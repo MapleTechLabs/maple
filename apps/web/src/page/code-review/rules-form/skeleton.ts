@@ -1,12 +1,16 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { field, fieldDescription, fieldLabel } from "../../../ui/field"
-import { inlineCode } from "../../../ui/inline-code"
-import { settingRow } from "../../../ui/setting-row"
+import { field, fieldDescription, fieldLabel } from "@maple/views/ui/field"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { settingRow } from "@maple/views/ui/setting-row"
 import { bar } from "../kit/skeletons"
 import { RULES_COPY } from "./copy"
 import { ALL_CATEGORIES } from "./state"
 import { valueState } from "./view-fields"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
+import { skeletonSwitchClass } from "@maple/views/ui/skeleton"
+import { Array as Arr } from "effect"
 
 // `RulesFormView` before its config loads: the real field labels and hints, bars for the values.
 
@@ -51,7 +55,7 @@ const toggleSkeleton = <M>(
 				ids: idsOf(mode, options.slug),
 				label: options.label,
 				description: options.description,
-				control: [bar(h, "h-5 w-9 rounded-full")],
+				control: [bar(h, skeletonSwitchClass())],
 			})
 		: fieldSkeleton(h, { mode, ...options, control: "h-8 sm:w-1/2" })
 
@@ -74,25 +78,22 @@ export const rulesFormSkeleton = <M>(h: HtmlBuilder<M>, mode: Mode): Html => {
 				control: "h-[68px]",
 				description: RULES_COPY.ignoreHint,
 			}),
-			h.div(
-				[h.Class("flex flex-col gap-2")],
-				[
-					h.span(
-						[h.Class("mb-2 flex items-center justify-between gap-3 text-sm font-medium")],
-						["Lenses", ...(isRepository ? [bar(h, "h-4 w-40")] : [])],
-					),
-					h.div(
-						[h.Class("grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3")],
-						ALL_CATEGORIES.map(() =>
-							h.span(
-								[h.Class("flex h-5 items-center gap-2")],
-								[bar(h, "size-4"), bar(h, "h-3 w-24")],
-							),
+			vstack(h, { gap: "2" }, [
+				h.span(
+					[h.Class("mb-2 flex items-center justify-between gap-3 text-sm font-medium")],
+					["Lenses", ...(isRepository ? [bar(h, "h-4 w-40")] : [])],
+				),
+				h.div(
+					[h.Class("grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3")],
+					Arr.map(ALL_CATEGORIES, () =>
+						h.span(
+							[h.Class("flex h-5 items-center gap-2")],
+							[bar(h, "size-4"), bar(h, "h-3 w-24")],
 						),
 					),
-					h.p([h.Class("text-xs text-muted-foreground")], [RULES_COPY.lensesHint]),
-				],
-			),
+				),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [RULES_COPY.lensesHint]),
+			]),
 			h.div(
 				[h.Class("grid gap-6 sm:grid-cols-2")],
 				[

@@ -1,10 +1,10 @@
 import { OrgId } from "@maple/domain"
 import { ErrorIssueId, GithubIntegrationStatus } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
-import * as Dialog from "../../../ui/dialog"
-import * as Select from "../../../ui/select"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Select from "@maple/views/ui/select"
 import type { PageContext } from "../../contract"
 import { githubOf } from "./attach"
 import { Message } from "./message"
@@ -69,7 +69,7 @@ describe("attach dialog repository", () => {
 		)
 		expect(githubOf(picked.model).repository).toBe("acme-shop/storefront")
 		expect(picked.model.attachDraft).toBe("")
-		expect((picked.commands ?? []).map((command) => command.name)).toContain("FetchVcsPullRequests")
+		expect(Arr.map(picked.commands ?? [], (command) => command.name)).toContain("FetchVcsPullRequests")
 	})
 
 	test("closing the dialog drops the picked repository; reopening shows the suggested one", () => {

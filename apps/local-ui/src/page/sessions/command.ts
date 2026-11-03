@@ -1,7 +1,7 @@
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { recordCached, withCache } from "../../data/cached"
-import type { LoadFailure } from "../../data/local-query"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { facetsFromCached, facetsKey, pagesFromCached, pagesToCached, sessionsKey } from "./cache"
 import { fetchSessionFacets, fetchSessionPage, filtersOf, nextCursor, type SessionCursor } from "./fetch"
 import { Message } from "./message"

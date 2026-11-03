@@ -13,6 +13,7 @@
  * rather than a dead one.
  */
 import type { V2Investigation } from "@maple/domain/http/v2"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * The shape of work an action asks for. `task` is the honest fallback: it says
@@ -98,7 +99,7 @@ export const routingContextFromInvestigation = (investigation: V2Investigation):
  * inside a longer word: "catalogue" is not a logs action.
  */
 const inflected = (stems: ReadonlyArray<string>): RegExp =>
-	new RegExp(`\\b(?:${stems.join("|")})(?:s|es|d|ed|ing)?\\b`)
+	new RegExp(`\\b(?:${Arr.join(stems, "|")})(?:s|es|d|ed|ing)?\\b`)
 
 /**
  * Ordered most-specific first, and the order is load-bearing: "roll back the
@@ -145,7 +146,7 @@ const KINDS: ReadonlyArray<{ kind: ActionKind; match: RegExp }> = [
 ]
 
 export function classifyAction(action: string, context: ActionRoutingContext): ActionClassification {
-	const text = action.toLowerCase()
+	const text = Str.toLowerCase(action)
 	const kind = KINDS.find((entry) => entry.match.test(text))?.kind ?? "task"
 	return { kind, target: actionTarget(text, context) }
 }
@@ -156,18 +157,23 @@ export function classifyAction(action: string, context: ActionRoutingContext): A
  * which is more use than no link at all.
  */
 function actionTarget(text: string, context: ActionRoutingContext): ActionTarget | null {
-	if (text.includes("alert")) return { label: "CREATE ALERT", href: "/alerts" }
-	if (text.includes("dashboard")) return { label: "OPEN DASHBOARDS", href: "/dashboards" }
-	if (text.includes("trace") || text.includes("span")) return { label: "VIEW TRACES", href: "/traces" }
-	if (text.includes("log")) return { label: "SEARCH LOGS", href: "/logs" }
+	if (Str.includes("alert")(text)) return { label: "CREATE ALERT", href: "/alerts" }
+	if (Str.includes("dashboard")(text)) return { label: "OPEN DASHBOARDS", href: "/dashboards" }
+	if (Str.includes("trace")(text) || Str.includes("span")(text))
+		return { label: "VIEW TRACES", href: "/traces" }
+	if (Str.includes("log")(text)) return { label: "SEARCH LOGS", href: "/logs" }
 
 	const scope = context.serviceName ?? context.scope
-	if (scope && !scope.includes(" ") && (text.includes("service") || text.includes(scope.toLowerCase()))) {
+	if (
+		scope &&
+		!Str.includes(" ")(scope) &&
+		(Str.includes("service")(text) || Str.includes(Str.toLowerCase(scope))(text))
+	) {
 		return { label: "VIEW SERVICE", href: `/services/${encodeURIComponent(scope)}` }
 	}
 
 	const issueId = context.issueId
-	if (issueId && (text.includes("issue") || text.includes("error"))) {
+	if (issueId && (Str.includes("issue")(text) || Str.includes("error")(text))) {
 		return { label: "OPEN ISSUE", href: `/errors/issues/${issueId}` }
 	}
 	return null

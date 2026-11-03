@@ -1,17 +1,17 @@
 import { histogramSampleData } from "@maple/ui/components/charts/_shared/sample-data"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import type { Message, Model } from "../../charts/chart"
-import { ChartSpec, ChartTooltip } from "../../charts/chart-spec"
-import { countTooltipBody } from "../../charts/histogram-chart"
-import { formatInterval } from "../../charts/histogram-format"
-import { plotFrame } from "../../charts/plot-frame"
-import { statsLegend } from "../../charts/plot-legend"
-import { muteColor } from "../../charts/sequential-colors"
-import { resolveColor, type ThemeColors } from "../../charts/theme-colors"
+import type { Message, Model } from "@maple/views/charts/chart"
+import { ChartSpec, ChartTooltip } from "@maple/views/charts/chart-spec"
+import { countTooltipBody } from "@maple/views/charts/histogram-chart"
+import { formatInterval } from "@maple/views/charts/histogram-format"
+import { plotFrame } from "@maple/views/charts/plot-frame"
+import { statsLegend } from "@maple/views/charts/plot-legend"
+import { muteColor } from "@maple/views/charts/sequential-colors"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 
 // `PieSpike` and `HistogramSpike`, canvas arm.
 
@@ -28,7 +28,7 @@ export const SPIKE_TOKENS: ReadonlyArray<string> = [...SLICE_TOKENS]
 
 /** `useSliceColor`: a slice's colour by its row's position in the full list. */
 const sliceColorFor = (theme: ThemeColors, rows: ReadonlyArray<PieSpikeRow>) => {
-	const palette = SLICE_TOKENS.map((token) => resolveColor(theme, token))
+	const palette = Arr.map(SLICE_TOKENS, (token) => resolveColor(theme, token))
 	const order = new Map<string, number>()
 	for (const row of rows) {
 		if (!order.has(row.name)) order.set(row.name, order.size)
@@ -81,7 +81,11 @@ export const pieSpikeView = Submodel.defineView<Model, Message, PieSpikeInputs>(
 		className: inputs.className,
 		ariaLabel: "Share by category",
 		spec: ChartSpec.PieSpike({
-			rows: inputs.rows.map((row) => ({ name: row.name, value: row.value, color: colorFor(row.name) })),
+			rows: Arr.map(inputs.rows, (row) => ({
+				name: row.name,
+				value: row.value,
+				color: colorFor(row.name),
+			})),
 			donut: inputs.donut ?? true,
 		}),
 		tooltipBody: (portal) =>
@@ -101,9 +105,9 @@ export const pieLegendSpikeView = Submodel.defineView<Model, Message, PieSpikeIn
 		onSome: (highlighted) => (name: string) =>
 			name === highlighted ? colorFor(name) : muteColor(colorFor(name), background, MUTED_COLOR_AMOUNT),
 	})
-	const total = inputs.rows.reduce((sum, row) => sum + row.value, 0)
+	const total = Arr.reduce(inputs.rows, 0, (sum, row) => sum + row.value)
 	const legend = statsLegend(h, {
-		series: inputs.rows.map((row) => ({
+		series: Arr.map(inputs.rows, (row) => ({
 			key: row.name,
 			label: row.name,
 			color: colorFor(row.name),
@@ -122,7 +126,7 @@ export const pieLegendSpikeView = Submodel.defineView<Model, Message, PieSpikeIn
 				className: "h-full min-w-0 flex-1",
 				ariaLabel: "Share by category",
 				spec: ChartSpec.PieSpike({
-					rows: inputs.rows.map((row) => ({
+					rows: Arr.map(inputs.rows, (row) => ({
 						name: row.name,
 						value: row.value,
 						color: emphasised(row.name),
@@ -143,7 +147,7 @@ const expandSampleData = (): ReadonlyArray<number> => {
 	const values: number[] = []
 	let previousWidth = 50
 	for (const bucket of histogramSampleData) {
-		const [rawLower, rawUpper] = bucket.name.split("-")
+		const [rawLower, rawUpper] = Str.split("-")(bucket.name)
 		const lower = Number.parseFloat(rawLower ?? "")
 		if (!Number.isFinite(lower)) continue
 		const parsedUpper = Number.parseFloat(rawUpper ?? "")

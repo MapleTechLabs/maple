@@ -3277,6 +3277,8 @@ export class QueryEngineValidationError extends HttpTaggedError<QueryEngineValid
 	{
 		message: Schema.String,
 		details: Schema.Array(Schema.String),
+		/** On a breakdown over a range or span limit: the widest window, ending at end_time, that fits. */
+		fittingRangeSeconds: Schema.optionalKey(Schema.Number),
 	},
 	{
 		status: 400,

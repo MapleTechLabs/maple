@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import * as tables from "@maple/db/tables"
 import { ORG_DELETE_REGISTRY } from "./OrganizationService"
+import { Array as Arr, Record as Rec } from "effect"
 
 /**
  * The fix that stays fixed: org deletion missed four credential tables because
@@ -13,10 +14,10 @@ import { ORG_DELETE_REGISTRY } from "./OrganizationService"
 const ORG_COLUMN_NAMES = new Set(["org_id", "approved_org_id"])
 
 const isTable = (value: unknown): value is (typeof tables.allTables)[number] =>
-	tables.allTables.some((table) => table === value)
+	Arr.some(tables.allTables, (table) => table === value)
 
 const exportedTables = () =>
-	Object.entries(tables).flatMap(([exportName, value]) =>
+	Arr.flatMap(Rec.toEntries(tables), ([exportName, value]) =>
 		isTable(value) ? [[exportName, value] as const] : [],
 	)
 
@@ -31,9 +32,9 @@ const orgScopedTables = () => {
 
 const registeredNames = (registered: ReadonlyArray<unknown>) => {
 	const byTable = new Map<unknown, string>(
-		exportedTables().map(([exportName, table]) => [table, exportName]),
+		Arr.map(exportedTables(), ([exportName, table]) => [table, exportName]),
 	)
-	return registered.map((table) => byTable.get(table) ?? "<unexported table>")
+	return Arr.map(registered, (table) => byTable.get(table) ?? "<unexported table>")
 }
 
 describe("org-scoped table registry", () => {
@@ -43,7 +44,7 @@ describe("org-scoped table registry", () => {
 			...registeredNames(ORG_DELETE_REGISTRY.approvedOrgScoped),
 			...ORG_DELETE_REGISTRY.unpurged,
 		])
-		const unclassified = [...orgScopedTables().keys()].filter((name) => !classified.has(name)).sort()
+		const unclassified = Arr.filter([...orgScopedTables().keys()], (name) => !classified.has(name)).sort()
 		expect(
 			unclassified,
 			"Every org-scoped table must be registered in OrganizationService: add it to ORG_SCOPED_TABLES (purged by org_id), APPROVED_ORG_SCOPED_TABLES (purged by approved_org_id), or UNPURGED_ORG_SCOPED_TABLES (deliberately kept).",
@@ -52,13 +53,14 @@ describe("org-scoped table registry", () => {
 
 	it("registers nothing that no longer carries an org column", () => {
 		const scoped = orgScopedTables()
-		const stale = [
-			...registeredNames(ORG_DELETE_REGISTRY.orgScoped),
-			...registeredNames(ORG_DELETE_REGISTRY.approvedOrgScoped),
-			...ORG_DELETE_REGISTRY.unpurged,
-		]
-			.filter((name) => !scoped.has(name))
-			.sort()
+		const stale = Arr.filter(
+			[
+				...registeredNames(ORG_DELETE_REGISTRY.orgScoped),
+				...registeredNames(ORG_DELETE_REGISTRY.approvedOrgScoped),
+				...ORG_DELETE_REGISTRY.unpurged,
+			],
+			(name) => !scoped.has(name),
+		).sort()
 		expect(stale).toEqual([])
 	})
 

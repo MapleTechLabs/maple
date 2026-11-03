@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Array as Arr } from "effect"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 import {
@@ -64,7 +64,7 @@ describe("supabase infra queries", () => {
 			diskWritePerSecond: "30",
 		})
 		const rows = Effect.runSync(compiled.decodeRows([rate("0.99"), rate(null)]))
-		expect(rows.map((row) => row.cacheHitRatio)).toEqual([0.99, null])
+		expect(Arr.map(rows, (row) => row.cacheHitRatio)).toEqual([0.99, null])
 	})
 
 	it("keeps a bucket holding a counter's first sample as a null rate and CPU, not 0", () => {

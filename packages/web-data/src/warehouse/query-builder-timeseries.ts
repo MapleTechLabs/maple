@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { QueryBuilderQueryDraftSchema } from "@maple/domain/http"
 import { QueryBuilderFormulaSchema, QueryComparisonSchema } from "@maple/query-model"
 import {
@@ -118,7 +118,8 @@ const getQueryBuilderTimeseriesEffect = Effect.fn("QueryEngine.getQueryBuilderTi
 	const input = yield* decodeInput(QueryBuilderTimeseriesInputSchema, data, "getQueryBuilderTimeseries")
 	const strategy = resolveStrategy(input)
 
-	const outcome = yield* runTimeseriesQuerySet(yield* executor, {
+	const queryExecutor = yield* executor
+	const outcome = yield* runTimeseriesQuerySet(queryExecutor, {
 		querySet: {
 			queries: input.queries,
 			...(!(input.formulas === undefined) ? { formulas: input.formulas } : undefined),
@@ -156,7 +157,7 @@ const getQueryBuilderTimeseriesEffect = Effect.fn("QueryEngine.getQueryBuilderTi
 		"query_set.query_count": input.queries.length,
 		"query_set.formula_count": input.formulas?.length ?? 0,
 		"query_set.comparison_mode": outcome.diagnostics.comparison.mode,
-		"query_set.fallback_used": outcome.diagnostics.queries.some((query) => query.fallbackUsed),
+		"query_set.fallback_used": Arr.some(outcome.diagnostics.queries, (query) => query.fallbackUsed),
 	})
 
 	return {

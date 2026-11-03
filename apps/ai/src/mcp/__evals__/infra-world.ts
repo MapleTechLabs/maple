@@ -7,6 +7,7 @@
  */
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import type { FixtureRule } from "./fake-warehouse"
+import { Array as Arr, String as Str } from "effect"
 
 export const INFRA_WORLD = {
 	cluster: "prod-eu",
@@ -24,7 +25,7 @@ type Curve = (t: number) => number
 
 const SAMPLES = 60
 const samples = (curve: Curve) => Array.from({ length: SAMPLES }, (_, i) => curve(i / SAMPLES))
-const avgOf = (curve: Curve) => samples(curve).reduce((sum, v) => sum + v, 0) / SAMPLES
+const avgOf = (curve: Curve) => Arr.reduce(samples(curve), 0, (sum, v) => sum + v) / SAMPLES
 const peakOf = (curve: Curve) => Math.max(...samples(curve))
 
 /** Three full periods across the window, so the mean is `base` and the peak `base * (1 + amp)`. */
@@ -124,7 +125,11 @@ const NODE_OVERHEAD_CORES = 0.3
 const nodeCpu =
 	(nodeName: string): Curve =>
 	(t) =>
-		PODS.filter((p) => p.nodeName === nodeName).reduce((sum, p) => sum + p.cpu(t), NODE_OVERHEAD_CORES)
+		Arr.reduce(
+			Arr.filter(PODS, (p) => p.nodeName === nodeName),
+			NODE_OVERHEAD_CORES,
+			(sum, p) => sum + p.cpu(t),
+		)
 
 const HOSTS = [
 	{
@@ -175,7 +180,7 @@ const CONTAINERS = [
 
 /** The window the SQL asked for, from its first two DateTime literals. */
 const windowOf = (sql: string): { start: number; end: number } => {
-	const stamps = [...sql.matchAll(/'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)'/g)].map((m) =>
+	const stamps = Arr.map([...sql.matchAll(/'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)'/g)], (m) =>
 		parseWarehouseDateTime(m[1] ?? ""),
 	)
 	const start = stamps[0] ?? parseWarehouseDateTime("2026-10-01 06:00:00")
@@ -183,16 +188,20 @@ const windowOf = (sql: string): { start: number; end: number } => {
 	return { start, end }
 }
 
-const fmt = (ms: number): string => new Date(ms).toISOString().slice(0, 19).replace("T", " ")
+const fmt = (ms: number): string => Str.replace("T", " ")(Str.slice(0, 19)(new Date(ms).toISOString()))
 const lastSeen = (sql: string) => fmt(windowOf(sql).end - 30_000)
 const firstSeen = (sql: string) => fmt(windowOf(sql).start + 30_000)
 
 /** Values for `ResourceAttributes['key'] = 'v'` or `IN ('a', 'b')` in the SQL; undefined when unfiltered. */
 const filterValues = (sql: string, key: string): ReadonlyArray<string> | undefined => {
-	const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-	const eq = [...sql.matchAll(new RegExp(`\\['${escaped}'\\] = '([^']*)'`, "g"))].map((m) => m[1] ?? "")
-	const inList = [...sql.matchAll(new RegExp(`\\['${escaped}'\\] IN \\(([^)]*)\\)`, "g"))].flatMap((m) =>
-		[...(m[1] ?? "").matchAll(/'([^']*)'/g)].map((v) => v[1] ?? ""),
+	const escaped = Str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")(key)
+	const eq = Arr.map(
+		[...sql.matchAll(new RegExp(`\\['${escaped}'\\] = '([^']*)'`, "g"))],
+		(m) => m[1] ?? "",
+	)
+	const inList = Arr.flatMap(
+		[...sql.matchAll(new RegExp(`\\['${escaped}'\\] IN \\(([^)]*)\\)`, "g"))],
+		(m) => Arr.map([...(m[1] ?? "").matchAll(/'([^']*)'/g)], (v) => v[1] ?? ""),
 	)
 	const all = [...eq, ...inList]
 	return all.length === 0 ? undefined : all
@@ -205,7 +214,7 @@ const matches = (sql: string, key: string, value: string): boolean => {
 
 const searched = (sql: string, name: string): boolean => {
 	const term = /positionCaseInsensitive\([^,]+, '([^']*)'\)/.exec(sql)?.[1]?.toLowerCase()
-	return term === undefined || name.toLowerCase().includes(term)
+	return term === undefined || Str.includes(term)(Str.toLowerCase(name))
 }
 
 const limitOf = (sql: string): number => Number([...sql.matchAll(/LIMIT (\d+)/g)].at(-1)?.[1] ?? 1000)
@@ -213,14 +222,15 @@ const limitOf = (sql: string): number => Number([...sql.matchAll(/LIMIT (\d+)/g)
 const OWNER_KINDS: ReadonlyArray<OwnerKind> = ["deployment", "statefulset", "daemonset"]
 
 const podsFor = (sql: string): ReadonlyArray<Pod> =>
-	PODS.filter(
+	Arr.filter(
+		PODS,
 		(p) =>
 			matches(sql, "k8s.pod.name", p.podName) &&
 			matches(sql, "k8s.namespace.name", p.namespace) &&
 			matches(sql, "k8s.node.name", p.nodeName) &&
 			matches(sql, "k8s.cluster.name", INFRA_WORLD.cluster) &&
 			// An owner filter of any kind selects only pods owned by that kind and name.
-			OWNER_KINDS.every((kind) => {
+			Arr.every(OWNER_KINDS, (kind) => {
 				const wanted = filterValues(sql, `k8s.${kind}.name`)
 				return wanted === undefined || (p.owner[0] === kind && wanted.includes(p.owner[1]))
 			}) &&
@@ -267,10 +277,10 @@ const podListRow = (sql: string, p: Pod) => {
 }
 
 const sortedPods = (sql: string) => {
-	const rows = podsFor(sql).map((p) => podListRow(sql, p))
+	const rows = Arr.map(podsFor(sql), (p) => podListRow(sql, p))
 	// The first key of the last ORDER BY decides; later keys are tiebreaks.
-	const key = /ORDER BY\s+(?:\w+\.)?(\w+)/i.exec(sql.slice(sql.lastIndexOf("ORDER BY")))?.[1]
-	if (key === "podName") return rows.sort((a, b) => a.podName.localeCompare(b.podName))
+	const key = /ORDER BY\s+(?:\w+\.)?(\w+)/i.exec(Str.slice(sql.lastIndexOf("ORDER BY"))(sql))?.[1]
+	if (key === "podName") return rows.sort((a, b) => Str.localeCompare(b.podName)(a.podName))
 	if (key === "cpuUsage") return rows.sort((a, b) => b.cpuUsage - a.cpuUsage)
 	if (key === "memoryLimitPct") return rows.sort((a, b) => b.memoryLimitPct - a.memoryLimitPct)
 	return rows.sort((a, b) => b.saturation - a.saturation)
@@ -291,31 +301,31 @@ const metricOf = (sql: string): string => /MetricName = '([^']+)'/.exec(sql)?.[1
 const meanCurve =
 	(curves: ReadonlyArray<Curve>): Curve =>
 	(t) =>
-		curves.reduce((sum, curve) => sum + curve(t), 0) / Math.max(1, curves.length)
+		Arr.reduce(curves, 0, (sum, curve) => sum + curve(t)) / Math.max(1, curves.length)
 
 const podSeries = (sql: string): ReturnType<typeof series> => {
 	const pods = podsFor(sql)
 	if (pods.length === 0) return []
 	// A workload chart grouped by pod: one series per pod, labeled with its name.
-	if (sql.includes("['k8s.pod.name'] AS attributeValue")) {
-		return pods.flatMap((p) =>
-			podSeries(sql.replace("['k8s.pod.name'] AS attributeValue", "")).length === 0
+	if (Str.includes("['k8s.pod.name'] AS attributeValue")(sql)) {
+		return Arr.flatMap(pods, (p) =>
+			podSeries(Str.replace("['k8s.pod.name'] AS attributeValue", "")(sql)).length === 0
 				? []
 				: seriesForPod(sql, p),
 		)
 	}
-	const bounded = pods.filter((p) => !p.unbounded)
+	const bounded = Arr.filter(pods, (p) => !p.unbounded)
 	switch (metricOf(sql)) {
 		case "k8s.pod.cpu.usage":
-			return series(sql, meanCurve(pods.map((p) => p.cpu)))
+			return series(sql, meanCurve(Arr.map(pods, (p) => p.cpu)))
 		case "k8s.pod.cpu_limit_utilization":
 			return bounded.length === 0
 				? []
-				: series(sql, meanCurve(bounded.map((p) => (t: number) => p.cpu(t) / p.cpuLimitCores)))
+				: series(sql, meanCurve(Arr.map(bounded, (p) => (t: number) => p.cpu(t) / p.cpuLimitCores)))
 		case "k8s.pod.memory_limit_utilization":
-			return bounded.length === 0 ? [] : series(sql, meanCurve(bounded.map((p) => p.memory)))
+			return bounded.length === 0 ? [] : series(sql, meanCurve(Arr.map(bounded, (p) => p.memory)))
 		case "k8s.pod.memory.working_set":
-			return series(sql, meanCurve(pods.map(workingSet)))
+			return series(sql, meanCurve(Arr.map(pods, workingSet)))
 		default:
 			return []
 	}
@@ -355,7 +365,7 @@ const WORLD_METRICS: ReadonlyArray<WorldMetric> = [
 		unit: "1",
 		service: "otel-collector",
 		key: "host.name",
-		entities: HOSTS.map((h) => [h.hostName, h.cpu]),
+		entities: Arr.map(HOSTS, (h) => [h.hostName, h.cpu]),
 	},
 	{
 		name: "system.memory.utilization",
@@ -363,7 +373,7 @@ const WORLD_METRICS: ReadonlyArray<WorldMetric> = [
 		unit: "1",
 		service: "otel-collector",
 		key: "host.name",
-		entities: HOSTS.map((h) => [h.hostName, h.memory]),
+		entities: Arr.map(HOSTS, (h) => [h.hostName, h.memory]),
 	},
 	{
 		name: "system.memory.usage",
@@ -371,7 +381,7 @@ const WORLD_METRICS: ReadonlyArray<WorldMetric> = [
 		unit: "By",
 		service: "otel-collector",
 		key: "host.name",
-		entities: HOSTS.map((h) => [h.hostName, (t: number) => h.memory(t) * 16 * 2 ** 30]),
+		entities: Arr.map(HOSTS, (h) => [h.hostName, (t: number) => h.memory(t) * 16 * 2 ** 30]),
 	},
 	{
 		name: "system.cpu.load_average.1m",
@@ -379,7 +389,7 @@ const WORLD_METRICS: ReadonlyArray<WorldMetric> = [
 		unit: "{thread}",
 		service: "otel-collector",
 		key: "host.name",
-		entities: HOSTS.map((h) => [h.hostName, wave(avgOf(h.load15), 0.3)]),
+		entities: Arr.map(HOSTS, (h) => [h.hostName, wave(avgOf(h.load15), 0.3)]),
 	},
 	{
 		name: "system.disk.io",
@@ -387,7 +397,7 @@ const WORLD_METRICS: ReadonlyArray<WorldMetric> = [
 		unit: "By",
 		service: "otel-collector",
 		key: "host.name",
-		entities: HOSTS.map((h) => [h.hostName, wave(h.hostName === "ci-runner-01" ? 9e7 : 2e5, 0.5)]),
+		entities: Arr.map(HOSTS, (h) => [h.hostName, wave(h.hostName === "ci-runner-01" ? 9e7 : 2e5, 0.5)]),
 	},
 	{
 		name: "system.network.io",
@@ -395,7 +405,7 @@ const WORLD_METRICS: ReadonlyArray<WorldMetric> = [
 		unit: "By",
 		service: "otel-collector",
 		key: "host.name",
-		entities: HOSTS.map((h) => [h.hostName, wave(h.hostName === "ci-runner-01" ? 4e7 : 1e5, 0.5)]),
+		entities: Arr.map(HOSTS, (h) => [h.hostName, wave(h.hostName === "ci-runner-01" ? 4e7 : 1e5, 0.5)]),
 	},
 	{
 		name: "system.cpu.load_average.15m",
@@ -403,7 +413,7 @@ const WORLD_METRICS: ReadonlyArray<WorldMetric> = [
 		unit: "{thread}",
 		service: "otel-collector",
 		key: "host.name",
-		entities: HOSTS.map((h) => [h.hostName, h.load15]),
+		entities: Arr.map(HOSTS, (h) => [h.hostName, h.load15]),
 	},
 	{
 		name: "system.filesystem.utilization",
@@ -411,7 +421,10 @@ const WORLD_METRICS: ReadonlyArray<WorldMetric> = [
 		unit: "1",
 		service: "otel-collector",
 		key: "host.name",
-		entities: HOSTS.map((h) => [h.hostName, () => Math.max(...h.filesystems.map((fs) => fs.used))]),
+		entities: Arr.map(HOSTS, (h) => [
+			h.hostName,
+			() => Math.max(...Arr.map(h.filesystems, (fs) => fs.used)),
+		]),
 	},
 	{
 		name: "k8s.pod.cpu.usage",
@@ -419,7 +432,7 @@ const WORLD_METRICS: ReadonlyArray<WorldMetric> = [
 		unit: "{cpu}",
 		service: "k8s-agent",
 		key: "k8s.pod.name",
-		entities: PODS.map((p) => [p.podName, p.cpu]),
+		entities: Arr.map(PODS, (p) => [p.podName, p.cpu]),
 	},
 	{
 		name: "k8s.pod.memory_limit_utilization",
@@ -427,7 +440,10 @@ const WORLD_METRICS: ReadonlyArray<WorldMetric> = [
 		unit: "1",
 		service: "k8s-agent",
 		key: "k8s.pod.name",
-		entities: PODS.filter((p) => !p.unbounded).map((p) => [p.podName, p.memory]),
+		entities: Arr.map(
+			Arr.filter(PODS, (p) => !p.unbounded),
+			(p) => [p.podName, p.memory],
+		),
 	},
 	{
 		name: "k8s.pod.cpu_limit_utilization",
@@ -435,10 +451,10 @@ const WORLD_METRICS: ReadonlyArray<WorldMetric> = [
 		unit: "1",
 		service: "k8s-agent",
 		key: "k8s.pod.name",
-		entities: PODS.filter((p) => !p.unbounded).map((p) => [
-			p.podName,
-			(t: number) => p.cpu(t) / p.cpuLimitCores,
-		]),
+		entities: Arr.map(
+			Arr.filter(PODS, (p) => !p.unbounded),
+			(p) => [p.podName, (t: number) => p.cpu(t) / p.cpuLimitCores],
+		),
 	},
 	{
 		name: "k8s.node.cpu.usage",
@@ -446,7 +462,7 @@ const WORLD_METRICS: ReadonlyArray<WorldMetric> = [
 		unit: "{cpu}",
 		service: "k8s-agent",
 		key: "k8s.node.name",
-		entities: NODES.map((n) => [n.nodeName, nodeCpu(n.nodeName)]),
+		entities: Arr.map(NODES, (n) => [n.nodeName, nodeCpu(n.nodeName)]),
 	},
 	{
 		name: "container.cpu.utilization",
@@ -454,7 +470,7 @@ const WORLD_METRICS: ReadonlyArray<WorldMetric> = [
 		unit: "%",
 		service: "docker-agent",
 		key: "container.name",
-		entities: CONTAINERS.map((c) => [c.containerName, (t: number) => c.cpu(t) * 100]),
+		entities: Arr.map(CONTAINERS, (c) => [c.containerName, (t: number) => c.cpu(t) * 100]),
 	},
 	{
 		name: "container.memory.percent",
@@ -462,7 +478,7 @@ const WORLD_METRICS: ReadonlyArray<WorldMetric> = [
 		unit: "%",
 		service: "docker-agent",
 		key: "container.name",
-		entities: CONTAINERS.map((c) => [c.containerName, (t: number) => c.memory(t) * 100]),
+		entities: Arr.map(CONTAINERS, (c) => [c.containerName, (t: number) => c.memory(t) * 100]),
 	},
 ]
 
@@ -473,10 +489,10 @@ const builderSeries = (sql: string) => {
 	const groupKey = /ResourceAttributes\['([^']+)'\] AS groupName/.exec(sql)?.[1]
 	const groups: ReadonlyArray<readonly [string, Curve]> =
 		groupKey === metric.key
-			? metric.entities.filter(([name]) => matches(sql, metric.key, name))
-			: [["", meanCurve(metric.entities.map(([, curve]) => curve))]]
-	return groups.flatMap(([group, curve]) =>
-		series(sql, curve, group).map((row) => ({
+			? Arr.filter(metric.entities, ([name]) => matches(sql, metric.key, name))
+			: [["", meanCurve(Arr.map(metric.entities, ([, curve]) => curve))]]
+	return Arr.flatMap(groups, ([group, curve]) =>
+		Arr.map(series(sql, curve, group), (row) => ({
 			bucket: row.bucket,
 			serviceName: metric.service,
 			attributeValue: group,
@@ -492,7 +508,8 @@ const builderSeries = (sql: string) => {
 
 const metricCatalogRows = (sql: string) => {
 	const term = /ilike\([^,]+, '%([^%']*)%'\)/i.exec(sql)?.[1]?.toLowerCase()
-	return WORLD_METRICS.filter((m) => term === undefined || m.name.toLowerCase().includes(term)).map(
+	return Arr.map(
+		Arr.filter(WORLD_METRICS, (m) => term === undefined || Str.includes(term)(Str.toLowerCase(m.name))),
 		(m) => ({
 			metricName: m.name,
 			metricType: m.type,
@@ -522,17 +539,17 @@ const workingSet =
 /** Container restarts: the OOM-killed checkout pod restarted once in the window. */
 const RESTARTS = new Map<string, number>([[INFRA_WORLD.oomPod, 1]])
 
-const has = (sql: string, alias: string) => sql.includes(` AS ${alias}`)
+const has = (sql: string, alias: string) => Str.includes(` AS ${alias}`)(sql)
 
 const workloadRows = (sql: string) => {
-	const kind = OWNER_KINDS.find((k) => sql.includes(`['k8s.${k}.name']`))
-	const owned = podsFor(sql).filter((p) => p.owner[0] === kind && searched(sql, p.owner[1]))
-	const names = [...new Set(owned.map((p) => p.owner[1]))]
-	return names.map((name) => {
-		const pods = owned.filter((p) => p.owner[1] === name)
-		const stats = pods.map(podStats)
+	const kind = OWNER_KINDS.find((k) => Str.includes(`['k8s.${k}.name']`)(sql))
+	const owned = Arr.filter(podsFor(sql), (p) => p.owner[0] === kind && searched(sql, p.owner[1]))
+	const names = [...new Set(Arr.map(owned, (p) => p.owner[1]))]
+	return Arr.map(names, (name) => {
+		const pods = Arr.filter(owned, (p) => p.owner[1] === name)
+		const stats = Arr.map(pods, podStats)
 		const mean = (f: (s: (typeof stats)[number]) => number) =>
-			stats.reduce((sum, s) => sum + f(s), 0) / stats.length
+			Arr.reduce(stats, 0, (sum, s) => sum + f(s)) / stats.length
 		return {
 			workloadName: name,
 			kind,
@@ -546,10 +563,10 @@ const workloadRows = (sql: string) => {
 			avgCpuLimitPct: mean((s) => s.cpuLimitPct),
 			avgMemoryLimitPct: mean((s) => s.memoryLimitPct),
 			avgCpuUsage: mean((s) => s.cpuUsage),
-			peakCpuLimitPct: Math.max(...stats.map((s) => s.cpuLimitPctPeak)),
-			peakMemoryLimitPct: Math.max(...stats.map((s) => s.memoryLimitPctPeak)),
-			saturation: Math.max(...stats.map((s) => Math.max(s.cpuLimitPctPeak, s.memoryLimitPctPeak))),
-			cpuUsage: stats.reduce((sum, s) => sum + s.cpuUsage, 0),
+			peakCpuLimitPct: Math.max(...Arr.map(stats, (s) => s.cpuLimitPctPeak)),
+			peakMemoryLimitPct: Math.max(...Arr.map(stats, (s) => s.memoryLimitPctPeak)),
+			saturation: Math.max(...Arr.map(stats, (s) => Math.max(s.cpuLimitPctPeak, s.memoryLimitPctPeak))),
+			cpuUsage: Arr.reduce(stats, 0, (sum, s) => sum + s.cpuUsage),
 			desiredReplicas: pods.length,
 			readyReplicas: pods.length,
 			replicaSamples: 1,
@@ -598,13 +615,15 @@ export const infraFixtureRules = (): FixtureRule[] => [
 	},
 	{
 		match: (sql) => has(sql, "surface"),
-		rows: ["hosts", "containers", "k8sPods", "k8sNodes", "k8sWorkloads"].map((surface) => ({ surface })),
+		rows: Arr.map(["hosts", "containers", "k8sPods", "k8sNodes", "k8sWorkloads"], (surface) => ({
+			surface,
+		})),
 	},
 	// Pod detail before pod list: both lead with podName.
 	{
 		match: (sql) => has(sql, "totalRestarts"),
 		rows: (sql) =>
-			podsFor(sql).map((p) => ({
+			Arr.map(podsFor(sql), (p) => ({
 				namespace: p.namespace,
 				podName: p.podName,
 				containerName: p.owner[1],
@@ -616,14 +635,12 @@ export const infraFixtureRules = (): FixtureRule[] => [
 	{
 		match: (sql) => has(sql, "podStartTime"),
 		rows: (sql) =>
-			podsFor(sql)
-				.slice(0, 1)
-				.map((p) => ({
-					...podListRow(sql, p),
-					podStartTime: new Date(windowOf(sql).start - 3 * 86_400_000).toISOString(),
-					sourceId: "src_infra_world",
-					firstSeen: firstSeen(sql),
-				})),
+			Arr.map(podsFor(sql).slice(0, 1), (p) => ({
+				...podListRow(sql, p),
+				podStartTime: new Date(windowOf(sql).start - 3 * 86_400_000).toISOString(),
+				sourceId: "src_infra_world",
+				firstSeen: firstSeen(sql),
+			})),
 	},
 	{
 		match: (sql) => has(sql, "livePods"),
@@ -633,9 +650,10 @@ export const infraFixtureRules = (): FixtureRule[] => [
 				{
 					livePods: pods.length,
 					endedPods: 0,
-					saturatedPods: pods.filter((p) => p.saturation >= 0.9).length,
-					elevatedPods: pods.filter((p) => p.saturation >= 0.6 && p.saturation < 0.9).length,
-					unboundedPods: pods.filter((p) => p.cpuLimitPct === 0 && p.memoryLimitPct === 0).length,
+					saturatedPods: Arr.filter(pods, (p) => p.saturation >= 0.9).length,
+					elevatedPods: Arr.filter(pods, (p) => p.saturation >= 0.6 && p.saturation < 0.9).length,
+					unboundedPods: Arr.filter(pods, (p) => p.cpuLimitPct === 0 && p.memoryLimitPct === 0)
+						.length,
 				},
 			]
 		},
@@ -647,10 +665,13 @@ export const infraFixtureRules = (): FixtureRule[] => [
 	{
 		match: (sql) => has(sql, "avgCpuLimitUtilization"),
 		rows: (sql) => {
-			if (!sql.includes("'checkout'")) return []
-			const stats = PODS.filter((p) => p.owner[1] === "checkout").map(podStats)
+			if (!Str.includes("'checkout'")(sql)) return []
+			const stats = Arr.map(
+				Arr.filter(PODS, (p) => p.owner[1] === "checkout"),
+				podStats,
+			)
 			const mean = (f: (s: (typeof stats)[number]) => number) =>
-				stats.reduce((sum, s) => sum + f(s), 0) / stats.length
+				Arr.reduce(stats, 0, (sum, s) => sum + f(s)) / stats.length
 			return [
 				{
 					serviceName: "checkout",
@@ -669,7 +690,11 @@ export const infraFixtureRules = (): FixtureRule[] => [
 	{
 		match: (sql) => has(sql, "kubeletVersion"),
 		rows: (sql) =>
-			NODES.filter((n) => matches(sql, "k8s.node.name", n.nodeName) && searched(sql, n.nodeName)).map(
+			Arr.map(
+				Arr.filter(
+					NODES,
+					(n) => matches(sql, "k8s.node.name", n.nodeName) && searched(sql, n.nodeName),
+				),
 				(n) => ({
 					...n,
 					cpuUsage: avgOf(nodeCpu(n.nodeName)),
@@ -687,14 +712,16 @@ export const infraFixtureRules = (): FixtureRule[] => [
 	{
 		match: (sql) => has(sql, "totalContainers"),
 		rows: (sql) => {
-			const rows = CONTAINERS.filter((c) => matches(sql, "host.name", c.hostName)).map((c) =>
-				containerRow(sql, c),
+			const rows = Arr.map(
+				Arr.filter(CONTAINERS, (c) => matches(sql, "host.name", c.hostName)),
+				(c) => containerRow(sql, c),
 			)
 			return [
 				{
 					totalContainers: rows.length,
-					saturatedContainers: rows.filter((c) => c.saturation >= 0.9).length,
-					elevatedContainers: rows.filter((c) => c.saturation >= 0.6 && c.saturation < 0.9).length,
+					saturatedContainers: Arr.filter(rows, (c) => c.saturation >= 0.9).length,
+					elevatedContainers: Arr.filter(rows, (c) => c.saturation >= 0.6 && c.saturation < 0.9)
+						.length,
 					staleContainers: 0,
 				},
 			]
@@ -703,29 +730,36 @@ export const infraFixtureRules = (): FixtureRule[] => [
 	{
 		match: (sql) => has(sql, "restartsDelta"),
 		rows: (sql) =>
-			CONTAINERS.filter((c) => matches(sql, "container.name", c.containerName)).map((c) => ({
-				memoryBytesAvg: 1_200_000_000,
-				memoryLimitBytes: 2_147_483_648,
-				restartsDelta: c.restarts,
-				pidsAvg: 48,
-			})),
+			Arr.map(
+				Arr.filter(CONTAINERS, (c) => matches(sql, "container.name", c.containerName)),
+				(c) => ({
+					memoryBytesAvg: 1_200_000_000,
+					memoryLimitBytes: 2_147_483_648,
+					restartsDelta: c.restarts,
+					pidsAvg: 48,
+				}),
+			),
 	},
 	{
 		match: (sql) => has(sql, "composeService") || has(sql, "imageName"),
 		rows: (sql) =>
-			CONTAINERS.filter(
-				(c) =>
-					matches(sql, "container.name", c.containerName) &&
-					matches(sql, "host.name", c.hostName) &&
-					matches(sql, "compose.service", c.composeService) &&
-					searched(sql, c.containerName),
-			).map((c) => containerRow(sql, c)),
+			Arr.map(
+				Arr.filter(
+					CONTAINERS,
+					(c) =>
+						matches(sql, "container.name", c.containerName) &&
+						matches(sql, "host.name", c.hostName) &&
+						matches(sql, "compose.service", c.composeService) &&
+						searched(sql, c.containerName),
+				),
+				(c) => containerRow(sql, c),
+			),
 	},
 	{
 		// Host summaries read mountpoints too (disk %), so key on the per-mount output.
 		match: (sql) => has(sql, "usedMax"),
 		rows: (sql) =>
-			HOSTS.filter((h) => matches(sql, "host.name", h.hostName)).flatMap((h) =>
+			Arr.filter(HOSTS, (h) => matches(sql, "host.name", h.hostName)).flatMap((h) =>
 				h.filesystems.map((fs) => ({
 					mountpoint: fs.mountpoint,
 					device: fs.device,
@@ -737,14 +771,15 @@ export const infraFixtureRules = (): FixtureRule[] => [
 	{
 		match: (sql) => has(sql, "load15") || has(sql, "cloudRegion"),
 		rows: (sql) =>
-			HOSTS.filter((h) => matches(sql, "host.name", h.hostName) && searched(sql, h.hostName)).map(
+			Arr.map(
+				Arr.filter(HOSTS, (h) => matches(sql, "host.name", h.hostName) && searched(sql, h.hostName)),
 				(h) => ({
 					hostName: h.hostName,
 					osType: h.osType,
 					hostArch: h.hostArch,
 					cpuPct: avgOf(h.cpu),
 					memoryPct: avgOf(h.memory),
-					diskPct: Math.max(...h.filesystems.map((fs) => fs.used)),
+					diskPct: Math.max(...Arr.map(h.filesystems, (fs) => fs.used)),
 					load15: avgOf(h.load15),
 					cloudProvider: "aws",
 					cloudRegion: "eu-central-1",
@@ -758,7 +793,7 @@ export const infraFixtureRules = (): FixtureRule[] => [
 		match: (sql) => has(sql, "avgValue"),
 		rows: (sql) => {
 			const metric = metricOf(sql)
-			if (metric.startsWith("k8s.pod.")) return podSeries(sql)
+			if (Str.startsWith("k8s.pod.")(metric)) return podSeries(sql)
 			if (metric === "k8s.node.cpu.usage") {
 				const node = NODES.find((n) => n.nodeName === filterValues(sql, "k8s.node.name")?.[0])
 				return node === undefined ? [] : series(sql, nodeCpu(node.nodeName))

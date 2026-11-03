@@ -101,17 +101,17 @@ const make = Effect.gen(function* () {
 					offset,
 				}),
 			).pipe(
-				Effect.mapError(
-					(cause) =>
+				Effect.mapBoth({
+					onFailure: (cause) =>
 						new AlertMemberDirectoryUnavailableError({
 							message: `Failed to list workspace members for ${orgId}`,
 							cause,
 						}),
-				),
-				Effect.map((page) => {
-					const next = offset + page.data.length
-					const done = next >= page.totalCount || page.data.length === 0
-					return [page.data, done ? Option.none<number>() : Option.some(next)] as const
+					onSuccess: (page) => {
+						const next = offset + page.data.length
+						const done = next >= page.totalCount || page.data.length === 0
+						return [page.data, done ? Option.none<number>() : Option.some(next)] as const
+					},
 				}),
 			),
 		).pipe(Stream.runCollect)
@@ -122,7 +122,7 @@ const make = Effect.gen(function* () {
 
 	const listMembers = Effect.fn("OrgMembersService.listMembers")(function* (orgId: OrgId) {
 		yield* Effect.annotateCurrentSpan("orgId", orgId)
-		if (clerk === null) return yield* Effect.fail(notConfigured)
+		if (clerk === null) return yield* notConfigured
 		const memberships = yield* listMemberships(clerk, orgId)
 		return memberships.flatMap((member): Array<OrgMember> => {
 			const userId = member.publicUserData?.userId
@@ -141,7 +141,7 @@ const make = Effect.gen(function* () {
 
 	const listMemberActivity = Effect.fn("OrgMembersService.listMemberActivity")(function* (orgId: OrgId) {
 		yield* Effect.annotateCurrentSpan("orgId", orgId)
-		if (clerk === null) return yield* Effect.fail(notConfigured)
+		if (clerk === null) return yield* notConfigured
 		const memberships = yield* listMemberships(clerk, orgId)
 		const userIds = memberships.flatMap((member) => member.publicUserData?.userId ?? [])
 		// Clerk filters by at most 100 user ids per call.
@@ -180,11 +180,9 @@ const make = Effect.gen(function* () {
 		userId: string,
 	) {
 		if (clerk === null) {
-			return yield* Effect.fail(
-				new AlertMemberDirectoryNotConfiguredError({
-					message: "Organization lookup requires Clerk authentication",
-				}),
-			)
+			return yield* new AlertMemberDirectoryNotConfiguredError({
+				message: "Organization lookup requires Clerk authentication",
+			})
 		}
 		const page = yield* clerkRequest(
 			"Clerk.users.getOrganizationMembershipList",
@@ -227,12 +225,10 @@ const make = Effect.gen(function* () {
 			else resolved.push(member)
 		}
 		if (unknown.length > 0) {
-			return yield* Effect.fail(
-				new AlertRecipientSelectionError({
-					message: "Some selected users are not members of this workspace",
-					unknownUserIds: unknown,
-				}),
-			)
+			return yield* new AlertRecipientSelectionError({
+				message: "Some selected users are not members of this workspace",
+				unknownUserIds: unknown,
+			})
 		}
 		yield* Effect.annotateCurrentSpan("result.member_count", resolved.length)
 		return resolved

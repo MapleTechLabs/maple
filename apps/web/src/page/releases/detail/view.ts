@@ -1,15 +1,15 @@
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import { attributeIssues, previousSha, shortReleaseLabel } from "../../../components/releases/release-model"
 import { errorIssueFromV2 } from "../../../lib/services/error-issues"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { BreadcrumbEntry } from "../../../shell"
-import { emptyMessage } from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { pageTitle } from "../../../ui/page-layout"
-import { panel } from "../../../ui/panel"
-import { skeleton } from "../../../ui/skeleton"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { pageTitle } from "@maple/views/ui/page-layout"
+import { panel } from "@maple/views/ui/panel"
+import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { timeControls } from "../../kit/time-controls"
@@ -21,6 +21,9 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { changesetState, overlaysOf, serviceBody, serviceButton } from "./view-service"
 import { type Clock, deploySummary, deployServices, issueList, releaseChangeset } from "./view-sections"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
+import { grid } from "@maple/views/ui/grid"
 
 // The release detail page: the deploy overview, or with `?service=` the service body
 // (view-service.ts).
@@ -28,7 +31,7 @@ import { type Clock, deploySummary, deployServices, issueList, releaseChangeset 
 type H = HtmlBuilder<Message>
 
 const plainSha = (h: H, sha: string, label: string): Html =>
-	h.span([h.Class("truncate font-mono"), h.Title(sha)], [label])
+	typography(h, { mono: true, truncate: true, attributes: [h.Title(sha)] }, [label])
 
 /** `ReleaseTitle`: the commit message once the sha resolves, the short sha until then. */
 const releaseTitle = (h: H, model: Model): Html => {
@@ -37,20 +40,17 @@ const releaseTitle = (h: H, model: Model): Html => {
 		onNone: () => plainSha(h, model.commitSha, shortReleaseLabel(model.commitSha)),
 		onSome: (commit) => {
 			const subject = firstLine(commit.message)
-			return h.span(
-				[h.Class("flex min-w-0 items-center gap-2.5")],
-				[
-					commitAvatar(
-						h,
-						commit.authorAvatarUrl,
-						commit.authorLogin ?? commit.authorName ?? "Unknown author",
-						false,
-					),
-					subject
-						? h.span([h.Class("truncate"), h.Title(subject)], [subject])
-						: plainSha(h, model.commitSha, shortReleaseLabel(model.commitSha)),
-				],
-			)
+			return hstack(h, { gap: "2.5", shrink: true, as: "span" }, [
+				commitAvatar(
+					h,
+					commit.authorAvatarUrl,
+					commit.authorLogin ?? commit.authorName ?? "Unknown author",
+					false,
+				),
+				subject
+					? h.span([h.Class("truncate"), h.Title(subject)], [subject])
+					: plainSha(h, model.commitSha, shortReleaseLabel(model.commitSha)),
+			])
 		},
 	})
 }
@@ -61,40 +61,36 @@ const deployIssues = (h: H, model: Model, clock: Clock): Html => {
 	const data = AsyncData.getOrElse(model.releases.data, () => null)
 	const impacts = data === null ? [] : deriveOf(data).impacts
 	return AsyncData.match(model.issues.data, {
-		onIdle: () => skeleton(h, "h-32 w-full rounded-md"),
-		onLoading: () => skeleton(h, "h-32 w-full rounded-md"),
-		onFailure: (failure) =>
-			errorState(h, { failure, title: "Couldn't load issues", variant: "row" }),
+		onIdle: () => skeletonBlock(h, { height: "32" }),
+		onLoading: () => skeletonBlock(h, { height: "32" }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load issues", variant: "row" }),
 		onStale: ({ error }) =>
 			errorState(h, { failure: error, title: "Couldn't load issues", variant: "row" }),
 		onSuccess: (issues) => lists(issues),
 		onRefreshing: (issues) => lists(issues),
 	})
 	function lists(wire: ReadonlyArray<Parameters<typeof errorIssueFromV2>[0]>): Html {
-		const documents: Array<ErrorIssueDocument> = wire.map(errorIssueFromV2)
+		const documents: Array<ErrorIssueDocument> = Arr.map(wire, errorIssueFromV2)
 		const split = attributeIssues(impacts, documents).get(model.commitSha) ?? { fresh: [], regressed: [] }
 		const isServiceShown = (group?.services.length ?? 0) > 1
-		return h.div(
-			[h.Class("grid gap-3 lg:grid-cols-2")],
-			[
-				issueList(h, {
-					title: "New with this release",
-					issues: split.fresh,
-					empty: "No issue first appeared while this release was live.",
-					tone: "error",
-					isServiceShown,
-					clock,
-				}),
-				issueList(h, {
-					title: "Regressed with this release",
-					issues: split.regressed,
-					empty: "Nothing fixed before came back while this release was live.",
-					tone: "warn",
-					isServiceShown,
-					clock,
-				}),
-			],
-		)
+		return grid(h, { lg: 2, gap: "3" }, [
+			issueList(h, {
+				title: "New with this release",
+				issues: split.fresh,
+				empty: "No issue first appeared while this release was live",
+				tone: "error",
+				isServiceShown,
+				clock,
+			}),
+			issueList(h, {
+				title: "Regressed with this release",
+				issues: split.regressed,
+				empty: "Nothing fixed before came back while this release was live",
+				tone: "warn",
+				isServiceShown,
+				clock,
+			}),
+		])
 	}
 }
 
@@ -123,32 +119,32 @@ const overview = (h: H, model: Model, clock: Clock): Html => {
 					]),
 				]),
 			onSome: (group) =>
-				h.div(
-					[h.Class("flex flex-col gap-3")],
-					[
-						deploySummary(h, group, clock),
-						deployServices(h, group, model.search.environments, {
+				vstack(h, { gap: "3" }, [
+					deploySummary(h, group, clock),
+					deployServices(
+						h,
+						group,
+						model.search.environments,
+						{
 							startTime: model.search.startTime,
 							endTime: model.search.endTime,
 							timePreset: model.search.timePreset,
-						}, overlaysOf(model, clock)),
-						releaseChangeset(h, changesetState(model, previousSha(group)), clock),
-						deployIssues(h, model, clock),
-					],
-				),
+						},
+						overlaysOf(model, clock),
+					),
+					releaseChangeset(h, changesetState(model, previousSha(group)), clock),
+					deployIssues(h, model, clock),
+				]),
 		})
 	}
 }
 
 const loading = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			skeleton(h, "h-4 w-80"),
-			skeleton(h, "h-48 w-full rounded-md"),
-			skeleton(h, "h-48 w-full rounded-md"),
-		],
-	)
+	vstack(h, { gap: "3" }, [
+		skeleton(h, "h-4 w-80"),
+		skeletonBlock(h, { height: "48" }),
+		skeletonBlock(h, { height: "48" }),
+	])
 
 const timeControlsOf = (h: H, model: Model): Html =>
 	timeControls(h, {
@@ -180,16 +176,16 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
-			titleContent: pageTitle(h, { className: "flex min-w-0 items-center gap-2.5" }, [
+			titleContent: pageTitle(h, { className: hstackClass({ gap: "2.5", shrink: true }) }, [
 				releaseTitle(h, model),
 			]),
 			actions:
 				service === undefined
 					? timeControlsOf(h, model)
-					: h.div(
-							[h.Class("flex flex-wrap items-center gap-2")],
-							[serviceButton(h, model, service), timeControlsOf(h, model)],
-						),
+					: hstack(h, { gap: "2", wrap: true }, [
+							serviceButton(h, model, service),
+							timeControlsOf(h, model),
+						]),
 		},
 		[service === undefined ? overview(h, model, clock) : serviceBody(h, model, service, clock)],
 	)

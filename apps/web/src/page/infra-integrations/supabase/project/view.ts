@@ -1,16 +1,16 @@
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { BAR_CHART_TOKENS } from "../../../../charts/bar-chart"
-import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
-import { ResolveThemeColors } from "../../../../charts/theme-colors"
-import { linkButton } from "../../../../ui/button"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
+import { BAR_CHART_TOKENS } from "@maple/views/charts/bar-chart"
+import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import { linkButton } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { relativeTime } from "../../../kit/relative-time"
-import { skeleton } from "../../../../ui/skeleton"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { pageHeroParts, headerActions } from "../../../infra/kit/page-parts"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { pageTime } from "../../kit/page-time"
@@ -29,6 +29,7 @@ import { issuesPanel } from "./view-issues"
 import { postgresRow } from "./view-postgres"
 import { HEALTH_STRIP_GRID, healthStripView } from "./view-strip"
 import { trafficPanel } from "./view-traffic"
+import { typography } from "@maple/views/ui/typography"
 
 // `/infra/supabase/$projectRef`: the project's Overview.
 
@@ -104,7 +105,7 @@ const stripView = (h: H, model: Model, timeZone: string): Html => {
 const noMetrics = (h: H, project: DiscoveredProject | null): Html =>
 	integrationNotConnected(h, {
 		icon: icon(h, "SupabaseIcon", { size: 16 }),
-		title: "No metrics for this project in this time range",
+		title: "No metrics for this project in this window",
 		description:
 			project !== null && !project.metricsEnabled
 				? "Metrics collection is off for this project. Turn on Metrics to start scraping it."
@@ -133,9 +134,10 @@ const heroMeta = (
 	return parts.length === 0
 		? []
 		: [
-				h.p(
-					[h.Class("font-mono text-xs text-muted-foreground")],
-					parts.flatMap((part, index) => (index === 0 ? [part] : [" · ", part])),
+				typography(
+					h,
+					{ size: "xs", tone: "muted", mono: true, as: "p" },
+					Arr.flatMap(parts, (part, index) => (index === 0 ? [part] : [" · ", part])),
 				),
 			]
 }

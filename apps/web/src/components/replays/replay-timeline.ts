@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 // Span ⇄ recording alignment
 //
 // Backend spans carry an absolute start timestamp; the recording's playhead is
@@ -13,7 +14,7 @@
  */
 export function parseChTimestampMs(ts: string): number {
 	if (!ts) return Number.NaN
-	const normalized = ts.includes("T") ? ts : ts.replace(" ", "T")
+	const normalized = Str.includes("T")(ts) ? ts : Str.replace(" ", "T")(ts)
 	const hasZone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(normalized)
 	return Date.parse(hasZone ? normalized : `${normalized}Z`)
 }

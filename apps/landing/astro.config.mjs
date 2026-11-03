@@ -2,6 +2,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { defineConfig } from "astro/config"
+import { Schema } from "effect"
 import { transformerNotationDiff, transformerNotationHighlight } from "@shikijs/transformers"
 import { unified } from "@astrojs/markdown-remark"
 import rehypeTableWrap from "./src/lib/rehype-table-wrap.mjs"
@@ -9,7 +10,7 @@ import remarkInstallTabs from "./src/lib/remark-install-tabs.mjs"
 import { codeTheme } from "./src/lib/code-theme.mjs"
 import mdx from "@astrojs/mdx"
 import { paraglideVitePlugin } from "@inlang/paraglide-js"
-import react from "@astrojs/react"
+import { foldkitIslands } from "./src/foldkit-island/integration.ts"
 import sitemap from "@astrojs/sitemap"
 import tailwindcss from "@tailwindcss/vite"
 import { siblingUrl } from "../../packages/infra/src/dev-urls.ts"
@@ -42,11 +43,13 @@ function readRootEnv() {
  * both surfaces report into one org and a visitor's marketing and product
  * sessions sit side by side.
  */
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const telemetryEnv = {
-	"import.meta.env.PUBLIC_MAPLE_INGEST_KEY": JSON.stringify(
+	"import.meta.env.PUBLIC_MAPLE_INGEST_KEY": encodeJson(
 		process.env.PUBLIC_MAPLE_INGEST_KEY?.trim() || rootEnv.MAPLE_OTEL_PUBLIC_INGEST_KEY?.trim() || "",
 	),
-	"import.meta.env.PUBLIC_INGEST_URL": JSON.stringify(
+	"import.meta.env.PUBLIC_INGEST_URL": encodeJson(
 		process.env.PUBLIC_INGEST_URL?.trim() ||
 			siblingUrl("ingest") ||
 			rootEnv.VITE_INGEST_URL?.trim() ||
@@ -54,7 +57,7 @@ const telemetryEnv = {
 	),
 	// Local dev only: browsers make `*.localhost` cookies host-only, so
 	// landing.localhost and web.localhost can't share a visitor id without help.
-	"import.meta.env.PUBLIC_MAPLE_COOKIE_DOMAIN": JSON.stringify(
+	"import.meta.env.PUBLIC_MAPLE_COOKIE_DOMAIN": encodeJson(
 		process.env.PUBLIC_MAPLE_COOKIE_DOMAIN?.trim() || rootEnv.PUBLIC_MAPLE_COOKIE_DOMAIN?.trim() || "",
 	),
 }
@@ -121,7 +124,7 @@ export default defineConfig({
 	},
 	integrations: [
 		mdx(),
-		react(),
+		foldkitIslands(),
 		sitemap({
 			i18n: {
 				defaultLocale: "en",

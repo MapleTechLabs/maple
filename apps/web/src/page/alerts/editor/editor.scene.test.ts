@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { AlertRulePreviewResponse, DashboardDocument } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes, V2ChatConnector } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import * as Animation from "@foldkit/ui/animation"
 import {
 	all,
@@ -23,12 +23,12 @@ import {
 } from "foldkit/scene"
 import { Lazy } from "foldkit/test"
 import { describe, expect, test } from "vitest"
-import * as Chart from "../../../charts/chart"
-import { MountChart } from "../../../charts/chart-mounts"
-import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
-import * as Menu from "../../../ui/menu"
-import * as RadioGroup from "../../../ui/radio-group"
-import * as Tooltip from "../../../ui/tooltip"
+import * as Chart from "@maple/views/charts/chart"
+import { MountChart } from "@maple/views/charts/chart-mounts"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import * as Menu from "@maple/views/ui/menu"
+import * as RadioGroup from "@maple/views/ui/radio-group"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import type { PageContext } from "../../contract"
 import { destinationRow, NOW, ORG, ruleId, ruleRow } from "../shared/test-rows"
 import { FetchEditorPreview, ReloadPage } from "./command"
@@ -43,14 +43,14 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const DRAFT_ID = "6f1c2e3a-0000-4000-8000-000000000001"
 const themeResolved = () =>
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
 
 const route = (search: Model["search"] = {}) => ({ _tag: "AlertsCreate" as const, search })
 const run = (model: Model, messages: ReadonlyArray<Message>) =>
-	messages.reduce((current, message) => pageUpdate(current, message).model, model)
+	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message).model)
 const entered = (search: Model["search"] = {}) =>
 	run(init(route(search), context).model, [
 		Message.GeneratedDraftId({ id: DRAFT_ID }),
@@ -98,7 +98,7 @@ describe("alert rule editor", () => {
 		const clocked = pageUpdate(drafted.model, Message.CompletedReadClock({ nowMs: NOW }))
 		expect(names(clocked.commands)).toContain("FetchAlertEditorPreview")
 		expect(
-			names(clocked.commands).filter((name) => name === "FetchAlertEditorAutocomplete"),
+			Arr.filter(names(clocked.commands), (name) => name === "FetchAlertEditorAutocomplete"),
 		).toHaveLength(6)
 		expect(names(clocked.commands)).toContain("FetchAlertEditorTraceFacets")
 	})
@@ -161,7 +161,10 @@ describe("alert rule editor", () => {
 	test("the check interval picker sets how often the rule runs, and refuses one longer than the window", () => {
 		const hint = (every: string) => text(`Each check looks at this much data, checked every ${every}.`)
 		const pick = (value: string) =>
-			Message.GotRadioMessage({ group: "interval", message: RadioGroup.Message.SelectedRadio({ value }) })
+			Message.GotRadioMessage({
+				group: "interval",
+				message: RadioGroup.Message.SelectedRadio({ value }),
+			})
 		const draft = run(withLists(entered({ template: "slow_p95" })), [
 			Message.ChangedField({ field: "windowMinutes", value: "15" }),
 		])
@@ -191,7 +194,9 @@ describe("alert rule editor", () => {
 				windowMinutes: 5,
 				threshold: 5,
 				thresholdUpper: null,
-				thresholds: [{ severity: "warning", value: 5, upper: null, recoveryValue: null, destinationIds: [] }],
+				thresholds: [
+					{ severity: "warning", value: 5, upper: null, recoveryValue: null, destinationIds: [] },
+				],
 				comparator: "gt",
 				truncatedToStart: null,
 				series: [],
@@ -222,7 +227,11 @@ describe("alert rule editor", () => {
 			themeResolved(),
 			expectView(text("Too slow for 1-minute checks, fits 5-minute checks.")).toExist(),
 			expectView(text(/^Line 4: Filter traces on a service/)).toExist(),
-			expectView(text("Over or too close to the 5 s this interval allows. Checking less often allows a slower query.")).toExist(),
+			expectView(
+				text(
+					"Over or too close to the 5 s this interval allows. Checking less often allows a slower query.",
+				),
+			).toExist(),
 			click(role("button", { name: "Check every 5 min" })),
 			expectView(role("radio", { name: /^5 min/ })).toHaveAttr("aria-checked", "true"),
 			expectView(text("Fits checks every 5 min.")).toExist(),
@@ -244,7 +253,11 @@ describe("alert rule editor", () => {
 			given(
 				run(sql, [
 					Message.CompletedLoadChartRuntime(),
-					Message.CompletedFetchPreview({ key: sql.preview.key ?? "", isSaved: false, result: Result.succeed(heavy) }),
+					Message.CompletedFetchPreview({
+						key: sql.preview.key ?? "",
+						isSaved: false,
+						result: Result.succeed(heavy),
+					}),
 				]),
 			),
 			themeResolved(),
@@ -255,7 +268,12 @@ describe("alert rule editor", () => {
 		const timed = Schema.encodeSync(AlertRulePreviewResponse)(timing(0))
 		const outOfMemory = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
 			...timed,
-			queryTiming: { ...timed.queryTiming, elapsedMs: null, failure: "query_too_much_memory", fitsIntervalMinutes: [] },
+			queryTiming: {
+				...timed.queryTiming,
+				elapsedMs: null,
+				failure: "query_too_much_memory",
+				fitsIntervalMinutes: [],
+			},
 		})
 		// 22 s fits no interval at all, so a wider window would not help.
 		const tooSlowForAny = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
@@ -266,27 +284,48 @@ describe("alert rule editor", () => {
 			{ update: pageUpdate, view },
 			given(
 				run(sql, [
-					Message.CompletedFetchPreview({ key: sql.preview.key ?? "", isSaved: false, result: Result.succeed(tooSlowForAny) }),
+					Message.CompletedFetchPreview({
+						key: sql.preview.key ?? "",
+						isSaved: false,
+						result: Result.succeed(tooSlowForAny),
+					}),
 				]),
 			),
 			themeResolved(),
 			expectView(text("Too slow for any interval this window allows. Narrow the query.")).toExist(),
-			expectView(text("It needs longer than the longest limit any interval allows, so checking less often will not help.")).toExist(),
+			expectView(
+				text(
+					"It needs longer than the longest limit any interval allows, so checking less often will not help.",
+				),
+			).toExist(),
 		)
 		const timedOut = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
 			...timed,
-			queryTiming: { ...timed.queryTiming, elapsedMs: null, failure: "query_too_slow", fitsIntervalMinutes: [] },
+			queryTiming: {
+				...timed.queryTiming,
+				elapsedMs: null,
+				failure: "query_too_slow",
+				fitsIntervalMinutes: [],
+			},
 		})
 		scene(
 			{ update: pageUpdate, view },
 			given(
 				run(sql, [
-					Message.CompletedFetchPreview({ key: sql.preview.key ?? "", isSaved: false, result: Result.succeed(timedOut) }),
+					Message.CompletedFetchPreview({
+						key: sql.preview.key ?? "",
+						isSaved: false,
+						result: Result.succeed(timedOut),
+					}),
 				]),
 			),
 			themeResolved(),
 			expectView(text(/too slow for any interval/)).toExist(),
-			expectView(text("It needs longer than the longest limit any interval allows, so checking less often will not help.")).toExist(),
+			expectView(
+				text(
+					"It needs longer than the longest limit any interval allows, so checking less often will not help.",
+				),
+			).toExist(),
 		)
 		// 18 s fits 10-minute checks, which a 5-minute window cannot pick.
 		const widenable = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
@@ -297,22 +336,36 @@ describe("alert rule editor", () => {
 			{ update: pageUpdate, view },
 			given(
 				run(sql, [
-					Message.CompletedFetchPreview({ key: sql.preview.key ?? "", isSaved: false, result: Result.succeed(widenable) }),
+					Message.CompletedFetchPreview({
+						key: sql.preview.key ?? "",
+						isSaved: false,
+						result: Result.succeed(widenable),
+					}),
 				]),
 			),
 			themeResolved(),
-			expectView(text("Too slow for any interval this window allows. Widen the window or narrow the query.")).toExist(),
+			expectView(
+				text("Too slow for any interval this window allows. Widen the window or narrow the query."),
+			).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(
 				run(sql, [
-					Message.CompletedFetchPreview({ key: sql.preview.key ?? "", isSaved: false, result: Result.succeed(outOfMemory) }),
+					Message.CompletedFetchPreview({
+						key: sql.preview.key ?? "",
+						isSaved: false,
+						result: Result.succeed(outOfMemory),
+					}),
 				]),
 			),
 			themeResolved(),
 			// Out of memory is no verdict on time: no interval reads as too slow.
-			expectView(text("It ran out of memory with the most any interval allows, so checking less often will not help.")).toExist(),
+			expectView(
+				text(
+					"It ran out of memory with the most any interval allows, so checking less often will not help.",
+				),
+			).toExist(),
 			expectView(role("radio", { name: /too slow/ })).not.toExist(),
 		)
 	})
@@ -322,7 +375,9 @@ describe("alert rule editor", () => {
 			Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
 			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { slowed_interval_minutes: 5 })] }),
 		])
-		const notice = text("Checked every 5 min because its query kept hitting its limit. Saving resets this unless you keep it.")
+		const notice = text(
+			"Checked every 5 min because its query kept hitting its limit. Saving resets this unless you keep it.",
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(slowed),
@@ -430,7 +485,7 @@ describe("alert rule editor", () => {
 			Message.UpdatedSourceDashboard({ orgId: ORG, dashboards: [dashboard] }),
 		).model
 		expect(found.draftKey).toBe("dashboard:dash-1:widget:w-1")
-		expect(found.notices.map((notice) => notice.message)).not.toContain(
+		expect(Arr.map(found.notices, (notice) => notice.message)).not.toContain(
 			"The source chart could not be found. Starting from a blank alert.",
 		)
 		const failed = pageUpdate(

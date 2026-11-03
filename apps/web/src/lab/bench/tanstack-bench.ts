@@ -1,16 +1,16 @@
 import { overviewBenchRows } from "./tanstack/bench-data"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../charts/chart"
-import { bucketTooltipBody } from "../../charts/bucket-tooltip"
-import { ChartSpec } from "../../charts/chart-spec"
-import { fixedMetricLegend, latencySeries } from "../../charts/fixed-metric-legend"
-import type { FixedMetricSeries } from "../../charts/fixed-metric-series"
-import { plotFrame } from "../../charts/plot-frame"
-import { resolveColor, ResolveThemeColors, type ThemeColors } from "../../charts/theme-colors"
-import { chartSkeleton } from "../../ui/chart-skeleton"
-import { eyebrow } from "../../ui/eyebrow"
+import * as Chart from "@maple/views/charts/chart"
+import { bucketTooltipBody } from "@maple/views/charts/bucket-tooltip"
+import { ChartSpec } from "@maple/views/charts/chart-spec"
+import { fixedMetricLegend, latencySeries } from "@maple/views/charts/fixed-metric-legend"
+import type { FixedMetricSeries } from "@maple/views/charts/fixed-metric-series"
+import { plotFrame } from "@maple/views/charts/plot-frame"
+import { resolveColor, ResolveThemeColors, type ThemeColors } from "@maple/views/charts/theme-colors"
+import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 import { isReady, type Message, type Model, toChart } from "./chart-bench"
 
 // `/lab/bench/tanstack`: the three `/` overview
@@ -32,7 +32,7 @@ const TOKENS = [
 type Kind = "Throughput" | "ErrorRate" | "Latency"
 
 /** `overviewBenchRows` as chart rows (its index signature is `unknown`). */
-const BENCH_ROWS = overviewBenchRows.map((row) => ({
+const BENCH_ROWS = Arr.map(overviewBenchRows, (row) => ({
 	bucket: row.bucket,
 	throughput: row.throughput,
 	errorRate: row.errorRate,
@@ -165,7 +165,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 		[
 			h.div(
 				[h.Class("grid grid-cols-1 gap-8")],
-				CHARTS.map((entry) => chartWithLegend(h, model, entry)),
+				Arr.map(CHARTS, (entry) => chartWithLegend(h, model, entry)),
 			),
 		],
 	)

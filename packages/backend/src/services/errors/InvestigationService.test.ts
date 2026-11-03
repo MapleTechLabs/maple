@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Schema } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Schema, Array as Arr } from "effect"
 import {
 	AiTriageEvidence,
 	AiTriageResult,
@@ -556,7 +556,7 @@ describe("InvestigationService", () => {
 				.execute((db) =>
 					db.run(PG.from(AnomalyIncidents).select("id", "triageStatus").orderBy(["id", "asc"])),
 				)
-				.pipe(Effect.map((rows) => rows.map((row) => row.triageStatus)))
+				.pipe(Effect.map((rows) => Arr.map(rows, (row) => row.triageStatus)))
 
 			const fast = yield* triage(FAST_ID)
 			yield* service.submitDiagnosis(
@@ -708,7 +708,7 @@ describe("InvestigationService", () => {
 				)
 
 				const events = yield* timeline
-				assert.strictEqual(events.filter((e) => e.type === "ai_triage").length, 1)
+				assert.strictEqual(Arr.filter(events, (e) => e.type === "ai_triage").length, 1)
 			}).pipe(Effect.provide(harness.layer))
 		},
 	)
@@ -739,10 +739,10 @@ describe("InvestigationService", () => {
 				new SubmitDiagnosisRequest({ report: followUp, turnId: "turn-2" }),
 			)
 
-			const summaries = (yield* timeline)
-				.filter((e) => e.type === "ai_triage")
-				.map((e) => decodeTriagePayload(e.payloadJson).summary)
-				.sort()
+			const summaries = Arr.map(
+				(yield* timeline).filter((e) => e.type === "ai_triage"),
+				(e) => decodeTriagePayload(e.payloadJson).summary,
+			).sort()
 			assert.deepStrictEqual(summaries, [sampleReport().summary, followUp.summary].sort())
 		}).pipe(Effect.provide(harness.layer))
 	})

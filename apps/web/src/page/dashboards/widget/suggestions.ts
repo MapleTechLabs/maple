@@ -1,7 +1,7 @@
 import { getProductEventNames } from "@maple/web-data/warehouse/product-events"
 import { getWebAnalyticsBreakdowns, getWebAnalyticsPages } from "@maple/web-data/warehouse/web-analytics"
 import { FUNNEL_POPULATION_FILTER_FIELDS, type FunnelPopulationFilterField } from "@maple/query-model"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import type { TimeWindow } from "../../../data/time-range"
 
 // The funnel suggestions: what the funnel and paths
@@ -39,8 +39,11 @@ export const suggestionRequestOf = (lookup: SuggestionLookup, window: TimeWindow
 	}
 }
 
-const facet = (field: FunnelPopulationFilterField, rows: ReadonlyArray<{ readonly name: string }>): ReadonlyArray<Suggestion> =>
-	rows.flatMap((row) => (row.name === "" ? [] : [{ name: row.name, count: null, field }]))
+const facet = (
+	field: FunnelPopulationFilterField,
+	rows: ReadonlyArray<{ readonly name: string }>,
+): ReadonlyArray<Suggestion> =>
+	Arr.flatMap(rows, (row) => (row.name === "" ? [] : [{ name: row.name, count: null, field }]))
 
 export const fetchSuggestions = (lookup: SuggestionLookup, window: TimeWindow) => {
 	switch (lookup) {
@@ -49,7 +52,7 @@ export const fetchSuggestions = (lookup: SuggestionLookup, window: TimeWindow) =
 			return Effect.map(
 				getProductEventNames({ data: { ...window, limit: EVENT_NAME_LIMIT } }),
 				(rows) =>
-					rows.data.flatMap((row) =>
+					Arr.flatMap(rows.data, (row) =>
 						row.kind === "navigation"
 							? []
 							: [{ name: row.eventName, count: row.count, field: null }],
@@ -59,7 +62,11 @@ export const fetchSuggestions = (lookup: SuggestionLookup, window: TimeWindow) =
 			return Effect.map(
 				getWebAnalyticsPages({ data: { ...window, limit: PAGE_SUGGESTION_LIMIT } }),
 				(rows) =>
-					rows.data.map((page) => ({ name: page.pagePath, count: page.pageViews, field: null })),
+					Arr.map(rows.data, (page) => ({
+						name: page.pagePath,
+						count: page.pageViews,
+						field: null,
+					})),
 			)
 		case "facets":
 			return Effect.map(

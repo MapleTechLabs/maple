@@ -110,7 +110,7 @@ const tabNamed = <T extends TabModel["_tag"]>(model: Model, tag: T): TabOf<T> | 
 const putTab = (model: Model, tab: TabModel): Model =>
 	model.tab !== null && model.tab._tag === tab._tag
 		? { ...model, tab }
-		: { ...model, kept: model.kept.map((kept) => (kept._tag === tab._tag ? tab : kept)) }
+		: { ...model, kept: Array.map(model.kept, (kept) => (kept._tag === tab._tag ? tab : kept)) }
 
 /** Closes the open tab, keeping its state for a return. */
 const leaveTab = (model: Model): Model =>
@@ -119,7 +119,7 @@ const leaveTab = (model: Model): Model =>
 		: {
 				...model,
 				tab: null,
-				kept: [...model.kept.filter((kept) => kept._tag !== model.tab?._tag), model.tab],
+				kept: [...Array.filter(model.kept, (kept) => kept._tag !== model.tab?._tag), model.tab],
 			}
 
 const sessionOf = (model: Model) => ({
@@ -383,7 +383,11 @@ const enterTab = (model: Model, tab: SettingsTab, context: PageContext): Return 
 	const returning = left.kept.find((kept) => isTabCurrent(kept, tab))
 	return returning === undefined
 		? initTab(left, tab, context)
-		: revisitTab({ ...left, kept: left.kept.filter((kept) => kept !== returning) }, returning, context)
+		: revisitTab(
+				{ ...left, kept: Array.filter(left.kept, (kept) => kept !== returning) },
+				returning,
+				context,
+			)
 }
 
 /** Mounts the active tab's section once the nav can resolve it, keeping the previous one. */
@@ -478,7 +482,7 @@ export const init = (route: SettingsRoute, context: PageContext): Return => {
 		commands: [
 			ReadSettingsClock(),
 			FetchSettingsSession(),
-			FetchSettingsCustomer({ refresh: false }),
+			FetchSettingsCustomer({ orgId: context.orgId, refresh: false }),
 			...(entered.commands ?? []),
 		],
 	}
@@ -564,7 +568,7 @@ const liftBilling = (model: Model, { step, isCustomerStale, checkout }: Billing.
 			...Command.mapMessages(step.commands ?? [], (child) =>
 				Message.GotBillingMessage({ message: child }),
 			),
-			...(isCustomerStale ? [FetchSettingsCustomer({ refresh: true })] : []),
+			...(isCustomerStale ? [FetchSettingsCustomer({ orgId: null, refresh: true })] : []),
 		],
 		// A checkout poll re-reads only this page's copy; the app's waits for the confirmed plan.
 		outMessage:
@@ -735,7 +739,7 @@ const updateMessage = (model: Model, message: Message, context: PageContext): Re
 		},
 		UpdatedApiKeys: ({ orgId, rows }) => {
 			if (orgId !== context.orgId) return { model }
-			const apiKeys = rows.map(rowToV2ApiKey)
+			const apiKeys = Array.map(rows, rowToV2ApiKey)
 			const next = { ...model, apiKeys, isApiKeysLoadFailed: false }
 			return next.tab !== null && next.tab._tag === "Keys"
 				? liftKeys(next, next.tab.model, KeysMessageValue.UpdatedApiKeys({ rows: apiKeys }))

@@ -16,6 +16,7 @@
 import { readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { DASHBOARD_SCHEMA_SECTIONS, renderDashboardSchemaSection } from "@/mcp/lib/dashboard-schema-doc"
+import { Array as Arr, String as Str } from "effect"
 
 const SKILL_PATH = resolve(import.meta.dirname, "../../../skills/maple-dashboard-widgets/SKILL.md")
 
@@ -58,11 +59,14 @@ widgets that cannot render, and return an automatic \`inspect_chart_data\` summa
 else. Read the verdict: \`suspicious\` or \`broken\` means fix and resubmit.
 `
 
-const body = [
-	FRONTMATTER.trimEnd(),
-	INTRO.trimEnd(),
-	...DASHBOARD_SCHEMA_SECTIONS.map((section) => renderDashboardSchemaSection(section)),
-].join("\n\n")
+const body = Arr.join(
+	[
+		Str.trimEnd(FRONTMATTER),
+		Str.trimEnd(INTRO),
+		...DASHBOARD_SCHEMA_SECTIONS.map((section) => renderDashboardSchemaSection(section)),
+	],
+	"\n\n",
+)
 
 const content = `${body}\n`
 

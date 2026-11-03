@@ -3,9 +3,9 @@ import { V2Source } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { defineTaggedUnion } from "foldkit/schema"
-import { PopupPosition } from "../ui/anchor"
-import * as Dialog from "../ui/dialog"
-import * as Tooltip from "../ui/tooltip"
+import { PopupPosition } from "@maple/views/ui/anchor"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import * as ClerkOrgSwitcher from "./clerk-org-switcher"
 import * as Checklist from "./onboarding-checklist"
 import * as ConnectPanel from "./connect-panel"
@@ -69,12 +69,14 @@ export const Message = defineMessageUnion({
 	CheckedDeployedCommit: { maybeCommit: Schema.Option(Schema.String) },
 	ClickedReload: {},
 	CompletedReloadPage: {},
-	SucceededLoadInfraPresence: { orgId: Schema.String, surfaces: Schema.Array(InfraSurfaceLiteral) },
-	FailedLoadInfraPresence: { orgId: Schema.String },
+	SucceededLoadInfraSurfaces: {
+		orgId: Schema.String,
+		maybeSurfaces: Schema.Option(Schema.Array(InfraSurfaceLiteral)),
+		integrations: Schema.Record(Integration, Schema.Boolean),
+	},
+	FailedLoadInfraSurfaces: { orgId: Schema.String },
 	SucceededLoadSources: { orgId: Schema.String, sources: Schema.Array(V2Source) },
 	FailedLoadSources: { orgId: Schema.String },
-	SucceededLoadIntegration: { orgId: Schema.String, integration: Integration, isConnected: Schema.Boolean },
-	FailedLoadIntegration: { orgId: Schema.String, integration: Integration },
 	SucceededLoadDashboards: { orgId: Schema.String, dashboards: Schema.Array(PinnedDashboardRow) },
 	FailedLoadDashboards: { orgId: Schema.String },
 	ChangedDashboardFavorites: { favorites: Schema.Array(Schema.String) },

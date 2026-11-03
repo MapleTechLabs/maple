@@ -11,15 +11,18 @@ import {
 } from "../../../components/releases/release-model"
 import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { linkButton } from "../../../ui/button"
-import { eyebrow } from "../../../ui/eyebrow"
-import { panel, panelHeader } from "../../../ui/panel"
-import { statusDot } from "../../../ui/status-dot"
-import { truncatedText } from "../../../ui/truncated-text"
-import { serviceDot } from "../../../ui/values"
+import { linkButton } from "@maple/views/ui/button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { serviceDot } from "@maple/views/ui/values"
 import { RELEASE_HEALTH_DOT_CLASS, RELEASE_HEALTH_LABEL, releaseHealthFigure, releaseHref } from "../kit"
 import { MeasureReleasesTrack } from "./command"
 import type { Message } from "./message"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `ReleasesLiveNow` and `ReleasesTimeline` (apps/web/src/components/releases/).
 
@@ -28,60 +31,82 @@ export type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePr
 
 const MAX_SHOWN = 16
 
-
-export const liveNow = (h: H, live: ReadonlyArray<LiveVersion>, timeSearch: TimeSearch, environments: ReadonlyArray<string> | undefined): Html | null => {
+export const liveNow = (
+	h: H,
+	live: ReadonlyArray<LiveVersion>,
+	timeSearch: TimeSearch,
+	environments: ReadonlyArray<string> | undefined,
+): Html | null => {
 	if (live.length === 0) return null
 	const shown = live.slice(0, MAX_SHOWN)
 	const hidden = live.length - shown.length
-	const behind = live.filter((version) => version.behind > 0).length
+	const behind = Arr.filter(live, (version) => version.behind > 0).length
 	return panel(h, { className: "gap-2 px-3 py-2.5" }, [
-		h.div(
-			[h.Class("flex items-baseline justify-between gap-3")],
-			[
-				eyebrow(h, {}, ["Live now"]),
-				behind > 0
-					? h.span([h.Class("text-2xs text-severity-warn")], [`${countLabel(behind, "service")} not on the latest release`])
-					: h.span([h.Class("text-2xs text-foreground-subtle")], ["Every service is on its latest release"]),
-			],
-		),
-		h.div(
-			[h.Class("flex flex-wrap gap-1.5")],
-			[
-				...shown.map((version) =>
-					linkButton(
-						h,
-						{
-							variant: "outline",
-							size: "xs",
-							className: cn("font-normal", version.behind > 0 && "border-severity-warn-a4 bg-severity-warn-a1"),
-							href: releaseHref(version.commitSha, { ...timeSearch, environments, service: version.serviceName }),
-							attributes: [
-								h.Key(version.serviceName),
-								...(version.behind > 0
-									? [
-											h.Title(
-												`${version.behind} newer ${pluralize(version.behind, "release")} reached the services ${version.serviceName} usually ships with, but not ${version.serviceName}`,
-											),
-										]
-									: []),
-							],
-						},
-						[
-							serviceDot(h, { serviceName: version.serviceName }),
-							h.span([], [version.serviceName]),
-							h.span([h.Class("font-mono text-2xs text-muted-foreground")], [shortReleaseLabel(version.commitSha)]),
-							...(version.share < ROLLOUT_COMPLETE_SHARE
-								? [h.span([h.Class("font-mono text-3xs tabular-nums text-primary")], [formatPercent(version.share)])]
-								: []),
+		hstack(h, { gap: "3", align: "baseline", justify: "between" }, [
+			eyebrow(h, {}, ["Live now"]),
+			behind > 0
+				? h.span(
+						[h.Class("text-2xs text-severity-warn")],
+						[`${countLabel(behind, "service")} not on the latest release`],
+					)
+				: typography(h, { size: "2xs", tone: "subtle" }, ["Every service is on its latest release"]),
+		]),
+		hstack(h, { gap: "1.5", align: "stretch", wrap: true }, [
+			...Arr.map(shown, (version) =>
+				linkButton(
+					h,
+					{
+						variant: "outline",
+						size: "xs",
+						className: cn(
+							"font-normal",
+							version.behind > 0 && "border-severity-warn-a4 bg-severity-warn-a1",
+						),
+						href: releaseHref(version.commitSha, {
+							...timeSearch,
+							environments,
+							service: version.serviceName,
+						}),
+						attributes: [
+							h.Key(version.serviceName),
 							...(version.behind > 0
-								? [h.span([h.Class("font-mono text-3xs tabular-nums text-severity-warn")], [String(version.behind), " behind"])]
+								? [
+										h.Title(
+											`${version.behind} newer ${pluralize(version.behind, "release")} reached the services ${version.serviceName} usually ships with, but not ${version.serviceName}`,
+										),
+									]
 								: []),
 						],
-					),
+					},
+					[
+						serviceDot(h, { serviceName: version.serviceName }),
+						h.span([], [version.serviceName]),
+						typography(h, { size: "2xs", tone: "muted", mono: true }, [
+							shortReleaseLabel(version.commitSha),
+						]),
+						...(version.share < ROLLOUT_COMPLETE_SHARE
+							? [
+									h.span(
+										[h.Class("font-mono text-3xs tabular-nums text-primary")],
+										[formatPercent(version.share)],
+									),
+								]
+							: []),
+						...(version.behind > 0
+							? [
+									h.span(
+										[h.Class("font-mono text-3xs tabular-nums text-severity-warn")],
+										[String(version.behind), " behind"],
+									),
+								]
+							: []),
+					],
 				),
-				...(hidden > 0 ? [h.span([h.Class("self-center px-1 text-2xs text-foreground-subtle")], [`+${hidden}`])] : []),
-			],
-		),
+			),
+			...(hidden > 0
+				? [h.span([h.Class("self-center px-1 text-2xs text-foreground-subtle")], [`+${hidden}`])]
+				: []),
+		]),
 	])
 }
 
@@ -98,34 +123,57 @@ interface Marker {
 }
 
 const buildLanes = (impacts: ReadonlyArray<ReleaseServiceImpact>) => {
-	const byService = new Map<string, { serviceName: string; spanCount: number; dots: Array<ReleaseServiceImpact> }>()
-	impacts.forEach((impact) => {
+	const byService = new Map<
+		string,
+		{ serviceName: string; spanCount: number; dots: Array<ReleaseServiceImpact> }
+	>()
+	Arr.forEach(impacts, (impact) => {
 		const lane = byService.get(impact.serviceName)
-		if (lane === undefined) byService.set(impact.serviceName, { serviceName: impact.serviceName, spanCount: impact.spanCount, dots: [impact] })
-		else byService.set(impact.serviceName, { ...lane, spanCount: lane.spanCount + impact.spanCount, dots: [...lane.dots, impact] })
+		if (lane === undefined)
+			byService.set(impact.serviceName, {
+				serviceName: impact.serviceName,
+				spanCount: impact.spanCount,
+				dots: [impact],
+			})
+		else
+			byService.set(impact.serviceName, {
+				...lane,
+				spanCount: lane.spanCount + impact.spanCount,
+				dots: [...lane.dots, impact],
+			})
 	})
-	return [...byService.values()].toSorted((a, b) => b.spanCount - a.spanCount || a.serviceName.localeCompare(b.serviceName))
+	return [...byService.values()].toSorted(
+		(a, b) => b.spanCount - a.spanCount || Str.localeCompare(b.serviceName)(a.serviceName),
+	)
 }
 
 const worstHealth = (members: ReadonlyArray<ReleaseServiceImpact>): ReleaseHealth =>
-	RELEASE_HEALTH_ORDER.find((band) => members.some((member) => member.health === band)) ?? "healthy"
+	RELEASE_HEALTH_ORDER.find((band) => Arr.some(members, (member) => member.health === band)) ?? "healthy"
 
 /** `clusterMarkers`: greedy left-to-right, a dot joins the open marker within `mergeRatio`. */
-const clusterMarkers = (dots: ReadonlyArray<ReleaseServiceImpact>, startMs: number, endMs: number, mergeRatio: number): ReadonlyArray<Marker> => {
+const clusterMarkers = (
+	dots: ReadonlyArray<ReleaseServiceImpact>,
+	startMs: number,
+	endMs: number,
+	mergeRatio: number,
+): ReadonlyArray<Marker> => {
 	const span = Math.max(1, endMs - startMs)
-	const placed = dots
-		.map((dot) => ({ dot, ratio: Math.min(1, Math.max(0, (toEpochMs(dot.firstSeen) - startMs) / span)) }))
-		.toSorted((a, b) => a.ratio - b.ratio)
-	const groups = placed.reduce<ReadonlyArray<{ anchor: number; items: ReadonlyArray<(typeof placed)[number]> }>>((acc, item) => {
+	const placed = Arr.map(dots, (dot) => ({
+		dot,
+		ratio: Math.min(1, Math.max(0, (toEpochMs(dot.firstSeen) - startMs) / span)),
+	})).toSorted((a, b) => a.ratio - b.ratio)
+	const groups = placed.reduce<
+		ReadonlyArray<{ anchor: number; items: ReadonlyArray<(typeof placed)[number]> }>
+	>((acc, item) => {
 		const open = acc[acc.length - 1]
 		return open !== undefined && item.ratio - open.anchor < mergeRatio
 			? [...acc.slice(0, -1), { ...open, items: [...open.items, item] }]
 			: [...acc, { anchor: item.ratio, items: [item] }]
 	}, [])
-	return groups.map((group) => {
-		const members = group.items.map((item) => item.dot).toReversed()
+	return Arr.map(groups, (group) => {
+		const members = Arr.map(group.items, (item) => item.dot).toReversed()
 		return {
-			ratio: group.items.reduce((sum, item) => sum + item.ratio, 0) / group.items.length,
+			ratio: Arr.reduce(group.items, 0, (sum, item) => sum + item.ratio) / group.items.length,
 			members,
 			health: worstHealth(members),
 		}
@@ -135,7 +183,7 @@ const clusterMarkers = (dots: ReadonlyArray<ReleaseServiceImpact>, startMs: numb
 const axisLabels = (startMs: number, endMs: number, timeZone: string): ReadonlyArray<string> => {
 	const span = endMs - startMs
 	const showTime = span <= 3 * 86_400_000
-	return [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+	return Arr.map([0, 0.25, 0.5, 0.75, 1], (ratio) => {
 		const date = new Date(startMs + span * ratio)
 		return showTime
 			? formatTimestampInTimezone(date, { timeZone, style: "range" })
@@ -152,7 +200,10 @@ const markerTitle = (marker: Marker, nowMs: number, timeZone: string): string =>
 		return `${shortReleaseLabel(newest.commitSha)} · ${ago(newest.firstSeen)}${figure ? ` · ${figure}` : ""}`
 	}
 	const oldest = marker.members[marker.members.length - 1] ?? newest
-	const listed = marker.members.slice(0, 6).map((member) => shortReleaseLabel(member.commitSha)).join(", ")
+	const listed = Arr.join(
+		Arr.map(marker.members.slice(0, 6), (member) => shortReleaseLabel(member.commitSha)),
+		", ",
+	)
 	const more = marker.members.length > 6 ? `, +${marker.members.length - 6} more` : ""
 	return `${countLabel(marker.members.length, "deploy")} · ${ago(oldest.firstSeen)} → ${ago(newest.firstSeen)}\n${listed}${more}`
 }
@@ -175,7 +226,10 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 	const endMs = toEpochMs(input.endTime)
 	const usable = input.trackWidth - TRACK_INSET_PX * 2
 	const mergeRatio = usable > MERGE_PX ? MERGE_PX / usable : FALLBACK_MERGE_RATIO
-	const lanes = buildLanes(input.impacts).map((lane) => ({ ...lane, markers: clusterMarkers(lane.dots, startMs, endMs, mergeRatio) }))
+	const lanes = Arr.map(buildLanes(input.impacts), (lane) => ({
+		...lane,
+		markers: clusterMarkers(lane.dots, startMs, endMs, mergeRatio),
+	}))
 	const visible = lanes.slice(0, MAX_LANES)
 	const hidden = lanes.length - visible.length
 	const twoColumns = "grid-cols-[minmax(0,160px)_1fr]"
@@ -186,51 +240,68 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 			className: "px-3 pt-2.5",
 			action: h.div(
 				[h.Class("flex items-center gap-3 text-3xs text-muted-foreground")],
-				RELEASE_HEALTH_ORDER.map((band) =>
-					h.span(
-						[h.Class("inline-flex items-center gap-1")],
-						[statusDot(h, { tone: "custom", size: "lg", className: RELEASE_HEALTH_DOT_CLASS[band] }), RELEASE_HEALTH_LABEL[band]],
-					),
+				Arr.map(RELEASE_HEALTH_ORDER, (band) =>
+					hstack(h, { gap: "1", inline: true, as: "span" }, [
+						statusDot(h, {
+							tone: "custom",
+							size: "lg",
+							className: RELEASE_HEALTH_DOT_CLASS[band],
+						}),
+						RELEASE_HEALTH_LABEL[band],
+					]),
 				),
 			),
 		}),
 		h.div(
 			[h.Class("px-3 pb-2 pt-1")],
 			[
-				...visible.map((lane, laneIndex) =>
+				...Arr.map(visible, (lane, laneIndex) =>
 					h.div(
 						[h.Key(lane.serviceName), h.Class(`grid h-8 ${twoColumns} items-center gap-3`)],
 						[
 							h.span(
 								[h.Class("flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground")],
-								[serviceDot(h, { serviceName: lane.serviceName }), truncatedText(h, { text: lane.serviceName })],
+								[
+									serviceDot(h, { serviceName: lane.serviceName }),
+									truncatedText(h, { text: lane.serviceName }),
+								],
 							),
 							h.div(
 								[
 									h.Class("relative h-full border-b border-dashed border-border-subtle"),
 									...(laneIndex === 0 ? [h.OnMount(MeasureReleasesTrack())] : []),
 								],
-								lane.markers.flatMap((marker) => {
+								Arr.flatMap(lane.markers, (marker) => {
 									const newest = marker.members[0]
 									if (newest === undefined) return []
 									const count = marker.members.length
 									return [
 										h.a(
 											[
-												h.Key(`${newest.commitSha}:${newest.environment}:${marker.ratio}`),
+												h.Key(
+													`${newest.commitSha}:${newest.environment}:${marker.ratio}`,
+												),
 												h.Href(
 													releaseHref(newest.commitSha, {
 														service: newest.serviceName,
-														environments: input.environments ?? (newest.environment ? [newest.environment] : undefined),
+														environments:
+															input.environments ??
+															(newest.environment
+																? [newest.environment]
+																: undefined),
 														...input.timeSearch,
 													}),
 												),
 												h.Title(markerTitle(marker, input.nowMs, input.timeZone)),
-												h.AriaLabel(`${lane.serviceName}: ${count === 1 ? shortReleaseLabel(newest.commitSha) : `${count} deploys`}`),
+												h.AriaLabel(
+													`${lane.serviceName}: ${count === 1 ? shortReleaseLabel(newest.commitSha) : `${count} deploys`}`,
+												),
 												h.Class(
 													"group absolute top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center focus-visible:outline-none",
 												),
-												h.Style({ left: `calc(${TRACK_INSET_PX}px + ${marker.ratio} * (100% - ${TRACK_INSET_PX * 2}px))` }),
+												h.Style({
+													left: `calc(${TRACK_INSET_PX}px + ${marker.ratio} * (100% - ${TRACK_INSET_PX * 2}px))`,
+												}),
 											],
 											[
 												h.span([
@@ -275,10 +346,17 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 						h.span([]),
 						h.div(
 							[
-								h.Class("flex justify-between font-mono text-3xs tabular-nums text-foreground-subtle"),
-								h.Style({ "padding-left": `${TRACK_INSET_PX}px`, "padding-right": `${TRACK_INSET_PX}px` }),
+								h.Class(
+									"flex justify-between font-mono text-3xs tabular-nums text-foreground-subtle",
+								),
+								h.Style({
+									"padding-left": `${TRACK_INSET_PX}px`,
+									"padding-right": `${TRACK_INSET_PX}px`,
+								}),
 							],
-							axisLabels(startMs, endMs, input.timeZone).map((label) => h.span([], [label])),
+							Arr.map(axisLabels(startMs, endMs, input.timeZone), (label) =>
+								h.span([], [label]),
+							),
 						),
 					],
 				),

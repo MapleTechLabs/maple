@@ -1,7 +1,7 @@
 import { CreateOrganizationRequest } from "@maple/domain/http"
 import { MapleRegion, parseMapleRegion } from "@maple/domain/organization-regions"
 import { currentRegion, regionAppUrl } from "../lib/region"
-import { Cause, Effect, Option, Queue, Schema, Stream } from "effect"
+import { Cause, Effect, Option, Queue, Schema, Stream, String as Str } from "effect"
 import { Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { load } from "foldkit/navigation"
@@ -9,9 +9,9 @@ import { modifyFields } from "foldkit/struct"
 import { MapleInternalApiClient } from "../platform/api-clients"
 import { activateOrganization, type ClerkActionError, setActiveOrganization } from "../platform/clerk"
 import type { Resources } from "../platform/resources"
-import * as Dialog from "../ui/dialog"
-import * as Menu from "../ui/menu"
-import * as RadioGroup from "../ui/radio-group"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
+import * as RadioGroup from "@maple/views/ui/radio-group"
 import { containSearchKeys } from "./namespace-search"
 
 /**
@@ -116,15 +116,22 @@ const updateMenu = (model: Model, message: Menu.Message): UpdateReturn => {
 				const opened = withDialog(menuStep.model, Dialog.open(model.createDialog))
 				return { ...opened, commands: [...(menuStep.commands ?? []), ...(opened.commands ?? [])] }
 			}
-			return value.startsWith(ORG_PREFIX)
-				? { ...menuStep, outMessage: OutMessage.SelectedOrganization({ orgId: value.slice(ORG_PREFIX.length) }) }
+			return Str.startsWith(ORG_PREFIX)(value)
+				? {
+						...menuStep,
+						outMessage: OutMessage.SelectedOrganization({
+							orgId: Str.slice(ORG_PREFIX.length)(value),
+						}),
+					}
 				: menuStep
 		},
 		SelectedSubmenuItem: ({ value }) => ({
 			...menuStep,
 			outMessage: OutMessage.SelectedNamespace({
 				maybeNamespace:
-					value === ALL_NAMESPACES ? Option.none() : Option.some(value.slice(NAMESPACE_PREFIX.length)),
+					value === ALL_NAMESPACES
+						? Option.none()
+						: Option.some(Str.slice(NAMESPACE_PREFIX.length)(value)),
 			}),
 		}),
 		ToggledCheckbox: () => menuStep,
@@ -143,13 +150,19 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			const next = RadioGroup.update(RadioGroup.init(model.region), child)
 			return {
 				model: modifyFields(model, {
-					region: (region) => Option.match(next.model.maybeValue, { onNone: () => region, onSome: parseMapleRegion }),
+					region: (region) =>
+						Option.match(next.model.maybeValue, {
+							onNone: () => region,
+							onSome: parseMapleRegion,
+						}),
 				}),
-				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotRegionMessage({ message })),
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotRegionMessage({ message }),
+				),
 			}
 		},
 		SubmittedCreateOrganization: () =>
-			model.isCreating || model.name.trim() === ""
+			model.isCreating || Str.trim(model.name) === ""
 				? { model }
 				: {
 						model: modifyFields(model, { isCreating: () => true, errorMessage: () => null }),
@@ -164,7 +177,9 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			model: modifyFields(model, { isCreating: () => false, errorMessage: () => failure }),
 		}),
 		CompletedSwitchOrganization: () => ({ model }),
-		ChangedNamespaceQuery: ({ value }) => ({ model: modifyFields(model, { namespaceQuery: () => value }) }),
+		ChangedNamespaceQuery: ({ value }) => ({
+			model: modifyFields(model, { namespaceQuery: () => value }),
+		}),
 		CompletedMountNamespaceSearch: () => ({ model }),
 	})
 
@@ -174,7 +189,9 @@ export const MountNamespaceSearch = Mount.defineStream("MountSwitcherNamespaceSe
 	execute: ({ element }) =>
 		Stream.callback<typeof Message.CompletedMountNamespaceSearch.Type>((queue) =>
 			containSearchKeys(element).pipe(
-				Effect.andThen(Effect.sync(() => Queue.offerUnsafe(queue, Message.CompletedMountNamespaceSearch()))),
+				Effect.andThen(
+					Effect.sync(() => Queue.offerUnsafe(queue, Message.CompletedMountNamespaceSearch())),
+				),
 				Effect.andThen(Effect.never),
 			),
 		),
@@ -205,7 +222,10 @@ export const switchToOrganization = (orgId: string, targetUrl: string | null): E
 	setActiveOrganization(orgId).pipe(Effect.andThen(landOn(targetUrl)))
 
 /** As `switchToOrganization`, but a refused `setActive` fails instead of reloading onto no org. */
-export const openOrganization = (orgId: string, targetUrl: string | null): Effect.Effect<void, ClerkActionError> =>
+export const openOrganization = (
+	orgId: string,
+	targetUrl: string | null,
+): Effect.Effect<void, ClerkActionError> =>
 	activateOrganization(orgId).pipe(Effect.andThen(landOn(targetUrl)))
 
 /** `switchOrganization` / the create dialog's ending: `setActive`, then reload or the region's app. */
@@ -229,7 +249,7 @@ export const createOrganization = (
 	Effect.gen(function* () {
 		const client = yield* MapleInternalApiClient
 		const result = yield* client.organizationCreation.create({
-			payload: new CreateOrganizationRequest({ name: name.trim(), region }),
+			payload: new CreateOrganizationRequest({ name: Str.trim(name), region }),
 		})
 		return result.orgId
 	}).pipe(
@@ -252,6 +272,8 @@ export const CreateOrganization = Command.define("CreateOrganization", {
 	execute: ({ name, region }) =>
 		createOrganization(name, region).pipe(
 			Effect.map((orgId) => Message.SucceededCreateOrganization({ orgId })),
-			Effect.catch((error) => Effect.succeed(Message.FailedCreateOrganization({ message: error.message }))),
+			Effect.catch((error) =>
+				Effect.succeed(Message.FailedCreateOrganization({ message: error.message })),
+			),
 		),
 })

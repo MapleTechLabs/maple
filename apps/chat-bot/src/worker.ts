@@ -20,7 +20,7 @@ import { merge, optionalSecret, plainWithDefault, selfObservabilityEnv } from "@
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Layer, Ref, Scope } from "effect"
+import { Effect, Layer, Ref, Scope, Array as Arr } from "effect"
 import { HttpRouter } from "effect/http"
 import { resolveConnectorConfig, socketConnectors, type IngressConnector } from "./config.ts"
 import { InboundHandler } from "./inbound.ts"
@@ -94,7 +94,7 @@ export default ChatBot.make(
 			yield* Effect.logInfo("Skipping chat connector with no configuration").pipe(
 				Effect.annotateLogs({
 					"maple.chat.connector": connector.id,
-					"maple.chat.missing_config": names.join(","),
+					"maple.chat.missing_config": Arr.join(names, ","),
 				}),
 			)
 		})
@@ -134,22 +134,19 @@ export default ChatBot.make(
 		return { fetch: app }
 	}).pipe(
 		// The init is the entry point: the cron source needs the host Worker.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(
-			Layer.mergeAll(
-				// The socket DO's activation yields the relay namespace, so it builds on it. The relay's
-				// yields maple-ai's chat namespace, bound cross-script: mentions become turns on it.
-				ConnectorSocketLive.pipe(
-					Layer.provideMerge(ConnectorRelayLive),
-					Layer.provide(BoundChatSessions.layer),
-				),
-				Cloudflare.Hyperdrive.ConnectBinding,
-				Cloudflare.Workers.CronEventSourceLive,
-				WorkerTelemetry({
-					serviceName: "maple-chat-bot",
-					anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
-				}),
+		Effect.provide([
+			// The socket DO's activation yields the relay namespace, so it builds on it. The relay's
+			// yields maple-ai's chat namespace, bound cross-script: mentions become turns on it.
+			ConnectorSocketLive.pipe(
+				Layer.provideMerge(ConnectorRelayLive),
+				Layer.provide(BoundChatSessions.layer),
 			),
-		),
+			Cloudflare.Hyperdrive.ConnectBinding,
+			Cloudflare.Workers.CronEventSourceLive,
+			WorkerTelemetry({
+				serviceName: "maple-chat-bot",
+				anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
+			}),
+		]),
 	),
 )

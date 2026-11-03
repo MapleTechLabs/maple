@@ -1,12 +1,12 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Timeline from "../../page/traces/detail/timeline"
-import { TraceData, toSpanNode } from "../../page/traces/detail/trace-data"
+import { TraceData, toSpanNode } from "@maple/views/traces/trace-data"
 import * as Waterfall from "../../page/traces/detail/waterfall"
 import type { Resources } from "../../platform/resources"
-import * as TraceFlow from "../../service-map/trace-flow/trace-flow"
-import * as Tabs from "../../ui/tabs"
+import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
+import * as Tabs from "@maple/views/ui/tabs"
 
 // `TraceBox`: a controlled `TraceViewTabs` over one trace, its
 // own tab and selected span, the way `/lab/timeline` hosts the trace page's Submodels.
@@ -39,9 +39,9 @@ export type Return = Readonly<{
 
 export const flowGraphOf = (trace: TraceData): TraceFlow.FlowGraph =>
 	TraceFlow.buildFlowGraph({
-		rootSpans: trace.rootSpans.map(toSpanNode),
+		rootSpans: Arr.map(trace.rootSpans, toSpanNode),
 		totalDurationMs: trace.totalDurationMs,
-		services: [...new Set(trace.spans.map((span) => span.serviceName))],
+		services: [...new Set(Arr.map(trace.spans, (span) => span.serviceName))],
 	})
 
 const liftTimeline = (step: Timeline.UpdateReturn, model: Model): Return => ({

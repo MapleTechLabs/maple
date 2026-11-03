@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect"
+import { Effect, Option, Schema, Record as Rec, String as Str } from "effect"
 import {
 	MAX_RAW_SQL_CELL_LENGTH,
 	MAX_RAW_SQL_RESULT_BYTES,
@@ -111,7 +111,7 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// Parenthesised so the predicate is one operand wherever it lands; `rawSqlIssue`
 	// already rejected an org filter that sits beside a top-level OR.
 	sql = sql.replace(ORG_FILTER_MACRO_RE, (_match, alias: string | undefined) =>
-		alias === undefined ? `(OrgId = ${orgLiteral})` : `(${alias.trim()}.OrgId = ${orgLiteral})`,
+		alias === undefined ? `(OrgId = ${orgLiteral})` : `(${Str.trim(alias)}.OrgId = ${orgLiteral})`,
 	)
 	sql = sql.replaceAll("$__startTime", () => startLiteral)
 	sql = sql.replaceAll("$__endTime", () => endLiteral)
@@ -123,7 +123,7 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// text as it was when `matchAll` was called.
 	const timeFilterMatches = [...sql.matchAll(/\$__timeFilter\(([^)]*)\)/g)]
 	for (const match of timeFilterMatches) {
-		const column = match[1].trim()
+		const column = Str.trim(match[1])
 		sql = sql.replace(
 			match[0],
 			() => `${column} >= ${startLiteral} AND ${column} ${endOperator} ${endLiteral}`,
@@ -136,7 +136,7 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// one synthetic bucket, which reduces to exactly the same scalar.
 	const timeGroupMatches = [...sql.matchAll(/\$__timeGroup\(([^)]*)\)/g)]
 	for (const match of timeGroupMatches) {
-		const column = match[1].trim()
+		const column = Str.trim(match[1])
 		sql = sql.replace(match[0], () =>
 			input.wholeRange
 				? rangeAlignedGroup(column, startLiteral, endLiteral)
@@ -155,10 +155,12 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// modifiers attached to the inner result (`WITH TOTALS`, `LIMIT BY`,
 	// `WITH FILL`) are discarded by the outer SELECT.
 	return {
-		sql: `SELECT * FROM (\n${splitTerminalClauses(sql).body.trim()}\n) AS maple_raw_sql_limited\nLIMIT ${input.truncateAtCap === true ? MAX_RAW_SQL_RESULT_ROWS : RAW_SQL_FETCH_ROW_LIMIT}`,
+		sql: `SELECT * FROM (\n${Str.trim(splitTerminalClauses(sql).body)}\n) AS maple_raw_sql_limited\nLIMIT ${input.truncateAtCap === true ? MAX_RAW_SQL_RESULT_ROWS : RAW_SQL_FETCH_ROW_LIMIT}`,
 		granularitySeconds: granularity,
 	} satisfies PreparedRawSql
 })
+
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 
 const rawSqlResultLimitError = (rows: ReadonlyArray<Record<string, unknown>>): string | null => {
 	if (rows.length > MAX_RAW_SQL_RESULT_ROWS) {
@@ -167,15 +169,15 @@ const rawSqlResultLimitError = (rows: ReadonlyArray<Record<string, unknown>>): s
 
 	let totalBytes = 2
 	for (const row of rows) {
-		for (const value of Object.values(row)) {
+		for (const value of Rec.values(row)) {
 			if (typeof value === "string" && value.length > MAX_RAW_SQL_CELL_LENGTH) {
 				return `Raw SQL result cells may contain at most ${MAX_RAW_SQL_CELL_LENGTH} characters`
 			}
 		}
 
-		// A cyclic value or a BigInt cell throws out of `JSON.stringify` rather
-		// than returning, and the caller owes the user that as a 400.
-		const encoded = Effect.runSync(Effect.option(Effect.try(() => JSON.stringify(row) ?? "null")))
+		// A cyclic value or a BigInt cell fails to encode, and the caller owes
+		// the user that as a 400.
+		const encoded = encodeJsonOption(row)
 		if (Option.isNone(encoded)) return "Raw SQL results must be JSON serializable"
 		totalBytes += new TextEncoder().encode(encoded.value).byteLength + 1
 		if (totalBytes > MAX_RAW_SQL_RESULT_BYTES) {
@@ -223,7 +225,7 @@ export const makeExecuteRawSql = <TTenant, E>(warehouse: RawSqlWarehouse<TTenant
 
 		return {
 			rows,
-			columns: rows.length > 0 ? Object.keys(rows[0]) : [],
+			columns: rows.length > 0 ? Rec.keys(rows[0]) : [],
 			rowCount: rows.length,
 			expandedSql: prepared.sql,
 			granularitySeconds: prepared.granularitySeconds,

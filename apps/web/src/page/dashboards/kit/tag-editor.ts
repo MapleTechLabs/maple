@@ -1,21 +1,17 @@
-import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import * as DialogStyles from "@maple/ui/styles/ui/dialog"
-import { fieldLabelStyles } from "@maple/ui/styles/ui/field"
-import { formDialogFormStyles, formDialogPanelStyles } from "@maple/ui/styles/ui/form-dialog"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { Command, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { button } from "../../../ui/button"
-import * as Dialog from "../../../ui/dialog"
-import { descriptionId, titleId } from "../../../ui/dialog"
-import * as DialogView from "../../../ui/dialog-view"
-import { dialogFooter, dialogHeader, dialogPanel } from "../../../ui/dialog-view"
-import { field, fieldDescription, fieldLabel, type FieldState } from "../../../ui/field"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { input } from "../../../ui/input"
+import { button } from "@maple/views/ui/button"
+import * as Dialog from "@maple/views/ui/dialog"
+import { badge } from "@maple/views/ui/display"
+import { field, fieldDescription, fieldGroupLabel, fieldLabel, type FieldState } from "@maple/views/ui/field"
+import { formDialog } from "@maple/views/ui/form-dialog"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { input } from "@maple/views/ui/input"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `TagEditorDialog` on `FormDialog`: one dashboard's tags,
 // added by typing or from the org's other tags, removed by chip; Save reports them.
@@ -26,12 +22,15 @@ const MAX_TAG_LENGTH = 32
 export const normalizeTags = (input: ReadonlyArray<string>): ReadonlyArray<string> =>
 	Array.from(
 		new Set(
-			input.map((raw) => raw.trim().toLowerCase().slice(0, MAX_TAG_LENGTH)).filter((tag) => tag !== ""),
+			Arr.filter(
+				Arr.map(input, (raw) => Str.slice(0, MAX_TAG_LENGTH)(Str.toLowerCase(Str.trim(raw)))),
+				(tag) => tag !== "",
+			),
 		),
 	).sort()
 
 /** `splitInput`: commas and newlines separate tags. */
-export const splitTagInput = (value: string): ReadonlyArray<string> => value.split(/[,\n]/)
+export const splitTagInput = (value: string): ReadonlyArray<string> => Str.split(/[,\n]/)(value)
 
 // MODEL
 
@@ -103,12 +102,12 @@ export const update = (model: Model, message: Message): Return =>
 			if (key === "Enter" || key === ",") return { model: commitInput(model, model.input) }
 			const last = model.drafts[model.drafts.length - 1]
 			return key === "Backspace" && model.input === "" && last !== undefined
-				? { model: { ...model, drafts: model.drafts.filter((tag) => tag !== last) } }
+				? { model: { ...model, drafts: Arr.filter(model.drafts, (tag) => tag !== last) } }
 				: { model }
 		},
 		ClickedAddTag: () => ({ model: commitInput(model, model.input) }),
 		ClickedRemoveTag: ({ tag }) => ({
-			model: { ...model, drafts: model.drafts.filter((draft) => draft !== tag) },
+			model: { ...model, drafts: Arr.filter(model.drafts, (draft) => draft !== tag) },
 		}),
 		ClickedSuggestedTag: ({ tag }) => ({ model: commitInput(model, tag) }),
 		ClickedSaveTags: () => {
@@ -135,8 +134,7 @@ const IDLE: FieldState = {
 }
 
 /** A `FieldLabel` with no control of its own (a chip list follows it). */
-const plainFieldLabel = (h: H, text: string): Html =>
-	h.label([h.Class(cn(fieldLabelStyles, "text-xs")), h.DataAttribute("slot", "field-label")], [text])
+const plainFieldLabel = (h: H, text: string): Html => fieldGroupLabel(h, { className: "text-xs" }, text)
 
 const TAG_INPUT_ID = "tag-editor-input"
 const TAG_IDS = { control: TAG_INPUT_ID, label: `${TAG_INPUT_ID}-label`, error: `${TAG_INPUT_ID}-error` }
@@ -148,36 +146,25 @@ const draftChips = (h: H, model: Model): Html =>
 				{ ids: TAG_IDS, className: "text-2xs", state: IDLE },
 				"No tags yet, so this dashboard won't appear under any Tags filter.",
 			)
-		: h.div(
-				[h.Class("flex flex-wrap gap-1")],
-				model.drafts.map((tag) =>
-					h.span(
-						[
-							h.Class(
-								cn(
-									badgeVariants({
-										variant: "secondary",
-										className: "gap-1 pr-1 font-mono text-2xs",
-									}),
-								),
-							),
-							h.DataAttribute("slot", "badge"),
-						],
-						[
-							tag,
-							iconButton(
-								h,
-								{
-									size: "icon-xs",
-									label: `Remove tag ${tag}`,
-									hasTooltip: false,
-									className: "size-4 text-muted-foreground hover:text-foreground active:text-foreground",
-									attributes: [h.OnClick(Message.ClickedRemoveTag({ tag }))],
-								},
-								[icon(h, "XmarkIcon")],
-							),
-						],
-					),
+		: hstack(
+				h,
+				{ gap: "1", align: "stretch", wrap: true },
+				Arr.map(model.drafts, (tag) =>
+					badge(h, { variant: "secondary", className: "gap-1 pr-1 font-mono text-2xs" }, [
+						tag,
+						iconButton(
+							h,
+							{
+								size: "icon-xs",
+								label: `Remove tag ${tag}`,
+								hasTooltip: false,
+								className:
+									"size-4 text-muted-foreground hover:text-foreground active:text-foreground",
+								attributes: [h.OnClick(Message.ClickedRemoveTag({ tag }))],
+							},
+							[icon(h, "XmarkIcon")],
+						),
+					]),
 				),
 			)
 
@@ -187,15 +174,16 @@ const suggestions = (h: H, unused: ReadonlyArray<string>): ReadonlyArray<Html> =
 		: [
 				field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
 					plainFieldLabel(h, "Used elsewhere"),
-					h.div(
-						[h.Class("flex flex-wrap gap-1")],
-						unused.map((tag) =>
+					hstack(
+						h,
+						{ gap: "1", align: "stretch", wrap: true },
+						Arr.map(unused, (tag) =>
 							button(
 								h,
 								{
 									variant: "outline",
 									size: "xs",
-									className: "font-mono text-2xs",
+									className: typographyClass({ size: "2xs", mono: true }),
 									attributes: [h.OnClick(Message.ClickedSuggestedTag({ tag }))],
 								},
 								[
@@ -214,37 +202,34 @@ const tagInput = (h: H, model: Model): Html => {
 	const canAdd = normalizeTags(splitTagInput(model.input)).length > 0
 	return field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
 		fieldLabel(h, { ids: TAG_IDS, className: "text-xs", state: IDLE }, "Add a tag"),
-		h.div(
-			[h.Class("flex items-center gap-1.5")],
-			[
-				input(h, {
-					id: TAG_INPUT_ID,
-					size: "sm",
-					attributes: [
-						h.Value(model.input),
-						h.Placeholder("slo, api, team-platform"),
-						h.Maxlength(32),
-						h.OnInput((value) => Message.ChangedTagInput({ value })),
-						h.OnKeyDownPreventDefault((key) =>
-							key === "Enter" || key === "," || (key === "Backspace" && model.input === "")
-								? Option.some(Message.PressedTagInputKey({ key }))
-								: Option.none(),
-						),
-						h.OnBlur(Message.ClickedAddTag()),
-					],
-				}),
-				iconButton(
-					h,
-					{
-						variant: "outline",
-						label: "Add tag",
-						isDisabled: !canAdd,
-						attributes: [h.OnClick(Message.ClickedAddTag())],
-					},
-					[icon(h, "PlusIcon")],
-				),
-			],
-		),
+		hstack(h, { gap: "1.5" }, [
+			input(h, {
+				id: TAG_INPUT_ID,
+				size: "sm",
+				attributes: [
+					h.Value(model.input),
+					h.Placeholder("slo, api, team-platform"),
+					h.Maxlength(32),
+					h.OnInput((value) => Message.ChangedTagInput({ value })),
+					h.OnKeyDownPreventDefault((key) =>
+						key === "Enter" || key === "," || (key === "Backspace" && model.input === "")
+							? Option.some(Message.PressedTagInputKey({ key }))
+							: Option.none(),
+					),
+					h.OnBlur(Message.ClickedAddTag()),
+				],
+			}),
+			iconButton(
+				h,
+				{
+					variant: "outline",
+					label: "Add tag",
+					isDisabled: !canAdd,
+					attributes: [h.OnClick(Message.ClickedAddTag())],
+				},
+				[icon(h, "PlusIcon")],
+			),
+		]),
 	])
 }
 
@@ -254,64 +239,28 @@ export type ViewInputs = Readonly<{
 }>
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
-	const id = model.dialog.id
-	const unused = normalizeTags(inputs.allTags).filter((tag) => !model.drafts.includes(tag))
-	return h.submodel({
-		slotId: id,
+	const unused = Arr.filter(normalizeTags(inputs.allTags), (tag) => !model.drafts.includes(tag))
+	return formDialog(h, {
+		slotId: model.dialog.id,
 		model: model.dialog,
-		view: DialogView.view,
-		viewInputs: {
-			hasTrigger: false,
-			className: "sm:max-w-md",
-			toView: ({ portal }) => portal ?? h.empty,
-			toContent: (close) => [
-				h.form(
-					[h.Class(formDialogFormStyles), h.OnSubmit(Message.ClickedSaveTags())],
-					[
-						dialogHeader(h, "dialog", [
-							h.h2(
-								[
-									h.Class(cn(DialogStyles.dialogTitleStyles)),
-									h.DataAttribute("slot", "dialog-title"),
-									h.Id(titleId(id)),
-								],
-								["Tags"],
-							),
-							h.p(
-								[
-									h.Class(cn(DialogStyles.dialogDescriptionStyles)),
-									h.DataAttribute("slot", "dialog-description"),
-									h.Id(descriptionId(id)),
-								],
-								[
-									"Group ",
-									h.span([h.Class("text-foreground")], [model.name]),
-									" with related dashboards. Tags drive the Tags filter on the dashboards list.",
-								],
-							),
-						]),
-						dialogPanel(
-							h,
-							"dialog",
-							id,
-							[
-								tagInput(h, model),
-								field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
-									plainFieldLabel(h, "On this dashboard"),
-									draftChips(h, model),
-								]),
-								...suggestions(h, unused),
-							],
-							cn(formDialogPanelStyles, "flex flex-col gap-3 space-y-0"),
-						),
-						dialogFooter(h, "dialog", [
-							button(h, { variant: "outline", attributes: close }, ["Cancel"]),
-							button(h, { type: "submit" }, ["Save"]),
-						]),
-					],
-				),
-			],
-		},
 		toParentMessage: (message) => Message.GotDialogMessage({ message }),
+		className: "sm:max-w-md",
+		title: "Tags",
+		description: [
+			"Group ",
+			h.span([h.Class("text-foreground")], [model.name]),
+			" with related dashboards. Tags drive the Tags filter on the dashboards list.",
+		],
+		onSubmit: Message.ClickedSaveTags(),
+		submitLabel: "Save tags",
+		panelClassName: "flex flex-col gap-3 space-y-0",
+		fields: [
+			tagInput(h, model),
+			field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
+				plainFieldLabel(h, "On this dashboard"),
+				draftChips(h, model),
+			]),
+			...suggestions(h, unused),
+		],
 	})
 })

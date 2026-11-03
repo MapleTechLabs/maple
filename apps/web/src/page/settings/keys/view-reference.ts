@@ -1,14 +1,18 @@
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
 import { apiPublicUrl } from "../../../lib/services/common/api-base-url"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { copyableField } from "../../../ui/copyable-field"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
+import { collapsible } from "@maple/views/ui/collapsible"
+import { copyableField } from "@maple/views/ui/copyable-field"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
 import { INLINE_LINK_CLASS, settingsSection } from "../kit/section"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { linkButton } from "../../../ui/button"
+import { linkButton } from "@maple/views/ui/button"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { spaced } from "@maple/views/ui/spaced"
+import { Array as Arr } from "effect"
 
 // `ApiReference` and `OAuthPointer`.
 
@@ -77,85 +81,49 @@ const scopeRow = (h: H, family: (typeof SCOPE_FAMILY_ROWS)[number]): Html =>
 			h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-4 py-2.5"),
 		],
 		[
-			h.div(
-				[h.Class("min-w-0 flex-1 space-y-0.5")],
-				[
-					h.div([h.Class("text-sm")], [family.label]),
-					h.div([h.Class("text-muted-foreground text-xs")], [family.description]),
-				],
-			),
-			h.div(
-				[h.Class("flex shrink-0 items-center gap-1.5")],
-				[
-					badge(h, { variant: "outline", mono: true, className: "text-2xs" }, [family.id, ":read"]),
-					badge(h, { variant: "outline", mono: true, className: "text-2xs" }, [
-						family.id,
-						":write",
-					]),
-				],
-			),
+			spaced(h, { space: "0.5", fill: true }, [
+				h.div([h.Class("text-sm")], [family.label]),
+				typography(h, { size: "xs", tone: "muted", as: "div" }, [family.description]),
+			]),
+			hstack(h, { gap: "1.5", className: "shrink-0" }, [
+				badge(h, { variant: "outline", mono: true, className: "text-2xs" }, [family.id, ":read"]),
+				badge(h, { variant: "outline", mono: true, className: "text-2xs" }, [family.id, ":write"]),
+			]),
 		],
 	)
 
 const scopes = (h: H, isOpen: boolean): Html =>
-	h.div(
-		[h.DataAttribute(isOpen ? "open" : "closed", ""), h.DataAttribute("slot", "collapsible")],
+	collapsible(
+		h,
+		{
+			isOpen,
+			onToggle: Message.ToggledScopes(),
+			panelId: "keys-scopes-panel",
+			triggerClassName:
+				"group/scopes hover:bg-surface-sunken active:bg-surface-sunken flex w-full items-center gap-2 px-4 py-3 text-left",
+			trigger: [
+				icon(h, "ChevronRightIcon", {
+					size: 14,
+					className:
+						"text-muted-foreground shrink-0 transition-transform group-data-[panel-open]/scopes:rotate-90",
+				}),
+				typography(h, { size: "sm", weight: "medium" }, ["Scopes"]),
+				typography(h, { size: "sm", tone: "muted" }, [
+					String(SCOPE_FAMILY_ROWS.length),
+					" resource families",
+				]),
+				h.span([h.Class("flex-1")], []),
+				h.span(
+					[h.Class("text-muted-foreground hidden text-2xs md:block")],
+					["Read or write per family. A key without scopes has full access."],
+				),
+			],
+		},
 		[
-			h.button(
-				[
-					...(isOpen ? [h.AriaControls("keys-scopes-panel")] : []),
-					h.AriaDisabled(false),
-					h.AriaExpanded(isOpen),
-					h.Class(
-						"group/scopes hover:bg-surface-sunken active:bg-surface-sunken flex w-full items-center gap-2 px-4 py-3 text-left",
-					),
-					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
-					h.DataAttribute("slot", "collapsible-trigger"),
-					h.Tabindex(0),
-					h.Type("button"),
-					h.OnClick(Message.ToggledScopes()),
-				],
-				[
-					icon(h, "ChevronRightIcon", {
-						size: 14,
-						className:
-							"text-muted-foreground shrink-0 transition-transform group-data-[panel-open]/scopes:rotate-90",
-					}),
-					h.span([h.Class("text-sm font-medium")], ["Scopes"]),
-					h.span(
-						[h.Class("text-muted-foreground text-sm")],
-						[String(SCOPE_FAMILY_ROWS.length), " resource families"],
-					),
-					h.span([h.Class("flex-1")], []),
-					h.span(
-						[h.Class("text-muted-foreground hidden text-2xs md:block")],
-						["Read or write per family. A key without scopes has full access."],
-					),
-				],
+			h.div(
+				[h.Class("divide-y border-t")],
+				Arr.map(SCOPE_FAMILY_ROWS, (family) => scopeRow(h, family)),
 			),
-			...(isOpen
-				? [
-						h.div(
-							[
-								h.Class(collapsiblePanelStyles),
-								h.DataAttribute("open", ""),
-								h.DataAttribute("slot", "collapsible-panel"),
-								h.Id("keys-scopes-panel"),
-								h.Style({
-									"--collapsible-panel-height": "auto",
-									"--collapsible-panel-width": "auto",
-									"animation-name": "none",
-								}),
-							],
-							[
-								h.div(
-									[h.Class("divide-y border-t")],
-									SCOPE_FAMILY_ROWS.map((family) => scopeRow(h, family)),
-								),
-							],
-						),
-					]
-				: []),
 		],
 	)
 
@@ -213,11 +181,7 @@ export const apiReference = (h: H, model: Model): Html =>
 
 export const oauthPointer = (h: H): Html =>
 	h.p(
-		[
-			h.Class(
-				"w-full rounded-md border border-dashed p-4 font-prose text-sm text-muted-foreground",
-			),
-		],
+		[h.Class("w-full rounded-md border border-dashed p-4 font-prose text-sm text-muted-foreground")],
 		[
 			"Clients signed in with OAuth don't use keys. See and revoke them in the ",
 			h.a(

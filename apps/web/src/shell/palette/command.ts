@@ -1,9 +1,8 @@
 import { getTracesFacetValues } from "@maple/web-data/warehouse/traces"
-import { Effect, Queue, Schema, Stream } from "effect"
-import { Command, Mount } from "foldkit"
+import { Effect, Schema, Array as Arr } from "effect"
+import { Command } from "foldkit"
 import { ReadCache } from "../../data/read-cache"
-import { requestKey } from "../../data/request-key"
-import { applyScrollOverflow, trackScrollbar } from "../../ui/scroll-area"
+import { requestKey } from "@maple/views/data/request-key"
 import { Message } from "./model"
 
 /** `getTracesFacetValuesResultAtom`'s `staleTime`, counted from the palette closing (its unmount). */
@@ -29,7 +28,7 @@ export const LoadPaletteServices = Command.define("LoadPaletteServices", {
 			},
 			getTracesFacetValues(SERVICES_INPUT),
 		)
-		return Message.SucceededLoadServices({ serviceNames: response.data.map((item) => item.name) })
+		return Message.SucceededLoadServices({ serviceNames: Arr.map(response.data, (item) => item.name) })
 	}).pipe(Effect.orElseSucceed(() => Message.FailedLoadServices())),
 })
 
@@ -41,46 +40,6 @@ export const ReleasePaletteServices = Command.define("ReleasePaletteServices", {
 		Effect.flatMap(ReadCache, (cache) =>
 			cache.release([requestKey(orgId, SERVICES_OPERATION, SERVICES_INPUT)]),
 		).pipe(Effect.as(Message.CompletedReleaseServices())),
-})
-
-/** The list's `ScrollArea` overflow (its fades), kept current on scroll and resize; option presses keep focus. */
-export const MeasurePaletteList = Mount.defineStream("MeasurePaletteList", {
-	messages: [Message.CompletedMeasureList],
-	execute: ({ element }) =>
-		Stream.callback<typeof Message.CompletedMeasureList.Type>((queue) =>
-			Effect.acquireRelease(
-				Effect.sync(() => {
-					if (!(element instanceof HTMLElement)) return undefined
-					const measure = () => applyScrollOverflow(element)
-					// Base UI keeps focus in the input while an option is pressed.
-					const keepFocus = (event: Event) => {
-						if (
-							event.target instanceof Element &&
-							event.target.closest('[role="option"]') !== null
-						)
-							event.preventDefault()
-					}
-					element.addEventListener("mousedown", keepFocus)
-					const observer = new ResizeObserver(measure)
-					observer.observe(element)
-					if (element.firstElementChild !== null) observer.observe(element.firstElementChild)
-					element.addEventListener("scroll", measure, { passive: true })
-					measure()
-					const untrack = trackScrollbar(element)
-					Queue.offerUnsafe(queue, Message.CompletedMeasureList())
-					return { observer, measure, keepFocus, untrack }
-				}),
-				(handles) =>
-					Effect.sync(() => {
-						handles?.observer.disconnect()
-						if (handles !== undefined) {
-							element.removeEventListener("scroll", handles.measure)
-							element.removeEventListener("mousedown", handles.keepFocus)
-							handles.untrack()
-						}
-					}),
-			).pipe(Effect.flatMap(() => Effect.never)),
-		),
 })
 
 /** Base UI keeps the highlighted item in view as the arrows move it (`scrollIntoView` nearest). */

@@ -2,21 +2,20 @@ import { peekPosition } from "./peek"
 import { MountPeekRows } from "./command"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { tableBodyStyles } from "@maple/ui/styles/ui/table"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { errorState } from "../../../ui/error-state"
-import { excludedEmptyHint } from "../../../ui/filters/excluded-empty-hint"
-import { listFooter, loadingMoreRow } from "../../../ui/list-footer"
-import { ariaSort, sortButton, table, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { tableSkeleton } from "../../../ui/table-skeleton"
+import { errorState } from "@maple/views/ui/error-state"
+import { excludedEmptyHint } from "@maple/views/ui/filters/excluded-empty-hint"
+import { listFooter, loadingMoreRow } from "@maple/views/ui/list-footer"
+import { ariaSort, sortButton, table, tableBody, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { signalEmptyState } from "../../kit/signal-empty-state"
-import { presenceOf } from "../../kit/signal-presence"
+import { presenceOf } from "@maple/views/data/signal-presence"
 import { canWidenTimeRange, isFiltered, traceFilterChips } from "./derive"
 import { Message, type SortKey } from "./message"
 import type { Model } from "./model"
 import { allRows, DEFAULT_PRESET, hasNextPage, hiddenCount, MAX_RETAINED_TRACES } from "./update"
-import { noiseNote, timeFormat, traceRow } from "./view-row"
+import { noiseNote, traceRow } from "./view-row"
 import { COUNT_ATTRIBUTE, VirtualizeTraces } from "./virtualize"
 
 /** `TRACE_COLUMNS`: shared by the table, the skeleton and the header. */
@@ -125,12 +124,11 @@ const spacer = (h: HtmlBuilder<Message>, key: string, height: number): Html =>
 /** `VirtualTableBody`: spacers around the rendered window, then the loading row. */
 const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile: boolean): Html => {
 	const rows = allRows(model)
-	const time = timeFormat(timeZone)
 	const activeIndex = isMobile ? null : (peekPosition(model)?.index ?? null)
 	const first = model.virtualRows[0]
 	const last = model.virtualRows.at(-1)
-	return h.tbody(
-		[h.Class(tableBodyStyles), h.DataAttribute("slot", "table-body")],
+	return tableBody(
+		h,
 		[
 			...(first === undefined ? [] : [spacer(h, "spacer-before", first.start)]),
 			...model.virtualRows.flatMap((item) => {
@@ -138,7 +136,7 @@ const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile:
 				return row === undefined
 					? []
 					: [
-							traceRow(h, row, item.index, time, model.nowMs, {
+							traceRow(h, row, item.index, timeZone, model.nowMs, {
 								search: model.search,
 								isFocused: model.focusedIndex === item.index,
 								isActive: activeIndex === item.index,

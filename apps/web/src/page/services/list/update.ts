@@ -1,15 +1,15 @@
-import { Duration, Effect, Option, Schema } from "effect"
+import { Duration, Effect, Option, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { LoadChartRuntime } from "../../../charts/chart-runtime"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { emptyOnFailure } from "../../../data/enrichment"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import { commitDetailsKey } from "../../kit/commit-card"
 import { resolveWindow, type TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
-import * as FilterSections from "../../../ui/filters/filter-sections"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { type PageContext, PageOutMessage, type PageReturn, pickCommands } from "../../contract"
-import { SignalPresenceData } from "../../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import type { Resources } from "../../../platform/resources"
 import {
@@ -114,7 +114,7 @@ const keyed = <A, E>(
 
 const applySteps = (model: Model, steps: ReadonlyArray<Step>): Return => ({
 	model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
-	commands: steps.flatMap((step) => step.commands),
+	commands: Arr.flatMap(steps, (step) => step.commands),
 })
 
 const facetsStep = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Step =>
@@ -258,10 +258,10 @@ const toggledFacet = (search: Search, facet: Facet, name: string): Search => {
 	return {
 		...search,
 		[EXCLUDED_OF[facet]]: excluded.includes(name)
-			? listOrUndefined(excluded.filter((v) => v !== name))
+			? listOrUndefined(Arr.filter(excluded, (v) => v !== name))
 			: search[EXCLUDED_OF[facet]],
 		[facet]: listOrUndefined(
-			selected.includes(name) ? selected.filter((v) => v !== name) : [...selected, name],
+			selected.includes(name) ? Arr.filter(selected, (v) => v !== name) : [...selected, name],
 		),
 	}
 }
@@ -272,10 +272,10 @@ const excludedFacet = (search: Search, facet: Facet, name: string): Search => {
 	return {
 		...search,
 		[facet]: selected.includes(name)
-			? listOrUndefined(selected.filter((v) => v !== name))
+			? listOrUndefined(Arr.filter(selected, (v) => v !== name))
 			: search[facet],
 		[EXCLUDED_OF[facet]]: listOrUndefined(
-			excluded.includes(name) ? excluded.filter((v) => v !== name) : [...excluded, name],
+			excluded.includes(name) ? Arr.filter(excluded, (v) => v !== name) : [...excluded, name],
 		),
 	}
 }

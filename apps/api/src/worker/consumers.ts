@@ -13,6 +13,7 @@ import {
 	AuditEventsQueue,
 	CancellationReviewsQueue,
 	PlanetScaleWebhookQueue,
+	VcsBackfillQueue,
 	VcsSyncQueue,
 } from "../resources/queues"
 import type { ApiPortsLayer } from "./bindings"
@@ -52,7 +53,7 @@ const auditEventsConsumer = (deadLetterQueue: string | undefined): Cloudflare.Qu
 })
 
 /**
- * Attaches the four consumers to the host at plan time and their listeners
+ * Attaches the five consumers to the host at plan time and their listeners
  * at runtime. Needs `Queues.EventSourceLive`. `renamedFrom` carries the
  * consumer resources over from the ids the api factory declared them under,
  * so the deploy migrates their state rows instead of re-creating the
@@ -65,13 +66,22 @@ export const registerQueueConsumers = (
 ) =>
 	Effect.gen(function* () {
 		// Handed to the placed fetch handler over the self binding (`./vcs-sync.ts`), inline without it.
-		yield* Cloudflare.Queues.consumeQueueMessages(yield* VcsSyncQueue, VCS_SYNC_CONSUMER, (stream) =>
+		const vcsSyncQueue = yield* VcsSyncQueue
+		yield* Cloudflare.Queues.consumeQueueMessages(vcsSyncQueue, VCS_SYNC_CONSUMER, (stream) =>
 			Effect.flatMap(Stream.runCollect(stream), (messages) =>
 				consumeVcsSyncBatch(ports, env, vcsSyncCaches, messages),
 			),
 		).pipe(renamedFrom({ fqn: "vcs-sync-consumer" }))
+		// Same handler, own consumer: a scheduled sync's backlog drains here without holding up webhooks.
+		const vcsBackfillQueue = yield* VcsBackfillQueue
+		yield* Cloudflare.Queues.consumeQueueMessages(vcsBackfillQueue, VCS_SYNC_CONSUMER, (stream) =>
+			Effect.flatMap(Stream.runCollect(stream), (messages) =>
+				consumeVcsSyncBatch(ports, env, vcsSyncCaches, messages),
+			),
+		)
+		const planetScaleWebhookQueue = yield* PlanetScaleWebhookQueue
 		yield* Cloudflare.Queues.consumeQueueMessages(
-			yield* PlanetScaleWebhookQueue,
+			planetScaleWebhookQueue,
 			PLANETSCALE_WEBHOOKS_CONSUMER,
 			(stream) =>
 				Effect.flatMap(
@@ -88,13 +98,18 @@ export const registerQueueConsumers = (
 						),
 				),
 		).pipe(renamedFrom({ fqn: "planetscale-webhooks-consumer" }))
+		const cancellationReviewsQueue = yield* CancellationReviewsQueue
 		yield* Cloudflare.Queues.consumeQueueMessages(
-			yield* CancellationReviewsQueue,
+			cancellationReviewsQueue,
 			CANCELLATION_REVIEWS_CONSUMER,
 			(stream) =>
 				Effect.flatMap(
 					cancellationReviewModule,
-					({ CancellationReviewLive, cancellationReviewTelemetry, processCancellationReviewBatch }) =>
+					({
+						CancellationReviewLive,
+						cancellationReviewTelemetry,
+						processCancellationReviewBatch,
+					}) =>
 						Effect.flatMap(Stream.runCollect(stream), (messages) =>
 							runEvent(
 								processCancellationReviewBatch({ messages }),
@@ -109,8 +124,9 @@ export const registerQueueConsumers = (
 		// The dead-letter setting is a plan-time value: the DLQ's resolved props
 		// carry its physical name there and are empty in the isolate.
 		const auditEventsDlq = yield* AuditEventsDlq
+		const auditEventsQueue = yield* AuditEventsQueue
 		yield* Cloudflare.Queues.consumeQueueMessages(
-			yield* AuditEventsQueue,
+			auditEventsQueue,
 			auditEventsConsumer(auditEventsDlq.Props.name),
 			(stream) =>
 				Effect.flatMap(auditEventsModule, ({ AuditEventsLive, processAuditEventsBatch }) =>

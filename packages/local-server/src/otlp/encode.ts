@@ -19,7 +19,8 @@
  *   - attributes are arrays of `{ key, value: AnyValue }`
  */
 
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { encodeJson } from "../json"
 
 export interface EncodedBatch {
 	datasource: string
@@ -161,7 +162,7 @@ function idHex(value: string | undefined, byteLength: number, field: string): st
 		return ""
 	}
 	if (value.length === byteLength * 2 && HEX_ONLY.test(value)) {
-		const lower = value.toLowerCase()
+		const lower = Str.toLowerCase(value)
 		return ALL_ZERO_HEX.test(lower) ? "" : lower
 	}
 	let bytes: Uint8Array | undefined
@@ -175,9 +176,9 @@ function idHex(value: string | undefined, byteLength: number, field: string): st
 		// that looks like hex but is the wrong length, the base64 byte count is
 		// noise ("deadbeef" is 4 hex bytes, but decodes as 6 base64 bytes).
 		const base64Chars = Math.ceil(byteLength / 3) * 4
-		const shown = value.length > 80 ? `${value.slice(0, 80)}…` : value
+		const shown = value.length > 80 ? `${Str.slice(0, 80)(value)}…` : value
 		throw OtlpFieldError.of(
-			`${field} must be ${byteLength} bytes: expected ${byteLength * 2} hex chars (OTLP/JSON) or ${base64Chars} base64 chars (OTLP/protobuf), got ${JSON.stringify(shown)} (${value.length} chars)`,
+			`${field} must be ${byteLength} bytes: expected ${byteLength * 2} hex chars (OTLP/JSON) or ${base64Chars} base64 chars (OTLP/protobuf), got ${encodeJson(shown)} (${value.length} chars)`,
 		)
 	}
 	return hexFromBytes(bytes)
@@ -226,8 +227,8 @@ export function formatTimestampNano(nanos: string | number | undefined): string 
 		return epoch
 	}
 	// iso is e.g. "2023-11-14T22:13:20.123Z"; keep the calendar part only.
-	const calendar = iso.slice(0, 19).replace("T", " ")
-	const frac9 = frac.toString().padStart(9, "0")
+	const calendar = Str.replace("T", " ")(Str.slice(0, 19)(iso))
+	const frac9 = Str.padStart(9, "0")(frac.toString())
 	return `${calendar}.${frac9}`
 }
 
@@ -257,7 +258,7 @@ export function anyValueString(value: AnyValue | undefined | null): string {
 		return bytesText(value.bytesValue)
 	}
 	if (value.arrayValue !== undefined || value.kvlistValue !== undefined) {
-		return JSON.stringify(anyValueJson(value))
+		return encodeJson(anyValueJson(value))
 	}
 	return ""
 }
@@ -268,11 +269,11 @@ export function anyValueString(value: AnyValue | undefined | null): string {
  */
 function anyValueJson(value: AnyValue | undefined): AttrJson {
 	if (value?.arrayValue !== undefined) {
-		return (value.arrayValue.values ?? []).map(anyValueJson)
+		return Arr.map(value.arrayValue.values ?? [], anyValueJson)
 	}
 	if (value?.kvlistValue !== undefined) {
-		return Object.fromEntries(
-			(value.kvlistValue.values ?? []).map((kv) => [kv.key ?? "", anyValueJson(kv.value)]),
+		return Rec.fromEntries(
+			Arr.map(value.kvlistValue.values ?? [], (kv) => [kv.key ?? "", anyValueJson(kv.value)]),
 		)
 	}
 	return anyValueString(value)
@@ -308,15 +309,15 @@ function formatDouble(num: number): string {
 }
 
 function expandExponential(s: string, eIndex: number): string {
-	let mantissa = s.slice(0, eIndex)
-	const exp = parseInt(s.slice(eIndex + 1), 10)
+	let mantissa = Str.slice(0, eIndex)(s)
+	const exp = parseInt(Str.slice(eIndex + 1)(s), 10)
 
 	let sign = ""
-	if (mantissa.startsWith("-")) {
+	if (Str.startsWith("-")(mantissa)) {
 		sign = "-"
-		mantissa = mantissa.slice(1)
-	} else if (mantissa.startsWith("+")) {
-		mantissa = mantissa.slice(1)
+		mantissa = Str.slice(1)(mantissa)
+	} else if (Str.startsWith("+")(mantissa)) {
+		mantissa = Str.slice(1)(mantissa)
 	}
 
 	const dot = mantissa.indexOf(".")
@@ -326,8 +327,8 @@ function expandExponential(s: string, eIndex: number): string {
 		intPart = mantissa
 		fracPart = ""
 	} else {
-		intPart = mantissa.slice(0, dot)
-		fracPart = mantissa.slice(dot + 1)
+		intPart = Str.slice(0, dot)(mantissa)
+		fracPart = Str.slice(dot + 1)(mantissa)
 	}
 
 	// Combine into a single digit string with a tracked decimal-point position.
@@ -337,16 +338,16 @@ function expandExponential(s: string, eIndex: number): string {
 
 	let result: string
 	if (pointPos <= 0) {
-		result = "0." + "0".repeat(-pointPos) + digits
+		result = "0." + Str.repeat(-pointPos)("0") + digits
 	} else if (pointPos >= digits.length) {
-		result = digits + "0".repeat(pointPos - digits.length)
+		result = digits + Str.repeat(pointPos - digits.length)("0")
 	} else {
-		result = digits.slice(0, pointPos) + "." + digits.slice(pointPos)
+		result = Str.slice(0, pointPos)(digits) + "." + Str.slice(pointPos)(digits)
 	}
 
 	// Trim redundant trailing zeros in any fractional part and a dangling dot.
 	if (result.indexOf(".") !== -1) {
-		result = result.replace(/0+$/, "").replace(/\.$/, "")
+		result = Str.replace(/\.$/, "")(Str.replace(/0+$/, "")(result))
 	}
 	return sign + result
 }
@@ -476,13 +477,13 @@ function parseDouble(value: ProtoDouble): number | undefined {
 	if (value === "NaN") return Number.NaN
 	if (value === "Infinity") return Number.POSITIVE_INFINITY
 	if (value === "-Infinity") return Number.NEGATIVE_INFINITY
-	const parsed = value.trim() === "" ? Number.NaN : Number(value)
+	const parsed = Str.trim(value) === "" ? Number.NaN : Number(value)
 	return Number.isNaN(parsed) ? undefined : parsed
 }
 
 function requireDouble(value: ProtoDouble, field: string): number {
 	const parsed = parseDouble(value)
-	if (parsed === undefined) throw OtlpFieldError.of(`${field} is not a double: ${JSON.stringify(value)}`)
+	if (parsed === undefined) throw OtlpFieldError.of(`${field} is not a double: ${encodeJson(value)}`)
 	return parsed
 }
 
@@ -571,7 +572,10 @@ function toBatches(byDatasource: Map<string, Record<string, unknown>[]>): Encode
 		batches.push({
 			datasource,
 			rowCount: rows.length,
-			ndjson: rows.map((row) => JSON.stringify(row)).join("\n"),
+			ndjson: Arr.join(
+				Arr.map(rows, (row) => encodeJson(row)),
+				"\n",
+			),
 		})
 	}
 	return batches
@@ -658,15 +662,17 @@ export function encodeTraces(req: unknown): EncodedBatch[] {
 					status_code: statusCode(span.status?.code),
 					status_message: span.status?.message ?? "",
 					span_attributes: spanAttrs,
-					events_timestamp: events.map((event) => formatTimestampNano(event.timeUnixNano)),
-					events_name: events.map((event) => event.name ?? ""),
-					events_attributes: events.map((event) => attrMap(event.attributes)),
-					links_trace_id: links.map((link, i) =>
+					events_timestamp: Arr.map(events, (event) => formatTimestampNano(event.timeUnixNano)),
+					events_name: Arr.map(events, (event) => event.name ?? ""),
+					events_attributes: Arr.map(events, (event) => attrMap(event.attributes)),
+					links_trace_id: Arr.map(links, (link, i) =>
 						traceIdHex(link.traceId, `span.links[${i}].traceId`),
 					),
-					links_span_id: links.map((link, i) => spanIdHex(link.spanId, `span.links[${i}].spanId`)),
-					links_trace_state: links.map((link) => link.traceState ?? ""),
-					links_attributes: links.map((link) => attrMap(link.attributes)),
+					links_span_id: Arr.map(links, (link, i) =>
+						spanIdHex(link.spanId, `span.links[${i}].spanId`),
+					),
+					links_trace_state: Arr.map(links, (link) => link.traceState ?? ""),
+					links_attributes: Arr.map(links, (link) => attrMap(link.attributes)),
 				})
 			}
 		}
@@ -948,8 +954,8 @@ export function encodeMetrics(req: unknown): EncodedBatch[] {
 						)
 						row.count = asUint64Number(point.count)
 						row.sum = optionalFloat64Cell(point.sum, "histogram.dataPoint.sum") ?? 0
-						row.bucket_counts = (point.bucketCounts ?? []).map(asUint64Number)
-						row.explicit_bounds = (point.explicitBounds ?? []).map((bound) =>
+						row.bucket_counts = Arr.map(point.bucketCounts ?? [], asUint64Number)
+						row.explicit_bounds = Arr.map(point.explicitBounds ?? [], (bound) =>
 							float64Cell(requireDouble(bound, "histogram.dataPoint.explicitBounds")),
 						)
 						row.min = optionalFloat64Cell(point.min, "histogram.dataPoint.min")
@@ -975,9 +981,9 @@ export function encodeMetrics(req: unknown): EncodedBatch[] {
 						row.scale = asInt32(point.scale)
 						row.zero_count = asUint64Number(point.zeroCount)
 						row.positive_offset = asInt32(positive?.offset)
-						row.positive_bucket_counts = (positive?.bucketCounts ?? []).map(asUint64Number)
+						row.positive_bucket_counts = Arr.map(positive?.bucketCounts ?? [], asUint64Number)
 						row.negative_offset = asInt32(negative?.offset)
-						row.negative_bucket_counts = (negative?.bucketCounts ?? []).map(asUint64Number)
+						row.negative_bucket_counts = Arr.map(negative?.bucketCounts ?? [], asUint64Number)
 						row.min = optionalFloat64Cell(point.min, "exponentialHistogram.dataPoint.min")
 						row.max = optionalFloat64Cell(point.max, "exponentialHistogram.dataPoint.max")
 						row.aggregation_temporality = asInt32(

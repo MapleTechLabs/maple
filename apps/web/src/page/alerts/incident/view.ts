@@ -1,4 +1,9 @@
-import type { AlertIncidentDocument, AlertRulePreviewResponse, AlertRuleDocument } from "@maple/domain/http"
+import type {
+	AlertCheckDocument,
+	AlertIncidentDocument,
+	AlertRulePreviewResponse,
+	AlertRuleDocument,
+} from "@maple/domain/http"
 import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import {
@@ -17,32 +22,34 @@ import {
 } from "@maple/web-data/alerts/incident-timeline"
 import { incidentTitle, isQueryIncident } from "@maple/web-data/alerts/overview-derive"
 import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type * as Chart from "../../../charts/chart"
-import { isChartRuntimeReady } from "../../../charts/chart-runtime"
-import { ResolveThemeColors, type ThemeColors } from "../../../charts/theme-colors"
+import type * as Chart from "@maple/views/charts/chart"
+import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
+import { ResolveThemeColors, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
-import { button, linkButton } from "../../../ui/button"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { pageTitle } from "../../../ui/page-layout"
-import { skeleton } from "../../../ui/skeleton"
+import { button, linkButton } from "@maple/views/ui/button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { pageTitle } from "@maple/views/ui/page-layout"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { severityBadge } from "../shared/badges"
 import { alertsHref } from "../shared/links"
+import { incidentChecksOf, summaryChecksOf } from "../shared/check-summary"
 import { previewIssue, previewStateOf } from "../shared/preview"
 import { providerOf } from "../shared/providers"
 import { RULE_CHART_TOKENS, ruleChart } from "../shared/rule-chart"
 import { msIso } from "../shared/time"
-import { groupPreviewOf, type IncidentView, incidentViewOf } from "./derive"
+import { groupPreviewOf, type IncidentView, incidentViewOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { incidentRail } from "./view-rail"
 import { incidentTimeline } from "./view-timeline"
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 
@@ -73,17 +80,21 @@ export const headerTitle = <M>(
 		isUptime || isQuery
 			? incidentTitle(incident)
 			: `${signalTitle(incident.signalType)} ${formatSignalValue(incident.signalType, incident.lastObservedValue)}${group != null ? ` on ${group}` : ""}`
-	const subline = (
-		isUptime
-			? ["Uptime check", group]
-			: [
-					isQuery ? group : `Rule ${rule?.name ?? incident.ruleName}`,
-					`${isQuery ? "value" : signalLabels[incident.signalType].toLowerCase()} ${conditionPhrase(incident)}${rule != null ? ` over ${rule.windowMinutes}m` : ""}`,
-					rule != null && rule.environments.length > 0 ? rule.environments.join(", ") : null,
-				]
+	const subline = Arr.join(
+		Arr.filter(
+			isUptime
+				? ["Uptime check", group]
+				: [
+						isQuery ? group : `Rule ${rule?.name ?? incident.ruleName}`,
+						`${isQuery ? "value" : Str.toLowerCase(signalLabels[incident.signalType])} ${conditionPhrase(incident)}${rule != null ? ` over ${rule.windowMinutes}m` : ""}`,
+						rule != null && rule.environments.length > 0
+							? Arr.join(rule.environments, ", ")
+							: null,
+					],
+			(part) => part != null,
+		),
+		" · ",
 	)
-		.filter((part) => part != null)
-		.join(" · ")
 	return h.div(
 		[h.Class("min-w-0 space-y-2")],
 		[
@@ -91,11 +102,11 @@ export const headerTitle = <M>(
 				[h.Class("flex flex-wrap items-center gap-2.5")],
 				[
 					severityBadge(h, incident.severity),
-					h.span([h.Class("text-muted-foreground text-xs")], [statusLine(incident, now, timeZone)]),
+					typography(h, { size: "xs", tone: "muted" }, [statusLine(incident, now, timeZone)]),
 				],
 			),
 			pageTitle(h, { title }, [title]),
-			h.p([h.Class("truncate text-muted-foreground text-xs")], [subline]),
+			typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [subline]),
 		],
 	)
 }
@@ -132,6 +143,8 @@ export type IncidentBodyInputs<M> = Readonly<{
 	ruleIncidents: ReadonlyArray<AlertIncidentDocument>
 	states: ReadonlyArray<AlertRuleStateRow>
 	preview: AlertRulePreviewResponse | null
+	/** The evaluator's recorded checks: the line when the preview has none, else its dashed comparison. */
+	checks: ReadonlyArray<AlertCheckDocument>
 	isPreviewLoading: boolean
 	previewError: string | null
 	range: Readonly<{ start: number; end: number }>
@@ -164,19 +177,13 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 								...(group != null ? [` · ${group}`] : []),
 							]),
 							incident.signalType === "uptime"
-								? h.p(
-										[h.Class("text-muted-foreground text-sm")],
-										[
-											"This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
-										],
-									)
+								? typography(h, { size: "sm", tone: "muted", as: "p" }, [
+										"This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
+									])
 								: rule === null
-									? h.p(
-											[h.Class("text-muted-foreground text-sm")],
-											[
-												"The rule behind this incident was deleted, so its signal cannot be replayed.",
-											],
-										)
+									? typography(h, { size: "sm", tone: "muted", as: "p" }, [
+											"The rule behind this incident was deleted, so its signal cannot be replayed.",
+										])
 									: ruleChart(h, {
 											chartId: inputs.chartId,
 											chart: inputs.chart,
@@ -184,6 +191,7 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 											colors: inputs.colors,
 											timeZone: inputs.timeZone,
 											preview: inputs.preview,
+											checks: inputs.checks,
 											incidents: [incident],
 											threshold: incident.threshold,
 											thresholdUpper: incident.thresholdUpper,
@@ -223,6 +231,7 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		Option.isSome(view.payload),
 		previewIssue(rule === null ? null : ruleToFormState(rule)),
 	)
+	const checkSummary = AsyncData.getOrElse(model.checks.data, () => null)
 	const deliveries = AsyncData.getOrElse(model.deliveries.data, () => [])
 	const investigation = AsyncData.getOrElse(model.investigation.data, () => null)
 	const isChartReady = model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
@@ -230,9 +239,18 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		incident,
 		rule,
 		ruleIncidents: view.ruleIncidents,
-		states: (model.states ?? []).filter((row) => row.rule_id === incident.ruleId),
+		states: ruleStatesOf(model, incident.ruleId),
 		preview: groupPreviewOf(previewState.preview, incident),
-		isPreviewLoading: previewState.isLoading || !isChartReady,
+		checks:
+			rule === null || checkSummary === null
+				? []
+				: incidentChecksOf(summaryChecksOf(rule, checkSummary), incident),
+		// A raw SQL rule may only chart from its checks, so it waits for them instead of flashing the error.
+		isPreviewLoading:
+			previewState.isLoading ||
+			!isChartReady ||
+			(incident.signalType === "raw_query" &&
+				(AsyncData.isIdle(model.checks.data) || AsyncData.isLoading(model.checks.data))),
 		previewError: previewState.error,
 		range: view.range,
 		now,

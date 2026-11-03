@@ -11,17 +11,19 @@ import {
 	decodeSignalProjectionSpec,
 	validateMapleCloudEvent,
 	type MapleCloudEvent,
-	type JsonValue,
 	type ProjectionFailure,
 	type SignalProjectionSpec,
 } from "@maple/eventing-core"
-import { Context, Effect, Layer, Result, Schema, type Scope } from "effect"
+import { Context, Effect, Layer, Result, Schema, type Scope, Array as Arr, String as Str } from "effect"
+import { encodeJson } from "../json"
 import { durableWrite, ensurePrivateDirectory } from "../durable-files"
 import { observeEventing } from "./telemetry"
 
 const CONTROL_DIRECTORY = "control"
 const CONTROL_DATABASE = "eventing.sqlite"
 const MAX_FAILURES_PER_TENANT = 10_000
+const stagedSourceKindKey = (tenantId: string, sourceKind: string): string =>
+	encodeJson([tenantId, sourceKind])
 export const DEFAULT_MAX_OUTBOX_EVENTS = 10_000
 export const DEFAULT_MAX_OUTBOX_BYTES = 256 * 1024 * 1024
 export const DEFAULT_RETAIN_ACKNOWLEDGED_READY_EVENTS = 1_000
@@ -676,7 +678,9 @@ export class LocalEventingControlStore extends Context.Service<
 				"SELECT DISTINCT tenant_id, source_kind FROM outbox_events WHERE state = 'staged' AND source_kind IS NOT NULL",
 			)
 			try {
-				return new Set(statement.all().map((row) => JSON.stringify([row.tenant_id, row.source_kind])))
+				return new Set(
+					Arr.map(statement.all(), (row) => stagedSourceKindKey(row.tenant_id, row.source_kind)),
+				)
 			} finally {
 				statement.finalize()
 			}
@@ -807,7 +811,7 @@ export class LocalEventingControlStore extends Context.Service<
 									.all(after, limit + 1)
 					const hasMore = rows.length > limit
 					const pageRows = hasMore ? rows.slice(0, limit) : rows
-					const page = pageRows.map(({ sequence, event_json, staged_at, ready_at }) => ({
+					const page = Arr.map(pageRows, ({ sequence, event_json, staged_at, ready_at }) => ({
 						sequence: asNumber(sequence),
 						event: decodeEvent(event_json),
 						stagedAt: staged_at,
@@ -904,9 +908,10 @@ export class LocalEventingControlStore extends Context.Service<
 		const loadEnabledProjections: LocalEventingControlStoreApi["loadEnabledProjections"] = (tenantId) =>
 			Effect.try({
 				try: () =>
-					db
-						.query<ProjectionJsonRow, [string]>(
-							`SELECT r.spec_json
+					Arr.map(
+						db
+							.query<ProjectionJsonRow, [string]>(
+								`SELECT r.spec_json
                  FROM active_projections a
                  JOIN projection_revisions r
                    ON r.tenant_id = a.tenant_id
@@ -914,9 +919,10 @@ export class LocalEventingControlStore extends Context.Service<
                   AND r.revision = a.revision
                 WHERE a.tenant_id = ?
                 ORDER BY a.projection_id`,
-						)
-						.all(tenantId)
-						.map(({ spec_json }) => decodeProjection(spec_json)),
+							)
+							.all(tenantId),
+						({ spec_json }) => decodeProjection(spec_json),
+					),
 				catch: storeFailure,
 			})
 
@@ -1163,7 +1169,7 @@ export class LocalEventingControlStore extends Context.Service<
 		const hasStagedSourceKind: LocalEventingControlStoreApi["hasStagedSourceKind"] = (
 			tenantId,
 			sourceKind,
-		) => Effect.sync(() => stagedSourceKinds.has(JSON.stringify([tenantId, sourceKind])))
+		) => Effect.sync(() => stagedSourceKinds.has(stagedSourceKindKey(tenantId, sourceKind)))
 
 		const hasStagedSourceOccurrence: LocalEventingControlStoreApi["hasStagedSourceOccurrence"] = (
 			tenantId,
@@ -1206,7 +1212,7 @@ export class LocalEventingControlStore extends Context.Service<
 						if (row.source_fingerprint !== sourceFingerprint)
 							throw storeError(`staged source occurrence collision: ${sourceOccurrenceId}`)
 					}
-					return rows.map(({ event_id }) => event_id)
+					return Arr.map(rows, ({ event_id }) => event_id)
 				},
 				catch: storeFailure,
 			})
@@ -1250,16 +1256,18 @@ export class LocalEventingControlStore extends Context.Service<
 		const listConsumers: LocalEventingControlStoreApi["listConsumers"] = (tenantId) =>
 			Effect.try({
 				try: () =>
-					db
-						.query<ConsumerRow, [string]>(
-							`SELECT consumer_id, tenant_id, active, last_acked_sequence, accepted_gap_generation, lease_token_hash,
+					Arr.map(
+						db
+							.query<ConsumerRow, [string]>(
+								`SELECT consumer_id, tenant_id, active, last_acked_sequence, accepted_gap_generation, lease_token_hash,
 				        lease_expires_at, claimed_through_sequence, registered_at, disabled_at
 				 FROM event_consumers
 				 WHERE tenant_id = ?
 				 ORDER BY consumer_id`,
-						)
-						.all(tenantId)
-						.map(decodeConsumer),
+							)
+							.all(tenantId),
+						decodeConsumer,
+					),
 				catch: storeFailure,
 			})
 
@@ -1474,7 +1482,7 @@ export class LocalEventingControlStore extends Context.Service<
 								leaseToken,
 								leaseExpiresAt,
 								throughSequence,
-								events: rows.map(({ sequence, event_json, staged_at, ready_at }) => ({
+								events: Arr.map(rows, ({ sequence, event_json, staged_at, ready_at }) => ({
 									sequence: asNumber(sequence),
 									event: decodeEvent(event_json),
 									stagedAt: staged_at,
@@ -1586,7 +1594,7 @@ export class LocalEventingControlStore extends Context.Service<
 				},
 				catch: consumerFailure,
 			}).pipe(
-				Effect.flatMap((acknowledgement) =>
+				Effect.tap((acknowledgement) =>
 					Effect.try({
 						try: () => consumerLag(tenantId, acknowledgement.acknowledgedThrough),
 						catch: storeFailure,
@@ -1600,7 +1608,6 @@ export class LocalEventingControlStore extends Context.Service<
 								{ discard: true },
 							),
 						),
-						Effect.as(acknowledgement),
 					),
 				),
 				Effect.tapError((error) => observeConsumerFailure("consumer_ack", error)),
@@ -1635,7 +1642,7 @@ export class LocalEventingControlStore extends Context.Service<
 										failure.projectionId,
 										failure.projectionRevision,
 										failure.occurrenceId,
-										failure.message.slice(0, 4_096),
+										Str.slice(0, 4_096)(failure.message),
 										createdAt,
 									],
 								)

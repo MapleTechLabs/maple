@@ -3,6 +3,7 @@ import { normalizeKey, parseWhereClause, quoteWhereValue, splitCsv } from "@mapl
 import { createQueryDraft, type QueryBuilderQueryDraft } from "@maple/query-engine/query-builder"
 
 import { domainThresholdToForm, formThresholdToDomain, type RuleFormState } from "./form-utils"
+import { Array as Arr, String as Str } from "effect"
 
 /** The three ways to write a rule's query. Built-in covers the five canned trace signals. */
 export type SignalKind = "builtin" | "builder_query" | "raw_query"
@@ -50,10 +51,10 @@ export function builtinToQueryDraft(form: RuleFormState): QueryBuilderQueryDraft
 	const base = form.queryBuilderDraft
 	const clauses = ["root_only = true"]
 	if (form.serviceNames.length > 0) {
-		clauses.push(`service.name = ${quoteWhereValue(form.serviceNames.join(","))}`)
+		clauses.push(`service.name = ${quoteWhereValue(Arr.join(form.serviceNames, ","))}`)
 	}
 	if (form.environments.length > 0) {
-		clauses.push(`deployment.environment = ${quoteWhereValue(form.environments.join(","))}`)
+		clauses.push(`deployment.environment = ${quoteWhereValue(Arr.join(form.environments, ","))}`)
 	}
 	for (const excluded of form.excludeServiceNames) {
 		clauses.push(`service.name != ${quoteWhereValue(excluded)}`)
@@ -70,7 +71,7 @@ export function builtinToQueryDraft(form: RuleFormState): QueryBuilderQueryDraft
 		name: base.name,
 		dataSource: "traces",
 		aggregation: builtinAggregation(form.signalType) ?? base.aggregation,
-		whereClause: clauses.join(" AND "),
+		whereClause: Arr.join(clauses, " AND "),
 		addOns: { ...fresh.addOns, groupBy: groupBy.length > 0 },
 		groupBy: groupBy.length > 0 ? [...groupBy] : [],
 	}
@@ -108,12 +109,15 @@ export function queryDraftToBuiltin(form: RuleFormState): BuiltinFromDraft {
 		else dropped.push(`${clause.key} ${clause.operator} ${clause.value}`)
 	}
 
-	const groupTokens = draft.addOns.groupBy ? draft.groupBy.filter((t) => t !== "none" && t.length > 0) : []
+	const groupTokens = draft.addOns.groupBy
+		? Arr.filter(draft.groupBy, (t) => t !== "none" && t.length > 0)
+		: []
 	// Several services already split per service; the token is implied, not a choice.
-	const groupBy = serviceNames.length > 1 ? groupTokens.filter((t) => t !== "service.name") : groupTokens
+	const groupBy =
+		serviceNames.length > 1 ? Arr.filter(groupTokens, (t) => t !== "service.name") : groupTokens
 	// Built-in splits per named service and cannot add another split on top, so say what goes.
-	const lostSplit = serviceNames.length > 0 ? groupBy.filter((t) => t !== "service.name") : []
-	if (lostSplit.length > 0) dropped.push(`split by ${lostSplit.join(", ")}`)
+	const lostSplit = serviceNames.length > 0 ? Arr.filter(groupBy, (t) => t !== "service.name") : []
+	if (lostSplit.length > 0) dropped.push(`split by ${Arr.join(lostSplit, ", ")}`)
 
 	return {
 		fields: {
@@ -163,7 +167,7 @@ function moveToKind(form: RuleFormState, next: SignalKind): KindSwitch {
 			form: { ...form, ...fromQuery.fields },
 			notice:
 				fromQuery.dropped.length > 0
-					? `Built-in can't express ${fromQuery.dropped.join(", ")}. Dropped on switch.`
+					? `Built-in can't express ${Arr.join(fromQuery.dropped, ", ")}. Dropped on switch.`
 					: null,
 		}
 	}
@@ -182,7 +186,7 @@ function moveToKind(form: RuleFormState, next: SignalKind): KindSwitch {
 /** Re-express both thresholds in the moved form's unit, through the stored value. */
 function carryThreshold(from: RuleFormState, to: RuleFormState): RuleFormState {
 	const convert = (value: string) => {
-		if (value.trim().length === 0 || !Number.isFinite(Number(value))) return value
+		if (Str.trim(value).length === 0 || !Number.isFinite(Number(value))) return value
 		return domainThresholdToForm(to, formThresholdToDomain(from, value))
 	}
 	return { ...to, threshold: convert(from.threshold), thresholdUpper: convert(from.thresholdUpper) }

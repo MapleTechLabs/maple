@@ -3,18 +3,18 @@ import { parseDiagnosisMarker } from "./kit/diagnosis-marker"
 import { cn } from "@maple/ui/lib/utils"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { AREA_CHART_TOKENS } from "../../../charts/area-chart"
-import { BAR_CHART_TOKENS } from "../../../charts/bar-chart"
-import { isChartRuntimeReady } from "../../../charts/chart-runtime"
-import { ResolveThemeColors } from "../../../charts/theme-colors"
-import { button } from "../../../ui/button"
-import { errorState } from "../../../ui/error-state"
-import type { LoadFailure } from "../../../data/load-failure"
-import { eyebrow } from "../../../ui/eyebrow"
-import { skeleton } from "../../../ui/skeleton"
+import { AREA_CHART_TOKENS } from "@maple/views/charts/area-chart"
+import { BAR_CHART_TOKENS } from "@maple/views/charts/bar-chart"
+import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import { button } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { approvalCard } from "./kit/view-cards"
 import { taskCard, taskSheetId } from "./kit/view-task"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { composer, failureNotice } from "./kit/view-composer"
 import { MountTurnMinimap } from "./kit/turn-minimap-mount"
 import { MountJumpToMessage } from "./kit/scroller"
@@ -25,6 +25,8 @@ import { chatMarkdownOverrides } from "./kit/view-markdown"
 import { type TranscriptHost, transcript } from "./kit/view-transcript"
 import { Message } from "./message"
 import { isLoading, type Model } from "./model"
+import { hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // One conversation: transcript, notices, composer.
 
@@ -256,8 +258,8 @@ const suggestionPills = <M>(
 	suggestions: Readonly<{ items: ReadonlyArray<string>; onSelect: (text: string) => M }>,
 ): Html =>
 	h.div(
-		[h.Class(cn("flex flex-wrap items-center gap-2", "mb-3"))],
-		suggestions.items.map((suggestion) =>
+		[h.Class(cn(hstackClass({ gap: "2", wrap: true }), "mb-3"))],
+		Arr.map(suggestions.items, (suggestion) =>
 			button(
 				h,
 				{

@@ -3,12 +3,12 @@
  * sandbox could not fetch without credentials, and so how the run may execute target code. Pure
  * over a list of tracked paths and the text of a few config files, so it tests on fixture trees.
  */
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 export const Ecosystem = Schema.Literals(["node", "python", "go", "rust", "jvm"])
 export type Ecosystem = typeof Ecosystem.Type
 
-/** `executable` waits on an execution sandbox per ecosystem; every run is `source_only` until then. */
+/** `executable` when the execution sandbox covers at least one of the repository's ecosystems. */
 export const ExecutionMode = Schema.Literals(["source_only", "executable"])
 export type ExecutionMode = typeof ExecutionMode.Type
 
@@ -17,7 +17,7 @@ export const ExecutionProfile = Schema.Struct({
 	ecosystems: Schema.Array(Ecosystem),
 	/** Each private-dependency signal, as `<file>: <what>`. */
 	privateDependencies: Schema.Array(Schema.String),
-	/** Why the run executes nothing, one sentence each, for reports and the run page. */
+	/** What the run cannot execute, and why, one sentence each, for reports and the run page. */
 	reasons: Schema.Array(Schema.String),
 })
 export type ExecutionProfile = typeof ExecutionProfile.Type
@@ -96,7 +96,7 @@ export const MAX_REGISTRY_CONFIG_READS = 60
 /** Broad files read after them, also shallowest first. */
 export const MAX_BROAD_CONFIG_READS = 40
 
-const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1)
+const basename = (path: string) => Str.slice(path.lastIndexOf("/") + 1)(path)
 
 const matches = (name: string, pattern: string | RegExp) =>
 	typeof pattern === "string" ? name === pattern : pattern.test(name)
@@ -106,8 +106,8 @@ const isWorkflow = (path: string) => /^\.github\/workflows\/[^/]+\.ya?ml$/u.test
 /** Cargo's `config` files only count inside `.cargo/`. */
 const isRegistryConfig = (path: string) => {
 	const name = basename(path)
-	if (name === "config" || name === "config.toml") return path.endsWith(`.cargo/${name}`)
-	return CONFIGS.some((pattern) => matches(name, pattern))
+	if (name === "config" || name === "config.toml") return Str.endsWith(`.cargo/${name}`)(path)
+	return Arr.some(CONFIGS, (pattern) => matches(name, pattern))
 }
 
 /** CI workflows can set GOPRIVATE too. */
@@ -118,7 +118,7 @@ const isConfig = (path: string) => isRegistryConfig(path) || isBroadConfig(path)
 /** The git pathspecs that list every manifest and config file this module reads. */
 export const DEPENDENCY_PATHSPECS: ReadonlyArray<string> = [
 	...new Set(
-		[...MANIFESTS.map(([, pattern]) => pattern), ...CONFIGS, ...BROAD_CONFIGS].map((pattern) =>
+		Arr.map([...Arr.map(MANIFESTS, ([, pattern]) => pattern), ...CONFIGS, ...BROAD_CONFIGS], (pattern) =>
 			typeof pattern === "string" ? `:(glob)**/${pattern}` : ":(glob)**/requirements*.txt",
 		),
 	),
@@ -127,13 +127,12 @@ export const DEPENDENCY_PATHSPECS: ReadonlyArray<string> = [
 ]
 
 const shallowestFirst = (a: string, b: string) =>
-	a.split("/").length - b.split("/").length || (a < b ? -1 : 1)
+	Str.split("/")(a).length - Str.split("/")(b).length || (a < b ? -1 : 1)
 
 /** The config files worth reading: registry configs first, then broad files, each tier capped. */
 export const configFilesToRead = (paths: ReadonlyArray<string>): ReadonlyArray<string> => [
-	...paths.filter(isRegistryConfig).sort(shallowestFirst).slice(0, MAX_REGISTRY_CONFIG_READS),
-	...paths
-		.filter((path) => !isRegistryConfig(path) && isBroadConfig(path))
+	...Arr.filter(paths, isRegistryConfig).sort(shallowestFirst).slice(0, MAX_REGISTRY_CONFIG_READS),
+	...Arr.filter(paths, (path) => !isRegistryConfig(path) && isBroadConfig(path))
 		.sort(shallowestFirst)
 		.slice(0, MAX_BROAD_CONFIG_READS),
 ]
@@ -172,61 +171,67 @@ const hostOf = (url: string): string | undefined => {
 
 /** URLs in `text` whose host is not a public registry. */
 const privateUrls = (text: string): ReadonlyArray<string> =>
-	[...text.matchAll(URL_PATTERN)]
-		.map((m) => m[0])
-		.filter((url) => {
+	Arr.filter(
+		Arr.map([...text.matchAll(URL_PATTERN)], (m) => m[0]),
+		(url) => {
 			const host = hostOf(url)
 			return host !== undefined && !PUBLIC_HOSTS.has(host)
-		})
+		},
+	)
 
-const lines = (text: string) => text.split(/\r?\n/u).map((line) => line.trim())
+const lines = (text: string) => Arr.map(Str.split(/\r?\n/u)(text), (line) => Str.trim(line))
 
 /** Lines that set one of `keys` (`key = value`, `key: value` or `key "value"`). */
 const keyed = (text: string, keys: ReadonlyArray<string>) =>
-	lines(text)
-		.filter((line) => keys.some((key) => new RegExp(`^["']?${key}["']?\\s*[=:"\\s]`, "u").test(line)))
-		.join("\n")
+	Arr.join(
+		Arr.filter(lines(text), (line) =>
+			Arr.some(keys, (key) => new RegExp(`^["']?${key}["']?\\s*[=:"\\s]`, "u").test(line)),
+		),
+		"\n",
+	)
 
 /** Config text without whole-line `//` and `#` comments: commented-out config is not a source. */
 const withoutLineComments = (text: string) =>
-	lines(text)
-		.filter((line) => !line.startsWith("//") && !line.startsWith("#"))
-		.join("\n")
+	Arr.join(
+		Arr.filter(lines(text), (line) => !Str.startsWith("//")(line) && !Str.startsWith("#")(line)),
+		"\n",
+	)
 
 /** XML without `<!-- -->` comments; an unterminated comment runs to the end, as XML reads it. */
 const withoutXmlComments = (xml: string) =>
-	xml
-		.split("<!--")
-		.map((part, index) => {
+	Arr.join(
+		Arr.map(Str.split("<!--")(xml), (part, index) => {
 			if (index === 0) return part
 			const end = part.indexOf("-->")
-			return end === -1 ? "" : part.slice(end + 3)
-		})
-		.join("")
+			return end === -1 ? "" : Str.slice(end + 3)(part)
+		}),
+		"",
+	)
 
 /** The text inside the XML elements a Maven file declares repositories with. */
 const REPOSITORY_TAGS = ["repository", "pluginRepository", "snapshotRepository", "mirror"] as const
 
 /** Scanned with `indexOf`, not a lazy regex: repository text must not cost quadratic time. */
 const repositoryBlocks = (xml: string) =>
-	REPOSITORY_TAGS.flatMap((tag) =>
-		xml
-			.split(`<${tag}>`)
-			.slice(1)
-			.flatMap((rest) => {
+	Arr.join(
+		Arr.flatMap(REPOSITORY_TAGS, (tag) =>
+			Arr.flatMap(Str.split(`<${tag}>`)(xml).slice(1), (rest) => {
 				const end = rest.indexOf(`</${tag}>`)
-				return end === -1 ? [] : [`<${tag}>${rest.slice(0, end)}</${tag}>`]
+				return end === -1 ? [] : [`<${tag}>${Str.slice(0, end)(rest)}</${tag}>`]
 			}),
-	).join("\n")
+		),
+		"\n",
+	)
 
 /** The part of a config file that can name where dependencies come from; never homepages or docs. */
 const sourceText = (name: string, text: string): string => {
 	switch (name) {
 		case ".npmrc":
 		case ".yarnrc":
-			return lines(text)
-				.filter((line) => line.includes("registry"))
-				.join("\n")
+			return Arr.join(
+				Arr.filter(lines(text), (line) => Str.includes("registry")(line)),
+				"\n",
+			)
 		case ".yarnrc.yml":
 			return keyed(text, ["npmRegistryServer", "npmScopes", "url"])
 		case "pyproject.toml":
@@ -239,11 +244,15 @@ const sourceText = (name: string, text: string): string => {
 		case "build.gradle.kts":
 		case "settings.gradle":
 		case "settings.gradle.kts":
-			return lines(withoutLineComments(text))
-				.filter((line) => /\burl\b|maven\s*\(/u.test(line))
-				.join("\n")
+			return Arr.join(
+				Arr.filter(lines(withoutLineComments(text)), (line) => /\burl\b|maven\s*\(/u.test(line)),
+				"\n",
+			)
 		case "Cargo.toml":
-			return [...text.matchAll(/\bgit\s*=\s*"([^"]+)"/gu)].map((m) => m[1]).join("\n")
+			return Arr.join(
+				Arr.map([...text.matchAll(/\bgit\s*=\s*"([^"]+)"/gu)], (m) => m[1]),
+				"\n",
+			)
 		default:
 			return text
 	}
@@ -271,16 +280,19 @@ const gitDependencies = (text: string): ReadonlyArray<{ readonly name: string; r
 	Option.match(decodePackageJson(text), {
 		onNone: () => [],
 		onSome: (manifest) =>
-			[
-				manifest.dependencies,
-				manifest.devDependencies,
-				manifest.optionalDependencies,
-				manifest.peerDependencies,
-			]
-				.flatMap((deps) => Object.entries(deps ?? {}))
-				.flatMap(([name, spec]) =>
-					typeof spec === "string" && GIT_DEPENDENCY.test(spec) ? [{ name, spec }] : [],
+			Arr.flatMap(
+				Arr.flatMap(
+					[
+						manifest.dependencies,
+						manifest.devDependencies,
+						manifest.optionalDependencies,
+						manifest.peerDependencies,
+					],
+					(deps) => Rec.toEntries(deps ?? {}),
 				),
+				([name, spec]) =>
+					typeof spec === "string" && GIT_DEPENDENCY.test(spec) ? [{ name, spec }] : [],
+			),
 	})
 
 /** A submodule URL anyone can clone: http(s) or git protocol on a public host. */
@@ -296,26 +308,31 @@ const REQUIREMENTS = /^requirements[\w.-]*\.txt$/u
 
 /** requirements files without their comments: a commented-out index is not a source. */
 const uncommented = (text: string) =>
-	lines(text)
-		.filter((line) => !line.startsWith("#"))
-		.map((line) => {
-			const comment = line.search(/\s#/u)
-			return comment === -1 ? line : line.slice(0, comment).trimEnd()
-		})
-		.join("\n")
+	Arr.join(
+		Arr.map(
+			Arr.filter(lines(text), (line) => !Str.startsWith("#")(line)),
+			(line) => {
+				const comment = line.search(/\s#/u)
+				return comment === -1 ? line : Str.trimEnd(Str.slice(0, comment)(line))
+			},
+		),
+		"\n",
+	)
 
 /** The private-dependency signals one config file carries. */
 const signalsIn = (path: string, text: string): ReadonlyArray<string> => {
 	const name = basename(path)
 	const at = (what: string) => `${path}: ${what}`
-	const sources = privateUrls(sourceText(name, text)).map((url) => at(`private source ${hostOf(url)}`))
-	const goPrivate = [...withoutLineComments(text).matchAll(GO_PRIVATE)].map((m) =>
+	const sources = Arr.map(privateUrls(sourceText(name, text)), (url) => at(`private source ${hostOf(url)}`))
+	const goPrivate = Arr.map([...withoutLineComments(text).matchAll(GO_PRIVATE)], (m) =>
 		at(`${m[1]} set to ${m[2]}`),
 	)
 	if (isWorkflow(path)) return goPrivate
 	switch (name) {
 		case "package.json":
-			return gitDependencies(text).map(({ name: dep, spec }) => at(`git dependency ${dep} (${spec})`))
+			return Arr.map(gitDependencies(text), ({ name: dep, spec }) =>
+				at(`git dependency ${dep} (${spec})`),
+			)
 		case "go.env":
 		case ".envrc":
 		case "Makefile":
@@ -331,30 +348,45 @@ const signalsIn = (path: string, text: string): ReadonlyArray<string> => {
 		case "Cargo.toml":
 			return [...sources, ...(/^\s*registry\s*=/mu.test(text) ? [at("alternate registry")] : [])]
 		case ".gitmodules":
-			return lines(text)
-				.filter((line) => /^url\s*=/u.test(line))
-				.map((line) => line.slice(line.indexOf("=") + 1).trim())
-				.filter((url) => !isPublicSubmodule(url))
-				.map((url) =>
-					at(
-						`git submodule ${url}${url.startsWith("git@") || url.startsWith("ssh://") ? " over SSH" : ""}, not checked out`,
+			return Arr.map(
+				Arr.filter(
+					Arr.map(
+						Arr.filter(lines(text), (line) => /^url\s*=/u.test(line)),
+						(line) => Str.trim(Str.slice(line.indexOf("=") + 1)(line)),
 					),
-				)
+					(url) => !isPublicSubmodule(url),
+				),
+				(url) =>
+					at(
+						`git submodule ${url}${Str.startsWith("git@")(url) || Str.startsWith("ssh://")(url) ? " over SSH" : ""}, not checked out`,
+					),
+			)
 		case "go.mod":
-			return lines(text)
-				.filter((line) => !line.startsWith("//"))
-				.filter((line) => line.includes("=>"))
-				.map((line) => line.slice(line.indexOf("=>") + 2).trim())
-				.filter((target) => target.startsWith(".") || target.startsWith("/"))
-				.map((target) => at(`replace directive to the local module ${target.split(/\s/u)[0]}`))
+			return Arr.map(
+				Arr.filter(
+					Arr.map(
+						Arr.filter(
+							Arr.filter(lines(text), (line) => !Str.startsWith("//")(line)),
+							(line) => Str.includes("=>")(line),
+						),
+						(line) => Str.trim(Str.slice(line.indexOf("=>") + 2)(line)),
+					),
+					(target) => Str.startsWith(".")(target) || Str.startsWith("/")(target),
+				),
+				(target) => at(`replace directive to the local module ${Str.split(/\s/u)(target)[0]}`),
+			)
 		default:
 			if (!REQUIREMENTS.test(name)) return sources
 			// requirements*.txt also names dependencies fetched over SSH.
 			return [
-				...privateUrls(uncommented(text)).map((url) => at(`private source ${hostOf(url)}`)),
-				...lines(uncommented(text))
-					.filter((line) => line.includes("git+ssh://") || line.includes("git+git@"))
-					.map(() => at("git dependency over SSH")),
+				...Arr.map(privateUrls(uncommented(text)), (url) => at(`private source ${hostOf(url)}`)),
+				...Arr.map(
+					Arr.filter(
+						lines(uncommented(text)),
+						(line) => Str.includes("git+ssh://")(line) || Str.includes("git+git@")(line),
+					),
+					() => at("git dependency over SSH"),
+				),
 			]
 	}
 }
@@ -369,14 +401,18 @@ export const scanDependencies = (
 	paths: ReadonlyArray<string>,
 	configs: ReadonlyMap<string, string>,
 ): DependencyScan => {
-	const names = new Set(paths.map(basename))
-	const ecosystems = Ecosystem.literals.filter((ecosystem) =>
-		MANIFESTS.some(
-			([owner, pattern]) => owner === ecosystem && [...names].some((name) => matches(name, pattern)),
+	const names = new Set(Arr.map(paths, basename))
+	const ecosystems = Arr.filter(Ecosystem.literals, (ecosystem) =>
+		Arr.some(
+			MANIFESTS,
+			([owner, pattern]) =>
+				owner === ecosystem && Arr.some([...names], (name) => matches(name, pattern)),
 		),
 	)
 	const privateDependencies = [
-		...new Set([...configs].flatMap(([path, text]) => (isConfig(path) ? signalsIn(path, text) : []))),
+		...new Set(
+			Arr.flatMap([...configs], ([path, text]) => (isConfig(path) ? signalsIn(path, text) : [])),
+		),
 	]
 	return { ecosystems, privateDependencies }
 }
@@ -385,28 +421,34 @@ export const scanDependencies = (
 const SIGNALS_IN_REASON = 3
 
 /**
- * How the run may execute target code. With no sandbox for any ecosystem (today), every run is
- * source-only; the shape already says which ecosystems a future `executable` run would need.
+ * How the run may execute target code: executable when the sandbox covers any of its ecosystems,
+ * with the rest (and any private dependency the install cannot fetch) named as what stays
+ * source-only.
  */
 export const executionProfile = (
 	scan: DependencyScan,
 	hasSandbox: (ecosystem: Ecosystem) => boolean = () => false,
 ): ExecutionProfile => {
-	const missing = scan.ecosystems.filter((ecosystem) => !hasSandbox(ecosystem))
+	const missing = Arr.filter(scan.ecosystems, (ecosystem) => !hasSandbox(ecosystem))
 	const reasons = [
 		...(scan.ecosystems.length === 0
 			? ["no execution sandbox for this repository's languages yet"]
 			: missing.length === 0
 				? []
-				: [`no execution sandbox for ${missing.map((e) => ECOSYSTEM_NAMES[e]).join(", ")} yet`]),
+				: [
+						`no execution sandbox for ${Arr.join(
+							Arr.map(missing, (e) => ECOSYSTEM_NAMES[e]),
+							", ",
+						)} yet`,
+					]),
 		...(scan.privateDependencies.length === 0
 			? []
 			: [
-					`private dependencies detected, which cannot be installed without credentials (${scan.privateDependencies.slice(0, SIGNALS_IN_REASON).join("; ")}${scan.privateDependencies.length > SIGNALS_IN_REASON ? `; ${scan.privateDependencies.length - SIGNALS_IN_REASON} more` : ""})`,
+					`private dependencies detected, which cannot be installed without credentials (${Arr.join(scan.privateDependencies.slice(0, SIGNALS_IN_REASON), "; ")}${scan.privateDependencies.length > SIGNALS_IN_REASON ? `; ${scan.privateDependencies.length - SIGNALS_IN_REASON} more` : ""})`,
 				]),
 	]
 	return {
-		mode: reasons.length === 0 ? "executable" : "source_only",
+		mode: Arr.some(scan.ecosystems, hasSandbox) ? "executable" : "source_only",
 		ecosystems: scan.ecosystems,
 		privateDependencies: scan.privateDependencies,
 		reasons,
@@ -416,5 +458,5 @@ export const executionProfile = (
 /** The one line a report or the run page shows, e.g. "Source-only review: no execution sandbox for Go yet". */
 export const executionModeLine = (profile: ExecutionProfile): string =>
 	profile.mode === "executable"
-		? "Executable review: target code ran in the execution sandbox"
-		: `Source-only review: ${profile.reasons.join("; ") || "target code was not executed"}`
+		? `Executable review: hunters and verifiers could run target code in the execution sandbox${profile.reasons.length === 0 ? "" : ` (${Arr.join(profile.reasons, "; ")})`}`
+		: `Source-only review: ${Arr.join(profile.reasons, "; ") || "target code was not executed"}`

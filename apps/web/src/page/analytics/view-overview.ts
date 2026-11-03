@@ -6,22 +6,22 @@ import {
 	findMetric,
 	isMetricAvailable,
 	metricDelta,
-} from "../../components/analytics/metrics"
+} from "@maple/views/lib/analytics-metrics"
 import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { chartLoading } from "../../ui/chart-state"
-import { isSameFailure } from "../../data/load-failure"
-import { errorState } from "../../ui/error-state"
-import { icon } from "../../ui/icon"
-import { delta } from "../../ui/delta"
-import { listRow } from "../../ui/list-row"
-import { panel, panelHeader } from "../../ui/panel"
-import { skeleton } from "../../ui/skeleton"
-import { truncatedId } from "../../ui/truncated-id"
+import { chartLoading } from "@maple/views/ui/chart-state"
+import { isSameFailure } from "@maple/views/data/load-failure"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { delta } from "@maple/views/ui/delta"
+import { listRow } from "@maple/views/ui/list-row"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { truncatedId } from "@maple/views/ui/truncated-id"
 import { sectionHeading } from "../kit/section-heading"
 import { docsLink } from "../kit/signal-empty-state"
 import { statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
@@ -31,6 +31,7 @@ import { filtersOf } from "./requests"
 import { type BreakdownCard, breakdownPanel } from "./view-breakdown"
 import { trafficChart } from "./view-chart"
 import { favicon } from "./view-icons"
+import { hstack } from "@maple/views/ui/stack"
 
 // `AnalyticsContent`: bot notice, metric strip, traffic chart, the
 // breakdown cards and the traces behind a filtered event.
@@ -86,14 +87,14 @@ const metricStrip = (
 ): Html =>
 	h.div(
 		[h.Class(GRID)],
-		ANALYTICS_METRICS.map((metric, index) => {
+		Arr.map(ANALYTICS_METRICS, (metric, index) => {
 			const isAvailable = isMetricAvailable(metric, source)
 			const value = metric.value(source)
 			const change = isAvailable ? metricDelta(metric, source, previous) : null
 			return statRailItem(h, {
 				eyebrow: metric.label,
 				value: isAvailable && value !== null ? metric.format(value) : EMPTY_VALUE,
-				spark: isAvailable ? metric.series(source).map((point) => point.value) : undefined,
+				spark: isAvailable ? Arr.map(metric.series(source), (point) => point.value) : undefined,
 				delta: change === null ? undefined : delta(h, { ratio: change, invert: metric.invertDelta }),
 				subline: isAvailable ? metric.subline(source) : "No visitor ids",
 				isSelected: metric.key === selected,
@@ -118,7 +119,7 @@ const summarySection = (h: H, model: Model, timeZone: string, isNarrow: boolean)
 		onEmpty: () => [
 			h.div(
 				[h.Class(GRID), h.AriaBusy(true)],
-				ANALYTICS_METRICS.map(() => statRailItemSkeleton(h, TILE_NARROW)),
+				Arr.map(ANALYTICS_METRICS, () => statRailItemSkeleton(h, TILE_NARROW)),
 			),
 			chartLoading(h, { variant: "area", height: 224 }),
 		],
@@ -185,7 +186,7 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 	const breakdowns = dataOf(model.breakdowns)
 	if (breakdowns === undefined) return []
 	const pages = dataOf(model.pages) ?? []
-	const isMultiSite = new Set(pages.map((page) => page.host)).size > 1
+	const isMultiSite = new Set(Arr.map(pages, (page) => page.host)).size > 1
 	const events = dataOf(model.events) ?? []
 	return [
 		{
@@ -230,7 +231,7 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 			dimensions: [
 				{
 					tab: "Pages",
-					rows: pages.map((page) => ({
+					rows: Arr.map(pages, (page) => ({
 						name: page.pagePath,
 						count: page.sessions,
 						views: page.pageViews,
@@ -244,8 +245,10 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 								favicon(h, model, row.secondary ?? "")
 						: undefined,
 					emptyMessage: (h: H) => [
-						"No page views in the selected window.",
-						h.span([h.Class("mt-2 flex justify-center")], [docsLink(h, "webAnalytics")]),
+						"No page views in this window",
+						hstack(h, { align: "stretch", justify: "center", as: "span", className: "mt-2" }, [
+							docsLink(h, "webAnalytics"),
+						]),
 					],
 				},
 				{
@@ -327,7 +330,7 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 			dimensions: [
 				{
 					tab: "Events",
-					rows: events.map((event) => ({
+					rows: Arr.map(events, (event) => ({
 						name: event.name,
 						count: event.sessions,
 						views: event.events,
@@ -337,8 +340,10 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 					nounPlural: "events",
 					viewsLabel: "Events",
 					emptyMessage: (h: H) => [
-						'No custom events in the selected window. Send one with track("name", props) from the browser SDK.',
-						h.span([h.Class("mt-2 flex justify-center")], [docsLink(h, "productEventsApi")]),
+						'No custom events in this window. Send one with track("name", props) from the browser SDK.',
+						hstack(h, { align: "stretch", justify: "center", as: "span", className: "mt-2" }, [
+							docsLink(h, "productEventsApi"),
+						]),
 					],
 				},
 			],
@@ -374,7 +379,7 @@ const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): 
 						header,
 						h.ul(
 							[h.Class("divide-y")],
-							samples.map((sample, index) =>
+							Arr.map(samples, (sample, index) =>
 								h.li(
 									[h.Key(`${index}:${sample.traceId}:${sample.spanId}`)],
 									[
@@ -440,7 +445,7 @@ const breakdownSection = (h: H, model: Model, timeZone: string): Html =>
 			return h.div(
 				[h.Class("grid items-start gap-4 @min-[880px]/page:grid-cols-2")],
 				[
-					...overviewCards(model).map((card) =>
+					...Arr.map(overviewCards(model), (card) =>
 						h.div(
 							[
 								h.Key(card.id),

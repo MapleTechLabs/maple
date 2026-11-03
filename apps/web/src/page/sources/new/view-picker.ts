@@ -1,14 +1,18 @@
 import type { PushSourcePlatform } from "@maple/domain/primitives"
-import { cardButton } from "../../../ui/card-button"
+import { cardButton } from "@maple/views/ui/card-button"
+import { revealIcon } from "@maple/views/ui/reveal-icon"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { statusDot } from "../../../ui/status-dot"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { DATA_INTEGRATIONS, type DataIntegration } from "../../integrations/embed"
 import { HEALTH_TONE, overviewOf } from "../../integrations/derive"
 import { PLATFORMS, platformTile, PUSH_PLATFORMS, type PlatformMeta } from "../kit/platforms"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `PlatformPicker`: the Source step.
 
@@ -46,21 +50,14 @@ const card = (
 		{ onClick: onSelect, className: "flex items-center gap-3 px-3 py-3", attributes: [h.Key(key)] },
 		[
 			leading,
-			h.span(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
-				[
-					h.span([h.Class("truncate text-sm font-medium")], [meta.label]),
-					h.span(
-						[h.Class("font-prose text-muted-foreground truncate text-xs")],
-						[meta.description],
-					),
-				],
-			),
+			vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
+				typography(h, { size: "sm", weight: "medium", truncate: true }, [meta.label]),
+				typography(h, { size: "xs", tone: "muted", truncate: true, className: "font-prose" }, [
+					meta.description,
+				]),
+			]),
 			...(badge === null ? [] : [badge]),
-			icon(h, "ChevronRightIcon", {
-				size: 14,
-				className: "text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100",
-			}),
+			revealIcon(h, "ChevronRightIcon"),
 		],
 	)
 
@@ -80,19 +77,13 @@ const connectedBadge = (h: H, model: Model, integration: DataIntegration): Html 
 
 /** A titled group of cards, with how its sources reach Maple at the title's end. */
 const section = (h: H, title: string, caption: string, cards: ReadonlyArray<Html>): Html =>
-	h.section(
-		[h.Class("flex flex-col gap-3")],
-		[
-			h.div(
-				[h.Class("flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1")],
-				[
-					eyebrow(h, { as: "h2" }, [title]),
-					h.span([h.Class("text-xs text-muted-foreground")], [caption]),
-				],
-			),
-			h.div([h.Class("grid gap-2 sm:grid-cols-2 xl:grid-cols-3")], cards),
-		],
-	)
+	vstack(h, { gap: "3", as: "section" }, [
+		hstack(h, { align: "baseline", justify: "between", wrap: true, className: "gap-x-4 gap-y-1" }, [
+			eyebrow(h, { as: "h2" }, [title]),
+			typography(h, { size: "xs", tone: "muted" }, [caption]),
+		]),
+		h.div([h.Class("grid gap-2 sm:grid-cols-2 xl:grid-cols-3")], cards),
+	])
 
 /** Push platforms create a source here; integrations open their connect step. */
 export const platformPicker = (h: H, model: Model): Html =>
@@ -103,7 +94,7 @@ export const platformPicker = (h: H, model: Model): Html =>
 				h,
 				"Send with OpenTelemetry",
 				"Your code or agent pushes data to Maple with an ingest key",
-				PUSH_PLATFORMS.map((platform: PushSourcePlatform) =>
+				Arr.map(PUSH_PLATFORMS, (platform: PushSourcePlatform) =>
 					card(
 						h,
 						platform,
@@ -118,7 +109,7 @@ export const platformPicker = (h: H, model: Model): Html =>
 				h,
 				"Connect an integration",
 				"Maple reads from your provider",
-				DATA_INTEGRATIONS.map((integration) =>
+				Arr.map(DATA_INTEGRATIONS, (integration) =>
 					card(
 						h,
 						integration,

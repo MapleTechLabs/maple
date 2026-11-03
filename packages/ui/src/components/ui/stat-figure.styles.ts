@@ -3,7 +3,7 @@ export type StatFigureSize = "sm" | "md" | "lg"
 export const statFigureValueSizeStyles: Record<StatFigureSize, string> = {
 	sm: "text-xl",
 	md: "text-2xl tracking-tight",
-	lg: "text-[26px] tracking-[-0.01em]",
+	lg: "text-figure tracking-[-0.01em]",
 } satisfies Record<StatFigureSize, string>
 
 export const statFigureUnitSizeStyles: Record<StatFigureSize, string> = {

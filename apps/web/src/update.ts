@@ -1,7 +1,7 @@
 import { OrgId as OrgIdSchema, type OrgId } from "@maple/domain"
 import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
-import { Option, Schema, Struct } from "effect"
+import { Option, Schema, Struct, Array as Arr } from "effect"
 import { AsyncData, Command, Update } from "foldkit"
 import { UrlRequest } from "foldkit/navigation"
 import { Transition } from "foldkit/route"
@@ -75,7 +75,10 @@ import * as Shell from "./shell"
 import * as OrgSwitcher from "./shell/clerk-org-switcher"
 import { presenceOf } from "./shell/view-nav"
 import { isResolved } from "./shell/source-link"
-import * as Toast from "./ui/toast"
+import * as Toast from "@maple/views/ui/toast"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
 type Step = Update.Step<Model, Message, Resources>
@@ -186,6 +189,13 @@ const foldToasts = Update.foldChild({
 	toParentMessage: (message: Toast.Message) => Message.GotToastMessage({ message }),
 })
 
+const foldTooltip = Update.foldChild({
+	update: TooltipHost.update,
+	read: (model: Model) => Option.some(model.tooltip),
+	write: (model, tooltip) => modifyFields(model, { tooltip: () => tooltip }),
+	toParentMessage: (message: TooltipHost.Message) => Message.GotTooltipMessage({ message }),
+})
+
 // PAGES
 
 /** The org a bare public page (a share link) is keyed under when nobody is signed in. */
@@ -204,8 +214,22 @@ const publicContextOf = (model: Model, maybeOrgId: Option.Option<OrgId>): Option
 			)
 		: Option.none()
 
+/**
+ * The last answer for the last Model: the lifted page Subscriptions read the context once each
+ * per Model, and a Model never changes in place.
+ */
+const lastByModel = <A>(compute: (model: Model) => A): ((model: Model) => A) => {
+	let last: { readonly model: Model; readonly value: A } | null = null
+	return (model) => {
+		if (last !== null && last.model === model) return last.value
+		const value = compute(model)
+		last = { model, value }
+		return value
+	}
+}
+
 /** What every page reads from the root: a signed-in org on a shell route, or a bare public page. */
-export const pageContextOf = (model: Model): Option.Option<PageContext> =>
+export const pageContextOf: (model: Model) => Option.Option<PageContext> = lastByModel((model) =>
 	Session.match(model.session, {
 		Resolving: () => Option.none(),
 		SignedOut: () => publicContextOf(model, Option.none()),
@@ -226,7 +250,8 @@ export const pageContextOf = (model: Model): Option.Option<PageContext> =>
 							},
 						})),
 					),
-	})
+	}),
+)
 
 /** A page's request the shell answers: the namespace pin or its infra surfaces. */
 const shellRequestOf = (out: PageOutMessage): Option.Option<Shell.Message> =>
@@ -298,7 +323,8 @@ const showPageToast = (model: Model, request: PageToast) => {
 			toastRootActions: (actions) =>
 				rootAction === null ? actions : { ...actions, [toastId]: rootAction.action },
 		}),
-		commands: (added.commands ?? []).map(
+		commands: Arr.map(
+			added.commands ?? [],
 			Command.mapMessage((message) => Message.GotToastMessage({ message })),
 		),
 	}
@@ -369,6 +395,14 @@ const actOnPageOut = (model: Model, outMessage: Option.Option<PageOutMessage>) =
 const writePage =
 	(transition: PageTransition): Step =>
 	(model) => {
+		// The page kept its slot and asked for nothing: same Model, so the frame is skipped.
+		if (
+			transition.slot === model.page &&
+			model.preload.holder === pageIdentity(transition.slot) &&
+			transition.commands.length === 0 &&
+			Option.isNone(transition.outMessage)
+		)
+			return { model }
 		const followed = actOnPageOut(model, transition.outMessage)
 		const held = Preload.held(
 			followed.model.preload,
@@ -387,7 +421,8 @@ const writePage =
 				...(held.isNewHolder || held.released.length > 0
 					? [ReleaseReads({ orgId: transition.slot?.orgId ?? null, keys: held.released })]
 					: []),
-				...transition.commands.map(
+				...Arr.map(
+					transition.commands,
 					Command.mapMessage((message) => Message.GotPageMessage({ message })),
 				),
 				...followed.outCommands,
@@ -466,7 +501,10 @@ export const shellClerkOf = (model: Model): Shell.ShellClerk | null =>
 		: null
 
 const toOnboardingCommands = (step: Onboarding.Step) =>
-	step.commands.map(Command.mapMessage((message) => Message.GotOnboardingMessage({ message })))
+	Arr.map(
+		step.commands,
+		Command.mapMessage((message) => Message.GotOnboardingMessage({ message })),
+	)
 
 /** Route entry: the screen is kept while its key holds, rebuilt on a new one, dropped on leave. */
 const loadOnboarding: Step = (model) => {
@@ -677,7 +715,7 @@ const clerkOrganizationOf = (model: Model) =>
 	Option.flatMap(Option.fromNullishOr(model.clerkSnapshot), (snapshot) => snapshot.maybeOrganization)
 
 /** `ClerkReverseRedirects`' plan and region gates, for a signed-in Clerk org off the auth pages. */
-export const planGateOf = (model: Model): Option.Option<Gate> =>
+export const planGateOf: (model: Model) => Option.Option<Gate> = lastByModel((model) =>
 	Session.match(model.session, {
 		Resolving: () => Option.none<Gate>(),
 		SignedOut: () => Option.none<Gate>(),
@@ -692,7 +730,8 @@ export const planGateOf = (model: Model): Option.Option<Gate> =>
 					}),
 				),
 			),
-	})
+	}),
+)
 
 const isWrongRegion = (model: Model): boolean =>
 	Option.exists(planGateOf(model), (gate) => gate.wrongRegion !== null)
@@ -827,7 +866,7 @@ const syncSessionTimeRange: Step = (model) =>
 				Option.filter(
 					completeRangeOf(model.route),
 					(value) =>
-						JSON.stringify(value) !== JSON.stringify(state.value) &&
+						encodeJson(value) !== encodeJson(state.value) &&
 						isWithin(value, Number.POSITIVE_INFINITY, state.nowMs, model.timeZone),
 				),
 				{
@@ -949,7 +988,8 @@ const preloadLink = (model: Model, href: string, nowMs: number): UpdateReturn =>
 				return {
 					model,
 					commands: [
-						...commands.map(
+						...Arr.map(
+							commands,
 							Command.mapMessage((message) => Message.GotPreloadMessage({ message })),
 						),
 						...(keys.length === 0 ? [] : [HoldPreloads({ keys })]),
@@ -1033,6 +1073,7 @@ const foldMessage = (model: Model, message: Message) =>
 		CompletedIdentifySession: () => ({ model }),
 		GotSignInMessage: ({ message }) => foldSignIn(model, message),
 		GotShellMessage: ({ message }) => foldShell(model, message),
+		GotTooltipMessage: ({ message }) => foldTooltip(model, message),
 		GotToastMessage: ({ message }) =>
 			message._tag === "ClickedToastAction" && model.toastActions[message.toastId] !== undefined
 				? toPage(model, model.toastActions[message.toastId])
@@ -1107,7 +1148,7 @@ const foldMessage = (model: Model, message: Message) =>
 export const update = (model: Model, message: Message): UpdateReturn => {
 	const result = foldMessage(model, message)
 	const next = result.model
-	return next !== model && Struct.keys(model).every((key) => model[key] === next[key])
+	return next !== model && Arr.every(Struct.keys(model), (key) => model[key] === next[key])
 		? { ...result, model }
 		: result
 }

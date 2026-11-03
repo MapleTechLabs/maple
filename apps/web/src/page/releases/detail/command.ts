@@ -2,7 +2,7 @@ import { getReleaseDetail, getReleases } from "@maple/web-data/warehouse/release
 import { Clock, Duration, Effect, Predicate, type Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { resolveWindow } from "../../../data/time-range"
 import { readCommitDetail } from "../../kit/commit-card"

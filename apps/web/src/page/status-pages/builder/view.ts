@@ -5,16 +5,17 @@ import {
 	StatusPageSlug,
 } from "@maple/domain/status-page"
 import { previewSnapshot } from "@maple/status-page"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { failureMessage } from "../../../data/load-failure"
-import { alert, alertDescription, alertTitle } from "../../../ui/alert"
-import { button, linkButton } from "../../../ui/button"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { skeleton } from "../../../ui/skeleton"
+import { failureMessage } from "@maple/views/data/load-failure"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { button, linkButton } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { heading } from "@maple/views/ui/heading"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
@@ -29,6 +30,8 @@ import { FocusNewRow } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { canSubmit, monitorsOf, NAME_ID, nameIssue, PICKER_ID, SLUG_ID, slugError } from "./update"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `/status-pages/new`: the form on the left, the page as visitors get it on the right, and the
 // publish bar under both. Below 1000px the preview stacks under the form.
@@ -38,37 +41,33 @@ type H = HtmlBuilder<Message>
 const isSlug = Schema.is(StatusPageSlug)
 const DRAFT_PAGE_ID = Schema.decodeSync(StatusPageId)("00000000-0000-4000-8000-000000000000")
 const draftComponentId = (index: number) =>
-	Schema.decodeSync(StatusPageComponentId)(`00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`)
+	Schema.decodeSync(StatusPageComponentId)(
+		`00000000-0000-4000-8000-${Str.padStart(12, "0")(String(index + 1))}`,
+	)
 
 const pageSection = (h: H, model: Model): Html =>
 	settingsSection(h, { id: "status-page-builder-page", title: "Page" }, [
-		h.div(
-			[h.Class("flex flex-col gap-4")],
-			[
-				textField(h, {
-					id: NAME_ID,
-					label: "Name",
-					value: model.name,
-					placeholder: "Acme Status",
-					error: nameIssue(model),
-					onInput: (value) => Message.ChangedName({ value }),
-					onBlur: Message.BlurredName(),
-				}),
-				textField(h, {
-					id: SLUG_ID,
-					label: "Address",
-					value: model.slug,
-					placeholder: "acme-status",
-					isMono: true,
-					hint:
-						model.slug === ""
-							? "Follows the name until you type one."
-							: publicAddress(model.slug),
-					error: slugError(model),
-					onInput: (value) => Message.ChangedSlug({ value }),
-				}),
-			],
-		),
+		vstack(h, { gap: "4" }, [
+			textField(h, {
+				id: NAME_ID,
+				label: "Name",
+				value: model.name,
+				placeholder: "Acme Status",
+				error: nameIssue(model),
+				onInput: (value) => Message.ChangedName({ value }),
+				onBlur: Message.BlurredName(),
+			}),
+			textField(h, {
+				id: SLUG_ID,
+				label: "Address",
+				value: model.slug,
+				placeholder: "acme-status",
+				isMono: true,
+				hint: model.slug === "" ? "Follows the name until you type one." : publicAddress(model.slug),
+				error: slugError(model),
+				onInput: (value) => Message.ChangedSlug({ value }),
+			}),
+		]),
 	])
 
 const componentsBody = (h: H, model: Model): Html => {
@@ -81,10 +80,11 @@ const componentsBody = (h: H, model: Model): Html => {
 			className: "rounded-md border py-8",
 		})
 	if (!model.isSeeded)
-		return h.div(
-			[h.Class("flex flex-col gap-2"), h.AriaBusy(true)],
-			[skeleton(h, "h-12 w-full"), skeleton(h, "h-12 w-full"), skeleton(h, "h-12 w-full")],
-		)
+		return vstack(h, { gap: "2", attributes: [h.AriaBusy(true)] }, [
+			skeleton(h, "h-12 w-full"),
+			skeleton(h, "h-12 w-full"),
+			skeleton(h, "h-12 w-full"),
+		])
 	return pickerView(h, {
 		picker: model.picker,
 		monitors: monitorsOf(model),
@@ -121,37 +121,28 @@ const lookSection = (h: H, model: Model): Html =>
 			description: ["Logo, colors, fonts and links later, in Settings."],
 		},
 		[
-			h.div(
-				[h.Class("flex flex-col gap-4")],
-				[
-					presetCards(h, {
-						selected: model.preset,
-						isDisabled: model.submitting !== null,
-						onPick: (preset) => Message.PickedPreset({ preset }),
+			vstack(h, { gap: "4" }, [
+				presetCards(h, {
+					selected: model.preset,
+					isDisabled: model.submitting !== null,
+					onPick: (preset) => Message.PickedPreset({ preset }),
+				}),
+				hstack(h, { gap: "3", wrap: true }, [
+					typography(h, { size: "xs", tone: "muted" }, ["Mode"]),
+					segmentedSelect(h, {
+						size: "sm",
+						ariaLabel: "Mode",
+						value: model.appearance,
+						onChange: (appearance) => Message.PickedAppearance({ appearance }),
+						options: APPEARANCES,
 					}),
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-3")],
-						[
-							h.span([h.Class("text-xs text-muted-foreground")], ["Mode"]),
-							segmentedSelect(h, {
-								size: "sm",
-								ariaLabel: "Mode",
-								value: model.appearance,
-								onChange: (appearance) => Message.PickedAppearance({ appearance }),
-								options: APPEARANCES,
-							}),
-							h.span(
-								[h.Class("text-xs text-muted-foreground")],
-								[
-									model.appearance === "auto"
-										? "Follows each visitor's setting."
-										: `Every visitor sees it ${model.appearance}.`,
-								],
-							),
-						],
-					),
-				],
-			),
+					typography(h, { size: "xs", tone: "muted" }, [
+						model.appearance === "auto"
+							? "Follows each visitor's setting."
+							: `Every visitor sees it ${model.appearance}.`,
+					]),
+				]),
+			]),
 		],
 	)
 
@@ -162,7 +153,7 @@ const draftDocument = (model: Model): string => {
 	const snapshot = previewSnapshot({
 		pageId: DRAFT_PAGE_ID,
 		page: {
-			name: model.name.trim() === "" ? "Status page" : model.name.trim(),
+			name: Str.trim(model.name) === "" ? "Status page" : Str.trim(model.name),
 			slug: isSlug(model.slug) ? model.slug : "preview",
 			description: null,
 			websiteUrl: null,
@@ -180,11 +171,11 @@ const draftDocument = (model: Model): string => {
 				model.previewScheme,
 			),
 		},
-		components: checkedRows(model.picker).map((row, index) => ({
+		components: Arr.map(checkedRows(model.picker), (row, index) => ({
 			id: draftComponentId(index),
-			name: row.name.trim() === "" ? "Untitled component" : row.name.trim(),
+			name: Str.trim(row.name) === "" ? "Untitled component" : Str.trim(row.name),
 			description: null,
-			group: row.group.trim() === "" ? null : row.group.trim(),
+			group: Str.trim(row.group) === "" ? null : Str.trim(row.group),
 			monitorStatus: monitors.find((monitor) => monitor.id === row.monitorId)?.state.status ?? null,
 			manualStatus: row.monitorId === null ? row.manualStatus : null,
 			showUptime: true,
@@ -205,52 +196,44 @@ const previewPanel = (h: H, model: Model): Html =>
 			h.Class("flex min-w-0 flex-col gap-3 pb-16 min-[1000px]:sticky min-[1000px]:top-0"),
 		],
 		[
-			h.div(
-				[h.Class("flex min-h-7 items-center justify-between gap-3")],
-				[
-					h.div(
-						[h.Class("flex items-center gap-2")],
-						[
-							h.h2(
-								[h.Id("status-page-builder-preview"), h.Class("text-sm font-medium")],
-								["Preview"],
-							),
-							h.span(
-								[h.Class("font-mono text-xs text-muted-foreground"), h.AriaLive("polite")],
-								[model.isPreviewLoading ? "Updating" : ""],
-							),
-						],
+			hstack(h, { gap: "3", justify: "between", className: "min-h-7" }, [
+				hstack(h, { gap: "2" }, [
+					heading(h, { level: 2, variant: "subsection", id: "status-page-builder-preview" }, [
+						"Preview",
+					]),
+					typography(
+						h,
+						{ size: "xs", tone: "muted", mono: true, attributes: [h.AriaLive("polite")] },
+						[model.isPreviewLoading ? "Updating" : ""],
 					),
-					...(model.appearance === "auto"
-						? [
-								segmentedSelect(h, {
-									size: "xs",
-									ariaLabel: "Preview mode",
-									value: model.previewScheme,
-									onChange: (scheme) => Message.PickedPreviewScheme({ scheme }),
-									options: [
-										{ value: "light", label: "Light" },
-										{ value: "dark", label: "Dark" },
-									],
-								}),
-							]
-						: []),
-				],
-			),
+				]),
+				...(model.appearance === "auto"
+					? [
+							segmentedSelect(h, {
+								size: "xs",
+								ariaLabel: "Preview mode",
+								value: model.previewScheme,
+								onChange: (scheme) => Message.PickedPreviewScheme({ scheme }),
+								options: [
+									{ value: "light", label: "Light" },
+									{ value: "dark", label: "Dark" },
+								],
+							}),
+						]
+					: []),
+			]),
 			previewFrame(h, {
 				title: "Status page preview",
 				document: draftDocument(model),
 				className: "h-[560px] min-[1000px]:h-[calc(100vh-20rem)] min-[1000px]:min-h-[520px]",
 			}),
 			model.previewFailure === null
-				? h.p(
-						[h.Class("text-xs text-muted-foreground")],
-						["Exactly what visitors get, with your monitors' real uptime."],
-					)
-				: h.p(
-						[h.Class("text-xs text-muted-foreground")],
-						[`Uptime history unavailable: ${failureMessage(model.previewFailure)}`],
-					),
+				? typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						"Exactly what visitors get, with your monitors' real uptime.",
+					])
+				: typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						`Uptime history unavailable: ${failureMessage(model.previewFailure)}`,
+					]),
 		],
 	)
 
@@ -263,68 +246,62 @@ const footerBar = (h: H, model: Model): Html => {
 			),
 		],
 		[
-			h.p([h.Class("text-xs text-muted-foreground")], ["Nothing is public until you publish."]),
-			h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isLoading: model.submitting === "draft",
-							isDisabled: !isReady,
-							attributes: [h.OnClick(Message.ClickedSubmit({ mode: "draft" }))],
-						},
-						["Save as draft"],
-					),
-					button(
-						h,
-						{
-							size: "sm",
-							isLoading: model.submitting === "publish",
-							isDisabled: !isReady,
-							attributes: [h.OnClick(Message.ClickedSubmit({ mode: "publish" }))],
-						},
-						["Publish page"],
-					),
-				],
-			),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, ["Nothing is public until you publish."]),
+			hstack(h, { gap: "2" }, [
+				button(
+					h,
+					{
+						size: "sm",
+						variant: "outline",
+						isLoading: model.submitting === "draft",
+						isDisabled: !isReady,
+						attributes: [h.OnClick(Message.ClickedSubmit({ mode: "draft" }))],
+					},
+					["Save as draft"],
+				),
+				button(
+					h,
+					{
+						size: "sm",
+						isLoading: model.submitting === "publish",
+						isDisabled: !isReady,
+						attributes: [h.OnClick(Message.ClickedSubmit({ mode: "publish" }))],
+					},
+					["Publish page"],
+				),
+			]),
 		],
 	)
 }
 
 const builder = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-6")],
-		[
-			h.div(
-				[h.Class("grid items-start gap-8 min-[1000px]:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]")],
-				[
-					h.div(
-						// Room under the last section, so it scrolls clear of the floating publish bar.
-						[h.Class("flex min-w-0 flex-col gap-8 pb-16")],
-						[
-							pageSection(h, model),
-							componentsSection(h, model),
-							lookSection(h, model),
-							...(model.createFailure === null
-								? []
-								: [
-										alert(h, { variant: "crit", size: "sm" }, [
-											icon(h, "CircleXmarkIcon"),
-											alertTitle(h, ["Couldn't create the page"]),
-											alertDescription(h, [failureMessage(model.createFailure)]),
-										]),
+	vstack(h, { gap: "6" }, [
+		h.div(
+			[h.Class("grid items-start gap-8 min-[1000px]:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]")],
+			[
+				h.div(
+					// Room under the last section, so it scrolls clear of the floating publish bar.
+					[h.Class("flex min-w-0 flex-col gap-8 pb-16")],
+					[
+						pageSection(h, model),
+						componentsSection(h, model),
+						lookSection(h, model),
+						...(model.createFailure === null
+							? []
+							: [
+									alert(h, { variant: "crit", size: "sm" }, [
+										icon(h, "CircleXmarkIcon"),
+										alertTitle(h, ["Couldn't create the page"]),
+										alertDescription(h, [failureMessage(model.createFailure)]),
 									]),
-						],
-					),
-					previewPanel(h, model),
-				],
-			),
-			footerBar(h, model),
-		],
-	)
+								]),
+					],
+				),
+				previewPanel(h, model),
+			],
+		),
+		footerBar(h, model),
+	])
 
 const membersOnly = (h: H): Html =>
 	resourceNotFound(h, {
@@ -342,10 +319,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		},
 		[
 			!model.isSessionLoaded
-				? h.div(
-						[h.Class("flex flex-col gap-4"), h.AriaBusy(true)],
-						[skeleton(h, "h-9 w-1/3"), skeleton(h, "h-64 w-full")],
-					)
+				? vstack(h, { gap: "4", attributes: [h.AriaBusy(true)] }, [
+						skeleton(h, "h-9 w-1/3"),
+						skeleton(h, "h-64 w-full"),
+					])
 				: model.isAdmin
 					? builder(h, model)
 					: membersOnly(h),

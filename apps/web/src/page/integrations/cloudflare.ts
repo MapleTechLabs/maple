@@ -3,13 +3,13 @@ import {
 	CloudflareZoneSettingsRequest,
 	CloudflareZoneWatchSetting,
 } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { ChartRuntime } from "../../charts/chart-runtime"
-import * as Dialog from "../../ui/dialog"
-import * as ToggleGroup from "../../ui/toggle-group"
-import { KeyedSchema } from "../../data/keyed"
-import { LoadFailure, toLoadFailure } from "../../data/load-failure"
+import { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { Message } from "./message"
 
@@ -108,7 +108,8 @@ export const SaveCloudflareZones = Command.define("SaveCloudflareZones", {
 						payload: new CloudflareZoneSettingsRequest({
 							accountId: account.accountId,
 							watchNewZones: account.watchNewZones,
-							zones: account.zones.map(
+							zones: Arr.map(
+								account.zones,
 								(zone) =>
 									new CloudflareZoneWatchSetting({
 										zoneId: zone.id,

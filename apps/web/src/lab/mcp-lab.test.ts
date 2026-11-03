@@ -1,8 +1,9 @@
 import { describe, expect, test } from "vitest"
-import * as Select from "../ui/select"
-import * as ToggleGroup from "../ui/toggle-group"
+import * as Select from "@maple/views/ui/select"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { filteredOverview, filteredTool } from "./mcp-filter"
 import { filtersOf, init, Message, update } from "./mcp-lab"
+import { Array as Arr } from "effect"
 
 const opened = () => init({ view: "server" }).model
 
@@ -21,7 +22,7 @@ const pressPercentile = (value: string, index: number) =>
 describe("mcp lab", () => {
 	test("a client facet change narrows the totals, tools and series to that client's calls", () => {
 		const overview = filteredOverview(filtersOf(pickClient("Claude Code")))
-		const seriesCalls = overview.series.reduce((sum, point) => sum + point.calls, 0)
+		const seriesCalls = Arr.reduce(overview.series, 0, (sum, point) => sum + point.calls)
 		expect([overview.totals.calls, overview.totals.errors, overview.tools.length, seriesCalls]).toEqual([
 			15, 1, 4, 15,
 		])
@@ -29,7 +30,7 @@ describe("mcp lab", () => {
 
 	test("a client facet change narrows run_sql to that client's calls and failures", () => {
 		const tool = filteredTool(filtersOf(pickClient("curl")))
-		expect([tool.calls, tool.errors, tool.failed.map((call) => call.client)]).toEqual([
+		expect([tool.calls, tool.errors, Arr.map(tool.failed, (call) => call.client)]).toEqual([
 			67,
 			2,
 			["curl", "curl"],
@@ -41,22 +42,24 @@ describe("mcp lab", () => {
 		const searched = filteredOverview({ ...base, search: "run_sql" })
 		const failing = filteredOverview({ ...base, isFailingOnly: true })
 		for (const overview of [searched, failing]) {
-			expect(overview.series.reduce((total, point) => total + point.calls, 0)).toBe(
+			expect(Arr.reduce(overview.series, 0, (total, point) => total + point.calls)).toBe(
 				overview.totals.calls,
 			)
-			expect(overview.series.reduce((total, point) => total + point.errors, 0)).toBe(
+			expect(Arr.reduce(overview.series, 0, (total, point) => total + point.errors)).toBe(
 				overview.totals.errors,
 			)
 		}
 		expect(searched.totals.calls).toBe(115)
 		expect(searched.clients).toHaveLength(5)
-		expect(searched.clients.reduce((total, client) => total + client.calls, 0)).toBe(115)
+		expect(Arr.reduce(searched.clients, 0, (total, client) => total + client.calls)).toBe(115)
 	})
 
 	test("kind and failing only narrow the chart's failures with the totals", () => {
 		const overview = filteredOverview({ ...filtersOf(opened()), kind: "agent", isFailingOnly: true })
 		expect(overview.totals.errors).toBe(1)
-		expect(overview.series.reduce((total, point) => total + point.errors, 0)).toBe(overview.totals.errors)
+		expect(Arr.reduce(overview.series, 0, (total, point) => total + point.errors)).toBe(
+			overview.totals.errors,
+		)
 	})
 
 	test("a new percentile switches the chart to duration; re-pressing the pressed one keeps it", () => {

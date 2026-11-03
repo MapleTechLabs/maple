@@ -1,23 +1,23 @@
 import { describe, expect, test } from "vitest"
 import { Message as HubMessage } from "../../page/alerts/hub/message"
-import * as Tabs from "../../ui/tabs"
+import * as Tabs from "@maple/views/ui/tabs"
 import { type Flags, Message, type Model } from "./model"
 import * as TraceBox from "./trace-box"
 import { init, update } from "./update"
+import { Array as Arr } from "effect"
 
 const FLAGS: Flags = { nowMs: Date.UTC(2026, 9, 1, 12), timeZone: "UTC", mode: "worst" }
 
 const step = (model: Model, ...messages: ReadonlyArray<Message>): Model =>
-	messages.reduce((current, message) => update(current, message).model, model)
+	Arr.reduce(messages, model, (current, message) => update(current, message).model)
 
 describe("worst-case lab", () => {
-
 	test("the mode toggle swaps in the demo twins and writes ?data= to the URL", () => {
 		const opened = init(FLAGS).model
 		const toggled = update(opened, Message.ClickedMode({ mode: "demo" }))
 		expect(toggled.model.mode).toBe("demo")
 		expect(toggled.model.logs).not.toEqual(opened.logs)
-		expect((toggled.commands ?? []).map(({ name }) => name)).toContain("ReplaceModeUrl")
+		expect(Arr.map(toggled.commands ?? [], ({ name }) => name)).toContain("ReplaceModeUrl")
 		expect(update(toggled.model, Message.ClickedMode({ mode: "demo" })).commands ?? []).toEqual([])
 	})
 

@@ -4,19 +4,20 @@ import {
 } from "../../../../components/integrations/planetscale-setup-steps"
 import { EMPTY_VALUE, formatNumber, pluralize } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { LoadFailure } from "../../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../../../route"
-import { linkButton } from "../../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../../ui/empty"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
-import { skeleton } from "../../../../ui/skeleton"
+import { linkButton } from "@maple/views/ui/button"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import { docsLink, emptyActions } from "../../../kit/signal-empty-state"
+import { docsLink } from "../../../kit/signal-empty-state"
+import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
 import { listToolbar, toolbarStat } from "../../../kit/list-toolbar"
@@ -172,7 +173,7 @@ const content = (
 	const stats =
 		AsyncData.isSuccess(statsData) || AsyncData.isRefreshing(statsData) ? statsData.data : NO_STATS
 	const never = neverCollected(model)
-	const branchTotal = inventory.databases.reduce((sum, db) => sum + db.branches.length, 0)
+	const branchTotal = Arr.reduce(inventory.databases, 0, (sum, db) => sum + db.branches.length)
 	const showInventoryNotice =
 		status.last_inventory_error !== null || inventoryIsStale(inventory.last_inventory_at, clock.nowMs)
 	const totals = totalsOf(stats)
@@ -193,7 +194,7 @@ const content = (
 						}),
 					]
 				: []),
-			...statsFailure.map((error) =>
+			...Arr.map(statsFailure, (error) =>
 				errorState(h, {
 					failure: error,
 					title: "Couldn't load database stats",
@@ -221,7 +222,7 @@ const content = (
 						sort: sortOf(model),
 						isWaiting: AsyncData.isRefreshing(statsData) || AsyncData.isLoading(statsData),
 						metricsPaused: never,
-						emptyMessage: "No databases in the inventory.",
+						emptyMessage: "No databases in the inventory",
 					}),
 		],
 	)

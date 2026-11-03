@@ -11,7 +11,7 @@ import type { Message } from "@cloudflare/workers-types"
 import { VcsSyncJob } from "@maple/domain/http/vcs"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Option, Schema, Stream } from "effect"
+import { Effect, Option, Schema, Stream, Array as Arr } from "effect"
 import { HttpClient, HttpClientRequest, HttpIncomingMessage, HttpServerRequest } from "effect/http"
 
 /**
@@ -162,7 +162,7 @@ export const applyOutcomes = (
 	messages: ReadonlyArray<Message<unknown>>,
 	outcomes: ReadonlyArray<MessageOutcome>,
 ) => {
-	const byId = new Map(outcomes.map((outcome) => [outcome.id, outcome]))
+	const byId = new Map(Arr.map(outcomes, (outcome) => [outcome.id, outcome]))
 	return Effect.forEach(messages, (message) => applyOutcome(message, byId.get(message.id)), {
 		discard: true,
 	})
@@ -188,7 +188,7 @@ const readBoundedBody = (request: HttpServerRequest.HttpServerRequest) =>
 	).pipe(
 		Effect.map(({ bytes, chunks }) => {
 			const joined = new Uint8Array(bytes)
-			chunks.reduce((offset, chunk) => (joined.set(chunk, offset), offset + chunk.byteLength), 0)
+			Arr.reduce(chunks, 0, (offset, chunk) => (joined.set(chunk, offset), offset + chunk.byteLength))
 			return new TextDecoder().decode(joined)
 		}),
 	)
@@ -204,7 +204,8 @@ export const authorizeVcsSyncBatchRequest = Effect.fnUntraced(function* (env: Re
 	if (request.headers["cf-connecting-ip"] !== undefined) {
 		return yield* refused(404, "Not found")
 	}
-	const authorized = Option.match(yield* workerSecretFor(env, VCS_SYNC_HOP_SECRET), {
+	const hopSecret = yield* workerSecretFor(env, VCS_SYNC_HOP_SECRET)
+	const authorized = Option.match(hopSecret, {
 		onNone: () => false,
 		onSome: (expected) => isValidInternalBearer(request.headers["authorization"], expected),
 	})

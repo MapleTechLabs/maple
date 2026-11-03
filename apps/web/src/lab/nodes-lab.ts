@@ -1,5 +1,5 @@
 import { buildNodeCatalogue } from "./node-catalogue/node-catalogue"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -7,8 +7,8 @@ import { load } from "foldkit/navigation"
 import { Message as InvestigationMessage } from "../page/investigations/detail/message"
 import { edgeLabel, edgeView, nodeChildren } from "../page/investigations/detail/view-canvas"
 import { dashboardPage } from "../page/kit/dashboard-page"
-import * as Canvas from "../service-map/xyflow/canvas"
-import { edgesLayer, flowCanvas, flowNode, nodesLayer } from "../service-map/xyflow/view"
+import * as Canvas from "@maple/views/service-map/xyflow/canvas"
+import { edgesLayer, flowCanvas, flowNode, nodesLayer } from "@maple/views/service-map/xyflow/view"
 
 // `/lab/nodes`: every
 // provenance-canvas node and edge state in the investigation page's renderer, at 1:1.
@@ -71,7 +71,7 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 
 type CanvasInputs = Readonly<{ nowMs: number; timeZone: string }>
 
-const ANCHORS = new Map(CATALOGUE.nodes.map((node) => [node.id, node]))
+const ANCHORS = new Map(Arr.map(CATALOGUE.nodes, (node) => [node.id, node]))
 const someOf = <A>(value: A | null) => Option.toArray(Option.fromNullishOr(value))
 
 /** `<ReactFlow>` over the catalogue: `nodeTypes`/`edgeTypes` are the investigation canvas's own. */
@@ -82,12 +82,12 @@ const canvasView = Submodel.defineView<Canvas.Model, InvestigationMessage, Canva
 			toMessage: (message) => InvestigationMessage.GotCanvasMessage({ message }),
 			edges: edgesLayer(
 				h,
-				CATALOGUE.edges.flatMap((edge) => someOf(edgeView(h, edge, ANCHORS))),
+				Arr.flatMap(CATALOGUE.edges, (edge) => someOf(edgeView(h, edge, ANCHORS))),
 			),
-			edgeLabels: CATALOGUE.edges.flatMap((edge) => someOf(edgeLabel(h, edge, ANCHORS))),
+			edgeLabels: Arr.flatMap(CATALOGUE.edges, (edge) => someOf(edgeLabel(h, edge, ANCHORS))),
 			nodes: nodesLayer(
 				h,
-				CATALOGUE.nodes.map((node) =>
+				Arr.map(CATALOGUE.nodes, (node) =>
 					flowNode(h, {
 						id: node.id,
 						type: node.type,

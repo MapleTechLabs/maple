@@ -9,6 +9,7 @@ import { createHmac } from "node:crypto"
 import { describe, expect, it } from "vitest"
 import { MAX_TIMESTAMP_SKEW_SECONDS } from "./api"
 import { verifySlackSignature } from "./signature"
+import { String as Str } from "effect"
 
 const SECRET = "8f742231b10e8888abcd99yyyzzz85a5"
 
@@ -88,7 +89,7 @@ describe("slack request signatures", () => {
 			_tag: "rejected",
 			reason: "malformed signature",
 		})
-		expect(verify({ signature: `v1=${"a".repeat(64)}` })).toEqual({
+		expect(verify({ signature: `v1=${Str.repeat(64)("a")}` })).toEqual({
 			_tag: "rejected",
 			reason: "malformed signature",
 		})

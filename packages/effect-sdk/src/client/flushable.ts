@@ -16,7 +16,7 @@ import {
 	warnIfKeylessMapleIngest,
 } from "@maple/browser-session"
 import { SDK_VERSION } from "../version.js"
-import { Layer, Redacted } from "effect"
+import { Layer, Redacted, String as Str } from "effect"
 import {
 	buildResolved,
 	type FlushTransport,
@@ -46,7 +46,7 @@ const POST_TIMEOUT_MS_PER_KIB = 10
 
 const browserInstanceId =
 	globalThis.crypto?.randomUUID?.() ??
-	`browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+	`browser-${Date.now().toString(36)}-${Str.slice(2)(Math.random().toString(36))}`
 
 export interface MapleClientFlushableConfig extends MapleSpanOptions {
 	/** Service name reported in traces, logs, and metrics. */
@@ -154,6 +154,7 @@ export interface FlushableTelemetry {
 
 /** Keepalive-budgeted POST (see file header), aborted when it takes too long. */
 const postOtlp = (url: string, headers: Record<string, string>, body: unknown) => {
+	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	const json = JSON.stringify(body)
 	const timeoutMs = POST_TIMEOUT_MS + (json.length / 1024) * POST_TIMEOUT_MS_PER_KIB
 	const controller = new AbortController()

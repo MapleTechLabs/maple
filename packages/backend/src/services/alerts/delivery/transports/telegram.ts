@@ -6,12 +6,14 @@ import {
 	AlertDeliveryTargetMissingError,
 	type AlertDeliveryFailure,
 } from "@maple/domain/http"
-import { Duration, Effect, Result, Schema } from "effect"
+import { Duration, Effect, Result, Schema, String as Str } from "effect"
 import { constTrue } from "effect/Function"
 import { HttpClient } from "effect/http"
 import { buildTelegramText, buildTelegramTextFromTemplate } from "../../AlertDeliveryDispatch"
 import { truncate } from "../../alert-formatting"
 import type { HttpTransport, ProviderAck, RenderInput, SecretConfigOf } from "../Transport"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type Config = SecretConfigOf<"telegram">
 
@@ -80,7 +82,7 @@ export const telegramTransport: HttpTransport<Config> = {
 			// `server.address` only. The first provider where these two disagree,
 			// which is why `sensitivePath` is declared rather than inferred.
 			sensitivePath: true,
-			body: JSON.stringify({
+			body: encodeJson({
 				chat_id: input.config.chatId,
 				text,
 				parse_mode: "HTML",
@@ -168,7 +170,7 @@ const telegramApiCall = (
 				Result.map(decoded, (payload) => payload.description ?? ""),
 				() => "",
 			)
-			return { ok, status, description: truncate(description.replace(/\s+/g, " ").trim(), 300) }
+			return { ok, status, description: truncate(Str.trim(Str.replace(/\s+/g, " ")(description)), 300) }
 		}),
 		Effect.orElseSucceed(() => ({ ok: false, status: 0, description: "" })),
 	)
@@ -303,7 +305,7 @@ export const fetchTelegramChats = (
 ): Effect.Effect<TelegramChatDiscovery, never, HttpClient.HttpClient> =>
 	telegramGet(
 		`${TELEGRAM_API_ORIGIN}/bot${botToken}/getUpdates?limit=100&timeout=0&allowed_updates=${encodeURIComponent(
-			JSON.stringify(["message", "edited_message", "channel_post", "my_chat_member"]),
+			encodeJson(["message", "edited_message", "channel_post", "my_chat_member"]),
 		)}`,
 	).pipe(
 		Effect.map((response): TelegramChatDiscovery => {
@@ -319,7 +321,7 @@ export const fetchTelegramChats = (
 			const payload = decoded.success
 			if (!payload.ok) {
 				const description = payload.description ?? ""
-				if (payload.error_code === 409 || description.includes("webhook is active")) {
+				if (payload.error_code === 409 || Str.includes("webhook is active")(description)) {
 					return {
 						status: "invalid",
 						reason: "This bot has a webhook registered, so Maple cannot read its recent chats. Delete the webhook (or enter the chat ID by hand).",
@@ -331,7 +333,7 @@ export const fetchTelegramChats = (
 				return {
 					status: "invalid",
 					reason:
-						truncate(description.replace(/\s+/g, " ").trim(), 300) ||
+						truncate(Str.trim(Str.replace(/\s+/g, " ")(description)), 300) ||
 						"Telegram rejected the request",
 				}
 			}

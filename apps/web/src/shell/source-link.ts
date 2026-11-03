@@ -1,13 +1,13 @@
 import type { V2Source } from "@maple/domain/http/v2"
 import type { PullSourcePlatform } from "@maple/domain/primitives"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { platformMeta } from "../page/sources/kit/platforms"
 import { sourceHref, toPublicSourceId } from "../page/sources/kit/shared"
 import { AppRoute, hrefOf } from "../route"
-import { linkButton } from "../ui/button"
-import { icon } from "../ui/icon"
+import { linkButton } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
 
 // The top bar's link from a page to the source its data came from.
 
@@ -42,7 +42,7 @@ const byPublicId = (sources: ReadonlyArray<V2Source>, publicId: string): V2Sourc
 export const isResolved = (ref: PageSourceRef, sources: ReadonlyArray<V2Source>): boolean =>
 	ref._tag === "Id"
 		? byPublicId(sources, ref.sourceId) !== null
-		: sources.some((source) => source.platform === ref.platform)
+		: Arr.some(sources, (source) => source.platform === ref.platform)
 
 /**
  * The link for a page's source: one source opens its page, several open the Sources list. An id
@@ -60,7 +60,7 @@ export const resolveSourceLink = (
 			source,
 		}
 	}
-	const matches = (sources ?? []).filter((source) => source.platform === ref.platform)
+	const matches = Arr.filter(sources ?? [], (source) => source.platform === ref.platform)
 	const [only] = matches
 	if (only === undefined) return null
 	return matches.length === 1

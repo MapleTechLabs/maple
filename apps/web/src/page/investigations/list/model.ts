@@ -1,11 +1,11 @@
 import { V2Investigation } from "@maple/domain/http/v2"
 import { Schema } from "effect"
-import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { InvestigationsSearch } from "../../../route/search"
-import * as Select from "../../../ui/select"
-import * as Tabs from "../../../ui/tabs"
-import { SignalPresenceData } from "../../kit/signal-presence"
+import * as Select from "@maple/views/ui/select"
+import * as Tabs from "@maple/views/ui/tabs"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 
 // `/investigations`.
 

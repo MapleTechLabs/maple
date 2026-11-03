@@ -1,11 +1,11 @@
 import { type DigestSubscriptionResponse, UpsertDigestSubscriptionRequest } from "@maple/domain/http"
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
-import { Clock, Effect, Option, Predicate, Result, Schema } from "effect"
+import { Clock, Effect, Option, Predicate, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { toLoadFailure } from "../../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { loadServicesFacets } from "../../../../data/services-facets-probe"
 import { MapleInternalApiClient } from "../../../../platform/api-clients"
-import * as Combobox from "../../../../ui/combobox"
+import * as Combobox from "@maple/views/ui/combobox"
 import { PageOutMessage, type PageReturn } from "../../../contract"
 import * as Draft from "../../kit/draft"
 import { DigestDraft, Message, type Model, type ScheduleField } from "./model"
@@ -27,7 +27,7 @@ export const DIGEST_DAYS = [
 
 export const DIGEST_HOURS = Array.from({ length: 24 }, (_, hour) => ({
 	value: hour,
-	label: `${String(hour).padStart(2, "0")}:00`,
+	label: `${Str.padStart(2, "0")(String(hour))}:00`,
 }))
 
 /** The draft for someone with no subscription: the server's Monday 09:00, in the browser's zone. */
@@ -46,8 +46,8 @@ export const sameDigestDraft = (a: DigestDraft, b: DigestDraft): boolean =>
 	a.dayOfWeek === b.dayOfWeek &&
 	a.sendHour === b.sendHour &&
 	a.timezone === b.timezone &&
-	sorted(a.namespaces).join("\u0000") === sorted(b.namespaces).join("\u0000") &&
-	sorted(a.environments).join("\u0000") === sorted(b.environments).join("\u0000") &&
+	Arr.join(sorted(a.namespaces), "\u0000") === Arr.join(sorted(b.namespaces), "\u0000") &&
+	Arr.join(sorted(a.environments), "\u0000") === Arr.join(sorted(b.environments), "\u0000") &&
 	a.namespaces.length === b.namespaces.length &&
 	a.environments.length === b.environments.length
 
@@ -59,7 +59,7 @@ export const digestTimeZoneOptions = (
 ): ReadonlyArray<string> => {
 	const zones = new Set([...supported, "UTC", saved])
 	if (browserZone !== null && browserZone !== "") zones.add(browserZone)
-	return [...zones].sort((a, b) => (a === "UTC" ? -1 : b === "UTC" ? 1 : a.localeCompare(b)))
+	return [...zones].sort((a, b) => (a === "UTC" ? -1 : b === "UTC" ? 1 : Str.localeCompare(b)(a)))
 }
 
 // COMMANDS
@@ -105,8 +105,14 @@ const FetchFacets = Command.define("FetchDigestScopeFacets", {
 		const response = yield* loadServicesFacets(range)
 		// The facets carry an empty-string entry for "not reported", which a digest cannot pin to.
 		return {
-			namespaces: response.data.namespaces.map((item) => item.name).filter((name) => name !== ""),
-			environments: response.data.environments.map((item) => item.name).filter((name) => name !== ""),
+			namespaces: Arr.filter(
+				Arr.map(response.data.namespaces, (item) => item.name),
+				(name) => name !== "",
+			),
+			environments: Arr.filter(
+				Arr.map(response.data.environments, (item) => item.name),
+				(name) => name !== "",
+			),
 		}
 	}).pipe(
 		Effect.orElseSucceed(() => ({ namespaces: [], environments: [] })),
@@ -135,13 +141,20 @@ const upsert = (enabled: boolean, fields: UpsertFields) =>
 				...(fields.timezone !== undefined && { timezone: fields.timezone }),
 				...(fields.namespaces !== undefined && { namespaces: fields.namespaces }),
 				...(fields.environments !== undefined && { environments: fields.environments }),
-				...(fields.webAnalyticsEnabled !== undefined && { webAnalyticsEnabled: fields.webAnalyticsEnabled }),
+				...(fields.webAnalyticsEnabled !== undefined && {
+					webAnalyticsEnabled: fields.webAnalyticsEnabled,
+				}),
 			}),
 		}),
 	).pipe(Effect.asVoid, Effect.mapError(toLoadFailure), Effect.result)
 
 const ToggleDigest = Command.define("ToggleDigest", {
-	args: { digest: Schema.Literals(["ops", "web"]), isOn: Schema.Boolean, enabled: Schema.Boolean, fields: UpsertFields },
+	args: {
+		digest: Schema.Literals(["ops", "web"]),
+		isOn: Schema.Boolean,
+		enabled: Schema.Boolean,
+		fields: UpsertFields,
+	},
 	messages: [Message.CompletedToggle],
 	execute: ({ digest, isOn, enabled, fields }) =>
 		Effect.map(upsert(enabled, fields), (result) => Message.CompletedToggle({ digest, isOn, result })),
@@ -170,8 +183,7 @@ const PreviewDigest = Command.define("PreviewDigest", {
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			digest === "ops" ? client.digest.preview() : client.digest.previewWebAnalytics(),
 		).pipe(
-			Effect.map((response) => response.html),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.html, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedPreview({ result })),
 		),
@@ -224,7 +236,8 @@ export const baselineOf = (model: Model): DigestDraft => {
 }
 
 export const draftOf = (model: Model): DigestDraft => Draft.draftOf(model.draft, baselineOf(model))
-export const isDraftDirty = (model: Model): boolean => Draft.isDirty(model.draft, baselineOf(model), sameDigestDraft)
+export const isDraftDirty = (model: Model): boolean =>
+	Draft.isDirty(model.draft, baselineOf(model), sameDigestDraft)
 export const isBusy = (model: Model): boolean => model.isTogglingOps || model.isTogglingWeb || model.isSaving
 
 /** The first write records the prefilled zone, so a toggle alone does not leave the row on UTC. */
@@ -263,7 +276,11 @@ const editDraft = (model: Model, patch: Partial<DigestDraft>): Model => ({
 })
 
 const scheduleValue = (field: ScheduleField, value: string): Partial<DigestDraft> =>
-	field === "timezone" ? { timezone: value } : field === "dayOfWeek" ? { dayOfWeek: Number(value) } : { sendHour: Number(value) }
+	field === "timezone"
+		? { timezone: value }
+		: field === "dayOfWeek"
+			? { dayOfWeek: Number(value) }
+			: { sendHour: Number(value) }
 
 /** The chips mirror the draft: the combobox's own selection is replaced by the draft's. */
 const updateScope = (
@@ -293,7 +310,10 @@ const toggle = (model: Model, digest: "ops" | "web"): Return => {
 }
 
 const refetch = (model: Model): Return => ({
-	model: { ...model, subscription: Option.getOrElse(AsyncData.revalidate(model.subscription), () => model.subscription) },
+	model: {
+		...model,
+		subscription: Option.getOrElse(AsyncData.revalidate(model.subscription), () => model.subscription),
+	},
 	commands: [FetchSubscription()],
 })
 
@@ -313,25 +333,39 @@ export const update = (model: Model, message: Message): Return =>
 			}
 		},
 		CompletedFetchFacets: ({ facets }) => ({ model: { ...model, facets } }),
-		ClickedRetry: () => ({ model: { ...model, subscription: AsyncData.Loading() }, commands: [FetchSubscription()] }),
+		ClickedRetry: () => ({
+			model: { ...model, subscription: AsyncData.Loading() },
+			commands: [FetchSubscription()],
+		}),
 		ToggledOps: () => toggle(model, "ops"),
 		ToggledWeb: () => toggle(model, "web"),
 		CompletedToggle: ({ digest, isOn, result }) => {
 			const settled = { ...model, isTogglingOps: false, isTogglingWeb: false }
 			const name = digest === "ops" ? "Weekly ops digest" : "Web analytics digest"
 			return Result.match(result, {
-				onSuccess: () => ({ ...refetch(settled), outMessage: toast("success", `${name} turned ${isOn ? "on" : "off"}`) }),
+				onSuccess: () => ({
+					...refetch(settled),
+					outMessage: toast("success", `${name} turned ${isOn ? "on" : "off"}`),
+				}),
 				onFailure: (error) => ({
 					model: settled,
-					outMessage: toast("error", `Couldn't update the ${digest === "ops" ? "weekly ops" : "web analytics"} digest`, error.message),
+					outMessage: toast(
+						"error",
+						`Couldn't update the ${digest === "ops" ? "weekly ops" : "web analytics"} digest`,
+						error.message,
+					),
 				}),
 			})
 		},
 		ChangedSchedule: ({ field, value }) => ({ model: editDraft(model, scheduleValue(field, value)) }),
 		GotNamespacesMessage: ({ message: child }) =>
-			updateScope(model, "namespaces", child, (inner) => Message.GotNamespacesMessage({ message: inner })),
+			updateScope(model, "namespaces", child, (inner) =>
+				Message.GotNamespacesMessage({ message: inner }),
+			),
 		GotEnvironmentsMessage: ({ message: child }) =>
-			updateScope(model, "environments", child, (inner) => Message.GotEnvironmentsMessage({ message: inner })),
+			updateScope(model, "environments", child, (inner) =>
+				Message.GotEnvironmentsMessage({ message: inner }),
+			),
 		ClickedDiscard: () => ({ model: { ...model, draft: Draft.discard() } }),
 		ClickedSave: () => {
 			// Save resends the pre-toggle `enabled`, which would undo a toggle in flight.
@@ -348,7 +382,12 @@ export const update = (model: Model, message: Message): Return =>
 					...refetch({
 						...model,
 						isSaving: false,
-						draft: Draft.commit(model.draft, { submitted, sent: null }, baselineOf(model), sameDigestDraft),
+						draft: Draft.commit(
+							model.draft,
+							{ submitted, sent: null },
+							baselineOf(model),
+							sameDigestDraft,
+						),
 					}),
 					outMessage: toast("success", "Email preferences saved"),
 				}),
@@ -358,7 +397,9 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 			}),
 		ClickedPreview: ({ digest }) =>
-			model.previewing !== null ? { model } : { model: { ...model, previewing: digest }, commands: [PreviewDigest({ digest })] },
+			model.previewing !== null
+				? { model }
+				: { model: { ...model, previewing: digest }, commands: [PreviewDigest({ digest })] },
 		CompletedPreview: ({ result }) =>
 			Result.match(result, {
 				onSuccess: (html) =>

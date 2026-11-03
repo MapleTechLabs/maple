@@ -1,18 +1,24 @@
-import { cn } from "@maple/ui/lib/utils"
-import { truncatedCellStyles } from "@maple/ui/styles/ui/table"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../../ui/button"
-import { confirmDialog } from "../../../../ui/confirm-dialog"
-import { badge } from "../../../../ui/display"
-import { formDialog } from "../../../../ui/form-dialog"
-import { icon } from "../../../../ui/icon"
-import * as Menu from "../../../../ui/menu"
-import type { MenuEntry } from "../../../../ui/menu-view"
-import * as OtpField from "../../../../ui/otp-field"
-import { rowActionsMenu } from "../../../../ui/row-actions-menu"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../../ui/table"
-import { truncatedText } from "../../../../ui/truncated-text"
+import { button } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import { badge } from "@maple/views/ui/display"
+import { formDialog } from "@maple/views/ui/form-dialog"
+import { icon } from "@maple/views/ui/icon"
+import * as Menu from "@maple/views/ui/menu"
+import type { MenuEntry } from "@maple/views/ui/menu-view"
+import * as OtpField from "@maple/views/ui/otp-field"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import {
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+	truncatedTableCell,
+} from "@maple/views/ui/table"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
 import { settingsSection, settingsSections } from "../../kit/section"
 import { codeField } from "../code-field"
@@ -20,6 +26,9 @@ import { textField } from "../fields"
 import type { AccountEmail, AccountUser } from "../user"
 import { Message, type Model } from "./model"
 import { canRemove } from "./update"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -65,26 +74,23 @@ const emailRow = (h: H, model: Model, user: AccountUser, address: AccountEmail):
 	return tableRow(
 		h,
 		[
-			tableCell(
+			truncatedTableCell(
 				h,
 				[truncatedText(h, { text: address.email })],
-				cn(truncatedCellStyles, "font-medium text-xs"),
+				typographyClass({ size: "xs", weight: "medium" }),
 			),
 			tableCell(h, [
-				h.div(
-					[h.Class("flex items-center gap-1.5")],
-					[
-						...(isPrimary ? [badge(h, { variant: "secondary" }, ["Primary"])] : []),
-						address.isVerified
-							? badge(h, { variant: "outline", className: "gap-1" }, [
-									icon(h, "CircleCheckIcon", { size: 12 }),
-									"Verified",
-								])
-							: badge(h, { variant: "outline", className: "text-muted-foreground" }, [
-									"Unverified",
-								]),
-					],
-				),
+				hstack(h, { gap: "1.5" }, [
+					...(isPrimary ? [badge(h, { variant: "secondary" }, ["Primary"])] : []),
+					address.isVerified
+						? badge(h, { variant: "outline", className: "gap-1" }, [
+								icon(h, "CircleCheckIcon", { size: 12 }),
+								"Verified",
+							])
+						: badge(h, { variant: "outline", className: "text-muted-foreground" }, [
+								"Unverified",
+							]),
+				]),
 			]),
 			tableCell(h, [
 				rowActionsMenu(h, {
@@ -127,7 +133,7 @@ const addDialog = (h: H, model: Model): Html => {
 					title: "Add an email address",
 					description: "We will send a six-digit code to confirm you own it.",
 					submitLabel: "Send code",
-					isSubmitDisabled: add.value.trim().length === 0,
+					isSubmitDisabled: Str.trim(add.value).length === 0,
 					fields: [
 						textField(h, {
 							id: "account-new-email",
@@ -171,7 +177,7 @@ const loaded = (h: H, model: Model, user: AccountUser): Html =>
 					]),
 					tableBody(
 						h,
-						user.emails.map((address) => emailRow(h, model, user, address)),
+						Arr.map(user.emails, (address) => emailRow(h, model, user, address)),
 					),
 				]),
 			],
@@ -183,13 +189,12 @@ const loaded = (h: H, model: Model, user: AccountUser): Html =>
 			toParentMessage: (message) => Message.GotRemoveDialogMessage({ message }),
 			title: "Remove email address?",
 			description: `${model.removing?.email ?? ""} can no longer be used to sign in or receive notifications from Maple.`,
-			confirmLabel: "Remove",
+			confirmLabel: "Remove email",
 			isPending: model.isBusy,
 			onConfirm: Message.ClickedConfirmRemove(),
 		}),
 	])
 
-export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>(
-	(model, _inputs, h) =>
-		!model.isLoaded || model.user === null ? accountSectionSkeleton(h) : loaded(h, model, model.user),
+export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>((model, _inputs, h) =>
+	!model.isLoaded || model.user === null ? accountSectionSkeleton(h) : loaded(h, model, model.user),
 )

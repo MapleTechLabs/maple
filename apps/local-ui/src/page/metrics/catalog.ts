@@ -1,5 +1,5 @@
 import type { CH } from "@maple/query-engine"
-import { DateTime, Schema } from "effect"
+import { DateTime, Schema, Array as Arr, String as Str } from "effect"
 
 // `MetricEntry` and `foldCatalogRows`: the metric catalog folded from its rows.
 
@@ -32,7 +32,7 @@ type Mutable = { -readonly [K in keyof MetricEntry]: MetricEntry[K] } & { servic
 export const foldCatalogRows = (rows: ReadonlyArray<CH.ListMetricsOutput>): MetricsListData => {
 	const byMetric = new Map<string, Mutable>()
 	const byService = new Map<string, Set<string>>()
-	rows.forEach((row) => {
+	Arr.forEach(rows, (row) => {
 		const key = `${row.metricName}\x00${row.metricType}`
 		const existing = byMetric.get(key)
 		if (existing) {
@@ -60,8 +60,9 @@ export const foldCatalogRows = (rows: ReadonlyArray<CH.ListMetricsOutput>): Metr
 		metricsOfService.add(key)
 		byService.set(row.serviceName, metricsOfService)
 	})
-	const serviceFacets = [...byService.entries()]
-		.map(([name, metrics]) => ({ name, count: metrics.size }))
-		.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+	const serviceFacets = Arr.map([...byService.entries()], ([name, metrics]) => ({
+		name,
+		count: metrics.size,
+	})).sort((a, b) => b.count - a.count || Str.localeCompare(b.name)(a.name))
 	return { entries: [...byMetric.values()], serviceFacets }
 }

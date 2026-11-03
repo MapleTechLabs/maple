@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { compileIngestRegex, INGEST_RULE_LIMITS } from "@maple/domain/ingest-rules"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { findAll } from "./detectors"
 import { scanCut } from "./engine"
 import { pattern } from "./fuzz-arbitraries"
@@ -20,16 +20,17 @@ describe("accepted patterns", () => {
 		([source]) => {
 			const regex = Option.getOrThrow(compileIngestRegex(source))
 			// Doubling lengths, so a cubic pattern fails within seconds instead of running for minutes.
-			const slow = FILLERS.flatMap((filler) => {
-				const full = filler.repeat(INGEST_RULE_LIMITS.scanBytes)
-				const window = full.slice(0, scanCut(full))
-				const lengths = [64, 128, 256, 512, 1024, 2048, 4096, 8192, window.length].filter(
+			const slow = Arr.flatMap(FILLERS, (filler) => {
+				const full = Str.repeat(INGEST_RULE_LIMITS.scanBytes)(filler)
+				const window = Str.slice(0, scanCut(full))(full)
+				const lengths = Arr.filter(
+					[64, 128, 256, 512, 1024, 2048, 4096, 8192, window.length],
 					(length) => length <= window.length,
 				)
 				const over = lengths.reduce<{ length: number; elapsed: number } | null>((found, length) => {
 					if (found !== null) return found
 					const start = performance.now()
-					findAll(regex, window.slice(0, length), () => true)
+					findAll(regex, Str.slice(0, length)(window), () => true)
 					const elapsed = performance.now() - start
 					return elapsed > BUDGET_MS ? { length, elapsed } : null
 				}, null)

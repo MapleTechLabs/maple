@@ -7,6 +7,7 @@
  */
 import type { CancellationSnapshot, DailyVolume } from "@maple/domain/http"
 import { timestampMs } from "@maple/backend/platform/time"
+import { Array as Arr, Record as Rec } from "effect"
 
 export const DAY_MS = 86_400_000
 export const WINDOW_DAYS = 30
@@ -109,16 +110,16 @@ interface BillingInputs {
 }
 
 export const summarizeBilling = ({ balances, invoices }: BillingInputs): Billing => {
-	const billed = invoices
-		.filter((invoice) => BILLED_STATUSES.has(invoice.status))
-		.toSorted((a, b) => b.createdAt - a.createdAt)
-	const overAllowance = Object.entries(balances)
-		.filter(([, balance]) => {
+	const billed = Arr.filter(invoices, (invoice) => BILLED_STATUSES.has(invoice.status)).toSorted(
+		(a, b) => b.createdAt - a.createdAt,
+	)
+	const overAllowance = Arr.map(
+		Arr.filter(Rec.toEntries(balances), ([, balance]) => {
 			const granted = balance.granted ?? 0
 			return balance.unlimited !== true && granted > 0 && (balance.usage ?? 0) > granted
-		})
-		.map(([featureId]) => featureId)
-		.toSorted()
+		}),
+		([featureId]) => featureId,
+	).toSorted()
 	return {
 		lastInvoiceTotal: billed[0]?.total ?? null,
 		previousInvoiceTotal: billed[1]?.total ?? null,

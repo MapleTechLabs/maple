@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Record as Rec } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
@@ -632,7 +632,7 @@ describe("infra rows decode timestamps to DateTime.Utc", () => {
 			),
 	}
 
-	for (const [name, compileQuery] of Object.entries(timestamped)) {
+	for (const [name, compileQuery] of Rec.toEntries(timestamped)) {
 		it.effect(`${name} derives its row schema`, () =>
 			Effect.gen(function* () {
 				const compiled = yield* compileQuery()

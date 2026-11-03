@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { genAiIntegration, mapAiSpan, mapAiSpans, resolveAiIntegration } from "./ai-integrations"
 import { AI_GENAI_FIELDS, type AiGenAiField } from "@maple/domain/gen-ai"
 import type { AiSessionSpansOutput } from "./ai-sessions"
+import { Array as Arr, Record as Rec } from "effect"
 
 const row = (
 	spanAttributes: Record<string, string>,
@@ -87,7 +88,7 @@ describe("the catalog is the contract", () => {
 	// Driven from `AI_GENAI_FIELDS` itself rather than a hand-written list, so a
 	// field added to the catalog without a source mapping fails here instead of
 	// silently returning `undefined` in the UI forever.
-	for (const [field, def] of Object.entries(AI_GENAI_FIELDS)) {
+	for (const [field, def] of Rec.toEntries(AI_GENAI_FIELDS)) {
 		it(`maps the canonical key ${def.key} to ${field}`, () => {
 			const mapped = mapAiSpan(row({ [def.key]: SAMPLE_ATTRIBUTE_VALUE[def.type] }))
 
@@ -96,7 +97,7 @@ describe("the catalog is the contract", () => {
 	}
 
 	it("declares a source list for every catalog field", () => {
-		expect(Object.keys(genAiIntegration.sources).sort()).toEqual(Object.keys(AI_GENAI_FIELDS).sort())
+		expect(Rec.keys(genAiIntegration.sources).sort()).toEqual(Rec.keys(AI_GENAI_FIELDS).sort())
 	})
 })
 
@@ -522,7 +523,7 @@ describe("span envelope", () => {
 			row(NON_AI_ATTRS, { spanName: "workflow.stream.flush" }),
 		])
 
-		expect(mapped.map((span) => span.isAiSpan)).toEqual([true, false])
+		expect(Arr.map(mapped, (span) => span.isAiSpan)).toEqual([true, false])
 	})
 })
 

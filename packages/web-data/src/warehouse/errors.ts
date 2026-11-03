@@ -1,4 +1,4 @@
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import {
 	QueryEngineExecuteRequest,
 	coerceErrorsByTypeRows,
@@ -83,7 +83,8 @@ const getErrorsByTypeEffect = Effect.fn("QueryEngine.getErrorsByType")(function*
 		return { data: coerceErrorsByTypeRows([]) }
 	}
 
-	const fallback = defaultErrorsTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultErrorsTimeRange(now)
 	const startTime = input.startTime ?? fallback.startTime
 	const endTime = input.endTime ?? fallback.endTime
 
@@ -163,7 +164,8 @@ const getErrorsFacetsEffect = Effect.fn("QueryEngine.getErrorsFacets")(function*
 	data: GetErrorsFacetsInput
 }) {
 	const input = yield* decodeInput(GetErrorsFacetsInputSchema, data ?? {}, "getErrorsFacets")
-	const fallback = defaultErrorsTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultErrorsTimeRange(now)
 	const startTime = input.startTime ?? fallback.startTime
 	const endTime = input.endTime ?? fallback.endTime
 
@@ -265,7 +267,8 @@ const getErrorsSummaryEffect = Effect.fn("QueryEngine.getErrorsSummary")(functio
 	data: GetErrorsSummaryInput
 }) {
 	const input = yield* decodeInput(GetErrorsSummaryInputSchema, data ?? {}, "getErrorsSummary")
-	const fallback = defaultErrorsTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultErrorsTimeRange(now)
 	const startTime = input.startTime ?? fallback.startTime
 	const endTime = input.endTime ?? fallback.endTime
 
@@ -321,7 +324,8 @@ const getErrorDetailTracesEffect = Effect.fn("QueryEngine.getErrorDetailTraces")
 	data: GetErrorDetailTracesInput
 }) {
 	const input = yield* decodeInput(GetErrorDetailTracesInputSchema, data ?? {}, "getErrorDetailTraces")
-	const fallback = defaultErrorsTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultErrorsTimeRange(now)
 
 	const result = yield* runWarehouseQuery("errorDetailTraces", () =>
 		Effect.gen(function* () {
@@ -340,7 +344,7 @@ const getErrorDetailTracesEffect = Effect.fn("QueryEngine.getErrorDetailTraces")
 	)
 
 	return {
-		data: result.data.map((raw) => ({
+		data: Arr.map(result.data, (raw) => ({
 			traceId: raw.traceId,
 			startTime: new Date(warehouseDateTimeToIso(raw.startTime)),
 			durationMicros: raw.durationMicros,
@@ -398,7 +402,8 @@ const getErrorsSparkEffect = Effect.fn("QueryEngine.getErrorsSpark")(function* (
 	data: GetErrorsSparkInput
 }) {
 	const input = yield* decodeInput(GetErrorsSparkInputSchema, data ?? {}, "getErrorsSpark")
-	const fallback = defaultErrorsTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultErrorsTimeRange(now)
 
 	// No fingerprints means nothing to chart — skipping the round-trip matters
 	// here because the list renders before its issues have loaded.
@@ -447,6 +452,6 @@ const getErrorsSparkEffect = Effect.fn("QueryEngine.getErrorsSpark")(function* (
 	}
 
 	return {
-		data: [...byFingerprint].map(([fingerprintHash, points]) => ({ fingerprintHash, points })),
+		data: Arr.map([...byFingerprint], ([fingerprintHash, points]) => ({ fingerprintHash, points })),
 	}
 })

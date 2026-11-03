@@ -6,6 +6,7 @@ import {
 import { type Operator, normalizeKey as sharedNormalizeKey } from "@maple/domain/where-clause"
 import { FUNNEL_POPULATION_FILTER_FIELDS, type FunnelPopulationFilterField } from "@maple/query-model"
 import { productEventsFilterField, productEventsFilterKey } from "./funnel-filters"
+import { Array as Arr, String as Str } from "effect"
 
 type WhereClauseAutocompleteContext = "key" | "operator" | "value" | "conjunction"
 
@@ -225,7 +226,7 @@ const PRODUCT_EVENTS_KEY_DESCRIPTIONS = {
 } satisfies Record<FunnelPopulationFilterField, string>
 
 /** The funnel population filter's keys — one per `FunnelPopulationFilters` field, canonical spelling. */
-const PRODUCT_EVENTS_KEY_DEFINITIONS: KeyDefinition[] = FUNNEL_POPULATION_FILTER_FIELDS.map((field) => ({
+const PRODUCT_EVENTS_KEY_DEFINITIONS: KeyDefinition[] = Arr.map(FUNNEL_POPULATION_FILTER_FIELDS, (field) => ({
 	label: productEventsFilterKey(field),
 	insertText: productEventsFilterKey(field),
 	description: PRODUCT_EVENTS_KEY_DESCRIPTIONS[field],
@@ -325,7 +326,7 @@ function findLastConjunctionBoundary(expression: string, cursor: number): number
 			continue
 		}
 
-		if (expression.slice(index, index + 3).toLowerCase() !== "and") {
+		if (Str.toLowerCase(Str.slice(index, index + 3)(expression)) !== "and") {
 			continue
 		}
 
@@ -375,13 +376,13 @@ function findFirstOperator(segment: string): OperatorMatch | null {
 			// Allow "!contains" / "! contains" — find the keyword skipping optional whitespace
 			let lookahead = index + 1
 			while (lookahead < segment.length && isSpace(segment[lookahead])) lookahead += 1
-			if (segment.slice(lookahead, lookahead + 8).toLowerCase() === "contains") {
+			if (Str.toLowerCase(Str.slice(lookahead, lookahead + 8)(segment)) === "contains") {
 				const after = segment[lookahead + 8]
 				if (isSpace(after) || after === undefined) {
 					return { position: index, length: lookahead + 8 - index, operator: "!contains" }
 				}
 			}
-			if (segment.slice(lookahead, lookahead + 6).toLowerCase() === "exists") {
+			if (Str.toLowerCase(Str.slice(lookahead, lookahead + 6)(segment)) === "exists") {
 				const after = segment[lookahead + 6]
 				if (isSpace(after) || after === undefined) {
 					return { position: index, length: lookahead + 6 - index, operator: "!exists" }
@@ -408,7 +409,7 @@ function findFirstOperator(segment: string): OperatorMatch | null {
 			return { position: index, length: 1, operator: "=" }
 		}
 
-		if (segment.slice(index, index + 8).toLowerCase() === "contains") {
+		if (Str.toLowerCase(Str.slice(index, index + 8)(segment)) === "contains") {
 			const before = index === 0 ? undefined : segment[index - 1]
 			const after = segment[index + 8]
 			if (isSpace(before) && (isSpace(after) || after === undefined)) {
@@ -416,7 +417,7 @@ function findFirstOperator(segment: string): OperatorMatch | null {
 			}
 		}
 
-		if (segment.slice(index, index + 6).toLowerCase() === "exists") {
+		if (Str.toLowerCase(Str.slice(index, index + 6)(segment)) === "exists") {
 			const before = index === 0 ? undefined : segment[index - 1]
 			const after = segment[index + 6]
 			if (isSpace(before) && (isSpace(after) || after === undefined)) {
@@ -441,9 +442,9 @@ function findClosingQuote(input: string, quote: '"' | "'"): number {
 function parseWhereClauseContext(expression: string, cursor: number): ParsedWhereClauseContext {
 	const cursorPosition = clampCursor(expression, cursor)
 	const segmentStart = findLastConjunctionBoundary(expression, cursorPosition)
-	const segment = expression.slice(segmentStart, cursorPosition)
+	const segment = Str.slice(segmentStart, cursorPosition)(expression)
 	const leadingWhitespace = segment.match(/^\s*/)?.[0].length ?? 0
-	const trimmedSegment = segment.slice(leadingWhitespace)
+	const trimmedSegment = Str.slice(leadingWhitespace)(segment)
 
 	if (!trimmedSegment) {
 		return {
@@ -460,7 +461,7 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 		const keyPattern = trimmedSegment.match(/^([^\s=]+)(\s*)(.*)$/)
 
 		if (!keyPattern) {
-			const query = trimmedSegment.trim()
+			const query = Str.trim(trimmedSegment)
 			return {
 				context: "key",
 				query,
@@ -485,7 +486,7 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 			}
 		}
 
-		const operatorQuery = operatorTail.trimStart()
+		const operatorQuery = Str.trimStart(operatorTail)
 		const operatorLeadingWhitespace = operatorTail.length - operatorQuery.length
 
 		return {
@@ -497,7 +498,7 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 		}
 	}
 
-	const keyToken = trimmedSegment.slice(0, operatorMatch.position).trim()
+	const keyToken = Str.trim(Str.slice(0, operatorMatch.position)(trimmedSegment))
 	if (!keyToken) {
 		return {
 			context: "key",
@@ -510,8 +511,8 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 
 	// EXISTS / !EXISTS takes no value — go straight to conjunction context
 	if (operatorMatch.operator === "exists" || operatorMatch.operator === "!exists") {
-		const tail = trimmedSegment.slice(operatorMatch.position + operatorMatch.length)
-		const tailTrimmed = tail.trimStart()
+		const tail = Str.slice(operatorMatch.position + operatorMatch.length)(trimmedSegment)
+		const tailTrimmed = Str.trimStart(tail)
 		return {
 			context: "conjunction",
 			query: tailTrimmed,
@@ -521,9 +522,9 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 		}
 	}
 
-	const valueTail = trimmedSegment.slice(operatorMatch.position + operatorMatch.length)
+	const valueTail = Str.slice(operatorMatch.position + operatorMatch.length)(trimmedSegment)
 	const valueTailLeadingWhitespace = valueTail.match(/^\s*/)?.[0].length ?? 0
-	const trimmedValueTail = valueTail.slice(valueTailLeadingWhitespace)
+	const trimmedValueTail = Str.slice(valueTailLeadingWhitespace)(valueTail)
 	const valueStart =
 		segmentStart +
 		leadingWhitespace +
@@ -548,15 +549,15 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 		if (closingQuote === -1) {
 			return {
 				context: "value",
-				query: trimmedValueTail.slice(1),
+				query: Str.slice(1)(trimmedValueTail),
 				key: keyToken,
 				replaceStart: valueStart + 1,
 				replaceEnd: cursorPosition,
 			}
 		}
 
-		const trailing = trimmedValueTail.slice(closingQuote + 1)
-		if (!trailing.trim()) {
+		const trailing = Str.slice(closingQuote + 1)(trimmedValueTail)
+		if (!Str.trim(trailing)) {
 			return {
 				context: "conjunction",
 				query: "",
@@ -570,7 +571,7 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 
 		return {
 			context: "conjunction",
-			query: trailing.slice(trailingLeadingWhitespace),
+			query: Str.slice(trailingLeadingWhitespace)(trailing),
 			key: keyToken,
 			replaceStart: valueStart + closingQuote + 1 + trailingLeadingWhitespace,
 			replaceEnd: cursorPosition,
@@ -601,7 +602,7 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 		}
 	}
 
-	if (!trailing.trim()) {
+	if (!Str.trim(trailing)) {
 		return {
 			context: "conjunction",
 			query: "",
@@ -615,7 +616,7 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 
 	return {
 		context: "conjunction",
-		query: trailing.slice(trailingLeadingWhitespace),
+		query: Str.slice(trailingLeadingWhitespace)(trailing),
 		key: keyToken,
 		replaceStart: valueStart + valueToken.length + trailingLeadingWhitespace,
 		replaceEnd: cursorPosition,
@@ -641,11 +642,11 @@ function normalizeKey(input: string | null): string {
 
 	// Autocomplete-specific: collapse attr.* and resource.* prefixes
 	// into wildcard keys for suggestion matching
-	if (normalized.startsWith("attr.") && normalized !== "attr.") {
+	if (Str.startsWith("attr.")(normalized) && normalized !== "attr.") {
 		return "attr.*"
 	}
 
-	if (normalized.startsWith("resource.") && normalized !== "resource.") {
+	if (Str.startsWith("resource.")(normalized) && normalized !== "resource.") {
 		return "resource.*"
 	}
 
@@ -657,10 +658,10 @@ function filterAndRankSuggestions(
 	query: string,
 	maxSuggestions: number,
 ): WhereClauseAutocompleteSuggestion[] {
-	const normalizedQuery = query.trim().toLowerCase()
+	const normalizedQuery = Str.toLowerCase(Str.trim(query))
 
-	const ranked = suggestions
-		.map((suggestion, index) => {
+	const ranked = Arr.filter(
+		Arr.map(suggestions, (suggestion, index) => {
 			if (!normalizedQuery) {
 				return {
 					index,
@@ -669,10 +670,13 @@ function filterAndRankSuggestions(
 				}
 			}
 
-			const normalizedLabel = suggestion.label.toLowerCase()
-			const normalizedInsert = suggestion.insertText.toLowerCase()
+			const normalizedLabel = Str.toLowerCase(suggestion.label)
+			const normalizedInsert = Str.toLowerCase(suggestion.insertText)
 
-			if (normalizedLabel.startsWith(normalizedQuery) || normalizedInsert.startsWith(normalizedQuery)) {
+			if (
+				Str.startsWith(normalizedQuery)(normalizedLabel) ||
+				Str.startsWith(normalizedQuery)(normalizedInsert)
+			) {
 				return {
 					index,
 					score: 0,
@@ -680,7 +684,10 @@ function filterAndRankSuggestions(
 				}
 			}
 
-			if (normalizedLabel.includes(normalizedQuery) || normalizedInsert.includes(normalizedQuery)) {
+			if (
+				Str.includes(normalizedQuery)(normalizedLabel) ||
+				Str.includes(normalizedQuery)(normalizedInsert)
+			) {
 				return {
 					index,
 					score: 1,
@@ -693,17 +700,17 @@ function filterAndRankSuggestions(
 				score: 99,
 				suggestion,
 			}
-		})
-		.filter((entry) => entry.score < 99)
-		.sort((left, right) => {
-			if (left.score !== right.score) {
-				return left.score - right.score
-			}
+		}),
+		(entry) => entry.score < 99,
+	).sort((left, right) => {
+		if (left.score !== right.score) {
+			return left.score - right.score
+		}
 
-			return left.index - right.index
-		})
+		return left.index - right.index
+	})
 
-	return ranked.slice(0, maxSuggestions).map((entry) => entry.suggestion)
+	return Arr.map(ranked.slice(0, maxSuggestions), (entry) => entry.suggestion)
 }
 
 function uniqueValues(values: string[]): string[] {
@@ -711,7 +718,7 @@ function uniqueValues(values: string[]): string[] {
 	const result: string[] = []
 
 	for (const value of values) {
-		const next = value.trim()
+		const next = Str.trim(value)
 		if (!next || seen.has(next)) {
 			continue
 		}
@@ -728,7 +735,7 @@ function toStringValueSuggestion(value: string, idPrefix: string): WhereClauseAu
 		id: `${idPrefix}:${value}`,
 		kind: "value",
 		label: value,
-		insertText: `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\\"')}"`,
+		insertText: `"${Str.replace(/"/g, '\\\"')(Str.replace(/\\/g, "\\\\")(value))}"`,
 	}
 }
 
@@ -738,7 +745,7 @@ function toStringValueSuggestion(value: string, idPrefix: string): WhereClauseAu
 function buildVariableSuggestions(
 	values: WhereClauseAutocompleteValues | undefined,
 ): WhereClauseAutocompleteSuggestion[] {
-	return uniqueValues(values?.variables ?? []).map((name) => ({
+	return Arr.map(uniqueValues(values?.variables ?? []), (name) => ({
 		id: `variable:${name}`,
 		kind: "value",
 		label: `$${name}`,
@@ -768,15 +775,15 @@ function buildProductEventValueSuggestions(
 	} satisfies Record<string, string[]>
 	if (Object.hasOwn(fixed, normalizedKey)) {
 		const own: string[] = fixed[normalizedKey as keyof typeof fixed]
-		return own.map((value) => toStringValueSuggestion(value, normalizedKey))
+		return Arr.map(own, (value) => toStringValueSuggestion(value, normalizedKey))
 	}
 
 	const field = productEventsFilterField(normalizedKey)
 	if (field === undefined) return undefined
 	if (field === "visitorType") {
-		return ["new", "returning"].map((value) => toStringValueSuggestion(value, "visitor_type"))
+		return Arr.map(["new", "returning"], (value) => toStringValueSuggestion(value, "visitor_type"))
 	}
-	return uniqueValues(values?.productEventFacets?.[field] ?? []).map((value) =>
+	return Arr.map(uniqueValues(values?.productEventFacets?.[field] ?? []), (value) =>
 		toStringValueSuggestion(value, normalizedKey),
 	)
 }
@@ -794,9 +801,9 @@ function buildValueSuggestions(
 		const field = productEventsFilterField(normalizedKey)
 		if (field === undefined) return []
 		if (field === "visitorType") {
-			return ["new", "returning"].map((value) => toStringValueSuggestion(value, "visitor_type"))
+			return Arr.map(["new", "returning"], (value) => toStringValueSuggestion(value, "visitor_type"))
 		}
-		return uniqueValues(values?.productEventFacets?.[field] ?? []).map((value) =>
+		return Arr.map(uniqueValues(values?.productEventFacets?.[field] ?? []), (value) =>
 			toStringValueSuggestion(value, normalizedKey),
 		)
 	}
@@ -846,7 +853,7 @@ function buildValueSuggestions(
 				? values.metricTypes
 				: [...QUERY_BUILDER_METRIC_TYPES]
 
-		return metricTypes.map((type) => toStringValueSuggestion(type, "metricType"))
+		return Arr.map(metricTypes, (type) => toStringValueSuggestion(type, "metricType"))
 	}
 
 	const mappedValues: Record<string, string[]> = {
@@ -865,19 +872,21 @@ function buildValueSuggestions(
 
 	const explicit = mappedValues[normalizedKey]
 	if (explicit) {
-		return explicit.map((value) => toStringValueSuggestion(value, normalizedKey))
+		return Arr.map(explicit, (value) => toStringValueSuggestion(value, normalizedKey))
 	}
 
 	if (normalizedKey === "" && dataSource === "metrics") {
-		return [...QUERY_BUILDER_METRIC_TYPES].map((type) => toStringValueSuggestion(type, "metricType"))
+		return Arr.map([...QUERY_BUILDER_METRIC_TYPES], (type) => toStringValueSuggestion(type, "metricType"))
 	}
 
 	if (normalizedKey === "attr.*" && values?.attributeValues) {
-		return uniqueValues(values.attributeValues).map((value) => toStringValueSuggestion(value, "attr"))
+		return Arr.map(uniqueValues(values.attributeValues), (value) =>
+			toStringValueSuggestion(value, "attr"),
+		)
 	}
 
 	if (normalizedKey === "resource.*" && values?.resourceAttributeValues) {
-		return uniqueValues(values.resourceAttributeValues).map((value) =>
+		return Arr.map(uniqueValues(values.resourceAttributeValues), (value) =>
 			toStringValueSuggestion(value, "resource"),
 		)
 	}
@@ -888,7 +897,7 @@ function buildValueSuggestions(
 const NOISY_ATTR_PREFIXES = ["http.request.header.", "http.response.header."]
 
 function isNoisyAttributeKey(key: string): boolean {
-	return NOISY_ATTR_PREFIXES.some((prefix) => key.startsWith(prefix))
+	return Arr.some(NOISY_ATTR_PREFIXES, (prefix) => Str.startsWith(prefix)(key))
 }
 
 function buildAttributeKeySuggestions(attributeKeys: string[]): WhereClauseAutocompleteSuggestion[] {
@@ -915,7 +924,7 @@ function buildAttributeKeySuggestions(attributeKeys: string[]): WhereClauseAutoc
 }
 
 function buildResourceAttributeKeySuggestions(attributeKeys: string[]): WhereClauseAutocompleteSuggestion[] {
-	return attributeKeys.map((key) => ({
+	return Arr.map(attributeKeys, (key) => ({
 		id: `key:resource.${key}`,
 		kind: "key" as const,
 		label: `resource.${key}`,
@@ -932,12 +941,12 @@ function buildSuggestions(
 	maxSuggestions: number,
 ): WhereClauseAutocompleteSuggestion[] {
 	if (parsed.context === "key") {
-		const query = parsed.query.toLowerCase()
+		const query = Str.toLowerCase(parsed.query)
 
 		// When typing attr., show dynamic attribute keys instead of static definitions
 		if (
 			!PRODUCT_EVENT_SCOPES.includes(scope) &&
-			query.startsWith("attr.") &&
+			Str.startsWith("attr.")(query) &&
 			values?.attributeKeys &&
 			values.attributeKeys.length > 0
 		) {
@@ -948,7 +957,7 @@ function buildSuggestions(
 		// When typing resource., show dynamic resource attribute keys
 		if (
 			!PRODUCT_EVENT_SCOPES.includes(scope) &&
-			query.startsWith("resource.") &&
+			Str.startsWith("resource.")(query) &&
 			values?.resourceAttributeKeys &&
 			values.resourceAttributeKeys.length > 0
 		) {
@@ -965,7 +974,7 @@ function buildSuggestions(
 						? TRACE_SEARCH_KEY_DEFINITIONS
 						: KEY_DEFINITIONS[dataSource]
 
-		const keySuggestions = keyDefinitions.map((keyDef) =>
+		const keySuggestions = Arr.map(keyDefinitions, (keyDef) =>
 			toSuggestion(
 				{
 					id: `key:${keyDef.insertText}`,
@@ -1125,12 +1134,12 @@ export function applyWhereClauseSuggestion({
 } {
 	const safeStart = clampRange(replaceStart, 0, expression.length)
 	const safeEnd = clampRange(replaceEnd, safeStart, expression.length)
-	const before = expression.slice(0, safeStart)
-	const after = expression.slice(safeEnd)
+	const before = Str.slice(0, safeStart)(expression)
+	const after = Str.slice(safeEnd)(expression)
 
 	if (context === "operator") {
-		const left = before.replace(/\s*$/, "")
-		const right = after.replace(/^\s*/, "")
+		const left = Str.replace(/\s*$/, "")(before)
+		const right = Str.replace(/^\s*/, "")(after)
 		const insertion = ` ${suggestion.insertText} `
 		const nextExpression = `${left}${insertion}${right}`
 
@@ -1141,8 +1150,8 @@ export function applyWhereClauseSuggestion({
 	}
 
 	if (context === "conjunction") {
-		const left = before.replace(/\s*$/, "")
-		const right = after.replace(/^\s*/, "")
+		const left = Str.replace(/\s*$/, "")(before)
+		const right = Str.replace(/^\s*/, "")(after)
 		const insertion = ` ${suggestion.insertText} `
 		const nextExpression = `${left}${insertion}${right}`
 
@@ -1153,7 +1162,7 @@ export function applyWhereClauseSuggestion({
 	}
 
 	const shouldAddLeadingSpace = before.length > 0 && !/\s$/.test(before)
-	const isPrefix = suggestion.insertText.endsWith(".")
+	const isPrefix = Str.endsWith(".")(suggestion.insertText)
 	const shouldAddTrailingSpace = !isPrefix && (after.length === 0 || !/^\s/.test(after))
 	const insertion = `${shouldAddLeadingSpace ? " " : ""}${
 		suggestion.insertText

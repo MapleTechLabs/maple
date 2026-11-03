@@ -8,12 +8,13 @@ import {
 } from "../../components/integrations/gcp-connector-state"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "@maple/views/ui/heading"
 import { AppRoute, hrefOf } from "../../route"
-import { button, linkButton } from "../../ui/button"
-import { errorState } from "../../ui/error-state"
-import { panel } from "../../ui/panel"
-import { skeleton } from "../../ui/skeleton"
-import { statusDot } from "../../ui/status-dot"
+import { button, linkButton } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { panel } from "@maple/views/ui/panel"
+import { skeletonBlock } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { sectionHeading } from "../kit/section-heading"
 import { HEALTH_TONE } from "./derive"
 import { integrationNotice } from "./kit/notice"
@@ -23,8 +24,10 @@ import { gcpConnectors } from "./update-gcp"
 import { gcpConnection } from "./view-gcp-connection"
 import { gcpConfigure } from "./view-gcp-configure"
 import { gcpDialogs } from "./view-gcp-dialogs"
-import { copyScriptButton, GCP_TITLE, openCloudShellButton } from "./view-gcp-parts"
+import { copyScriptButton, openCloudShellButton } from "./view-gcp-parts"
 import { usageBand } from "./view-gcp-workloads"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `GcpIntegrationCard` and `GcpHeaderStatus`.
 
@@ -32,19 +35,16 @@ type H = HtmlBuilder<Message>
 
 /** A removed connection whose cleanup script was never seen to run. */
 const cleanupPanels = (h: H, model: Model): ReadonlyArray<Html> =>
-	model.gcpCard.removed.map((entry) =>
+	Arr.map(model.gcpCard.removed, (entry) =>
 		panel(h, { className: "gap-3 border-severity-warn-a3 bg-severity-warn-a1 px-4 py-3" }, [
 			h.div(
 				[],
 				[
-					h.h3(
-						[h.Class(GCP_TITLE)],
-						[
-							entry.label,
-							" ",
-							entry.reported ? "disconnected, may not be cleaned up" : "disconnected",
-						],
-					),
+					heading(h, { level: 3, variant: "subsection" }, [
+						entry.label,
+						" ",
+						entry.reported ? "disconnected, may not be cleaned up" : "disconnected",
+					]),
 					h.p(
 						[h.Class("text-xs/5 text-pretty text-muted-foreground")],
 						[
@@ -55,22 +55,19 @@ const cleanupPanels = (h: H, model: Model): ReadonlyArray<Html> =>
 					),
 				],
 			),
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					openCloudShellButton(h, entry.hostProjectId),
-					copyScriptButton(h, model, `removed-${entry.id}`, entry.cleanupScript, "cleanup script"),
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							attributes: [h.OnClick(Message.ClickedDismissCleanup({ id: entry.id }))],
-						},
-						["Dismiss"],
-					),
-				],
-			),
+			hstack(h, { gap: "2", wrap: true }, [
+				openCloudShellButton(h, entry.hostProjectId),
+				copyScriptButton(h, model, `removed-${entry.id}`, entry.cleanupScript, "cleanup script"),
+				button(
+					h,
+					{
+						size: "sm",
+						variant: "outline",
+						attributes: [h.OnClick(Message.ClickedDismissCleanup({ id: entry.id }))],
+					},
+					["Dismiss"],
+				),
+			]),
 		]),
 	)
 
@@ -94,62 +91,56 @@ const byStatus = (
 	const connectors =
 		focusId === null
 			? status.connectors
-			: status.connectors.filter((connector) => connector.id === focusId)
+			: Arr.filter(status.connectors, (connector) => connector.id === focusId)
 	// Focused on a source, the removal dialogs render with its header actions (`actionsEmbed`).
 	const dialogs = [
 		...(focusId === null ? gcpDialogs(h, model, timeZone) : []),
 		...gcpConfigure(h, model, timeZone),
 	]
 	if (connectors.length === 0)
-		return h.div(
-			[h.Class("flex flex-col gap-4")],
-			[
-				...cleanupPanels(h, model),
-				gcpReconnect(
-					h,
-					focusId === null
-						? "Google Cloud is not connected."
-						: "This Google Cloud connection no longer exists.",
-				),
-				...dialogs,
-			],
-		)
+		return vstack(h, { gap: "4" }, [
+			...cleanupPanels(h, model),
+			gcpReconnect(
+				h,
+				focusId === null
+					? "Google Cloud is not connected."
+					: "This Google Cloud connection no longer exists.",
+			),
+			...dialogs,
+		])
 	const ordered = connectors.toSorted(
 		(a, b) =>
 			GCP_STATE_ORDER.indexOf(gcpConnectionState(a, model.nowMs)) -
 			GCP_STATE_ORDER.indexOf(gcpConnectionState(b, model.nowMs)),
 	)
 	const band = usageBand(h, model, connectors)
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
-		[
-			...cleanupPanels(h, model),
-			...(band === null ? [] : [band]),
-			h.section(
-				[h.Class("flex min-w-0 flex-col gap-3 font-display")],
-				[
-					sectionHeading(h, {
-						title: focusId === null ? "Connections" : "Connection",
-						count: connectors.length > 1 ? String(connectors.length) : undefined,
-						actions:
-							focusId === null
-								? linkButton(h, { size: "sm", variant: "outline", href: FLOW_HREF }, [
-										"Add another account",
-									])
-								: undefined,
-					}),
-					...ordered.map((connector) => gcpConnection(h, model, connector, timeZone)),
-				],
-			),
-			...dialogs,
-		],
-	)
+	return vstack(h, { gap: "4" }, [
+		...cleanupPanels(h, model),
+		...(band === null ? [] : [band]),
+		h.section(
+			[h.Class("flex min-w-0 flex-col gap-3 font-display")],
+			[
+				sectionHeading(h, {
+					title: focusId === null ? "Connections" : "Connection",
+					count: connectors.length > 1 ? String(connectors.length) : undefined,
+					actions:
+						focusId === null
+							? linkButton(h, { size: "sm", variant: "outline", href: FLOW_HREF }, [
+									"Add another account",
+								])
+							: undefined,
+				}),
+				...Arr.map(ordered, (connector) => gcpConnection(h, model, connector, timeZone)),
+			],
+		),
+		...dialogs,
+	])
 }
 
 export const gcpCard = (h: H, model: Model, timeZone: string, focusId: string | null = null): Html =>
 	AsyncData.match(model.statuses.gcp.data, {
-		onIdle: () => skeleton(h, "h-40 w-full rounded-md"),
-		onLoading: () => skeleton(h, "h-40 w-full rounded-md"),
+		onIdle: () => skeletonBlock(h, { height: "40" }),
+		onLoading: () => skeletonBlock(h, { height: "40" }),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
@@ -164,13 +155,14 @@ export const gcpCard = (h: H, model: Model, timeZone: string, focusId: string | 
 /** `GcpHeaderStatus`: the worst connection's state, how many share it, how many projects send data. */
 export const gcpHeaderStatus = (h: H, model: Model): Html => {
 	const connectors: ReadonlyArray<V2GcpConnector> = gcpConnectors(model)
-	const states = connectors.map((connector) => gcpConnectionState(connector, model.nowMs))
+	const states = Arr.map(connectors, (connector) => gcpConnectionState(connector, model.nowMs))
 	const worst = gcpWorstState(states)
-	const inWorst = states.filter((state) => state === worst).length
-	const projects = connectors.reduce(
+	const inWorst = Arr.filter(states, (state) => state === worst).length
+	const projects = Arr.reduce(
+		connectors,
+		0,
 		(sum, connector) =>
 			sum + (connector.scope_type === "project" ? 1 : connector.discovered_project_count),
-		0,
 	)
 	return h.div(
 		[h.Class("flex items-center gap-1.5 font-display text-ui/5 text-muted-foreground")],

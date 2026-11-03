@@ -1,16 +1,21 @@
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { Option } from "effect"
-import { isChartRuntimeReady } from "../../charts/chart-runtime"
-import { ResolveThemeColors } from "../../charts/theme-colors"
-import { FAILURE_KEY_SEPARATOR, failureKey, isSameFailure, type LoadFailure } from "../../data/load-failure"
-import { errorState } from "../../ui/error-state"
-import * as Select from "../../ui/select"
-import * as SelectView from "../../ui/select-view"
+import { Option, Array as Arr } from "effect"
+import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import {
+	FAILURE_KEY_SEPARATOR,
+	failureKey,
+	isSameFailure,
+	type LoadFailure,
+} from "@maple/views/data/load-failure"
+import { errorState } from "@maple/views/ui/error-state"
+import * as Select from "@maple/views/ui/select"
+import * as SelectView from "@maple/views/ui/select-view"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
 import { signalEmptyState } from "../kit/signal-empty-state"
-import { presenceOf } from "../kit/signal-presence"
+import { presenceOf } from "@maple/views/data/signal-presence"
 import { timeControls } from "../kit/time-controls"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
@@ -28,6 +33,7 @@ import { usageCards } from "./view-usage"
 
 import { Message as SetupMessage } from "./setup-checklist"
 import * as SetupChecklistView from "./setup-checklist-view"
+import { hstack } from "@maple/views/ui/stack"
 
 const EMPTY_COLORS = {}
 
@@ -68,9 +74,12 @@ const headerActions = (h: H, model: Model): Html => {
 		view: SelectView.view,
 		toParentMessage: toSelect,
 		viewInputs: {
-			entries: environmentItems(model).map((item): SelectView.SelectEntry => ({ _tag: "Item", item })),
+			entries: Arr.map(environmentItems(model), (item): SelectView.SelectEntry => ({
+				_tag: "Item",
+				item,
+			})),
 			size: "sm",
-			toView: (parts) => h.div([h.Class("flex items-center gap-2")], [...parts, controls]),
+			toView: (parts) => hstack(h, { gap: "2" }, [...parts, controls]),
 		},
 	})
 }
@@ -122,9 +131,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const nowMs = model.nowMs ?? 0
 	const environments = environmentFilter(model)
 	const failures = pageFailures(model)
-	const pageFailureKeys = failures.map(({ failure }) => failureKey(failure)).join(FAILURE_KEY_SEPARATOR)
+	const pageFailureKeys = Arr.join(
+		Arr.map(failures, ({ failure }) => failureKey(failure)),
+		FAILURE_KEY_SEPARATOR,
+	)
 	const isExplained = (failure: LoadFailure) =>
-		failures.some((page) => isSameFailure(page.failure, failure))
+		Arr.some(failures, (page) => isSameFailure(page.failure, failure))
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
@@ -139,7 +151,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								toParentMessage: (message) => Message.GotSetupMessage({ message }),
 							}),
 						]),
-				...failures.map(({ failure, title, onRetry }) =>
+				...Arr.map(failures, ({ failure, title, onRetry }) =>
 					errorState(h, { failure, title, variant: "row", onRetry, className: "mb-4" }),
 				),
 				healthOverview(h, { model, slice, nowMs }),

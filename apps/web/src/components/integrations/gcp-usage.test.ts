@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { gcpLogVolume, gcpWorkloadCounts } from "./gcp-usage"
+import { Array as Arr } from "effect"
 
 const at = (iso: string) => Date.parse(iso)
 
@@ -22,7 +23,7 @@ describe("gcpLogVolume", () => {
 		expect(volume.hourly).toHaveLength(24)
 		expect(volume.hourly[0]).toBe(4)
 		expect(volume.hourly[23]).toBe(6)
-		expect(volume.hourly.slice(1, 23).every((entries) => entries === 0)).toBe(true)
+		expect(Arr.every(volume.hourly.slice(1, 23), (entries) => entries === 0)).toBe(true)
 	})
 
 	it("adds the severities of one hour and leaves out a row outside the window", () => {

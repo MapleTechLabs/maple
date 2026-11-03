@@ -14,7 +14,7 @@ import {
 } from "@maple/domain/http/v2"
 import type { V2Source, V2SourceDeleteResponse, V2SourceUpdateParams } from "@maple/domain/http/v2"
 import { AwsConnectionId, GcpConnectorId, ScrapeTargetId } from "@maple/domain/primitives"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
@@ -115,14 +115,15 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 				Effect.gen(function* () {
 					const tenant = yield* adminTenant("view")
 					const keys = yield* sources.list(tenant.orgId)
-					const page = yield* paginateArray(keys.map(toV2Source), query)
+					const page = yield* paginateArray(Arr.map(keys, toV2Source), query)
 					return { object: "list" as const, ...page }
 				}),
 			)
 			.handle("retrieve", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* adminTenant("view")
-					return toV2Source(yield* sources.get(tenant.orgId, params.id))
+					const source = yield* sources.get(tenant.orgId, params.id)
+					return toV2Source(source)
 				}),
 			)
 			.handle("create", ({ payload }) =>
@@ -209,7 +210,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 						object: "source_usage" as const,
 						window_start: toIsoTimestamp(usage.windowStart),
 						window_end: toIsoTimestamp(usage.windowEnd),
-						buckets: usage.buckets.map((bucket) => ({
+						buckets: Arr.map(usage.buckets, (bucket) => ({
 							hour: toIsoTimestamp(bucket.hour),
 							spans: bucket.spans,
 							logs: bucket.logs,
@@ -228,7 +229,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 						window_start: toIsoTimestamp(summary.windowStart),
 						window_end: toIsoTimestamp(summary.windowEnd),
 						// The rollup keys on the stamped `src_` id; one that does not decode names no source.
-						data: summary.totals.flatMap((total) =>
+						data: Arr.flatMap(summary.totals, (total) =>
 							Option.match(decodePublicSourceId(total.sourceId), {
 								onNone: () => [],
 								onSome: (id) => [

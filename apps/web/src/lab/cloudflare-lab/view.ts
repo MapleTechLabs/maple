@@ -1,6 +1,6 @@
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ResolveThemeColors } from "../../charts/theme-colors"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import type * as List from "../../page/infra-integrations/cloudflare/list/model"
 import { listScopeOf } from "../../page/infra-integrations/cloudflare/list/derive"
 import { listBody, THEME_TOKENS, titleRow } from "../../page/infra-integrations/cloudflare/list/view"
@@ -10,9 +10,10 @@ import type * as Zone from "../../page/infra-integrations/cloudflare/zone/model"
 import { zonePage } from "../../page/infra-integrations/cloudflare/zone/view"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import type * as Shell from "../../shell"
-import { segmentedSelect } from "../../ui/segmented-select"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { listFrame } from "./fixture"
 import { LAB_PAGES, Message, type Model, PAGE_LABEL } from "./model"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -95,7 +96,7 @@ export const toolbar = (model: Model, h: H): Html =>
 			segmentedSelect(h, {
 				size: "xs",
 				ariaLabel: "Lab page",
-				options: LAB_PAGES.map((value) => ({ value, label: PAGE_LABEL[value] })),
+				options: Arr.map(LAB_PAGES, (value) => ({ value, label: PAGE_LABEL[value] })),
 				value: model.page,
 				onChange: (page) => Message.ClickedLabPage({ page }),
 			}),

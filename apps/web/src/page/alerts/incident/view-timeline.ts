@@ -4,10 +4,12 @@ import type { IncidentTimelineEntry } from "@maple/web-data/alerts/incident-time
 import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { eyebrow } from "../../../ui/eyebrow"
-import { skeleton } from "../../../ui/skeleton"
-import { statusDot } from "../../../ui/status-dot"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { msIso } from "../shared/time"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // `IncidentTimeline`: the incident's events in order.
 
@@ -32,16 +34,15 @@ export const incidentTimeline = <M>(
 			h.ol(
 				[h.Class("divide-y divide-border-subtle border-t border-border-subtle")],
 				[
-					...options.entries.map((entry) => entryRow(h, entry, firstAt, timeZone)),
+					...Arr.map(options.entries, (entry) => entryRow(h, entry, firstAt, timeZone)),
 					...(options.isLoading ? [h.li([h.Class("py-3")], [skeleton(h, "h-4 w-2/3")])] : []),
 				],
 			),
 			...(options.isFailed
 				? [
-						h.p(
-							[h.Class("text-muted-foreground text-xs")],
-							["Couldn't load delivery history, so notifications are missing."],
-						),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Couldn't load delivery history, so notifications are missing.",
+						]),
 					]
 				: []),
 		],
@@ -85,7 +86,7 @@ const entryRow = <M>(
 				[
 					h.p([h.Class(cn("text-sm", entry.pending && "text-muted-foreground"))], [entry.title]),
 					...(entry.detail
-						? [h.p([h.Class("text-muted-foreground text-xs")], [entry.detail])]
+						? [typography(h, { size: "xs", tone: "muted", as: "p" }, [entry.detail])]
 						: []),
 					...(entry.investigation
 						? [
@@ -110,7 +111,13 @@ const entryRow = <M>(
 														}),
 													),
 												),
-												h.Class("text-primary text-xs hover:underline active:underline"),
+												h.Class(
+													typographyClass({
+														size: "xs",
+														tone: "primary",
+														className: "hover:underline active:underline",
+													}),
+												),
 											],
 											["Open investigation"],
 										),

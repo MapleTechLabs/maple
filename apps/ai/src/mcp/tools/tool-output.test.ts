@@ -17,6 +17,7 @@ import {
 	truncateToolOutput,
 	utf8ByteLength,
 } from "./tool-output"
+import { Array as Arr, String as Str } from "effect"
 
 describe("countLines", () => {
 	it("counts the way a file does", () => {
@@ -48,29 +49,32 @@ describe("truncateToolOutput", () => {
 	})
 
 	it("cuts on the line limit", () => {
-		const text = Array.from({ length: MAX_TOOL_OUTPUT_LINES + 500 }, (_, i) => `row ${i}`).join("\n")
+		const text = Arr.join(
+			Array.from({ length: MAX_TOOL_OUTPUT_LINES + 500 }, (_, i) => `row ${i}`),
+			"\n",
+		)
 		const result = truncateToolOutput(text)
 
 		assert.isTrue(result.truncated)
-		const body = result.text.slice(0, result.text.indexOf("\n\n…["))
+		const body = Str.slice(0, result.text.indexOf("\n\n…["))(result.text)
 		assert.equal(countLines(body), MAX_TOOL_OUTPUT_LINES)
-		assert.isTrue(body.startsWith("row 0\n"))
-		assert.isTrue(body.endsWith(`row ${MAX_TOOL_OUTPUT_LINES - 1}`))
+		assert.isTrue(Str.startsWith("row 0\n")(body))
+		assert.isTrue(Str.endsWith(`row ${MAX_TOOL_OUTPUT_LINES - 1}`)(body))
 	})
 
 	it("cuts on the byte limit even when the line count is fine", () => {
 		// One enormous line — a trace payload, not a row set. The line limit alone would pass it.
-		const result = truncateToolOutput("x".repeat(MAX_TOOL_OUTPUT_BYTES * 2))
+		const result = truncateToolOutput(Str.repeat(MAX_TOOL_OUTPUT_BYTES * 2)("x"))
 
 		assert.isTrue(result.truncated)
-		const body = result.text.slice(0, result.text.indexOf("\n\n…["))
+		const body = Str.slice(0, result.text.indexOf("\n\n…["))(result.text)
 		assert.equal(utf8ByteLength(body), MAX_TOOL_OUTPUT_BYTES)
 	})
 
 	it("counts bytes, not JS string length", () => {
 		// "…" is 3 UTF-8 bytes. 400 of them is 1200 bytes against a 1000-byte budget, but only 400
 		// by `.length` — measuring the wrong one lets 20% more through than the provider will see.
-		const result = truncateToolOutput("…".repeat(400), { maxBytes: 1_000, maxLines: 10 })
+		const result = truncateToolOutput(Str.repeat(400)("…"), { maxBytes: 1_000, maxLines: 10 })
 		assert.isTrue(result.truncated)
 	})
 
@@ -79,22 +83,25 @@ describe("truncateToolOutput", () => {
 		// of 3. A naive byte slice decodes the tail to U+FFFD, which the model cannot tell apart
 		// from a replacement character the tool really returned.
 		for (const maxBytes of [100, 101, 102]) {
-			const result = truncateToolOutput("…".repeat(200), { maxBytes, maxLines: 10 })
-			const body = result.text.slice(0, result.text.indexOf("\n\n…["))
+			const result = truncateToolOutput(Str.repeat(200)("…"), { maxBytes, maxLines: 10 })
+			const body = Str.slice(0, result.text.indexOf("\n\n…["))(result.text)
 			assert.notInclude(body, "�")
 			assert.isAtMost(utf8ByteLength(body), maxBytes)
 		}
 	})
 
 	it("keeps the head, so the excerpt is the start of the real output", () => {
-		const text = `first row\n${"filler\n".repeat(5_000)}last row`
-		assert.isTrue(truncateToolOutput(text).text.startsWith("first row\n"))
+		const text = `first row\n${Str.repeat(5_000)("filler\n")}last row`
+		assert.isTrue(Str.startsWith("first row\n")(truncateToolOutput(text).text))
 	})
 
 	it("tells the model what it lost and what to do about it", () => {
 		// A result that quietly loses its tail is indistinguishable from a tool that returned less
 		// than it did — which is how a model concludes "there were only 2000 traces".
-		const text = Array.from({ length: 10_000 }, (_, i) => `row ${i}`).join("\n")
+		const text = Arr.join(
+			Array.from({ length: 10_000 }, (_, i) => `row ${i}`),
+			"\n",
+		)
 		const marker = truncateToolOutput(text).text
 
 		assert.include(marker, "truncated")
@@ -110,14 +117,15 @@ describe("truncateToolOutput", () => {
 
 	it("bounds a single line longer than the byte budget", () => {
 		// No newline to cut at — the line slice is a no-op and the byte slice has to carry it.
-		const result = truncateToolOutput("y".repeat(5_000), { maxLines: 10, maxBytes: 1_000 })
-		const body = result.text.slice(0, result.text.indexOf("\n\n…["))
+		const result = truncateToolOutput(Str.repeat(5_000)("y"), { maxLines: 10, maxBytes: 1_000 })
+		const body = Str.slice(0, result.text.indexOf("\n\n…["))(result.text)
 		assert.equal(body.length, 1_000)
 	})
 })
 
 describe("renderToolDocWithinBudget", () => {
-	const rows = (count: number) => Array.from({ length: count }, (_, i) => [`row-${i}`, "x".repeat(100)])
+	const rows = (count: number) =>
+		Array.from({ length: count }, (_, i) => [`row-${i}`, Str.repeat(100)("x")])
 	const big = (count: number): ToolDoc => ({
 		title: "Big",
 		scope: [["Time range", "last 6h"]],
@@ -152,16 +160,13 @@ describe("renderToolDocWithinBudget", () => {
 		assert.include(text, "lower `limit`")
 		assert.notInclude(text, "trailer")
 		assert.notInclude(text, "row-999")
-		const lastRow = text
-			.split("\n")
-			.filter((line) => line.startsWith("| row-"))
-			.at(-1)!
+		const lastRow = Arr.filter(Str.split("\n")(text), (line) => Str.startsWith("| row-")(line)).at(-1)!
 		assert.match(lastRow, /\|$/)
 	})
 
 	it("keeps the hard-cut fallback, marker included, under the ceiling", () => {
 		const text = renderToolDocWithinBudget(
-			{ title: "t".repeat(5_000), blocks: [doc.text("body")] },
+			{ title: Str.repeat(5_000)("t"), blocks: [doc.text("body")] },
 			1_000,
 		)
 		assert.isAtMost(text.length, 1_000)
@@ -170,7 +175,7 @@ describe("renderToolDocWithinBudget", () => {
 
 	it("cuts one enormous line on characters", () => {
 		const text = renderToolDocWithinBudget(
-			{ title: "Blob", blocks: [doc.text("z".repeat(100_000))] },
+			{ title: "Blob", blocks: [doc.text(Str.repeat(100_000)("z"))] },
 			2_000,
 		)
 		assert.isAtMost(text.length, 2_000)

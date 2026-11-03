@@ -5,7 +5,7 @@
  * is a timestamp it formats itself, never user input.
  */
 import { SOURCE_ID_ATTRIBUTE } from "@maple/domain/http"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import type { SupabaseProjectRef } from "@maple/domain/primitives"
 import { timestampMs } from "@maple/backend/platform/time"
@@ -39,7 +39,7 @@ export const nextLogsWindow = (watermarkAt: number | null, now: number) => {
 /** `2026-10-21 17:48:12.059000`, the `timestamp` column's own UTC format. Built from a Date only. */
 const sqlTimestamp = (ms: number) => {
 	const iso = new Date(ms).toISOString()
-	return `${iso.slice(0, 10)} ${iso.slice(11, 23)}000`
+	return `${Str.slice(0, 10)(iso)} ${Str.slice(11, 23)(iso)}000`
 }
 
 export const logsQuerySql = (window: { readonly startMs: number; readonly endMs: number }) =>
@@ -66,9 +66,13 @@ const LogsResponse = Schema.Union([
 	Schema.Struct({ error: Schema.Unknown }),
 ])
 const decodeLogsResponse = Schema.decodeUnknownOption(Schema.fromJsonString(LogsResponse))
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 
 const errorText = (error: unknown) =>
-	(typeof error === "string" ? error : (JSON.stringify(error) ?? "unknown error")).slice(0, 300)
+	Str.slice(
+		0,
+		300,
+	)(typeof error === "string" ? error : Option.getOrElse(encodeJsonOption(error), () => "unknown error"))
 
 /** One page of raw rows; a refused query fails with {@link SupabaseLogsQueryError}. */
 export const queryLogs = Effect.fn("SupabaseApi.queryLogs")(function* (
@@ -126,16 +130,16 @@ export const parseRowTimestamp = (value: string) => {
 	if (match === null) return undefined
 	const secondsMs = timestampMs(`${match[1]}T${match[2]}Z`)
 	if (!Number.isFinite(secondsMs) || secondsMs <= 0) return undefined
-	const fraction = (match[3] ?? "").padEnd(9, "0")
+	const fraction = Str.padEnd(9, "0")(match[3] ?? "")
 	return {
-		ms: secondsMs + Number(fraction.slice(0, 3)),
+		ms: secondsMs + Number(Str.slice(0, 3)(fraction)),
 		unixNano: `${secondsMs / 1000}${fraction}`,
 	}
 }
 
 /** Rows that decode and carry a parseable time; the rest are dropped (and counted by the caller). */
 export const decodeLogRows = (raw: ReadonlyArray<unknown>): ReadonlyArray<SupabaseLogRow> =>
-	raw.flatMap((item) =>
+	Arr.flatMap(raw, (item) =>
 		Option.match(decodeLogRow(item), {
 			onNone: () => [],
 			onSome: (row) => {
@@ -156,8 +160,8 @@ type Severity = (typeof SEVERITY)[keyof typeof SEVERITY]
 
 /** Postgres `error_severity` (DEBUG1..5, LOG, NOTICE, WARNING...) or a service's `level` (info, warn...). */
 const severityOfLevel = (level: string): Severity | undefined => {
-	const value = level.trim().toUpperCase()
-	if (value.startsWith("DEBUG") || value === "TRACE") return SEVERITY.DEBUG
+	const value = Str.toUpperCase(Str.trim(level))
+	if (Str.startsWith("DEBUG")(value) || value === "TRACE") return SEVERITY.DEBUG
 	if (value === "LOG" || value === "INFO" || value === "NOTICE") return SEVERITY.INFO
 	if (value === "WARN" || value === "WARNING") return SEVERITY.WARN
 	if (value === "ERROR" || value === "ERR") return SEVERITY.ERROR
@@ -173,7 +177,7 @@ const severityOfStatus = (status: string | undefined): Severity | undefined => {
 }
 
 const attributeText = (value: unknown) =>
-	typeof value === "string" ? value : (JSON.stringify(value) ?? String(value))
+	typeof value === "string" ? value : Option.getOrElse(encodeJsonOption(value), () => String(value))
 
 /** Severity hint order: postgres `parsed.error_severity`, then `level`, then an HTTP status, else INFO. */
 export const severityOf = (attributes: Readonly<Record<string, string>>): Severity =>
@@ -185,7 +189,7 @@ export const severityOf = (attributes: Readonly<Record<string, string>>): Severi
 type OtlpKeyValue = { readonly key: string; readonly value: { readonly stringValue: string } }
 
 const keyValues = (attributes: Readonly<Record<string, string | undefined>>): Array<OtlpKeyValue> =>
-	Object.entries(attributes).flatMap(([key, value]) =>
+	Arr.flatMap(Rec.toEntries(attributes), ([key, value]) =>
 		value === undefined ? [] : [{ key, value: { stringValue: value } }],
 	)
 
@@ -199,8 +203,8 @@ export interface SupabaseLogsResource {
 }
 
 export const logRecordOf = (row: SupabaseLogRow) => {
-	const attributes = Object.fromEntries(
-		Object.entries(row.log_attributes ?? {}).map(([key, value]) => [key, attributeText(value)]),
+	const attributes = Rec.fromEntries(
+		Arr.map(Rec.toEntries(row.log_attributes ?? {}), ([key, value]) => [key, attributeText(value)]),
 	)
 	return {
 		timeUnixNano: row.unixNano,
@@ -228,7 +232,7 @@ export const logsToOtlp = (resource: SupabaseLogsResource, rows: ReadonlyArray<S
 					[SOURCE_ID_ATTRIBUTE]: resource.sourceId,
 				}),
 			},
-			scopeLogs: [{ scope: { name: SCOPE_NAME }, logRecords: rows.map(logRecordOf) }],
+			scopeLogs: [{ scope: { name: SCOPE_NAME }, logRecords: Arr.map(rows, logRecordOf) }],
 		},
 	],
 })
@@ -252,7 +256,10 @@ export const advanceWatermark = (
 	}
 	return {
 		watermarkAt: last.ms,
-		boundaryIds: rows.filter((row) => row.ms === last.ms).map((row) => row.id),
+		boundaryIds: Arr.map(
+			Arr.filter(rows, (row) => row.ms === last.ms),
+			(row) => row.id,
+		),
 	}
 }
 
@@ -265,8 +272,8 @@ export const acceptedWatermark = (
 	lastSent: SupabaseLogRow,
 ): { readonly watermarkAt: number; readonly boundaryIds: ReadonlyArray<string> } => ({
 	watermarkAt: lastSent.ms,
-	boundaryIds: rows
-		.slice(0, rows.indexOf(lastSent) + 1)
-		.filter((row) => row.ms === lastSent.ms)
-		.map((row) => row.id),
+	boundaryIds: Arr.map(
+		Arr.filter(rows.slice(0, rows.indexOf(lastSent) + 1), (row) => row.ms === lastSent.ms),
+		(row) => row.id,
+	),
 })

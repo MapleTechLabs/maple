@@ -2,20 +2,21 @@ import type { ToolSeriesPoint } from "../page/agent-sessions/tools-kit/model"
 import type { McpCallRow, McpServerOverview, McpToolDetail, McpToolRow } from "../page/mcp/data"
 import type { McpFilters } from "../page/mcp/view-kit"
 import { MCP_CLIENT_TOOLS, MCP_OVERVIEW, MCP_RUN_SQL } from "./mcp-fixture"
+import { Array as Arr, String as Str } from "effect"
 
 // The fixture narrowed the way the reads would be. Calls and errors come from the per-(client, tool)
 // breakdown and the per-client series; durations have no per-client split, so they stay server-wide.
 
 const sum = <A>(rows: ReadonlyArray<A>, read: (row: A) => number): number =>
-	rows.reduce((total, row) => total + read(row), 0)
+	Arr.reduce(rows, 0, (total, row) => total + read(row))
 
 /** The merged series rebuilt from the kept clients' series; percentiles stay the server's. */
 const seriesOf = (
 	merged: ReadonlyArray<ToolSeriesPoint>,
 	byClient: ReadonlyArray<ToolSeriesPoint>,
 ): ReadonlyArray<ToolSeriesPoint> =>
-	merged.map((point) => {
-		const inBucket = byClient.filter((entry) => entry.bucket === point.bucket)
+	Arr.map(merged, (point) => {
+		const inBucket = Arr.filter(byClient, (entry) => entry.bucket === point.bucket)
 		return {
 			...point,
 			calls: sum(inBucket, (entry) => entry.calls),
@@ -31,9 +32,9 @@ const toolSeriesOf = (
 	tools: ReadonlyArray<McpToolRow>,
 	filters: McpFilters,
 ): ReadonlyArray<ToolSeriesPoint> => {
-	const full = new Map(MCP_OVERVIEW.tools.map((row) => [row.tool, row]))
-	const runSql = tools.some((row) => row.tool === MCP_RUN_SQL.tool) ? filteredTool(filters).series : []
-	return MCP_OVERVIEW.series.map((point, index) => ({
+	const full = new Map(Arr.map(MCP_OVERVIEW.tools, (row) => [row.tool, row]))
+	const runSql = Arr.some(tools, (row) => row.tool === MCP_RUN_SQL.tool) ? filteredTool(filters).series : []
+	return Arr.map(MCP_OVERVIEW.series, (point, index) => ({
 		...point,
 		calls: Math.round(
 			sum(tools, (row) => {
@@ -54,45 +55,52 @@ export const hasFilter = (filters: McpFilters): boolean =>
 	filters.client !== undefined ||
 	filters.kind !== undefined ||
 	filters.isFailingOnly ||
-	filters.search.trim() !== ""
+	Str.trim(filters.search) !== ""
 
 /** `/mcp/:service` under the toolbar's filters: clients, tools, totals and series all narrow. */
 export const filteredOverview = (filters: McpFilters): McpServerOverview => {
 	if (!hasFilter(filters)) return MCP_OVERVIEW
-	const needle = filters.search.trim().toLowerCase()
+	const needle = Str.toLowerCase(Str.trim(filters.search))
 	// The (client, tool) pairs every filter keeps; clients, tools and totals all come from them.
-	const pairs = MCP_CLIENT_TOOLS.filter(
+	const pairs = Arr.filter(
+		MCP_CLIENT_TOOLS,
 		(pair) =>
 			(filters.client === undefined || pair.client === filters.client) &&
 			(filters.kind === undefined || kindOf(pair.client) === filters.kind) &&
-			pair.tool.toLowerCase().includes(needle) &&
+			Str.includes(needle)(Str.toLowerCase(pair.tool)) &&
 			(!filters.isFailingOnly || pair.errors > 0),
 	)
-	const tools = MCP_OVERVIEW.tools
-		.flatMap((row) => {
-			const mine = pairs.filter((pair) => pair.tool === row.tool)
-			const calls = sum(mine, (pair) => pair.calls)
-			const errors = sum(mine, (pair) => pair.errors)
-			return calls === 0
-				? []
-				: [
-						{
-							...row,
-							calls,
-							errors,
-							topError: errors > 0 ? row.topError : null,
-							spark: row.spark.map((value) => Math.round((value * calls) / row.calls)),
-						},
-					]
-		})
-		.toSorted((a, b) => b.calls - a.calls)
-	const clients = MCP_OVERVIEW.clients.flatMap((client) => {
-		const mine = pairs.filter((pair) => pair.client === client.name)
+	const tools = Arr.flatMap(MCP_OVERVIEW.tools, (row) => {
+		const mine = Arr.filter(pairs, (pair) => pair.tool === row.tool)
+		const calls = sum(mine, (pair) => pair.calls)
+		const errors = sum(mine, (pair) => pair.errors)
+		return calls === 0
+			? []
+			: [
+					{
+						...row,
+						calls,
+						errors,
+						topError: errors > 0 ? row.topError : null,
+						spark: Arr.map(row.spark, (value) => Math.round((value * calls) / row.calls)),
+					},
+				]
+	}).toSorted((a, b) => b.calls - a.calls)
+	// A quiet client (connects, no tool call) stays under a client or kind filter, as the API keeps it.
+	const keepsQuiet = needle === "" && !filters.isFailingOnly
+	const clients = Arr.flatMap(MCP_OVERVIEW.clients, (client) => {
+		if (client.calls === 0)
+			return keepsQuiet &&
+				(filters.client === undefined || client.name === filters.client) &&
+				(filters.kind === undefined || client.kind === filters.kind)
+				? [client]
+				: []
+		const mine = Arr.filter(pairs, (pair) => pair.client === client.name)
 		const calls = sum(mine, (pair) => pair.calls)
 		return calls === 0 ? [] : [{ ...client, calls, errors: sum(mine, (pair) => pair.errors) }]
 	})
 	// Each kept client's series scaled to the share of its calls the filters keep.
-	const clientSeries = MCP_OVERVIEW.clientSeries.flatMap((point) => {
+	const clientSeries = Arr.flatMap(MCP_OVERVIEW.clientSeries, (point) => {
 		const full = MCP_OVERVIEW.clients.find((client) => client.name === point.seriesKey)
 		const kept = clients.find((client) => client.name === point.seriesKey)
 		if (full === undefined || kept === undefined) return []
@@ -115,7 +123,7 @@ export const filteredOverview = (filters: McpFilters): McpServerOverview => {
 		totals: { ...MCP_OVERVIEW.totals, calls: sum(tools, (row) => row.calls), errors },
 		tools,
 		clients,
-		failures: MCP_OVERVIEW.failures.map((row) =>
+		failures: Arr.map(MCP_OVERVIEW.failures, (row) =>
 			row.label === "Tool errors" ? { ...row, count: errors } : row,
 		),
 	}
@@ -125,19 +133,20 @@ export const filteredOverview = (filters: McpFilters): McpServerOverview => {
 export const filteredTool = (filters: McpFilters): McpToolDetail => {
 	if (filters.client === undefined && filters.kind === undefined && !filters.isFailingOnly)
 		return MCP_RUN_SQL
-	const pairs = MCP_CLIENT_TOOLS.filter(
+	const pairs = Arr.filter(
+		MCP_CLIENT_TOOLS,
 		(pair) =>
 			pair.tool === MCP_RUN_SQL.tool &&
 			(filters.client === undefined || pair.client === filters.client) &&
 			(filters.kind === undefined || kindOf(pair.client) === filters.kind) &&
 			(!filters.isFailingOnly || pair.errors > 0),
 	)
-	const names = new Set(pairs.map((pair) => pair.client))
+	const names = new Set(Arr.map(pairs, (pair) => pair.client))
 	const keep = (call: McpCallRow) =>
 		names.has(call.client) && (!filters.isFailingOnly || call.errorType !== null)
-	const clientSeries = MCP_RUN_SQL.clientSeries.filter((point) => names.has(point.seriesKey))
+	const clientSeries = Arr.filter(MCP_RUN_SQL.clientSeries, (point) => names.has(point.seriesKey))
 	const errors = sum(pairs, (pair) => pair.errors)
-	const failed = MCP_RUN_SQL.failed.filter(keep)
+	const failed = Arr.filter(MCP_RUN_SQL.failed, keep)
 	const series = seriesOf(MCP_RUN_SQL.series, clientSeries)
 	return {
 		...MCP_RUN_SQL,
@@ -149,15 +158,15 @@ export const filteredTool = (filters: McpFilters): McpToolDetail => {
 		errorGroups:
 			errors === 0
 				? []
-				: MCP_RUN_SQL.errorGroups.map((group) => ({
+				: Arr.map(MCP_RUN_SQL.errorGroups, (group) => ({
 						...group,
 						count: errors,
-						clients: pairs.filter((pair) => pair.errors > 0).length,
-						lastSeenMs: Math.max(...failed.map((call) => call.timeMs), 0),
-						trend: series.map((point) => point.errors),
+						clients: Arr.filter(pairs, (pair) => pair.errors > 0).length,
+						lastSeenMs: Math.max(...Arr.map(failed, (call) => call.timeMs), 0),
+						trend: Arr.map(series, (point) => point.errors),
 					})),
-		slowest: MCP_RUN_SQL.slowest.filter(keep),
+		slowest: Arr.filter(MCP_RUN_SQL.slowest, keep),
 		failed,
-		recent: MCP_RUN_SQL.recent.filter(keep),
+		recent: Arr.filter(MCP_RUN_SQL.recent, keep),
 	}
 }

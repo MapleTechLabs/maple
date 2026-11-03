@@ -1,8 +1,8 @@
 import { OrgId } from "@maple/domain"
 import { V2ErrorIssue } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -14,7 +14,7 @@ const window = { startTime: "2026-09-30 12:00:00", endTime: "2026-10-01 12:00:00
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const ids = ["iss_YoxMYDoXSr3tsBZyBLmNMv", "iss_YoxMYDoXSr3tsBZyBLmNMw", "iss_YoxMYDoXSr3tsBZyBLmNMx"]
 const issue = (id: string, lastSeen: string) =>
@@ -61,7 +61,7 @@ const loaded = (): Model => {
 		entered,
 		Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
 	).model
-	const data = ids.map((id, index) => issue(id, `2026-10-01T11:4${5 - index}:00.000Z`))
+	const data = Arr.map(ids, (id, index) => issue(id, `2026-10-01T11:4${5 - index}:00.000Z`))
 	return pageUpdate(
 		model,
 		Message.CompletedFetchPage({
@@ -133,7 +133,8 @@ describe("errors hub selection", () => {
 	})
 
 	test("a row still being written is written again: the newest pick is sent, not dropped", () => {
-		const press = (model: Model, key: string) => pageUpdate(model, Message.PressedListKey({ key, isShift: false })).model
+		const press = (model: Model, key: string) =>
+			pageUpdate(model, Message.PressedListKey({ key, isShift: false })).model
 		const selected = press(press(loaded(), "j"), "x")
 		const first = pageUpdate(selected, Message.ClickedBulkClaim()).model
 		const again = pageUpdate(press(first, "x"), Message.ClickedBulkClaim())
@@ -151,7 +152,8 @@ describe("errors hub selection", () => {
 	})
 
 	test("a single row's write keeps the selection: only the bulk bar clears it", () => {
-		const press = (model: Model, key: string) => pageUpdate(model, Message.PressedListKey({ key, isShift: false })).model
+		const press = (model: Model, key: string) =>
+			pageUpdate(model, Message.PressedListKey({ key, isShift: false })).model
 		const selected = press(press(press(press(loaded(), "j"), "x"), "j"), "x")
 		expect(selected.selectedIds).toHaveLength(2)
 		const done = pageUpdate(
@@ -183,7 +185,10 @@ describe("errors hub selection", () => {
 		expect(names(second.commands)).toContain("FetchErrorIssuesPage")
 		const firstKey = first.model.pages[0]?.page.key ?? ""
 		expect(second.model.pages[0]?.page.key).not.toBe(firstKey)
-		const late = pageUpdate(second.model, Message.CompletedFetchPage({ key: firstKey, result: Result.fail(toLoadFailure("old")) }))
+		const late = pageUpdate(
+			second.model,
+			Message.CompletedFetchPage({ key: firstKey, result: Result.fail(toLoadFailure("old")) }),
+		)
 		expect(late.model.pages).toEqual(second.model.pages)
 	})
 })

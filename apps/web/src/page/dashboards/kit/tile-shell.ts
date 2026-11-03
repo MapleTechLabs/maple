@@ -1,14 +1,18 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { cardActionStyles } from "@maple/ui/styles/ui/card"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { card, cardHeader, cardPanel } from "../../../ui/card"
-import { emptyMessage } from "../../../ui/empty"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
+import { button } from "@maple/views/ui/button"
+import { card, cardAction, cardHeader, cardPanel } from "@maple/views/ui/card"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { pressable } from "@maple/views/ui/pressable"
 import { isEmptyError, type WidgetDataState } from "./data-state"
 import { NARROW_RANGE_LABEL } from "./widget-data"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { swatch } from "@maple/views/ui/swatch"
+import { Array as Arr } from "effect"
 
 /** `useId` of the grid's hidden rearranging instructions, which every grip describes itself by. */
 export const GRID_INSTRUCTIONS_ID = "dashboard-grid-instructions"
@@ -48,34 +52,32 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<LegendItem>): H
 			),
 		],
 		[
-			...visible.map((item) =>
+			...Arr.map(visible, (item) =>
 				h.span(
 					[h.Class("flex min-w-0 shrink items-center gap-1.5 text-3xs text-muted-foreground")],
 					[
-						h.span([
-							h.Class(
-								cn(
-									"size-2 shrink-0 rounded-xs",
-									item.dashed === true && "border border-dashed",
-								),
-							),
-							h.Style(
-								item.dashed === true
-									? { "border-color": item.color }
-									: { "background-color": item.color },
-							),
-						]),
+						swatch(h, { color: item.color, dashed: item.dashed }),
 						h.span([h.Class("truncate")], [item.label]),
 					],
 				),
 			),
 			...(overflow > 0
 				? [
-						h.span(
-							[
-								h.Class("shrink-0 text-3xs text-muted-foreground"),
-								h.Title(items.map((i) => i.label).join(", ")),
-							],
+						typography(
+							h,
+							{
+								size: "3xs",
+								tone: "muted",
+								className: "shrink-0",
+								attributes: [
+									h.Title(
+										Arr.join(
+											Arr.map(items, (i) => i.label),
+											", ",
+										),
+									),
+								],
+							},
 							[`+${overflow}`],
 						),
 					]
@@ -97,16 +99,14 @@ const timeRangeChip = <M>(h: HtmlBuilder<M>, label: string): Html =>
 
 /** The grip a tile is dragged by (edit mode); the press starts the grid gesture. */
 const grip = <M>(h: HtmlBuilder<M>, title: string): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.AriaLabel(`Move ${title}`),
-			h.DataAttribute("grid-label", title),
-			h.Class(
+	pressable(
+		h,
+		{
+			label: `Move ${title}`,
+			className:
 				"widget-drag-handle cursor-grab touch-none rounded-sm text-muted-foreground outline-none group-[.is-layout-locked]/canvas:hidden hover:text-foreground active:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing",
-			),
-			h.AriaDescribedBy(GRID_INSTRUCTIONS_ID),
-		],
+			attributes: [h.DataAttribute("grid-label", title), h.AriaDescribedBy(GRID_INSTRUCTIONS_ID)],
+		},
 		[icon(h, "GripDotsIcon", { size: 14 })],
 	)
 
@@ -121,44 +121,36 @@ export const widgetShell = <M>(
 			cardHeader(
 				h,
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-2")],
-						[
-							...(options.isEdit && options.hasGrip ? [grip(h, options.title)] : []),
-							eyebrow(
-								h,
-								{
-									variant: "label",
-									as: "div",
-									className: "min-w-0 truncate",
-									attributes: [h.Title(options.title)],
-								},
-								[options.title],
-							),
-							...(options.timeRangeLabel === undefined
-								? []
-								: [timeRangeChip(h, options.timeRangeLabel)]),
-							...(options.legendItems !== undefined && options.legendItems.length >= 2
-								? [headerLegend(h, options.legendItems)]
-								: []),
-						],
-					),
+					hstack(h, { gap: "2", shrink: true }, [
+						...(options.isEdit && options.hasGrip ? [grip(h, options.title)] : []),
+						eyebrow(
+							h,
+							{
+								variant: "label",
+								as: "div",
+								className: "min-w-0 truncate",
+								attributes: [h.Title(options.title)],
+							},
+							[options.title],
+						),
+						...(options.timeRangeLabel === undefined
+							? []
+							: [timeRangeChip(h, options.timeRangeLabel)]),
+						...(options.legendItems !== undefined && options.legendItems.length >= 2
+							? [headerLegend(h, options.legendItems)]
+							: []),
+					]),
 					...(options.menu === null
 						? []
 						: [
-								h.div(
-									[
-										h.Class(
-											cn(
-												cardActionStyles,
-												!options.isEdit &&
-													"opacity-0 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100 pointer-coarse:opacity-100",
-												!options.isEdit && options.isMenuOpen && "opacity-100",
-											),
-										),
-										h.DataAttribute("slot", "card-action"),
-									],
+								cardAction(
+									h,
 									[options.menu],
+									cn(
+										!options.isEdit &&
+											"opacity-0 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100 pointer-coarse:opacity-100",
+										!options.isEdit && options.isMenuOpen && "opacity-100",
+									),
 								),
 							]),
 				],
@@ -180,7 +172,7 @@ export const widgetShell = <M>(
 /** `WidgetEmptyState`: the query ran and returned nothing. */
 export const widgetEmptyState = <M>(h: HtmlBuilder<M>): Html =>
 	emptyMessage(h, { className: "flex h-full flex-col items-center justify-center gap-1.5 px-3 py-0" }, [
-		h.span([h.Class("font-medium")], ["No data in the selected time range"]),
+		h.span([h.Class("font-medium")], ["No data in this window"]),
 		h.span(
 			[h.Class("text-3xs text-foreground-subtle max-w-full line-clamp-3")],
 			["Widen the time range or check the query's filters."],
@@ -196,19 +188,14 @@ const mutedError = <M>(
 	h.div(
 		[h.Class("flex items-center justify-center h-full flex-col gap-1.5 px-3")],
 		[
-			h.span(
-				[h.Class("text-xs font-medium text-muted-foreground")],
-				[state.title ?? (state.kind === "range" ? "Range too wide" : "Not configured")],
-			),
+			typography(h, { size: "xs", tone: "muted", weight: "medium" }, [
+				state.title ?? (state.kind === "range" ? "Range too wide" : "Not configured"),
+			]),
 			...(state.message === null
 				? []
 				: [
 						h.span(
-							[
-								h.Class(
-									"text-3xs text-foreground-subtle max-w-full text-center line-clamp-3",
-								),
-							],
+							[h.Class("text-3xs text-foreground-subtle max-w-full text-center line-clamp-3")],
 							[state.message],
 						),
 					]),
@@ -252,7 +239,10 @@ const failedState = <M>(
 	h.div(
 		[h.Class("flex items-center justify-center h-full flex-col gap-1.5 px-3")],
 		[
-			h.span([h.Class(cn("text-xs font-medium", TONE_TEXT.crit))], [state.title ?? "Unable to load"]),
+			h.span(
+				[h.Class(cn(typographyClass({ size: "xs", weight: "medium" }), TONE_TEXT.crit))],
+				[state.title ?? "Unable to load"],
+			),
 			...(state.message === null
 				? []
 				: [

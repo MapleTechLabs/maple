@@ -124,19 +124,21 @@ export function downsample(rows: ReadonlyArray<ChartPoint>): ChartPoint[] {
 
 /** Clip bands to the visible domain and drop the ones entirely outside it. */
 export const clipToDomain = <T extends Band>(bands: ReadonlyArray<T>, domain: ChartDomain): Array<T & Band> =>
-	bands
-		.filter(
+	Arr.map(
+		Arr.filter(
+			bands,
 			(band) =>
 				Number.isFinite(band.x1) &&
 				Number.isFinite(band.x2) &&
 				band.x2 >= domain.min &&
 				band.x1 <= domain.max,
-		)
-		.map((band) => ({
+		),
+		(band) => ({
 			...band,
 			x1: Math.max(band.x1, domain.min),
 			x2: Math.min(band.x2, domain.max),
-		}))
+		}),
+	)
 
 /**
  * The domain to actually frame the plot on.
@@ -205,9 +207,9 @@ export const projectPreview = (
 	// An entirely valueless preview (every window no-data) charts nothing useful
 	// — the caller falls through to checks or to the placeholder instead of
 	// drawing an empty grid.
-	if (!previewSeries.some((s) => s.points.some((p) => p.value != null))) return EMPTY_PREVIEW
+	if (!Arr.some(previewSeries, (s) => Arr.some(s.points, (p) => p.value != null))) return EMPTY_PREVIEW
 
-	const keys = previewSeries.map((s) => s.groupKey)
+	const keys = Arr.map(previewSeries, (s) => s.groupKey)
 	const single = keys.length === 1
 	const stepMs = (preview?.bucketSeconds ?? 60) * 1000
 	const byT = new Map<number, ChartPoint>()
@@ -254,9 +256,9 @@ export const projectPreview = (
 
 	// Runs of windows where every group came back empty → merged hatched bands.
 	const noDataBands: Band[] = []
-	const empty = Array.from(coverage.values())
-		.filter((b) => b.points > 0 && b.withData === 0)
-		.sort((a, b) => a.x1 - b.x1)
+	const empty = Arr.filter(Array.from(coverage.values()), (b) => b.points > 0 && b.withData === 0).sort(
+		(a, b) => a.x1 - b.x1,
+	)
 	for (const bucket of empty) {
 		const last = noDataBands[noDataBands.length - 1]
 		if (last != null && bucket.x1 <= last.x2 + 1)
@@ -278,14 +280,14 @@ export const projectPreview = (
 export const projectChecks = (
 	checks: ReadonlyArray<AlertCheckDocument>,
 ): { readonly rows: ChartPoint[]; readonly hasPoints: boolean } => {
-	const rows: ChartPoint[] = checks
-		.map((check) => ({
+	const rows: ChartPoint[] = Arr.filter(
+		Arr.map(checks, (check) => ({
 			t: new Date(normalizeTimestampInput(check.timestamp)).getTime(),
 			[SINGLE_KEY]: check.observedValue,
-		}))
-		.filter((row) => Number.isFinite(row.t))
-		.sort((a, b) => a.t - b.t)
-	return { rows: downsample(rows), hasPoints: rows.some((r) => r[SINGLE_KEY] != null) }
+		})),
+		(row) => Number.isFinite(row.t),
+	).sort((a, b) => a.t - b.t)
+	return { rows: downsample(rows), hasPoints: Arr.some(rows, (r) => r[SINGLE_KEY] != null) }
 }
 
 /**
@@ -328,9 +330,10 @@ export const mergeGhost = (
 	ghostRows: ReadonlyArray<ChartPoint>,
 	fallbackSpacing: number,
 ): { readonly rows: ChartPoint[]; readonly divergence: number | null } => {
-	const ghostPoints = ghostRows
-		.map((row) => ({ t: row.t, v: row[SINGLE_KEY] }))
-		.filter((p): p is { t: number; v: number } => typeof p.v === "number")
+	const ghostPoints = Arr.filter(
+		Arr.map(ghostRows, (row) => ({ t: row.t, v: row[SINGLE_KEY] })),
+		(p): p is { t: number; v: number } => typeof p.v === "number",
+	)
 	if (ghostPoints.length === 0) return { rows: [...primary], divergence: null }
 
 	// Close enough to be the same window, far enough that a coarser summary
@@ -340,7 +343,7 @@ export const mergeGhost = (
 	let cursor = 0
 	let maxGap: number | null = null
 
-	const rows = primary.map((row) => {
+	const rows = Arr.map(primary, (row) => {
 		while (
 			cursor + 1 < ghostPoints.length &&
 			Math.abs(ghostPoints[cursor + 1]!.t - row.t) <= Math.abs(ghostPoints[cursor]!.t - row.t)

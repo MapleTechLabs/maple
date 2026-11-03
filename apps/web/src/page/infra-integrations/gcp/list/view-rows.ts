@@ -4,15 +4,20 @@ import { gcpWorkloadId, gcpWorkloadSearch } from "../../../../components/infra/g
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../../charts/chart"
-import * as Sparkline from "../../../../charts/sparkline"
-import { resolveColor, type ThemeColors } from "../../../../charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import * as Sparkline from "@maple/views/charts/sparkline"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
 import { ROW_LINK_CLASS } from "../../../infra/kit/data-table"
 import { type MetaItem, metaLine } from "../../../infra/kit/meta-line"
 import { gcpServiceIcon } from "../service-icon"
 import { Message } from "./model"
 import { type GcpBandSpec, healthDot } from "./view-band"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstackClass } from "@maple/views/ui/stack"
+import { columnClass } from "@maple/views/ui/column"
+import { spaced } from "@maple/views/ui/spaced"
+import { Array as Arr, String as Str } from "effect"
 
 // The shared parts of the Google Cloud list rows.
 
@@ -30,9 +35,9 @@ export type RowsContext = Readonly<{
 	locale: string
 }>
 
-export const NAME = "w-0 min-w-56 flex-1"
-export const NUMBER = "text-right font-mono text-xs tabular-nums"
-export const SUB = "font-mono text-3xs text-muted-foreground"
+export const NAME = columnClass({ min: "56" })
+export const NUMBER = typographyClass({ size: "xs", mono: true, numeric: true, className: "text-right" })
+export const SUB = typographyClass({ size: "3xs", tone: "muted", mono: true })
 
 /** The workload's page: the name, its identity params and the list's own time params. */
 export const workloadHref = (
@@ -74,24 +79,26 @@ export const workloadRow = <R extends RowBase, S extends string>(
 		[
 			healthDot(h, options.spec, rowHealth(options.rules, row)),
 			h.div(
-				[h.Class(cn(NAME, "flex items-center gap-3"))],
+				[h.Class(cn(NAME, hstackClass({ gap: "3" })))],
 				[
 					gcpServiceIcon(h, { service: row.service, databaseVersion: row.engine }),
-					h.div(
-						[h.Class("min-w-0 flex-1 space-y-0.5")],
-						[
-							h.div(
-								[
-									h.Class(
-										"truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
-									),
-									h.Title(row.name),
-								],
-								[row.name],
-							),
-							...(line === null ? [] : [line]),
-						],
-					),
+					spaced(h, { space: "0.5", fill: true }, [
+						typography(
+							h,
+							{
+								size: "xs",
+								tone: "foreground",
+								weight: "medium",
+								mono: true,
+								truncate: true,
+								as: "div",
+								className: "transition-colors group-hover:text-primary",
+								attributes: [h.Title(row.name)],
+							},
+							[row.name],
+						),
+						...(line === null ? [] : [line]),
+					]),
 				],
 			),
 			...cells,
@@ -111,7 +118,7 @@ export const spark = (
 ): Html =>
 	values === undefined || values.length < 2 || ctx.theme === null || !ctx.isChartReady
 		? h.div([h.Class("h-5 min-w-0 flex-1")])
-		: values.every((value) => value === 0)
+		: Arr.every(values, (value) => value === 0)
 			? // All zeros is no traffic, not a flat line of data: a muted dash keeps the slot.
 				h.div(
 					[h.Class("flex h-5 min-w-0 flex-1 items-center")],
@@ -141,7 +148,7 @@ export const spark = (
 
 /** `VolumeCell`: a count and its sparkline. */
 /** "880K" over "880.0K": a trailing ".0" carries nothing, so the column drops it. */
-const formatVolume = (value: number): string => formatNumber(value).replace(/\.0(?=[KMBT]$)/, "")
+const formatVolume = (value: number): string => Str.replace(/\.0(?=[KMBT]$)/, "")(formatNumber(value))
 
 const VOLUME_CELL = "flex w-44 items-center gap-3"
 const VOLUME_NUMBER_SLOT = "w-[56px] shrink-0"
@@ -149,7 +156,7 @@ const VOLUME_NUMBER_SLOT = "w-[56px] shrink-0"
 /** The head over a `volumeCell` column: its label ends where the right-aligned counts end. */
 export const volumeHead = (h: H, label: string, hidden?: string): Html =>
 	h.div(
-		[h.Class(cn(VOLUME_CELL, "text-2xs font-medium", hidden))],
+		[h.Class(cn(VOLUME_CELL, typographyClass({ size: "2xs", weight: "medium" }), hidden))],
 		[
 			h.span(
 				[h.Class(cn(VOLUME_NUMBER_SLOT, "flex justify-end whitespace-nowrap text-muted-foreground"))],
@@ -185,4 +192,4 @@ export const volumeCell = (
 	)
 
 export const rowSlot = (prefix: string, keys: ReadonlyArray<string>) =>
-	`${prefix}-${gcpWorkloadId(keys).replaceAll("\u0000", "~")}`
+	`${prefix}-${Str.replaceAll("\u0000", "~")(gcpWorkloadId(keys))}`

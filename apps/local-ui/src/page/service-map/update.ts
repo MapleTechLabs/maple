@@ -1,9 +1,9 @@
 import type { Resources } from "../../platform/resources"
 import { snapToMinute, WIDEST_RANGE } from "../../lib/time"
-import * as ServiceMap from "@maple/web/service-map/map/service-map"
+import * as ServiceMap from "@maple/views/service-map/map/service-map"
 import { Option, Result } from "effect"
 import { AsyncData, type Command } from "foldkit"
-import { accept, acceptCached, idle } from "../../data/slot"
+import { accept, acceptCached, idle } from "@maple/views/data/keyed"
 import { type PageContext, PageOutMessage, withParams } from "../contract"
 import { updateCopy } from "../kit/copies"
 import { ReadClock, ReadRefreshClock, ReadStored } from "./command"
@@ -61,7 +61,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			const shown = syncMap({ model: cached.isFresh ? settleRefresh(next) : next }, context)
 			if (cached.isFresh) return shown
 			// Shown while the window's own rows load (an older window, or a stale exact one).
-			const again = load(shown.model, context, true)
+			const again = load(shown.model, context, false, true)
 			return { ...shown, model: again.model, commands: [...(shown.commands ?? []), ...(again.commands ?? [])] }
 		},
 		FailedFetchServiceMap: ({ key, failure }) => ({

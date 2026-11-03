@@ -1,6 +1,7 @@
 import type { V2UptimeMonitor } from "@maple/domain/http/v2"
 import type { Tone } from "@maple/ui/lib/tone"
 import { isoMs } from "./time"
+import { Array as Arr, String as Str } from "effect"
 
 // Pure reads of an uptime monitor shared by the Uptime tab, the monitor page and the service card.
 
@@ -73,7 +74,7 @@ export const KIND_LABEL = {
 } as const satisfies Record<UptimeMonitor["kind"], string>
 
 /** A URL without its scheme, as the list shows it. */
-export const bareUrl = (url: string): string => url.replace(/^https?:\/\//u, "")
+export const bareUrl = (url: string): string => Str.replace(/^https?:\/\//u, "")(url)
 
 export const heartbeatScheduleLabel = (
 	config: Extract<UptimeMonitor["config"], { type: "heartbeat" }>,
@@ -117,7 +118,7 @@ export const requestLine = (monitor: UptimeMonitor): string => {
 
 /** Share of passing checks, or `null` with none. */
 export const uptimeShare = (recent: ReadonlyArray<RecentCheck>): number | null =>
-	recent.length === 0 ? null : recent.filter((check) => check.ok).length / recent.length
+	recent.length === 0 ? null : Arr.filter(recent, (check) => check.ok).length / recent.length
 
 /** `99.58%`; whole shares drop the decimals. */
 export const formatShare = (share: number | null): string => {
@@ -131,9 +132,9 @@ export type LatencyPercentiles = Readonly<{ p50: number | null; p95: number | nu
 
 /** Nearest-rank p50, p95 and p99 of the recent durations, each `null` with none. */
 export const latencyPercentiles = (recent: ReadonlyArray<RecentCheck>): LatencyPercentiles => {
-	const sorted = recent
-		.flatMap((check) => (check.duration_ms === null ? [] : [check.duration_ms]))
-		.sort((a, b) => a - b)
+	const sorted = Arr.flatMap(recent, (check) =>
+		check.duration_ms === null ? [] : [check.duration_ms],
+	).sort((a, b) => a - b)
 	const at = (q: number) =>
 		sorted.length === 0
 			? null
@@ -178,11 +179,11 @@ export const matchesStatus = (monitor: UptimeMonitor, filter: StatusFilter): boo
 
 /** Name or target contains the query, case-insensitively. */
 export const matchesQuery = (monitor: UptimeMonitor, query: string, nowMs: number): boolean => {
-	const needle = query.trim().toLowerCase()
+	const needle = Str.toLowerCase(Str.trim(query))
 	return (
 		needle === "" ||
-		monitor.name.toLowerCase().includes(needle) ||
-		targetLine(monitor, nowMs).toLowerCase().includes(needle)
+		Str.includes(needle)(Str.toLowerCase(monitor.name)) ||
+		Str.includes(needle)(Str.toLowerCase(targetLine(monitor, nowMs)))
 	)
 }
 
@@ -197,14 +198,14 @@ export type UptimeSummary = Readonly<{
 
 export const summarize = (monitors: ReadonlyArray<UptimeMonitor>): UptimeSummary => {
 	const count = (status: DisplayStatus) =>
-		monitors.filter((monitor) => displayStatus(monitor) === status).length
-	const active = monitors.filter((monitor) => displayStatus(monitor) !== "paused")
+		Arr.filter(monitors, (monitor) => displayStatus(monitor) === status).length
+	const active = Arr.filter(monitors, (monitor) => displayStatus(monitor) !== "paused")
 	return {
 		total: monitors.length,
 		up: count("up"),
 		down: count("down"),
 		degraded: count("degraded"),
 		paused: count("paused"),
-		share: uptimeShare(active.flatMap((monitor) => monitor.state.recent)),
+		share: uptimeShare(Arr.flatMap(active, (monitor) => monitor.state.recent)),
 	}
 }

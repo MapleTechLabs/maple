@@ -1,5 +1,5 @@
 import { OrgId, UserId } from "@maple/domain"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { describe, expect, test, vi } from "vitest"
 
 // Clerk mode is read at import; the shell's favorites listener targets `window` at import too.
@@ -15,8 +15,9 @@ import * as SignIn from "./page/sign-in"
 import type { ClerkSnapshot, PendingSessionTask } from "./platform/clerk"
 import { AppRoute } from "./route"
 import * as Shell from "./shell"
-import * as Toast from "./ui/toast"
+import * as Toast from "@maple/views/ui/toast"
 import { update } from "./update"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 
@@ -29,6 +30,7 @@ const base = (route: AppRoute): Model => ({
 	toasts: Toast.init("toasts"),
 	toastActions: {},
 	toastRootActions: {},
+	tooltip: TooltipHost.init("tooltip"),
 	page: null,
 	pageInstances: 0,
 	parkedPages: [],
@@ -51,10 +53,14 @@ const snapshotOf = (task: PendingSessionTask | null): ClerkSnapshot => ({
 })
 
 const namesOf = (result: { readonly commands?: ReadonlyArray<{ readonly name: string }> }) =>
-	(result.commands ?? []).map(({ name }) => name)
+	Arr.map(result.commands ?? [], ({ name }) => name)
 const urlsOf = (result: {
 	readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }>
-}) => (result.commands ?? []).filter(({ name }) => name === "ReplaceUrl").map(({ args }) => args)
+}) =>
+	Arr.map(
+		Arr.filter(result.commands ?? [], ({ name }) => name === "ReplaceUrl"),
+		({ args }) => args,
+	)
 
 describe("pending session task", () => {
 	test("a pending reset-password session is sent to the task screen, not the dashboard", () => {

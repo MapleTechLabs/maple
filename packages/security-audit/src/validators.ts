@@ -3,7 +3,7 @@
  * is valid exactly when Cloudflare's own checker says so, and a skill bump that tightens the
  * contract tightens ours with it.
  */
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import * as LedgerValidator from "../skill/validate-coverage-ledger.cjs"
 import * as FindingsValidator from "../skill/validate-findings.cjs"
 import reportSchema from "../skill/report-schema.json" with { type: "json" }
@@ -20,7 +20,7 @@ export class SecurityAuditContractError extends Schema.TaggedError<SecurityAudit
 
 const failWith = (document: "ledger" | "findings", errors: ReadonlyArray<string>) =>
 	new SecurityAuditContractError({
-		message: `${document} failed the skill's validator: ${errors.slice(0, 3).join("; ")}`,
+		message: `${document} failed the skill's validator: ${Arr.join(errors.slice(0, 3), "; ")}`,
 		document,
 		errors: [...errors],
 	})
@@ -29,8 +29,9 @@ const failWith = (document: "ledger" | "findings", errors: ReadonlyArray<string>
  * The document as the file-based validator would read it. Values built in memory can share object
  * references, which the upstream validator rejects as cycles; a written-out document never does.
  */
-type Json = string | number | boolean | null | ReadonlyArray<Json> | { readonly [key: string]: Json }
-const asWritten = (value: unknown): Json => JSON.parse(JSON.stringify(value))
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const decodeJson = Schema.decodeSync(Schema.fromJsonString(Schema.Json))
+const asWritten = (value: unknown): Schema.Json => decodeJson(encodeJson(value))
 
 /** The skill's own `coverage_id`: RFC 3986-encoded canonical references joined with `::`. */
 export const coverageId = (refs: CanonicalRefs): string => LedgerValidator.canonicalCoverageId(refs)

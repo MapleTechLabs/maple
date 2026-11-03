@@ -14,6 +14,7 @@ import {
 	faviconIcon,
 	type WebAnalyticsDigestProps,
 } from "./web-analytics-digest-core"
+import { Array as Arr } from "effect"
 
 const pct = (value: number): Delta => ({ kind: "pct", value })
 
@@ -34,14 +35,12 @@ function derive(services: Array<DigestService>): {
 			entry.errors += (s.requests * s.errorRate) / 100
 			totals.set(key, entry)
 		}
-		return [...totals.entries()]
-			.map(([label, t]) => ({
-				label,
-				requests: t.requests,
-				errorRate: t.requests > 0 ? (t.errors / t.requests) * 100 : 0,
-				requestsDelta: pct(4.2),
-			}))
-			.sort((a, b) => b.requests - a.requests)
+		return Arr.map([...totals.entries()], ([label, t]) => ({
+			label,
+			requests: t.requests,
+			errorRate: t.requests > 0 ? (t.errors / t.requests) * 100 : 0,
+			requestsDelta: pct(4.2),
+		})).sort((a, b) => b.requests - a.requests)
 	}
 
 	const groups = new Map<string, Array<DigestService>>()
@@ -53,12 +52,10 @@ function derive(services: Array<DigestService>): {
 
 	return {
 		services: [...services].sort((a, b) => b.errorRate - a.errorRate),
-		environmentGroups: [...groups.entries()]
-			.map(([environment, groupServices]) => {
-				const requests = groupServices.reduce((sum, s) => sum + s.requests, 0)
-				return { environment, requests, requestsDelta: pct(6.1), services: groupServices }
-			})
-			.sort((a, b) => b.requests - a.requests),
+		environmentGroups: Arr.map([...groups.entries()], ([environment, groupServices]) => {
+			const requests = Arr.reduce(groupServices, 0, (sum, s) => sum + s.requests)
+			return { environment, requests, requestsDelta: pct(6.1), services: groupServices }
+		}).sort((a, b) => b.requests - a.requests),
 		breakdown: { environments: by((s) => s.environment), namespaces: by((s) => s.namespace) },
 	}
 }
@@ -166,7 +163,7 @@ export const watchDigestProps: WeeklyDigestProps = {
 		errors: { value: 21_400, delta: pct(38.6) },
 		p95Latency: { valueMs: 410, delta: pct(28.9) },
 	},
-	series: healthyDigestProps.series.map((point, index) => ({
+	series: Arr.map(healthyDigestProps.series, (point, index) => ({
 		...point,
 		errors: Math.round(point.requests * (0.012 + index * 0.004)),
 	})),
@@ -220,7 +217,7 @@ export const criticalDigestProps: WeeklyDigestProps = {
 		p95Latency: { valueMs: 980, delta: pct(96.3) },
 		dataVolume: { valueBytes: 12_100_000_000, delta: pct(-22.0) },
 	},
-	series: healthyDigestProps.series.map((point, index) => ({
+	series: Arr.map(healthyDigestProps.series, (point, index) => ({
 		...point,
 		errors: Math.round(point.requests * (0.03 + index * 0.012)),
 	})),
@@ -422,8 +419,8 @@ export const alertNotificationProps: AlertNotificationProps = {
 }
 
 const shareOf = <T extends { value: number; icon: string | null }>(rows: Array<T>) => {
-	const total = rows.reduce((sum, row) => sum + row.value, 0)
-	return rows.map((row) => ({ ...row, share: total > 0 ? row.value / total : 0 }))
+	const total = Arr.reduce(rows, 0, (sum, row) => sum + row.value)
+	return Arr.map(rows, (row) => ({ ...row, share: total > 0 ? row.value / total : 0 }))
 }
 
 export const webAnalyticsDigestProps: WebAnalyticsDigestProps = {

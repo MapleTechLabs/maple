@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 // The six raw telemetry tables that Maple archives to Parquet. Aggregation and
 // materialized-view tables are intentionally excluded: they are rebuildable from
 // raw telemetry and would balloon archive volume without preserving any fact the
@@ -35,7 +36,7 @@ export const ARCHIVE_SIGNALS: ReadonlyArray<ArchiveSignal> = [
 ]
 
 export const isArchiveSignalName = (value: string): value is ArchiveSignalName =>
-	ARCHIVE_SIGNALS.some((s) => s.name === value)
+	Arr.some(ARCHIVE_SIGNALS, (s) => s.name === value)
 
 export const archiveSignal = (name: string): ArchiveSignal => {
 	const signal = ARCHIVE_SIGNALS.find((s) => s.name === name)

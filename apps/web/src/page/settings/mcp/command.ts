@@ -1,7 +1,7 @@
 import { McpConnectionPublicId } from "@maple/domain/http/v2"
 import { Effect } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleAiClient, MapleApiV2Client } from "../../../platform/api-clients"
 import { Message } from "./message"
 

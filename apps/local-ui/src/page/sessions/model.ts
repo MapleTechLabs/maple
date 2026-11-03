@@ -1,6 +1,7 @@
-import * as FilterSections from "@maple/web/ui/filters/filter-sections"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { Schema } from "effect"
-import { SlotSchema } from "../../data/slot"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { Copies } from "../kit/copies"
 
 // The sessions list, as Schemas: the columns the list card reads.
@@ -48,8 +49,8 @@ export const Model = Schema.TaggedStruct("SessionsPage", {
 	maybeAnchorMs: Schema.Option(Schema.Number),
 	/** The clock at the last read, for live-ness and relative times. */
 	nowMs: Schema.Number,
-	sessions: SlotSchema(SessionPages),
-	facets: SlotSchema(SessionFacets),
+	sessions: KeyedSchema(SessionPages, LoadFailure),
+	facets: KeyedSchema(SessionFacets, LoadFailure),
 	isFetchingNextPage: Schema.Boolean,
 	/** Bumped when the list is refetched or rekeyed; a next page from an older generation is dropped. */
 	pageGeneration: Schema.Number,

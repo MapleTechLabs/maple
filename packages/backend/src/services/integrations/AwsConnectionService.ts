@@ -30,7 +30,7 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/primitives"
-import { Cause, Clock, Context, Effect, Layer, Option, Redacted } from "effect"
+import { Cause, Clock, Context, Effect, Layer, Option, Redacted, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -190,11 +190,11 @@ const SWEEP_BUDGET_MS = 10 * 60_000
 const SWEEP_CONCURRENCY = 2
 
 const sameModules = (a: ReadonlyArray<AwsModule>, b: ReadonlyArray<AwsModule>) =>
-	a.length === b.length && a.every((module) => b.includes(module))
+	a.length === b.length && Arr.every(a, (module) => b.includes(module))
 
 /** Modules in their canonical order, without repeats. */
 const normalizeModules = (modules: ReadonlyArray<AwsModule>) =>
-	AWS_MODULES.filter((module) => modules.includes(module))
+	Arr.filter(AWS_MODULES, (module) => modules.includes(module))
 
 const toConnection = (issuer: string, row: AwsConnectionRow): AwsConnection => {
 	const names = awsConnectionResourceNames(row.id)
@@ -225,7 +225,7 @@ const toConnection = (issuer: string, row: AwsConnectionRow): AwsConnection => {
 const streamSecretAad = (connectionId: string) =>
 	Buffer.from(`aws_connections:stream:v1:${connectionId}`, "utf8")
 
-const MODULE_INFO: ReadonlyArray<AwsModuleInfo> = AWS_MODULES.map((module) => ({
+const MODULE_INFO: ReadonlyArray<AwsModuleInfo> = Arr.map(AWS_MODULES, (module) => ({
 	module,
 	title: AWS_MODULE_SPECS[module].title,
 	summary: AWS_MODULE_SPECS[module].summary,
@@ -235,12 +235,12 @@ const MODULE_INFO: ReadonlyArray<AwsModuleInfo> = AWS_MODULES.map((module) => ({
 const validateModules = (
 	modules: ReadonlyArray<AwsModule>,
 ): Effect.Effect<ReadonlyArray<AwsModule>, ModulesError> => {
-	const planned = modules.filter((module) => !isAwsModuleAvailable(module))
+	const planned = Arr.filter(modules, (module) => !isAwsModuleAvailable(module))
 	return planned.length === 0
 		? Effect.succeed(normalizeModules(modules))
 		: Effect.fail(
 				new IntegrationsValidationError({
-					message: `Maple does not read ${planned.join(", ")} from AWS yet.`,
+					message: `Maple does not read ${Arr.join(planned, ", ")} from AWS yet.`,
 				}),
 			)
 }
@@ -267,16 +267,16 @@ export const interpretCheck = (
 	if (result._tag === "Ok") {
 		const version = Number(result.tags.find((tag) => tag.key === AWS_ROLE_TAGS.templateVersion)?.value)
 		const granted = normalizeModules(
-			result.attachedPolicyNames.flatMap((name) => {
+			Arr.flatMap(result.attachedPolicyNames, (name) => {
 				const module = awsModuleOfPolicyName(roleName, name)
 				return module === undefined ? [] : [module]
 			}),
 		)
-		const missing = row.modules.filter((module) => !granted.includes(module))
+		const missing = Arr.filter(row.modules, (module) => !granted.includes(module))
 		const error =
 			missing.length === 0
 				? null
-				: `The role does not grant ${missing.join(", ")} yet: run the setup script again.`
+				: `The role does not grant ${Arr.join(missing, ", ")} yet: run the setup script again.`
 		return {
 			changes: {
 				verifiedAt: row.verifiedAt ?? now,
@@ -371,7 +371,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 			const issuer = awsOidcIssuer(env.MAPLE_API_BASE_URL)
 			// Without a usable key nothing can be assumed, so no setup is handed out either.
 			const signer: AwsOidcSigner | undefined = yield* Option.match(env.MAPLE_AWS_OIDC_SIGNING_KEY, {
-				onNone: () => Effect.succeed(undefined),
+				onNone: () => Effect.undefined,
 				onSome: (key) =>
 					makeAwsOidcSigner(issuer, key).pipe(
 						Effect.catchTag("@maple/backend/integrations/AwsOidcKeyError", (error) =>
@@ -501,8 +501,10 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 						streamSecretHash: null,
 					}),
 				}
-				if (Object.keys(changes).length === 0)
-					return connectionOf(yield* selectRow(orgId, connectionId))
+				if (Object.keys(changes).length === 0) {
+					const current = yield* selectRow(orgId, connectionId)
+					return connectionOf(current)
+				}
 				const [row] = yield* dbExecute((db) =>
 					db.run(
 						PG.update(AwsConnections)
@@ -701,7 +703,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 						// deadline, and the rows left stay leased, then come due again.
 						Effect.flatMap(Clock.currentTimeMillis, (now) =>
 							now >= deadlineAt
-								? Effect.succeed(undefined)
+								? Effect.undefined
 								: runCheck(signer, row).pipe(Effect.map(({ ok }) => ok)),
 						).pipe(
 							Effect.withSpan("AwsConnectionService.checkDue.connection", {

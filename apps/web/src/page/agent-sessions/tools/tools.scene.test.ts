@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -15,7 +15,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const measures = { calls: 3, sessions: 2, errors: 1, p50: 1, p90: 2, p95: 3 }
 const totals: TotalsResult = {
@@ -36,7 +36,9 @@ const windowed = (search: Model["search"] = {}) =>
 describe("agent tools", () => {
 	test("an unfiltered window reads totals and breakdowns once: the tab counts share them", () => {
 		const resolved = windowed()
-		expect(names(resolved.commands).filter((name) => name === "FetchAgentToolsTotals")).toHaveLength(1)
+		expect(Arr.filter(names(resolved.commands), (name) => name === "FetchAgentToolsTotals")).toHaveLength(
+			1,
+		)
 		expect(resolved.model.tabTotals.key).toBe(resolved.model.totals.key)
 		const answered = pageUpdate(
 			resolved.model,
@@ -50,7 +52,9 @@ describe("agent tools", () => {
 
 	test("a filtered window reads the bare window for the tabs, and dropping the filter reuses it", () => {
 		const filtered = windowed({ tool: "Bash" })
-		expect(names(filtered.commands).filter((name) => name === "FetchAgentToolsTotals")).toHaveLength(2)
+		expect(Arr.filter(names(filtered.commands), (name) => name === "FetchAgentToolsTotals")).toHaveLength(
+			2,
+		)
 		const answered = pageUpdate(
 			filtered.model,
 			Message.CompletedFetchTabTotals({
@@ -116,7 +120,7 @@ describe("agent tools", () => {
 			[],
 		)
 		const filtered = names(routeChanged(resolved, { search: { tool: "Bash" } }, context).commands)
-		expect(filtered.filter((name) => name === "FetchAgentToolsTotals")).toHaveLength(1)
+		expect(Arr.filter(filtered, (name) => name === "FetchAgentToolsTotals")).toHaveLength(1)
 		expect(filtered).toEqual(
 			expect.arrayContaining(["FetchAgentToolsSeries", "FetchAgentToolsBreakdowns"]),
 		)

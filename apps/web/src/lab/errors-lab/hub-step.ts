@@ -1,7 +1,7 @@
 import { buildErrorsLabFixture } from "../errors-fixture"
 import type { ErrorSignal } from "../../lib/models/error-signal"
 import { OrgId } from "@maple/domain"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Command } from "foldkit"
 import { fromString as urlFromString } from "foldkit/url"
 import type { PageContext } from "../../page/contract"
@@ -30,20 +30,24 @@ export const labSignals = (hub: HubModel, state: LabState): ReadonlyArray<ErrorS
 	if (state === "empty") return []
 	const view = viewOf(hub.search)
 	const severity = severityOf(hub.search)
-	const term = (hub.search.q ?? "").toLowerCase()
-	const signals = buildErrorsLabFixture(hub.nowMs).signals.filter(
+	const term = Str.toLowerCase(hub.search.q ?? "")
+	const signals = Arr.filter(
+		buildErrorsLabFixture(hub.nowMs).signals,
 		(signal) =>
 			viewCovers(view, signal.issue.workflowState) &&
 			(severity === "all" ||
 				(severity === "unset" ? signal.severity === null : signal.severity === severity)) &&
 			// Mirrors the server's ILIKE over type, message, label and service.
 			(term === "" ||
-				[
-					signal.issue.exceptionType,
-					signal.issue.exceptionMessage,
-					signal.issue.errorLabel,
-					signal.issue.serviceName,
-				].some((field) => field.toLowerCase().includes(term))),
+				Arr.some(
+					[
+						signal.issue.exceptionType,
+						signal.issue.exceptionMessage,
+						signal.issue.errorLabel,
+						signal.issue.serviceName,
+					],
+					(field) => Str.includes(term)(Str.toLowerCase(field)),
+				)),
 	)
 	return sortSignals(signals, sortOf(hub.search))
 }
@@ -66,8 +70,8 @@ const followNavigation = (hub: HubModel, url: string): HubModel =>
 /** The hub's own update, its URL writes kept in the lab; the header checkbox reads the lab's rows. */
 export const hubStep = (hub: HubModel, message: HubMessage, signals: ReadonlyArray<ErrorSignal>): HubStep => {
 	if (message._tag === "ToggledAllRows") {
-		const ids = signals.map((signal) => signal.id)
-		const isAll = ids.length > 0 && ids.every((id) => hub.selectedIds.includes(id))
+		const ids = Arr.map(signals, (signal) => signal.id)
+		const isAll = ids.length > 0 && Arr.every(ids, (id) => hub.selectedIds.includes(id))
 		const selectedIds = isAll ? [] : [...new Set([...hub.selectedIds, ...ids])]
 		return { hub: { ...hub, selectedIds, selectionAnchor: null }, commands: [] }
 	}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Array as Arr } from "effect"
 import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { orgTelemetryPulseQuery, serviceLivenessQuery } from "./liveness"
 import { OrgId } from "@maple/domain"
@@ -133,7 +133,7 @@ describe("orgTelemetryPulseQuery", () => {
 			{ signal: "spans", count: "0", lastSeen: "1970-01-01 00:00:00" },
 			{ signal: "logs", count: 42, lastSeen: "2024-01-01 00:09:00" },
 		])
-		expect(rows.map((row) => row.count)).toEqual([0, 42])
+		expect(Arr.map(rows, (row) => row.count)).toEqual([0, 42])
 	})
 
 	// Decoding rests entirely on the schema the builder derives from the SELECT:

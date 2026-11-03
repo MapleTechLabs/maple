@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 /**
  * Removes the phantom `null` branch that Effect's JSON-Schema renderer emits for
  * `Schema.optional` query parameters.
@@ -49,10 +50,10 @@ interface JsonObject {
 }
 
 const asObject = (value: JsonValue | undefined): JsonObject | undefined =>
-	typeof value === "object" && value !== null && !Array.isArray(value) ? value : undefined
+	typeof value === "object" && value !== null && !Arr.isArray(value) ? value : undefined
 
 const asArray = (value: JsonValue | undefined): ReadonlyArray<JsonValue> | undefined =>
-	Array.isArray(value) ? value : undefined
+	Arr.isArray(value) ? value : undefined
 
 const asString = (value: JsonValue | undefined): string | undefined =>
 	typeof value === "string" ? value : undefined
@@ -61,7 +62,9 @@ const COMPONENT_PREFIX = "#/components/schemas/"
 
 const componentName = (ref: JsonValue | undefined): string | undefined => {
 	const value = asString(ref)
-	return value?.startsWith(COMPONENT_PREFIX) === true ? value.slice(COMPONENT_PREFIX.length) : undefined
+	return value?.startsWith(COMPONENT_PREFIX) === true
+		? Str.slice(COMPONENT_PREFIX.length)(value)
+		: undefined
 }
 
 /**
@@ -75,7 +78,7 @@ const withoutNullBranch = (schema: JsonObject): JsonObject | undefined => {
 
 	// The renderer flattens nested unions, so `optional(Union([A, B]))` arrives as
 	// `anyOf: [A, B, null]`, not `anyOf: [anyOf: [A, B], null]`.
-	const kept = members.filter((member) => asObject(member)?.type !== "null")
+	const kept = Arr.filter(members, (member) => asObject(member)?.type !== "null")
 	if (kept.length === members.length || kept.length === 0) return undefined
 
 	const { anyOf: _removed, ...siblings } = schema
@@ -99,7 +102,7 @@ const collectRefs = (node: JsonValue | undefined, schemas: JsonObject, into: Set
 		into.add(name)
 		collectRefs(schemas[name], schemas, into)
 	}
-	for (const value of Object.values(object)) collectRefs(value, schemas, into)
+	for (const value of Rec.values(object)) collectRefs(value, schemas, into)
 }
 
 /**
@@ -116,7 +119,7 @@ export const collapseQueryParameterNullBranches = <S>(spec: S): S => {
 	const paths = asObject(document.paths) ?? {}
 	const inlinedAway = new Set<string>()
 
-	for (const rawItem of Object.values(paths)) {
+	for (const rawItem of Rec.values(paths)) {
 		const item = asObject(rawItem)
 		if (item === undefined) continue
 

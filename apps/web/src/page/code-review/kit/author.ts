@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { avatarFallback } from "../../../ui/display"
+import { avatarFallback } from "@maple/views/ui/display"
+import { String as Str } from "effect"
 
 /** A GitHub login's avatar, from GitHub's public `<login>.png` redirect; the initial while it loads. */
 export const authorAvatar = <M>(h: HtmlBuilder<M>, login: string, className?: string): Html =>
@@ -10,7 +11,7 @@ export const authorAvatar = <M>(h: HtmlBuilder<M>, login: string, className?: st
 			className: cn("size-[18px] text-4xs", className),
 			imageUrl: `https://github.com/${encodeURIComponent(login)}.png?size=64`,
 		},
-		login.slice(0, 1).toUpperCase(),
+		Str.toUpperCase(Str.slice(0, 1)(login)),
 	)
 
 /** Avatar and login on one line, the way an author is shown everywhere in Code Review. */

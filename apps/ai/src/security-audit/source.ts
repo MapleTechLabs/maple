@@ -4,7 +4,7 @@
  * commit the run is pinned to, and every answer is bounded so a single call cannot fill a context.
  */
 import { SKILL_REFERENCE_FILES } from "@maple/security-audit"
-import { Context, Effect, Schema } from "effect"
+import { Context, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 import { toolHandlersWithContent } from "../platform/genai-spans"
 
@@ -46,7 +46,7 @@ export class SourceReader extends Context.Service<SourceReader, SourceReaderApi>
 /** Lines one `read_file` call may return. */
 export const MAX_READ_LINES = 400
 
-const ToolFailure = Schema.Struct({ message: Schema.String })
+export const ToolFailure = Schema.Struct({ message: Schema.String })
 
 const readFileTool = Tool.make("read_file", {
 	description: `Read lines of a tracked file at the audited commit, numbered. At most ${MAX_READ_LINES} lines per call.`,
@@ -115,12 +115,14 @@ const render = (output: SourceOutput) =>
 		: output.text || "(no output)"
 
 /** What a tool answers the model when it cannot: `failureMode: "return"` hands it this message. */
-type ToolFailure = typeof ToolFailure.Type
+export type ToolFailure = typeof ToolFailure.Type
 
 const answer = (effect: Effect.Effect<SourceOutput, SourceReadError>) =>
 	effect.pipe(
-		Effect.map(render),
-		Effect.mapError((error): ToolFailure => ({ message: error.message })),
+		Effect.mapBoth({
+			onSuccess: render,
+			onFailure: (error): ToolFailure => ({ message: error.message }),
+		}),
 	)
 
 /**
@@ -128,11 +130,10 @@ const answer = (effect: Effect.Effect<SourceOutput, SourceReadError>) =>
  * `..` resolves lexically. "" is the root; undefined when the path climbs out of it.
  */
 export const normalizePath = (raw: string): string | undefined =>
-	raw
-		.trim()
-		.replaceAll("\\", "/")
-		.split("/")
-		.filter((part) => part !== "" && part !== ".")
+	Arr.filter(
+		Str.split("/")(Str.replaceAll("\\", "/")(Str.trim(raw))),
+		(part) => part !== "" && part !== ".",
+	)
 		.reduce<ReadonlyArray<string> | undefined>(
 			(parts, part) =>
 				parts === undefined
@@ -156,7 +157,7 @@ const resolvePath = (raw: string): Effect.Effect<string, ToolFailure> => {
 /** An optional path tool argument; the root is no path at all. */
 const scopePath = (raw: string | undefined) =>
 	raw === undefined
-		? Effect.succeed(undefined)
+		? Effect.undefined
 		: Effect.map(resolvePath(raw), (path) => (path === "" ? undefined : path))
 
 /** Paths a missed read suggests, at most. */
@@ -165,13 +166,16 @@ const MAX_SUGGESTIONS = 10
 const MAX_LISTING = 200
 
 const listing = (path: string, files: ReadonlyArray<string>, truncated: boolean) =>
-	[
-		`${path} is a directory. Tracked files under it:`,
-		...files.slice(0, MAX_LISTING),
-		...(files.length > MAX_LISTING || truncated
-			? ["[listing truncated: list_files a subdirectory]"]
-			: []),
-	].join("\n")
+	Arr.join(
+		[
+			`${path} is a directory. Tracked files under it:`,
+			...files.slice(0, MAX_LISTING),
+			...(files.length > MAX_LISTING || truncated
+				? ["[listing truncated: list_files a subdirectory]"]
+				: []),
+		],
+		"\n",
+	)
 
 /**
  * A read that failed, answered with what the model can do next: a directory's listing, a note that
@@ -179,35 +183,39 @@ const listing = (path: string, files: ReadonlyArray<string>, truncated: boolean)
  */
 const missedRead = (source: SourceReaderApi, path: string, error: SourceReadError) =>
 	Effect.gen(function* () {
-		const basename = path.slice(path.lastIndexOf("/") + 1)
+		const basename = Str.slice(path.lastIndexOf("/") + 1)(path)
 		if (SKILL_REFERENCE_FILES.has(basename))
 			return yield* Effect.fail<ToolFailure>({
 				message: `${path} is not a file of this repository: ${basename} is the audit's own method text, and what you need from it is already in your prompt. Read the target's files instead.`,
 			})
 		const found = yield* Effect.result(source.nearby(path, basename))
 		if (found._tag === "Failure") return yield* Effect.fail<ToolFailure>({ message: error.message })
-		const files = found.success.text.split("\n").filter((line) => line !== "")
-		const under = files.filter((file) => file.startsWith(`${path}/`))
+		const files = Arr.filter(Str.split("\n")(found.success.text), (line) => line !== "")
+		const under = Arr.filter(files, (file) => Str.startsWith(`${path}/`)(file))
 		if (under.length > 0) return listing(path, under, found.success.truncated)
-		const named = files
-			.filter((file) => file === basename || file.endsWith(`/${basename}`))
-			.slice(0, MAX_SUGGESTIONS)
+		const named = Arr.filter(
+			files,
+			(file) => file === basename || Str.endsWith(`/${basename}`)(file),
+		).slice(0, MAX_SUGGESTIONS)
 		return yield* Effect.fail<ToolFailure>({
-			message: [
-				error.message,
-				named.length === 0
-					? `No tracked file is named ${basename}. Use list_files on a parent directory to see what exists.`
-					: `Tracked files with the same name:\n${named.join("\n")}`,
-			].join("\n"),
+			message: Arr.join(
+				[
+					error.message,
+					named.length === 0
+						? `No tracked file is named ${basename}. Use list_files on a parent directory to see what exists.`
+						: `Tracked files with the same name:\n${Arr.join(named, "\n")}`,
+				],
+				"\n",
+			),
 		})
 	})
 
 /**
- * The toolkit's handlers over the `SourceReader` the run provides. `onCall` runs once per tool
+ * The read tools' handlers over the `SourceReader` the run provides. `onCall` runs once per tool
  * call, so the host can tell an agent that read the repository from one that never did.
  */
-export const auditToolHandlers = (source: SourceReaderApi, onCall: Effect.Effect<void> = Effect.void) =>
-	toolHandlersWithContent(AUDIT_TOOLKIT, {
+export const sourceHandlers = (source: SourceReaderApi, onCall: Effect.Effect<void> = Effect.void) =>
+	AUDIT_TOOLKIT.of({
 		read_file: ({ path, start_line, end_line }) =>
 			Effect.gen(function* () {
 				yield* onCall
@@ -239,3 +247,7 @@ export const auditToolHandlers = (source: SourceReaderApi, onCall: Effect.Effect
 				Effect.flatMap(scopePath(path), (scope) => answer(source.log(scope))),
 			),
 	})
+
+/** The read-only toolkit's handlers, as every role without execution gets them. */
+export const auditToolHandlers = (source: SourceReaderApi, onCall: Effect.Effect<void> = Effect.void) =>
+	toolHandlersWithContent(AUDIT_TOOLKIT, sourceHandlers(source, onCall))

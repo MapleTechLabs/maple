@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import {
 	all,
 	expect as expectView,
@@ -13,7 +13,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import * as Frame from "../kit/frame"
 import { Message } from "./message"
@@ -43,9 +43,9 @@ const later = { startTime: "2026-10-01 11:05:00", endTime: "2026-10-01 12:05:00"
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const sourceReads = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	names(commands).filter((name) => name === "FetchInfraOverviewSource")
+	Arr.filter(names(commands), (name) => name === "FetchInfraOverviewSource")
 const resolvedAt = (at: typeof window, mode: Frame.RequestMode) =>
 	Message.GotFrameMessage({
 		message: Frame.Message.CompletedResolveWindow({ window: at, nowMs: NOW, locale: "en-US", mode }),

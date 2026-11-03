@@ -19,7 +19,7 @@ import {
 	type VcsRepoSyncStatus,
 	type VcsSyncJob,
 } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Option } from "effect"
+import { Clock, Context, Effect, Layer, Option, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Base64Url from "effect/encoding/Base64Url"
 import type { OAuthAuthStateRow } from "@maple/db/tables"
@@ -246,7 +246,14 @@ const refuseConnect = (orgId: OrgId, outcome: string, reason: string, message: s
 const cleanPrReviewConfig = Effect.fn("GithubConnectService.cleanPrReviewConfig")(function* (
 	config: PrReviewRepositoryConfig,
 ) {
-	const ignorePaths = [...new Set((config.ignorePaths ?? []).map((p) => p.trim()).filter((p) => p !== ""))]
+	const ignorePaths = [
+		...new Set(
+			Arr.filter(
+				Arr.map(config.ignorePaths ?? [], (p) => Str.trim(p)),
+				(p) => p !== "",
+			),
+		),
+	]
 	if (ignorePaths.length > 50)
 		return yield* new IntegrationsValidationError({ message: "At most 50 ignored paths." })
 	const instructions = config.instructions?.trim()
@@ -479,18 +486,15 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				const isSameOrgReconnect = Option.isSome(existingInstallation)
 				const hasCode = code !== undefined && code.length > 0
 				const userToken = hasCode
-					? Option.some(
-							yield* githubApp.exchangeUserOAuthCode(code).pipe(
-								Effect.tapError(() =>
-									Effect.annotateCurrentSpan({
-										orgId: stateRow.orgId,
-										"vcs.connect.outcome": "oauth_exchange_failed",
-										"vcs.connect.reason":
-											"could not exchange OAuth code for a user token",
-									}),
-								),
-								Effect.mapError(fromGithubError),
+					? yield* githubApp.exchangeUserOAuthCode(code).pipe(
+							Effect.tapError(() =>
+								Effect.annotateCurrentSpan({
+									orgId: stateRow.orgId,
+									"vcs.connect.outcome": "oauth_exchange_failed",
+									"vcs.connect.reason": "could not exchange OAuth code for a user token",
+								}),
 							),
+							Effect.mapBoth({ onSuccess: Option.some, onFailure: fromGithubError }),
 						)
 					: Option.none<string>()
 				if (Option.isSome(userToken)) {
@@ -1100,11 +1104,10 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 			const requireRepository = (orgId: OrgId, repositoryId: VcsRepositoryId) =>
 				asPersistence(repo.getRepositoryById(orgId, repositoryId)).pipe(
 					Effect.flatMap((existing) =>
-						Option.isNone(existing)
-							? Effect.fail(
-									new IntegrationsValidationError({ message: "Repository not found" }),
-								)
-							: Effect.succeed(existing.value),
+						Effect.fromOption(
+							existing,
+							() => new IntegrationsValidationError({ message: "Repository not found" }),
+						),
 					),
 				)
 

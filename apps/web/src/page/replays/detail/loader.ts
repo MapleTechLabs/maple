@@ -1,6 +1,6 @@
 import { normalizeEvents } from "../../../components/replays/replay-events"
 import { deriveRangeMeta, firstEventMs } from "../kit/replay-meta"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import {
 	chunkAtOffset,
@@ -16,7 +16,7 @@ import {
 	rangesCovering,
 	type ReplayRange,
 } from "../kit/replay-range"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { Loader, LoadedRange, Manifest, Model, RangeRows } from "./model"
 
 // `useReplayChunkLoader` as pure functions of the Model: plan once per session, load ranges one at a
@@ -60,16 +60,20 @@ export const planOf = (model: Model): ReadonlyArray<ReplayRange> => {
 
 /** `subscribedRange`: the active range, else the last loaded, else the plan's first, else 0–0. */
 export const subscribedRange = (model: Model): ReplayRange =>
-	model.loader.queue[0] ?? model.loader.loaded.at(-1)?.range ?? planOf(model)[0] ?? { fromChunkSeq: 0, toChunkSeq: 0 }
+	model.loader.queue[0] ??
+	model.loader.loaded.at(-1)?.range ??
+	planOf(model)[0] ?? { fromChunkSeq: 0, toChunkSeq: 0 }
 
 export const loadedThroughSeq = (loader: Loader): number =>
-	loader.loaded.reduce((max, entry) => Math.max(max, entry.lastChunkSeq), -1)
+	Arr.reduce(loader.loaded, -1, (max, entry) => Math.max(max, entry.lastChunkSeq))
 
 export const seedEvents = (loader: Pick<Loader, "seed">): ReadonlyArray<unknown> => loader.seed
 
 /** How far into the recording the seed starts: 0 for the opening seed, more after a seek rebuild. */
 export const seedShiftMs = (loader: Pick<Loader, "originMs" | "seed">): number =>
-	loader.originMs === null || loader.seed.length === 0 ? 0 : Math.max(0, firstEventMs(loader.seed) - loader.originMs)
+	loader.originMs === null || loader.seed.length === 0
+		? 0
+		: Math.max(0, firstEventMs(loader.seed) - loader.originMs)
 
 /**
  * Event bytes the player holds at once. The rest of the recording downloads in the background for its
@@ -79,14 +83,14 @@ export const seedShiftMs = (loader: Pick<Loader, "originMs" | "seed">): number =
 export const MAX_PLAYABLE_BYTES = 50_000_000
 
 const bytesIn = (model: Model, range: ReplayRange): number =>
-	chunksOf(model).reduce(
-		(sum, chunk) =>
-			chunk.chunk_seq >= range.fromChunkSeq && chunk.chunk_seq <= range.toChunkSeq ? sum + chunk.byte_size : sum,
-		0,
+	Arr.reduce(chunksOf(model), 0, (sum, chunk) =>
+		chunk.chunk_seq >= range.fromChunkSeq && chunk.chunk_seq <= range.toChunkSeq
+			? sum + chunk.byte_size
+			: sum,
 	)
 
 const loadedBytes = (model: Model): number =>
-	model.loader.loaded.reduce((sum, entry) => sum + bytesIn(model, entry.range), 0)
+	Arr.reduce(model.loader.loaded, 0, (sum, entry) => sum + bytesIn(model, entry.range))
 
 /**
  * The planned range after the loaded span: by plan order, not `through + 1`, since the manifest can
@@ -119,9 +123,9 @@ export const cacheRange = (
 	key: string,
 	rows: RangeRows,
 ): Loader["rangeCache"] => {
-	const kept = Object.entries(cache).filter(([cached]) => cached !== key)
+	const kept = Arr.filter(Rec.toEntries(cache), ([cached]) => cached !== key)
 	const entries: ReadonlyArray<readonly [string, RangeRows]> = [...kept, [key, rows]]
-	return Object.fromEntries(entries.slice(-RANGE_CACHE_LIMIT))
+	return Rec.fromEntries(entries.slice(-RANGE_CACHE_LIMIT))
 }
 
 /** Ranges after the seed, for the feed Mounts. */
@@ -132,7 +136,9 @@ export const loadedUntilMs = (model: Model): number => {
 	const through = loadedThroughSeq(model.loader)
 	const chunks = chunksOf(model)
 	const last = chunks.findLast((chunk) => chunk.chunk_seq <= through)
-	return through < 0 || last === undefined ? 0 : chunkStartMs(last) + last.duration_ms - manifestStartMs(chunks)
+	return through < 0 || last === undefined
+		? 0
+		: chunkStartMs(last) + last.duration_ms - manifestStartMs(chunks)
 }
 
 export const hasMoreChunks = (model: Model): boolean => {
@@ -173,16 +179,17 @@ export const advance = (model: Model, rows: Option.Option<RangeRows>): Model => 
 	const active = loader.queue[0]
 	if (active === undefined) return cutSeed(model)
 	const key = rangeKey(active)
-	if (loader.loaded.some((entry) => entry.key === key))
+	if (Arr.some(loader.loaded, (entry) => entry.key === key))
 		return advance({ ...model, loader: { ...loader, queue: loader.queue.slice(1) } }, rows)
 	if (Option.isNone(rows)) return model
 	const through = loadedThroughSeq(loader)
-	const own = rows.value
-		.filter((row) => row.chunk_seq >= active.fromChunkSeq && row.chunk_seq <= active.toChunkSeq)
-		.toSorted((a, b) => a.chunk_seq - b.chunk_seq)
-	const events = normalizeEvents(own.flatMap((row) => row.events))
+	const own = Arr.filter(
+		rows.value,
+		(row) => row.chunk_seq >= active.fromChunkSeq && row.chunk_seq <= active.toChunkSeq,
+	).toSorted((a, b) => a.chunk_seq - b.chunk_seq)
+	const events = normalizeEvents(Arr.flatMap(own, (row) => row.events))
 	const originMs = loader.originMs ?? (events.length > 0 ? firstEventMs(events) : null)
-	const isKnown = loader.rangeMetas.some((meta) => meta.fromChunkSeq === active.fromChunkSeq)
+	const isKnown = Arr.some(loader.rangeMetas, (meta) => meta.fromChunkSeq === active.fromChunkSeq)
 	const rangeMetas =
 		originMs === null || isKnown || events.length === 0
 			? loader.rangeMetas
@@ -229,7 +236,9 @@ const continueDownload = (model: Model): Model => {
 	const isSkipped = (range: ReplayRange) =>
 		loader.fetchedRanges.includes(range.fromChunkSeq) || loader.failedRanges.includes(range.fromChunkSeq)
 	const next =
-		playable !== undefined && !loader.failedRanges.includes(playable.fromChunkSeq) && fitsWindow(model, playable)
+		playable !== undefined &&
+		!loader.failedRanges.includes(playable.fromChunkSeq) &&
+		fitsWindow(model, playable)
 			? playable
 			: // The first range never fetched, wherever it is: a seek can jump the download past some.
 				planOf(model).find((range) => !isSkipped(range))
@@ -244,7 +253,7 @@ const cutSeed = (model: Model): Model => {
 		loader: {
 			...loader,
 			seedCount: loader.loaded.length,
-			seed: loader.loaded.flatMap((entry) => entry.events),
+			seed: Arr.flatMap(loader.loaded, (entry) => entry.events),
 			isSeeking: false,
 			seedVersion: loader.seedVersion + 1,
 		},
@@ -261,7 +270,7 @@ export const loadedFromMs = (model: Model): number => {
 
 /** Whether the recording is larger than the player may hold, so it plays in windows. */
 const isWindowed = (model: Model): boolean =>
-	chunksOf(model).reduce((sum, chunk) => sum + chunk.byte_size, 0) > MAX_PLAYABLE_BYTES
+	Arr.reduce(chunksOf(model), 0, (sum, chunk) => sum + chunk.byte_size) > MAX_PLAYABLE_BYTES
 
 const rebuildAt = (model: Model, offsetMs: number, anchorSeq: number, resume: boolean): Model => ({
 	...model,
@@ -310,8 +319,10 @@ export const requestSeek = (model: Model, offsetMs: number, resume: boolean): Op
 	if (target === undefined) return Option.none()
 	const isLoaded =
 		target.chunk_seq <= loadedThroughSeq(loader) &&
-		loader.loaded.some(
-			(entry) => target.chunk_seq >= entry.range.fromChunkSeq && target.chunk_seq <= entry.range.toChunkSeq,
+		Arr.some(
+			loader.loaded,
+			(entry) =>
+				target.chunk_seq >= entry.range.fromChunkSeq && target.chunk_seq <= entry.range.toChunkSeq,
 		)
 	if (isLoaded) return Option.none()
 	const anchor = checkpointAtOrBefore(chunks, target.chunk_seq)
@@ -353,7 +364,10 @@ export const retryAt = (model: Model, offsetMs: number): Model => {
 	const chunks = chunksOf(model)
 	const target = chunkAtOffset(chunks, offsetMs)
 	const anchor = target === undefined ? undefined : checkpointAtOrBefore(chunks, target.chunk_seq)
-	const cleared: Model = { ...model, loader: { ...model.loader, failedRanges: [], backgroundFailure: null } }
+	const cleared: Model = {
+		...model,
+		loader: { ...model.loader, failedRanges: [], backgroundFailure: null },
+	}
 	return anchor === undefined ? cleared : rebuildAt(cleared, offsetMs, anchor.chunk_seq, false)
 }
 

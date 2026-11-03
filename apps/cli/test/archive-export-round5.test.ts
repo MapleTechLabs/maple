@@ -11,6 +11,7 @@ import {
 import { parseArchiveGenerationManifest } from "@maple/local-server/archives/manifest"
 import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
 import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
+import { Array as Arr, String as Str } from "effect"
 
 // Pure-logic tests for the round-5 fixes. The end-to-end adversarial coverage
 // (column swap, row reassociation, byte refinement, timezone, recovery) lives
@@ -27,9 +28,9 @@ const settings = (overrides: Partial<ExportSettings> = {}): ExportSettings => ({
 describe("bounded multiset digest", () => {
 	it("uses fixed-size aggregate state instead of materializing every row", () => {
 		const sql = multisetDigestSql([{ name: "Body", type: "String" }], "logs")
-		strictEqual(sql.includes("groupArray"), false)
-		strictEqual(sql.includes("sumWithOverflow"), true)
-		strictEqual(sql.includes("groupBitXor"), true)
+		strictEqual(Str.includes("groupArray")(sql), false)
+		strictEqual(Str.includes("sumWithOverflow")(sql), true)
+		strictEqual(Str.includes("groupBitXor")(sql), true)
 	})
 })
 
@@ -67,7 +68,7 @@ describe("planHourShards — per-part physical offset ranges (no ORDER BY)", () 
 		deepStrictEqual(plans.length, 3)
 		// Half-open ranges covering [0, 1200): [0,500),[500,1000),[1000,1200)
 		deepStrictEqual(
-			plans.map((p) => [p.range.offsetLo, p.range.offsetHiExclusive]),
+			Arr.map(plans, (p) => [p.range.offsetLo, p.range.offsetHiExclusive]),
 			[
 				[0, 500],
 				[500, 1000],
@@ -75,7 +76,7 @@ describe("planHourShards — per-part physical offset ranges (no ORDER BY)", () 
 			],
 		)
 		deepStrictEqual(
-			plans.map((p) => p.range.part),
+			Arr.map(plans, (p) => p.range.part),
 			["p1", "p1", "p1"],
 		)
 		// Each range's physical width <= maxShardRows.
@@ -101,7 +102,7 @@ describe("planHourShards — per-part physical offset ranges (no ORDER BY)", () 
 		const plans = planHourShards(12, parts, settings({ maxShardRows: 500 }))
 		// part a -> [0,500),[500,1000); part b -> [0,500)
 		deepStrictEqual(
-			plans.map((p) => [p.range.part, p.range.offsetLo, p.range.offsetHiExclusive]),
+			Arr.map(plans, (p) => [p.range.part, p.range.offsetLo, p.range.offsetHiExclusive]),
 			[
 				["a", 0, 500],
 				["a", 500, 1000],
@@ -145,7 +146,7 @@ const manifestWith = (
 			rowCount: 1,
 			minEventTimeUnixNano: nano("2026-06-29T12:00:00.000Z"),
 			maxEventTimeUnixNano: nano("2026-06-29T12:30:00.000Z"),
-			sha256: "a".repeat(64),
+			sha256: Str.repeat(64)("a"),
 			bytes: 4096,
 			columns: ["Timestamp"],
 			complexDigest: "1:2:3:4",

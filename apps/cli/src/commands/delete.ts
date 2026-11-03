@@ -1,4 +1,4 @@
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import * as Command from "effect/cli/Command"
 import * as Flag from "effect/cli/Flag"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs"
 import { Mode } from "../core/mode"
 import { parseTimestampMs, sinceToMs } from "../core/time"
 import { CliUsageError } from "../lib/errors"
+import { encodeJsonEffect } from "@maple/local-server/json"
 import { bold, dim, green } from "../lib/style"
 import { isLoopbackHostname } from "@maple/local-server/local-address"
 import { maintenanceTokenPath } from "@maple/local-server/archives/retention"
@@ -30,7 +31,7 @@ export const resolveDeleteBaseUrl = Effect.gen(function* () {
 			message: `${LOCAL_ONLY}, and the active mode is remote`,
 			hint: "pass --local to target the running `maple start` server",
 		})
-	return resolved.baseUrl.replace(/\/$/, "")
+	return Str.replace(/\/$/, "")(resolved.baseUrl)
 })
 
 /** `--before` as a relative age (`7d`, `12h`) or an absolute UTC timestamp. */
@@ -50,15 +51,16 @@ export const buildDeleteRequest = (flags: {
 	readonly beforeMs: number | undefined
 }): Effect.Effect<ScopedDeleteRequest, CliUsageError> =>
 	Effect.gen(function* () {
-		const present = Object.entries({
-			service: flags.service?.trim() || undefined,
-			namespace: flags.namespace?.trim() || undefined,
-			env: flags.env,
-			beforeMs: flags.beforeMs === undefined ? undefined : Math.floor(flags.beforeMs),
-		}).filter(([, value]) => value !== undefined)
-		const request = yield* Schema.decodeUnknownEffect(ScopedDeleteRequest)(
-			Object.fromEntries(present),
-		).pipe(
+		const present = Arr.filter(
+			Rec.toEntries({
+				service: flags.service?.trim() || undefined,
+				namespace: flags.namespace?.trim() || undefined,
+				env: flags.env,
+				beforeMs: flags.beforeMs === undefined ? undefined : Math.floor(flags.beforeMs),
+			}),
+			([, value]) => value !== undefined,
+		)
+		const request = yield* Schema.decodeUnknownEffect(ScopedDeleteRequest)(Rec.fromEntries(present)).pipe(
 			Effect.mapError(() =>
 				failure(
 					"invalid delete flags",
@@ -90,7 +92,7 @@ export const verifyStoreServer = (
 ): Effect.Effect<void, CliUsageError> =>
 	Effect.gen(function* () {
 		const target = URL.canParse(baseUrl) ? new URL(baseUrl) : undefined
-		if (target === undefined || !isLoopbackHostname(target.hostname.replace(/^\[(.*)\]$/, "$1")))
+		if (target === undefined || !isLoopbackHostname(Str.replace(/^\[(.*)\]$/, "$1")(target.hostname)))
 			return yield* failure(
 				`maple delete only talks to a loopback server, not ${baseUrl}`,
 				"run it on the machine that runs `maple start`, against 127.0.0.1",
@@ -127,18 +129,21 @@ const postDelete = (baseUrl: string, body: ScopedDeleteRequest & { readonly dryR
 		// The token sits beside the data dir, so only the machine that owns the store can delete.
 		const tokenPath = maintenanceTokenPath(status.dataDir)
 		const token = yield* Effect.try({
-			try: () => readFileSync(tokenPath, "utf8").trim(),
+			try: () => Str.trim(readFileSync(tokenPath, "utf8")),
 			catch: () =>
 				failure(
 					`cannot read the maintenance token at ${prettyPath(tokenPath)}`,
 					"run maple delete as the same user, on the machine that runs `maple start`",
 				),
 		})
+		const bodyJson = yield* encodeJsonEffect(body).pipe(
+			Effect.mapError(() => failure("cannot encode the delete request")),
+		)
 		const response = yield* client
 			.execute(
 				HttpClientRequest.post(`${baseUrl}/local/maintenance/delete`).pipe(
 					HttpClientRequest.setHeader("x-maple-maintenance-token", token),
-					HttpClientRequest.bodyText(JSON.stringify(body), "application/json"),
+					HttpClientRequest.bodyText(bodyJson, "application/json"),
 				),
 			)
 			.pipe(Effect.mapError((error) => failure(`delete request failed: ${error.message}`)))
@@ -156,25 +161,31 @@ const postDelete = (baseUrl: string, body: ScopedDeleteRequest & { readonly dryR
 	})
 
 const describeRequest = (request: ScopedDeleteRequest): string =>
-	[
-		...(request.service === undefined ? [] : [`service ${bold(request.service)}`]),
-		...(request.namespace === undefined ? [] : [`namespace ${bold(request.namespace)}`]),
-		...(request.env === undefined ? [] : [`env ${bold(request.env === "" ? '""' : request.env)}`]),
-		...(request.beforeMs === undefined
-			? []
-			: [`before ${bold(new Date(request.beforeMs).toISOString())}`]),
-	].join(", ")
+	Arr.join(
+		[
+			...(request.service === undefined ? [] : [`service ${bold(request.service)}`]),
+			...(request.namespace === undefined ? [] : [`namespace ${bold(request.namespace)}`]),
+			...(request.env === undefined ? [] : [`env ${bold(request.env === "" ? '""' : request.env)}`]),
+			...(request.beforeMs === undefined
+				? []
+				: [`before ${bold(new Date(request.beforeMs).toISOString())}`]),
+		],
+		", ",
+	)
 
 const renderReport = (report: ScopedDeleteReport): string => {
-	const lines = report.tables
-		.filter((t) => t.strategy !== "excluded" && (t.rows > 0 || (t.skippedHours ?? 0) > 0))
-		.map((t) =>
+	const lines = Arr.map(
+		Arr.filter(
+			report.tables,
+			(t) => t.strategy !== "excluded" && (t.rows > 0 || (t.skippedHours ?? 0) > 0),
+		),
+		(t) =>
 			t.strategy === "filter"
-				? `  ${t.table.padEnd(36)} ${t.rows} row(s)`
-				: `  ${t.table.padEnd(36)} ${t.rebuiltHours} hour(s) recomputed` +
+				? `  ${Str.padEnd(36)(t.table)} ${t.rows} row(s)`
+				: `  ${Str.padEnd(36)(t.table)} ${t.rebuiltHours} hour(s) recomputed` +
 					((t.skippedHours ?? 0) > 0 ? dim(`, ${t.skippedHours} past source retention kept`) : ""),
-		)
-	return lines.length === 0 ? `  ${dim("nothing matched")}\n` : `${lines.join("\n")}\n`
+	)
+	return lines.length === 0 ? `  ${dim("nothing matched")}\n` : `${Arr.join(lines, "\n")}\n`
 }
 
 export const deleteCommand = Command.make("delete", {
@@ -219,7 +230,11 @@ export const deleteCommand = Command.make("delete", {
 			const baseUrl = yield* resolveDeleteBaseUrl
 			const rawBefore = Option.getOrUndefined(a.before)
 			const beforeMs =
-				rawBefore === undefined ? undefined : parseBefore(rawBefore, yield* Clock.currentTimeMillis)
+				rawBefore === undefined
+					? undefined
+					: yield* Clock.currentTimeMillis.pipe(
+							Effect.map((nowMs) => parseBefore(rawBefore, nowMs)),
+						)
 			if (beforeMs === null)
 				return yield* failure(
 					`invalid --before: ${rawBefore}`,
@@ -245,7 +260,7 @@ export const deleteCommand = Command.make("delete", {
 								: ""),
 					),
 				)
-			if (!a.yes && report.tables.some((t) => t.rows > 0))
+			if (!a.yes && Arr.some(report.tables, (t) => t.rows > 0))
 				return yield* failure("nothing was deleted (preview)", "re-run with --yes to delete")
 		}),
 	),

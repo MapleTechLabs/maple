@@ -2,6 +2,7 @@ import rss from "@astrojs/rss"
 import type { APIContext } from "astro"
 import { getSortedReleases } from "../../lib/changelog"
 import { CATEGORY_LABELS } from "../../lib/changelog-meta"
+import { Array as Arr, String as Str } from "effect"
 
 export async function GET(context: APIContext) {
 	const releases = await getSortedReleases()
@@ -13,7 +14,7 @@ export async function GET(context: APIContext) {
 		title: "Maple changelog",
 		description: "New features, improvements and fixes in Maple.",
 		site,
-		items: releases.map((release) => {
+		items: Arr.map(releases, (release) => {
 			// The cover leads the item body rather than riding as an <enclosure>:
 			// enclosures require a byte length we'd have to keep in sync with the
 			// file by hand, and readers render an inline <img> just as well.
@@ -34,5 +35,8 @@ export async function GET(context: APIContext) {
 }
 
 function escapeHtml(value: string): string {
-	return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+	return Str.replace(
+		/"/g,
+		"&quot;",
+	)(Str.replace(/>/g, "&gt;")(Str.replace(/</g, "&lt;")(Str.replace(/&/g, "&amp;")(value))))
 }

@@ -5,7 +5,7 @@
  * approval. Everything else the gateway delivers — edits, deletes, channel and member changes,
  * slash commands — is dropped here.
  */
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { InboundEvent } from "../../ingress.ts"
 import { decodeInteractionCreate, decodeMessageCreate } from "./gateway-payloads.ts"
 import { HAZEL_CONNECTOR_ID } from "./id.ts"
@@ -21,23 +21,24 @@ export const mentionOf = (userId: string): string => `@[userId:${userId}]`
  * the model as it was written.
  */
 const stripMention = (text: string, botUserId: string): string => {
-	const parts = text.split(mentionOf(botUserId)).map((part, index, all) => {
-		const start = index === 0 ? part : part.replace(/^[ \t]+/u, "")
-		return index === all.length - 1 ? start : start.replace(/[ \t]+$/u, "")
+	const parts = Str.split(mentionOf(botUserId))(text).map((part, index, all) => {
+		const start = index === 0 ? part : Str.replace(/^[ \t]+/u, "")(part)
+		return index === all.length - 1 ? start : Str.replace(/[ \t]+$/u, "")(start)
 	})
 	// A space only where the mention sat between words, never at a line's edge.
 	let joined = ""
 	for (const part of parts) {
-		if (joined !== "" && part !== "" && !joined.endsWith("\n") && !part.startsWith("\n")) joined += " "
+		if (joined !== "" && part !== "" && !Str.endsWith("\n")(joined) && !Str.startsWith("\n")(part))
+			joined += " "
 		joined += part
 	}
 	// A mention alone on its line leaves a blank one; the next line keeps its indentation.
-	return joined.replace(/^(?:[ \t]*\r?\n)+/u, "").trimEnd()
+	return Str.trimEnd(Str.replace(/^(?:[ \t]*\r?\n)+/u, "")(joined))
 }
 
 /** The workspace out of `org:<orgId>:channel:<channelId>`. */
 const organizationOf = (partitionKey: string): string | undefined => {
-	const [scope, organizationId] = partitionKey.split(":")
+	const [scope, organizationId] = Str.split(":")(partitionKey)
 	return scope === "org" && organizationId !== undefined && organizationId !== ""
 		? organizationId
 		: undefined
@@ -58,8 +59,8 @@ const messageCreate = (envelope: unknown, botUserId: string): ReadonlyArray<Inbo
 	const workspaceId = organizationOf(partitionKey)
 	if (workspaceId === undefined) return []
 	if (message.authorId === botUserId || author?.isBot === true) return []
-	const mentionsBot = message.content.includes(mentionOf(botUserId))
-	if (!mentionsBot && message.content.trim() === "") return []
+	const mentionsBot = Str.includes(mentionOf(botUserId))(message.content)
+	if (!mentionsBot && Str.trim(message.content) === "") return []
 	return [
 		{
 			type: "message",
@@ -110,7 +111,7 @@ export const mapEvents = (
 	envelopes: ReadonlyArray<unknown>,
 	botUserId: string | undefined,
 ): ReadonlyArray<InboundEvent> =>
-	envelopes.flatMap((envelope) => {
+	Arr.flatMap(envelopes, (envelope) => {
 		const type = Option.match(decodeEventType(envelope), {
 			onNone: () => undefined,
 			onSome: (decoded) => decoded.eventType,

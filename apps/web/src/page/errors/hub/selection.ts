@@ -1,10 +1,10 @@
 import { type ErrorIssueId, WORKFLOW_STATE_ORDER } from "@maple/domain/http"
 import { Command, type Update } from "foldkit"
-import { Option } from "effect"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import { Option, Array as Arr } from "effect"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import { AppRoute, hrefOf } from "../../../route"
-import * as Menu from "../../../ui/menu"
+import * as Menu from "@maple/views/ui/menu"
 import * as QuickPick from "../kit/quick-pick"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { SEVERITY_ORDER } from "../kit/severity"
@@ -19,12 +19,13 @@ import { type HubWrite, outcomeToast, type WriteOutcome } from "./writes"
 
 type Return = PageReturn<Model, Message>
 
-const orderedIds = (model: Model): ReadonlyArray<ErrorIssueId> => signalsOf(model).map((signal) => signal.id)
+const orderedIds = (model: Model): ReadonlyArray<ErrorIssueId> =>
+	Arr.map(signalsOf(model), (signal) => signal.id)
 
 /** A toggle, or with Shift a range from the anchor (which stays put). */
 export const toggledSelection = (model: Model, id: string, isShift: boolean): Model => {
 	const ids = orderedIds(model)
-	if (!ids.some((candidate) => candidate === id)) return model
+	if (!Arr.some(ids, (candidate) => candidate === id)) return model
 	if (isShift && model.selectionAnchor !== null) {
 		const from = ids.findIndex((candidate) => candidate === model.selectionAnchor)
 		const to = ids.findIndex((candidate) => candidate === id)
@@ -36,7 +37,7 @@ export const toggledSelection = (model: Model, id: string, isShift: boolean): Mo
 	return {
 		...model,
 		selectedIds: model.selectedIds.includes(id)
-			? model.selectedIds.filter((selected) => selected !== id)
+			? Arr.filter(model.selectedIds, (selected) => selected !== id)
 			: [...model.selectedIds, id],
 		selectionAnchor: id,
 	}
@@ -119,14 +120,14 @@ export const startHubWrite = (
 
 /** Drops one in-flight entry per written id (a row can have two writes out). */
 const settledWriting = (writing: ReadonlyArray<string>, ids: ReadonlyArray<string>) =>
-	ids.reduce((left, id) => {
+	Arr.reduce(ids, writing, (left, id) => {
 		const at = left.indexOf(id)
 		return at === -1 ? left : [...left.slice(0, at), ...left.slice(at + 1)]
-	}, writing)
+	})
 
 /** The bulk bar acts on the selection and clears it at once (`onClear` after each action). */
 export const bulkWrite = (model: Model, write: HubWrite): Return => {
-	const ids = orderedIds(model).filter((id) => model.selectedIds.includes(id))
+	const ids = Arr.filter(orderedIds(model), (id) => model.selectedIds.includes(id))
 	return startHubWrite(cleared(model), ids, write, true)
 }
 
@@ -135,7 +136,7 @@ type PageQuery = (model: Model, cursor: string | null) => Parameters<typeof Fetc
 
 const refreshIssues = (model: Model, context: PageContext, pageQuery: PageQuery): Return => {
 	// Invalidation restarts reads already in flight: an answer from before the write is dropped.
-	const pages = model.pages.map((slot) => {
+	const pages = Arr.map(model.pages, (slot) => {
 		if (slot.page.key === null) return { slot, command: Option.none<typeof slot>() }
 		const next = { ...slot, page: Keyed.supersede(slot.page, slot.page.key) }
 		return { slot: next, command: Option.some(next) }
@@ -146,11 +147,11 @@ const refreshIssues = (model: Model, context: PageContext, pageQuery: PageQuery)
 	return {
 		model: {
 			...model,
-			pages: pages.map(({ slot }) => slot),
+			pages: Arr.map(pages, ({ slot }) => slot),
 			serviceCounts: Option.getOrElse(counts, () => model.serviceCounts),
 		},
 		commands: [
-			...pages.flatMap(({ command }) =>
+			...Arr.flatMap(pages, ({ command }) =>
 				Option.match(command, {
 					onNone: () => [],
 					onSome: (slot) =>

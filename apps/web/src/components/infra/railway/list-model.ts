@@ -1,6 +1,7 @@
 import type { RailwayEnvironmentStatus } from "@maple/domain/http"
 
 import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
+import { Array as Arr } from "effect"
 
 /** Where a group's poller stands, read off the integration status for its environment. */
 export type RailwaySync =
@@ -34,7 +35,7 @@ function syncOf(environment: RailwayEnvironmentStatus | undefined, authFailed: b
 }
 
 const sumMemory = (services: ReadonlyArray<RailwayServiceRow>) =>
-	services.reduce((total, row) => total + row.memoryAvg, 0)
+	Arr.reduce(services, 0, (total, row) => total + row.memoryAvg)
 
 /** Groups by environment (ids are unique across projects), heaviest group first. */
 export function groupRailwayServices<R extends RailwayServiceRow>(
@@ -48,20 +49,20 @@ export function groupRailwayServices<R extends RailwayServiceRow>(
 		if (bucket === undefined) byEnvironment.set(row.environmentId, [row])
 		else bucket.push(row)
 	}
-	const statusById = new Map(environments.map((environment) => [environment.environmentId, environment]))
-	return [...byEnvironment.entries()]
-		.map(([environmentId, rows]): RailwayServiceGroup<R> => {
-			const status = statusById.get(environmentId)
-			return {
-				key: environmentId,
-				projectName: rows[0]?.projectName || status?.projectName || "",
-				environmentName: rows[0]?.environmentName || status?.environmentName || "",
-				services: rows,
-				memoryAvg: sumMemory(rows),
-				sync: syncOf(status, authFailed),
-			}
-		})
-		.sort((a, b) => b.memoryAvg - a.memoryAvg)
+	const statusById = new Map(
+		Arr.map(environments, (environment) => [environment.environmentId, environment]),
+	)
+	return Arr.map([...byEnvironment.entries()], ([environmentId, rows]): RailwayServiceGroup<R> => {
+		const status = statusById.get(environmentId)
+		return {
+			key: environmentId,
+			projectName: rows[0]?.projectName || status?.projectName || "",
+			environmentName: rows[0]?.environmentName || status?.environmentName || "",
+			services: rows,
+			memoryAvg: sumMemory(rows),
+			sync: syncOf(status, authFailed),
+		}
+	}).sort((a, b) => b.memoryAvg - a.memoryAvg)
 }
 
 /**
@@ -71,7 +72,7 @@ export function groupRailwayServices<R extends RailwayServiceRow>(
  */
 export function hasConfiguredLimits(services: ReadonlyArray<RailwayServiceRow>): boolean {
 	const distinct = (pick: (row: RailwayServiceRow) => number) =>
-		new Set(services.map(pick).filter((limit) => limit > 0)).size > 1
+		new Set(Arr.filter(Arr.map(services, pick), (limit) => limit > 0)).size > 1
 	return distinct((row) => row.cpuLimit) || distinct((row) => row.memoryLimit)
 }
 

@@ -1,6 +1,7 @@
 import type { SupabaseAdvisorLint } from "@maple/domain/http"
 import { healthReason, projectHealth, type ProjectHealth } from "../health"
 import type { SupabaseFleetInsights, SupabaseProjectRow, SupabaseStatus } from "../model"
+import { Array as Arr } from "effect"
 
 // The pure half of the overview: discovery, metrics and health joined per project.
 
@@ -27,9 +28,9 @@ export const projectViews = (
 	status: SupabaseStatus,
 	rows: ReadonlyArray<SupabaseProjectRow>,
 ): ReadonlyArray<ProjectView> => {
-	const byRef = new Map(rows.map((row) => [row.projectRef, row]))
-	const known = new Set<string>(status.projects.map((project) => project.ref))
-	const discovered = status.projects.map((project): ProjectView => {
+	const byRef = new Map(Arr.map(rows, (row) => [row.projectRef, row]))
+	const known = new Set<string>(Arr.map(status.projects, (project) => project.ref))
+	const discovered = Arr.map(status.projects, (project): ProjectView => {
 		const metrics = byRef.get(project.ref) ?? null
 		return {
 			ref: project.ref,
@@ -42,9 +43,9 @@ export const projectViews = (
 			metrics,
 		}
 	})
-	const orphaned = rows
-		.filter((row) => !known.has(row.projectRef))
-		.map((row): ProjectView => ({
+	const orphaned = Arr.map(
+		Arr.filter(rows, (row) => !known.has(row.projectRef)),
+		(row): ProjectView => ({
 			ref: row.projectRef,
 			displayName: row.projectRef,
 			region: "",
@@ -53,26 +54,27 @@ export const projectViews = (
 			metricsEnabled: true,
 			logsEnabled: row.requests > 0 || row.issueCount > 0,
 			metrics: row,
-		}))
+		}),
+	)
 	return [...discovered, ...orphaned]
 }
 
 /** The four tiles above the table. */
 export const fleetSummary = (projects: ReadonlyArray<ProjectView>) => {
-	const rows = projects.flatMap((project) => (project.metrics === null ? [] : [project.metrics]))
+	const rows = Arr.flatMap(projects, (project) => (project.metrics === null ? [] : [project.metrics]))
 	const sum = (pick: (row: SupabaseProjectRow) => number) =>
-		rows.reduce((total, row) => total + pick(row), 0)
+		Arr.reduce(rows, 0, (total, row) => total + pick(row))
 	const requests = sum((row) => row.requests)
 	const errors5xx = sum((row) => row.errors5xx)
-	const unhealthy = projects.flatMap((project) => {
+	const unhealthy = Arr.flatMap(projects, (project) => {
 		const reason = healthReason(project.displayName, project.health)
 		return reason === null ? [] : [reason]
 	})
 	return {
 		total: projects.length,
-		healthy: projects.filter((project) => project.health._tag === "Healthy").length,
+		healthy: Arr.filter(projects, (project) => project.health._tag === "Healthy").length,
 		/** Projects with no metrics row to judge, neither healthy nor unhealthy. */
-		unknown: projects.filter((project) => project.health._tag === "Unknown").length,
+		unknown: Arr.filter(projects, (project) => project.health._tag === "Unknown").length,
 		/** Why the first unhealthy project is not healthy, `null` when all are. */
 		firstReason: unhealthy[0] ?? null,
 		unhealthyCount: unhealthy.length,
@@ -80,10 +82,10 @@ export const fleetSummary = (projects: ReadonlyArray<ProjectView>) => {
 		requestsPerMinute: sum((row) => row.requestsPerMinute),
 		errorRate5xx: requests > 0 ? errors5xx / requests : 0,
 		issues: sum((row) => row.issueCount),
-		issueProjects: rows.filter((row) => row.issueCount > 0).length,
+		issueProjects: Arr.filter(rows, (row) => row.issueCount > 0).length,
 		dbSize: sum((row) => row.dbSize),
-		databases: rows.filter((row) => row.dbSize > 0).length,
-		hasLogs: projects.some((project) => project.logsEnabled),
+		databases: Arr.filter(rows, (row) => row.dbSize > 0).length,
+		hasLogs: Arr.some(projects, (project) => project.logsEnabled),
 	}
 }
 
@@ -100,16 +102,14 @@ export const advisorFindings = (
 	fleet: SupabaseFleetInsights,
 	names: ReadonlyMap<string, string>,
 ): ReadonlyArray<AdvisorFinding> =>
-	fleet.insights
-		.flatMap((insights) =>
-			[...insights.advisors.error, ...insights.advisors.warn].map((lint): AdvisorFinding => ({
-				lint,
-				projectRef: insights.projectRef,
-				projectName: names.get(insights.projectRef) ?? insights.projectRef,
-			})),
-		)
-		.toSorted((a, b) => LEVEL_RANK[a.lint.level] - LEVEL_RANK[b.lint.level])
+	Arr.flatMap(fleet.insights, (insights) =>
+		Arr.map([...insights.advisors.error, ...insights.advisors.warn], (lint): AdvisorFinding => ({
+			lint,
+			projectRef: insights.projectRef,
+			projectName: names.get(insights.projectRef) ?? insights.projectRef,
+		})),
+	).toSorted((a, b) => LEVEL_RANK[a.lint.level] - LEVEL_RANK[b.lint.level])
 
 /** Whether any read project's advisors have been checked at least once. */
 export const advisorsChecked = (fleet: SupabaseFleetInsights): boolean =>
-	fleet.insights.some((insights) => insights.advisorsCheckedAt !== null)
+	Arr.some(fleet.insights, (insights) => insights.advisorsCheckedAt !== null)

@@ -8,7 +8,7 @@ import {
 	type CompiledRules,
 	type RuleRecord,
 } from "@maple/ingest-rules"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -56,16 +56,19 @@ export const parseLocalIngestRules = (body: string): LocalIngestRules => {
 	if (Result.isFailure(decoded))
 		return { ...EMPTY, problems: [`ingest rules file is invalid: ${decoded.failure.message}`] }
 	// Each rule decodes on its own, so one malformed entry is skipped instead of disabling the file.
-	const parsed = decoded.success.map((entry, index) => ({ index, rule: decodeRule(entry) }))
-	const malformed = parsed.flatMap(({ index, rule }) =>
+	const parsed = Arr.map(decoded.success, (entry, index) => ({ index, rule: decodeRule(entry) }))
+	const malformed = Arr.flatMap(parsed, ({ index, rule }) =>
 		Result.isFailure(rule) ? [`ingest rule ${index + 1} skipped: ${rule.failure.message}`] : [],
 	)
 	// File positions travel with the rules, so an unnamed rule is reported by where it is in the file.
-	const enabled = parsed
-		.flatMap(({ index, rule }) => (Result.isSuccess(rule) ? [{ index, rule: rule.success }] : []))
-		.filter(({ rule }) => rule.enabled !== false)
+	const enabled = Arr.filter(
+		Arr.flatMap(parsed, ({ index, rule }) =>
+			Result.isSuccess(rule) ? [{ index, rule: rule.success }] : [],
+		),
+		({ rule }) => rule.enabled !== false,
+	)
 	const compiled = compileRules(
-		enabled.map(({ rule }) => ({
+		Arr.map(enabled, ({ rule }) => ({
 			signals: rule.signals,
 			conditions: rule.conditions,
 			action: rule.action,
@@ -76,9 +79,10 @@ export const parseLocalIngestRules = (body: string): LocalIngestRules => {
 		compiled,
 		problems: [
 			...malformed,
-			...compiled.invalid.map(
+			...Arr.map(
+				compiled.invalid,
 				(invalid) =>
-					`ingest rule ${ruleLabel(enabled[invalid.index], invalid.index)} skipped: ${invalid.problems.join("; ")}`,
+					`ingest rule ${ruleLabel(enabled[invalid.index], invalid.index)} skipped: ${Arr.join(invalid.problems, "; ")}`,
 			),
 		],
 	}
@@ -132,14 +136,14 @@ const toValue = (value: AnyValue | undefined): AttrValue => {
 	if (value.intValue !== undefined) return BigInt(value.intValue)
 	if (value.doubleValue !== undefined) return Number(value.doubleValue)
 	if (value.bytesValue !== undefined) return base64ToBytes(value.bytesValue)
-	if (value.arrayValue !== undefined) return (value.arrayValue.values ?? []).map(toValue)
+	if (value.arrayValue !== undefined) return Arr.map(value.arrayValue.values ?? [], toValue)
 	if (value.kvlistValue !== undefined) return toMap(value.kvlistValue.values)
 	return ""
 }
 const toMap = (attributes: ReadonlyArray<KeyValue> | undefined): AttrMap =>
-	Object.fromEntries((attributes ?? []).map((kv) => [kv.key ?? "", toValue(kv.value)]))
+	Rec.fromEntries(Arr.map(attributes ?? [], (kv) => [kv.key ?? "", toValue(kv.value)]))
 
-const isAttrList = (value: AttrValue): value is ReadonlyArray<AttrValue> => Array.isArray(value)
+const isAttrList = (value: AttrValue): value is ReadonlyArray<AttrValue> => Arr.isArray(value)
 
 const fromValue = (value: AttrValue): AnyValue => {
 	if (typeof value === "string") return { stringValue: value }
@@ -147,20 +151,23 @@ const fromValue = (value: AttrValue): AnyValue => {
 	if (typeof value === "bigint") return { intValue: value.toString() }
 	if (typeof value === "number") return { doubleValue: value }
 	if (value instanceof Uint8Array) return { bytesValue: bytesToBase64(value) }
-	if (isAttrList(value)) return { arrayValue: { values: value.map(fromValue) } }
+	if (isAttrList(value)) return { arrayValue: { values: Arr.map(value, fromValue) } }
 	return { kvlistValue: { values: fromMap(value, undefined) } }
 }
 const fromMap = (map: AttrMap, original: ReadonlyArray<KeyValue> | undefined): KeyValue[] => {
-	const before = new Map((original ?? []).map((kv) => [kv.key ?? "", kv]))
-	return Object.entries(map).map(([key, value]) => {
+	const before = new Map(Arr.map(original ?? [], (kv) => [kv.key ?? "", kv]))
+	return Arr.map(Rec.toEntries(map), ([key, value]) => {
 		const kept = before.get(key)
 		return kept !== undefined && sameValue(kept.value, value) ? kept : { key, value: fromValue(value) }
 	})
 }
 const sameValue = (original: AnyValue | undefined, value: AttrValue): boolean =>
-	JSON.stringify(toValue(original), jsonSafe) === JSON.stringify(value, jsonSafe)
+	safeJson(toValue(original)) === safeJson(value)
 const jsonSafe = (_key: string, value: unknown) =>
 	typeof value === "bigint" ? `${value}n` : value instanceof Uint8Array ? Array.from(value) : value
+// `undefined` when the value has no JSON form, as `JSON.stringify` returns.
+const encodeSafeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown, { replacer: jsonSafe }))
+const safeJson = (value: unknown): string | undefined => Option.getOrUndefined(encodeSafeJson(value))
 
 const safeTraceId = (raw: string | undefined): string | undefined =>
 	Option.getOrUndefined(Result.getSuccess(Result.try(() => traceIdHex(raw, "traceId"))))
@@ -170,11 +177,11 @@ const SPAN_STATUSES = ["unset", "ok", "error"] as const
 
 const isObject = (value: unknown): value is object => typeof value === "object" && value !== null
 const isTraceRequest = (value: unknown): value is TraceRequest =>
-	isObject(value) && "resourceSpans" in value && Array.isArray(value.resourceSpans)
+	isObject(value) && "resourceSpans" in value && Arr.isArray(value.resourceSpans)
 const isLogsRequest = (value: unknown): value is LogsRequest =>
-	isObject(value) && "resourceLogs" in value && Array.isArray(value.resourceLogs)
+	isObject(value) && "resourceLogs" in value && Arr.isArray(value.resourceLogs)
 const isMetricsRequest = (value: unknown): value is MetricsRequest =>
-	isObject(value) && "resourceMetrics" in value && Array.isArray(value.resourceMetrics)
+	isObject(value) && "resourceMetrics" in value && Arr.isArray(value.resourceMetrics)
 
 export interface LocalRuleOutcome {
 	readonly dropped: number
@@ -230,16 +237,19 @@ const writeResource = (
 	records: ReadonlyArray<RuleRecord>,
 	before: AttrMap,
 ) => {
-	const changed = records.filter((record) => record.resource !== before)
+	const changed = Arr.filter(records, (record) => record.resource !== before)
 	if (resource === undefined || changed.length === 0) return
 	const merged = changed.reduce<AttrMap>(
 		(acc, record) =>
-			Object.fromEntries(
-				Object.entries(acc).flatMap(([key, value]): ReadonlyArray<readonly [string, AttrValue]> => {
-					const next = record.resource[key]
-					if (next === undefined) return []
-					return [[key, next === before[key] ? value : next]]
-				}),
+			Rec.fromEntries(
+				Arr.flatMap(
+					Rec.toEntries(acc),
+					([key, value]): ReadonlyArray<readonly [string, AttrValue]> => {
+						const next = record.resource[key]
+						if (next === undefined) return []
+						return [[key, next === before[key] ? value : next]]
+					},
+				),
 			),
 		before,
 	)
@@ -247,11 +257,11 @@ const writeResource = (
 }
 
 const applyToTraces = (request: TraceRequest, run: Run) => {
-	request.resourceSpans = (request.resourceSpans ?? []).filter((resourceSpans) => {
+	request.resourceSpans = Arr.filter(request.resourceSpans ?? [], (resourceSpans) => {
 		const resource = toMap(resourceSpans.resource?.attributes)
 		const kept: Array<RuleRecord> = []
-		resourceSpans.scopeSpans = (resourceSpans.scopeSpans ?? []).filter((scopeSpans) => {
-			scopeSpans.spans = (scopeSpans.spans ?? []).filter((span) => {
+		resourceSpans.scopeSpans = Arr.filter(resourceSpans.scopeSpans ?? [], (scopeSpans) => {
+			scopeSpans.spans = Arr.filter(scopeSpans.spans ?? [], (span) => {
 				const output = run({
 					signal: "traces",
 					resource,
@@ -261,7 +271,7 @@ const applyToTraces = (request: TraceRequest, run: Run) => {
 					spanKind: SPAN_KINDS[span.kind ?? 0] ?? "unspecified",
 					spanStatus: SPAN_STATUSES[span.status?.code ?? 0] ?? "unset",
 					statusMessage: span.status?.message,
-					events: (span.events ?? []).map((event) => ({
+					events: Arr.map(span.events ?? [], (event) => ({
 						name: event.name ?? "",
 						attributes: toMap(event.attributes),
 					})),
@@ -287,11 +297,11 @@ const applyToTraces = (request: TraceRequest, run: Run) => {
 }
 
 const applyToLogs = (request: LogsRequest, run: Run) => {
-	request.resourceLogs = (request.resourceLogs ?? []).filter((resourceLogs) => {
+	request.resourceLogs = Arr.filter(request.resourceLogs ?? [], (resourceLogs) => {
 		const resource = toMap(resourceLogs.resource?.attributes)
 		const kept: Array<RuleRecord> = []
-		resourceLogs.scopeLogs = (resourceLogs.scopeLogs ?? []).filter((scopeLogs) => {
-			scopeLogs.logRecords = (scopeLogs.logRecords ?? []).filter((log) => {
+		resourceLogs.scopeLogs = Arr.filter(resourceLogs.scopeLogs ?? [], (scopeLogs) => {
+			scopeLogs.logRecords = Arr.filter(scopeLogs.logRecords ?? [], (log) => {
 				const body = log.body === undefined ? undefined : toValue(log.body)
 				const output = run({
 					signal: "logs",
@@ -322,11 +332,11 @@ interface DataPoint {
 }
 
 const applyToMetrics = (request: MetricsRequest, run: Run) => {
-	request.resourceMetrics = (request.resourceMetrics ?? []).filter((resourceMetrics) => {
+	request.resourceMetrics = Arr.filter(request.resourceMetrics ?? [], (resourceMetrics) => {
 		const resource = toMap(resourceMetrics.resource?.attributes)
 		const kept: Array<RuleRecord> = []
 		const keepPoints = <P extends DataPoint>(name: string, points: ReadonlyArray<P> | undefined): P[] =>
-			(points ?? []).filter((point) => {
+			Arr.filter(points ?? [], (point) => {
 				const output = run({ signal: "metrics", resource, attributes: toMap(point.attributes), name })
 				if (output === null) return false
 				kept.push(output.record)
@@ -339,8 +349,8 @@ const applyToMetrics = (request: MetricsRequest, run: Run) => {
 				})
 				return true
 			})
-		resourceMetrics.scopeMetrics = (resourceMetrics.scopeMetrics ?? []).filter((scopeMetrics) => {
-			scopeMetrics.metrics = (scopeMetrics.metrics ?? []).filter((metric) => {
+		resourceMetrics.scopeMetrics = Arr.filter(resourceMetrics.scopeMetrics ?? [], (scopeMetrics) => {
+			scopeMetrics.metrics = Arr.filter(scopeMetrics.metrics ?? [], (metric) => {
 				const name = metric.name ?? ""
 				if (metric.gauge !== undefined)
 					metric.gauge.dataPoints = keepPoints(name, metric.gauge.dataPoints)

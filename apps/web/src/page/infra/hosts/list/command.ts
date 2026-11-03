@@ -1,7 +1,7 @@
 import { listHosts } from "@maple/web-data/warehouse/infra"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import { Message } from "./message"
 
@@ -15,8 +15,7 @@ export const FetchHosts = Command.define("FetchInfraHosts", {
 		listHosts({
 			data: { startTime: window.startTime, endTime: window.endTime, limit: HOST_LIST_LIMIT },
 		}).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchHosts({ key, result })),
 		),

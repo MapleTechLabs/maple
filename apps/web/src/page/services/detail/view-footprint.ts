@@ -12,27 +12,30 @@ import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button } from "../../../ui/button"
-import { delta } from "../../../ui/delta"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon, type IconName } from "../../../ui/icon"
-import { item, itemActions, itemContent, itemDescription, itemTitle } from "../../../ui/item"
-import { meter } from "../../../ui/meter"
-import { truncatedText } from "../../../ui/truncated-text"
-import { serviceDot } from "../../../ui/values"
+import { button } from "@maple/views/ui/button"
+import { delta } from "@maple/views/ui/delta"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { item, itemActions, itemContent, itemDescription, itemTitle } from "@maple/views/ui/item"
+import { meter } from "@maple/views/ui/meter"
+import { pressable } from "@maple/views/ui/pressable"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { serviceDot } from "@maple/views/ui/values"
 import { pickTimeSearch } from "../../infra/kit/view-tabs"
 import { type RuntimeLink, runtimeLink, workloadLink } from "../../kit/service-runtimes"
 import { type DependencyKind, type StripTarget, stripTargets } from "./derive-panels"
 import { Message } from "./message"
 import type { Model, UsageTotals } from "./model"
 import { sectionCard, viewAllButton } from "./view-panels"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `ServiceUsagePanel`, `ServiceWorkloadsPanel` and `ServiceDependencyStrip` (components/services/).
 
 type H = HtmlBuilder<Message>
 
-const allEnvironments = (h: H): Html =>
-	h.span([h.Class("text-3xs text-foreground-subtle")], ["all environments"])
+const allEnvironments = (h: H): Html => typography(h, { size: "3xs", tone: "subtle" }, ["all environments"])
 
 const USAGE_STATS: ReadonlyArray<{
 	readonly key: keyof UsageTotals
@@ -61,7 +64,7 @@ export const usagePanel = (h: H, model: Model, envFilterActive: boolean): Html =
 		[
 			h.div(
 				[h.Class("grid grid-cols-2 gap-px sm:grid-cols-4")],
-				USAGE_STATS.map((stat) =>
+				Arr.map(USAGE_STATS, (stat) =>
 					h.div(
 						[h.Key(stat.key), h.Class("flex flex-col gap-0.5 px-4 py-3")],
 						[
@@ -79,7 +82,7 @@ export const usagePanel = (h: H, model: Model, envFilterActive: boolean): Html =
 								previous: previous?.[stat.key],
 								suffix: "vs prev",
 								flatThreshold: 0.005,
-								className: "text-3xs text-muted-foreground",
+								className: typographyClass({ size: "3xs", tone: "muted" }),
 							}),
 						],
 					),
@@ -147,8 +150,8 @@ const runsOnRow = (
 						),
 						itemDescription(
 							h,
-							[[link.label, ...link.location].join(" · ")],
-							"truncate text-3xs text-foreground-subtle",
+							[Arr.join([link.label, ...link.location], " · ")],
+							typographyClass({ size: "3xs", tone: "subtle", truncate: true }),
 						),
 					],
 					"gap-0 leading-tight",
@@ -161,21 +164,36 @@ const runsOnRow = (
 					itemActions(
 						h,
 						[extra.count],
-						"shrink-0 font-mono text-2xs tabular-nums text-muted-foreground",
+						typographyClass({
+							size: "2xs",
+							tone: "muted",
+							mono: true,
+							numeric: true,
+							className: "shrink-0",
+						}),
 					),
 				]),
 		...(extra.meters.length === 0
 			? []
-			: [h.div([h.Class(cn("flex flex-col gap-1", "max-w-[280px] basis-full pl-6"))], extra.meters)]),
+			: [
+					h.div(
+						[h.Class(cn(vstackClass({ gap: "1" }), "max-w-[280px] basis-full pl-6"))],
+						extra.meters,
+					),
+				]),
 	])
 
 /** Every place the service runs, platform resources first: the header links the first. */
 export const runsOnLinks = (model: Model): ReadonlyArray<RuntimeLink> => {
 	const time = pickTimeSearch(model.search)
 	return [
-		...AsyncData.getOrElse(model.runtimes.data, () => []).map((runtime) => runtimeLink(runtime, time)),
-		...AsyncData.getOrElse(model.workloads.data, () => []).map((workload) =>
-			workloadLink(workload, time),
+		...Arr.map(
+			AsyncData.getOrElse(model.runtimes.data, () => []),
+			(runtime) => runtimeLink(runtime, time),
+		),
+		...Arr.map(
+			AsyncData.getOrElse(model.workloads.data, () => []),
+			(workload) => workloadLink(workload, time),
 		),
 	]
 }
@@ -199,11 +217,11 @@ export const runsOnPanel = (h: H, model: Model, envFilterActive: boolean): Html 
 			h.ul(
 				[h.Class("divide-y")],
 				[
-					...runtimes.map((runtime) => {
+					...Arr.map(runtimes, (runtime) => {
 						const link = runtimeLink(runtime, time)
 						return h.keyed("li")(link.key, [], [runsOnRow(h, link, { meters: [] })])
 					}),
-					...workloads.map((workload) => {
+					...Arr.map(workloads, (workload) => {
 						const link = workloadLink(workload, time)
 						const meters = [
 							...(workload.avgCpuLimitUtilization === null
@@ -246,13 +264,9 @@ const stripChip = (h: H, target: StripTarget, onClick: Message): Html =>
 				],
 				[serviceDot(h, { serviceName: target.name }), h.span([h.Class("truncate")], [target.name])],
 			)
-		: h.button(
-				[
-					h.Key(target.id),
-					h.Type("button"),
-					h.OnClick(onClick),
-					h.Class(cn(CHIP, "text-muted-foreground")),
-				],
+		: pressable(
+				h,
+				{ onClick, className: cn(CHIP, "text-muted-foreground"), attributes: [h.Key(target.id)] },
 				[
 					icon(h, KIND_ICON.get(target.kind) ?? "GlobeIcon", { size: 12 }),
 					truncatedText(h, { text: target.name }),
@@ -274,7 +288,7 @@ export const dependencyStrip = (h: H, model: Model): Html => {
 		],
 		[
 			eyebrow(h, {}, ["Talks to"]),
-			...visible.map((target) => stripChip(h, target, onViewAll)),
+			...Arr.map(visible, (target) => stripChip(h, target, onViewAll)),
 			...(hiddenCount > 0
 				? [
 						button(
@@ -286,9 +300,8 @@ export const dependencyStrip = (h: H, model: Model): Html => {
 								className: "h-auto py-0.5 text-xs font-normal sm:h-auto",
 								attributes: [h.OnClick(onViewAll)],
 							},
-							[
-							`+${hiddenCount} more`,
-						]),
+							[`+${hiddenCount} more`],
+						),
 					]
 				: []),
 			viewAllButton(h, onViewAll),

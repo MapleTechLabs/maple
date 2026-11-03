@@ -1,6 +1,7 @@
 // Span event markers on the trace timeline: where along its bar each event sits.
 
 import { formatDuration } from "./format"
+import { Array as Arr } from "effect"
 
 /** One OTel span event as the timeline needs it: no attributes. */
 export interface TimelineSpanEvent {
@@ -32,7 +33,7 @@ export function spanEventMarkers(
 	spanStartMs: number,
 	durationMs: number,
 ): ReadonlyArray<SpanEventMarker> {
-	return events.map((event) => ({
+	return Arr.map(events, (event) => ({
 		name: event.name,
 		offsetMs: event.offsetMs,
 		atMs: spanStartMs + Math.min(Math.max(durationMs, 0), Math.max(0, event.offsetMs)),

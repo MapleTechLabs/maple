@@ -1,3 +1,4 @@
+import { Schema, Array as Arr, String as Str } from "effect"
 import type {
 	AnnotationSegment,
 	InlineErrorData,
@@ -11,11 +12,15 @@ import { getSeverityColor } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
 import { formatTimeInTimezone, normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../../ui/display"
-import { icon } from "../../../../ui/icon"
-import { truncatedId } from "../../../../ui/truncated-id"
-import { truncatedText } from "../../../../ui/truncated-text"
-import { latencyValue } from "../../../../ui/values"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { truncatedId } from "@maple/views/ui/truncated-id"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { latencyValue } from "@maple/views/ui/values"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstackClass } from "@maple/views/ui/stack"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The inline reference cards: a service, an error
 // fingerprint, a trace and a log line the model wrote as `<<maple:…>>`.
@@ -24,7 +29,7 @@ const SHELL =
 	"@container/inline flex w-full flex-col gap-1 rounded-md border border-border bg-muted px-3 py-2"
 const LINK_SHELL =
 	"hover:border-ring/40 active:border-ring/40 hover:bg-muted active:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
-const ROW = "flex min-w-0 items-center gap-2.5"
+const ROW = hstackClass({ gap: "2.5", shrink: true })
 const META = "flex min-w-0 flex-wrap items-center gap-1 ps-6"
 
 const cardClass = (interactive: boolean): string => cn(SHELL, interactive && LINK_SHELL)
@@ -62,7 +67,7 @@ const metric = <M>(
 const serviceChips = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<string>): ReadonlyArray<Html> => {
 	const shown = services.slice(0, 4)
 	return [
-		...shown.map((service) =>
+		...Arr.map(shown, (service) =>
 			h.span(
 				[
 					h.Class(
@@ -96,7 +101,9 @@ const inlineService = <M>(h: HtmlBuilder<M>, data: InlineServiceData): Html =>
 		h.div(
 			[h.Class(ROW)],
 			[
-				icon(h, "ServerIcon", { className: "size-3.5 shrink-0 text-muted-foreground" }),
+				icon(h, "ServerIcon", {
+					className: typographyClass({ tone: "muted", className: "size-3.5 shrink-0" }),
+				}),
 				truncatedText(
 					h,
 					{ text: data.name, className: "flex-1 text-xs font-medium text-foreground" },
@@ -227,7 +234,7 @@ const inlineTrace = <M>(h: HtmlBuilder<M>, data: InlineTraceData): Html =>
 
 /** `SeverityBadge`: the severity's own colour on a 10% wash of it. */
 const severityBadge = <M>(h: HtmlBuilder<M>, severity: string): Html => {
-	const label = severity.trim() === "" ? "UNSET" : severity
+	const label = Str.trim(severity) === "" ? "UNSET" : severity
 	const color = getSeverityColor(label)
 	return badge(
 		h,
@@ -263,12 +270,15 @@ const inlineLog = <M>(h: HtmlBuilder<M>, data: InlineLogData, timeZone: string):
 					]),
 					...(data.timestamp
 						? [
-								h.span(
-									[
-										h.Class(
-											"shrink-0 font-mono text-2xs tabular-nums text-muted-foreground",
-										),
-									],
+								typography(
+									h,
+									{
+										size: "2xs",
+										tone: "muted",
+										mono: true,
+										numeric: true,
+										className: "shrink-0",
+									},
 									[
 										formatTimeInTimezone(normalizeTimestampInput(data.timestamp), {
 											timeZone,
@@ -283,7 +293,7 @@ const inlineLog = <M>(h: HtmlBuilder<M>, data: InlineLogData, timeZone: string):
 								h.a(
 									[
 										h.Href(
-											`/traces/${encodeURIComponent(data.traceId)}${data.timestamp ? `?t=${encodeURIComponent(JSON.stringify(data.timestamp))}` : ""}`,
+											`/traces/${encodeURIComponent(data.traceId)}${data.timestamp ? `?t=${encodeURIComponent(encodeJson(data.timestamp))}` : ""}`,
 										),
 										h.Target("_blank"),
 										h.Rel("noreferrer"),

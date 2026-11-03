@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId } from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
@@ -47,7 +47,7 @@ describe("SourceUsageService", () => {
 			assert.strictEqual(usage.windowStart, Date.UTC(2026, 6, 14, 10))
 			assert.strictEqual(usage.windowEnd, NOW)
 			assert.deepStrictEqual(
-				usage.buckets.map((bucket) => [bucket.hour, bucket.spans, bucket.metrics, bucket.bytes]),
+				Arr.map(usage.buckets, (bucket) => [bucket.hour, bucket.spans, bucket.metrics, bucket.bytes]),
 				[
 					[Date.UTC(2026, 6, 14, 10), 1, 0, 300],
 					[Date.UTC(2026, 6, 15, 9), 10, 6, 5000],
@@ -64,7 +64,7 @@ describe("SourceUsageService", () => {
 
 			assert.strictEqual(summary.windowStart, Date.UTC(2026, 6, 14, 10))
 			assert.deepStrictEqual(
-				summary.totals.map((total) => ({ ...total })),
+				Arr.map(summary.totals, (total) => ({ ...total })),
 				[{ sourceId: "src_a", spans: 11, logs: 4, metrics: 6, bytes: 5300 }],
 			)
 		}).pipe(Effect.provide(makeLayer([]))),

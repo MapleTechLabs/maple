@@ -1,8 +1,8 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import * as Menu from "../../../ui/menu"
+import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { CreateDashboard, FetchDashboardsFallback } from "./command"
 import { Message } from "./message"
@@ -18,9 +18,9 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const run = (model: Model, messages: ReadonlyArray<Message>) =>
-	messages.reduce((current, message) => pageUpdate(current, message).model, model)
+	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message).model)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const board: ListDashboard = {
 	id: "dash_platform",

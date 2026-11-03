@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -202,7 +202,7 @@ describe("LinearOAuthService", () => {
 			yield* connect.pipe(Effect.provide(makeLayer(testDb, mockLinear())))
 			const teams = yield* (yield* LinearOAuthService).listTeams(orgA)
 			assert.deepStrictEqual(
-				teams.map((team) => team.key),
+				Arr.map(teams, (team) => team.key),
 				["ENG", "OPS"],
 			)
 			assert.deepStrictEqual(linear.graphqlTokens, ["lin-access", "lin-access-refreshed"])

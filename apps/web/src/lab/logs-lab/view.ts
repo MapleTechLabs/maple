@@ -1,10 +1,10 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import * as LogsStreamView from "../../ui/logs/logs-stream-view"
-import { eyebrow } from "../../ui/eyebrow"
-import * as ToastView from "../../ui/toast-view"
+import { button } from "@maple/views/ui/button"
+import * as LogsStreamView from "@maple/views/ui/logs/logs-stream-view"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import * as ToastView from "@maple/views/ui/toast-view"
 import { liveControls } from "../../page/logs/live-controls"
 import { labShellView } from "../app-shell"
 import { Message, type Model, PIN_OPTIONS, type Toggle } from "./model"
@@ -28,7 +28,7 @@ const toggles = (h: HtmlBuilder<Message>, model: Model): ReadonlyArray<Html> => 
 		flag("Wrap", model.wrap, "Wrap"),
 		flag("Comfortable", model.density === "comfortable", "Comfortable"),
 		flag("Search “pool”", Option.isSome(model.search), "Search"),
-		...PIN_OPTIONS.map((key) =>
+		...Arr.map(PIN_OPTIONS, (key) =>
 			toggleButton(h, `Pin ${key}`, model.pinned.includes(key), Message.ClickedPin({ key })),
 		),
 		flag("Empty", model.isEmpty, "Empty"),

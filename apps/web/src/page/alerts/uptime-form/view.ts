@@ -1,18 +1,19 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
-import { button, linkButton } from "../../../ui/button"
-import { errorState } from "../../../ui/error-state"
-import { icon, type IconName } from "../../../ui/icon"
-import { alert, alertDescription, alertTitle } from "../../../ui/alert"
-import { panel, panelHeader } from "../../../ui/panel"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { skeleton } from "../../../ui/skeleton"
+import { button, linkButton } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { heading } from "@maple/views/ui/heading"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { failureMessage, type LoadFailure } from "../../../data/load-failure"
+import { failureMessage, type LoadFailure } from "@maple/views/data/load-failure"
 import { LIMIT_REACHED_CODE, monitorHref, uptimeTabHref } from "../shared/uptime-commands"
 import { formatMs } from "../shared/uptime-derive"
 import { uptimePanelBody } from "../shared/uptime-view"
@@ -22,6 +23,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { assertionsSection, type H, requestSection, scheduleSection } from "./view-fields"
 import { dnsSection, heartbeatSection, notifySection, serviceSection, tcpSection } from "./view-kinds"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
 
 // `/alerts/uptime/new`: the kind picker, the kind's sections, the test panel and the action bar.
 
@@ -57,31 +60,27 @@ const kindPicker = (h: H, model: Model): Html =>
 	h.section(
 		[h.AriaLabel("Type"), h.Class("grid gap-x-8 gap-y-2 px-4 py-4 sm:grid-cols-[136px_minmax(0,1fr)]")],
 		[
-			h.h3([h.Class("text-sm font-medium sm:pt-1.5")], ["Type"]),
-			h.div(
-				[h.Class("flex min-w-0 flex-col gap-2")],
-				[
-					segmentedSelect(h, {
-						ariaLabel: "Monitor type",
-						size: "sm",
-						// Four labelled kinds outgrow a phone column, so the track wraps like the old picker.
-						className: "w-fit flex-wrap",
-						value: model.form.kind,
-						onChange: (kind) => Message.PickedKind({ kind }),
-						// Editing keeps the kind: the others stay visible but can't be picked.
-						options: KINDS.map((option) => ({
-							value: option.kind,
-							label: option.label,
-							icon: icon(h, option.icon, { size: 14 }),
-							isDisabled: model.editingId !== null && option.kind !== model.form.kind,
-						})),
-					}),
-					h.p(
-						[h.Class("text-xs text-muted-foreground")],
-						[KINDS.find((option) => option.kind === model.form.kind)?.description ?? ""],
-					),
-				],
-			),
+			heading(h, { level: 3, variant: "subsection", className: "sm:pt-1.5" }, ["Type"]),
+			vstack(h, { gap: "2", shrink: true }, [
+				segmentedSelect(h, {
+					ariaLabel: "Monitor type",
+					size: "sm",
+					// Four labelled kinds outgrow a phone column, so the track wraps like the old picker.
+					className: "w-fit flex-wrap",
+					value: model.form.kind,
+					onChange: (kind) => Message.PickedKind({ kind }),
+					// Editing keeps the kind: the others stay visible but can't be picked.
+					options: Arr.map(KINDS, (option) => ({
+						value: option.kind,
+						label: option.label,
+						icon: icon(h, option.icon, { size: 14 }),
+						isDisabled: model.editingId !== null && option.kind !== model.form.kind,
+					})),
+				}),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					KINDS.find((option) => option.kind === model.form.kind)?.description ?? "",
+				]),
+			]),
 		],
 	)
 
@@ -107,42 +106,44 @@ const describeAssertion = (row: AssertionDraft): string => {
 
 const testResultBody = (h: H, model: Model): ReadonlyArray<Html> => {
 	if (model.testFailure !== null)
-		return [h.p([h.Role("alert"), h.Class("text-sm text-destructive")], [model.testFailure.message])]
+		return [
+			h.p(
+				[h.Role("alert"), h.Class("text-sm text-destructive-foreground")],
+				[model.testFailure.message],
+			),
+		]
 	const result = model.testResult
 	if (result === null)
 		return [
-			h.p(
-				[h.Class("text-sm text-muted-foreground")],
-				["Run the check once from Ashburn, US before you save it."],
-			),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [
+				"Run the check once from Ashburn, US before you save it.",
+			]),
 		]
 	return [
 		h.p(
-			[h.Class("flex items-baseline gap-2")],
+			[h.Class(hstackClass({ gap: "2", align: "baseline" }))],
 			[
 				h.span(
 					[h.Class(cn("font-mono text-2xl font-semibold", TONE_TEXT[result.ok ? "ok" : "crit"]))],
 					[result.status_code === null ? "No response" : String(result.status_code)],
 				),
-				h.span([h.Class("font-mono text-xs text-muted-foreground")], [formatMs(result.duration_ms)]),
+				typography(h, { size: "xs", tone: "muted", mono: true }, [formatMs(result.duration_ms)]),
 			],
 		),
 		...(result.error === null ? [] : [h.p([h.Class(cn("text-sm", TONE_TEXT.crit))], [result.error])]),
-		h.ul(
-			[h.Class("flex flex-col gap-1.5 text-sm")],
+		vstack(
+			h,
+			{ gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) },
 			result.ok
-				? model.form.assertions.map((row) =>
-						h.li(
-							[h.Key(String(row.id)), h.Class("flex items-center gap-2")],
-							[
-								icon(h, "CheckIcon", { className: "text-severity-info" }),
-								describeAssertion(row),
-							],
-						),
+				? Arr.map(model.form.assertions, (row) =>
+						hstack(h, { gap: "2", as: "li", attributes: [h.Key(String(row.id))] }, [
+							icon(h, "CheckIcon", { className: "text-severity-info" }),
+							describeAssertion(row),
+						]),
 					)
 				: [
 						h.li(
-							[h.Class(cn("flex items-center gap-2", TONE_TEXT.crit))],
+							[h.Class(cn(hstackClass({ gap: "2" }), TONE_TEXT.crit))],
 							[icon(h, "XmarkIcon"), result.failed_assertion ?? "The check did not pass."],
 						),
 					],
@@ -172,13 +173,13 @@ const testPanel = (h: H, model: Model): Html =>
 					size: "sm",
 					variant: "outline",
 					isLoading: model.isTesting,
-					isDisabled: model.form.url.trim() === "",
+					isDisabled: Str.trim(model.form.url) === "",
 					attributes: [h.OnClick(Message.ClickedTest())],
 				},
 				[icon(h, "ArrowRotateClockwiseIcon"), model.testResult === null ? "Run test" : "Run again"],
 			),
 		}),
-		uptimePanelBody(h, [h.div([h.Class("flex flex-col gap-3")], testResultBody(h, model))]),
+		uptimePanelBody(h, [vstack(h, { gap: "3" }, testResultBody(h, model))]),
 	])
 
 /** What happens after creating, for the kinds without a test run; editing has nothing to announce. */
@@ -196,19 +197,31 @@ const actionBar = (h: H, model: Model, widthClass: string): Html => {
 		[
 			...(model.saveFailure === null ? [] : [saveFailureNotice(h, model.saveFailure, widthClass)]),
 			h.div(
-				[h.Class(cn("flex items-center justify-between gap-4", widthClass))],
+				[h.Class(cn(hstackClass({ gap: "4", justify: "between" }), widthClass))],
 				[
 					issues.length === 0
-						? h.span(
-								[h.Class("flex items-center gap-1.5 text-xs text-severity-info")],
+						? hstack(
+								h,
+								{
+									gap: "1.5",
+									as: "span",
+									className: typographyClass({
+										size: "xs",
+										className: "text-severity-info",
+									}),
+								},
 								[icon(h, "CheckIcon", { size: 14 }), "Ready to save"],
 							)
 						: h.p(
 								[
 									h.AriaLabel("Fix before saving"),
-									h.Title(issues.join(" ")),
+									h.Title(Arr.join(issues, " ")),
 									h.Class(
-										"flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground",
+										hstackClass({
+											gap: "1.5",
+											shrink: true,
+											className: typographyClass({ size: "xs", tone: "muted" }),
+										}),
 									),
 								],
 								[
@@ -220,7 +233,7 @@ const actionBar = (h: H, model: Model, widthClass: string): Html => {
 										[h.Class("truncate")],
 										[
 											"Fix before saving: ",
-											...issues.flatMap((issue, index) => [
+											...Arr.flatMap(issues, (issue, index) => [
 												...(index === 0 ? [] : [" "]),
 												h.span([h.Key(issue), h.Class("text-foreground")], [issue]),
 											]),
@@ -228,32 +241,27 @@ const actionBar = (h: H, model: Model, widthClass: string): Html => {
 									),
 								],
 							),
-					h.div(
-						[h.Class("flex shrink-0 items-center gap-2")],
-						[
-							linkButton(
-								h,
-								{
-									variant: "outline",
-									href:
-										model.editingId === null
-											? uptimeTabHref()
-											: monitorHref(model.editingId),
-								},
-								["Cancel"],
-							),
-							button(
-								h,
-								{
-									// Until the session says this is an admin, a click would be dropped by `save`.
-									isDisabled: issues.length > 0 || !model.isAdmin,
-									isLoading: model.isSaving,
-									attributes: [h.OnClick(Message.ClickedSave())],
-								},
-								[isEdit ? "Save changes" : "Create monitor"],
-							),
-						],
-					),
+					hstack(h, { gap: "2", className: "shrink-0" }, [
+						linkButton(
+							h,
+							{
+								variant: "outline",
+								href:
+									model.editingId === null ? uptimeTabHref() : monitorHref(model.editingId),
+							},
+							["Cancel"],
+						),
+						button(
+							h,
+							{
+								// Until the session says this is an admin, a click would be dropped by `save`.
+								isDisabled: issues.length > 0 || !model.isAdmin,
+								isLoading: model.isSaving,
+								attributes: [h.OnClick(Message.ClickedSave())],
+							},
+							[isEdit ? "Save changes" : "Create monitor"],
+						),
+					]),
 				],
 			),
 		],
@@ -269,7 +277,7 @@ const hasSavedRequestExtras = (model: Model): boolean =>
 		onNone: () => false,
 		onSome: (monitor) =>
 			monitor.config.type === "http" &&
-			(Object.keys(monitor.config.headers ?? {}).length > 0 || (monitor.config.body ?? "") !== ""),
+			(Rec.keys(monitor.config.headers ?? {}).length > 0 || (monitor.config.body ?? "") !== ""),
 	})
 
 const kindSections = (h: H, model: Model): ReadonlyArray<Html> => {
@@ -362,7 +370,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							],
 						)
 					: h.div(
-							[h.Class(cn("flex flex-col gap-2", widthClass))],
+							[h.Class(cn(vstackClass({ gap: "2" }), widthClass))],
 							[
 								card,
 								...(isEdit

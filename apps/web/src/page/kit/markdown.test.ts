@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { describe, expect, test } from "vitest"
 import { escapeDirectives, parseMarkdownTexts } from "./markdown"
 
@@ -12,8 +12,11 @@ describe("the shared markdown parse", () => {
 	})
 
 	test("code spans and fenced blocks keep their colons as written", () => {
-		const text = ["key:value in `a:b` prose", "```yaml", "image:latest", "```", "after:fence"].join("\n")
-		expect(escapeDirectives(text).split("\n")).toEqual([
+		const text = Arr.join(
+			["key:value in `a:b` prose", "```yaml", "image:latest", "```", "after:fence"],
+			"\n",
+		)
+		expect(Str.split("\n")(escapeDirectives(text))).toEqual([
 			"key\\:value in `a:b` prose",
 			"```yaml",
 			"image:latest",

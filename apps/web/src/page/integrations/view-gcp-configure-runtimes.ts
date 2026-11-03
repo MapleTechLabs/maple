@@ -1,23 +1,34 @@
 import type { GcpLogRuntime } from "@maple/domain/primitives"
 import { cn } from "@maple/ui/lib/utils"
-import { fieldDescriptionStyles, fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
 import { GCP_LOG_RUNTIMES } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription, alertTitle } from "../../ui/alert"
-import { button } from "../../ui/button"
-import * as Checkbox from "../../ui/checkbox"
-import { labelIdOf } from "../../ui/choice"
-import { icon } from "../../ui/icon"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { button } from "@maple/views/ui/button"
+import { dividedList } from "@maple/views/ui/rule"
+import { field, fieldDescription, type FieldIds, fieldLabel, type FieldState } from "@maple/views/ui/field"
+import * as Checkbox from "@maple/views/ui/checkbox"
+import { labelIdOf } from "@maple/views/ui/choice"
+import { icon } from "@maple/views/ui/icon"
 import { OTEL_DOCS } from "./gcp-configure-copy"
 import { Message } from "./message"
 import { externalLink } from "./view-gcp-configure-parts"
 import { GCP_LINK } from "./view-gcp-parts"
+import { typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // `RuntimeFields`: the runtimes whose application output Google Cloud forwards.
 
 type H = HtmlBuilder<Message>
 
 const FORWARD_ID = "gcp-forward"
+
+const IDLE: FieldState = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
 
 const runtimeRow = (
 	h: H,
@@ -28,16 +39,14 @@ const runtimeRow = (
 	checked: boolean,
 ): Html => {
 	const inputId = `${forwardId}-${value}`
-	return h.div(
-		[
-			h.Class(
-				cn(
-					fieldStyles,
-					"grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0.5 px-3.5 py-2.5 sm:grid-cols-[auto_11.875rem_1fr]",
-				),
-			),
-			h.DataAttribute("slot", "field"),
-		],
+	const ids: FieldIds = { control: inputId, label: labelIdOf(inputId), error: `${inputId}-error` }
+	return field(
+		h,
+		{
+			className:
+				"grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-0.5 px-3.5 py-2.5 sm:grid-cols-[auto_11.875rem_1fr]",
+			state: IDLE,
+		},
 		[
 			...Checkbox.view(h, {
 				model: { isChecked: checked },
@@ -45,22 +54,10 @@ const runtimeRow = (
 				id: `${inputId}-checkbox`,
 				inputId,
 			}),
-			h.label(
-				[
-					h.Class(cn(fieldLabelStyles, "sm:text-sm/5")),
-					h.DataAttribute("slot", "field-label"),
-					h.For(inputId),
-					h.Id(labelIdOf(inputId)),
-				],
-				[label],
-			),
-			h.p(
-				[
-					h.Class(cn(fieldDescriptionStyles, "col-start-2 text-pretty sm:col-start-3")),
-					h.DataAttribute("slot", "field-description"),
-				],
-				[hint],
-			),
+			fieldLabel(h, { ids, state: IDLE, className: "sm:text-sm/5" }, [label]),
+			fieldDescription(h, { ids, state: IDLE, className: "col-start-2 text-pretty sm:col-start-3" }, [
+				hint,
+			]),
 		],
 	)
 }
@@ -87,7 +84,13 @@ export const runtimeFields = (
 							variant: "link",
 							size: "xs",
 							className: cn(
-								"h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground active:text-foreground",
+								typographyClass({
+									size: "xs",
+									tone: "muted",
+									weight: "normal",
+									hoverTone: "foreground",
+									className: "h-auto p-0",
+								}),
 								GCP_LINK,
 							),
 							attributes: [h.OnClick(Message.ClickedGcpUseOpenTelemetry())],
@@ -96,9 +99,10 @@ export const runtimeFields = (
 					),
 				],
 			),
-			h.div(
-				[h.Class("divide-y rounded-md border")],
-				GCP_LOG_RUNTIMES.map(({ value, label, hint }) =>
+			dividedList(
+				h,
+				{ as: "div" },
+				Arr.map(GCP_LOG_RUNTIMES, ({ value, label, hint }) =>
 					runtimeRow(h, forwardId, value, label, hint, runtimes.includes(value)),
 				),
 			),

@@ -1,14 +1,16 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { confirmDialog } from "../../ui/confirm-dialog"
-import * as DialogView from "../../ui/dialog-view"
-import * as Field from "../../ui/field"
-import * as SelectView from "../../ui/select-view"
+import { button } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import * as Field from "@maple/views/ui/field"
+import * as SelectView from "@maple/views/ui/select-view"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { FormFieldName } from "./prometheus"
 import { isFormValid, parsedInterval, prometheusTargets } from "./update-prometheus"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `ScrapeTargetsSection`'s `FormDialog` (add and edit) and its delete `ConfirmDialog`.
 
@@ -16,8 +18,8 @@ type H = HtmlBuilder<Message>
 
 const AUTH_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = [
 	{ _tag: "Item", item: { value: "none", label: "None" } },
-	{ _tag: "Item", item: { value: "bearer", label: "Bearer Token" } },
-	{ _tag: "Item", item: { value: "basic", label: "Basic Auth" } },
+	{ _tag: "Item", item: { value: "bearer", label: "Bearer token" } },
+	{ _tag: "Item", item: { value: "basic", label: "Basic auth" } },
 ]
 
 const idsOf = (control: string, hasDescription = false): Field.FieldIds => ({
@@ -51,7 +53,7 @@ export const textField = (
 	return Field.field(h, { state }, [
 		options.aside === undefined
 			? label
-			: h.div([h.Class("flex items-center justify-between gap-2")], [label, options.aside]),
+			: hstack(h, { gap: "2", justify: "between" }, [label, options.aside]),
 		Field.input(h, {
 			ids,
 			state,
@@ -109,7 +111,7 @@ export const credentialFields = (h: H, model: Model): ReadonlyArray<Html> => {
 					textField(h, model, {
 						field: "token",
 						id: "scrape-auth-token",
-						label: "Bearer Token",
+						label: "Bearer token",
 						type: "password",
 						placeholder: keepPlaceholder(model, "bearer", "Enter bearer token"),
 					}),
@@ -242,13 +244,13 @@ export const targetDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 			slotId: "scrape-target-delete",
 			model: card.deleteDialog,
 			toParentMessage: (message) => Message.GotTargetDeleteDialogMessage({ message }),
-			title: "Disconnect this scrape target?",
+			title: "Delete scrape target?",
 			description: [
 				"Maple stops scraping ",
-				h.span([h.Class("font-medium text-foreground")], [target?.name ?? ""]),
+				typography(h, { tone: "foreground", weight: "medium" }, [target?.name ?? ""]),
 				" and removes it from Sources. This cannot be undone.",
 			],
-			confirmLabel: "Disconnect",
+			confirmLabel: "Delete scrape target",
 			isPending: card.isDeleting,
 			onConfirm: Message.ConfirmedTargetDelete(),
 		}),

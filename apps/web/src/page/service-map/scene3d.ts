@@ -1,12 +1,18 @@
 import { Effect, Option, Queue, Schema, Stream } from "effect"
 import { Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import * as ToggleGroup from "../../ui/toggle-group"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { SceneHandle, SceneInput } from "./three/scene"
 
 // The 3D viewport's own state: the Atlas or
 // Cascade perspective, the traffic toggle and the camera command. The scene itself runs in a
 // Mount that `import()`s `./three/scene`, so three never reaches the startup bundle.
+
+/** The scene chunk failed to load, or WebGL failed to start. */
+export class SceneStartError extends Schema.TaggedError<SceneStartError>()(
+	"@maple/web/service-map/SceneStartError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
 
 export const Perspective = Schema.Literals(["atlas", "cascade"])
 export type Perspective = typeof Perspective.Type
@@ -189,13 +195,20 @@ export const MountScene = Mount.defineStream("MountServiceMapScene", {
 			? Stream.empty
 			: Stream.callback<SceneMessage>((queue) =>
 					Effect.acquireRelease(
-						Effect.tryPromise(() => import("./three/scene")).pipe(
+						Effect.tryPromise({
+							try: () => import("./three/scene"),
+							catch: (cause) =>
+								new SceneStartError({ message: "The 3D scene chunk did not load", cause }),
+						}).pipe(
 							Effect.flatMap(({ startScene }) =>
-								Effect.try(() =>
-									attach(element, startScene, (message) => {
-										Queue.offerUnsafe(queue, message)
-									}),
-								),
+								Effect.try({
+									try: () =>
+										attach(element, startScene, (message) => {
+											Queue.offerUnsafe(queue, message)
+										}),
+									catch: (cause) =>
+										new SceneStartError({ message: "The 3D scene did not start", cause }),
+								}),
 							),
 							Effect.catch(() =>
 								Effect.sync(() => {

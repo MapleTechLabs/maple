@@ -1,33 +1,33 @@
 import { MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
 import { bucketTimeScale } from "@maple/ui/components/plot/plot-scales"
-import { countLabel, formatBucketLabel } from "@maple/ui/lib/format"
+import { countLabel, formatBucketLabel, formatNumber } from "@maple/ui/lib/format"
 import { TONE_COLOR, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatAlertDateTime, formatAlertTime } from "@maple/web-data/alerts/form-utils"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import * as Chart from "../../../charts/chart"
-import { ChartSpec } from "../../../charts/chart-spec"
-import * as FixedMetricChart from "../../../charts/fixed-metric-chart"
-import { fixedMetricLegend } from "../../../charts/fixed-metric-legend"
-import { LATENCY_SERIES } from "../../../charts/fixed-metric-series"
-import { bucketTooltipBody } from "../../../charts/bucket-tooltip"
-import { plotFrame } from "../../../charts/plot-frame"
-import { stackedBreakdown } from "../../../charts/stacked-breakdown-chart"
-import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
-import { chartSkeleton } from "../../../ui/chart-skeleton"
-import { emptyMessage } from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { segmentedSelect } from "../../../ui/segmented-select"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartSpec } from "@maple/views/charts/chart-spec"
+import * as FixedMetricChart from "@maple/views/charts/fixed-metric-chart"
+import { fixedMetricLegend } from "@maple/views/charts/fixed-metric-legend"
+import { LATENCY_SERIES } from "@maple/views/charts/fixed-metric-series"
+import { bucketTooltipBody } from "@maple/views/charts/bucket-tooltip"
+import { plotFrame } from "@maple/views/charts/plot-frame"
+import { stackedBreakdown } from "@maple/views/charts/stacked-breakdown-chart"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
+import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { isoMs } from "../shared/time"
-import * as CopyButton from "../../../ui/copy-button"
-import { copyableField } from "../../../ui/copyable-field"
-import { eyebrow } from "../../../ui/eyebrow"
-import { panel, panelHeader } from "../../../ui/panel"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { copyableField } from "@maple/views/ui/copyable-field"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { panel, panelHeader } from "@maple/views/ui/panel"
 import { traceHref, uptimeTracesHref, UPTIME_SERVICE } from "../shared/uptime-commands"
 import {
 	displayStatus,
@@ -45,6 +45,9 @@ import {
 import { Message } from "./message"
 import type { CheckPoint, CheckSample, CheckStats, Model, PhasePoint, UptimeWindow } from "./model"
 import { CHECK_HEALTH_FILL, uptimePanelBody } from "../shared/uptime-view"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { chartFrameClass } from "@maple/views/ui/chart-frame"
 
 // The monitor page's panels: response time, the checks list and the side panels.
 
@@ -72,8 +75,8 @@ const PHASES = [
 ] as const satisfies ReadonlyArray<{ key: keyof PhasePoint; label: string; token: string }>
 
 export const CHART_TOKENS = [
-	...LATENCY_SERIES.map((entry) => entry.token),
-	...PHASES.map((phase) => phase.token),
+	...Arr.map(LATENCY_SERIES, (entry) => entry.token),
+	...Arr.map(PHASES, (phase) => phase.token),
 	"--border",
 	"--background",
 ]
@@ -152,14 +155,17 @@ export const kpiRail = (
 				subline:
 					last === null
 						? "The first check runs shortly"
-						: [
-								last.status_code === null
-									? last.ok
-										? "Passed"
-										: "Failed"
-									: String(last.status_code),
-								last.duration_ms === null ? "" : ` in ${formatMs(last.duration_ms)}`,
-							].join(""),
+						: Arr.join(
+								[
+									last.status_code === null
+										? last.ok
+											? "Passed"
+											: "Failed"
+										: String(last.status_code),
+									last.duration_ms === null ? "" : ` in ${formatMs(last.duration_ms)}`,
+								],
+								"",
+							),
 			})
 	if (isHeartbeat) {
 		const share = uptimeShare(monitor.state.recent)
@@ -196,7 +202,7 @@ export const kpiRail = (
 			subline:
 				data.checks === 0
 					? `No checks in the ${WINDOW_LABEL[data.window]}`
-					: `${data.checks.toLocaleString()} checks, ${data.failures.toLocaleString()} failed`,
+					: `${formatNumber(data.checks)} checks, ${formatNumber(data.failures)} failed`,
 		}),
 	})
 	const percentile = (label: string, value: number | null) =>
@@ -242,7 +248,7 @@ const checkIntervalMs = (model: Model): number =>
 
 /** Where the response time line breaks: the buckets the breakdown leaves a gap at too. */
 const breakBuckets = (stats: CheckStats, intervalMs: number): ReadonlyArray<string> =>
-	chartRows(stats, intervalMs).flatMap((row) =>
+	Arr.flatMap(chartRows(stats, intervalMs), (row) =>
 		row.p50LatencyMs === null && typeof row.bucket === "string" ? [row.bucket] : [],
 	)
 
@@ -290,10 +296,10 @@ const windowDomain = (stats: CheckStats): readonly [number, number] => [
 
 /** The median count of checks in a bucket that holds any. */
 const checksPerBucket = (points: ReadonlyArray<CheckPoint>): number => {
-	const counts = points
-		.map((point) => point.totalCount)
-		.filter((count) => count > 0)
-		.toSorted((a, b) => a - b)
+	const counts = Arr.filter(
+		Arr.map(points, (point) => point.totalCount),
+		(count) => count > 0,
+	).toSorted((a, b) => a - b)
 	return counts[Math.floor(counts.length / 2)] ?? 0
 }
 
@@ -303,10 +309,10 @@ const checksPerBucket = (points: ReadonlyArray<CheckPoint>): number => {
  */
 export const percentileSeries = (points: ReadonlyArray<CheckPoint>) => {
 	const perBucket = checksPerBucket(points)
-	const shown = LATENCY_SERIES.filter((entry) =>
+	const shown = Arr.filter(LATENCY_SERIES, (entry) =>
 		perBucket <= 1 ? entry.key === "p50LatencyMs" : perBucket < 50 ? entry.key !== "p99LatencyMs" : true,
 	)
-	return shown.map((entry) => ({ ...entry, label: perBucket <= 1 ? "Response time" : entry.label }))
+	return Arr.map(shown, (entry) => ({ ...entry, label: perBucket <= 1 ? "Response time" : entry.label }))
 }
 
 const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartContext): Html => {
@@ -324,13 +330,16 @@ const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartConte
 				marginLeft: PLOT_LEFT,
 				marginRight: PLOT_RIGHT,
 				xDomainMs: [...windowDomain(stats)],
-				latencySeries: series.map(({ key, label }) => ({ key, label })),
+				latencySeries: Arr.map(series, ({ key, label }) => ({ key, label })),
 				rows: chartRows(stats, intervalMs),
 				colors: {
 					border: resolveColor(context.theme, "--border"),
 					background: resolveColor(context.theme, "--background"),
-					...Object.fromEntries(
-						LATENCY_SERIES.map((entry) => [entry.key, resolveColor(context.theme, entry.token)]),
+					...Rec.fromEntries(
+						Arr.map(LATENCY_SERIES, (entry) => [
+							entry.key,
+							resolveColor(context.theme, entry.token),
+						]),
 					),
 				},
 				perSecond: false,
@@ -339,10 +348,10 @@ const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartConte
 				gradientPrefix: "uptime-latency",
 				showTooltip: true,
 			}),
-			className: "h-full w-full aspect-auto",
+			className: chartFrameClass("fill"),
 			legend: fixedMetricLegend(
 				h,
-				series.map((entry) => ({
+				Arr.map(series, (entry) => ({
 					key: entry.key,
 					label: entry.label,
 					color: resolveColor(context.theme, entry.token),
@@ -355,8 +364,8 @@ const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartConte
 
 /** The bucket width: the smallest gap between buckets, else the span from the only one to the window's end. */
 const bucketStepMs = (points: ReadonlyArray<CheckPoint>, endMs: number): number => {
-	const starts = points.map((point) => isoMs(point.bucket))
-	const gaps = starts.slice(1).flatMap((start, index) => {
+	const starts = Arr.map(points, (point) => isoMs(point.bucket))
+	const gaps = Arr.flatMap(starts.slice(1), (start, index) => {
 		const gap = start - (starts[index] ?? start)
 		return gap > 0 ? [gap] : []
 	})
@@ -372,14 +381,14 @@ const availabilityStrip = (h: H, stats: CheckStats, window: UptimeWindow, timeZo
 	const domain: Domain = { startMs: stats.windowStartMs, endMs: stats.windowEndMs }
 	const stepMs = bucketStepMs(stats.points, domain.endMs)
 	const medianMs = medianOf(
-		stats.points.flatMap((point) => (point.totalCount === 0 ? [] : [point.p95LatencyMs])),
+		Arr.flatMap(stats.points, (point) => (point.totalCount === 0 ? [] : [point.p95LatencyMs])),
 	)
 	return h.div(
 		[h.Class("h-2 pr-3 pl-16"), h.AriaHidden(true)],
 		[
 			h.div(
 				[h.Class("relative h-full")],
-				stats.points.map((point) => {
+				Arr.map(stats.points, (point) => {
 					const startMs = isoMs(point.bucket)
 					const left = Math.max(0, xShare(startMs, domain))
 					const right = Math.min(1, xShare(startMs + stepMs, domain))
@@ -437,7 +446,7 @@ export const responseTimePanel = (h: H, model: Model, context: ChartContext | nu
 											...(isStatsRefreshing(model) ? [h.AriaBusy(true)] : []),
 											h.Class(
 												cn(
-													"flex flex-col gap-2",
+													vstackClass({ gap: "2" }),
 													refreshingClass(isStatsRefreshing(model)),
 												),
 											),
@@ -475,7 +484,7 @@ const niceCeil = (value: number): number => {
 
 /** The y range: the checks' p99 with headroom, so one timeout does not flatten the rest; slower checks sit on the top edge. */
 const scatterMax = (samples: ReadonlyArray<CheckSample>): number => {
-	const sorted = samples.map((sample) => sample.durationMs).sort((a, b) => a - b)
+	const sorted = Arr.map(samples, (sample) => sample.durationMs).sort((a, b) => a - b)
 	const p99 = sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.99) - 1)] ?? 1
 	return niceCeil(p99 * 1.15)
 }
@@ -490,13 +499,18 @@ const yShare = (ms: number, yMax: number): number => Math.min(1, ms / yMax)
 /** Round clock ticks in the viewer's zone, short labels; the end ones kept inside the plot. */
 const scatterTimeTicks = (domain: Domain, window: UptimeWindow, timeZone: string) => {
 	const context = { rangeMs: domain.endMs - domain.startMs, bucketSeconds: undefined, timeZone }
-	return bucketTimeScale([new Date(domain.startMs), new Date(domain.endMs)], timeZone)
-		.ticks(window === "7d" ? 7 : 4)
-		.map((date) => ({
-			share: xShare(date.getTime(), domain),
-			label: formatBucketLabel(date.toISOString(), context, "tick"),
-		}))
-		.filter((tick) => tick.share >= 0 && tick.share <= 1)
+	return Arr.filter(
+		Arr.map(
+			bucketTimeScale([new Date(domain.startMs), new Date(domain.endMs)], timeZone).ticks(
+				window === "7d" ? 7 : 4,
+			),
+			(date) => ({
+				share: xShare(date.getTime(), domain),
+				label: formatBucketLabel(date.toISOString(), context, "tick"),
+			}),
+		),
+		(tick) => tick.share >= 0 && tick.share <= 1,
+	)
 }
 
 const tickAnchor = (share: number): string =>
@@ -506,11 +520,14 @@ const tickAnchor = (share: number): string =>
 const barSegments = (sample: CheckSample): ReadonlyArray<{ key: string; ms: number; color: string }> =>
 	sample.phases === null
 		? [{ key: "total", ms: sample.durationMs, color: "var(--muted-foreground)" }]
-		: PHASES.map((phase) => ({
-				key: phase.key,
-				ms: sample.phases?.[phase.key] ?? 0,
-				color: `var(${phase.token})`,
-			})).filter((segment) => segment.ms > 0)
+		: Arr.filter(
+				Arr.map(PHASES, (phase) => ({
+					key: phase.key,
+					ms: sample.phases?.[phase.key] ?? 0,
+					color: `var(${phase.token})`,
+				})),
+				(segment) => segment.ms > 0,
+			)
 
 /** One column per check, its full height a link to its trace; failures red, a check past the axis capped with a caret. */
 const checkBars = (
@@ -531,7 +548,9 @@ const checkBars = (
 				h.Href(traceHref(sample.traceId)),
 				h.Attribute("tabindex", "-1"),
 				h.OnMouseEnter(Message.HoveredCheck({ index })),
-				h.Class("group absolute inset-y-0 -translate-x-1/2 hover:bg-surface-sunken active:bg-surface-sunken"),
+				h.Class(
+					"group absolute inset-y-0 -translate-x-1/2 hover:bg-surface-sunken active:bg-surface-sunken",
+				),
 				h.Style({ left: `${xShare(isoMs(sample.at), domain) * 100}%`, width }),
 			],
 			[
@@ -546,7 +565,7 @@ const checkBars = (
 						h.Style({ height: `${yShare(sample.durationMs, yMax) * 100}%` }),
 					],
 					sample.ok
-						? barSegments(sample).map((segment) =>
+						? Arr.map(barSegments(sample), (segment) =>
 								h.span(
 									[
 										h.Key(segment.key),
@@ -582,29 +601,20 @@ const checkBars = (
 			h.Class("absolute inset-0"),
 			h.OnMouseLeave(Message.HoveredCheck({ index: null })),
 		],
-		samples.map(bar),
+		Arr.map(samples, bar),
 	)
 }
 
 const barsSlot = createLazy()
 
 const cardRow = (h: H, key: string, color: string, label: string, value: string): Html =>
-	h.span(
-		[h.Key(key), h.Class("flex items-center justify-between gap-4")],
-		[
-			h.span(
-				[h.Class("flex items-center gap-1.5 text-muted-foreground")],
-				[
-					h.span(
-						[h.Class("inline-block size-2 rounded-xs"), h.Style({ background: color })],
-						[],
-					),
-					label,
-				],
-			),
-			h.span([h.Class("font-mono tabular-nums")], [value]),
-		],
-	)
+	hstack(h, { gap: "4", justify: "between", as: "span", attributes: [h.Key(key)] }, [
+		hstack(h, { gap: "1.5", as: "span", className: typographyClass({ tone: "muted" }) }, [
+			h.span([h.Class("inline-block size-2 rounded-xs"), h.Style({ background: color })], []),
+			label,
+		]),
+		typography(h, { mono: true, numeric: true }, [value]),
+	])
 
 /** The hovered check's card: when, what it returned, and where its time went. */
 const hoverCard = (h: H, sample: CheckSample, domain: Domain, timeZone: string): Html => {
@@ -626,12 +636,12 @@ const hoverCard = (h: H, sample: CheckSample, domain: Domain, timeZone: string):
 				[h.Class("flex items-center justify-between gap-4 font-medium")],
 				[
 					h.span([h.Class(sample.ok ? TONE_TEXT.info : TONE_TEXT.crit)], [result]),
-					h.span([h.Class("font-mono tabular-nums")], [formatMs(sample.durationMs)]),
+					typography(h, { mono: true, numeric: true }, [formatMs(sample.durationMs)]),
 				],
 			),
 			...(sample.phases === null
 				? []
-				: PHASES.map((phase) =>
+				: Arr.map(PHASES, (phase) =>
 						cardRow(
 							h,
 							phase.key,
@@ -649,21 +659,21 @@ const hoverCard = (h: H, sample: CheckSample, domain: Domain, timeZone: string):
 const formatPhaseMs = (ms: number): string => (ms < 10 ? `${ms.toFixed(1)} ms` : formatMs(ms))
 
 const legendItem = (h: H, key: string, swatch: Html, label: string): Html =>
-	h.span([h.Key(key), h.Class("flex items-center gap-1.5")], [swatch, label])
+	hstack(h, { gap: "1.5", as: "span", attributes: [h.Key(key)] }, [swatch, label])
 
 const swatch = (h: H, color: string): Html =>
 	h.span([h.Class("inline-block size-2 rounded-xs"), h.Style({ background: color })], [])
 
 const barsLegend = (h: H, samples: ReadonlyArray<CheckSample>, yMax: number): Html => {
-	const timed = samples.some((sample) => sample.ok && sample.phases !== null)
-	const untimed = samples.some((sample) => sample.ok && sample.phases === null)
-	const failed = samples.some((sample) => !sample.ok)
-	const clipped = samples.some((sample) => sample.durationMs > yMax)
+	const timed = Arr.some(samples, (sample) => sample.ok && sample.phases !== null)
+	const untimed = Arr.some(samples, (sample) => sample.ok && sample.phases === null)
+	const failed = Arr.some(samples, (sample) => !sample.ok)
+	const clipped = Arr.some(samples, (sample) => sample.durationMs > yMax)
 	return h.div(
 		[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 pr-3 pl-16 text-xs text-muted-foreground")],
 		[
 			...(timed
-				? PHASES.map((phase) =>
+				? Arr.map(PHASES, (phase) =>
 						legendItem(h, phase.key, swatch(h, `var(${phase.token})`), phase.label),
 					)
 				: []),
@@ -717,7 +727,7 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 				])
 			if (stats.samples.length === 0) return null
 			const yMax = scatterMax(stats.samples)
-			const failed = stats.samples.filter((sample) => !sample.ok).length
+			const failed = Arr.filter(stats.samples, (sample) => !sample.ok).length
 			// Past the list's limit the axis starts at the oldest check shown, not the window's start.
 			const oldest = stats.samples[0]
 			const startMs =
@@ -728,21 +738,18 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 			return panel(h, {}, [
 				panelHeader(h, {
 					title: "Every check",
-					action: h.span(
-						[h.Class("text-xs text-muted-foreground tabular-nums")],
-						[
-							stats.samplesTruncated
-								? `Newest ${stats.samples.length.toLocaleString()} checks`
-								: `${stats.samples.length.toLocaleString()} checks`,
-							failed === 0 ? "" : `, ${failed} failed`,
-						],
-					),
+					action: typography(h, { size: "xs", tone: "muted", numeric: true }, [
+						stats.samplesTruncated
+							? `Newest ${formatNumber(stats.samples.length)} checks`
+							: `${formatNumber(stats.samples.length)} checks`,
+						failed === 0 ? "" : `, ${formatNumber(failed)} failed`,
+					]),
 				}),
 				uptimePanelBody(h, [
 					h.div(
 						[
 							...(isStatsRefreshing(model) ? [h.AriaBusy(true)] : []),
-							h.Class(cn("flex flex-col gap-2", refreshingClass(isStatsRefreshing(model)))),
+							h.Class(cn(vstackClass({ gap: "2" }), refreshingClass(isStatsRefreshing(model)))),
 						],
 						[
 							h.div(
@@ -755,7 +762,7 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 												"relative w-16 shrink-0 font-mono text-2xs text-muted-foreground tabular-nums",
 											),
 										],
-										yTicks.map((share) =>
+										Arr.map(yTicks, (share) =>
 											h.span(
 												[
 													h.Key(String(share)),
@@ -775,7 +782,7 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 											h.Class("relative min-w-0 flex-1"),
 										],
 										[
-											...yTicks.map((share) =>
+											...Arr.map(yTicks, (share) =>
 												h.div(
 													[
 														h.Key(`grid-${share}`),
@@ -815,7 +822,7 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 										"relative mr-3 ml-16 h-4 font-mono text-2xs text-muted-foreground",
 									),
 								],
-								scatterTimeTicks(domain, stats.window, timeZone).map((tick) =>
+								Arr.map(scatterTimeTicks(domain, stats.window, timeZone), (tick) =>
 									h.span(
 										[
 											h.Key(tick.label),
@@ -847,18 +854,16 @@ const untimed = (point: PhasePoint): boolean => point.timedChecks === 0
  * breaks: where checks stopped, and where checks ran but none was timed.
  */
 export const phaseSeries = (stats: CheckStats, intervalMs: number) => ({
-	rows: stats.phases
-		.filter((point) => !untimed(point))
-		.flatMap((point) =>
-			PHASES.map((phase) => ({
-				bucket: point.bucket,
-				attributeValue: phase.label,
-				value: point[phase.key],
-			})),
-		),
+	rows: Arr.filter(stats.phases, (point) => !untimed(point)).flatMap((point) =>
+		PHASES.map((phase) => ({
+			bucket: point.bucket,
+			attributeValue: phase.label,
+			value: point[phase.key],
+		})),
+	),
 	breaks: [
 		...breakBuckets(stats, intervalMs),
-		...stats.phases.filter(untimed).map((point) => point.bucket),
+		...Arr.map(Arr.filter(stats.phases, untimed), (point) => point.bucket),
 	],
 })
 
@@ -866,8 +871,8 @@ const phaseChart = (h: H, model: Model, stats: CheckStats, context: ChartContext
 	const series = phaseSeries(stats, checkIntervalMs(model))
 	const built = stackedBreakdown({
 		rows: series.rows,
-		colors: Object.fromEntries(PHASES.map((phase) => [phase.label, `var(${phase.token})`])),
-		order: PHASES.map((phase) => phase.label),
+		colors: Rec.fromEntries(Arr.map(PHASES, (phase) => [phase.label, `var(${phase.token})`])),
+		order: Arr.map(PHASES, (phase) => phase.label),
 		theme: context.theme,
 		timeZone: context.timeZone,
 		gradientPrefix: "uptime-phases",
@@ -888,7 +893,7 @@ const phaseChart = (h: H, model: Model, stats: CheckStats, context: ChartContext
 					spec: built.spec,
 					legend: fixedMetricLegend(
 						h,
-						PHASES.map((phase) => ({
+						Arr.map(PHASES, (phase) => ({
 							key: phase.key,
 							label: phase.label,
 							color: resolveColor(context.theme, phase.token),
@@ -910,7 +915,7 @@ const PhaseChartView = Submodel.defineView<
 		chartId: "uptime-phases",
 		spec: inputs.spec,
 		ariaLabel: "Response time breakdown by phase",
-		className: "h-full w-full aspect-auto",
+		className: chartFrameClass("fill"),
 		legend: inputs.legend,
 		tooltipBody: (portal) =>
 			Option.flatMap(model.tooltip, (tooltip) =>
@@ -934,7 +939,7 @@ export const phaseBreakdownPanel = (h: H, model: Model, context: ChartContext | 
 								[h.Class("py-16 text-center text-sm text-muted-foreground")],
 								["Couldn't load the breakdown. The other figures are unaffected."],
 							)
-						: stats.phases.every(untimed)
+						: Arr.every(stats.phases, untimed)
 							? h.p(
 									[h.Class("py-16 text-center text-sm text-muted-foreground")],
 									[
@@ -969,7 +974,7 @@ type CheckRow = Readonly<{
 const checkRows = (monitor: UptimeMonitor): ReadonlyArray<CheckRow> => {
 	const last = monitor.state.last_check
 	const recent = [...monitor.state.recent].reverse()
-	return recent.slice(0, CHECK_ROWS).map((check): CheckRow =>
+	return Arr.map(recent.slice(0, CHECK_ROWS), (check): CheckRow =>
 		last !== null && last.at === check.at
 			? {
 					at: last.at,
@@ -1003,7 +1008,13 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 					h.Title(
 						`Each check is a span in the ${UPTIME_SERVICE} service, namespace ${MAPLE_SERVICES_NAMESPACE}.`,
 					),
-					h.Class("text-xs text-primary hover:underline active:underline"),
+					h.Class(
+						typographyClass({
+							size: "xs",
+							tone: "primary",
+							className: "hover:underline active:underline",
+						}),
+					),
 				],
 				["View all checks in Traces"],
 			),
@@ -1019,21 +1030,23 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 			],
 		),
 		rows.length === 0
-			? emptyMessage(h, {}, ["No checks yet."])
+			? emptyMessage(h, {}, ["No checks yet"])
 			: h.ul(
 					[h.Class("divide-y")],
-					rows.map((row, index) =>
+					Arr.map(rows, (row, index) =>
 						h.li(
 							[h.Key(`${row.at}-${index}`), h.Class(cn(CHECK_GRID, "px-4 py-2 text-sm"))],
 							[
-								h.span(
-									[h.Class("font-mono text-xs text-muted-foreground")],
-									[formatAlertTime(row.at, timeZone)],
-								),
+								typography(h, { size: "xs", tone: "muted", mono: true }, [
+									formatAlertTime(row.at, timeZone),
+								]),
 								h.span(
 									[
 										h.Class(
-											cn("font-mono text-xs", row.ok ? TONE_TEXT.info : TONE_TEXT.crit),
+											cn(
+												typographyClass({ size: "xs", mono: true }),
+												row.ok ? TONE_TEXT.info : TONE_TEXT.crit,
+											),
 										),
 									],
 									[
@@ -1044,16 +1057,25 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 											: String(row.statusCode),
 									],
 								),
+								typography(h, { size: "xs", mono: true, numeric: true }, [
+									formatMs(row.durationMs),
+								]),
 								h.span(
-									[h.Class("font-mono text-xs tabular-nums")],
-									[formatMs(row.durationMs)],
-								),
-								h.span(
-									[h.Class(cn("truncate text-xs", TONE_TEXT.crit)), h.Title(row.result)],
+									[
+										h.Class(
+											cn(
+												typographyClass({ size: "xs", truncate: true }),
+												TONE_TEXT.crit,
+											),
+										),
+										h.Title(row.result),
+									],
 									[row.result],
 								),
 								row.traceId === null
-									? h.span([h.Class("text-right text-xs text-muted-foreground")], ["–"])
+									? typography(h, { size: "xs", tone: "muted", className: "text-right" }, [
+											"–",
+										])
 									: h.a(
 											[
 												h.Href(traceHref(row.traceId)),
@@ -1061,7 +1083,7 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 													"text-right font-mono text-xs text-primary hover:underline active:underline",
 												),
 											],
-											[`${row.traceId.slice(0, 4)}…${row.traceId.slice(-4)}`],
+											[`${Str.slice(0, 4)(row.traceId)}…${Str.slice(-4)(row.traceId)}`],
 										),
 							],
 						),
@@ -1120,12 +1142,14 @@ export const setupPanel = (h: H, model: Model, monitor: UptimeMonitor, serviceHr
 			? "Nobody yet"
 			: destinations === null
 				? countLabel(count, "destination")
-				: monitor.destination_ids
-						.map(
+				: Arr.join(
+						Arr.map(
+							monitor.destination_ids,
 							(id) =>
 								destinations.find((row) => row.id === id)?.name ?? "Unavailable destination",
-						)
-						.join(", ")
+						),
+						", ",
+					)
 	return panel(h, { className: "divide-y" }, [
 		panelHeader(h, { title: "Setup" }),
 		fact(h, "Notifies", notifies, count === 0 ? "text-muted-foreground" : undefined),
@@ -1135,7 +1159,15 @@ export const setupPanel = (h: H, model: Model, monitor: UptimeMonitor, serviceHr
 					h,
 					"Service",
 					h.a(
-						[h.Href(serviceHref), h.Class("text-primary hover:underline active:underline")],
+						[
+							h.Href(serviceHref),
+							h.Class(
+								typographyClass({
+									tone: "primary",
+									className: "hover:underline active:underline",
+								}),
+							),
+						],
 						[monitor.service_name],
 					),
 				),
@@ -1160,32 +1192,23 @@ export const heartbeatPanel = (h: H, model: Model, pingUrl: string): Html =>
 				[h.Class("mb-3 text-sm text-muted-foreground")],
 				["Send a GET or POST here when the job succeeds. Add /fail to report a failure right away."],
 			),
-			h.div(
-				[h.Class("flex flex-col gap-3")],
-				[
-					snippet(h, model, "url", "Ping URL", pingUrl),
-					snippet(
-						h,
-						model,
-						"success",
-						"After the job succeeds",
-						`curl -fsS -m 10 --retry 3 ${pingUrl}`,
-					),
-					snippet(
-						h,
-						model,
-						"fail",
-						"When the job fails",
-						`curl -fsS -m 10 --retry 3 ${pingUrl}/fail`,
-					),
-					snippet(
-						h,
-						model,
-						"crontab",
-						"Crontab",
-						`0 2 * * * /path/to/job.sh && curl -fsS -m 10 ${pingUrl} || curl -fsS -m 10 ${pingUrl}/fail`,
-					),
-				],
-			),
+			vstack(h, { gap: "3" }, [
+				snippet(h, model, "url", "Ping URL", pingUrl),
+				snippet(
+					h,
+					model,
+					"success",
+					"After the job succeeds",
+					`curl -fsS -m 10 --retry 3 ${pingUrl}`,
+				),
+				snippet(h, model, "fail", "When the job fails", `curl -fsS -m 10 --retry 3 ${pingUrl}/fail`),
+				snippet(
+					h,
+					model,
+					"crontab",
+					"Crontab",
+					`0 2 * * * /path/to/job.sh && curl -fsS -m 10 ${pingUrl} || curl -fsS -m 10 ${pingUrl}/fail`,
+				),
+			]),
 		]),
 	])

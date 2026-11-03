@@ -1,5 +1,5 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Cause, Effect, Predicate } from "effect"
+import { Cause, Effect, Predicate, Array as Arr } from "effect"
 
 /** Retries and timeout for one step, as Cloudflare's step API takes them. */
 export type DurableStepConfig = Cloudflare.WorkflowStepConfig
@@ -36,7 +36,7 @@ export const durableStep = <A, E, R>(
 		timeout: config?.timeout ?? DEFAULT_STEP_TIMEOUT,
 	}).pipe(
 		Effect.catchCauseIf(
-			(cause) => cause.reasons.some((r) => Cause.isDieReason(r) && isInstanceLost(r.defect)),
+			(cause) => Arr.some(cause.reasons, (r) => Cause.isDieReason(r) && isInstanceLost(r.defect)),
 			() => Effect.interrupt,
 		),
 	)

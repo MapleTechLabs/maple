@@ -47,11 +47,13 @@ const previewOf = (
 		comparator: "gt",
 		truncatedToStart:
 			options?.truncatedToStart != null ? IsoDateTimeString.make(options.truncatedToStart) : null,
-		series: groups.map(
+		series: Arr.map(
+			groups,
 			(group) =>
 				new AlertRulePreviewSeries({
 					groupKey: group.groupKey,
-					points: group.points.map(
+					points: Arr.map(
+						group.points,
 						(point) =>
 							new AlertRulePreviewPoint({
 								bucket: iso(T0 + point.offsetMinutes * MINUTE),
@@ -259,7 +261,7 @@ describe("mergeGhost", () => {
 	// pairing them would invent a disagreement.
 	it("leaves rows alone when the nearest ghost point is too far", () => {
 		const merged = mergeGhost(primary, [{ t: T0 + 45 * MINUTE, [SINGLE_KEY]: 9 }], MINUTE)
-		expect(merged.rows.every((row) => row[GHOST_KEY] === undefined)).toBe(true)
+		expect(Arr.every(merged.rows, (row) => row[GHOST_KEY] === undefined)).toBe(true)
 		expect(merged.divergence).toBeNull()
 	})
 })
@@ -294,19 +296,21 @@ describe("downsample", () => {
 		const rows = rowsOf(721, (index) => (index === 33 ? 99 : 1))
 		const out = downsample(rows)
 		expect(out.length).toBeLessThanOrEqual(722)
-		expect(out.some((row) => row[SINGLE_KEY] === 99)).toBe(true)
+		expect(Arr.some(out, (row) => row[SINGLE_KEY] === 99)).toBe(true)
 	})
 
 	it("keeps both the deepest dip and the highest spike at 1441 points", () => {
 		const rows = rowsOf(1441, (index) => (index === 700 ? -50 : index === 701 ? 120 : 1))
 		const out = downsample(rows)
-		expect(out.some((row) => row[SINGLE_KEY] === -50)).toBe(true)
-		expect(out.some((row) => row[SINGLE_KEY] === 120)).toBe(true)
+		expect(Arr.some(out, (row) => row[SINGLE_KEY] === -50)).toBe(true)
+		expect(Arr.some(out, (row) => row[SINGLE_KEY] === 120)).toBe(true)
 		// First and last rows always survive, and time order is preserved.
 		expect(out[0]?.t).toBe(rows[0]?.t)
 		expect(out[out.length - 1]?.t).toBe(rows[rows.length - 1]?.t)
 		// Pairing each row with its successor makes the ordering check total.
-		expect(Arr.zip(out, Arr.drop(out, 1)).every(([previous, next]) => next.t > previous.t)).toBe(true)
+		expect(Arr.every(Arr.zip(out, Arr.drop(out, 1)), ([previous, next]) => next.t > previous.t)).toBe(
+			true,
+		)
 	})
 
 	it("keeps a spike carried by a secondary series key", () => {
@@ -316,6 +320,6 @@ describe("downsample", () => {
 			b: index === 450 ? 77 : 2,
 		}))
 		const out = downsample(rows)
-		expect(out.some((row) => row.b === 77)).toBe(true)
+		expect(Arr.some(out, (row) => row.b === 77)).toBe(true)
 	})
 })

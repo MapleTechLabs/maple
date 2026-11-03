@@ -4,6 +4,7 @@ import {
 	type DashboardSection,
 	type DashboardSectionTab,
 } from "./shared/sections"
+import { Array as Arr } from "effect"
 
 // Pure helpers for dashboard sections. No Effect runtime and no I/O, so the API
 // write path, the web read path and the tests all share one implementation of
@@ -128,7 +129,7 @@ function sanitizeSection(section: DashboardSection): DashboardSection {
 		capped.length > 0 ? capped : [{ id: section.id, title: section.title }]
 
 	const tabsUnchanged =
-		tabs.length === section.tabs.length && tabs.every((tab, i) => tab === section.tabs[i])
+		tabs.length === section.tabs.length && Arr.every(tabs, (tab, i) => tab === section.tabs[i])
 	// "Collapsed by default" and "can never be collapsed" contradict each other,
 	// and the document loses either way: the group renders folded with no chevron
 	// to unfold it. `collapsible: false` wins, because it is the stronger claim.
@@ -164,19 +165,19 @@ export function sanitizeDashboardSections<W extends SectionMembership, D extends
 	const deduped = dedupeById(doc.sections)
 	const capped =
 		deduped.length > DASHBOARD_MAX_SECTIONS ? deduped.slice(0, DASHBOARD_MAX_SECTIONS) : deduped
-	const sections = capped.map(sanitizeSection)
+	const sections = Arr.map(capped, sanitizeSection)
 
 	const tabsBySection = new Map<string, { readonly ids: ReadonlySet<string>; readonly first: string }>()
 	for (const section of sections) {
 		tabsBySection.set(section.id, {
-			ids: new Set(section.tabs.map((tab) => tab.id)),
+			ids: new Set(Arr.map(section.tabs, (tab) => tab.id)),
 			// `sanitizeSection` guarantees at least one tab.
 			first: section.tabs[0]?.id ?? section.id,
 		})
 	}
 
 	let widgetsChanged = false
-	const widgets = doc.widgets.map((widget) => {
+	const widgets = Arr.map(doc.widgets, (widget) => {
 		if (widget.sectionId === undefined) {
 			// A `tabId` with no `sectionId` addresses nothing.
 			if (widget.tabId === undefined) return widget
@@ -197,7 +198,7 @@ export function sanitizeDashboardSections<W extends SectionMembership, D extends
 
 	const sectionsChanged =
 		sections.length !== doc.sections.length ||
-		sections.some((section, index) => section !== doc.sections?.[index])
+		Arr.some(sections, (section, index) => section !== doc.sections?.[index])
 
 	if (!sectionsChanged && !widgetsChanged) return doc
 	return {

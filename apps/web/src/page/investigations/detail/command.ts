@@ -2,10 +2,10 @@ import { ErrorIssueId, InvestigationId } from "@maple/domain/http"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { loadKnownServices } from "../conversation/kit/known-services"
-import { Clock, Effect, type Result, Schema } from "effect"
+import { Clock, Effect, type Result, Schema, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { clickStream, factsOf, nodeLinkClick } from "../clicks"
-import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { Message } from "./message"
 
@@ -63,7 +63,10 @@ export const FetchSignalLogs = Command.define("FetchInvestigationSignalLogs", {
 					},
 				}),
 				(response) =>
-					response.data.map((point) => ({ bucket: point.bucket, series: { ...point.series } })),
+					Arr.map(response.data, (point) => ({
+						bucket: point.bucket,
+						series: { ...point.series },
+					})),
 			),
 			(result) => Message.CompletedFetchLogs({ key, result }),
 		),
@@ -89,7 +92,7 @@ export const FetchSignalTraces = Command.define("FetchInvestigationSignalTraces"
 					},
 				}),
 				(response) =>
-					response.data.map(({ serviceName, spanCount, p95LatencyMs, errorRate }) => ({
+					Arr.map(response.data, ({ serviceName, spanCount, p95LatencyMs, errorRate }) => ({
 						serviceName,
 						spanCount,
 						p95LatencyMs,
@@ -116,7 +119,7 @@ export const FetchEscalation = Command.define("FetchInvestigationEscalation", {
 					? null
 					: {
 							status: attempt.status,
-							destinations: attempt.deliveries.map((delivery) => ({
+							destinations: Arr.map(attempt.deliveries, (delivery) => ({
 								name: delivery.destinationName ?? delivery.destinationId,
 								status: delivery.status,
 							})),

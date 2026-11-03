@@ -9,6 +9,7 @@ import type { DuckClick } from "./critters"
 import { type Child, disposeTree, group, makeScope, type Scope } from "./kit"
 import { quacker } from "./quack"
 import { type Layout, layoutOf, sceneryKey, sceneryOf, worldOf } from "./world"
+import { Array as Arr } from "effect"
 
 // The 3D service map: an orthographic, flat renderer (dpr 1 to 2, antialias, alpha), its demand
 // or always frame loop, the camera rig and machine picking. The lazy scene chunk's entry; the view owns all DOM.
@@ -86,15 +87,16 @@ const pick = (
 	size: Size,
 ): ReadonlyArray<string> => {
 	const raycaster = aim(camera, event, size)
-	return world.children
-		.filter((node) => typeof node.userData.pickId === "string")
-		.flatMap((machine) =>
-			raycaster
-				.intersectObject(machine, true)
-				.map((hit) => ({ id: String(machine.userData.pickId), hit })),
-		)
-		.toSorted((a, b) => a.hit.distance - b.hit.distance)
-		.map(({ id }) => id)
+	return Arr.map(
+		Arr.filter(world.children, (node) => typeof node.userData.pickId === "string")
+			.flatMap((machine) =>
+				raycaster
+					.intersectObject(machine, true)
+					.map((hit) => ({ id: String(machine.userData.pickId), hit })),
+			)
+			.toSorted((a, b) => a.hit.distance - b.hit.distance),
+		({ id }) => id,
+	)
 }
 
 /** The `userData.quack` of the duck hit box under the pointer, if any. Only the boxes are
@@ -228,8 +230,8 @@ export function startScene(
 		const delta = (now - state.last) / 1000
 		state.last = now
 		rig()
-		state.built.scenery.scope.frames.forEach((frame) => frame(delta))
-		state.built.world.scope.frames.forEach((frame) => frame(delta))
+		Arr.forEach(state.built.scenery.scope.frames, (frame) => frame(delta))
+		Arr.forEach(state.built.world.scope.frames, (frame) => frame(delta))
 		renderer.render(scene, camera)
 	}
 	state.raf = requestAnimationFrame(loop)

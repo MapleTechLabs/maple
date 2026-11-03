@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import {
 	FUNNEL_MAX_STEPS,
 	FunnelBreakdownBy,
@@ -14,6 +14,7 @@ import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatNumber, formatPercent, truncate } from "../lib/format"
+import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -164,10 +165,10 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 					),
 				),
 			)
-			const counts = new Map(outcome.map((row) => [row.step, row.count || 0]))
+			const counts = new Map(Arr.map(outcome, (row) => [row.step, row.count || 0]))
 
 			const first = counts.get(1) ?? 0
-			const stepData = steps.map((step, index) => {
+			const stepData = Arr.map(steps, (step, index) => {
 				const count = counts.get(index + 1) ?? 0
 				const previous = index === 0 ? null : (counts.get(index) ?? 0)
 				return {
@@ -225,7 +226,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 									const index = row.step - 1
 									if (index >= 0 && index < steps.length) arr[index] = row.count || 0
 								}
-								const groups = [...byGroup.entries()].map(([group, groupCounts]) => ({
+								const groups = Arr.map([...byGroup.entries()], ([group, groupCounts]) => ({
 									group,
 									counts: groupCounts,
 									conversion:
@@ -257,7 +258,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			const first = steps[0]
 			const last = steps[steps.length - 1]
 			const window = { start_time: output.timeRange.start, end_time: output.timeRange.end }
-			const stepsJson = JSON.stringify(output.definition)
+			const stepsJson = stringifyJson(output.definition)
 			return {
 				title: `Funnel (${steps.length} step${steps.length === 1 ? "" : "s"}, by ${output.keyBy}, within ${output.windowSeconds}s)`,
 				scope: [["Time range", `${output.timeRange.start} to ${output.timeRange.end}`]],
@@ -281,12 +282,12 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 									[
 										"#",
 										"Step",
-										noun.charAt(0).toUpperCase() + noun.slice(1),
+										Str.toUpperCase(noun.charAt(0)) + Str.slice(1)(noun),
 										"Of first",
 										"Of previous",
 										"Drop-off",
 									],
-									steps.map((stat) => [
+									Arr.map(steps, (stat) => [
 										String(stat.step),
 										truncate(stat.label, 60),
 										formatNumber(stat.count),
@@ -309,12 +310,12 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 											doc.table(
 												[
 													breakdown.by,
-													...steps.map((stat) => `Step ${stat.step}`),
+													...Arr.map(steps, (stat) => `Step ${stat.step}`),
 													"Conv.",
 												],
-												breakdown.groups.map((group) => [
+												Arr.map(breakdown.groups, (group) => [
 													group.group === "" ? "(none)" : truncate(group.group, 40),
-													...group.counts.map((count) => formatNumber(count)),
+													...Arr.map(group.counts, (count) => formatNumber(count)),
 													fmtPct(group.conversion),
 												]),
 											),

@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -14,7 +14,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const windowed = (search: Model["search"] = {}) =>
 	pageUpdate(
@@ -65,7 +65,10 @@ describe("agent tool detail", () => {
 
 	test("after Reload, an error row's URL change re-reads nothing; a time change re-resolves", () => {
 		const reloaded = pageUpdate(windowed().model, Message.ClickedReload()).model
-		const resolved = pageUpdate(reloaded, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" })).model
+		const resolved = pageUpdate(
+			reloaded,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" }),
+		).model
 		const clicked = routeChanged(resolved, { toolName: "Bash", search: { error: "42" } }, context)
 		expect(names(clicked.commands)).toEqual([])
 		expect(clicked.model.search.error).toBe("42")

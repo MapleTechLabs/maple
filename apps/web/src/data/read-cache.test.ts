@@ -2,7 +2,7 @@ import { Deferred, Effect, Exit, Fiber, Ref, Schema, type Scope } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
 import { READ_CACHE_MAX_ENTRIES, ReadCache } from "./read-cache"
-import { requestKey } from "./request-key"
+import { requestKey } from "@maple/views/data/request-key"
 
 const TTL_MS = 30_000
 const Count = Schema.Struct({ count: Schema.Number })

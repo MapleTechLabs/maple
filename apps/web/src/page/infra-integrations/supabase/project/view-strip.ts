@@ -8,6 +8,8 @@ import { SUPABASE_ACCENT } from "../connect"
 import { SATURATION } from "../health"
 import type { HealthStrip } from "./derive"
 import type { Message } from "./message"
+import { typography } from "@maple/views/ui/typography"
+import { String as Str } from "effect"
 
 // The health strip: six tiles, each value over a line spark of the window and a caption.
 
@@ -31,7 +33,7 @@ const tile = (h: H, window: SparkWindow, options: TileOptions): Html =>
 	h.div(
 		[h.Class("flex min-w-0 flex-col gap-2 rounded-md border bg-card p-4")],
 		[
-			h.span([h.Class("truncate text-2xs font-medium text-muted-foreground")], [options.label]),
+			typography(h, { size: "2xs", tone: "muted", weight: "medium", truncate: true }, [options.label]),
 			h.span(
 				[
 					h.Class(
@@ -44,7 +46,9 @@ const tile = (h: H, window: SparkWindow, options: TileOptions): Html =>
 				[options.value],
 			),
 			windowSparkline(h, { points: options.spark, window, color: SUPABASE_ACCENT }),
-			h.span([h.Class("truncate font-mono text-2xs text-muted-foreground")], [options.caption ?? ""]),
+			typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
+				options.caption ?? "",
+			]),
 		],
 	)
 
@@ -63,7 +67,7 @@ export const healthStripView = (h: H, strip: HealthStrip, window: SparkWindow, t
 				caption:
 					cpu.peak === null
 						? ""
-						: `peak ${formatPercent(cpu.peak.cpu)} at ${formatClockInTimezone(cpu.peak.bucket, { timeZone }).slice(0, 5)}`,
+						: `peak ${formatPercent(cpu.peak.cpu)} at ${Str.slice(0, 5)(formatClockInTimezone(cpu.peak.bucket, { timeZone }))}`,
 			}),
 			tile(h, window, {
 				label: "Memory",

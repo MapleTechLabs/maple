@@ -23,6 +23,7 @@ import {
 	type StepSpec,
 } from "./step-executor"
 import type { StateDispositionEntry } from "../local-store-migration-module"
+import { Array as Arr } from "effect"
 
 /** Rebuilds the facet rollup from every retained root span; the truncate makes a resumed step converge. */
 const TRACE_FACETS_HOURLY_BACKFILL = [
@@ -1425,7 +1426,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		to: 36,
 		description: "Align raw-timestamp TTLs to their daily partitions",
 		clonedBefore: "any DDL runs",
-		beforeBootstrap: ALIGNED_TTLS.map(([table, ttl]) => modifyTtl(table, ttl)),
+		beforeBootstrap: Arr.map(ALIGNED_TTLS, ([table, ttl]) => modifyTtl(table, ttl)),
 		plan: [
 			[
 				"align-ttls",
@@ -1433,7 +1434,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			],
 		],
 		verifies: "Verify the v36 physical schema and the retained raw telemetry counts",
-		dispositions: ALIGNED_TTLS.map(([name]) => ({
+		dispositions: Arr.map(ALIGNED_TTLS, ([name]) => ({
 			name,
 			classification: "derived",
 			disposition: "preserve-exact",
@@ -1681,6 +1682,34 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			],
 		],
 		verifies: "Verify the v43 physical schema and retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their FingerprintHash untouched; only occurrences whose message or stack carries one of the redacted shapes hash differently after the migration.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
+	{
+		id: "local-0043-to-0044-error-fingerprint-json-frames",
+		from: 43,
+		to: 44,
+		description:
+			"Recreate the error_events MVs: JSON path values, route-not-found variants, masked secrets, internal and repeated frames",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events views so JSON path values, masked secrets, runtime-internal frames and repeated frames no longer split one bug",
+			],
+		],
+		verifies: "Verify the v44 physical schema and retained raw telemetry counts",
 		dispositions: [
 			TRACES_UNDER_REPLACED_VIEWS,
 			{

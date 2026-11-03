@@ -3,7 +3,7 @@
  * before any hunter launches; a `deep` run repeats waves until a post-wave critic and a separate
  * final-clean critic both accept no work.
  */
-import { Effect, Ref } from "effect"
+import { Effect, Ref, Schema, Array as Arr } from "effect"
 import { criticPrompt, hunterPrompt } from "../prompts"
 import { type Candidate, candidateErrors, CriticResult, HunterResult } from "../results"
 import { ledgerErrors } from "../validators"
@@ -22,6 +22,7 @@ import {
 import type { AuditStoreError } from "./ports"
 import type { EngineState, Engine } from "./state"
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const BUDGET_DEFER = "budget_cannot_reserve_critics_and_validation"
 /** A unit whose hunters returned unusable results this many times is deferred, not retried forever. */
 const MAX_UNIT_FAILURES = 2
@@ -48,7 +49,7 @@ export const strongest = <E extends { readonly candidate: Candidate; readonly ag
  * fingerprint is one verifier however many units carry or raise it.
  */
 const validationReserve = (s: EngineState, perCandidate: number, balance: number): number => {
-	const fingerprints = new Set([...s.candidates.keys(), ...s.carried.map((c) => c.record.fingerprint)])
+	const fingerprints = new Set([...s.candidates.keys(), ...Arr.map(s.carried, (c) => c.record.fingerprint)])
 	return Math.max(fingerprints.size * perCandidate, Math.ceil(balance * 0.3))
 }
 
@@ -56,11 +57,11 @@ const groupUnits = (
 	units: ReadonlyArray<LedgerUnit>,
 	size: number,
 ): ReadonlyArray<ReadonlyArray<LedgerUnit>> => {
-	const bySubsystem = units.reduce((acc, unit) => {
+	const bySubsystem = Arr.reduce(units, new Map<string, ReadonlyArray<LedgerUnit>>(), (acc, unit) => {
 		const key = `${unit.subsystem}\u0000${unit.boundary}`
 		return new Map(acc).set(key, [...(acc.get(key) ?? []), unit])
-	}, new Map<string, ReadonlyArray<LedgerUnit>>())
-	return [...bySubsystem.values()].flatMap((group) =>
+	})
+	return Arr.flatMap([...bySubsystem.values()], (group) =>
 		Array.from({ length: Math.ceil(group.length / size) }, (_, i) =>
 			group.slice(i * size, (i + 1) * size),
 		),
@@ -70,7 +71,7 @@ const groupUnits = (
 const filesOf = (claim: {
 	readonly trace: ReadonlyArray<{ readonly file: string }>
 	readonly evidence: ReadonlyArray<{ readonly file: string }>
-}) => new Set([...claim.trace.map((t) => t.file), ...claim.evidence.map((e) => e.file)])
+}) => new Set([...Arr.map(claim.trace, (t) => t.file), ...Arr.map(claim.evidence, (e) => e.file)])
 
 /**
  * An unchanged prior rejection suppresses only its own claim: the same fingerprint over the same
@@ -80,7 +81,7 @@ const isSuppressed = (s: EngineState, candidate: Candidate): boolean => {
 	const prior = s.suppressed.get(candidate.fingerprint)
 	if (prior === undefined) return false
 	const priorFiles = filesOf(prior)
-	return [...filesOf(candidate)].every((file) => priorFiles.has(file))
+	return Arr.every([...filesOf(candidate)], (file) => priorFiles.has(file))
 }
 
 /** Applies one hunter result to the units it owned; anything it got wrong goes back to `planned`. */
@@ -92,58 +93,62 @@ const applyHunterResult = (
 ): EngineState => {
 	const ids = new Set(owned)
 	if (result === undefined) return { ...s, ledger: revert(s.ledger, ids, MAX_UNIT_FAILURES) }
-	const reported = result.units.map((unit) => unit.coverage_id)
+	const reported = Arr.map(result.units, (unit) => unit.coverage_id)
 	if (
 		reported.length !== ids.size ||
-		!reported.every((id) => ids.has(id)) ||
+		!Arr.every(reported, (id) => ids.has(id)) ||
 		new Set(reported).size !== reported.length
 	) {
 		return { ...s, ledger: revert(s.ledger, ids, MAX_UNIT_FAILURES) }
 	}
-	const listed = new Set(result.units.flatMap((unit) => unit.candidate_fingerprints))
-	const valid = result.candidates.filter(
+	const listed = new Set(Arr.flatMap(result.units, (unit) => unit.candidate_fingerprints))
+	const valid = Arr.filter(
+		result.candidates,
 		(candidate) => listed.has(candidate.fingerprint) && candidateErrors(candidate).length === 0,
 	)
-	const known = new Set([...valid.map((c) => c.fingerprint), ...s.suppressed.keys()])
-	const good = result.units.filter(
+	const known = new Set([...Arr.map(valid, (c) => c.fingerprint), ...s.suppressed.keys()])
+	// A `local` check is evidence only through a file the parent promoted for this agent.
+	const promoted = s.promoted.get(agentId) ?? new Set<string>()
+	const good = Arr.filter(
+		result.units,
 		(unit) =>
 			unit.checks.length > 0 &&
-			// Without a parent-promoted artifact a `local` check is not evidence; this run has none.
-			unit.checks.every(
-				(check) => check.agent_id === agentId && check.method === "source" && check.artifact === null,
+			Arr.every(
+				unit.checks,
+				(check) =>
+					check.agent_id === agentId &&
+					(check.method === "source"
+						? check.artifact === null
+						: check.artifact !== null && promoted.has(check.artifact)),
 			) &&
-			unit.candidate_fingerprints.every((fp) => known.has(fp)),
+			Arr.every(unit.candidate_fingerprints, (fp) => known.has(fp)),
 	)
-	const applied = good.reduce(
-		(acc, unit) => {
-			const next = applyUnitResult(acc.ledger, unit, agentId)
-			return ledgerErrors(next).length === 0 ? { ledger: next, ok: [...acc.ok, unit.coverage_id] } : acc
-		},
-		{ ledger: s.ledger, ok: [] as ReadonlyArray<string> },
-	)
+	const applied = Arr.reduce(good, { ledger: s.ledger, ok: [] as ReadonlyArray<string> }, (acc, unit) => {
+		const next = applyUnitResult(acc.ledger, unit, agentId)
+		return ledgerErrors(next).length === 0 ? { ledger: next, ok: [...acc.ok, unit.coverage_id] } : acc
+	})
 	const ok = new Set(applied.ok)
-	const failed = new Set(owned.filter((id) => !ok.has(id)))
-	const ledger = revert(applied.ledger, failed, MAX_UNIT_FAILURES).map((unit) =>
+	const failed = new Set(Arr.filter(owned, (id) => !ok.has(id)))
+	const ledger = Arr.map(revert(applied.ledger, failed, MAX_UNIT_FAILURES), (unit) =>
 		ok.has(unit.coverage_id) && result.hardening.length > 0
 			? { ...unit, hardening: [...(unit.hardening ?? []), ...result.hardening] }
 			: unit,
 	)
 	// Only units that were applied link a candidate; a reverted unit's claims wait for its re-hunt.
 	const linked = new Set(
-		result.units
-			.filter((unit) => ok.has(unit.coverage_id))
-			.flatMap((unit) => unit.candidate_fingerprints),
+		Arr.filter(result.units, (unit) => ok.has(unit.coverage_id)).flatMap(
+			(unit) => unit.candidate_fingerprints,
+		),
 	)
-	const candidates = valid
-		.filter((c) => linked.has(c.fingerprint) && !isSuppressed(s, c))
-		.reduce(
-			(acc, candidate) =>
-				new Map(acc).set(candidate.fingerprint, [
-					...(acc.get(candidate.fingerprint) ?? []),
-					{ candidate, agentId },
-				]),
-			s.candidates,
-		)
+	const candidates = Arr.reduce(
+		Arr.filter(valid, (c) => linked.has(c.fingerprint) && !isSuppressed(s, c)),
+		s.candidates,
+		(acc, candidate) =>
+			new Map(acc).set(candidate.fingerprint, [
+				...(acc.get(candidate.fingerprint) ?? []),
+				{ candidate, agentId },
+			]),
+	)
 	return { ...s, ledger, candidates, uncovered: [...s.uncovered, ...result.uncovered] }
 }
 
@@ -155,7 +160,7 @@ const runHunter = (
 ) =>
 	Effect.gen(function* () {
 		const s = yield* Ref.get(engine.state)
-		const carriedExclusions = s.carried.flatMap(({ record }) =>
+		const carriedExclusions = Arr.flatMap(s.carried, ({ record }) =>
 			record.verdict === "confirmed"
 				? [{ fingerprint: record.fingerprint, title: record.title, root_cause: record.root_cause }]
 				: [],
@@ -178,7 +183,7 @@ const runHunter = (
 			undefined,
 			applyHunterResult(
 				current,
-				units.map((unit) => unit.coverage_id),
+				Arr.map(units, (unit) => unit.coverage_id),
 				agentId,
 				result,
 			),
@@ -187,9 +192,9 @@ const runHunter = (
 
 /** A compact ledger for the critic: every unit and block map, without check prose. */
 const criticLedger = (ledger: ReadonlyArray<LedgerUnit>) =>
-	ledger.map(({ local_checks, attempts, hardening: _h, ...unit }) => ({
+	Arr.map(ledger, ({ local_checks, attempts, hardening: _h, ...unit }) => ({
 		...unit,
-		checks: local_checks.map((check) => check.invariant),
+		checks: Arr.map(local_checks, (check) => check.invariant),
 		attempts: attempts.length,
 	}))
 
@@ -215,7 +220,7 @@ const runCritic = (
 				repoTree: engine.input.repoTree,
 				ledger: criticLedger(s.ledger),
 				// Sorted, not hunter-completion order, so a replay sends the critic the same prompt.
-				candidateStates: [...s.candidates.keys()].sort().map((fingerprint) => ({
+				candidateStates: Arr.map([...s.candidates.keys()].sort(), (fingerprint) => ({
 					fingerprint,
 					state: "candidate",
 				})),
@@ -223,38 +228,44 @@ const runCritic = (
 					engine.input.prior === null
 						? "No prior ledger exists."
 						: `Prior run ${engine.input.prior.runId}.`,
-				hunterUncovered: s.uncovered
-					.map((surface) => ({ surface, key: JSON.stringify(surface) }))
-					.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
-					.map(({ surface }) => surface),
+				hunterUncovered: Arr.map(
+					Arr.map(s.uncovered, (surface) => ({ surface, key: encodeJson(surface) })).sort((a, b) =>
+						a.key < b.key ? -1 : a.key > b.key ? 1 : 0,
+					),
+					({ surface }) => surface,
+				),
 			},
 			engine.context(agentId),
 		)
 		// One repair turn before the run loses its planning: a critic's JSON is long and easy to break.
 		const result = yield* engine.invokeRepairing("critic", agentId, prompt, CriticResult)
 		if (result === undefined) return undefined
-		const refusals = result.missing_units.flatMap((unit) => {
+		const refusals = Arr.flatMap(result.missing_units, (unit) => {
 			const reason = unitRefusal(unit)
 			return reason === undefined ? [] : [`${unit.surface} / ${unit.attack_class}: ${reason}`]
 		})
 		const outcome = yield* engine.mutate((current) => {
 			const priorStatus = engine.input.prior === null ? "none" : "new"
-			const proposals = result.missing_units.filter((unit) => unitRefusal(unit) === undefined)
+			const proposals = Arr.filter(result.missing_units, (unit) => unitRefusal(unit) === undefined)
 			// A proposal the ledger already holds is that unit (same canonical refs): neither new nor refused.
-			const seeded = proposals
-				.map((unit) => seedUnit(unit, { scope: engine.input.scopePaths, priorStatus }))
-				.filter(
-					(unit) => !current.ledger.some((existing) => existing.coverage_id === unit.coverage_id),
-				)
+			const seeded = Arr.filter(
+				Arr.map(proposals, (unit) => seedUnit(unit, { scope: engine.input.scopePaths, priorStatus })),
+				(unit) => !Arr.some(current.ledger, (existing) => existing.coverage_id === unit.coverage_id),
+			)
 			const admitted = admitUnits(current.ledger, seeded)
 			const newIds = new Set(
-				admitted.ledger
-					.filter((u) => !current.ledger.some((c) => c.coverage_id === u.coverage_id))
-					.map((u) => u.coverage_id),
+				Arr.map(
+					Arr.filter(
+						admitted.ledger,
+						(u) => !Arr.some(current.ledger, (c) => c.coverage_id === u.coverage_id),
+					),
+					(u) => u.coverage_id,
+				),
 			)
 			const reassign = new Set(
-				result.reassign_ids.filter((id) =>
-					current.ledger.some(
+				Arr.filter(result.reassign_ids, (id) =>
+					Arr.some(
+						current.ledger,
 						(u) =>
 							u.coverage_id === id &&
 							(u.status === "blocked" || u.status === "covered" || u.status === "candidate"),
@@ -268,12 +279,12 @@ const runCritic = (
 			)
 			const resolved = new Set(result.resolved_prior_leads)
 			// A carried unit links its prior record through `carried_fingerprint`; earlier critics' marks stay.
-			const marked = reopened.map((unit) => {
+			const marked = Arr.map(reopened, (unit) => {
 				const linked =
 					unit.carried_fingerprint === undefined
 						? unit.result_fingerprints
 						: [...unit.result_fingerprints, unit.carried_fingerprint]
-				const leads = linked.filter((fp) => resolved.has(fp))
+				const leads = Arr.filter(linked, (fp) => resolved.has(fp))
 				return leads.length === 0
 					? unit
 					: {
@@ -284,12 +295,16 @@ const runCritic = (
 						}
 			})
 			const planned = new Set(
-				[...newIds, ...reassign].filter(
+				Arr.filter(
+					[...newIds, ...reassign],
 					(id) => marked.find((u) => u.coverage_id === id)?.status === "planned",
 				),
 			)
 			const ledger = deferReason === undefined ? marked : defer(marked, planned, deferReason)
-			const refused = [...refusals, ...admitted.refused.map((r) => `${r.coverage_id}: ${r.reason}`)]
+			const refused = [
+				...refusals,
+				...Arr.map(admitted.refused, (r) => `${r.coverage_id}: ${r.reason}`),
+			]
 			return [
 				{ accepted: planned.size, refused },
 				{ ...current, ledger, uncovered: [] },
@@ -321,7 +336,7 @@ export const runHunting = (engine: Engine) =>
 		const deferQueued = (reason: string) =>
 			Effect.gen(function* () {
 				const s = yield* Ref.get(engine.state)
-				const ids = new Set(huntable(s.ledger).map((unit) => unit.coverage_id))
+				const ids = new Set(Arr.map(huntable(s.ledger), (unit) => unit.coverage_id))
 				if (ids.size === 0) return
 				yield* engine.mutate((c) => [undefined, { ...c, ledger: defer(c.ledger, ids, reason) }])
 				yield* engine.gap(reason)
@@ -355,10 +370,7 @@ export const runHunting = (engine: Engine) =>
 				if (allowance <= 0) return false
 				const launch = groups.slice(0, allowance)
 				const unfunded = new Set(
-					groups
-						.slice(launch.length)
-						.flat()
-						.map((unit) => unit.coverage_id),
+					Arr.map(groups.slice(launch.length).flat(), (unit) => unit.coverage_id),
 				)
 				if (unfunded.size > 0) {
 					yield* engine.mutate((c) => [
@@ -367,15 +379,13 @@ export const runHunting = (engine: Engine) =>
 					])
 					yield* engine.gap(BUDGET_DEFER)
 				}
-				const owners = launch.map((group, i) => ({ group, agentId: `hunter-w${wave}-${i + 1}` }))
+				const owners = Arr.map(launch, (group, i) => ({ group, agentId: `hunter-w${wave}-${i + 1}` }))
 				yield* engine.mutate((c) => [
 					undefined,
 					{
 						...c,
-						ledger: owners.reduce(
-							(ledger, { group, agentId }) =>
-								assign(ledger, new Set(group.map((u) => u.coverage_id)), agentId),
-							c.ledger,
+						ledger: Arr.reduce(owners, c.ledger, (ledger, { group, agentId }) =>
+							assign(ledger, new Set(Arr.map(group, (u) => u.coverage_id)), agentId),
 						),
 					},
 				])
@@ -384,7 +394,7 @@ export const runHunting = (engine: Engine) =>
 					phase: `wave-${wave}`,
 					detail: `${owners.length} hunters over ${launch.flat().length} units`,
 				})
-				const allIds = launch.flat().map((unit) => unit.coverage_id)
+				const allIds = Arr.map(launch.flat(), (unit) => unit.coverage_id)
 				yield* Effect.forEach(
 					owners,
 					({ group, agentId }) =>
@@ -392,7 +402,7 @@ export const runHunting = (engine: Engine) =>
 							engine,
 							group,
 							agentId,
-							allIds.filter((id) => !group.some((unit) => unit.coverage_id === id)),
+							Arr.filter(allIds, (id) => !Arr.some(group, (unit) => unit.coverage_id === id)),
 						),
 					{ concurrency: input.concurrency ?? 4, discard: true },
 				)

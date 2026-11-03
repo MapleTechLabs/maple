@@ -7,7 +7,7 @@ import {
 import { zoneSignalTotals } from "../../../../components/infra/cloudflare/zone-signals"
 import type { Tone } from "@maple/ui/lib/tone"
 import { AsyncData } from "foldkit"
-import { chartBucketSeconds } from "../../../../charts/infra-metric-series"
+import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import type { TimeWindow } from "../../../../data/time-range"
 import type {
 	BreakdownDimension,
@@ -19,6 +19,7 @@ import type {
 } from "../data"
 import { dataOf } from "../list/derive"
 import type { Model, ZoneTab } from "./model"
+import { Array as Arr } from "effect"
 
 const ZONE_SERVICE_PREFIX = "cloudflare/"
 /** Rows the server returns per dimension. */
@@ -114,15 +115,15 @@ export const dnsSummaryOf = (model: Model): ZoneRailDns | null => {
 	const dns = dataOf(model.dns.data)
 	if (dns === null || (dns.names.length === 0 && dns.buckets.length === 0)) return null
 	return {
-		queries: dns.buckets.reduce((acc, b) => acc + b.queries, 0),
-		alwaysNxdomain: dns.names.filter((n) => n.queries > 0 && n.nxdomain >= n.queries).length,
+		queries: Arr.reduce(dns.buckets, 0, (acc, b) => acc + b.queries),
+		alwaysNxdomain: Arr.filter(dns.names, (n) => n.queries > 0 && n.nxdomain >= n.queries).length,
 	}
 }
 
 /** Null while loading; zero means the dataset is live but quiet. */
 export const firewallEventsOf = (model: Model): number | null => {
 	const security = dataOf(model.security.data)
-	return security === null ? null : security.buckets.reduce((acc, b) => acc + b.events, 0)
+	return security === null ? null : Arr.reduce(security.buckets, 0, (acc, b) => acc + b.events)
 }
 
 export const tabsOf = (model: Model): ReadonlyArray<Readonly<{ value: ZoneTab; label: string }>> => {
@@ -160,7 +161,7 @@ export const zoneAccountOf = (model: Model): ZoneAccount | null => {
 	const status = dataOf(model.status.data)
 	if (status === null) return null
 	const accounts = status.accounts ?? []
-	const account = accounts.find((a) => a.zones.some((zone) => zone.name === model.zoneName))
+	const account = accounts.find((a) => Arr.some(a.zones, (zone) => zone.name === model.zoneName))
 	if (account === undefined) return null
 	return {
 		id: account.accountId,

@@ -1,7 +1,7 @@
 import { Clock, Duration, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { readCached, recordCached } from "../../data/cached"
-import type { LoadFailure } from "../../data/local-query"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { facetsFromCached, facetsKey, facetsToCached, pagesFromCached, pagesToCached, tracesKey } from "./cache"
 import { fetchTraceFacets } from "./fetch-facets"
 import { fetchTracePage, nextCursor, type TraceCursor } from "./fetch-traces"

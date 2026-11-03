@@ -1,9 +1,9 @@
 import type { StatusPageComponentId } from "@maple/domain"
 import type { V2StatusPageComponent, V2UptimeMonitor } from "@maple/domain/http/v2"
-import { Option, Result } from "effect"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
-import type { LoadFailure } from "../../../data/load-failure"
-import * as Dialog from "../../../ui/dialog"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../../contract"
 import {
 	type ComponentTextField,
@@ -41,6 +41,8 @@ import {
 	type Return,
 	toast,
 } from "./reads"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // Components in the side panel: saved as you go, removed behind a confirm, moved in the list,
 // and added from the same checklist the builder uses.
@@ -84,7 +86,7 @@ export const changeComponent = (model: Model, field: ComponentTextField, value: 
 })
 
 const isSame = (form: ComponentForm, component: V2StatusPageComponent): boolean =>
-	JSON.stringify(componentPayload(form)) === JSON.stringify(componentPayload(componentFormOf(component)))
+	encodeJson(componentPayload(form)) === encodeJson(componentPayload(componentFormOf(component)))
 
 /** Saves the form when it differs from the component; a save in flight re-commits when it lands. */
 export const commitComponent = (model: Model): Return => {
@@ -95,7 +97,7 @@ export const commitComponent = (model: Model): Return => {
 		model.pageId === null ||
 		saved === undefined ||
 		model.componentSave === "saving" ||
-		form.name.trim() === "" ||
+		Str.trim(form.name) === "" ||
 		isSame(form, saved)
 	)
 		return { model }
@@ -125,7 +127,7 @@ export const savedComponent = (
 				components: {
 					...model.components,
 					data: AsyncData.map(model.components.data, (rows) =>
-						rows.map((row) => (row.id === component.id ? component : row)),
+						Arr.map(rows, (row) => (row.id === component.id ? component : row)),
 					),
 				},
 			}
@@ -146,7 +148,7 @@ export const moved = <A extends { readonly id: StatusPageComponentId }>(
 	const to = from + offset
 	const item = components[from]
 	if (from < 0 || to < 0 || to >= components.length || item === undefined) return null
-	const rest = components.filter((_, index) => index !== from)
+	const rest = Arr.filter(components, (_, index) => index !== from)
 	return [...rest.slice(0, to), item, ...rest.slice(to)]
 }
 
@@ -161,7 +163,10 @@ export const moveComponent = (model: Model, componentId: StatusPageComponentId, 
 			components: { ...model.components, data: AsyncData.map(model.components.data, () => next) },
 		},
 		commands: [
-			ReorderComponents({ pageId: model.pageId, componentIds: next.map((component) => component.id) }),
+			ReorderComponents({
+				pageId: model.pageId,
+				componentIds: Arr.map(next, (component) => component.id),
+			}),
 		],
 	}
 }
@@ -233,12 +238,12 @@ export const deletedComponent = (
 export const openAdd = (model: Model): Return => {
 	if (!model.isAdmin || model.isAddingComponents) return { model }
 	const used = new Set(
-		componentsOf(model).flatMap((component) =>
+		Arr.flatMap(componentsOf(model), (component) =>
 			component.monitor_id === null ? [] : [component.monitor_id],
 		),
 	)
 	const picker = seedPicker(
-		monitorsOf(model).filter((monitor) => !used.has(monitor.id)),
+		Arr.filter(monitorsOf(model), (monitor) => !used.has(monitor.id)),
 		false,
 	)
 	const session = model.addSession + 1
@@ -328,7 +333,10 @@ export const addedComponents = (
 			outMessage: toast(
 				"success",
 				added.length === 1 ? "Component added" : `${added.length} components added`,
-				added.map((component) => component.name).join(", "),
+				Arr.join(
+					Arr.map(added, (component) => component.name),
+					", ",
+				),
 			),
 		}),
 		// Some may have been created before the failure, so the panel closes rather than offer a

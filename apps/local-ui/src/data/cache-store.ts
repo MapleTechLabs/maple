@@ -1,7 +1,7 @@
 import { type CacheValue, decodeCacheValue, encodeCacheValue } from "../lib/cache-codec"
 import { parseClickHouseDateTime } from "../lib/time"
 import { trySync } from "@maple/ui/lib/try-sync"
-import { Array, Option, Order, Schema } from "effect"
+import { Array, Option, Order, Schema, Record as Rec, String as Str } from "effect"
 
 // The pure half of the result cache (query-cache.ts): query keys and their hash, the
 // saved form in localStorage, and the "newest older window" a windowed query opens on.
@@ -33,16 +33,23 @@ const isPlainObject = (value: unknown): value is Readonly<Record<string, unknown
 	return proto === Object.prototype || proto === null
 }
 
+const encodeSortedJson = Schema.encodeSync(
+	Schema.fromJsonString(Schema.Unknown, {
+		replacer: (_, value: unknown) =>
+			isPlainObject(value)
+				? Rec.fromEntries(Array.map(Rec.keys(value).sort(), (name) => [name, value[name]]))
+				: value,
+	}),
+)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 /** A key's hash: JSON with object keys sorted (undefined fields drop out). */
-export const hashKey = (key: QueryKey): string =>
-	JSON.stringify(key, (_, value: unknown) =>
-		isPlainObject(value) ? Object.fromEntries(Object.keys(value).sort().map((name) => [name, value[name]])) : value,
-	)
+export const hashKey = (key: QueryKey): string => encodeSortedJson(key)
 
 /** Epoch ms of a `boundsKey` ("start/end") window, or none for any other key part. */
 const windowOf = (part: unknown): Option.Option<Readonly<{ start: number; end: number }>> => {
 	if (typeof part !== "string") return Option.none()
-	const [start, end, extra] = part.split("/")
+	const [start, end, extra] = Str.split("/")(part)
 	if (start === undefined || end === undefined || extra !== undefined) return Option.none()
 	const startMs = parseClickHouseDateTime(start)
 	const endMs = parseClickHouseDateTime(end)
@@ -58,13 +65,15 @@ const byNewest = Order.mapInput(Order.flip(Order.Number), (entry: CacheEntry) =>
 export const newestOlderWindow = (entries: CacheEntries, key: QueryKey): Option.Option<CacheEntry> =>
 	Option.flatMap(windowOf(key.at(-1)), (window) => {
 		const prefix = hashKey(key.slice(0, -1))
-		const older = Array.fromIterable(entries.values()).filter(
+		const older = Array.filter(
+			Array.fromIterable(entries.values()),
 			(entry) =>
 				entry.key.length === key.length &&
 				hashKey(entry.key.slice(0, -1)) === prefix &&
 				Option.exists(
 					windowOf(entry.key.at(-1)),
-					(other) => other.end < window.end && other.end - other.start === window.end - window.start,
+					(other) =>
+						other.end < window.end && other.end - other.start === window.end - window.start,
 				),
 		)
 		return Array.head(Array.sort(older, byNewest))
@@ -72,7 +81,9 @@ export const newestOlderWindow = (entries: CacheEntries, key: QueryKey): Option.
 
 const SavedCache = Schema.Struct({
 	version: Schema.Literal(1),
-	entries: Schema.Array(Schema.Struct({ key: Schema.Array(Schema.Unknown), data: Schema.Unknown, updatedAt: Schema.Number })),
+	entries: Schema.Array(
+		Schema.Struct({ key: Schema.Array(Schema.Unknown), data: Schema.Unknown, updatedAt: Schema.Number }),
+	),
 })
 const decodeSaved = Schema.decodeUnknownOption(Schema.fromJsonString(SavedCache))
 
@@ -83,27 +94,31 @@ export const parseSaved = (text: string, nowMs: number): CacheEntries =>
 			onNone: () => [],
 			onSome: (saved) =>
 				Array.getSomes(
-					saved.entries
-						.filter((entry) => nowMs - entry.updatedAt <= MAX_AGE_MS)
-						.map((entry) =>
+					Array.map(
+						Array.filter(saved.entries, (entry) => nowMs - entry.updatedAt <= MAX_AGE_MS),
+						(entry) =>
 							trySync((): readonly [string, CacheEntry] => {
-								const key = entry.key.map(decodeCacheValue)
-								return [hashKey(key), { key, data: decodeCacheValue(entry.data), updatedAtMs: entry.updatedAt }]
+								const key = Array.map(entry.key, decodeCacheValue)
+								return [
+									hashKey(key),
+									{ key, data: decodeCacheValue(entry.data), updatedAtMs: entry.updatedAt },
+								]
 							}),
-						),
+					),
 				),
 		}),
 	)
 
 /** What `restore` would rebuild from `data`: none when the codec cannot encode it (`serialize` skips it). */
-export const asCacheValue = <A>(data: A): Option.Option<CacheValue> => Option.map(encodeCacheValue(data), decodeCacheValue)
+export const asCacheValue = <A>(data: A): Option.Option<CacheValue> =>
+	Option.map(encodeCacheValue(data), decodeCacheValue)
 
 /** `serializeQueryCache`: the newest results that fit the budget, in legacy's saved form. */
 export const serialize = (entries: CacheEntries): string => {
 	const encoded = Array.getSomes(
-		Array.sort(Array.fromIterable(entries.values()), byNewest).map((entry) =>
+		Array.map(Array.sort(Array.fromIterable(entries.values()), byNewest), (entry) =>
 			Option.zipWith(encodeCacheValue(entry.key), encodeCacheValue(entry.data), (key, data) =>
-				JSON.stringify({ key, data, updatedAt: entry.updatedAtMs }),
+				encodeJson({ key, data, updatedAt: entry.updatedAtMs }),
 			),
 		),
 	)
@@ -114,7 +129,7 @@ export const serialize = (entries: CacheEntries): string => {
 				: { items: [...acc.items, item], size: acc.size + item.length },
 		{ items: [], size: 0 },
 	)
-	return `{"version":1,"entries":[${kept.items.join(",")}]}`
+	return `{"version":1,"entries":[${Array.join(kept.items, ",")}]}`
 }
 
 /** The client's `gcTime`: a result nothing has read or written for an hour leaves the cache. */
@@ -126,4 +141,6 @@ export const dropUnused = (
 	lastUsedAtMs: ReadonlyMap<string, number>,
 	nowMs: number,
 ): CacheEntries =>
-	new Map(Array.filter(Array.fromIterable(entries), ([hash]) => nowMs - (lastUsedAtMs.get(hash) ?? 0) < GC_MS))
+	new Map(
+		Array.filter(Array.fromIterable(entries), ([hash]) => nowMs - (lastUsedAtMs.get(hash) ?? 0) < GC_MS),
+	)

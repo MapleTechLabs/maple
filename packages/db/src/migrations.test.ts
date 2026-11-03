@@ -2,13 +2,15 @@ import { readFileSync } from "node:fs"
 import * as PgliteClient from "@effect/sql-pglite/PgliteClient"
 import { PGlite } from "@electric-sql/pglite"
 import * as Migrate from "@maple-dev/effect-orm/migrate"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { bundledMigrations, listBundledMigrations, migrateBundled, readBundledMigrationsSql } from "./migrate"
 
 /** The folder for a migration by its name (the part after the kit's timestamp prefix). */
 const migrationNamed = (name: string) => {
-	const matches = listBundledMigrations().filter((migration) => migration.name.endsWith(`_${name}`))
+	const matches = Arr.filter(listBundledMigrations(), (migration) =>
+		Str.endsWith(`_${name}`)(migration.name),
+	)
 	if (matches.length !== 1)
 		throw new Error(`expected exactly one migration named ${name}, found ${matches.length}`)
 	return matches[0]!
@@ -18,10 +20,13 @@ const readMigrationSql = (name: string): string => readFileSync(migrationNamed(n
 
 const readMigrationSqlBefore = (name: string): string => {
 	const stop = migrationNamed(name).name
-	return listBundledMigrations()
-		.filter((migration) => migration.name < stop)
-		.map((migration) => readFileSync(migration.sqlPath, "utf8"))
-		.join("\n")
+	return Arr.join(
+		Arr.map(
+			Arr.filter(listBundledMigrations(), (migration) => migration.name < stop),
+			(migration) => readFileSync(migration.sqlPath, "utf8"),
+		),
+		"\n",
+	)
 }
 
 describe("migrations", () => {
@@ -36,7 +41,7 @@ describe("migrations", () => {
 			// applies), but the replay order in fresh databases would differ from
 			// production's, which is how a dependency between two migrations hides.
 			expect(
-				migrations[i]!.name.slice(0, 14) >= migrations[i - 1]!.name.slice(0, 14),
+				Str.slice(0, 14)(migrations[i]!.name) >= Str.slice(0, 14)(migrations[i - 1]!.name),
 				`${migrations[i]!.name} must not predate ${migrations[i - 1]!.name}`,
 			).toBe(true)
 		}
@@ -66,7 +71,7 @@ describe("migrations", () => {
 		try {
 			const head = migrationNamed("alert_incident_hold").name
 			const migrations = await Effect.runPromise(bundledMigrations)
-			const upTo = migrations.filter((migration) => migration.name <= head)
+			const upTo = Arr.filter(migrations, (migration) => migration.name <= head)
 			await migrateWith(pg, Migrate.run({ migrations: upTo, strict: true }))
 			expect(await ledgerCount(pg)).toBe(upTo.length)
 
@@ -83,7 +88,7 @@ describe("migrations", () => {
 			const holdColumns = await pg.query<{ column_name: string }>(
 				"SELECT column_name FROM information_schema.columns WHERE table_name = 'alert_incidents' AND column_name IN ('hold_reason', 'held_since') ORDER BY column_name",
 			)
-			expect(holdColumns.rows.map((row) => row.column_name)).toEqual(["held_since", "hold_reason"])
+			expect(Arr.map(holdColumns.rows, (row) => row.column_name)).toEqual(["held_since", "hold_reason"])
 		} finally {
 			await pg.close()
 		}
@@ -103,10 +108,11 @@ describe("migrations", () => {
 			const baseline = migrationNamed("effect_orm_baseline").name
 			expect(recorded).toHaveLength(migrations.findIndex((migration) => migration.name === baseline))
 			const ran = await migrateWith(pg, migrateBundled)
-			expect(ran.map((migration) => migration.name)).toEqual(
-				migrations
-					.filter((migration) => migration.name >= baseline)
-					.map((migration) => migration.name),
+			expect(Arr.map(ran, (migration) => migration.name)).toEqual(
+				Arr.map(
+					Arr.filter(migrations, (migration) => migration.name >= baseline),
+					(migration) => migration.name,
+				),
 			)
 			expect(await ledgerCount(pg)).toBe(migrations.length)
 		} finally {
@@ -179,12 +185,12 @@ describe("bundled migrations", () => {
 		await expect(pg.exec(readBundledMigrationsSql())).resolves.toBeDefined()
 
 		const pubs = await pg.query<{ pubname: string }>("select pubname from pg_publication")
-		expect(pubs.rows.map((r) => r.pubname)).toContain("electric_publication_default")
+		expect(Arr.map(pubs.rows, (r) => r.pubname)).toContain("electric_publication_default")
 
 		const members = await pg.query<{ tablename: string }>(
 			"select tablename from pg_publication_tables where pubname = 'electric_publication_default'",
 		)
-		expect(members.rows.map((r) => r.tablename).sort()).toEqual([...SYNCED_TABLES].sort())
+		expect(Arr.map(members.rows, (r) => r.tablename).sort()).toEqual([...SYNCED_TABLES].sort())
 
 		// relreplident 'f' = FULL. Electric refuses to serve a shape over a table that
 		// is not FULL — verified empirically against electricsql/electric:latest, which
@@ -216,7 +222,7 @@ describe("bundled migrations", () => {
 		// The scheduler claim lock (0027) must stay out of the publication: it is
 		// written once per enabled rule per minute, which is precisely the churn that
 		// splitting it off `alert_rules` was meant to keep off the replication stream.
-		expect(members.rows.map((r) => r.tablename)).not.toContain("alert_rule_claims")
+		expect(Arr.map(members.rows, (r) => r.tablename)).not.toContain("alert_rule_claims")
 
 		// 'd' = DEFAULT (primary key only). An unpublished table must not keep paying
 		// FULL's WAL cost — writing the whole old row on every UPDATE/DELETE.
@@ -224,29 +230,31 @@ describe("bundled migrations", () => {
 			`select relname, relreplident from pg_class where relname = any($1)`,
 			[UNSYNCED_TABLES],
 		)
-		expect(pruned.rows.map((r) => r.relname).sort()).toEqual([...UNSYNCED_TABLES].sort())
+		expect(Arr.map(pruned.rows, (r) => r.relname).sort()).toEqual([...UNSYNCED_TABLES].sort())
 		for (const row of pruned.rows) {
 			expect(row.relreplident, `${row.relname} replica identity`).toBe("d")
 		}
 	}, 30_000)
 
 	const publishedTables = async (pg: PGlite) =>
-		(
-			await pg.query<{ tablename: string }>(
-				"select tablename from pg_publication_tables where pubname = 'electric_publication_default'",
-			)
-		).rows
-			.map((r) => r.tablename)
-			.sort()
+		Arr.map(
+			(
+				await pg.query<{ tablename: string }>(
+					"select tablename from pg_publication_tables where pubname = 'electric_publication_default'",
+				)
+			).rows,
+			(r) => r.tablename,
+		).sort()
 
 	const fullTables = async (pg: PGlite) =>
-		(
-			await pg.query<{ relname: string }>(
-				"select relname from pg_class where relkind = 'r' and relreplident = 'f' and relnamespace = 'public'::regnamespace",
-			)
-		).rows
-			.map((r) => r.relname)
-			.sort()
+		Arr.map(
+			(
+				await pg.query<{ relname: string }>(
+					"select relname from pg_class where relkind = 'r' and relreplident = 'f' and relnamespace = 'public'::regnamespace",
+				)
+			).rows,
+			(r) => r.relname,
+		).sort()
 
 	// The fresh EU database had an empty publication before the first migration ran,
 	// so 0009's CREATE PUBLICATION hit duplicate_object and its handler rolled back the
@@ -439,6 +447,139 @@ describe("bundled migrations", () => {
 		expect(table.rows).toEqual([{ name: null }])
 	}, 30_000)
 
+	it("retires hazel-oauth destinations and every reference to them", async () => {
+		const pg = new PGlite()
+		await pg.exec(readMigrationSqlBefore("drop_hazel_oauth_destinations"))
+
+		const now = "2026-11-01T00:00:00.000Z"
+		await pg.query(
+			`INSERT INTO alert_destinations (
+				id, org_id, name, type, config_json, secret_ciphertext, secret_iv, secret_tag,
+				created_at, updated_at, created_by, updated_by
+			) VALUES
+				('dest_hazel', 'org_1', 'Hazel', 'hazel-oauth', '{}', 'x', 'x', 'x', $1, $1, 'user_1', 'user_1'),
+				('dest_webhook', 'org_1', 'Webhook', 'webhook', '{}', 'x', 'x', 'x', $1, $1, 'user_1', 'user_1')`,
+			[now],
+		)
+		const tier = (severity: string, destinationIds: unknown) => ({
+			severity,
+			value: 1,
+			upper: null,
+			recoveryValue: null,
+			destinationIds,
+		})
+		const rule = (id: string, enabled: boolean, destinationIds: unknown, thresholds: unknown) =>
+			pg.query(
+				`INSERT INTO alert_rules (
+					id, org_id, name, enabled, severity, signal_type, comparator, threshold, window_minutes,
+					destination_ids_json, thresholds_json, query_spec_json, reducer, no_data_behavior,
+					created_at, updated_at, created_by, updated_by
+				) VALUES ($1, 'org_1', $1, $2, 'warning', 'error_rate', 'gt', 0.1, 5, $3, $4, '{}', 'max', 'skip',
+					$5, $5, 'user_1', 'user_1')`,
+				[id, enabled, JSON.stringify(destinationIds), JSON.stringify(thresholds), now],
+			)
+		await rule(
+			"rule_mixed",
+			true,
+			["dest_hazel", "dest_webhook"],
+			[tier("warning", ["dest_webhook"]), tier("critical", ["dest_hazel", "dest_webhook"])],
+		)
+		await rule("rule_hazel_only", true, ["dest_hazel"], [tier("warning", ["dest_hazel"])])
+		await rule("rule_untouched", true, ["dest_webhook"], null)
+		await rule("rule_corrupt", true, { not: "an array" }, [tier("warning", "dest_hazel")])
+		await pg.query(
+			`INSERT INTO error_notification_policies (org_id, destination_ids_json, updated_at, updated_by) VALUES
+				('org_1', '["dest_hazel", "dest_webhook"]', $1, 'user_1'),
+				('org_2', '"not an array"', $1, 'user_1')`,
+			[now],
+		)
+		await pg.query(
+			`INSERT INTO issue_escalation_policies (org_id, enabled, rules_json, updated_at, updated_by) VALUES
+				('org_1', true, $1, $3, 'user_1'),
+				('org_2', true, $2, $3, 'user_1')`,
+			[
+				JSON.stringify([
+					{ severity: "critical", destinationIds: ["dest_hazel"], minConfidence: "high" },
+					{ severity: "high", destinationIds: ["dest_webhook", "dest_hazel"] },
+				]),
+				JSON.stringify([
+					{ severity: "critical", destinationIds: ["dest_hazel"] },
+					{ severity: "high", destinationIds: "not an array" },
+				]),
+				now,
+			],
+		)
+		await pg.query(
+			`INSERT INTO alert_delivery_events (
+				id, org_id, incident_id, rule_id, destination_id, delivery_key, event_type,
+				attempt_number, status, scheduled_at, payload_json, created_at, updated_at
+			) VALUES
+				('delivery_hazel', 'org_1', 'inc_1', 'rule_mixed', 'dest_hazel', 'k1', 'trigger', 1, 'queued', $1, '{}', $1, $1),
+				('delivery_webhook', 'org_1', 'inc_1', 'rule_mixed', 'dest_webhook', 'k2', 'trigger', 1, 'queued', $1, '{}', $1, $1)`,
+			[now],
+		)
+
+		await pg.exec(readMigrationSql("drop_hazel_oauth_destinations"))
+
+		const rules = await pg.query<{
+			id: string
+			enabled: boolean
+			destination_ids_json: unknown
+			thresholds_json: unknown
+		}>("SELECT id, enabled, destination_ids_json, thresholds_json FROM alert_rules ORDER BY id")
+		expect(rules.rows).toEqual([
+			// Malformed jsonb is left for the readers that already tolerate it.
+			{
+				id: "rule_corrupt",
+				enabled: true,
+				destination_ids_json: { not: "an array" },
+				thresholds_json: [tier("warning", "dest_hazel")],
+			},
+			{
+				id: "rule_hazel_only",
+				enabled: false,
+				destination_ids_json: [],
+				thresholds_json: [tier("warning", [])],
+			},
+			{
+				id: "rule_mixed",
+				enabled: true,
+				destination_ids_json: ["dest_webhook"],
+				thresholds_json: [tier("warning", ["dest_webhook"]), tier("critical", ["dest_webhook"])],
+			},
+			{
+				id: "rule_untouched",
+				enabled: true,
+				destination_ids_json: ["dest_webhook"],
+				thresholds_json: null,
+			},
+		])
+		const errorPolicies = await pg.query<{ org_id: string; destination_ids_json: unknown }>(
+			"SELECT org_id, destination_ids_json FROM error_notification_policies ORDER BY org_id",
+		)
+		expect(errorPolicies.rows).toEqual([
+			{ org_id: "org_1", destination_ids_json: ["dest_webhook"] },
+			{ org_id: "org_2", destination_ids_json: "not an array" },
+		])
+		const escalations = await pg.query<{ org_id: string; rules_json: unknown }>(
+			"SELECT org_id, rules_json FROM issue_escalation_policies ORDER BY org_id",
+		)
+		expect(escalations.rows).toEqual([
+			{ org_id: "org_1", rules_json: [{ severity: "high", destinationIds: ["dest_webhook"] }] },
+			{
+				org_id: "org_2",
+				rules_json: [
+					{ severity: "critical", destinationIds: ["dest_hazel"] },
+					{ severity: "high", destinationIds: "not an array" },
+				],
+			},
+		])
+		const destinations = await pg.query<{ id: string }>("SELECT id FROM alert_destinations")
+		expect(destinations.rows).toEqual([{ id: "dest_webhook" }])
+		const deliveries = await pg.query<{ id: string }>("SELECT id FROM alert_delivery_events")
+		expect(deliveries.rows).toEqual([{ id: "delivery_webhook" }])
+	}, 30_000)
+
 	it("links every integration row to the source it sends as", async () => {
 		const pg = new PGlite()
 		await pg.exec(readMigrationSqlBefore("source_ownership"))
@@ -504,7 +645,7 @@ describe("bundled migrations", () => {
 		const sources = await pg.query<{ id: string; kind: string; platform: string; name: string }>(
 			"SELECT id, kind, platform, name FROM sources",
 		)
-		const byId = new Map(sources.rows.map((row) => [row.id, row]))
+		const byId = new Map(Arr.map(sources.rows, (row) => [row.id, row]))
 		expect(byId.get("src_default")?.kind).toBe("default")
 		expect(byId.get("src_token")?.kind).toBe("token")
 		expect(byId.has("src_gone")).toBe(false)
@@ -562,7 +703,9 @@ describe("bundled migrations", () => {
 			VALUES ('src_old', 'org_2', 'Old', 'nodejs', false, 'old-hash', $1, $1)`,
 			[now],
 		)
-		expect((await pg.query("SELECT kind FROM sources WHERE id = 'src_old'")).rows).toEqual([{ kind: "token" }])
+		expect((await pg.query("SELECT kind FROM sources WHERE id = 'src_old'")).rows).toEqual([
+			{ kind: "token" },
+		])
 
 		// Deleting a source deletes the integration row that owns it.
 		await pg.query("DELETE FROM sources WHERE id = $1", [await owner("railway_connections", "r1")])
@@ -607,7 +750,12 @@ describe("bundled migrations", () => {
 
 		await pg.exec(readMigrationSql("source_ownership_contract"))
 
-		const owners = await pg.query<{ id: string; managed_by: string | null; platform: string; kind: string }>(
+		const owners = await pg.query<{
+			id: string
+			managed_by: string | null
+			platform: string
+			kind: string
+		}>(
 			`SELECT t.id, t.managed_by, s.platform, s.kind FROM scrape_targets t JOIN sources s ON s.id = t.source_id
 			UNION ALL SELECT r.id, NULL, s.platform, s.kind FROM railway_connections r JOIN sources s ON s.id = r.source_id
 			ORDER BY 1`,

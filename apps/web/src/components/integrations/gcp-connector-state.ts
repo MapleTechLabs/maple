@@ -2,7 +2,7 @@
 // each capability is doing, what a connection asks of its owner, what a change to its configuration
 // does and when, and the add form's validation. Pure, like planetscale-setup-steps.ts.
 
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { V2GcpCreateConnectorRequest, type V2GcpConnector } from "@maple/domain/http/v2"
 import {
 	GcpProjectId,
@@ -205,20 +205,23 @@ export const gcpNothingSeen = (connector: V2GcpConnector) =>
 export const gcpPendingChanges = (connector: ConnectorFields, nowMs: number): ReadonlyArray<string> => {
 	const log = gcpLogState(connector, nowMs)
 	const metrics = gcpMetricsState(connector, nowMs)
-	return [
-		log.kind === "setup-pending" && connector.applied_logs_enabled === false
-			? "Log forwarding starts once the log sink exists in Google Cloud."
-			: null,
-		log.kind === "off" && log.stillSetUp
-			? "Google Cloud keeps forwarding logs, billed by Google, until the log sink is removed."
-			: null,
-		metrics.kind === "setup-pending" && connector.applied_metrics_enabled === false
-			? "Metrics and resources start once the read-only service account exists in Google Cloud."
-			: null,
-		metrics.kind === "off" && metrics.stillSetUp
-			? "The read-only service account stays in Google Cloud until it is removed."
-			: null,
-	].filter((line) => line !== null)
+	return Arr.filter(
+		[
+			log.kind === "setup-pending" && connector.applied_logs_enabled === false
+				? "Log forwarding starts once the log sink exists in Google Cloud."
+				: null,
+			log.kind === "off" && log.stillSetUp
+				? "Google Cloud keeps forwarding logs, billed by Google, until the log sink is removed."
+				: null,
+			metrics.kind === "setup-pending" && connector.applied_metrics_enabled === false
+				? "Metrics and resources start once the read-only service account exists in Google Cloud."
+				: null,
+			metrics.kind === "off" && metrics.stillSetUp
+				? "The read-only service account stays in Google Cloud until it is removed."
+				: null,
+		],
+		(line) => line !== null,
+	)
 }
 
 /** A connection's worst capability, worst first. */
@@ -301,10 +304,10 @@ export function gcpRunAsked(connector: ConnectorFields, nowMs: number): Readonly
 	const log = gcpLogState(connector, nowMs)
 	const metrics = gcpMetricsState(connector, nowMs)
 	const asked: Array<GcpCapability> = []
-	if (log.kind === "failing" && log.error.includes("setup script")) asked.push("logs")
+	if (log.kind === "failing" && Str.includes("setup script")(log.error)) asked.push("logs")
 	if (
 		(metrics.kind === "failing" || metrics.kind === "incomplete") &&
-		metrics.error.includes("setup script")
+		Str.includes("setup script")(metrics.error)
 	) {
 		asked.push("metrics")
 	}
@@ -371,10 +374,10 @@ export function gcpMessageParts(text: string): {
 	readonly body: ReadonlyArray<string>
 	readonly answer: string | null
 } {
-	const [, message = text, answer] = /^(.*?)\s*(\([^()]*\))?$/s.exec(text.trim()) ?? []
+	const [, message = text, answer] = /^(.*?)\s*(\([^()]*\))?$/s.exec(Str.trim(text)) ?? []
 	// A sentence ends at a full stop before a space. An address ends before one too, without a stop.
-	const [headline = "", ...body] = message.split(/(?<=\.)\s+|(?<=https:\/\/\S+)\s+(?=[A-Z])/)
-	return { headline: headline.replace(/\.$/, ""), body, answer: answer?.slice(1, -1) ?? null }
+	const [headline, ...body] = Str.split(/(?<=\.)\s+|(?<=https:\/\/\S+)\s+(?=[A-Z])/)(message)
+	return { headline: Str.replace(/\.$/, "")(headline), body, answer: answer?.slice(1, -1) ?? null }
 }
 
 export const GCP_SCOPE_NAMES = {
@@ -394,14 +397,17 @@ export const gcpScopeLabel = (connector: Pick<V2GcpConnector, "scope_type" | "sc
 export const gcpScopeRoles = (scopeType: GcpScopeType, flags: GcpFlags): ReadonlyArray<string> =>
 	scopeType === "project"
 		? []
-		: [
-				flags.logs_enabled ? "Logs Configuration Writer" : null,
-				flags.metrics_enabled
-					? scopeType === "folder"
-						? "Folder IAM Admin"
-						: "Organization Administrator"
-					: null,
-			].filter((role) => role !== null)
+		: Arr.filter(
+				[
+					flags.logs_enabled ? "Logs Configuration Writer" : null,
+					flags.metrics_enabled
+						? scopeType === "folder"
+							? "Folder IAM Admin"
+							: "Organization Administrator"
+						: null,
+				],
+				(role) => role !== null,
+			)
 
 /** Why adding this scope next to the existing connections may collect a project twice, or null. */
 export function gcpOverlapNote(
@@ -409,14 +415,17 @@ export function gcpOverlapNote(
 	existing: ReadonlyArray<Pick<V2GcpConnector, "scope_type" | "scope_id">>,
 ): string | null {
 	if (scopeType === "project") {
-		return existing.some((connector) => connector.scope_type !== "project")
+		return Arr.some(existing, (connector) => connector.scope_type !== "project")
 			? "If this project sits inside an organization or folder you already connected, it is collected twice."
 			: null
 	}
-	const projects = existing.filter((connector) => connector.scope_type === "project")
+	const projects = Arr.filter(existing, (connector) => connector.scope_type === "project")
 	return projects.length === 0
 		? null
-		: `Projects you already connected (${projects.map((project) => project.scope_id).join(", ")}) are collected twice if they sit inside this ${scopeType}. Disconnect them once this connection receives data.`
+		: `Projects you already connected (${Arr.join(
+				Arr.map(projects, (project) => project.scope_id),
+				", ",
+			)}) are collected twice if they sit inside this ${scopeType}. Disconnect them once this connection receives data.`
 }
 
 /** What the add form holds. */
@@ -441,11 +450,11 @@ export const gcpCreateRequest = (draft: GcpConnectorDraft): Option.Option<V2GcpC
 	const optIns = { logs_enabled: draft.logsEnabled, metrics_enabled: draft.metricsEnabled }
 	return decodeCreateRequest(
 		draft.scopeType === "project"
-			? { scope_type: "project", scope_id: draft.scopeId.trim(), ...optIns }
+			? { scope_type: "project", scope_id: Str.trim(draft.scopeId), ...optIns }
 			: {
 					scope_type: draft.scopeType,
-					scope_id: draft.scopeId.trim(),
-					project_id: draft.hostProjectId.trim(),
+					scope_id: Str.trim(draft.scopeId),
+					project_id: Str.trim(draft.hostProjectId),
 					...optIns,
 				},
 	)
@@ -492,10 +501,13 @@ export const gcpLogFilterChoice = (draft: GcpLogFilterDraft, sinkExists: boolean
 
 /** One line of the apply step's recap: whose application output the new filter forwards. */
 export const gcpApplicationLogsLine = (runtimes: ReadonlyArray<GcpLogRuntime>): string => {
-	const labels = GCP_LOG_RUNTIMES.filter(({ value }) => runtimes.includes(value)).map(({ label }) => label)
+	const labels = Arr.map(
+		Arr.filter(GCP_LOG_RUNTIMES, ({ value }) => runtimes.includes(value)),
+		({ label }) => label,
+	)
 	return labels.length === 0
 		? "Platform logs only, no application output"
-		: `Platform logs and the output of ${labels.join(", ")}`
+		: `Platform logs and the output of ${Arr.join(labels, ", ")}`
 }
 
 const LOG_ROUTER_SCOPE = { project: "project", folder: "folder", organization: "organizationId" } as const

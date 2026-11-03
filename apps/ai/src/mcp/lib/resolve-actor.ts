@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect"
+import { Effect, Option, String as Str } from "effect"
 import { isReservedAgentName } from "@maple/domain/system-agents"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
@@ -10,12 +10,15 @@ import { McpQueryError } from "../tools/types"
  * names are refused so a client cannot masquerade as Maple's own subsystems.
  */
 const agentNameFromMcpClient = (clientName: string): string | null => {
-	const normalized = clientName
-		.trim()
-		.toLowerCase()
-		.replace(/[^a-z0-9._-]+/g, "-")
-		.replace(/^[-._]+|[-._]+$/g, "")
-		.slice(0, 64)
+	const normalized = Str.slice(
+		0,
+		64,
+	)(
+		Str.replace(
+			/^[-._]+|[-._]+$/g,
+			"",
+		)(Str.replace(/[^a-z0-9._-]+/g, "-")(Str.toLowerCase(Str.trim(clientName)))),
+	)
 	if (normalized.length === 0 || isReservedAgentName(normalized)) return null
 	return normalized
 }

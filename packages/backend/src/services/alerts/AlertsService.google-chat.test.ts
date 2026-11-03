@@ -1,4 +1,4 @@
-import { AlertValidationError } from "@maple/domain/http"
+import { AlertValidationError, GoogleChatAlertDestinationConfig } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { AlertsService } from "./AlertsService"
@@ -13,6 +13,10 @@ import {
 	makeWarehouseStub,
 } from "./alerts-service-test-support"
 
+/** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
+const requestBodyText = (body: RequestInit["body"]): string =>
+	body instanceof Uint8Array ? new TextDecoder().decode(body) : typeof body === "string" ? body : ""
+
 const trackedDbs: TestDb[] = []
 
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -25,11 +29,16 @@ describe("AlertsService: Google Chat destinations", () => {
 		return Effect.gen(function* () {
 			const alerts = yield* AlertsService
 			const exit = yield* Effect.exit(
-				alerts.createDestination(asOrgId("org_gchat"), asUserId("user_gchat"), adminRoles, {
-					type: "google-chat",
-					name: "Ops",
-					webhookUrl: "https://chat.google.com/room/AAAAops",
-				}),
+				alerts.createDestination(
+					asOrgId("org_gchat"),
+					asUserId("user_gchat"),
+					adminRoles,
+					new GoogleChatAlertDestinationConfig({
+						type: "google-chat",
+						name: "Ops",
+						webhookUrl: "https://chat.google.com/room/AAAAops",
+					}),
+				),
 			)
 			const error = getError(exit)
 			assert.instanceOf(error, AlertValidationError)
@@ -45,7 +54,7 @@ describe("AlertsService: Google Chat destinations", () => {
 		const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
 			requests.push({
 				url: String(input instanceof Request ? input.url : input),
-				body: String(init?.body ?? ""),
+				body: requestBodyText(init?.body),
 			})
 			return Response.json({ name: "spaces/AAAAops/messages/1" })
 		}) as typeof fetch
@@ -54,11 +63,16 @@ describe("AlertsService: Google Chat destinations", () => {
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_gchat")
 			const userId = asUserId("user_gchat")
-			const destination = yield* alerts.createDestination(orgId, userId, adminRoles, {
-				type: "google-chat",
-				name: "Ops",
-				webhookUrl: WEBHOOK_URL,
-			})
+			const destination = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new GoogleChatAlertDestinationConfig({
+					type: "google-chat",
+					name: "Ops",
+					webhookUrl: WEBHOOK_URL,
+				}),
+			)
 			assert.strictEqual(destination.summary, "Space AAAAops")
 			assert.notInclude(JSON.stringify(destination), "secret-token")
 

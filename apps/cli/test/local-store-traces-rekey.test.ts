@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { Chdb, configureRawTelemetryRetentionDays } from "@maple/local-server/chdb"
 import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
 import type { MigrationModuleContext } from "../src/server/local-store-migration-module"
@@ -12,7 +12,7 @@ import { migrationStep, openStore } from "./local-store-step-test-support"
 
 const DAY_MS = 86_400_000
 const RETENTION_DAYS = 120
-const iso = (ms: number) => new Date(ms).toISOString().replace("T", " ").replace("Z", "")
+const iso = (ms: number) => Str.replace("Z", "")(Str.replace("T", " ")(new Date(ms).toISOString()))
 const SPAN_COLUMNS =
 	"OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, SpanAttributes"
 const span = (atMs: number, n: number) =>
@@ -76,7 +76,10 @@ describeWithChdb("v33 -> v34 traces re-sort", () => {
 			rawTelemetryRetentionDays: RETENTION_DAYS,
 		})
 		db.exec(
-			`INSERT INTO traces (${SPAN_COLUMNS}) VALUES ${ages.map((age, n) => span(nowMs - age * DAY_MS, n)).join(", ")}`,
+			`INSERT INTO traces (${SPAN_COLUMNS}) VALUES ${Arr.join(
+				Arr.map(ages, (age, n) => span(nowMs - age * DAY_MS, n)),
+				", ",
+			)}`,
 		)
 		db.close()
 		;({ migration, context } = migrationStep(STEP_ID, sourceDataDir, targetDataDir, nowMs))
@@ -105,7 +108,7 @@ describeWithChdb("v33 -> v34 traces re-sort", () => {
 		}))
 		expect(after.snapshot).toEqual(before)
 		expect(after.table?.sortingKey).toBe("OrgId, ServiceName, toStartOfFiveMinutes(Timestamp), TraceId")
-		expect(after.table?.indexes.split(",")).toContain("idx_span_name")
+		expect(Str.split(",")(after.table?.indexes)).toContain("idx_span_name")
 		expect(after.table?.definition).toContain(`toIntervalDay(${RETENTION_DAYS})`)
 	})
 

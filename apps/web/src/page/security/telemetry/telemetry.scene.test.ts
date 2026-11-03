@@ -1,8 +1,8 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import {
 	catchAllExposureOf,
 	emptyExposureOf,
@@ -12,6 +12,7 @@ import {
 } from "../../../lab/security-telemetry-fixture"
 import { AppRoute, hrefOf } from "../../../route"
 import type { PageContext } from "../../contract"
+import { breadcrumbsOf, codeCrumbs } from "../kit/layout"
 import { runtimeEntries } from "./derive"
 import { Message, type Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -26,28 +27,36 @@ const NOW = Date.UTC(2026, 9, 31, 14, 32)
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const exposureRoute = AppRoute.SecurityExposure()
 const runtimesRoute = AppRoute.SecurityRuntimes()
 
 const withExposure = (data = exposureOf(NOW)): Model => {
 	const entered = init(exposureRoute, context).model
-	return [
-		Message.ReadClock({ nowMs: NOW }),
-		Message.CompletedFetchExposure({ key: entered.exposure.key ?? "", result: Result.succeed(data) }),
-	].reduce((model, message) => pageUpdate(model, message).model, entered)
+	return Arr.reduce(
+		[
+			Message.ReadClock({ nowMs: NOW }),
+			Message.CompletedFetchExposure({ key: entered.exposure.key ?? "", result: Result.succeed(data) }),
+		],
+		entered,
+		(model, message) => pageUpdate(model, message).model,
+	)
 }
 
 const withRuntimes = (): Model => {
 	const entered = init(runtimesRoute, context).model
-	return [
-		Message.ReadClock({ nowMs: NOW }),
-		Message.CompletedFetchRuntimes({
-			key: entered.runtimes.key ?? "",
-			result: Result.succeed(runtimesOf(NOW)),
-		}),
-	].reduce((model, message) => pageUpdate(model, message).model, entered)
+	return Arr.reduce(
+		[
+			Message.ReadClock({ nowMs: NOW }),
+			Message.CompletedFetchRuntimes({
+				key: entered.runtimes.key ?? "",
+				result: Result.succeed(runtimesOf(NOW)),
+			}),
+		],
+		entered,
+		(model, message) => pageUpdate(model, message).model,
+	)
 }
 
 describe("security telemetry tabs", () => {
@@ -71,6 +80,39 @@ describe("security telemetry tabs", () => {
 			expectView(text("Probe requests")).toBeAbsent(),
 			expectView(text("No scanner traffic in the last 7 days")).toBeAbsent(),
 		)
+	})
+
+	test("the rail links every source to its page and marks the open one", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withRuntimes()),
+			expectView(role("navigation", { name: "Security sources" })).toExist(),
+			expectView(role("link", { name: "Code security audit" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SecurityCode()),
+			),
+			expectView(role("link", { name: "Dependencies" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SecurityDependencies({ search: {} })),
+			),
+			expectView(role("link", { name: "Exposure" })).toHaveAttr("href", hrefOf(exposureRoute)),
+			expectView(role("link", { name: "Runtimes" })).toHaveAttr("aria-current", "page"),
+			expectView(role("link", { name: "Exposure" })).not.toHaveAttr("aria-current", "page"),
+			expectView(role("heading", { name: "Runtimes", level: 1 })).toExist(),
+		)
+	})
+
+	test("every Security trail links all but its last crumb, the page itself", () => {
+		const trails = [
+			breadcrumbsOf("runtimes"),
+			breadcrumbsOf("code"),
+			breadcrumbsOf("code", "findings"),
+			[...codeCrumbs({ label: "Runs", href: "/security/code/runs" }), { label: "Run 7c1e04b2" }],
+		]
+		for (const trail of trails) {
+			expect(Arr.every(trail.slice(0, -1), (entry) => entry.href !== undefined)).toBe(true)
+			expect(trail.at(-1)?.href).toBeUndefined()
+		}
 	})
 
 	test("no scanner traffic shows the calm empty state", () => {
@@ -115,7 +157,10 @@ describe("security telemetry tabs", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(
-				withExposure({ ...data, exposed: data.exposed.filter((row) => row.service === "web-app") }),
+				withExposure({
+					...data,
+					exposed: Arr.filter(data.exposed, (row) => row.service === "web-app"),
+				}),
 			),
 			expectView(text(/answered with a success/)).toBeAbsent(),
 			expectView(text("1 likely catch-all route")).toExist(),
@@ -168,7 +213,7 @@ describe("security telemetry tabs", () => {
 		expect(runtimes._tag).toBe("Success")
 		if (runtimes._tag !== "Success") return
 		// A critical CVE outranks an end-of-life date.
-		expect(runtimeEntries(runtimes.data).map((entry) => entry.row.service)).toEqual([
+		expect(Arr.map(runtimeEntries(runtimes.data), (entry) => entry.row.service)).toEqual([
 			"payments",
 			"checkout-api",
 			"scraper",
@@ -213,7 +258,7 @@ describe("security telemetry tabs", () => {
 			expectView(text(/release line is end of life/)).toExist(),
 			// Python's only advisory is medium: listed in the table, not as an upgrade to make now.
 			expectView(role("link", { name: "CVE-2025-0938" })).toBeAbsent(),
-			expectView(text("1 medium")).toExist(),
+			expectView(text("Medium")).toExist(),
 			expectView(text("None known")).toExist(),
 			// Java's advisory read failed; Python 3.13 was past the read budget.
 			expectView(text("Unavailable")).toExist(),

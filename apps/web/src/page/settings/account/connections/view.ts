@@ -1,15 +1,17 @@
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../../ui/button"
-import { confirmDialog } from "../../../../ui/confirm-dialog"
-import { badge } from "../../../../ui/display"
-import { icon } from "../../../../ui/icon"
-import { settingRow } from "../../../../ui/setting-row"
+import { button } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { settingRow } from "@maple/views/ui/setting-row"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
 import { settingsSection, settingsSections } from "../../kit/section"
 import type { AccountUser } from "../user"
 import { Message, type Model } from "./model"
 import { PROVIDERS, providerOf } from "./update"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -25,15 +27,12 @@ const providerRow = (h: H, model: Model, user: AccountUser, provider: (typeof PR
 		ids,
 		className: "p-4",
 		icon: h.div([h.Class("text-muted-foreground")], [icon(h, provider.icon, { size: 18 })]),
-		label: h.span(
-			[h.Class("flex items-center gap-1.5")],
-			[
-				provider.label,
-				...(account !== undefined && !account.isVerified
-					? [badge(h, { variant: "outline", className: "text-muted-foreground" }, ["Incomplete"])]
-					: []),
-			],
-		),
+		label: hstack(h, { gap: "1.5", as: "span" }, [
+			provider.label,
+			...(account !== undefined && !account.isVerified
+				? [badge(h, { variant: "outline", className: "text-muted-foreground" }, ["Incomplete"])]
+				: []),
+		]),
 		description: h.span(
 			[h.Class("block truncate")],
 			[
@@ -81,7 +80,7 @@ const providerRow = (h: H, model: Model, user: AccountUser, provider: (typeof PR
 						button(
 							h,
 							{
-								variant: "ghost",
+								variant: "outline",
 								size: "sm",
 								isDisabled: isBusy,
 								attributes: [
@@ -115,7 +114,7 @@ const loaded = (h: H, model: Model, user: AccountUser): Html => {
 			[
 				h.div(
 					[h.Class("divide-y")],
-					PROVIDERS.map((provider) => providerRow(h, model, user, provider)),
+					Arr.map(PROVIDERS, (provider) => providerRow(h, model, user, provider)),
 				),
 			],
 		),
@@ -132,7 +131,6 @@ const loaded = (h: H, model: Model, user: AccountUser): Html => {
 	])
 }
 
-export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>(
-	(model, _inputs, h) =>
-		!model.isLoaded || model.user === null ? accountSectionSkeleton(h) : loaded(h, model, model.user),
+export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>((model, _inputs, h) =>
+	!model.isLoaded || model.user === null ? accountSectionSkeleton(h) : loaded(h, model, model.user),
 )

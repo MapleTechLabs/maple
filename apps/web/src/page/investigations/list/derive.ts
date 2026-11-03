@@ -9,6 +9,7 @@ import {
 import { AsyncData } from "foldkit"
 import type { InvestigationsSearch } from "../../../route/search"
 import type { InvestigationPage, Model } from "./model"
+import { Array as Arr } from "effect"
 
 export type Search = typeof InvestigationsSearch.Type
 export type HubView = "active" | "history"
@@ -18,13 +19,14 @@ export const viewOf = (search: Search): HubView => search.view ?? "active"
 const ACTIVE: ReadonlyArray<V2Investigation["status"]> = ["investigating", "diagnosed"]
 export const isActive = (investigation: V2Investigation) => ACTIVE.includes(investigation.status)
 
-const pageOf = (slot: Model["firstPage"]): InvestigationPage | null => AsyncData.getOrElse(slot.data, () => null)
+const pageOf = (slot: Model["firstPage"]): InvestigationPage | null =>
+	AsyncData.getOrElse(slot.data, () => null)
 
 /** The first page and every "Load more" page, deduped by id. */
 export const allOf = (model: Model): ReadonlyArray<V2Investigation> => {
 	const byId = new Map<string, V2Investigation>()
-	;[model.firstPage, ...model.morePages.map((more) => more.page)].forEach((slot) =>
-		(pageOf(slot)?.data ?? []).forEach((investigation) => {
+	Arr.forEach([model.firstPage, ...Arr.map(model.morePages, (more) => more.page)], (slot) =>
+		Arr.forEach(pageOf(slot)?.data ?? [], (investigation) => {
 			if (!byId.has(investigation.id)) byId.set(investigation.id, investigation)
 		}),
 	)
@@ -47,8 +49,11 @@ export const visibleOf = (model: Model, all: ReadonlyArray<V2Investigation>) => 
 	const { search } = model
 	const view = viewOf(search)
 	const query = search.q ?? ""
-	const inView = all.filter((investigation) => (view === "active" ? isActive(investigation) : !isActive(investigation)))
-	const filtered = inView.filter(
+	const inView = Arr.filter(all, (investigation) =>
+		view === "active" ? isActive(investigation) : !isActive(investigation),
+	)
+	const filtered = Arr.filter(
+		inView,
 		(investigation) =>
 			(search.kind === undefined || investigationKindKey(investigation.subject) === search.kind) &&
 			matchesQuery(investigation, query),
@@ -60,11 +65,17 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 /** `TriageStrip`'s three numbers, from the fetched page. */
 export const triageStatsOf = (all: ReadonlyArray<V2Investigation>, nowMs: number) => {
-	const running = all.filter((entry) => entry.status === "investigating")
-	const review = all.filter((entry) => entry.status === "diagnosed")
+	const running = Arr.filter(all, (entry) => entry.status === "investigating")
+	const review = Arr.filter(all, (entry) => entry.status === "diagnosed")
 	const cutoff = nowMs - DAY_MS
-	const resolved = all.filter((entry) => entry.status === "resolved" && toEpochMs(entry.updated_at) >= cutoff)
-	const critical = review.filter((entry) => (entry.severity ?? entry.snapshot.severity) === "critical").length
+	const resolved = Arr.filter(
+		all,
+		(entry) => entry.status === "resolved" && toEpochMs(entry.updated_at) >= cutoff,
+	)
+	const critical = Arr.filter(
+		review,
+		(entry) => (entry.severity ?? entry.snapshot.severity) === "critical",
+	).length
 	return { running: running.length, review: review.length, resolved: resolved.length, critical }
 }
 

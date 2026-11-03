@@ -1,5 +1,5 @@
 import { Resolver } from "node:dns/promises"
-import { Clock, Context, Duration, Effect, Layer, Result, Schema } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Result, Schema, Array as Arr, String as Str } from "effect"
 import type { UptimeDnsConfig, UptimeDnsRecordType } from "@maple/domain/uptime"
 import { isPrivateAddress, parseExternalUrl } from "@maple/safe-fetch"
 import { errorCodeOf, failed, formatSeconds, type ProbeOutcome, succeeded } from "./UptimeProbe"
@@ -30,9 +30,13 @@ const query = (resolver: Resolver, hostname: string, recordType: UptimeDnsRecord
 		case "NS":
 			return resolver.resolveNs(hostname)
 		case "MX":
-			return resolver.resolveMx(hostname).then((records) => records.map((record) => record.exchange))
+			return resolver
+				.resolveMx(hostname)
+				.then((records) => Arr.map(records, (record) => record.exchange))
 		case "TXT":
-			return resolver.resolveTxt(hostname).then((records) => records.map((chunks) => chunks.join("")))
+			return resolver
+				.resolveTxt(hostname)
+				.then((records) => Arr.map(records, (chunks) => Arr.join(chunks, "")))
 	}
 }
 
@@ -60,18 +64,18 @@ const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/u
 
 /** `2001:DB8:0::1` and `2001:db8::1` are one address: compare the URL parser's canonical spelling. */
 const canonicalIpv6 = (value: string): string => {
-	const bare = value.replace(/^\[|\]$/gu, "")
-	return URL.canParse(`http://[${bare}]/`) ? new URL(`http://[${bare}]/`).hostname : bare.toLowerCase()
+	const bare = Str.replace(/^\[|\]$/gu, "")(value)
+	return URL.canParse(`http://[${bare}]/`) ? new URL(`http://[${bare}]/`).hostname : Str.toLowerCase(bare)
 }
 
 /** Addresses compare as addresses, names case-insensitively without the root dot, TXT exactly. */
 const normalize = (recordType: UptimeDnsRecordType, value: string): string => {
-	const trimmed = value.trim()
+	const trimmed = Str.trim(value)
 	if (recordType === "A") return IPV4.test(trimmed) ? trimmed.split(".").map(Number).join(".") : trimmed
 	if (recordType === "AAAA") return canonicalIpv6(trimmed)
 	if (!NAME_TYPES.has(recordType)) return trimmed
-	const lower = trimmed.toLowerCase()
-	return lower.endsWith(".") ? lower.slice(0, -1) : lower
+	const lower = Str.toLowerCase(trimmed)
+	return Str.endsWith(".")(lower) ? Str.slice(0, -1)(lower) : lower
 }
 
 const describeQueryFailure = (config: DnsProbeConfig, error: DnsQueryError): string => {
@@ -100,7 +104,7 @@ const isQuotable = (recordType: UptimeDnsRecordType, answer: string): boolean =>
 		case "CNAME":
 		case "MX":
 		case "NS":
-			return Result.isSuccess(parseExternalUrl(`http://${answer.trim().replace(/\.$/u, "")}/`))
+			return Result.isSuccess(parseExternalUrl(`http://${Str.replace(/\.$/u, "")(Str.trim(answer))}/`))
 	}
 }
 
@@ -110,7 +114,7 @@ const describeMismatch = (
 	expected: string,
 	answers: ReadonlyArray<string>,
 ): string => {
-	const quotable = answers.filter((answer) => isQuotable(config.recordType, answer))
+	const quotable = Arr.filter(answers, (answer) => isQuotable(config.recordType, answer))
 	if (quotable.length === 0) {
 		const records = answers.length === 1 ? "record" : "records"
 		return `${config.hostname} resolved to ${answers.length} ${config.recordType} ${records}, none matched ${expected}`
@@ -118,7 +122,7 @@ const describeMismatch = (
 	const listed = quotable.slice(0, MAX_LISTED_ANSWERS)
 	const unlisted = answers.length - listed.length
 	const more = unlisted > 0 ? ` and ${unlisted} more` : ""
-	return `${config.recordType} records for ${config.hostname} are ${listed.join(", ")}${more}, expected ${expected}`
+	return `${config.recordType} records for ${config.hostname} are ${Arr.join(listed, ", ")}${more}, expected ${expected}`
 }
 
 export interface UptimeDnsProbeApi {

@@ -6,6 +6,8 @@
 		"test": "vitest run",
 		"verify:image": "bun scripts/verify-image.ts",
 		"verify:executor-probe": "bun scripts/verify-executor-probe.ts",
+		"verify:executor": "bun scripts/verify-executor.ts",
+		"executor:local": "bun scripts/executor-local.ts",
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {

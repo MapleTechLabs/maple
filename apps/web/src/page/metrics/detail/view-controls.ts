@@ -4,19 +4,19 @@ import {
 	tokenizeWhereClause,
 	WHERE_CLAUSE_TOKEN_COLOR,
 } from "../../../lib/query-builder/where-clause-highlight"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData as FoldkitAsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import type * as Combobox from "../../../ui/combobox"
-import { view as comboboxView } from "../../../ui/combobox-view"
-import * as CopyButton from "../../../ui/copy-button"
-import { icon } from "../../../ui/icon"
-import { input } from "../../../ui/input"
-import { panel } from "../../../ui/panel"
-import type * as Select from "../../../ui/select"
-import { view as selectView } from "../../../ui/select-view"
-import { textarea } from "../../../ui/textarea"
+import { button } from "@maple/views/ui/button"
+import type * as Combobox from "@maple/views/ui/combobox"
+import { view as comboboxView } from "@maple/views/ui/combobox-view"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { icon } from "@maple/views/ui/icon"
+import { input } from "@maple/views/ui/input"
+import { panel } from "@maple/views/ui/panel"
+import type * as Select from "@maple/views/ui/select"
+import { view as selectView } from "@maple/views/ui/select-view"
+import { textarea } from "@maple/views/ui/textarea"
 import { SERVICE_KEY } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -25,50 +25,49 @@ import { whereAutocompleteOf } from "./update-where"
 import { isOpenOf } from "./where-editor"
 import { suggestionListbox, whereKeyHandler } from "../../kit/where-autocomplete-view"
 import { MountKeepWhereFocus, MountWhereCaret } from "./command"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `MetricGraduationActions` and `MetricQueryControls` (components/metrics/).
 
 type H = HtmlBuilder<Message>
 
 const label = (h: H, text: string): Html =>
-	h.span([h.Class("text-xs text-muted-foreground shrink-0")], [text])
+	typography(h, { size: "xs", tone: "muted", className: "shrink-0" }, [text])
 
 /** The explorer's way out: a dashboard widget, an alert rule, or a shared link. */
 export const graduationActions = (h: H, model: Model): Html =>
 	h.div(
 		[h.Class("flex justify-end")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							attributes: [h.OnClick(Message.ClickedAddToDashboard())],
-						},
-						[icon(h, "GridSquareCirclePlusIcon"), "Add to dashboard"],
-					),
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							attributes: [h.OnClick(Message.ClickedCreateAlert())],
-						},
-						[icon(h, "BellIcon"), "Create alert"],
-					),
-					CopyButton.copyButton(h, {
-						status: model.copyLink.status,
-						label: "Link",
-						idleLabel: "Copy link",
-						idleIcon: "LinkIcon",
+			hstack(h, { gap: "2" }, [
+				button(
+					h,
+					{
 						variant: "outline",
-						onClick: Message.ClickedCopyLink(),
-					}),
-				],
-			),
+						size: "sm",
+						attributes: [h.OnClick(Message.ClickedAddToDashboard())],
+					},
+					[icon(h, "GridSquareCirclePlusIcon"), "Add to dashboard"],
+				),
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						attributes: [h.OnClick(Message.ClickedCreateAlert())],
+					},
+					[icon(h, "BellIcon"), "Create alert"],
+				),
+				CopyButton.copyButton(h, {
+					status: model.copyLink.status,
+					label: "Link",
+					idleLabel: "Copy link",
+					idleIcon: "LinkIcon",
+					variant: "outline",
+					onClick: Message.ClickedCopyLink(),
+				}),
+			]),
 		],
 	)
 
@@ -137,7 +136,7 @@ const whereEditor = (h: H, model: Model): Html => {
 											"px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] break-words whitespace-pre-wrap",
 										),
 									],
-									tokenizeWhereClause(model.whereInput).map((token) =>
+									Arr.map(tokenizeWhereClause(model.whereInput), (token) =>
 										h.span(
 											[h.Style({ color: WHERE_CLAUSE_TOKEN_COLOR[token.type] })],
 											[token.text],
@@ -157,7 +156,7 @@ const whereEditor = (h: H, model: Model): Html => {
 const scopedKeys = (model: Model): ReadonlyArray<string> =>
 	Option.match(FoldkitAsyncData.getData(model.attributeKeys.data), {
 		onNone: () => [],
-		onSome: (rows) => rows.map((row) => row.attributeKey),
+		onSome: (rows) => Arr.map(rows, (row) => row.attributeKey),
 	})
 
 /** The structured query row: aggregation, where, group-by, step. */
@@ -174,14 +173,13 @@ export const queryControls = (
 			view: selectView,
 			toParentMessage: toAggregation,
 			viewInputs: {
-				entries: getMetricsAggregations(metricType, isMonotonic).map((option) => ({
+				entries: Arr.map(getMetricsAggregations(metricType, isMonotonic), (option) => ({
 					_tag: "Item" as const,
 					item: { value: option.value, label: option.label },
 				})),
 				size: "sm",
 				className: "w-28 text-xs",
-				toView: (parts) =>
-					h.div([h.Class("flex items-center gap-2")], [label(h, "Aggregate"), ...parts]),
+				toView: (parts) => hstack(h, { gap: "2" }, [label(h, "Aggregate"), ...parts]),
 			},
 		}),
 		h.div(
@@ -194,33 +192,33 @@ export const queryControls = (
 			view: comboboxView,
 			toParentMessage: toGroupBy,
 			viewInputs: {
-				items: [GROUP_BY_NONE_LABEL, SERVICE_KEY, ...scopedKeys(model).map((key) => `attr.${key}`)],
+				items: [
+					GROUP_BY_NONE_LABEL,
+					SERVICE_KEY,
+					...Arr.map(scopedKeys(model), (key) => `attr.${key}`),
+				],
 				placeholder: "Search fields…",
 				emptyText: "",
 				className: "h-8 w-52 text-xs",
-				toView: ({ field, rest }) =>
-					h.div([h.Class("flex items-center gap-2")], [label(h, "Group by"), field, ...rest]),
+				toView: ({ field, rest }) => hstack(h, { gap: "2" }, [label(h, "Group by"), field, ...rest]),
 			},
 		}),
-		h.div(
-			[h.Class("flex items-center gap-2")],
-			[
-				label(h, "Every"),
-				input(h, {
-					id: "metric-step-interval",
-					className: "h-8 w-20 text-xs",
-					attributes: [
-						h.AriaLabel("Step interval"),
-						h.Placeholder("Auto"),
-						h.Value(model.stepInput),
-						h.OnInput((value) => Message.ChangedStepInput({ value })),
-						h.OnBlur(Message.CommittedStepInput()),
-						h.OnKeyDownPreventDefault((key) =>
-							key === "Enter" ? Option.some(Message.CommittedStepInput()) : Option.none(),
-						),
-					],
-				}),
-				h.span([h.Class("text-xs text-muted-foreground")], ["sec"]),
-			],
-		),
+		hstack(h, { gap: "2" }, [
+			label(h, "Every"),
+			input(h, {
+				id: "metric-step-interval",
+				className: "h-8 w-20 text-xs",
+				attributes: [
+					h.AriaLabel("Step interval"),
+					h.Placeholder("Auto"),
+					h.Value(model.stepInput),
+					h.OnInput((value) => Message.ChangedStepInput({ value })),
+					h.OnBlur(Message.CommittedStepInput()),
+					h.OnKeyDownPreventDefault((key) =>
+						key === "Enter" ? Option.some(Message.CommittedStepInput()) : Option.none(),
+					),
+				],
+			}),
+			typography(h, { size: "xs", tone: "muted" }, ["sec"]),
+		]),
 	])

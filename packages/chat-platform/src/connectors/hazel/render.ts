@@ -7,6 +7,7 @@
  */
 import { chatActionControlId, type ChatActionToken } from "../../action-token"
 import type { ChatAlertBlock, ChatBlock, ChatToolActivity } from "../../render/blocks"
+import { Array as Arr, String as Str } from "effect"
 
 /** A button on an embed. Pressing it sends the bot an `interaction.create` carrying `id`. */
 export interface HazelEmbedAction {
@@ -82,7 +83,7 @@ export const EMPTY_CONTENT = "—"
  * channel; a model quoting either, or a log line holding one, must not notify anybody. A zero-width
  * space after the `@` leaves the text readable and the markup inert.
  */
-export const defuseMentions = (text: string): string => text.replaceAll("@[", "@​[")
+export const defuseMentions = (text: string): string => Str.replaceAll("@[", "@​[")(text)
 
 /** What one message's worth of blocks becomes. */
 export const renderHazelMessage = (blocks: ReadonlyArray<ChatBlock>): HazelMessageBody => {
@@ -118,7 +119,8 @@ export const renderHazelLive = (blocks: ReadonlyArray<ChatBlock>): HazelLiveBody
 	const last = blocks.at(-1)
 	const failure = last?.kind === "notice" && last.tone === "error" ? last : null
 	const pending = blocks.find((block) => block.kind === "notice" && block.tone === "pending")
-	const shown = blocks.filter(
+	const shown = Arr.filter(
+		blocks,
 		(block) => block !== failure && !(block.kind === "notice" && block.tone === "pending"),
 	)
 	return {
@@ -126,7 +128,9 @@ export const renderHazelLive = (blocks: ReadonlyArray<ChatBlock>): HazelLiveBody
 		text: renderParts(shown).content,
 		error: failure === null ? null : defuseMentions(failure.text),
 		loading:
-			pending?.kind === "notice" ? { text: defuseMentions(pending.text.replace(/…$/u, "")) } : null,
+			pending?.kind === "notice"
+				? { text: defuseMentions(Str.replace(/…$/u, "")(pending.text)) }
+				: null,
 	}
 }
 
@@ -161,7 +165,8 @@ const renderParts = (blocks: ReadonlyArray<ChatBlock>): HazelMessageBody => {
 				break
 			}
 			case "activity":
-				if (block.tools.length > 0) lines.push(`_${block.tools.map(toolLabel).join(" · ")}_`)
+				if (block.tools.length > 0)
+					lines.push(`_${Arr.join(Arr.map(block.tools, toolLabel), " · ")}_`)
 				break
 			case "approval": {
 				const { outcome } = block
@@ -202,8 +207,8 @@ const renderParts = (blocks: ReadonlyArray<ChatBlock>): HazelMessageBody => {
 	}
 
 	return {
-		content: clamp(defuseMentions(lines.join("\n\n")), MAX_CONTENT_CHARS),
-		embeds: embeds.map(defuseEmbed),
+		content: clamp(defuseMentions(Arr.join(lines, "\n\n")), MAX_CONTENT_CHARS),
+		embeds: Arr.map(embeds, defuseEmbed),
 	}
 }
 
@@ -214,7 +219,7 @@ const defuseEmbed = (embed: HazelEmbed): HazelEmbed => ({
 	...(embed.fields === undefined
 		? undefined
 		: {
-				fields: embed.fields.map((field) => ({
+				fields: Arr.map(embed.fields, (field) => ({
 					...field,
 					name: defuseMentions(field.name),
 					value: defuseMentions(field.value),
@@ -226,23 +231,36 @@ const defuseEmbed = (embed: HazelEmbed): HazelEmbed => ({
 /** An alert as a card: the title linking into Maple, the summary, the facts, the chart, a footer. */
 const alertEmbed = (block: ChatAlertBlock): HazelEmbed => {
 	const primary = block.links.find((link) => link.primary) ?? block.links[0]
-	const links = block.links.map((link) => `[${link.label}](${link.url})`).join(" · ")
-	const fields = [
-		...block.fields.map((field) => ({ name: field.label, value: field.value, inline: true })),
-		...(links === "" ? [] : [{ name: "Links", value: links, inline: false }]),
-	]
-		.filter((field) => field.name !== "" && field.value !== "")
-		.slice(0, MAX_EMBED_FIELDS)
-		.map((field) => ({
+	const links = Arr.join(
+		Arr.map(block.links, (link) => `[${link.label}](${link.url})`),
+		" · ",
+	)
+	const fields = Arr.map(
+		Arr.filter(
+			[
+				...Arr.map(block.fields, (field) => ({
+					name: field.label,
+					value: field.value,
+					inline: true,
+				})),
+				...(links === "" ? [] : [{ name: "Links", value: links, inline: false }]),
+			],
+			(field) => field.name !== "" && field.value !== "",
+		).slice(0, MAX_EMBED_FIELDS),
+		(field) => ({
 			name: clamp(field.name, MAX_FIELD_NAME_CHARS),
 			value: clamp(field.value, MAX_FIELD_VALUE_CHARS),
 			inline: field.inline,
-		}))
-	const footer = block.footer.map((part) => part.replaceAll("`", "")).join("  ·  ")
+		}),
+	)
+	const footer = Arr.join(
+		Arr.map(block.footer, (part) => Str.replaceAll("`", "")(part)),
+		"  ·  ",
+	)
 	return {
 		title: clamp(block.title, MAX_EMBED_TITLE_CHARS),
 		...(primary === undefined ? undefined : { url: primary.url }),
-		color: Number.parseInt(block.color.slice(1), 16),
+		color: Number.parseInt(Str.slice(1)(block.color), 16),
 		...(block.summary === ""
 			? undefined
 			: { description: clamp(block.summary, MAX_EMBED_DESCRIPTION_CHARS) }),
@@ -254,7 +272,7 @@ const alertEmbed = (block: ChatAlertBlock): HazelEmbed => {
 }
 
 const clamp = (text: string, max: number): string =>
-	text.length <= max ? text : `${text.slice(0, max - 1)}…`
+	text.length <= max ? text : `${Str.slice(0, max - 1)(text)}…`
 
 const ENTITY_LABELS = {
 	trace: "Trace",

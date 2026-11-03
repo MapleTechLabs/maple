@@ -4,7 +4,7 @@ import { AsyncData, type Update } from "foldkit"
 import { type PageContext, PageOutMessage, replaceParams, withParams } from "../contract"
 import { FetchNextPage } from "./command"
 import { nextCursor } from "./fetch"
-import { canExtend } from "../../data/slot"
+import { canExtend } from "@maple/views/data/keyed"
 import { boundsOf } from "./load"
 import type { Message } from "./message"
 import type { Model, SessionRow } from "./model"
@@ -68,7 +68,6 @@ export const appendPage = (model: Model, key: string, page: ReadonlyArray<Sessio
 				...model.sessions,
 				key,
 				data: AsyncData.Success({ data: { pages: [...current.pages, page], hasNextPage: nextCursor(page) !== undefined } }),
-				isPlaceholder: false,
 			},
 		}),
 	})

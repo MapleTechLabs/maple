@@ -371,11 +371,9 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				action: string,
 			) {
 				if (isOrgAdmin(roles)) return
-				return yield* Effect.fail(
-					new OrganizationForbiddenError({
-						message: `Only org admins can ${action}`,
-					}),
-				)
+				return yield* new OrganizationForbiddenError({
+					message: `Only org admins can ${action}`,
+				})
 			})
 
 			const purgeOrgScopedRows = Effect.fn("OrganizationService.purgeOrgScopedRows")(function* (
@@ -505,9 +503,8 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 					})
 				}
 				// An organization that predates regions has data on US already, plan or not.
-				if (
-					!organizationRegionOpen(org.publicMetadata, org.createdAt, yield* Clock.currentTimeMillis)
-				) {
+				const nowMs = yield* Clock.currentTimeMillis
+				if (!organizationRegionOpen(org.publicMetadata, org.createdAt, nowMs)) {
 					return yield* new OrganizationRegionLockedError({
 						message: "Only a new organization can choose its data region.",
 					})

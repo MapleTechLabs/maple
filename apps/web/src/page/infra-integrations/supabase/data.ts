@@ -6,9 +6,9 @@ import {
 	getSupabaseProjectCallers,
 	getSupabaseProjectInsights,
 } from "@maple/web-data/warehouse/supabase-insights"
-import { Effect, Result } from "effect"
+import { Effect, Result, Array as Arr } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 import type { SupabaseFleetInsights, SupabaseProjectRow, SupabaseProjectTimeseriesRow } from "./model"
 
@@ -19,8 +19,10 @@ type BucketedProjectWindow = ProjectWindow & { readonly bucketSeconds: number }
 
 export const loadSupabaseProjects = (window: TimeWindow) =>
 	getSupabaseProjects({ data: window }).pipe(
-		Effect.map((response): ReadonlyArray<SupabaseProjectRow> => response.projects),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<SupabaseProjectRow> => response.projects,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -33,8 +35,10 @@ export const loadSupabaseStatus = (refresh: boolean) =>
 
 export const loadSupabaseTimeseries = (input: BucketedProjectWindow) =>
 	getSupabaseProjectTimeseries({ data: { ...input } }).pipe(
-		Effect.map((response): ReadonlyArray<SupabaseProjectTimeseriesRow> => response.buckets),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<SupabaseProjectTimeseriesRow> => response.buckets,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -65,7 +69,7 @@ export const loadSupabaseFleetInsights = (refs: ReadonlyArray<string>) =>
 		{ concurrency: "unbounded" },
 	).pipe(
 		Effect.map((reads): SupabaseFleetInsights => ({
-			insights: reads.flatMap(({ result }) => (Result.isSuccess(result) ? [result.success] : [])),
-			failedRefs: reads.flatMap(({ ref, result }) => (Result.isFailure(result) ? [ref] : [])),
+			insights: Arr.flatMap(reads, ({ result }) => (Result.isSuccess(result) ? [result.success] : [])),
+			failedRefs: Arr.flatMap(reads, ({ ref, result }) => (Result.isFailure(result) ? [ref] : [])),
 		})),
 	)

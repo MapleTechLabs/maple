@@ -3,8 +3,14 @@ import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { OrgId } from "@maple/domain/http"
-import { Sandbox, SandboxExited, SandboxOutput, SandboxStarted } from "@maple/backend/sandbox/contract"
-import { Duration, Effect, Layer, Schema, Stream } from "effect"
+import {
+	Sandbox,
+	SandboxExited,
+	SandboxOutput,
+	SandboxStarted,
+	SandboxResourceUse,
+} from "@maple/backend/sandbox/contract"
+import { Duration, Effect, Layer, Schema, Stream, String as Str } from "effect"
 import { gitPathspec, RepoSandboxService } from "./RepoSandboxService"
 import { IMPLEMENTATION } from "./CloudflareRepoSandbox"
 
@@ -54,7 +60,7 @@ const localSandbox = (repo: string, seen: string[][] = []): Layer.Layer<Sandbox>
 			Stream.unwrap(
 				Effect.sync(() => {
 					seen.push([request.command, ...request.args])
-					const cwd = request.cwd === "/workspace" ? repo : `${repo}/${request.cwd.slice(11)}`
+					const cwd = request.cwd === "/workspace" ? repo : `${repo}/${Str.slice(11)(request.cwd)}`
 					let stdout = ""
 					let exitCode = 0
 					try {
@@ -85,11 +91,11 @@ const localSandbox = (repo: string, seen: string[][] = []): Layer.Layer<Sandbox>
 							eventVersion: 1,
 							implementation: IMPLEMENTATION,
 							exitCode,
-							resourceUse: {
+							resourceUse: new SandboxResourceUse({
 								wallTime: Duration.millis(1),
 								stdoutBytes: Buffer.byteLength(stdout),
 								stderrBytes: 0,
-							} as ConstructorParameters<typeof SandboxExited>[0]["resourceUse"],
+							}) as ConstructorParameters<typeof SandboxExited>[0]["resourceUse"],
 							artifacts: [],
 						}),
 					])
@@ -244,7 +250,7 @@ describe("the git commands the tools build, against a real repository", () => {
 				{ path: "escape.txt", startLine: 1, endLine: 10 },
 			)
 			assert.notStrictEqual(result.exitCode, 0)
-			assert.notInclude(result.stdout, SENTINEL_BODY.trim())
+			assert.notInclude(result.stdout, Str.trim(SENTINEL_BODY))
 		}).pipe(Effect.provide(overRepo())),
 	)
 

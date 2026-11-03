@@ -10,6 +10,7 @@ import { fold } from "./derive"
 import type { FlowSpec } from "./flow"
 import type { Model } from "./model"
 import { parsePatternList } from "./planetscale"
+import { Array as Arr } from "effect"
 
 // PlanetScale's place in the connect flow: authorize (and optionally a metrics token), pick the
 // organization and branches, then Go live.
@@ -27,7 +28,7 @@ export const inventoryCountsOf = (model: Model): InventoryCounts | null => {
 	return AsyncData.isSuccess(inventory) || AsyncData.isRefreshing(inventory)
 		? {
 				databases: inventory.data.databases.length,
-				branches: inventory.data.databases.reduce((sum, db) => sum + db.branches.length, 0),
+				branches: Arr.reduce(inventory.data.databases, 0, (sum, db) => sum + db.branches.length),
 			}
 		: null
 }
@@ -37,7 +38,7 @@ export const isAccessBlocked = (status: V2PlanetScaleIntegration): boolean =>
 	status.revoked_at !== null || status.detected_permissions?.readDatabases === false
 
 const sameList = (a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean =>
-	a.length === b.length && a.every((value, index) => value === b[index])
+	a.length === b.length && Arr.every(a, (value, index) => value === b[index])
 
 /** The picker differs from the saved binding, so Continue waits for Save. */
 export const hasUnsavedChoice = (model: Model, status: V2PlanetScaleIntegration): boolean => {
@@ -59,11 +60,11 @@ export const matchedBranches = (
 ): Readonly<{ kept: number; total: number }> | null => {
 	const inventory = model.statuses.planetscaleDatabases.data
 	if (!AsyncData.isSuccess(inventory) && !AsyncData.isRefreshing(inventory)) return null
-	const names = inventory.data.databases.flatMap((db) => db.branches.map((branch) => branch.name))
+	const names = Arr.flatMap(inventory.data.databases, (db) => Arr.map(db.branches, (branch) => branch.name))
 	const include = status.scrape_target?.include_branches ?? []
 	const exclude = status.scrape_target?.exclude_branches ?? []
 	return {
-		kept: names.filter((name) => !isExcluded(name, include, exclude)).length,
+		kept: Arr.filter(names, (name) => !isExcluded(name, include, exclude)).length,
 		total: names.length,
 	}
 }

@@ -8,7 +8,7 @@
 // apps/api (`query-benchmark.clickhouse.e2e.test.ts`) analyzes these fixtures
 // against the real migrations alongside the core catalog.
 
-import { Effect } from "effect"
+import { Effect, Array as Arr, Record as Rec, String as Str } from "effect"
 import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple/query-engine/ch"
 import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS, GCP_INFRA_SOURCES } from "@maple/domain/gcp-infra"
@@ -485,6 +485,12 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 	},
 	{
 		module: "ai-sessions",
+		name: "aiSessionsOfTracesQuery",
+		label: "default",
+		compile: () => compileUnsafe(CH.aiSessionsOfTracesQuery([AI_TRACE_ID]), window),
+	},
+	{
+		module: "ai-sessions",
 		name: "aiTraceSpansQuery",
 		label: "default",
 		compile: () =>
@@ -866,13 +872,13 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		label: "default",
 		compile: () => compileUnsafe(CH.gcpInfraPresenceSQL(), window),
 	},
-	...GCP_INFRA_SERVICE_IDS.map((service): IntegrationFixture => ({
+	...Arr.map(GCP_INFRA_SERVICE_IDS, (service): IntegrationFixture => ({
 		module: "gcp-infra",
 		name: "gcpInfraMetricsSQL",
 		label: service,
 		compile: () => compileUnsafe(CH.gcpInfraMetricsSQL(service), window),
 	})),
-	...GCP_INFRA_SOURCE_IDS.map((source): IntegrationFixture => ({
+	...Arr.map(GCP_INFRA_SOURCE_IDS, (source): IntegrationFixture => ({
 		module: "gcp-infra",
 		name: "gcpInfraTimeseriesSQL",
 		label: source,
@@ -880,12 +886,13 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 			compileUnsafe(
 				CH.gcpInfraTimeseriesSQL(
 					source,
-					GCP_INFRA_SOURCES[source].identity.map(([label]) => label.toLowerCase()),
+					Arr.map(GCP_INFRA_SOURCES[source].identity, ([label]) => Str.toLowerCase(label)),
 				),
 				bucketed,
 			),
 	})),
-	...GCP_INFRA_SERVICE_IDS.filter((service) => CH.GCP_INFRA_SPARKLINE_METRICS[service] !== undefined).map(
+	...Arr.map(
+		Arr.filter(GCP_INFRA_SERVICE_IDS, (service) => CH.GCP_INFRA_SPARKLINE_METRICS[service] !== undefined),
 		(service): IntegrationFixture => ({
 			module: "gcp-infra",
 			name: "gcpInfraSparklinesSQL",
@@ -919,13 +926,13 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		label: "default",
 		compile: () => compileUnsafe(CH.awsInfraPresenceSQL(), window),
 	},
-	...AWS_INFRA_KIND_IDS.map((kind): IntegrationFixture => ({
+	...Arr.map(AWS_INFRA_KIND_IDS, (kind): IntegrationFixture => ({
 		module: "aws-infra",
 		name: "awsInfraMetricsSQL",
 		label: kind,
 		compile: () => compileUnsafe(CH.awsInfraMetricsSQL(kind), window),
 	})),
-	...AWS_INFRA_KIND_IDS.map((kind): IntegrationFixture => ({
+	...Arr.map(AWS_INFRA_KIND_IDS, (kind): IntegrationFixture => ({
 		module: "aws-infra",
 		name: "awsInfraSparklinesSQL",
 		label: kind,
@@ -938,14 +945,14 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 				bucketed,
 			),
 	})),
-	...AWS_INFRA_KIND_IDS.map((kind): IntegrationFixture => ({
+	...Arr.map(AWS_INFRA_KIND_IDS, (kind): IntegrationFixture => ({
 		module: "aws-infra",
 		name: "awsInfraTimeseriesSQL",
 		label: kind,
 		compile: () =>
 			compileUnsafe(
 				CH.awsInfraTimeseriesSQL(kind, [
-					...AWS_INFRA_KINDS[kind].identity.map(([, dimension]) => `acme-${dimension}`),
+					...Arr.map(AWS_INFRA_KINDS[kind].identity, ([, dimension]) => `acme-${dimension}`),
 					"us-east-1",
 					"123456789012",
 				]),
@@ -1079,11 +1086,11 @@ export interface IntegrationCatalogEntry extends CatalogEntry {
 export const collectIntegrationQueryCatalog = () =>
 	Effect.try({
 		try: (): ReadonlyArray<IntegrationCatalogEntry> =>
-			integrationFixtures.map((fixture) => {
+			Arr.map(integrationFixtures, (fixture) => {
 				const compiled = fixture.compile()
 				// The executor dies on unresolved placeholders at runtime; a fixture
 				// missing a compile param must fail HERE.
-				if (compiled.sql.includes("__PARAM_")) {
+				if (Str.includes("__PARAM_")(compiled.sql)) {
 					throw new Error(
 						`Integration catalog: ${fixture.module}/${fixture.name} (${fixture.label}) ` +
 							`left an unresolved __PARAM_ placeholder — a compile param is missing.`,
@@ -1132,10 +1139,10 @@ export const UNDECODED_INTEGRATION_QUERIES: ReadonlySet<string> = new Set([])
 export function undecodedIntegrationQueries(
 	entries: ReadonlyArray<IntegrationCatalogEntry>,
 ): ReadonlyArray<string> {
-	return entries
-		.filter((entry) => entry.compiled.rowSchemaSource === "none")
-		.map((entry) => entry.id)
-		.sort()
+	return Arr.map(
+		Arr.filter(entries, (entry) => entry.compiled.rowSchemaSource === "none"),
+		(entry) => entry.id,
+	).sort()
 }
 
 /**
@@ -1172,16 +1179,20 @@ export const EXEMPT_INTEGRATION_BUILDERS: ReadonlySet<string> = new Set([])
 /** Every exported builder — the `*Query` / `*SQL` naming convention is the
  *  contract, the same one the core catalog's coverage assertion reads. */
 export function exportedIntegrationBuilders(): ReadonlyArray<string> {
-	return Object.entries(CH)
-		.filter(([name, value]) => typeof value === "function" && /(Query|SQL)$/.test(name))
-		.map(([name]) => name)
-		.sort()
+	return Arr.map(
+		Arr.filter(
+			Rec.toEntries(CH),
+			([name, value]) => typeof value === "function" && /(Query|SQL)$/.test(name),
+		),
+		([name]) => name,
+	).sort()
 }
 
 /** Exported builders that no fixture compiles and no exemption covers. */
 export function unfixturedIntegrationBuilders(): ReadonlyArray<string> {
-	const fixtured = new Set(integrationFixtures.map((fixture) => fixture.name))
-	return exportedIntegrationBuilders().filter(
+	const fixtured = new Set(Arr.map(integrationFixtures, (fixture) => fixture.name))
+	return Arr.filter(
+		exportedIntegrationBuilders(),
 		(name) => !fixtured.has(name) && !EXEMPT_INTEGRATION_BUILDERS.has(name),
 	)
 }

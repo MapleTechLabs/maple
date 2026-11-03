@@ -11,7 +11,7 @@ import {
 	type ChatWorkspaceId,
 	type OrgId,
 } from "@maple/domain/http"
-import { Context, Duration, Effect, Layer, Option, Redacted, Ref } from "effect"
+import { Context, Duration, Effect, Layer, Option, Redacted, Ref, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -85,8 +85,8 @@ export interface ChatAlertPosterApi {
  * the whole message when it cannot, so a rejected post with an image is retried once without it.
  */
 const withoutImages = (blocks: ReadonlyArray<ChatBlock>): ReadonlyArray<ChatBlock> | undefined =>
-	blocks.some((block) => (block.kind === "alert" || block.kind === "chart") && block.imageUrl !== null)
-		? blocks.map((block) =>
+	Arr.some(blocks, (block) => (block.kind === "alert" || block.kind === "chart") && block.imageUrl !== null)
+		? Arr.map(blocks, (block) =>
 				block.kind === "alert" || block.kind === "chart" ? { ...block, imageUrl: null } : block,
 			)
 		: undefined
@@ -166,7 +166,7 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 				const missing = missingOutboundConfig(workspace.value, outboundConfig)
 				if (missing.length > 0) {
 					return yield* deliveryError(
-						`${connector.manifest.name} is not configured on this deployment (${missing.join(", ")})`,
+						`${connector.manifest.name} is not configured on this deployment (${Arr.join(missing, ", ")})`,
 					)
 				}
 				const transportKey = `${connector.id}\u0000${externalWorkspaceId}\u0000${workspace.value.credentials ?? ""}`

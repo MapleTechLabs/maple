@@ -1,11 +1,12 @@
 import { mergeWorkerRows, type WorkerListRow } from "../../../../components/infra/cloudflare/list-model"
 import { deployMarkers } from "../../../../components/infra/cloudflare/worker-signals"
 import { toIsoBucket } from "@maple/web-data/warehouse/timeseries-utils"
-import { chartBucketSeconds } from "../../../../charts/infra-metric-series"
-import type { ChartEventMarker } from "../../../../charts/event-marker-spec"
+import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
+import type { ChartEventMarker } from "@maple/views/charts/event-marker-spec"
 import type { Release } from "../data"
 import { dataOf } from "../list/derive"
 import type { Model } from "./model"
+import { Array as Arr, String as Str } from "effect"
 
 export type Traced = Readonly<{ service: string; spans: number; errors: number }>
 
@@ -34,7 +35,7 @@ export const pageOf = (model: Model): PageData => {
 	const releases: ReadonlyArray<Release> | null =
 		loaded === null || row?.nameInOtherAccounts === true
 			? null
-			: loaded.filter((release) => release.serviceName === model.scriptName)
+			: Arr.filter(loaded, (release) => release.serviceName === model.scriptName)
 	const status = dataOf(model.status.data)
 	const accounts = status?.accounts ?? []
 	const accountId = row?.accountId ?? model.search.account
@@ -49,8 +50,8 @@ export const pageOf = (model: Model): PageData => {
 			? null
 			: {
 					service: model.scriptName,
-					spans: releases.reduce((acc, release) => acc + release.spanCount, 0),
-					errors: releases.reduce((acc, release) => acc + release.errorCount, 0),
+					spans: Arr.reduce(releases, 0, (acc, release) => acc + release.spanCount),
+					errors: Arr.reduce(releases, 0, (acc, release) => acc + release.errorCount),
 				}
 	const window = model.window
 	const markers =
@@ -64,6 +65,6 @@ export const pageOf = (model: Model): PageData => {
 	const currentVersion =
 		releases === null || releases.length === 0
 			? null
-			: (releases.toSorted((a, b) => b.firstSeen.localeCompare(a.firstSeen))[0]?.commitSha ?? null)
+			: (releases.toSorted((a, b) => Str.localeCompare(a.firstSeen)(b.firstSeen))[0]?.commitSha ?? null)
 	return { row, accountName, traced, markers, currentVersion }
 }

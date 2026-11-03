@@ -8,7 +8,7 @@
  * drifting into fifteen different contracts again.
  */
 import type { MapleDb } from "@maple/db/client"
-import { Effect, Schedule } from "effect"
+import { Effect, Schedule, Schema } from "effect"
 import { describeCause } from "./describe-cause"
 import { DatabaseError, type DatabaseApi } from "./DatabaseLive"
 import { isRetryablePostgresContention } from "./postgres-errors"
@@ -59,10 +59,10 @@ export const makeDbExecute =
 		database.execute(fn).pipe(
 			Effect.retry({
 				schedule: CONTENTION_RETRY_SCHEDULE,
-				while: (error) => error instanceof DatabaseError && isRetryablePostgresContention(error),
+				while: (error) => Schema.is(DatabaseError)(error) && isRetryablePostgresContention(error),
 			}),
 			Effect.tapError((error) =>
-				error instanceof DatabaseError
+				Schema.is(DatabaseError)(error)
 					? Effect.gen(function* () {
 							// Service methods run inside an Effect.fn span — its name says which
 							// operation's query failed without threading a label through.
@@ -79,7 +79,7 @@ export const makeDbExecute =
 					: Effect.void,
 			),
 			Effect.catchIf(
-				(error): error is DatabaseError => error instanceof DatabaseError,
+				(error): error is DatabaseError => Schema.is(DatabaseError)(error),
 				(error) => Effect.fail(mapError(error)),
 			),
 		)

@@ -2,8 +2,9 @@ import { CodeReviewTeam, CodeReviewTeamQuery } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import * as HoverCard from "@maple/views/ui/hover-card"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { CodeReviewTeamSearch, CodeReviewTeamSort } from "../../../route/search"
 import { getTeam } from "../kit/api"
 import { Frame, FrameMessage } from "../kit/frame"
@@ -17,6 +18,8 @@ export const Model = Schema.Struct({
 	/** `codeReview.team` for the repository and window. */
 	team: KeyedSchema(CodeReviewTeam, LoadFailure),
 	teamCache: ResponseCache(CodeReviewTeam),
+	/** The activity calendar's day card: one card, a trigger per day. */
+	activityCard: HoverCard.Model,
 })
 export type Model = typeof Model.Type
 
@@ -27,6 +30,7 @@ export const Message = defineMessageUnion({
 	ClickedClearFilters: {},
 	ClickedSort: { sort: CodeReviewTeamSort },
 	SelectedView: { view: Schema.Literals(["scorecard", "ranked"]) },
+	GotActivityCardMessage: { message: HoverCard.Message },
 })
 export type Message = typeof Message.Type
 

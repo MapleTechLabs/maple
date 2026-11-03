@@ -1,4 +1,3 @@
-import { truncatedCellStyles } from "@maple/ui/styles/ui/table"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
@@ -6,25 +5,36 @@ import { orgRoleLabel, roleChangePrompt, toOrgRole } from "../../../components/s
 import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { confirmDialog } from "../../../ui/confirm-dialog"
-import { warmAvatarTone } from "../../../ui/avatar-tone"
-import { avatarFallback } from "../../../ui/display"
-import { field, type FieldIds, fieldLabel, input, type FieldState } from "../../../ui/field"
-import * as Field from "../../../ui/field"
-import { formDialog } from "../../../ui/form-dialog"
-import { icon } from "../../../ui/icon"
-import * as Menu from "../../../ui/menu"
-import { rowActionsMenu } from "../../../ui/row-actions-menu"
-import * as SelectView from "../../../ui/select-view"
-import { skeleton, skeletonList } from "../../../ui/skeleton"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { truncatedText } from "../../../ui/truncated-text"
+import { button } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
+import { avatarFallback } from "@maple/views/ui/display"
+import { field, type FieldIds, fieldLabel, input, type FieldState } from "@maple/views/ui/field"
+import * as Field from "@maple/views/ui/field"
+import { formDialog } from "@maple/views/ui/form-dialog"
+import { icon } from "@maple/views/ui/icon"
+import * as Menu from "@maple/views/ui/menu"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import * as SelectView from "@maple/views/ui/select-view"
+import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
+import {
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+	truncatedTableCell,
+} from "@maple/views/ui/table"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { accountSectionSkeleton, noOrganization } from "../kit/account-skeleton"
 import { adminOnlyNotice } from "../kit/members"
 import { settingsSection, settingsSections } from "../kit/section"
 import { type InvitationRow, type MemberRow, Message, type Model } from "./model"
 import { hasMore, roleSelectFor } from "./update"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string; isKnownMember: boolean }>
@@ -36,7 +46,10 @@ const ROLE_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = [
 
 /** `isInset`: the members column holds role selects, so both tables put values and headers at their text inset. */
 const roleText = (h: H, role: string, isInset: boolean): Html =>
-	h.span([h.Class(cn("text-xs text-foreground", isInset && "px-2.5"))], [orgRoleLabel(role)])
+	h.span(
+		[h.Class(cn(typographyClass({ size: "xs", tone: "foreground" }), isInset && "px-2.5"))],
+		[orgRoleLabel(role)],
+	)
 
 const roleHead = (h: H, isInset: boolean): Html =>
 	tableHead(h, [h.span([h.Class(cn(isInset && "px-2.5"))], ["Role"])], COLUMN.role)
@@ -46,9 +59,6 @@ const COLUMN = { role: "w-36", date: "w-36", actions: "w-12" } as const
 
 /** Without the actions column the date column ends the row, so it sits flush right. */
 const dateAlign = (isAdmin: boolean): string | undefined => (isAdmin ? undefined : "text-right")
-
-const truncatedCell = (h: H, children: ReadonlyArray<Html>, className?: string): Html =>
-	tableCell(h, children, cn(truncatedCellStyles, className))
 
 const loadMore = (h: H, isLoading: boolean, onClick: Message): Html =>
 	h.div(
@@ -65,13 +75,10 @@ const skeletonRow = (h: H, isAdmin: boolean, index: number): Html =>
 		h,
 		[
 			tableCell(h, [
-				h.div(
-					[h.Class("flex items-center gap-3")],
-					[
-						skeleton(h, "size-6 rounded-full"),
-						h.div([h.Class("space-y-1.5")], [skeleton(h, "h-3 w-32"), skeleton(h, "h-3 w-48")]),
-					],
-				),
+				hstack(h, { gap: "3" }, [
+					skeleton(h, "size-6 rounded-full"),
+					h.div([h.Class("space-y-1.5")], [skeleton(h, "h-3 w-32"), skeleton(h, "h-3 w-48")]),
+				]),
 			]),
 			tableCell(h, [skeleton(h, "h-3 w-16")]),
 			tableCell(h, [skeleton(h, cn("h-3 w-20", !isAdmin && "ml-auto"))]),
@@ -110,36 +117,33 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 	const row = tableRow(
 		h,
 		[
-			truncatedCell(h, [
-				h.div(
-					[h.Class("flex items-center gap-3")],
-					[
-						personAvatar(h, member.name, member.imageUrl),
-						h.div(
-							[h.Class("min-w-0")],
-							[
-								h.div(
-									[h.Class("flex min-w-0 text-xs font-medium")],
-									[
-										truncatedText(h, { text: member.name }),
-										...(member.isCurrentUser
-											? [
-													h.span(
-														[h.Class("ml-1 shrink-0 text-muted-foreground")],
-														["(you)"],
-													),
-												]
-											: []),
-									],
-								),
-								truncatedText(h, {
-									text: member.identifier,
-									className: "text-xs text-muted-foreground",
-								}),
-							],
-						),
-					],
-				),
+			truncatedTableCell(h, [
+				hstack(h, { gap: "3" }, [
+					personAvatar(h, member.name, member.imageUrl),
+					h.div(
+						[h.Class("min-w-0")],
+						[
+							h.div(
+								[h.Class("flex min-w-0 text-xs font-medium")],
+								[
+									truncatedText(h, { text: member.name }),
+									...(member.isCurrentUser
+										? [
+												h.span(
+													[h.Class("ml-1 shrink-0 text-muted-foreground")],
+													["(you)"],
+												),
+											]
+										: []),
+								],
+							),
+							truncatedText(h, {
+								text: member.identifier,
+								className: typographyClass({ size: "xs", tone: "muted" }),
+							}),
+						],
+					),
+				]),
 			]),
 			roleCell(h, model, member, canManage),
 			tableCell(
@@ -150,7 +154,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 						[formatDateInTimezone(member.createdAtMs, { timeZone: inputs.timeZone })],
 					),
 				],
-				cn("text-xs text-muted-foreground", dateAlign(model.isAdmin)),
+				cn(typographyClass({ size: "xs", tone: "muted" }), dateAlign(model.isAdmin)),
 			),
 			...(model.isAdmin
 				? [
@@ -205,30 +209,27 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 										prompt.question,
 									],
 								),
-								h.div(
-									[h.Class("flex shrink-0 items-center gap-1.5")],
-									[
-										button(
-											h,
-											{
-												variant: "ghost",
-												size: "sm",
-												isDisabled: model.isRoleSaving,
-												attributes: [h.OnClick(Message.ClickedCancelRole())],
-											},
-											["Cancel"],
-										),
-										button(
-											h,
-											{
-												size: "sm",
-												isLoading: model.isRoleSaving,
-												attributes: [h.OnClick(Message.ClickedConfirmRole())],
-											},
-											[prompt.confirmLabel],
-										),
-									],
-								),
+								hstack(h, { gap: "1.5", className: "shrink-0" }, [
+									button(
+										h,
+										{
+											variant: "ghost",
+											size: "sm",
+											isDisabled: model.isRoleSaving,
+											attributes: [h.OnClick(Message.ClickedCancelRole())],
+										},
+										["Cancel"],
+									),
+									button(
+										h,
+										{
+											size: "sm",
+											isLoading: model.isRoleSaving,
+											attributes: [h.OnClick(Message.ClickedConfirmRole())],
+										},
+										[prompt.confirmLabel],
+									),
+								]),
 							],
 						),
 					],
@@ -290,8 +291,8 @@ const membersSection = (h: H, model: Model, inputs: Inputs): Html => {
 					]),
 				]),
 				tableBody(h, [
-					...(isLoading ? [0, 1, 2].map((index) => skeletonRow(h, model.isAdmin, index)) : []),
-					...rows.flatMap((member) => memberRows(h, model, member, inputs)),
+					...(isLoading ? Arr.map([0, 1, 2], (index) => skeletonRow(h, model.isAdmin, index)) : []),
+					...Arr.flatMap(rows, (member) => memberRows(h, model, member, inputs)),
 				]),
 			]),
 			...(data !== null && hasMore(data)
@@ -307,14 +308,11 @@ const invitationRow = (h: H, model: Model, invitation: InvitationRow, inputs: In
 	return tableRow(
 		h,
 		[
-			truncatedCell(h, [
-				h.div(
-					[h.Class("flex items-center gap-3")],
-					[
-						personAvatar(h, invitation.email, ""),
-						truncatedText(h, { text: invitation.email, className: "text-xs" }),
-					],
-				),
+			truncatedTableCell(h, [
+				hstack(h, { gap: "3" }, [
+					personAvatar(h, invitation.email, ""),
+					truncatedText(h, { text: invitation.email, className: "text-xs" }),
+				]),
 			]),
 			tableCell(h, [roleText(h, invitation.role, model.isAdmin)]),
 			tableCell(
@@ -326,7 +324,7 @@ const invitationRow = (h: H, model: Model, invitation: InvitationRow, inputs: In
 						[formatDateInTimezone(invitation.createdAtMs, { timeZone: inputs.timeZone })],
 					),
 				],
-				cn("text-xs text-muted-foreground", dateAlign(model.isAdmin)),
+				cn(typographyClass({ size: "xs", tone: "muted" }), dateAlign(model.isAdmin)),
 			),
 			...(model.isAdmin
 				? [
@@ -389,7 +387,7 @@ const invitationsSection = (h: H, model: Model, inputs: Inputs): ReadonlyArray<H
 					]),
 					tableBody(
 						h,
-						data.rows.map((invitation) => invitationRow(h, model, invitation, inputs)),
+						Arr.map(data.rows, (invitation) => invitationRow(h, model, invitation, inputs)),
 					),
 				]),
 				...(hasMore(data)
@@ -425,7 +423,7 @@ const inviteDialog = (h: H, model: Model): Html => {
 		onSubmit: Message.SubmittedInvite(),
 		submitLabel: "Send invitation",
 		isPending: model.isInviting,
-		isSubmitDisabled: model.inviteEmail.value.trim().length === 0,
+		isSubmitDisabled: Str.trim(model.inviteEmail.value).length === 0,
 		fields: [
 			field(h, { state: emailState }, [
 				fieldLabel(h, { ids: EMAIL_IDS, state: emailState }, "Email address"),
@@ -503,13 +501,10 @@ const loadingSkeleton = (h: H): Html =>
 			rows: 3,
 			gap: "3",
 			renderRow: () =>
-				h.div(
-					[h.Class("flex items-center gap-3")],
-					[
-						skeleton(h, "size-8 rounded-full"),
-						h.div([h.Class("space-y-1.5")], [skeleton(h, "h-3.5 w-32"), skeleton(h, "h-3 w-48")]),
-					],
-				),
+				hstack(h, { gap: "3" }, [
+					skeleton(h, "size-8 rounded-full"),
+					h.div([h.Class("space-y-1.5")], [skeleton(h, "h-3.5 w-32"), skeleton(h, "h-3 w-48")]),
+				]),
 		}),
 	])
 

@@ -1,7 +1,8 @@
 import type { FrameworkId } from "../components/quick-start/sdk-snippets"
-import type { IconName } from "../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 import type { DocsPage } from "./docs"
 import { ONBOARDING_INTENT_IDS, type OnboardingIntent } from "./onboarding-intent"
+import { Array as Arr, String as Str } from "effect"
 
 // The onboarding stack step: what the user runs, and which of Maple's surfaces each pick fills.
 
@@ -111,15 +112,11 @@ const STACK_LANGUAGE_ALIASES = {
 
 /** The languages a search matches by name, description or alias, in the grid's order. */
 export const searchLanguages = (query: string): ReadonlyArray<StackLanguage> => {
-	const words = query
-		.toLowerCase()
-		.trim()
-		.split(/\s+/)
-		.filter((word) => word !== "")
-	return STACK_LANGUAGE_IDS.filter((id) => {
+	const words = Arr.filter(Str.split(/\s+/)(Str.trim(Str.toLowerCase(query))), (word) => word !== "")
+	return Arr.filter(STACK_LANGUAGE_IDS, (id) => {
 		const item = STACK_LANGUAGES[id]
-		const haystack = `${item.label} ${item.description} ${STACK_LANGUAGE_ALIASES[id]}`.toLowerCase()
-		return words.every((word) => haystack.includes(word))
+		const haystack = Str.toLowerCase(`${item.label} ${item.description} ${STACK_LANGUAGE_ALIASES[id]}`)
+		return Arr.every(words, (word) => Str.includes(word)(haystack))
 	})
 }
 
@@ -213,19 +210,19 @@ export type FilledSurface = Readonly<{ intent: OnboardingIntent; sources: Readon
 /** What the stack fills: every surface any pick sends data to, plus Alerts, which works on all of it. */
 export const filledSurfaces = (answers: StackAnswers): ReadonlyArray<FilledSurface> => {
 	const picks: ReadonlyArray<StackItem> = [
-		...answers.languages.map((id) => STACK_LANGUAGES[id]),
-		...answers.platforms.map((id) => STACK_PLATFORMS[id]),
+		...Arr.map(answers.languages, (id) => STACK_LANGUAGES[id]),
+		...Arr.map(answers.platforms, (id) => STACK_PLATFORMS[id]),
 	]
 	if (picks.length === 0) return []
-	return ONBOARDING_INTENT_IDS.flatMap((intent): ReadonlyArray<FilledSurface> => {
-		const sources = picks.filter((pick) => pick.fills.includes(intent))
+	return Arr.flatMap(ONBOARDING_INTENT_IDS, (intent): ReadonlyArray<FilledSurface> => {
+		const sources = Arr.filter(picks, (pick) => pick.fills.includes(intent))
 		return sources.length > 0 || intent === "alerts" ? [{ intent, sources }] : []
 	})
 }
 
 /** The surfaces, as the setup checklist's intents. */
 export const intentsOf = (answers: StackAnswers): ReadonlyArray<OnboardingIntent> =>
-	filledSurfaces(answers).map((surface) => surface.intent)
+	Arr.map(filledSurfaces(answers), (surface) => surface.intent)
 
 const FRAMEWORK_OF = {
 	nodejs: "nodejs",
@@ -253,4 +250,4 @@ export const frameworkOf = (answers: StackAnswers): FrameworkId | null => {
 }
 
 export const toggled = <A>(items: ReadonlyArray<A>, item: A): ReadonlyArray<A> =>
-	items.includes(item) ? items.filter((candidate) => candidate !== item) : [...items, item]
+	items.includes(item) ? Arr.filter(items, (candidate) => candidate !== item) : [...items, item]

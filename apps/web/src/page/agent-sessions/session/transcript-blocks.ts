@@ -2,14 +2,18 @@ import type { TranscriptPayload, TranscriptRow } from "@maple/agent-sessions"
 import { formatBytes, formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { pressable } from "@maple/views/ui/pressable"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disclosed } from "./payload-view"
 import { payloadActions, payloadBody, toolIo, toolIoSummary, truncatedBadge, truncatedNote } from "./tool-io"
 import { clockOf, META, ON_HOVER, row } from "./transcript-shell"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The transcript's tool cards and payload sections (`ToolBlock`, `PayloadSection`).
 
@@ -29,14 +33,13 @@ const toolHeader = (
 	timeZone: string,
 ): Html => {
 	const name = tool.toolName ?? tool.span.spanName
-	return h.button(
-		[
-			h.AriaExpanded(isOpen),
-			h.Class("group flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 px-2.5 text-left"),
-			h.Title(clockOf(tool.startMs, timeZone)),
-			h.Type("button"),
-			h.OnClick(Message.ToggledRow({ key: `${tool.key}:payloads` })),
-		],
+	return pressable(
+		h,
+		{
+			onClick: Message.ToggledRow({ key: `${tool.key}:payloads` }),
+			className: "group flex h-8 w-full min-w-0 items-center gap-2 px-2.5 text-left",
+			attributes: [h.AriaExpanded(isOpen), h.Title(clockOf(tool.startMs, timeZone))],
+		},
 		[
 			icon(h, "GearIcon", {
 				size: 12,
@@ -121,27 +124,24 @@ export const payloadSection = (
 	return h.div(
 		[h.Class("flex flex-col gap-2 px-3 pt-2.5 pb-3")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					eyebrow(h, { variant: "mono" }, [options.label]),
-					h.span(
-						[h.Class("font-mono text-3xs text-muted-foreground")],
+			hstack(h, { gap: "2", wrap: true }, [
+				eyebrow(h, { variant: "mono" }, [options.label]),
+				typography(h, { size: "3xs", tone: "muted", mono: true }, [
+					Arr.join(
 						[
-							[
-								formatBytes(payload.byteLength),
-								...(payload.lineCount > 1 ? [`${payload.lineCount} lines`] : []),
-							].join(" · "),
+							formatBytes(payload.byteLength),
+							...(payload.lineCount > 1 ? [`${payload.lineCount} lines`] : []),
 						],
+						" · ",
 					),
-					...(payload.truncatedByEmitter ? [truncatedBadge(h)] : []),
-					...payloadActions(h, model, {
-						payload,
-						textKey: options.textKey,
-						label: options.label.toLowerCase(),
-					}),
-				],
-			),
+				]),
+				...(payload.truncatedByEmitter ? [truncatedBadge(h)] : []),
+				...payloadActions(h, model, {
+					payload,
+					textKey: options.textKey,
+					label: Str.toLowerCase(options.label),
+				}),
+			]),
 			...payloadBody(h, model, { payload, textKey: options.textKey, clampLines: 14 }),
 			...(payload.truncatedByEmitter ? [truncatedNote(h)] : []),
 		],

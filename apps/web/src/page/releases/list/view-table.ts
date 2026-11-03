@@ -2,7 +2,6 @@ import type { VcsCommitDetailResponse, VcsCommitRangeResponse } from "@maple/dom
 import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import {
 	releaseDayLabel,
 	releaseHeadline,
@@ -11,45 +10,80 @@ import {
 	type ReleaseIssueCounts,
 	type ReleaseServiceImpact,
 } from "../../../components/releases/release-model"
-import { tableCellStyles } from "@maple/ui/styles/ui/table"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { panel } from "../../../ui/panel"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { emptyValue, serviceDot } from "../../../ui/values"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { panel } from "@maple/views/ui/panel"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import { emptyValue, errorRateValue, latencyValue, serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { commitAvatar, isResolvableSha, firstLine, releaseHealthFigure, releaseHref } from "../kit"
 import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
 import { MountReleasesTable } from "./command"
 import { Message } from "./message"
 import type { TimeSearch } from "./view-overview"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The releases table and its commit count.
 
 type H = HtmlBuilder<Message>
 
 /** "0.30% → 1.24%": the version it replaced, then this one. */
-const baselineShift = (h: H, value: number, baseline: number | undefined, format: (value: number) => string, tone?: "error" | "warn"): Html =>
+const baselineShift = (h: H, baseline: string | undefined, current: Html): Html =>
 	h.span(
 		[h.Class("inline-flex items-baseline gap-1 font-mono text-xs tabular-nums")],
 		[
 			...(baseline === undefined
 				? []
-				: [h.span([h.Class("text-3xs text-foreground-subtle"), h.Title("The version this one replaced")], [format(baseline), " →"])]),
-			h.span([h.Class(cn(tone === "error" && "text-severity-error", tone === "warn" && "text-severity-warn"))], [format(value)]),
+				: [
+						typography(
+							h,
+							{
+								size: "3xs",
+								tone: "subtle",
+								attributes: [h.Title("The version this one replaced")],
+							},
+							[baseline, " →"],
+						),
+					]),
+			current,
 		],
+	)
+
+/** The current value in its threshold tone, unless the release's health calls it out. */
+const healthTone = (tone: "error" | "warn" | undefined): string | undefined =>
+	tone === "error" ? "text-severity-error" : tone === "warn" ? "text-severity-warn" : undefined
+
+const errorRateShift = (h: H, value: number, baseline: number | undefined, tone?: "error"): Html =>
+	baselineShift(
+		h,
+		baseline === undefined ? undefined : formatErrorRate(baseline),
+		errorRateValue(h, { rate: value, className: healthTone(tone) }),
+	)
+
+const latencyShift = (h: H, value: number, baseline: number | undefined, tone?: "warn"): Html =>
+	baselineShift(
+		h,
+		baseline === undefined ? undefined : formatLatency(baseline),
+		latencyValue(h, { ms: value, className: healthTone(tone) }),
 	)
 
 const issueCounts = (h: H, counts: ReleaseIssueCounts | undefined | null): Html | null => {
 	if (counts === null) return null
 	if (counts === undefined || (counts.fresh === 0 && counts.regressed === 0))
-		return emptyValue(h, "font-mono text-xs")
+		return emptyValue(h, typographyClass({ size: "xs", mono: true }))
 	return h.span(
 		[h.Class("inline-flex items-baseline gap-2 whitespace-nowrap font-mono text-xs tabular-nums")],
 		[
-			...(counts.fresh > 0 ? [h.span([h.Class("text-severity-error")], [String(counts.fresh), " new"])] : []),
-			...(counts.regressed > 0 ? [h.span([h.Class("text-severity-warn")], [String(counts.regressed), " regressed"])] : []),
+			...(counts.fresh > 0
+				? [h.span([h.Class("text-severity-error")], [String(counts.fresh), " new"])]
+				: []),
+			...(counts.regressed > 0
+				? [h.span([h.Class("text-severity-warn")], [String(counts.regressed), " regressed"])]
+				: []),
 		],
 	)
 }
@@ -63,21 +97,38 @@ const serviceChip = (h: H, serviceName: string, className: string): Html =>
 	)
 
 const serviceChips = (h: H, services: ReadonlyArray<ReleaseServiceImpact>): Html => {
-	const names = [...new Set(services.map((service) => service.serviceName))]
+	const names = [...new Set(Arr.map(services, (service) => service.serviceName))]
 	if (names.length > NAMED_SERVICES) {
-		const flagged = [...new Set(services.filter((service) => service.health !== "healthy").map((service) => service.serviceName))]
+		const flagged = [
+			...new Set(
+				Arr.map(
+					Arr.filter(services, (service) => service.health !== "healthy"),
+					(service) => service.serviceName,
+				),
+			),
+		]
 		return h.span(
 			[h.Class("flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground")],
 			[
 				h.span([h.Class("tabular-nums")], [String(names.length), " services"]),
-				...flagged.slice(0, 2).map((name) => serviceChip(h, name, "inline-flex min-w-0 max-w-56 items-center gap-1")),
-				...(flagged.length > 2 ? [h.span([h.Class("text-2xs text-foreground-subtle")], [`+${flagged.length - 2}`])] : []),
+				...Arr.map(flagged.slice(0, 2), (name) =>
+					serviceChip(h, name, "inline-flex min-w-0 max-w-56 items-center gap-1"),
+				),
+				...(flagged.length > 2
+					? [typography(h, { size: "2xs", tone: "subtle" }, [`+${flagged.length - 2}`])]
+					: []),
 			],
 		)
 	}
 	return h.span(
 		[h.Class("flex flex-wrap items-center gap-x-2 gap-y-0.5")],
-		names.map((name) => serviceChip(h, name, "inline-flex min-w-0 max-w-56 items-center gap-1 text-xs text-muted-foreground")),
+		Arr.map(names, (name) =>
+			serviceChip(
+				h,
+				name,
+				"inline-flex min-w-0 max-w-56 items-center gap-1 text-xs text-muted-foreground",
+			),
+		),
 	)
 }
 
@@ -105,28 +156,49 @@ const releaseTitle = (
 		[
 			h.div(
 				[h.Class("mt-0.5 shrink-0")],
-				[commit ? commitAvatar(h, commit.authorAvatarUrl, author ?? "Unknown author") : h.span([h.Class("block size-5 rounded-full bg-muted")])],
+				[
+					commit
+						? commitAvatar(h, commit.authorAvatarUrl, author ?? "Unknown author")
+						: h.span([h.Class("block size-5 rounded-full bg-muted")]),
+				],
 			),
 			h.div(
 				[h.Class("flex min-w-0 flex-col gap-0.5 leading-tight")],
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-2")],
-						[
-							commitTrigger(h, overlays, "releases-list", group.commitSha, cn("min-w-0 truncate text-sm text-foreground", commit === undefined && "font-mono text-xs"), [
-								(commit ? firstLine(commit.message) : "") || shortReleaseLabel(group.commitSha),
-							]),
-							...(group.health === "healthy"
-								? []
-								: [releaseHealthPill(h, overlays, pillId(group.commitSha), group.health, figure)]),
-						],
-					),
+					hstack(h, { gap: "2", shrink: true }, [
+						commitTrigger(
+							h,
+							overlays,
+							"releases-list",
+							group.commitSha,
+							cn(
+								"min-w-0 truncate text-sm text-foreground",
+								commit === undefined && typographyClass({ size: "xs", mono: true }),
+							),
+							[(commit ? firstLine(commit.message) : "") || shortReleaseLabel(group.commitSha)],
+						),
+						...(group.health === "healthy"
+							? []
+							: [
+									releaseHealthPill(
+										h,
+										overlays,
+										pillId(group.commitSha),
+										group.health,
+										figure,
+									),
+								]),
+					]),
 					h.div(
 						[h.Class("flex items-center gap-1.5 text-2xs text-muted-foreground")],
 						[
-							...(commit ? [h.span([h.Class("font-mono")], [shortReleaseLabel(group.commitSha)])] : []),
+							...(commit
+								? [h.span([h.Class("font-mono")], [shortReleaseLabel(group.commitSha)])]
+								: []),
 							...(author ? [h.span([h.Class("truncate")], [author])] : []),
-							...(!commit && !isResolvableSha(group.commitSha) ? [h.span([], ["deployment reference"])] : []),
+							...(!commit && !isResolvableSha(group.commitSha)
+								? [h.span([], ["deployment reference"])]
+								: []),
 							...(count === null ? [] : [count]),
 						],
 					),
@@ -152,7 +224,7 @@ export type TableInput = Readonly<{
 
 /** A DOM-safe id for one health pill's tooltip trigger. */
 const pillId = (...parts: ReadonlyArray<string>): string =>
-	`releases-pill-${parts.join("-").replace(/[^A-Za-z0-9_-]/g, "_")}`
+	`releases-pill-${Str.replace(/[^A-Za-z0-9_-]/g, "_")(Arr.join(parts, "-"))}`
 
 const HEADERS: ReadonlyArray<readonly [string, string | undefined]> = [
 	["Release", "w-[46%] min-w-64"],
@@ -172,11 +244,18 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 	const href = (commitSha: string, service: string, environment: string) =>
 		releaseHref(commitSha, linkSearch(service, environment))
 	const time = (value: string) =>
-		relativeTime(h, { value, nowMs: input.nowMs, timeZone: input.timeZone, variant: "orDate", tooltip: "title" })
-	const rows = input.groups.flatMap((group, index): ReadonlyArray<Html> => {
+		relativeTime(h, {
+			value,
+			nowMs: input.nowMs,
+			timeZone: input.timeZone,
+			variant: "orDate",
+			tooltip: "title",
+		})
+	const rows = Arr.flatMap(input.groups, (group, index): ReadonlyArray<Html> => {
 		const day = releaseDayLabel(group.firstSeen, input.nowMs, input.timeZone)
 		const previous = input.groups[index - 1]
-		const showDay = previous === undefined || releaseDayLabel(previous.firstSeen, input.nowMs, input.timeZone) !== day
+		const showDay =
+			previous === undefined || releaseDayLabel(previous.firstSeen, input.nowMs, input.timeZone) !== day
 		const isOpen = input.expanded.includes(group.commitSha)
 		const worst = releaseHeadline(group)
 		const multi = group.services.length > 1
@@ -184,16 +263,16 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 		return [
 			...(showDay
 				? [
-						tableRow(h, [
-							h.td(
-								[
-									h.Attribute("class", cn(tableCellStyles, cn(eyebrowVariants({}), "bg-surface-sunken py-1"))),
+						tableRow(
+							h,
+							[
+								tableCell(h, [eyebrow(h, {}, [day])], "bg-surface-sunken py-1", [
 									h.Attribute("colspan", "6"),
-									h.DataAttribute("slot", "eyebrow"),
-								],
-								[day],
-							),
-						], "hover:bg-transparent active:bg-transparent", [h.Key(`day:${group.commitSha}`)]),
+								]),
+							],
+							"hover:bg-transparent active:bg-transparent",
+							[h.Key(`day:${group.commitSha}`)],
+						),
 					]
 				: []),
 			tableRow(
@@ -216,14 +295,23 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 												isOpen && "rotate-90",
 												group.services.length <= 1 && "invisible",
 											),
-											attributes: [h.AriaExpanded(isOpen), h.OnClick(Message.ToggledExpanded({ commitSha: group.commitSha }))],
+											attributes: [
+												h.AriaExpanded(isOpen),
+												h.OnClick(
+													Message.ToggledExpanded({ commitSha: group.commitSha }),
+												),
+											],
 										},
 										[icon(h, "ChevronRightIcon")],
 									),
 									h.a(
 										[
-											h.Href(href(group.commitSha, worst.serviceName, worst.environment)),
-											h.Class("min-w-0 flex-1 rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"),
+											h.Href(
+												href(group.commitSha, worst.serviceName, worst.environment),
+											),
+											h.Class(
+												"min-w-0 flex-1 rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+											),
 										],
 										[
 											releaseTitle(
@@ -242,34 +330,59 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 						"max-w-0 py-2",
 					),
 					tableCell(h, [serviceChips(h, group.services)], "whitespace-normal py-2 align-top"),
-					tableCell(h, [time(group.firstSeen)], "whitespace-nowrap py-2 align-top font-mono text-xs tabular-nums text-muted-foreground"),
+					tableCell(
+						h,
+						[time(group.firstSeen)],
+						"whitespace-nowrap py-2 align-top font-mono text-xs tabular-nums text-muted-foreground",
+					),
 					tableCell(
 						h,
 						[
-							h.span(
-								[h.Class("inline-flex items-center gap-1.5")],
-								[
-									...(multi
-										? [h.span([h.Class("inline-flex"), h.Title(`Worst service: ${worst.serviceName}`)], [serviceDot(h, { serviceName: worst.serviceName })])]
-										: []),
-									baselineShift(h, worst.errorRate, worst.baseline?.errorRate, formatErrorRate, worst.health === "regressed" ? "error" : undefined),
-								],
+							hstack(h, { gap: "1.5", inline: true, as: "span" }, [
+								...(multi
+									? [
+											h.span(
+												[
+													h.Class("inline-flex"),
+													h.Title(`Worst service: ${worst.serviceName}`),
+												],
+												[serviceDot(h, { serviceName: worst.serviceName })],
+											),
+										]
+									: []),
+								errorRateShift(
+									h,
+									worst.errorRate,
+									worst.baseline?.errorRate,
+									worst.health === "regressed" ? "error" : undefined,
+								),
+							]),
+						],
+						"py-2 align-top",
+					),
+					tableCell(
+						h,
+						[
+							latencyShift(
+								h,
+								worst.p95LatencyMs,
+								worst.baseline?.p95LatencyMs,
+								worst.health === "watch" ? "warn" : undefined,
 							),
 						],
 						"py-2 align-top",
 					),
 					tableCell(
 						h,
-						[baselineShift(h, worst.p95LatencyMs, worst.baseline?.p95LatencyMs, formatLatency, worst.health === "watch" ? "warn" : undefined)],
+						Arr.filter([issueCounts(h, counts)], (node): node is Html => node !== null),
 						"py-2 align-top",
 					),
-					tableCell(h, [issueCounts(h, counts)].filter((node): node is Html => node !== null), "py-2 align-top"),
 				],
 				"group/row",
 				[h.Key(group.commitSha)],
 			),
 			...(isOpen
-				? group.services.map((service) =>
+				? Arr.map(group.services, (service) =>
 						tableRow(
 							h,
 							[
@@ -278,14 +391,37 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 									[
 										h.a(
 											[
-												h.Href(href(group.commitSha, service.serviceName, service.environment)),
-												h.Class("inline-flex max-w-full items-center gap-2 text-xs hover:underline active:underline"),
+												h.Href(
+													href(
+														group.commitSha,
+														service.serviceName,
+														service.environment,
+													),
+												),
+												h.Class(
+													"inline-flex max-w-full items-center gap-2 text-xs hover:underline active:underline",
+												),
 											],
 											[
 												serviceDot(h, { serviceName: service.serviceName }),
-												h.span([h.Class("min-w-0 truncate"), h.Title(service.serviceName)], [service.serviceName]),
+												h.span(
+													[
+														h.Class("min-w-0 truncate"),
+														h.Title(service.serviceName),
+													],
+													[service.serviceName],
+												),
 												...(service.environment && !input.environments?.length
-													? [h.span([h.Class("min-w-0 truncate text-foreground-subtle")], [service.environment])]
+													? [
+															h.span(
+																[
+																	h.Class(
+																		"min-w-0 truncate text-foreground-subtle",
+																	),
+																],
+																[service.environment],
+															),
+														]
 													: []),
 												...(service.health === "healthy"
 													? []
@@ -293,7 +429,11 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 															releaseHealthPill(
 																h,
 																input.overlays,
-																pillId(group.commitSha, service.serviceName, service.environment),
+																pillId(
+																	group.commitSha,
+																	service.serviceName,
+																	service.environment,
+																),
 																service.health,
 																releaseHealthFigure(service),
 																"shrink-0",
@@ -305,15 +445,33 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 									"max-w-0 py-1.5 pl-12",
 								),
 								tableCell(h, [], "py-1.5"),
-								tableCell(h, [time(service.firstSeen)], "whitespace-nowrap py-1.5 font-mono text-xs tabular-nums text-muted-foreground"),
 								tableCell(
 									h,
-									[baselineShift(h, service.errorRate, service.baseline?.errorRate, formatErrorRate, service.health === "regressed" ? "error" : undefined)],
+									[time(service.firstSeen)],
+									"whitespace-nowrap py-1.5 font-mono text-xs tabular-nums text-muted-foreground",
+								),
+								tableCell(
+									h,
+									[
+										errorRateShift(
+											h,
+											service.errorRate,
+											service.baseline?.errorRate,
+											service.health === "regressed" ? "error" : undefined,
+										),
+									],
 									"py-1.5",
 								),
 								tableCell(
 									h,
-									[baselineShift(h, service.p95LatencyMs, service.baseline?.p95LatencyMs, formatLatency, service.health === "watch" ? "warn" : undefined)],
+									[
+										latencyShift(
+											h,
+											service.p95LatencyMs,
+											service.baseline?.p95LatencyMs,
+											service.health === "watch" ? "warn" : undefined,
+										),
+									],
 									"py-1.5",
 								),
 								tableCell(h, [], "py-1.5"),
@@ -327,14 +485,22 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 	})
 	return panel(h, { className: refreshingClass(input.isWaiting) }, [
 		h.div(
-			[h.Class("contents"), h.OnMount(MountReleasesTable()), ...(input.isWaiting ? [h.AriaBusy(true)] : [])],
+			[
+				h.Class("contents"),
+				h.OnMount(MountReleasesTable()),
+				...(input.isWaiting ? [h.AriaBusy(true)] : []),
+			],
 			[
 				table(h, {}, [
-					tableHeader(h, [tableRow(h, HEADERS.map(([label, className]) => tableHead(h, [label], className)))]),
+					tableHeader(h, [
+						tableRow(
+							h,
+							Arr.map(HEADERS, ([label, className]) => tableHead(h, [label], className)),
+						),
+					]),
 					tableBody(h, rows),
 				]),
 			],
 		),
 	])
 }
-

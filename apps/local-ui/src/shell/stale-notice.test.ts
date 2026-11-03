@@ -2,14 +2,14 @@ import { Result } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import { shownDataOf } from "../data/shown"
-import { idle } from "../data/slot"
+import { idle } from "@maple/views/data/keyed"
 import { describeNotice } from "./stale-notice"
 
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 const timeFormat = { locale: "en-US", timeZone: "UTC" }
 const shownAt = (atMs: number, extra: Readonly<{ isStandIn?: boolean; isRefreshing?: boolean }> = {}) => ({
 	rows: {
-		...idle<ReadonlyArray<number>>(),
+		...idle<ReadonlyArray<number>, never>(),
 		key: "k",
 		data: extra.isRefreshing === true ? AsyncData.Refreshing({ data: [1] }) : AsyncData.Success({ data: [1] }),
 		updatedAtMs: atMs,

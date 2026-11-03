@@ -7,8 +7,11 @@ import {
 	FINGERPRINT_HASH_SALT,
 	FRAME_LINE_PATTERN,
 	FRAME_REDACTIONS,
+	INTERNAL_FRAME_PATTERN,
+	JSON_TYPE_VALUE_REDACTIONS,
 	JSON_VALUE_REDACTIONS,
 	MAX_FINGERPRINT_FRAMES,
+	MAX_NORMALIZED_FRAMES,
 	MSG_SCAN_CHARS,
 	MSG_SIGNATURE_CHARS,
 	NAMESPACED_TYPE_MAX_FRAMES,
@@ -16,16 +19,20 @@ import {
 	SPAN_NAME_FRAME_PATTERN,
 } from "./fingerprint"
 import { ERROR_EVENTS_MV_SQL } from "./materializations"
+import { Array as Arr, String as Str } from "effect"
 
 describe("error fingerprint normalization", () => {
 	it("extracts and normalizes top 3 Node.js frames", () => {
-		const stack = [
-			"TypeError: Cannot read properties of undefined (reading 'id')",
-			"    at getUser (/app/src/users.ts:42:18)",
-			"    at handler (/app/src/routes/user.ts:17:21)",
-			"    at process (/app/src/server.ts:88:12)",
-			"    at Server._events (internal/server.js:512:9)",
-		].join("\n")
+		const stack = Arr.join(
+			[
+				"TypeError: Cannot read properties of undefined (reading 'id')",
+				"    at getUser (/app/src/users.ts:42:18)",
+				"    at handler (/app/src/routes/user.ts:17:21)",
+				"    at process (/app/src/server.ts:88:12)",
+				"    at Server._events (internal/server.js:512:9)",
+			],
+			"\n",
+		)
 
 		const result = computeFingerprintInputs({
 			exceptionType: "TypeError",
@@ -34,7 +41,7 @@ describe("error fingerprint normalization", () => {
 		})
 
 		expect(result.topFrame).toBe("    at getUser (/app/src/users.ts)")
-		expect(result.fpFrames.split("\n")).toHaveLength(3)
+		expect(Str.split("\n")(result.fpFrames)).toHaveLength(3)
 		expect(result.fpFrames).toContain("getUser")
 		expect(result.fpFrames).toContain("handler")
 		expect(result.fpFrames).toContain("process")
@@ -42,14 +49,17 @@ describe("error fingerprint normalization", () => {
 	})
 
 	it("skips Python 'Traceback' header and picks the File lines", () => {
-		const stack = [
-			"Traceback (most recent call last):",
-			'  File "/app/main.py", line 42, in get_user',
-			"    user = db.query(user_id)",
-			'  File "/app/db.py", line 101, in query',
-			"    raise ValueError(f'bad id {user_id}')",
-			"ValueError: bad id 12345",
-		].join("\n")
+		const stack = Arr.join(
+			[
+				"Traceback (most recent call last):",
+				'  File "/app/main.py", line 42, in get_user',
+				"    user = db.query(user_id)",
+				'  File "/app/db.py", line 101, in query',
+				"    raise ValueError(f'bad id {user_id}')",
+				"ValueError: bad id 12345",
+			],
+			"\n",
+		)
 
 		const result = computeFingerprintInputs({
 			exceptionType: "ValueError",
@@ -65,12 +75,15 @@ describe("error fingerprint normalization", () => {
 	})
 
 	it("strips Java line numbers and keeps frame identifiers", () => {
-		const stack = [
-			'java.lang.NullPointerException: Cannot invoke "String.length()"',
-			"\tat com.example.UserService.getUser(UserService.java:45)",
-			"\tat com.example.UserController.handle(UserController.java:23)",
-			"\tat com.example.Main.main(Main.java:12)",
-		].join("\n")
+		const stack = Arr.join(
+			[
+				'java.lang.NullPointerException: Cannot invoke "String.length()"',
+				"\tat com.example.UserService.getUser(UserService.java:45)",
+				"\tat com.example.UserController.handle(UserController.java:23)",
+				"\tat com.example.Main.main(Main.java:12)",
+			],
+			"\n",
+		)
 
 		const result = computeFingerprintInputs({
 			exceptionType: "java.lang.NullPointerException",
@@ -81,15 +94,18 @@ describe("error fingerprint normalization", () => {
 		expect(result.topFrame).toContain("UserService.getUser")
 		expect(result.topFrame).toContain("UserService.java)")
 		expect(result.topFrame).not.toMatch(/:45/)
-		expect(result.fpFrames.split("\n")).toHaveLength(3)
+		expect(Str.split("\n")(result.fpFrames)).toHaveLength(3)
 	})
 
 	it("ignores language-specific header lines that have no :NUMBER", () => {
-		const stack = [
-			"RuntimeError: something went wrong 0xdeadbeef",
-			"\tat main.go:10 +0x1234",
-			"\tat runtime.go:50 +0x5678",
-		].join("\n")
+		const stack = Arr.join(
+			[
+				"RuntimeError: something went wrong 0xdeadbeef",
+				"\tat main.go:10 +0x1234",
+				"\tat runtime.go:50 +0x5678",
+			],
+			"\n",
+		)
 
 		const result = computeFingerprintInputs({
 			exceptionType: "RuntimeError",
@@ -177,12 +193,15 @@ describe("error fingerprint normalization", () => {
 			// The params line carries the actual row values — uuid, org id, customer
 			// email, branch names, timestamps — so one bug became one issue per row:
 			// 15,051 fingerprints for 13 real call sites.
-			const stack = [
-				'@maple/api/lib/DatabaseError: Failed query: insert into "planetscale_events"',
-				"params: e6261d5f-bee7-4f98-a313-42cb91f5f5bc,org_3AuiNC,deploy_request.opened,36,david@superwall.com,2026-08-05T00:30:19.311Z",
-				"    at toDatabaseError (worker.js:1542:13655)",
-				"    at worker.js:14:7233",
-			].join("\n")
+			const stack = Arr.join(
+				[
+					'@maple/api/lib/DatabaseError: Failed query: insert into "planetscale_events"',
+					"params: e6261d5f-bee7-4f98-a313-42cb91f5f5bc,org_3AuiNC,deploy_request.opened,36,david@superwall.com,2026-08-05T00:30:19.311Z",
+					"    at toDatabaseError (worker.js:1542:13655)",
+					"    at worker.js:14:7233",
+				],
+				"\n",
+			)
 
 			const result = computeFingerprintInputs({
 				exceptionType: "@maple/api/lib/DatabaseError",
@@ -198,11 +217,14 @@ describe("error fingerprint normalization", () => {
 		it("does not treat a multi-line SQL body as frames", () => {
 			// `from (values ($2::text, ...))` matched the Ruby `from ` alternative
 			// until it was required to carry a `path:line`.
-			const stack = [
-				"@maple/api/lib/DatabaseError: Failed query: update x",
-				"\t\t\t\tfrom (values ($2::text, $3::timestamptz, $4::integer)) as v(id, seen, cnt)",
-				"    at toDatabaseError (worker.js:1542:13655)",
-			].join("\n")
+			const stack = Arr.join(
+				[
+					"@maple/api/lib/DatabaseError: Failed query: update x",
+					"\t\t\t\tfrom (values ($2::text, $3::timestamptz, $4::integer)) as v(id, seen, cnt)",
+					"    at toDatabaseError (worker.js:1542:13655)",
+				],
+				"\n",
+			)
 
 			const result = computeFingerprintInputs({
 				exceptionType: "@maple/api/lib/DatabaseError",
@@ -220,7 +242,7 @@ describe("error fingerprint normalization", () => {
 			// real call sites.
 			const header =
 				'@maple/cli/IngestRejected: chDB insert (traces): Code: 62. Syntax error: failed at position 1628 (\'{"start_time":"2026-08-15 14:32:11"}\')'
-			const stack = [header, "    at <anonymous> (/$bunfs/root/maple:61585:39)"].join("\n")
+			const stack = Arr.join([header, "    at <anonymous> (/$bunfs/root/maple:61585:39)"], "\n")
 
 			const result = computeFingerprintInputs({
 				exceptionType: "@maple/cli/IngestRejected",
@@ -476,7 +498,7 @@ describe("error fingerprint normalization", () => {
 		})
 
 		it("truncates long StatusMessage to 120 characters after redaction", () => {
-			const long = "x".repeat(500)
+			const long = Str.repeat(500)("x")
 			const result = computeFingerprintInputs({
 				exceptionType: "",
 				exceptionStacktrace: "",
@@ -546,6 +568,17 @@ describe("error fingerprint normalization", () => {
 					'{"type":"https://e/rate-limit","title":"Rate limited","detail":"retry in 5s","status":429}',
 				),
 			).toBe('detail="retry in #s"|status=#|title="Rate limited"|type="/rate-limit"')
+		})
+
+		it("keeps a problem type's path, which names the failure when the title is generic", () => {
+			const problem = (type: string) => sig(JSON.stringify({ type, title: "Request failed" }))
+
+			expect(problem("https://errors.example/problems/card-declined")).not.toBe(
+				problem("https://errors.example/problems/limit-exceeded"),
+			)
+			expect(problem("https://a.example/problems/card-declined")).toBe(
+				problem("https://b.example/problems/card-declined"),
+			)
 		})
 
 		it("is insensitive to key order", () => {
@@ -624,14 +657,16 @@ describe("SQL parity", () => {
 		expect(sql).toContain(`position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0`)
 		expect(sql).toContain(`NOT match(line, ${chPattern(SCHEMA_PATH_LINE_PATTERN)})`)
 		expect(sql).toContain(`NOT match(line, ${chPattern(SPAN_NAME_FRAME_PATTERN)})`)
+		expect(sql).toContain(`NOT match(line, ${chPattern(INTERNAL_FRAME_PATTERN)})`)
 		// The frame limit reads _msgSig, so the signature must be defined first.
-		expect(sql.indexOf("AS _msgSig")).toBeLessThan(sql.indexOf("AS _rawFrames"))
+		expect(sql.indexOf("AS _msgSig")).toBeLessThan(sql.indexOf("AS _topFrames"))
 		for (const [pattern, replacement] of [
 			...FRAME_REDACTIONS,
+			...JSON_TYPE_VALUE_REDACTIONS,
 			...JSON_VALUE_REDACTIONS,
 			...ERROR_MSG_REDACTIONS,
 		]) {
-			const chReplacement = replacement.replace(/\$([1-9])/g, "\\$1")
+			const chReplacement = Str.replace(/\$([1-9])/g, "\\$1")(replacement)
 			expect(sql).toContain(`${chPattern(pattern)}, ${chPattern(chReplacement)}`)
 		}
 	})
@@ -651,7 +686,7 @@ describe("SQL parity", () => {
 
 	it("keeps the frame limit in step", () => {
 		expect(sql).toContain(
-			`1, if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})\n          ) AS _rawFrames`,
+			`1, if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})\n          ) AS _topFrames`,
 		)
 	})
 
@@ -671,11 +706,12 @@ describe("SQL parity", () => {
 		// `$<name>` or a literal backslash would mean different things on each side.
 		for (const [pattern, replacement] of [
 			...FRAME_REDACTIONS,
+			...JSON_TYPE_VALUE_REDACTIONS,
 			...JSON_VALUE_REDACTIONS,
 			...ERROR_MSG_REDACTIONS,
 		]) {
-			const groups = [...replacement.matchAll(/\$([1-9])/g)].map((m) => Number(m[1]))
-			expect(replacement.replace(/\$[1-9]/g, "")).not.toMatch(/[$\\]/)
+			const groups = Arr.map([...replacement.matchAll(/\$([1-9])/g)], (m) => Number(m[1]))
+			expect(Str.replace(/\$[1-9]/g, "")(replacement)).not.toMatch(/[$\\]/)
 			const capturing = new RegExp(`${pattern}|`).exec("")?.length ?? 1
 			for (const group of groups) expect(group).toBeLessThan(capturing)
 		}
@@ -686,9 +722,13 @@ describe("Apple crash frames", () => {
 	// The shape `maple-swift`'s CrashReport.stacktrace renders: frame index, binary
 	// name, hex address, hex offset. Unsymbolicated — MetricKit has no symbols.
 	const appleStack = (frames: ReadonlyArray<[string, string, string]>) =>
-		frames
-			.map(([binary, address, offset], i) => `${i}   ${binary}   0x${address}   +0x${offset}`)
-			.join("\n")
+		Arr.join(
+			Arr.map(
+				frames,
+				([binary, address, offset], i) => `${i}   ${binary}   0x${address}   +0x${offset}`,
+			),
+			"\n",
+		)
 
 	it("matches Apple frames and strips address and offset", () => {
 		const result = computeFingerprintInputs({
@@ -703,7 +743,7 @@ describe("Apple crash frames", () => {
 		})
 
 		expect(result.topFrame).toBe("0   MyApp      +")
-		expect(result.fpFrames.split("\n")).toHaveLength(MAX_FINGERPRINT_FRAMES)
+		expect(Str.split("\n")(result.fpFrames)).toHaveLength(MAX_FINGERPRINT_FRAMES)
 		expect(result.fpFrames).toContain("UIKitCore")
 		expect(result.fpFrames).not.toContain("libdyld")
 	})
@@ -745,13 +785,13 @@ describe("Apple crash frames", () => {
 		// message hash — the exact failure this alternative exists to fix.
 		const result = computeFingerprintInputs({
 			exceptionType: "EXC_BAD_ACCESS",
-			exceptionStacktrace: [
-				"0   My App   0x104112600   +0x1d0f0",
-				"1   My App   0x1041125a0   +0xa112",
-			].join("\n"),
+			exceptionStacktrace: Arr.join(
+				["0   My App   0x104112600   +0x1d0f0", "1   My App   0x1041125a0   +0xa112"],
+				"\n",
+			),
 			statusMessage: "",
 		})
-		expect(result.fpFrames.split("\n")).toHaveLength(2)
+		expect(Str.split("\n")(result.fpFrames)).toHaveLength(2)
 		expect(result.topFrame).toContain("My App")
 		expect(result.msgSignature).toBe("")
 	})
@@ -791,7 +831,7 @@ describe("fingerprint v3", () => {
 		const inputs = computeFingerprintInputs({ exceptionType, exceptionStacktrace, statusMessage })
 		return `${inputs.fpFrames}\u0000${inputs.msgSignature}`
 	}
-	const stack = (...frames: ReadonlyArray<string>) => ["Error: boom", ...frames].join("\n")
+	const stack = (...frames: ReadonlyArray<string>) => Arr.join(["Error: boom", ...frames], "\n")
 
 	describe("frames", () => {
 		it("keeps only the throw site for a namespaced type, so its callers are one issue", () => {
@@ -889,13 +929,16 @@ describe("fingerprint v3", () => {
 
 		it("drops location-less span frames, so an Effect span rename keeps the issue", () => {
 			const httpClientError = (spanFrame: string) =>
-				[
-					"HttpClientError: Transport error (POST https://app.maple.dev/_api/internal/query-engine/infra-presence)",
-					"    at catch (https://app.maple.dev/assets/atom-client-C8D2PDUe.js:1:16420)",
-					"    at https://app.maple.dev/assets/Effect-lYjf0hDm.js:13:6044",
-					spanFrame,
-					"    at infraPresence (https://app.maple.dev/assets/warehouse-query-atoms-C2u8hHOl.js:1:6826)",
-				].join("\n")
+				Arr.join(
+					[
+						"HttpClientError: Transport error (POST https://app.maple.dev/_api/internal/query-engine/infra-presence)",
+						"    at catch (https://app.maple.dev/assets/atom-client-C8D2PDUe.js:1:16420)",
+						"    at https://app.maple.dev/assets/Effect-lYjf0hDm.js:13:6044",
+						spanFrame,
+						"    at infraPresence (https://app.maple.dev/assets/warehouse-query-atoms-C2u8hHOl.js:1:6826)",
+					],
+					"\n",
+				)
 			const message =
 				"Transport error (POST https://app.maple.dev/_api/internal/query-engine/infra-presence)"
 			const before = httpClientError("    at http.client POST")
@@ -927,14 +970,17 @@ describe("fingerprint v3", () => {
 
 		it("reads a Python traceback from the raise site, not the shared framework layers", () => {
 			const traceback = (raiseSite: string) =>
-				[
-					"Traceback (most recent call last):",
-					'  File "/app/.venv/lib/python3.12/site-packages/opentelemetry/instrumentation/asgi/__init__.py", line 631, in __call__',
-					'  File "/app/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 165, in __call__',
-					'  File "/app/.venv/lib/python3.12/site-packages/starlette/routing.py", line 74, in app',
-					raiseSite,
-					"ValueError: invalid input",
-				].join("\n")
+				Arr.join(
+					[
+						"Traceback (most recent call last):",
+						'  File "/app/.venv/lib/python3.12/site-packages/opentelemetry/instrumentation/asgi/__init__.py", line 631, in __call__',
+						'  File "/app/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 165, in __call__',
+						'  File "/app/.venv/lib/python3.12/site-packages/starlette/routing.py", line 74, in app',
+						raiseSite,
+						"ValueError: invalid input",
+					],
+					"\n",
+				)
 
 			expect(
 				key("ValueError", traceback('  File "/app/orders.py", line 12, in create'), "invalid input"),
@@ -1113,11 +1159,108 @@ describe("fingerprint v3", () => {
 			const json = (url: string, user: string) => JSON.stringify({ error: "fetch_failed", url, user })
 
 			expect(signature(json("https://a.acme.dev/favicon.ico", "ann@acme.dev"))).toBe(
-				'error="fetch_failed"|url="/favicon.ico"|user="EMAIL"',
+				'error="fetch_failed"|url="#"|user="EMAIL"',
 			)
 			expect(signature(json("https://b.other.io/favicon.ico", "bo@other.io"))).toBe(
 				signature(json("https://a.acme.dev/favicon.ico", "ann@acme.dev")),
 			)
 		})
+	})
+})
+
+describe("grouping residuals from a production replay", () => {
+	const inputs = (exceptionType: string, exceptionStacktrace: string, statusMessage: string) =>
+		computeFingerprintInputs({ exceptionType, exceptionStacktrace, statusMessage })
+	const signature = (statusMessage: string) => inputs("", "", statusMessage).msgSignature
+	const frames = (...lines: ReadonlyArray<string>) =>
+		inputs("GatewayError", Arr.join(["GatewayError: boom", ...lines], "\n"), "").fpFrames
+
+	it("folds a path held in a JSON value, so scanner probes are one issue", () => {
+		const probe = (url: string) => signature(JSON.stringify({ _tag: "NoSubdomainInUrlParams", url }))
+
+		expect(probe("/.git/config")).toBe(probe("/supabase/config.toml"))
+		expect(probe("https://x.acme.dev/.env")).toBe('_tag="NoSubdomainInUrlParams"|url="#"')
+		expect(signature(JSON.stringify({ error: "not_found", path: "/a" }))).not.toBe(
+			signature(JSON.stringify({ error: "forbidden", path: "/a" })),
+		)
+	})
+
+	it("keeps a long code in a JSON value, which names the failure", () => {
+		expect(signature(JSON.stringify({ code: "ERR_UNSUPPORTED_PAYMENT_METHOD_TYPE" }))).toBe(
+			'code="ERR_UNSUPPORTED_PAYMENT_METHOD_TYPE"',
+		)
+	})
+
+	it("folds a route-not-found path the scan cut before its closing parenthesis", () => {
+		const longProbe = `RouteNotFound (GET /${Str.repeat(300)("$%7B")})`
+
+		expect(signature(longProbe)).toBe("RouteNotFound (GET PATH)")
+	})
+
+	it("folds Effect 4's `GET /x not found` wording, and only at the start of the message", () => {
+		expect(signature("GET /v2/.env not found")).toBe(signature("GET /wp-login.php not found"))
+		expect(signature("GET /v2/.env not found")).toBe("GET PATH not found")
+		expect(signature("lookup failed: GET /api/users not found")).not.toBe(
+			signature("lookup failed: GET /api/teams not found"),
+		)
+	})
+
+	it("redacts a masked secret however short", () => {
+		const denied = (key: string) =>
+			signature(`Permission denied. The provided key '${key}' does not have the required permissions`)
+
+		expect(denied("rk_live_...DtrK")).toBe(denied("rk_test_...U9o3"))
+		expect(signature('token "sk-****abcd" revoked')).toBe('token "#" revoked')
+		expect(signature("No such table: 'users'")).not.toBe(signature("No such table: 'orders'"))
+	})
+
+	it("drops runtime-internal frames, which come and go with how a promise resumed", () => {
+		const site = "    at storeFresh (/app/worker.js:1:200)"
+		const caller = "    at storeForward (/app/worker.js:1:900)"
+
+		expect(frames(site, "    at next (<anonymous>)", caller)).toBe(frames(site, caller))
+		expect(
+			frames(
+				"    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)",
+				"    at EventEmitter.emit (node:events:517:28)",
+				"    at Array.forEach (native)",
+				"    at run (native:7:39)",
+				"    at op_fetch (ext:core/01_core.js:3:1)",
+				site,
+			),
+		).toBe("    at storeFresh (/app/worker.js)")
+	})
+
+	it("keeps anonymous functions that have a real location", () => {
+		expect(
+			frames("    at <anonymous> (/app/worker.js:4:2)", "    at Object.<anonymous> (/app/main.js:9:1)"),
+		).toBe("    at <anonymous> (/app/worker.js)\n    at Object.<anonymous> (/app/main.js)")
+		expect(frames("    at nativeBridge (/app/bridge.js:1:1)")).toBe(
+			"    at nativeBridge (/app/bridge.js)",
+		)
+	})
+
+	it("collapses repeated frames so they do not use up the hashed frames", () => {
+		const closure = "    at /app/index.js:1:4410"
+
+		expect(
+			frames(
+				closure,
+				"    at /app/index.js:1:9921",
+				"    at getUserAttributes (/app/index.js:1:300)",
+				"    at enrichEvent (/app/index.js:1:700)",
+			),
+		).toBe(
+			"    at /app/index.js\n    at getUserAttributes (/app/index.js)\n    at enrichEvent (/app/index.js)",
+		)
+	})
+
+	it("normalizes a bounded number of frames before collapsing repeats", () => {
+		const recursion = Array.from(
+			{ length: MAX_NORMALIZED_FRAMES + 5 },
+			() => "    at walk (/app/tree.js:3:1)",
+		)
+
+		expect(frames(...recursion, "    at main (/app/main.js:1:1)")).toBe("    at walk (/app/tree.js)")
 	})
 })

@@ -3,7 +3,7 @@
  * parent and the only writer: state lives in a `Ref`, every change goes through `mutate` under a
  * single permit, and the store sees each new snapshot before the next decision.
  */
-import { Effect, Ref, type Schema, Semaphore } from "effect"
+import { Effect, Ref, type Schema, Semaphore, Array as Arr, String as Str } from "effect"
 import type { ExecutionProfile } from "../ecosystems"
 import type { AgentContext, ExecutionPolicy } from "../prompts"
 import type { Candidate, UncoveredSurface } from "../results"
@@ -82,6 +82,8 @@ export interface EngineState {
 	readonly criticClean: boolean
 	/** Every agent id this run spent, so none is ever reused. */
 	readonly usedIds: ReadonlySet<string>
+	/** What the parent promoted for each agent (`AgentAnswer.promoted`): the artifacts a `local` check may cite. */
+	readonly promoted: ReadonlyMap<string, ReadonlySet<string>>
 	/** Why the host stopped launching agents (the org's budget is spent); null while it launches. */
 	readonly halted: string | null
 	readonly usage: { readonly inputTokens: number; readonly outputTokens: number; readonly costUsd: number }
@@ -101,6 +103,7 @@ export const initialState: EngineState = {
 	incomplete: [],
 	criticClean: false,
 	usedIds: new Set(),
+	promoted: new Map(),
 	halted: null,
 	usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
 }
@@ -121,7 +124,7 @@ export const withEstimate = (
 export const discardSummary = (paths: ReadonlyArray<string>): string =>
 	paths.length === 0
 		? "result is not exactly one JSON object for its contract"
-		: `result broke its contract at: ${paths.slice(0, 8).join(", ")}${paths.length > 8 ? ` (+${paths.length - 8} more)` : ""}`
+		: `result broke its contract at: ${Arr.join(paths.slice(0, 8), ", ")}${paths.length > 8 ? ` (+${paths.length - 8} more)` : ""}`
 
 type Attempt<A> =
 	| { readonly _tag: "Decoded"; readonly value: A }
@@ -244,6 +247,18 @@ export const makeEngine = (input: AuditRunInput) =>
 					})
 					return undefined
 				}
+				const promoted = answer.success.promoted ?? []
+				if (promoted.length > 0) {
+					yield* Ref.update(state, (s) => ({
+						...s,
+						promoted: new Map(s.promoted).set(agentId, new Set(promoted)),
+					}))
+					yield* Effect.forEach(
+						promoted,
+						(path) => event({ _tag: "Note", message: `${agentId} promoted ${path}` }),
+						{ discard: true },
+					)
+				}
 				const usage = answer.success.usage
 				if (usage !== undefined) {
 					yield* Ref.update(state, (s) => ({
@@ -316,7 +331,7 @@ export const makeEngine = (input: AuditRunInput) =>
 				const answer = yield* call(role, agentId, prompt)
 				if (answer === undefined) return NO_TEXT
 				const unread = answer.toolCalls === 0
-				if (answer.text.trim() === "" || unread) {
+				if (Str.trim(answer.text) === "" || unread) {
 					yield* event({
 						_tag: "Agent",
 						role,

@@ -26,7 +26,7 @@ import {
 	InvestigationSubject,
 	InvestigationSubjectSnapshot,
 } from "@maple/domain/http"
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 
 const decodeSubject = Schema.decodeUnknownOption(InvestigationSubject)
 const decodeSnapshot = Schema.decodeUnknownOption(InvestigationSubjectSnapshot)
@@ -161,7 +161,7 @@ const fallbackSnapshot = (subject: V2Investigation["subject"]): V2Investigation[
 			? subject.title
 			: subject.type === "fix_verification"
 				? "Fix verification"
-				: `${subject.incident_kind[0]?.toUpperCase() ?? ""}${subject.incident_kind.slice(1)} incident`,
+				: `${subject.incident_kind[0]?.toUpperCase() ?? ""}${Str.slice(1)(subject.incident_kind)} incident`,
 	scope: null,
 	status: "open",
 	severity: null,

@@ -16,7 +16,7 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertRules, Dashboards, ErrorIssues, VcsCommits } from "@maple/db/tables"
 import { CH } from "@maple/query-engine"
-import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
+import { Context, DateTime, Duration, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
@@ -537,7 +537,7 @@ const toCatalogIssue = (row: {
 }): CatalogIssue => ({
 	id: row.id,
 	fingerprintHash: row.fingerprintHash,
-	title: (row.errorLabel || `${row.exceptionType}: ${row.exceptionMessage}`).slice(0, 200),
+	title: Str.slice(0, 200)(row.errorLabel || `${row.exceptionType}: ${row.exceptionMessage}`),
 	service: row.serviceName,
 	topFrame: row.topFrame,
 	occurrences: row.occurrenceCount,

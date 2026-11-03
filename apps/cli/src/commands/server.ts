@@ -1,11 +1,21 @@
-import { Clock, Config, Duration, Effect, Option, Schema } from "effect"
+import {
+	Clock,
+	Config,
+	DateTime,
+	Duration,
+	Effect,
+	Option,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FileSystem } from "effect/FileSystem"
 import * as Command from "effect/cli/Command"
 import * as Flag from "effect/cli/Flag"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { closeSync, openSync, readFileSync, renameSync, statSync, unlinkSync } from "node:fs"
 import { dirname, resolve } from "node:path"
-import { ensurePortFree, ServerBindError, startServer } from "@maple/local-server/serve"
+import { ensurePortFree, startServer } from "@maple/local-server/serve"
 import { TelemetryLayer } from "../core/telemetry"
 import { loadProjectorModules, resolveProjectorModulePaths } from "../server/eventing/projector-modules"
 import {
@@ -119,6 +129,7 @@ import {
 	DEFAULT_REMOTE_UI_URL,
 	isLoopbackHostname,
 } from "@maple/local-server/local-address"
+import { encodeJsonPretty } from "@maple/local-server/json"
 
 /** An unset or empty env var reads as `undefined`; never fails. */
 const optionalEnvString = (key: string): Effect.Effect<string | undefined> =>
@@ -166,7 +177,7 @@ export const authSummary = (auth: RemoteAuth, bindHost: string): string | undefi
 	]
 	if (open.length === 0) return "ingest key + access token"
 	if (isLoopbackHostname(bindHost)) return undefined
-	return amber(`⚠ open to anyone who can reach this address: ${open.join(", ")}`)
+	return amber(`⚠ open to anyone who can reach this address: ${Arr.join(open, ", ")}`)
 }
 
 /** The startup banner shown once the server is listening. `dashboardUrl` is the
@@ -183,7 +194,7 @@ const startBanner = (
 	inMemory: InMemoryStore | undefined,
 ): string => {
 	// No leading indent here: the gutter below supplies it.
-	const row = (key: string, value: string) => `${dim(key.padEnd(11))}${value}`
+	const row = (key: string, value: string) => `${dim(Str.padEnd(11)(key))}${value}`
 	const content = [
 		// The lockup. Mono has only one face, so the tension that carries it in
 		// the UI (display vs. mono) becomes weight: `maple` bold, `local` dim.
@@ -197,7 +208,7 @@ const startBanner = (
 		...(dashboardUrl
 			? [
 					row("dashboard", cyan(dashboardUrl)),
-					...(offline ? [] : [`${" ".repeat(11)}${dim("· bundled UI: pass --offline")}`]),
+					...(offline ? [] : [`${Str.repeat(11)(" ")}${dim("· bundled UI: pass --offline")}`]),
 				]
 			: []),
 		inMemory === undefined
@@ -225,11 +236,13 @@ const startBanner = (
 	const lines =
 		(process.stderr.columns ?? 80) >= 72
 			? Array.from({ length: Math.max(MARK_LINES.length, content.length) }, (_, i) =>
-					`  ${amber(MARK_LINES[i] ?? " ".repeat(MARK_WIDTH))}   ${content[i] ?? ""}`.trimEnd(),
+					Str.trimEnd(
+						`  ${amber(MARK_LINES[i] ?? Str.repeat(MARK_WIDTH)(" "))}   ${content[i] ?? ""}`,
+					),
 				)
-			: content.map((line) => `  ${line}`)
+			: Arr.map(content, (line) => `  ${line}`)
 
-	return `\n${lines.join("\n")}\n\n`
+	return `\n${Arr.join(lines, "\n")}\n\n`
 }
 
 const alreadyRunning =
@@ -254,7 +267,7 @@ const runningRefusal =
 const adoptSidecars = (dataDir: string): Effect.Effect<void, ServerStateFileError> =>
 	Effect.flatMap(adoptLegacyStoreFiles(dataDir), (adopted) =>
 		Effect.sync(() => {
-			if (adopted.length > 0) debugLog("adopted legacy store files", adopted.join(", "))
+			if (adopted.length > 0) debugLog("adopted legacy store files", Arr.join(adopted, ", "))
 		}),
 	)
 
@@ -468,7 +481,7 @@ const BACKGROUND_ABORT_GRACE_MS = 20_000
  * the data loss this exists to prevent.
  */
 export const parseCheckpointInterval = (value: string): Duration.Duration | undefined | "invalid" => {
-	const raw = value.trim().toLowerCase()
+	const raw = Str.toLowerCase(Str.trim(value))
 	if (raw === "off" || raw === "0" || raw === "none") return undefined
 	const match = raw.match(/^(\d+)\s*(s|m|h)$/)
 	if (!match) return "invalid"
@@ -507,7 +520,7 @@ const storeHasLiveData = (dataDir: string): Effect.Effect<boolean, never, FileSy
 	Effect.gen(function* () {
 		const fs = yield* FileSystem
 		return yield* fs.readDirectory(dataDir).pipe(
-			Effect.map((entries) => entries.some((entry) => entry !== "backups")),
+			Effect.map((entries) => Arr.some(entries, (entry) => entry !== "backups")),
 			Effect.orElseSucceed(() => false),
 		)
 	})
@@ -597,7 +610,7 @@ const takeCheckpointQuietly = (
 								new CheckpointChildError({
 									reason,
 									exitCode,
-									message: stderr.trim() || `maple checkpoint exited ${exitCode}`,
+									message: Str.trim(stderr) || `maple checkpoint exited ${exitCode}`,
 								}),
 							),
 				),
@@ -686,7 +699,7 @@ const checkpointRefreshLoop = (
 
 const fileSize = (path: string): number =>
 	Effect.runSync(
-		Effect.try({ try: () => statSync(path).size, catch: (error) => error }).pipe(
+		Effect.try({ try: () => statSync(path).size, catch: stateFileError(path, "stat") }).pipe(
 			Effect.orElseSucceed(() => 0),
 		),
 	)
@@ -703,15 +716,18 @@ const childFailureLine = (logPath: string, fromByte: number): string =>
 	Effect.runSync(
 		Effect.try({
 			try: () => {
-				const lines = readFileSync(logPath)
-					.subarray(fromByte)
-					.toString("utf8")
-					.split("\n")
-					.map((line) => line.trim())
-					.filter((line) => line.length > 0)
-				return [...lines].reverse().find((line) => line.startsWith("error:")) ?? lines.at(-1) ?? ""
+				const lines = Arr.filter(
+					Arr.map(
+						Str.split("\n")(readFileSync(logPath).subarray(fromByte).toString("utf8")),
+						(line) => Str.trim(line),
+					),
+					(line) => line.length > 0,
+				)
+				return (
+					[...lines].reverse().find((line) => Str.startsWith("error:")(line)) ?? lines.at(-1) ?? ""
+				)
 			},
-			catch: (error) => error,
+			catch: stateFileError(logPath, "read"),
 		}).pipe(Effect.orElseSucceed(() => "")),
 	)
 
@@ -843,7 +859,7 @@ const startDetached = (options: DetachedStart) =>
 				exitCode: child.exitCode,
 				message:
 					`background server exited during startup` +
-					(cause ? ` (${cause.replace(/^error:\s*/, "")})` : "") +
+					(cause ? ` (${Str.replace(/^error:\s*/, "")(cause)})` : "") +
 					`; full log: ${prettyPath(logPath)}`,
 			})
 		}
@@ -941,7 +957,7 @@ export const start = Command.make("start", {
 			if (conflicts.length > 0) {
 				return yield* new ServerOptionError({
 					source: "--in-memory",
-					message: `--in-memory keeps nothing after the run, so it cannot be combined with ${conflicts.join(", ")}`,
+					message: `--in-memory keeps nothing after the run, so it cannot be combined with ${Arr.join(conflicts, ", ")}`,
 				})
 			}
 			// Acquired on the handler's scope, outside the server's: the store is
@@ -979,13 +995,10 @@ export const start = Command.make("start", {
 			}
 			// `--offline` trusts no hosted origin at all, so none is configured.
 			const hostedUiUrl = a.offline ? undefined : yield* remoteUiUrl()
+			const advertiseHostEnv = yield* optionalEnvString("MAPLE_LOCAL_ADVERTISE_HOST")
 			const advertiseHost = yield* validatedHost(
 				"--advertise-host / MAPLE_LOCAL_ADVERTISE_HOST",
-				resolveAdvertiseHost(
-					Option.getOrUndefined(a.advertiseHost),
-					yield* optionalEnvString("MAPLE_LOCAL_ADVERTISE_HOST"),
-					bindHost,
-				),
+				resolveAdvertiseHost(Option.getOrUndefined(a.advertiseHost), advertiseHostEnv, bindHost),
 			)
 			const scope = commandScope({ dataDir, port: a.port, host: bindHost })
 			const pidPath = serverPidPath(dataDir)
@@ -1244,7 +1257,8 @@ export const start = Command.make("start", {
 						hostname: bindHost,
 						browserHosts: Array.from(
 							new Set(
-								[bindHost, connectionHostForBindHost(bindHost), advertiseHost].map(
+								Arr.map(
+									[bindHost, connectionHostForBindHost(bindHost), advertiseHost],
 									canonicalUrlHostname,
 								),
 							),
@@ -1275,21 +1289,18 @@ export const start = Command.make("start", {
 							.makeDirectory(dirname(discoveryPath), { recursive: true })
 							.pipe(Effect.ignore)
 					}
+					const startedAt = yield* Effect.map(DateTime.now, DateTime.formatIso)
 					yield* Effect.acquireRelease(
 						Effect.tryPromise({
 							try: () =>
 								durableWrite(
 									discoveryPath,
-									`${JSON.stringify(
-										{
-											pid: process.pid,
-											url: probeAddr,
-											dataDir,
-											startedAt: new Date().toISOString(),
-										} satisfies ServerDiscovery,
-										null,
-										2,
-									)}\n`,
+									`${encodeJsonPretty({
+										pid: process.pid,
+										url: probeAddr,
+										dataDir,
+										startedAt,
+									} satisfies ServerDiscovery)}\n`,
 								),
 							catch: stateFileError(discoveryPath, "write"),
 						}).pipe(
@@ -1375,7 +1386,7 @@ const maintenanceInProgress = (dataDir: string): boolean =>
 	Effect.runSync(
 		Effect.try({
 			try: () => readFileSync(`${resolve(dataDir)}.maple-maintenance-lock/owner.json`, "utf8"),
-			catch: (error) => error,
+			catch: stateFileError(`${resolve(dataDir)}.maple-maintenance-lock/owner.json`, "read"),
 		}).pipe(
 			Effect.map((raw) => {
 				const owner = decodeMaintenanceOwner(raw)
@@ -1394,12 +1405,12 @@ const statusConfirmsPid = (
 ): Effect.Effect<boolean, never, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const discovery = yield* readDiscovery(serverDiscoveryPath(dataDir))
+		const probeHost =
+			scope.host ??
+			(yield* optionalEnvString("MAPLE_LOCAL_BIND_HOST").pipe(Effect.map(resolveBindHost)))
 		const urls = [
 			...(Option.isSome(discovery) && discovery.value.pid === pid ? [discovery.value.url] : []),
-			serverProbeUrl(
-				scope.host ?? resolveBindHost(yield* optionalEnvString("MAPLE_LOCAL_BIND_HOST")),
-				scope.port ?? 4318,
-			),
+			serverProbeUrl(probeHost, scope.port ?? 4318),
 		]
 		for (const url of urls) {
 			const status = yield* fetchLocalStatus(url, "1 second")
@@ -1454,7 +1465,8 @@ export const stop = Command.make("stop", { dataDir: dataDirFlag }).pipe(
 					process.kill(pid, "SIGTERM")
 					return true
 				},
-				catch: (error) => error,
+				catch: (error) =>
+					new ServerStateError({ message: `could not signal PID ${pid}: ${describeError(error)}` }),
 			}).pipe(Effect.orElseSucceed(() => false))
 			yield* Effect.sync(() =>
 				process.stderr.write(
@@ -1577,16 +1589,20 @@ export const checkpoint = Command.make("checkpoint", {
 			// store started on a non-default port is checkpointed without repeating it.
 			const discovered = Option.isSome(a.port)
 				? Option.none<URL>()
-				: Option.flatMap(yield* readDiscovery(serverDiscoveryPath(dataDir)), (found) =>
-						isProcessAlive(found.pid) && URL.canParse(found.url)
-							? Option.some(new URL(found.url))
-							: Option.none(),
+				: yield* readDiscovery(serverDiscoveryPath(dataDir)).pipe(
+						Effect.map(
+							Option.flatMap((found) =>
+								isProcessAlive(found.pid) && URL.canParse(found.url)
+									? Option.some(new URL(found.url))
+									: Option.none(),
+							),
+						),
 					)
 			const result = yield* createCheckpoint({
 				dataDir,
 				host: Option.match(discovered, {
 					onNone: () => connectionHostForBindHost(a.host),
-					onSome: (url) => url.hostname.replace(/^\[(.*)\]$/, "$1"),
+					onSome: (url) => Str.replace(/^\[(.*)\]$/, "$1")(url.hostname),
 				}),
 				port: Option.getOrElse(a.port, () =>
 					Option.match(discovered, {

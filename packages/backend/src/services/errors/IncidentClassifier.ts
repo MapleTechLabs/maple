@@ -43,7 +43,8 @@ export class IncidentClassifier extends Context.Service<IncidentClassifier, Inci
 	"@maple/backend/errors/IncidentClassifier",
 	{
 		make: Effect.gen(function* () {
-			const binding = Option.flatten(yield* Effect.serviceOption(AiWorkerFetcher))
+			const fetcher = yield* Effect.serviceOption(AiWorkerFetcher)
+			const binding = Option.flatten(fetcher)
 			const config = yield* Env
 			const token = Option.map(config.INTERNAL_SERVICE_TOKEN, Redacted.value)
 

@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { Schema } from "effect"
 import { describe, expect, test } from "vitest"
-import { decodeLogAttributeFilters } from "../../../../lib/logs/log-attribute-filters"
+import { decodeLogAttributeFilters } from "@maple/views/lib/log-attribute-filters"
 import type { PageContext } from "../../../contract"
 import { init } from "./update"
 import { projectLogsHref } from "./view"

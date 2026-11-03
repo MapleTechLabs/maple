@@ -6,9 +6,11 @@ import {
 	type StatusPageSnapshot,
 } from "@maple/domain/status-page"
 import { FIXTURE_NOW, FIXTURE_PAGE_ID } from "@maple/status-page/fixtures"
-import { Effect, Option } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { handleRequest } from "./handler"
 import { type CachedValue, type StatusEnv, type StatusStorage, StatusStorageError } from "./ports"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** In-memory KV, R2, colo cache and rate limiter; each store can be made to fail. */
 interface ListHook {
@@ -42,8 +44,10 @@ export const makeFakeStorage = () => {
 		kvPut: (key, value) => guard("kv-put", key, () => void kv.set(key, value)),
 		kvList: (prefix, limit) =>
 			guard("kv", prefix, () => {
-				const listed = [...kv.keys()]
-					.filter((key) => key.startsWith(prefix) && !unlisted.has(key))
+				const listed = Arr.filter(
+					[...kv.keys()],
+					(key) => Str.startsWith(prefix)(key) && !unlisted.has(key),
+				)
 					.sort()
 					.slice(0, limit)
 				const raced = duringList.run
@@ -73,7 +77,7 @@ export const publish = (
 	snapshot: StatusPageSnapshot,
 	options: { readonly host?: string; readonly heartbeatAt?: number | null } = {},
 ) => {
-	const json = JSON.stringify(snapshot)
+	const json = encodeJson(snapshot)
 	const host = options.host ?? "status.acme.example"
 	fake.kv.set(StatusPageKeys.host(host), snapshot.pageId)
 	fake.kv.set(StatusPageKeys.slug(snapshot.page.slug), snapshot.pageId)
@@ -87,19 +91,22 @@ export const publish = (
 			at: heartbeatAt,
 			probesSeenAt: heartbeatAt - 30_000,
 		}
-		fake.kv.set(StatusPageKeys.heartbeat, JSON.stringify(heartbeat))
+		fake.kv.set(StatusPageKeys.heartbeat, encodeJson(heartbeat))
 	}
 }
 
 /** Writes one break-glass entry under its own key, as the Worker does. */
 export const putOverlayEntry = (fake: FakeStorage, entry: StatusPageOverlayEntry) =>
-	fake.kv.set(StatusPageKeys.overlayEntry(FIXTURE_PAGE_ID, entry.id), JSON.stringify(entry))
+	fake.kv.set(StatusPageKeys.overlayEntry(FIXTURE_PAGE_ID, entry.id), encodeJson(entry))
 
 /** Every break-glass entry stored for the fixture page, in key order. */
 export const overlayEntries = (fake: FakeStorage): ReadonlyArray<StatusPageOverlayEntry> =>
-	[...fake.kv.entries()]
-		.filter(([key]) => key.startsWith(StatusPageKeys.overlayPage(FIXTURE_PAGE_ID)))
-		.flatMap(([, raw]) => Option.toArray(decodeStatusPageOverlayEntryJson(raw)))
+	Arr.flatMap(
+		Arr.filter([...fake.kv.entries()], ([key]) =>
+			Str.startsWith(StatusPageKeys.overlayPage(FIXTURE_PAGE_ID))(key),
+		),
+		([, raw]) => Option.toArray(decodeStatusPageOverlayEntryJson(raw)),
+	)
 
 /** Runs one request through the handler; ids count up so nonces and entry ids are predictable. */
 export const send = (
@@ -120,5 +127,5 @@ export const postForm = (url: string, fields: ReadonlyArray<readonly [string, st
 	new Request(url, {
 		method: "POST",
 		headers: { "content-type": "application/x-www-form-urlencoded", "cf-connecting-ip": ip },
-		body: new URLSearchParams(fields.map(([name, value]) => [name, value])).toString(),
+		body: new URLSearchParams(Arr.map(fields, ([name, value]) => [name, value])).toString(),
 	})

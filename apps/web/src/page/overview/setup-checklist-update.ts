@@ -3,8 +3,8 @@ import type { OnboardingRole } from "../../lib/onboarding-role"
 import { AsyncData, Command } from "foldkit"
 import type { TimeWindow } from "../../data/time-range"
 import { AppRoute, hrefOf } from "../../route"
-import * as CopyButton from "../../ui/copy-button"
-import * as Tabs from "../../ui/tabs"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Tabs from "@maple/views/ui/tabs"
 import { PageOutMessage, type PageReturn } from "../contract"
 import { PACKAGE_TAB_VALUES, SETUP_TAB_VALUES } from "../kit/guided-setup"
 import type { QuickStartState } from "../onboarding/quick-start-state"
@@ -16,6 +16,7 @@ import {
 	SaveSetupState,
 } from "./setup-checklist-command"
 import { type CopyField, Message, type Model, type ServiceRow, ServicesData } from "./setup-checklist"
+import { Array as Arr, String as Str } from "effect"
 
 type Return = PageReturn<Model, Message>
 
@@ -65,12 +66,14 @@ export const isMounted = (model: Model): boolean => model.state !== null && !mod
 
 /** `useGuidedFramework`: the picked framework, else the role's default. */
 export const frameworkOf = (state: QuickStartState): string =>
-	state.selectedFramework ?? (state.qualifyAnswers.role === null ? "nodejs" : ROLE_DEFAULT_FRAMEWORK[state.qualifyAnswers.role])
+	state.selectedFramework ??
+	(state.qualifyAnswers.role === null ? "nodejs" : ROLE_DEFAULT_FRAMEWORK[state.qualifyAnswers.role])
 
 /** `useIngestConnection`: the org's own services; the seeded `demo-` ones do not count. */
 export const realServices = (model: Model): ReadonlyArray<ServiceRow> =>
-	AsyncData.getOrElse(model.services, (): ReadonlyArray<ServiceRow> => []).filter(
-		(row) => !row.serviceName.startsWith("demo-"),
+	Arr.filter(
+		AsyncData.getOrElse(model.services, (): ReadonlyArray<ServiceRow> => []),
+		(row) => !Str.startsWith("demo-")(row.serviceName),
 	)
 
 /** The card polls only while it waits for the first real service: the celebration needs no reads. */
@@ -110,7 +113,9 @@ const dismissed = (model: Model): Return =>
 /** `FirstTraceCelebration`'s explore: dismiss, then the traces of the first real service. */
 const explore = (model: Model): Return => {
 	const first = realServices(model)[0]
-	const url = hrefOf(AppRoute.Traces({ search: first === undefined ? {} : { services: [first.serviceName] } }))
+	const url = hrefOf(
+		AppRoute.Traces({ search: first === undefined ? {} : { services: [first.serviceName] } }),
+	)
 	return { ...dismissed(model), outMessage: PageOutMessage.RequestedNavigation({ url, isReplace: false }) }
 }
 
@@ -118,7 +123,9 @@ const copyStep = (model: Model, field: CopyField, message: CopyButton.Message): 
 	const next = CopyButton.update(model.copies[field], message)
 	return {
 		model: { ...model, copies: { ...model.copies, [field]: next.model } },
-		commands: Command.mapMessages(next.commands ?? [], (inner) => Message.GotCopyMessage({ field, message: inner })),
+		commands: Command.mapMessages(next.commands ?? [], (inner) =>
+			Message.GotCopyMessage({ field, message: inner }),
+		),
 	}
 }
 
@@ -143,7 +150,9 @@ const tabsStep = (
 }
 
 const isWindow = (model: Model, window: TimeWindow) =>
-	model.window !== null && model.window.startTime === window.startTime && model.window.endTime === window.endTime
+	model.window !== null &&
+	model.window.startTime === window.startTime &&
+	model.window.endTime === window.endTime
 
 export const update = (model: Model, message: Message, context: SetupContext): Return => {
 	const { pinnedNamespace } = context
@@ -199,14 +208,21 @@ export const update = (model: Model, message: Message, context: SetupContext): R
 		ClickedFramework: ({ framework }) =>
 			model.state === null
 				? { model }
-				: saveState({ ...model, snippetCopies: {} }, { ...model.state, selectedFramework: framework }),
+				: saveState(
+						{ ...model, snippetCopies: {} },
+						{ ...model.state, selectedFramework: framework },
+					),
 		CompletedSaveState: () => ({ model }),
-		ClickedRevealPrivateKey: () => ({ model: { ...model, isPrivateKeyVisible: !model.isPrivateKeyVisible } }),
+		ClickedRevealPrivateKey: () => ({
+			model: { ...model, isPrivateKeyVisible: !model.isPrivateKeyVisible },
+		}),
 		GotCopyMessage: ({ field, message: inner }) => copyStep(model, field, inner),
 		GotSetupTabsMessage: ({ message: inner }) =>
 			tabsStep(model, "setupTabs", inner, (child) => Message.GotSetupTabsMessage({ message: child })),
 		GotPackageTabsMessage: ({ message: inner }) =>
-			tabsStep(model, "packageTabs", inner, (child) => Message.GotPackageTabsMessage({ message: child })),
+			tabsStep(model, "packageTabs", inner, (child) =>
+				Message.GotPackageTabsMessage({ message: child }),
+			),
 		GotSnippetCopyMessage: ({ snippet, message: inner }) => snippetCopyStep(model, snippet, inner),
 	})
 }

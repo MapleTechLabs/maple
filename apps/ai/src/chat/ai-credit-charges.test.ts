@@ -7,7 +7,7 @@
  */
 import type { RunUsageDelta } from "@yielded/agent/run-options"
 import { InputTokenUsage, ModelCallUsage, OutputTokenUsage } from "@yielded/agent/usage"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { Response } from "effect/ai"
 import { assert, describe, it } from "vitest"
 import { autumnModelId } from "../platform/ai-credits"
@@ -107,7 +107,7 @@ describe("AI credit charges", () => {
 		await consume(usage, { model: GLM, uncached: 5000, cacheRead: 15_000, text: 100 })
 
 		assert.deepEqual(
-			usage.charges.map((charge) => charge.cacheReadTokens),
+			Arr.map(usage.charges, (charge) => charge.cacheReadTokens),
 			[15_000, 15_000],
 		)
 	})
@@ -119,7 +119,7 @@ describe("AI credit charges", () => {
 		await consume(usage, { model: GLM, uncached: 1000, text: 100 })
 
 		assert.deepEqual(
-			usage.charges.map((charge) => charge.modelId),
+			Arr.map(usage.charges, (charge) => charge.modelId),
 			[
 				"openrouter/z-ai/glm-5.3-flash",
 				"openrouter/anthropic/claude-sonnet-5.5",

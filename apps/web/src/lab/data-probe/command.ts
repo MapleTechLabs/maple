@@ -45,8 +45,7 @@ export const FetchServicesFacets = Command.define("FetchServicesFacets", {
 	messages: [Message.CompletedFetchServicesFacets],
 	execute: ({ key, window }) =>
 		getServicesFacets({ data: window }).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toWarehouseFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toWarehouseFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchServicesFacets({ key, result })),
 		),

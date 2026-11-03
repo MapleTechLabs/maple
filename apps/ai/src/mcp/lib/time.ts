@@ -83,6 +83,11 @@ const formatHours = (hours: number): string => {
 
 /** Clock skew tolerated on a future end_time before it earns a notice (it is clamped either way). */
 const FUTURE_END_TOLERANCE_MS = 60_000
+/**
+ * How far ahead of the server clock a start_time may be and still read as "just now": agents
+ * round up or run a skewed clock by minutes. A timezone mistake is an hour or more off.
+ */
+const FUTURE_START_TOLERANCE_MS = 15 * 60_000
 /** Windows narrower than this get a warning: a near-empty window reads like "nothing happened". */
 const SHORT_WINDOW_MS = 60_000
 
@@ -99,8 +104,9 @@ export type WindowResolution =
 
 /**
  * The window a time-windowed tool queries, relative to the server clock `nowMs`. A future
- * end_time clamps to now, a start_time not in the past is rejected, and a window over
- * `maxHours` keeps end_time and moves start_time forward. Every adjustment returns a notice.
+ * end_time clamps to now, a start_time up to 15 minutes ahead reads the last 15 minutes (a later
+ * one is rejected), and a window over `maxHours` keeps end_time and moves start_time forward.
+ * Every adjustment returns a notice.
  */
 export function resolveWindow(
 	startTime: WarehouseDateTime | undefined,
@@ -110,12 +116,19 @@ export function resolveWindow(
 ): WindowResolution {
 	const now = warehouseDateTime(nowMs)
 	const notices: Array<string> = []
-	const startMs = startTime === undefined ? undefined : parseWarehouseDateTime(startTime)
-	if (startMs !== undefined && startMs >= nowMs) {
+	const askedStartMs = startTime === undefined ? undefined : parseWarehouseDateTime(startTime)
+	if (askedStartMs !== undefined && askedStartMs - nowMs > FUTURE_START_TOLERANCE_MS) {
 		return {
 			_tag: "Rejected",
 			message: `start_time (${startTime}) is not in the past: server now is ${now} UTC. Times are UTC; convert local times before querying.`,
 		}
+	}
+	const aheadOfNow = askedStartMs !== undefined && askedStartMs >= nowMs
+	const start = aheadOfNow ? warehouseDateTime(nowMs - FUTURE_START_TOLERANCE_MS) : startTime
+	if (aheadOfNow) {
+		notices.push(
+			`start_time ${startTime} is ahead of server now (${now} UTC); read the last 15 minutes instead (from ${start}). Times are UTC.`,
+		)
 	}
 	let endMs = endTime === undefined ? nowMs : parseWarehouseDateTime(endTime)
 	if (endTime !== undefined && endMs > nowMs) {
@@ -127,7 +140,7 @@ export function resolveWindow(
 		endMs = nowMs
 	}
 	const et = warehouseDateTime(endMs)
-	let st = startTime ?? warehouseDateTime(endMs - (spec.defaultHours ?? DEFAULT_HOURS) * 3_600_000)
+	let st = start ?? warehouseDateTime(endMs - (spec.defaultHours ?? DEFAULT_HOURS) * 3_600_000)
 	const widthMs = endMs - parseWarehouseDateTime(st)
 	if (widthMs <= 0) {
 		const clamped = endTime !== undefined && et !== endTime ? " (end_time was clamped to server now)" : ""

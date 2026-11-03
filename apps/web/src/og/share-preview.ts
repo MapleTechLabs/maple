@@ -19,10 +19,13 @@
  * generic Maple card is a worse preview; a rewrite that throws is a broken
  * dashboard, and the page is what people actually came for.
  */
+import { Schema, Array as Arr, String as Str } from "effect"
 import { ogCardNode } from "./card"
 import { renderOgCard, type AssetFetcher, type EmbeddedImage } from "./render"
 import { ogMetaAdditions, ogMetaReplacements, type ShareOgMeta } from "./share-links"
 import type { ApiTarget } from "../worker-env"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /**
  * The slice of Cloudflare's `HTMLRewriter` this module uses.
@@ -59,14 +62,17 @@ const postJson = (api: ApiTarget, path: string, body: unknown): Promise<Response
 		new Request(new URL(path, api.baseUrl), {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify(body),
+			body: encodeJson(body),
 			signal: AbortSignal.timeout(API_TIMEOUT_MS),
 		}),
 	)
 
 const digest = async (value: string): Promise<string> => {
 	const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
-	return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+	return Arr.join(
+		Arr.map([...new Uint8Array(bytes)], (byte) => Str.padStart(2, "0")(byte.toString(16))),
+		"",
+	)
 }
 
 /** Cache entry shape. `meta` absent is the cached "this link has no preview". */
@@ -95,7 +101,10 @@ export const fetchShareOgMeta = async (api: ApiTarget, token: string): Promise<S
 		const response = await postJson(api, "/v2/share/og-meta", { token })
 		// A 4xx (no such public link) is a cacheable negative; a 408, 429 or 5xx is retried next load.
 		const isNegative =
-			response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429
+			response.status >= 400 &&
+			response.status < 500 &&
+			response.status !== 408 &&
+			response.status !== 429
 		if (!response.ok && !isNegative) return undefined
 		meta = response.ok ? ((await response.json()) as ShareOgMeta) : undefined
 	} catch {
@@ -111,7 +120,7 @@ export const fetchShareOgMeta = async (api: ApiTarget, token: string): Promise<S
 	try {
 		await cache.put(
 			key,
-			new Response(JSON.stringify({ meta } satisfies CachedMeta), {
+			new Response(encodeJson({ meta } satisfies CachedMeta), {
 				headers: {
 					"content-type": "application/json",
 					"cache-control": `max-age=${META_CACHE_SECONDS}`,
@@ -173,10 +182,10 @@ const readCapped = async (
 	const total = await read(0)
 	if (total === undefined) return undefined
 	const data = new Uint8Array(total)
-	chunks.reduce((offset, chunk) => {
+	Arr.reduce(chunks, 0, (offset, chunk) => {
 		data.set(chunk, offset)
 		return offset + chunk.byteLength
-	}, 0)
+	})
 	return data
 }
 

@@ -3,7 +3,7 @@
 // for everything that reads. Both come from the environment, never argv.
 
 import { createHash, createHmac, timingSafeEqual } from "node:crypto"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 
 export const INGEST_KEY_ENV = "MAPLE_LOCAL_INGEST_KEY"
 export const ACCESS_TOKEN_ENV = "MAPLE_LOCAL_ACCESS_TOKEN"
@@ -75,10 +75,10 @@ export const presentedIngestKey = (req: Request): string | null =>
 	req.headers.get("x-maple-ingest-key") ?? bearerToken(req)
 
 const readCookie = (req: Request, name: string): string | null => {
-	for (const part of (req.headers.get("cookie") ?? "").split(";")) {
+	for (const part of Str.split(";")(req.headers.get("cookie") ?? "")) {
 		const separator = part.indexOf("=")
-		if (separator !== -1 && part.slice(0, separator).trim() === name)
-			return part.slice(separator + 1).trim()
+		if (separator !== -1 && Str.trim(Str.slice(0, separator)(part)) === name)
+			return Str.trim(Str.slice(separator + 1)(part))
 	}
 	return null
 }
@@ -110,14 +110,17 @@ const isSecureRequest = (req: Request, url: URL): boolean =>
 	url.protocol === "https:" || req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() === "https"
 
 export const sessionCookie = (req: Request, url: URL, value: string): string =>
-	[
-		`${SESSION_COOKIE}=${value}`,
-		"Path=/",
-		`Max-Age=${SESSION_TTL_MS / 1000}`,
-		"HttpOnly",
-		"SameSite=Lax",
-		...(isSecureRequest(req, url) ? ["Secure"] : []),
-	].join("; ")
+	Arr.join(
+		[
+			`${SESSION_COOKIE}=${value}`,
+			"Path=/",
+			`Max-Age=${SESSION_TTL_MS / 1000}`,
+			"HttpOnly",
+			"SameSite=Lax",
+			...(isSecureRequest(req, url) ? ["Secure"] : []),
+		],
+		"; ",
+	)
 
 export const hasValidSession = (auth: RemoteAuth, req: Request, nowMs: number): boolean =>
 	auth.accessToken !== undefined && sessionValid(auth.accessToken, readCookie(req, SESSION_COOKIE), nowMs)
@@ -160,14 +163,14 @@ export const accessDenied = (
 	if (
 		hasValidSession(auth, req, nowMs) ||
 		secretMatches(auth.accessToken, bearerToken(req)) ||
-		(url.pathname.startsWith("/local/") &&
+		(Str.startsWith("/local/")(url.pathname) &&
 			secretMatches(credentials.maintenanceToken, req.headers.get("x-maple-maintenance-token"))) ||
 		(CONSUMER_PATHS.has(url.pathname) &&
 			secretMatches(credentials.consumerToken, req.headers.get("x-maple-event-consumer-token")))
 	)
 		return null
 	// A page load goes to the sign-in page; API calls get a 401 their client can act on.
-	if (req.method === "GET" && !url.pathname.startsWith("/local/"))
+	if (req.method === "GET" && !Str.startsWith("/local/")(url.pathname))
 		return new Response(null, { status: 303, headers: { location: LOGIN_PATH } })
 	return unauthorized(SIGN_IN_REQUIRED)
 }

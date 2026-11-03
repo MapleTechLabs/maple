@@ -5,9 +5,9 @@ import {
 import { countLabel } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ResolveThemeColors } from "../../../../charts/theme-colors"
-import { button } from "../../../../ui/button"
-import { textLink } from "../../../../ui/text-link"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import { button } from "@maple/views/ui/button"
+import { textLink } from "@maple/views/ui/text-link"
 import {
 	empty,
 	emptyContent,
@@ -15,11 +15,11 @@ import {
 	emptyHeader,
 	emptyMedia,
 	emptyTitle,
-} from "../../../../ui/empty"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
-import { type SelectEntry, view as selectView } from "../../../../ui/select-view"
-import * as Tooltip from "../../../../ui/tooltip"
+} from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { type SelectEntry, view as selectView } from "@maple/views/ui/select-view"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { heroChip } from "../../../infra/kit/hero-chip"
@@ -59,6 +59,10 @@ import { activitySection, eventTriggerId, insightTriggerId, topQueries } from ".
 import { sectionHeading } from "../../../kit/section-heading"
 import { planetscaleSidebar } from "./view-sidebar"
 import { absenceReason } from "../../../../components/infra/planetscale/branch-selection"
+import { removableChip } from "@maple/views/ui/removable-chip"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `PlanetScaleDatabasePage`.
 // TODO(alert-menu): "Alert on this" renders its trigger; the suggestion menu and its prefilled
@@ -77,24 +81,27 @@ const CHART_METRIC_IDS = [
 
 /** Every tooltip on the page: scope chips, event times, query last-run times. */
 const tooltipIds = (model: Model): ReadonlyArray<string> => [
-	...CHART_METRIC_IDS.flatMap((metric) => [`ps-chart-${metric}-all`, `ps-chart-${metric}-fallback`]),
+	...Arr.flatMap(CHART_METRIC_IDS, (metric) => [`ps-chart-${metric}-all`, `ps-chart-${metric}-fallback`]),
 	"ps-insights-all",
 	"ps-insights-fallback",
-	...AsyncData.getOrElse(model.events.data, () => []).map(eventTriggerId),
+	...Arr.map(
+		AsyncData.getOrElse(model.events.data, () => []),
+		eventTriggerId,
+	),
 	...AsyncData.match(model.insights.data, {
 		onIdle: () => [],
 		onLoading: () => [],
 		onFailure: () => [],
 		onStale: () => [],
-		onRefreshing: (data) => data.rows.map((row) => insightTriggerId(row.fingerprint)),
-		onSuccess: (data) => data.rows.map((row) => insightTriggerId(row.fingerprint)),
+		onRefreshing: (data) => Arr.map(data.rows, (row) => insightTriggerId(row.fingerprint)),
+		onSuccess: (data) => Arr.map(data.rows, (row) => insightTriggerId(row.fingerprint)),
 	}),
 ]
 
 const tooltipContent = (model: Model, clock: Clock, id: string): ReadonlyArray<string> => {
-	if (id.endsWith("-all")) return [CHART_SCOPE_EXPLANATION]
+	if (Str.endsWith("-all")(id)) return [CHART_SCOPE_EXPLANATION]
 	if (id === "ps-insights-fallback") return [FALLBACK_EXPLANATION.insights]
-	if (id.endsWith("-fallback")) return [FALLBACK_EXPLANATION.chart]
+	if (Str.endsWith("-fallback")(id)) return [FALLBACK_EXPLANATION.chart]
 	const event = AsyncData.getOrElse(model.events.data, () => []).find(
 		(entry) => eventTriggerId(entry) === id,
 	)
@@ -206,7 +213,7 @@ const dataSections = (
 								measure: model.measure,
 								sort: model.breakdownSort,
 								isWaiting: true,
-								emptyMessage: "No branches match these filters.",
+								emptyMessage: "No branches match these filters",
 							}),
 						onSuccess: () =>
 							breakdownPanel(h, {
@@ -215,7 +222,7 @@ const dataSections = (
 								measure: model.measure,
 								sort: model.breakdownSort,
 								isWaiting: false,
-								emptyMessage: "No branches match these filters.",
+								emptyMessage: "No branches match these filters",
 							}),
 					}),
 				],
@@ -239,10 +246,7 @@ const dataSections = (
 									}),
 								],
 							),
-							h.span(
-								[h.Class("text-2xs text-muted-foreground")],
-								["PlanetScale Query Insights"],
-							),
+							typography(h, { size: "2xs", tone: "muted" }, ["PlanetScale Query Insights"]),
 						],
 					),
 					topQueries(h, model.insights.data, model.dbName, clock, trigger),
@@ -255,53 +259,31 @@ const dataSections = (
 const filterChipRail = (h: H, model: Model): ReadonlyArray<Html> => {
 	const chips = activeFilterChips(filtersOf(model))
 	if (chips.length === 0) return []
-	const chipClass =
-		"inline-flex items-center gap-1 rounded-sm border border-border-subtle bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground"
 	return [
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-1.5"), h.AriaLabel("Active filters")],
-			[
-				...chips.slice(0, 6).map((chip) =>
-					h.span(
-						[h.Class(chipClass)],
-						[
-							h.span([h.Class("max-w-[22ch] truncate text-foreground-soft")], [chip.label]),
-							button(
-								h,
-								{
-									variant: "ghost",
-									size: "icon-2xs",
-									className: "text-muted-foreground hover:text-foreground active:text-foreground",
-									attributes: [
-										h.AriaLabel(`Remove ${chip.label}`),
-										h.OnClick(
-											Message.RemovedFilterChip({ key: chip.key, value: chip.value }),
-										),
-									],
-								},
-								[icon(h, "XmarkIcon")],
-							),
-						],
-					),
-				),
-				textLink(
-					h,
-					{
-						tone: "muted",
-						isMono: true,
-						className: "ml-1 text-3xs",
-						onClick: Message.ClickedClearFilters(),
-					},
-					["Clear all"],
-				),
-			],
-		),
+		hstack(h, { gap: "1.5", wrap: true, attributes: [h.AriaLabel("Active filters")] }, [
+			...Arr.map(chips.slice(0, 6), (chip) =>
+				removableChip(h, {
+					label: chip.label,
+					onRemove: Message.RemovedFilterChip({ key: chip.key, value: chip.value }),
+				}),
+			),
+			textLink(
+				h,
+				{
+					tone: "muted",
+					isMono: true,
+					className: "ml-1 text-3xs",
+					onClick: Message.ClickedClearFilters(),
+				},
+				["Clear all"],
+			),
+		]),
 	]
 }
 
 const branchSelect = (h: H, model: Model, timeControls: Html): Html => {
 	const candidates = candidatesOf(model)
-	if (candidates.length === 0) return h.div([h.Class("flex flex-wrap items-center gap-2")], [timeControls])
+	if (candidates.length === 0) return hstack(h, { gap: "2", wrap: true }, [timeControls])
 	const selected = selectedBranchOf(model)
 	return h.submodel({
 		slotId: "planetscale-branch-select",
@@ -309,7 +291,7 @@ const branchSelect = (h: H, model: Model, timeControls: Html): Html => {
 		view: selectView,
 		toParentMessage: (message) => Message.GotBranchSelectMessage({ message }),
 		viewInputs: {
-			entries: candidates.map((candidate): SelectEntry => ({
+			entries: Arr.map(candidates, (candidate): SelectEntry => ({
 				_tag: "Item",
 				item: { value: candidate.name, label: candidate.name },
 			})),
@@ -322,8 +304,7 @@ const branchSelect = (h: H, model: Model, timeControls: Html): Html => {
 					? [" · production"]
 					: []),
 			],
-			toView: (parts) =>
-				h.div([h.Class("flex flex-wrap items-center gap-2")], [...parts, timeControls]),
+			toView: (parts) => hstack(h, { gap: "2", wrap: true }, [...parts, timeControls]),
 		},
 	})
 }
@@ -404,8 +385,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					toContent: (id) => tooltipContent(model, clock, id),
 					// `ScopeChip`'s `TooltipContent className="max-w-[32ch]"`.
 					className:
-						model.tooltip.triggerId.startsWith("ps-chart-") ||
-						model.tooltip.triggerId.startsWith("ps-insights-")
+						Str.startsWith("ps-chart-")(model.tooltip.triggerId) ||
+						Str.startsWith("ps-insights-")(model.tooltip.triggerId)
 							? "max-w-[32ch]"
 							: undefined,
 					toView: ({ trigger, portal }) =>
@@ -424,10 +405,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								actions:
 									heroActions.length === 0
 										? branchSelect(h, model, timeControls)
-										: h.div(
-												[h.Class("flex flex-wrap items-center gap-2")],
-												[...heroActions, branchSelect(h, model, timeControls)],
-											),
+										: hstack(h, { gap: "2", wrap: true }, [
+												...heroActions,
+												branchSelect(h, model, timeControls),
+											]),
 								// TODO(alert-menu): see the note at the top of this file.
 							},
 							[hero.body, ...body(trigger), ...(portal === null ? [] : [portal])],

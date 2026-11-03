@@ -120,5 +120,6 @@ export interface LocalStoreMigrationModule<State = unknown, Progress = unknown> 
 /** The registry is heterogeneous at runtime; the coordinator erases the
  * module-specific state types only at this boundary. Each concrete module
  * remains strongly typed internally. */
+// oxlint-disable-next-line typescript/no-explicit-any -- erased registry boundary, see above
 export type AnyLocalStoreMigrationModule = LocalStoreMigrationModule<any, any>
 export type LocalStoreMigration = AnyLocalStoreMigrationModule

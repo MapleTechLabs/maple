@@ -1,7 +1,7 @@
 import { Effect, Queue, Schema, Stream } from "effect"
 import { Dom, Mount } from "foldkit"
-import { Align, measurePosition, Side } from "../ui/anchor"
-import { applyScrollOverflow } from "../ui/scroll-area"
+import { Align, measurePosition, Side } from "@maple/views/ui/anchor"
+import { applyScrollOverflow } from "@maple/views/ui/scroll-area"
 import { containSearchKeys } from "./namespace-search"
 import { Menu, Message } from "./message"
 

@@ -3,13 +3,14 @@ import { GROUP_BY_OPTIONS } from "@maple/query-engine/query-builder"
 import { signalTypeToKind } from "@maple/web-data/alerts/rule-modes"
 import { cn } from "@maple/ui/lib/utils"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { card } from "../../../ui/card"
-import * as Combobox from "../../../ui/combobox"
-import { chipsView } from "../../../ui/combobox-view"
-import { icon, type IconName } from "../../../ui/icon"
-import * as RadioGroup from "../../../ui/radio-group"
-import { segmentedSelect } from "../../../ui/segmented-select"
+import { button } from "@maple/views/ui/button"
+import { card } from "@maple/views/ui/card"
+import * as Combobox from "@maple/views/ui/combobox"
+import { chipsView } from "@maple/views/ui/combobox-view"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { label } from "@maple/views/ui/label"
+import * as RadioGroup from "@maple/views/ui/radio-group"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { stableSlice } from "../../kit/stable-slice"
 import { queryPanelView } from "../../kit/query-builder/view"
 import { spanAttributeKeysOf, traceFacetsOf } from "./derive-rows"
@@ -19,8 +20,11 @@ import type { AlertQueryTiming } from "@maple/domain/http"
 import { draftTimingOf } from "./derive-rows"
 import { Message, type SignalKind } from "./message"
 import type { Model } from "./model"
-import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "../../../ui/input-group"
+import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "@maple/views/ui/input-group"
 import { rawQueryEditor, REDUCER_SELECT_ID, type SqlView } from "./view-sql"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `RuleQuerySection`: Built-in, the query builder's
 // `QueryPanel`, or SQL, over the same draft.
@@ -67,7 +71,7 @@ const signalRadios = (h: H, form: RuleForm): Html => {
 	const config: RadioGroup.RadioGroupViewConfig<Message> = {
 		model: RadioGroup.init(form.signalType),
 		toParentMessage: (message) => Message.GotRadioMessage({ group: "signal", message }),
-		items: BUILTIN_SIGNALS.map((signal) => ({
+		items: Arr.map(BUILTIN_SIGNALS, (signal) => ({
 			value: signal.value,
 			id: `rule-signal-${signal.value}`,
 			inputId: `rule-signal-${signal.value}-input`,
@@ -79,7 +83,7 @@ const signalRadios = (h: H, form: RuleForm): Html => {
 			h.Class("grid grid-cols-2 border-b sm:grid-cols-5"),
 			h.Role("radiogroup"),
 		],
-		BUILTIN_SIGNALS.flatMap((signal) =>
+		Arr.flatMap(BUILTIN_SIGNALS, (signal) =>
 			RadioGroup.radio(h, config, signal.value, SIGNAL_CLASS, {
 				children: [
 					h.span(
@@ -138,22 +142,34 @@ const chipsPicker = (
 /** `GroupByMultiSelect` over traces: the built-in dimensions and the span attributes as `attr.*`. */
 const groupByItems = (model: QueryView): ReadonlyArray<string> => [
 	...new Set([
-		...GROUP_BY_OPTIONS.traces.filter((option) => option.value !== "none").map((option) => option.value),
-		...spanAttributeKeysOf(model).map((key) => `attr.${key}`),
+		...Arr.map(
+			Arr.filter(GROUP_BY_OPTIONS.traces, (option) => option.value !== "none"),
+			(option) => option.value,
+		),
+		...Arr.map(spanAttributeKeysOf(model), (key) => `attr.${key}`),
 	]),
 ]
 
 /** `BuiltinRow`: a label column and the control. */
-const builtinRow = (h: H, label: string, htmlFor: string, hint: string | undefined, control: Html): Html =>
+const builtinRow = (h: H, text: string, htmlFor: string, hint: string | undefined, control: Html): Html =>
 	h.div(
 		[h.Class("grid items-start gap-1 sm:grid-cols-[120px_minmax(0,1fr)] sm:gap-3")],
 		[
-			h.label([h.Class("pt-2 text-sm text-muted-foreground"), h.For(htmlFor)], [label]),
+			label(
+				h,
+				{
+					className: "pt-2 font-normal text-sm text-muted-foreground sm:text-sm",
+					attributes: [h.For(htmlFor)],
+				},
+				[text],
+			),
 			h.div(
 				[h.Class("min-w-0 space-y-1")],
 				[
 					control,
-					...(hint === undefined ? [] : [h.p([h.Class("text-2xs text-muted-foreground")], [hint])]),
+					...(hint === undefined
+						? []
+						: [typography(h, { size: "2xs", tone: "muted", as: "p" }, [hint])]),
 				],
 			),
 		],
@@ -180,7 +196,7 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 						chipsPicker(h, model, "rule-services", form.serviceNames, {
 							items: facets.services,
 							placeholder: hasServices ? "Add service…" : "All services",
-							emptyText: "No services found.",
+							emptyText: "No services found",
 						}),
 					),
 					builtinRow(
@@ -192,7 +208,7 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 							items: facets.environments,
 							placeholder:
 								form.environments.length === 0 ? "All environments" : "Add environment…",
-							emptyText: "No environments found.",
+							emptyText: "No environments found",
 						}),
 					),
 					builtinRow(
@@ -203,8 +219,8 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 						chipsPicker(h, model, "rule-group-by", form.groupBy, {
 							items: groupByItems(model),
 							placeholder: form.groupBy.length === 0 ? "service.name" : "",
-							emptyText: "No fields found.",
-							className: "text-xs font-mono",
+							emptyText: "No fields found",
+							className: typographyClass({ size: "xs", mono: true }),
 							wrapperClassName: "w-full",
 							isDisabled: hasServices,
 						}),
@@ -217,7 +233,7 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 						chipsPicker(h, model, "rule-exclude", form.excludeServiceNames, {
 							items: facets.services,
 							placeholder: hasServices ? "Only applies to all services" : "Skip these services",
-							emptyText: "No services found.",
+							emptyText: "No services found",
 							isDisabled: hasServices,
 						}),
 					),
@@ -232,7 +248,7 @@ const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 										inputGroupInput(h, {
 											id: "apdex-threshold",
 											type: "number",
-											controlClassName: "font-mono tabular-nums",
+											controlClassName: typographyClass({ mono: true, numeric: true }),
 											attributes: [
 												h.InputMode("numeric"),
 												h.Value(form.apdexThresholdMs),
@@ -302,10 +318,9 @@ const builderPanel = (h: H, model: QueryView, form: RuleForm): Html =>
 				},
 				toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
 			}),
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
-				["Each group is checked on its own and gets its own incident."],
-			),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				"Each group is checked on its own and gets its own incident.",
+			]),
 		],
 	)
 
@@ -314,22 +329,18 @@ const query = (h: H, model: QueryView, form: RuleForm, timing: AlertQueryTiming 
 	return h.div(
 		[h.Class("space-y-2")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-3")],
-				[
-					segmentedSelect(h, {
-						options: KIND_OPTIONS,
-						value: kind,
-						onChange: (next) => Message.ClickedSignalKind({ kind: next }),
-						ariaLabel: "Query mode",
-						size: "sm",
-					}),
-					h.p(
-						[h.Class("min-w-0 flex-1 text-xs text-muted-foreground")],
-						[model.kindNotice ?? KIND_HINT.get(kind) ?? ""],
-					),
-				],
-			),
+			hstack(h, { gap: "3", wrap: true }, [
+				segmentedSelect(h, {
+					options: KIND_OPTIONS,
+					value: kind,
+					onChange: (next) => Message.ClickedSignalKind({ kind: next }),
+					ariaLabel: "Query mode",
+					size: "sm",
+				}),
+				typography(h, { size: "xs", tone: "muted", as: "p", className: "min-w-0 flex-1" }, [
+					model.kindNotice ?? KIND_HINT.get(kind) ?? "",
+				]),
+			]),
 			kind === "builtin"
 				? builtinForm(h, model, form)
 				: kind === "builder_query"

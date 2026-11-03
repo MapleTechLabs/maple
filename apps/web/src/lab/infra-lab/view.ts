@@ -16,8 +16,9 @@ import type { Model as RailwayModel } from "../../page/infra-integrations/railwa
 import { servicesList } from "../../page/infra-integrations/railway/list/view"
 import { sectionHeading } from "../../page/kit/section-heading"
 import { sortRowsBy } from "../../page/kit/table-sort"
-import { eyebrow } from "../../ui/eyebrow"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 import { Message, type Model } from "./update"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -31,9 +32,10 @@ const frame = (h: H, label: string, children: ReadonlyArray<Html>): Html =>
 	)
 
 const overview = (h: H, fixture: InfraLabFixture): Html => {
-	const findings: ReadonlyArray<Finding> = fixture.summaries
-		.flatMap(([, summary]) => summary.findings)
-		.toSorted((a, b) => RANK[a.tone] - RANK[b.tone])
+	const findings: ReadonlyArray<Finding> = Arr.flatMap(
+		fixture.summaries,
+		([, summary]) => summary.findings,
+	).toSorted((a, b) => RANK[a.tone] - RANK[b.tone])
 	return frame(h, "/infra overview", [
 		pageHero(h, {
 			title: "Infrastructure",
@@ -45,7 +47,7 @@ const overview = (h: H, fixture: InfraLabFixture): Html => {
 				sectionHeading(h, { title: "Needs attention", hint: "across every source, worst first" }),
 				h.div(
 					[h.Class(FINDINGS_LIST_CLASS)],
-					findings.map((finding) => findingRow(h, finding, {})),
+					Arr.map(findings, (finding) => findingRow(h, finding, {})),
 				),
 			],
 		),
@@ -55,7 +57,7 @@ const overview = (h: H, fixture: InfraLabFixture): Html => {
 				sectionHeading(h, { title: "Sources", hint: "one row per source reporting to this org" }),
 				h.div(
 					[h.Class("divide-y overflow-hidden rounded-lg border")],
-					fixture.summaries.map(([id, summary]) =>
+					Arr.map(fixture.summaries, ([id, summary]) =>
 						sourceRow(h, id, { status: "ready", summary }, {}),
 					),
 				),

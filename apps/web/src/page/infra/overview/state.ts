@@ -5,11 +5,12 @@ import {
 	probeOf,
 	resolveInfraSurfaces,
 } from "../../../data/infra-surfaces"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { NavSurface } from "../../../shell/nav"
 import type { PageContext } from "../../contract"
 import type { Model, SourceId, SourceSummary } from "./model"
 import { SOURCE_IDS } from "./model"
+import { Array as Arr } from "effect"
 
 // `SourceState` and `presentSources`.
 
@@ -64,8 +65,8 @@ export const presentSources = (surfaces: InfraSurfaces): ReadonlyArray<SourceId>
 		case "Every":
 			return SOURCE_IDS
 		case "Only":
-			return SOURCE_IDS.filter((id) =>
-				SOURCE_SURFACES[id].some((surface) => surfaces.surfaces.has(surface)),
+			return Arr.filter(SOURCE_IDS, (id) =>
+				Arr.some(SOURCE_SURFACES[id], (surface) => surfaces.surfaces.has(surface)),
 			)
 	}
 }

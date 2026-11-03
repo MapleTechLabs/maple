@@ -1,11 +1,13 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as DialogView from "../../ui/dialog-view"
-import { icon } from "../../ui/icon"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { icon } from "@maple/views/ui/icon"
 import { STEPS } from "./gcp-configure-copy"
 import { CONFIGURE_DIALOG_ID } from "./gcp-configure"
 import type { Message } from "./message"
 import { GCP_LINK } from "./view-gcp-parts"
+import { hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `GcpExternalLink`, `Mono`, `Chip`, `FooterNote`, `Stepper` and `ConfigureHeader`.
 
@@ -57,7 +59,7 @@ export type StepIndex = 0 | 1 | 2 | 3
 const stepper = (h: H, current: StepIndex): Html =>
 	h.ol(
 		[h.AriaLabel("Setup progress"), h.Class("flex flex-wrap items-center gap-2 font-prose text-xs")],
-		STEPS.flatMap((label, index) => {
+		Arr.flatMap(STEPS, (label, index) => {
 			const done = index < current
 			const active = index === current
 			const step = h.li(
@@ -65,7 +67,7 @@ const stepper = (h: H, current: StepIndex): Html =>
 					...(active ? [h.AriaCurrent("step")] : []),
 					h.Class(
 						cn(
-							"inline-flex items-center gap-1.5",
+							hstackClass({ gap: "1.5", inline: true }),
 							active
 								? "font-medium text-foreground underline decoration-primary underline-offset-4"
 								: "text-muted-foreground",

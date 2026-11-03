@@ -21,6 +21,7 @@ import {
 	type MaplePublicErrorType,
 } from "./errors"
 import { MapleEnvironment } from "./MapleEnvironment"
+import { String as Str } from "effect"
 
 /**
  * Thin JSON client for the Maple public v2 API.
@@ -187,7 +188,8 @@ export const make = Effect.gen(function* () {
 						),
 					)
 				}
-				return yield* Effect.fail(yield* errorFromResponse(response.status, text))
+				const error = yield* errorFromResponse(response.status, text)
+				return yield* Effect.fail(error)
 			}).pipe(
 				Effect.catchIf(isMapleApiResponseError, (error) =>
 					canAutomaticallyRetry && error.error.retryable && attempt < 6
@@ -236,7 +238,7 @@ export const listAll = (
 		const items: Array<unknown> = []
 		let cursor: string | null = null
 		do {
-			const sep = path.includes("?") ? "&" : "?"
+			const sep = Str.includes("?")(path) ? "&" : "?"
 			const page = (yield* api.get(
 				cursor === null
 					? `${path}${sep}limit=100`

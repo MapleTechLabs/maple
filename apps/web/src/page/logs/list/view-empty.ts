@@ -1,20 +1,22 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { excludedEmptyHint } from "../../../ui/filters/excluded-empty-hint"
+import { button } from "@maple/views/ui/button"
+import { excludedEmptyHint } from "@maple/views/ui/filters/excluded-empty-hint"
 import { docsLink, signalEmptyState } from "../../kit/signal-empty-state"
-import { presenceOf } from "../../kit/signal-presence"
+import { presenceOf } from "@maple/views/data/signal-presence"
 import { canWidenRange, logFilterChips } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { toolbar } from "./view-toolbar"
+import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // The logs table's empty state.
 
 const exclusionsHint = (h: HtmlBuilder<Message>, model: Model): Html | null =>
 	excludedEmptyHint(h, {
-		excluded: logFilterChips(model.search)
-			.filter((chip) => chip.negated)
-			.flatMap((chip) => chip.values),
+		excluded: Arr.filter(logFilterChips(model.search), (chip) => chip.negated).flatMap(
+			(chip) => chip.values,
+		),
 		onClear: Message.ClickedClearExclusions(),
 		className: "max-w-lg",
 	})
@@ -26,14 +28,15 @@ const searchEmpty = (h: HtmlBuilder<Message>, model: Model): Html => {
 	return h.div(
 		[h.Class("flex h-48 flex-col items-center justify-center gap-2 rounded-md border px-6 text-center")],
 		[
-			h.span(
-				[h.Class("text-sm text-muted-foreground")],
+			typography(
+				h,
+				{ size: "sm", tone: "muted" },
 				traceId
 					? [
 							"No logs on trace",
 							" ",
 							h.span([h.Class("font-mono text-foreground break-all")], [traceId]),
-							" in this time range",
+							" in this window",
 						]
 					: [
 							"No log message contains",

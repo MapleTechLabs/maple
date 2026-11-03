@@ -3,27 +3,27 @@ import { countLabel } from "@maple/ui/lib/format"
 import { TONE_BORDER, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import type { IconName } from "../../../ui/icon"
-import { statusDot } from "../../../ui/status-dot"
+import { badge } from "@maple/views/ui/display"
+import type { IconName } from "@maple/views/ui/icon"
+import { statusDot } from "@maple/views/ui/status-dot"
 import type { SessionListItem, SessionRow } from "./session-row"
+import { String as Str } from "effect"
 
 // Shared parts of the sessions list and its pills.
-// TODO(tooltip): the org and tag pills' hover tooltips.
 
 // The icon for a browser, OS or device name.
 export const browserIconFor = (name: string): IconName => {
-	const n = name.toLowerCase()
-	if (n.includes("edg")) return "EdgeIcon"
-	if (n.includes("opera") || n.includes("opr")) return "OperaIcon"
-	if (n.includes("chrome")) return "ChromeIcon"
-	if (n.includes("firefox")) return "FirefoxIcon"
-	if (n.includes("safari")) return "SafariIcon"
+	const n = Str.toLowerCase(name)
+	if (Str.includes("edg")(n)) return "EdgeIcon"
+	if (Str.includes("opera")(n) || Str.includes("opr")(n)) return "OperaIcon"
+	if (Str.includes("chrome")(n)) return "ChromeIcon"
+	if (Str.includes("firefox")(n)) return "FirefoxIcon"
+	if (Str.includes("safari")(n)) return "SafariIcon"
 	return "GlobeIcon"
 }
 
 export const deviceIconFor = (type: string): IconName => {
-	const t = type.toLowerCase()
+	const t = Str.toLowerCase(type)
 	if (t === "mobile" || t === "phone") return "MobileIcon"
 	if (t === "tablet") return "TabletIcon"
 	return "MonitorIcon"

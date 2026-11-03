@@ -18,13 +18,15 @@ import {
 } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../../charts/chart"
-import * as InfraMetricChart from "../../../../charts/infra-metric-chart"
-import type { ThemeColors } from "../../../../charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import * as InfraMetricChart from "@maple/views/charts/infra-metric-chart"
+import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { correlationStrips, type StripSeries } from "../../../infra/kit/correlation-strips"
 import type { ZoneDetail, ZoneRow } from "../data"
 import { MountLinkedCursor } from "./command"
 import { Message, type Model } from "./model"
+import { typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // `CloudflareZoneSignals`.
 
@@ -38,12 +40,34 @@ const summary = (
 	captionClassName?: string,
 ): ReadonlyArray<Html> => [
 	h.span(
-		[h.Class(cn("font-mono text-sm font-semibold tabular-nums text-foreground", valueClassName))],
+		[
+			h.Class(
+				cn(
+					typographyClass({
+						size: "sm",
+						tone: "foreground",
+						weight: "semibold",
+						mono: true,
+						numeric: true,
+					}),
+					valueClassName,
+				),
+			),
+		],
 		[value],
 	),
 	...(caption === undefined
 		? []
-		: [h.span([h.Class(cn("font-mono text-3xs text-muted-foreground", captionClassName))], [caption])]),
+		: [
+				h.span(
+					[
+						h.Class(
+							cn(typographyClass({ size: "3xs", tone: "muted", mono: true }), captionClassName),
+						),
+					],
+					[caption],
+				),
+			]),
 ]
 
 const buildStrips = (
@@ -128,7 +152,7 @@ export const zoneSignals = (
 ): Html => {
 	const { detail } = options
 	const totals = zoneSignalTotals(detail.statusBuckets, detail.cacheBuckets)
-	const strips = buildStrips(h, detail, options.zoneRow, totals).map((strip) =>
+	const strips = Arr.map(buildStrips(h, detail, options.zoneRow, totals), (strip) =>
 		(strip.id === "cf-latency" ? detail.latencyIgnoredFilters : detail.ignoredFilters).length > 0
 			? { ...strip, source: `zone-wide, filters not applied · ${strip.source}` }
 			: strip,
@@ -136,7 +160,7 @@ export const zoneSignals = (
 	return correlationStrips(h, {
 		strips,
 		xDomain: [
-			...new Set([...detail.statusBuckets, ...detail.cacheBuckets].map((b) => b.bucket)),
+			...new Set(Arr.map([...detail.statusBuckets, ...detail.cacheBuckets], (b) => b.bucket)),
 		].toSorted(),
 		isWaiting: options.isWaiting,
 		theme: options.theme,

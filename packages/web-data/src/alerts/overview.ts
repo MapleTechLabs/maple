@@ -2,6 +2,7 @@ import type { AlertDeliveryEventDocument, AlertIncidentDocument, AlertRuleDocume
 
 import type { AlertRuleStateRow } from "../collections/alerts"
 import { deriveRuleStatus, type DerivedRuleStatus, needsAttention } from "./rule-status"
+import { Array as Arr } from "effect"
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -69,18 +70,16 @@ export const deriveOverview = (inputs: OverviewInputs): AlertsOverviewReady => {
 	// ISO timestamps order lexicographically; newest first, as the server lists do.
 	const byIsoDesc = (a: string, b: string) => (a < b ? 1 : a > b ? -1 : 0)
 	// Uptime monitors own their backing rules: the rule list hides them, their incidents stay.
-	const rules = inputs.rules
-		.filter((rule) => rule.signalType !== "uptime")
-		.sort((a, b) => byIsoDesc(a.updatedAt, b.updatedAt))
+	const rules = Arr.filter(inputs.rules, (rule) => rule.signalType !== "uptime").sort((a, b) =>
+		byIsoDesc(a.updatedAt, b.updatedAt),
+	)
 	const incidentCutoff = now - INCIDENT_WINDOW_MS
-	const incidents = inputs.incidents
-		.filter(
-			(incident) =>
-				incident.status === "open" || Date.parse(incident.lastTriggeredAt) >= incidentCutoff,
-		)
-		.sort((a, b) => byIsoDesc(a.lastTriggeredAt, b.lastTriggeredAt))
+	const incidents = Arr.filter(
+		inputs.incidents,
+		(incident) => incident.status === "open" || Date.parse(incident.lastTriggeredAt) >= incidentCutoff,
+	).sort((a, b) => byIsoDesc(a.lastTriggeredAt, b.lastTriggeredAt))
 
-	const openIncidents = incidents.filter((incident) => incident.status === "open")
+	const openIncidents = Arr.filter(incidents, (incident) => incident.status === "open")
 	const incidentsByRule = groupByRuleId(incidents)
 	const openIncidentsByRule = groupByRuleId(openIncidents)
 	// The delivery-events list arrives newest-first; deriveRuleStatus relies on it.

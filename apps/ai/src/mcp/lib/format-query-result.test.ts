@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { renderQueryData } from "../tools/query-data"
 import { bucketLabels } from "./format-query-result"
 import { renderToolDoc } from "./tool-doc"
+import { Array as Arr, String as Str } from "effect"
 
 describe("bucketLabels", () => {
 	it("prints only the time within one day", () => {
@@ -40,8 +41,8 @@ describe("query_data timeseries rendering", () => {
 		unit: "percent" as const,
 		result: {
 			kind: "timeseries" as const,
-			data: series.map((s, i) => ({
-				bucket: `2026-09-01 10:${String(i * 5).padStart(2, "0")}:00`,
+			data: Arr.map(series, (s, i) => ({
+				bucket: `2026-09-01 10:${Str.padStart(2, "0")(String(i * 5))}:00`,
 				series: s,
 			})),
 		},

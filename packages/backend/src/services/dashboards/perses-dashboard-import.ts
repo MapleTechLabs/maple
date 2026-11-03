@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	DashboardValidationError,
 	DashboardWidgetSchema,
@@ -40,33 +40,30 @@ const SUPPORTED_PANEL_KINDS = new Set([
 ])
 
 const isRecord = (value: unknown): value is UnknownRecord =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 const asRecord = (value: unknown): UnknownRecord | null => (isRecord(value) ? value : null)
 
-const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : [])
+const asArray = (value: unknown): unknown[] => (Arr.isArray(value) ? value : [])
 
 const asString = (value: unknown): string | undefined =>
-	typeof value === "string" && value.trim().length > 0 ? value : undefined
+	typeof value === "string" && Str.trim(value).length > 0 ? value : undefined
 
 const asFiniteNumber = (value: unknown): number | undefined =>
 	typeof value === "number" && Number.isFinite(value) ? value : undefined
 
 const sanitizeIdSegment = (value: string): string => {
-	const normalized = value
-		.toLowerCase()
-		.replace(/[^a-z0-9_-]+/g, "-")
-		.replace(/^-+|-+$/g, "")
+	const normalized = Str.replace(/^-+|-+$/g, "")(Str.replace(/[^a-z0-9_-]+/g, "-")(Str.toLowerCase(value)))
 	return normalized.length > 0 ? normalized : "panel"
 }
 
 const jsonPointerSegment = (segment: string): string =>
-	decodeURIComponent(segment.replace(/~1/g, "/").replace(/~0/g, "~"))
+	decodeURIComponent(Str.replace(/~0/g, "~")(Str.replace(/~1/g, "/")(segment)))
 
 function panelKeyFromRef(ref: string): string | null {
 	const prefix = "#/spec/panels/"
-	if (!ref.startsWith(prefix)) return null
-	return jsonPointerSegment(ref.slice(prefix.length))
+	if (!Str.startsWith(prefix)(ref)) return null
+	return jsonPointerSegment(Str.slice(prefix.length)(ref))
 }
 
 function panelKeyFromGridContent(content: unknown): string | null {
@@ -228,7 +225,7 @@ function queryPluginFromQuery(query: unknown) {
 }
 
 function querySummaries(queries: readonly unknown[]): string[] {
-	return queries.map((query, index) => {
+	return Arr.map(queries, (query, index) => {
 		const plugin = queryPluginFromQuery(query)
 		if (plugin.query) {
 			return `Query ${index + 1}: ${plugin.kind ?? "UnknownQuery"} - ${plugin.query}`
@@ -238,13 +235,13 @@ function querySummaries(queries: readonly unknown[]): string[] {
 }
 
 function hasOrgScope(sql: string): boolean {
-	return sql.includes("$__orgFilter") || /\bOrgId\b/.test(sql)
+	return Str.includes("$__orgFilter")(sql) || /\bOrgId\b/.test(sql)
 }
 
 function insertBeforeTrailingClauses(sql: string, fragment: string): string {
 	const match = /\b(GROUP\s+BY|ORDER\s+BY|LIMIT|FORMAT)\b/i.exec(sql)
-	if (!match) return `${sql.trimEnd()} ${fragment}`
-	return `${sql.slice(0, match.index).trimEnd()} ${fragment} ${sql.slice(match.index).trimStart()}`
+	if (!match) return `${Str.trimEnd(sql)} ${fragment}`
+	return `${Str.trimEnd(Str.slice(0, match.index)(sql))} ${fragment} ${Str.trimStart(Str.slice(match.index)(sql))}`
 }
 
 function normalizeClickHouseSql(sql: string, warnings: string[], panelTitle: string): string | null {
@@ -255,11 +252,11 @@ function normalizeClickHouseSql(sql: string, warnings: string[], panelTitle: str
 		return null
 	}
 
-	const normalized = sql.includes("$__orgFilter")
+	const normalized = Str.includes("$__orgFilter")(sql)
 		? sql
 		: insertBeforeTrailingClauses(sql, /\bWHERE\b/i.test(sql) ? "AND $__orgFilter" : "WHERE $__orgFilter")
 
-	if (!sql.includes("$__orgFilter")) {
+	if (!Str.includes("$__orgFilter")(sql)) {
 		warnings.push(
 			`Panel "${panelTitle}" had an explicit OrgId reference; Maple added $__orgFilter so the widget stays tenant-scoped.`,
 		)
@@ -314,7 +311,7 @@ function markdownWidgetContent(args: {
 		}
 	}
 
-	return lines.join("\n")
+	return Arr.join(lines, "\n")
 }
 
 function placeholderWidget(args: {
@@ -514,14 +511,14 @@ function convertSync(input: unknown): PersesImportConversion | DashboardValidati
 		warnings.push("Perses dashboard variables are not imported; affected queries may need manual edits.")
 	}
 
-	if (Object.keys(asRecord(spec.datasources) ?? {}).length > 0) {
+	if (Rec.keys(asRecord(spec.datasources) ?? {}).length > 0) {
 		warnings.push(
 			"Perses datasource definitions are not stored; imported ClickHouse widgets run through Maple raw SQL.",
 		)
 	}
 
 	const panels = asRecord(spec.panels)
-	if (!panels || Object.keys(panels).length === 0) {
+	if (!panels || Rec.keys(panels).length === 0) {
 		return new DashboardValidationError({
 			message: "Invalid Perses dashboard",
 			details: ["Dashboard spec.panels must contain at least one panel."],
@@ -576,7 +573,7 @@ function convertSync(input: unknown): PersesImportConversion | DashboardValidati
 		warnings.push("Perses dashboard has no layouts; Maple generated layouts for imported panels.")
 	}
 
-	for (const [panelKey, panel] of Object.entries(panels)) {
+	for (const [panelKey, panel] of Rec.toEntries(panels)) {
 		if (placedPanels.has(panelKey)) continue
 		const panelKind = getPanelPlugin(panel).kind
 		const visualization = defaultVisualizationForPanelKind(panelKind)
@@ -610,6 +607,6 @@ export const convertPersesDashboardToPortable = Effect.fn("PersesDashboardImport
 				details: [error instanceof Error ? error.message : String(error)],
 			}),
 	})
-	if (result instanceof DashboardValidationError) return yield* result
+	if (Schema.is(DashboardValidationError)(result)) return yield* result
 	return result
 })

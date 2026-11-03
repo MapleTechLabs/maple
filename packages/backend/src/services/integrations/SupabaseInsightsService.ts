@@ -24,7 +24,7 @@ import {
 	type SupabaseProjectInsightsRow,
 	type SupabaseProjectRow,
 } from "@maple/db/tables"
-import { Cause, Clock, Context, Effect, Layer, Schema } from "effect"
+import { Cause, Clock, Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -64,13 +64,13 @@ export const groupAdvisors = (lints: ReadonlyArray<SupabaseAdvisorLint>) => {
 	const sorted = lints.toSorted(
 		(a, b) =>
 			LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level] ||
-			a.title.localeCompare(b.title) ||
-			(a.object ?? "").localeCompare(b.object ?? ""),
+			Str.localeCompare(b.title)(a.title) ||
+			Str.localeCompare(b.object ?? "")(a.object ?? ""),
 	)
 	return new SupabaseAdvisorsByLevel({
-		error: sorted.filter((lint) => lint.level === "ERROR"),
-		warn: sorted.filter((lint) => lint.level === "WARN"),
-		info: sorted.filter((lint) => lint.level === "INFO"),
+		error: Arr.filter(sorted, (lint) => lint.level === "ERROR"),
+		warn: Arr.filter(sorted, (lint) => lint.level === "WARN"),
+		info: Arr.filter(sorted, (lint) => lint.level === "INFO"),
 	})
 }
 

@@ -11,7 +11,7 @@
 // tests drive the real production paths and assert they succeed.
 
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import { DashboardDocument, DashboardId, IsoDateTimeString, OrgId, UserId } from "@maple/domain/http"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
@@ -147,7 +147,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 			const listed = yield* persistence.list(asOrgId(ORG))
 			assert.strictEqual(listed.dashboards.length, 1)
 			assert.deepStrictEqual(
-				listed.dashboards[0]!.widgets.map((w) => w.id),
+				Arr.map(listed.dashboards[0]!.widgets, (w) => w.id),
 				["w-new"],
 			)
 		}).pipe(Effect.provide(layer))
@@ -180,7 +180,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 			// The pre-existing widget keeps its container, and the added one lands in
 			// the section it asked for rather than being flattened onto the root canvas.
 			assert.deepStrictEqual(
-				stored.widgets.map((w) => [w.id, w.sectionId, w.tabId]),
+				Arr.map(stored.widgets, (w) => [w.id, w.sectionId, w.tabId]),
 				[
 					["w-1", "sec-1", "tab-1"],
 					["w-new", "sec-1", "tab-1"],

@@ -2,7 +2,7 @@ import type { AlertDestinationRow } from "@maple/db/tables"
 import { ChatOutboundError, chatConnectorId, type ChatAlertBlock, type ChatBlock } from "@maple/chat-platform"
 import { AlertDestinationId, ChatWorkspaceId, OrgId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { chatDeliveryFailure } from "../../ChatAlertPoster"
 import type { DispatchContext } from "../context"
@@ -107,7 +107,7 @@ describe("chat alert blocks", () => {
 		assert.strictEqual(card.color, "#e01e5a")
 		assert.include(card.summary, "**Error Rate** is **8%**")
 		assert.deepStrictEqual(
-			card.fields.map((field) => field.label),
+			Arr.map(card.fields, (field) => field.label),
 			["Severity", "Group"],
 		)
 		assert.strictEqual(card.fields[1]?.value, "`checkout`")
@@ -128,7 +128,7 @@ describe("chat alert blocks", () => {
 			buildChatAlertBlocks(inputFor({ context: { ...context, groupKey: "__total__" } })),
 		)
 		assert.deepStrictEqual(
-			card.fields.map((field) => field.label),
+			Arr.map(card.fields, (field) => field.label),
 			["Severity"],
 		)
 	})

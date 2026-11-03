@@ -3,7 +3,7 @@ import { RoleName, UserId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssuePullRequests, ErrorIssues, type ErrorIssueVerificationRow } from "@maple/db/tables"
 import { CH } from "@maple/query-engine"
-import { Cause, Clock, Context, DateTime, Effect, Layer, Option, Schema } from "effect"
+import { Cause, Clock, Context, DateTime, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -129,7 +129,8 @@ const make: Effect.Effect<
 
 	// Present only inside a Worker isolate; absent in tests and local runs, where
 	// the enqueue records `no_binding` rather than silently degrading.
-	const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
+	const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
+	const chatSessions = Option.getOrUndefined(chatSessionsOption)
 
 	const systemTenant = (orgId: OrgId): TenantContext => ({
 		orgId,
@@ -234,7 +235,7 @@ const make: Effect.Effect<
 				if (subject === undefined) return "skipped"
 
 				const split = yield* occurrenceSplit(row, subject.fingerprintHash, nowMs).pipe(
-					Effect.map(Option.some),
+					Effect.asSome,
 					// Interrupts (isolate teardown) are NOT failures — re-raise them so the
 					// tick cancels promptly instead of recording a non-answer for this row.
 					Effect.catchCause((cause) =>
@@ -356,12 +357,12 @@ const make: Effect.Effect<
 		)
 
 		const countOutcome = (outcome: (typeof outcomes)[number]) =>
-			outcomes.filter((candidate) => candidate === outcome).length
+			Arr.filter(outcomes, (candidate) => candidate === outcome).length
 		const refuted = countOutcome("refuted")
 		const investigationsStarted = countOutcome("started")
 		const skipped = countOutcome("skipped")
-		const verdictsApplied = settledApplied.filter(Boolean).length + countOutcome("verdict")
-		const failedRows = settledApplied.filter((applied) => !applied).length + countOutcome("failed")
+		const verdictsApplied = Arr.filter(settledApplied, Boolean).length + countOutcome("verdict")
+		const failedRows = Arr.filter(settledApplied, (applied) => !applied).length + countOutcome("failed")
 
 		yield* Effect.annotateCurrentSpan({
 			"maple.verification.examined": due.length,

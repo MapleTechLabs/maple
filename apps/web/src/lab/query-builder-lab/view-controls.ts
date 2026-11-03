@@ -1,10 +1,11 @@
 import { cn } from "@maple/ui/lib/utils"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../ui/eyebrow"
-import * as Select from "../../ui/select"
-import { type SelectOption, view as selectView } from "../../ui/select-view"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import * as Select from "@maple/views/ui/select"
+import { type SelectOption, view as selectView } from "@maple/views/ui/select-view"
 import { Message, type Model } from "./model"
+import { Array as Arr } from "effect"
 
 // The small pieces the lab's query and formula cards share.
 
@@ -50,7 +51,7 @@ export const labSelect = (
 		view: selectView,
 		toParentMessage: (message) => Message.GotSelectMessage({ id, message }),
 		viewInputs: {
-			entries: options.map((item) => ({ _tag: "Item" as const, item })),
+			entries: Arr.map(options, (item) => ({ _tag: "Item" as const, item })),
 			className: inputs.className,
 			toView: inputs.toView,
 			renderValue: placeholder === undefined || index !== -1 ? undefined : () => [placeholder],

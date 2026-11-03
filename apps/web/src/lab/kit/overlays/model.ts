@@ -1,15 +1,15 @@
 import { OVERLAY_ITEMS } from "../overlay-items"
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Combobox from "../../../ui/combobox"
-import * as ContextMenu from "../../../ui/context-menu"
-import * as Dialog from "../../../ui/dialog"
-import * as HoverCard from "../../../ui/hover-card"
-import * as Menu from "../../../ui/menu"
-import * as Popover from "../../../ui/popover"
-import * as Select from "../../../ui/select"
-import * as Toast from "../../../ui/toast"
-import * as Tooltip from "../../../ui/tooltip"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as ContextMenu from "@maple/views/ui/context-menu"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as HoverCard from "@maple/views/ui/hover-card"
+import * as Menu from "@maple/views/ui/menu"
+import * as Popover from "@maple/views/ui/popover"
+import * as Select from "@maple/views/ui/select"
+import * as Toast from "@maple/views/ui/toast"
+import * as Tooltip from "@maple/views/ui/tooltip"
 
 export const OverlayItem = Schema.Literals(OVERLAY_ITEMS)
 export type OverlayItem = typeof OverlayItem.Type
@@ -67,8 +67,8 @@ export const decodeItem = (raw: string | null): Option.Option<OverlayItem> =>
 
 /** The `toast-<type>` items' toast type. */
 export const toastTypeOf = (item: OverlayItem): Option.Option<Toast.ToastType> =>
-	item.startsWith("toast-")
-		? Schema.decodeUnknownOption(Toast.ToastType)(item.slice("toast-".length))
+	Str.startsWith("toast-")(item)
+		? Schema.decodeUnknownOption(Toast.ToastType)(Str.slice("toast-".length)(item))
 		: Option.none()
 
 export const TOAST_COPY = {

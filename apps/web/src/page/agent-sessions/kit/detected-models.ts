@@ -1,6 +1,6 @@
 import { AiModelBrandColor, DetectAiModelsRequest } from "@maple/domain/http"
 import { shortTarget } from "../../../lib/agent-sessions/span-filters"
-import { Effect, Option, Record, Schema } from "effect"
+import { Effect, Option, Record, Schema, Array as Arr, String as Str } from "effect"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 
 // Model detection: one `detectMany` per distinct
@@ -35,7 +35,7 @@ const MAX_MODELS = 200
 
 /** One request per distinct set: sorted so two orders of the same models share the key. */
 export const detectionKey = (models: ReadonlyArray<string>): string =>
-	JSON.stringify([...new Set(models)].toSorted().slice(0, MAX_MODELS))
+	encodeModels([...new Set(models)].toSorted().slice(0, MAX_MODELS))
 
 /** `Some(key)` when the set has not been asked for yet. */
 export const missingDetection = (
@@ -49,11 +49,11 @@ export const missingDetection = (
 /** Every answer so far, as one lookup; an unanswered model renders its last path segment. */
 export const detectLookup = (detections: Detections) => {
 	const byModel = new Map(
-		Object.values(detections).flatMap((answer) =>
-			(answer ?? []).map((entry) => [entry.model, entry] as const),
+		Arr.flatMap(Record.values(detections), (answer) =>
+			Arr.map(answer ?? [], (entry) => [entry.model, entry] as const),
 		),
 	)
-	return (model: string): DetectedModel => byModel.get(model.trim()) ?? unresolved(model)
+	return (model: string): DetectedModel => byModel.get(Str.trim(model)) ?? unresolved(model)
 }
 
 /** `modelTitle`: the vendor, then the id it was reported under. */
@@ -61,6 +61,7 @@ export const modelTitle = (detected: DetectedModel): string =>
 	detected.vendorName === null ? detected.model : `${detected.vendorName} · ${detected.model}`
 
 const decodeModels = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.String)))
+const encodeModels = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)))
 
 /** The batch for one key; a failure leaves the models unresolved, like the atom's `orElse`. */
 export const detectModels = (key: string) =>
@@ -70,7 +71,7 @@ export const detectModels = (key: string) =>
 		const response = yield* client.aiModelsInternal.detectMany({
 			payload: new DetectAiModelsRequest({ models }),
 		})
-		return response.map((entry): DetectedModel => ({
+		return Arr.map(response, (entry): DetectedModel => ({
 			model: entry.model,
 			displayName: entry.displayName,
 			vendorSlug: entry.vendorSlug,

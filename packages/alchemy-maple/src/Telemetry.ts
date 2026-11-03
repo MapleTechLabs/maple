@@ -129,8 +129,10 @@ export const Telemetry = (props: TelemetryProps): Layer.Layer<never> => {
 				const server = Effect.isEffect(local) ? yield* local : local
 				yield* rc.set("MAPLE_ENDPOINT", Output.asOutput(server.endpoint))
 			} else {
-				if (ingestKey !== undefined)
-					yield* rc.set("MAPLE_INGEST_KEY", yield* ingestKeyOutput(ingestKey))
+				if (ingestKey !== undefined) {
+					const key = yield* ingestKeyOutput(ingestKey)
+					yield* rc.set("MAPLE_INGEST_KEY", key)
+				}
 				if (endpoint !== undefined) yield* rc.set("MAPLE_ENDPOINT", Output.asOutput(endpoint))
 			}
 			if (environment !== undefined) yield* rc.set("MAPLE_ENVIRONMENT", Output.asOutput(environment))
@@ -139,5 +141,6 @@ export const Telemetry = (props: TelemetryProps): Layer.Layer<never> => {
 	// SAFETY: the only requirement is the resource declaration's provider set,
 	// which the Stack supplies to the init Effect at plan time — the same shape
 	// alchemy's own `Axiom.Telemetry` returns.
+	// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- see SAFETY above
 	return Layer.mergeAll(bind, AlchemyTelemetry.layer(sdkRequestLayer(telemetry))) as Layer.Layer<never>
 }

@@ -1,20 +1,27 @@
 import type { Resources } from "../../platform/resources"
 import { patternSearchTerm } from "../../lib/log-patterns"
-import * as FilterSections from "@maple/web/ui/filters/filter-sections"
-import * as ToggleGroup from "@maple/web/ui/toggle-group"
-import { Option } from "effect"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import * as LogsStream from "@maple/views/ui/logs/logs-stream"
+import * as Popover from "@maple/views/ui/popover"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
+import * as Tooltip from "@maple/views/ui/tooltip"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
-import { idle } from "../../data/slot"
+import { idle } from "@maple/views/data/keyed"
 import { queryOf } from "../../route"
-import { type PageContext, PageOutMessage, replaceParams, withParams } from "../contract"
-import { ReadClock } from "./command"
-import { filtersOf, modeOf } from "./filters"
+import { type PageContext, PageOutMessage, type ParamUpdates, replaceParams, withParams } from "../contract"
+import { ReadClock, ReadPreferences } from "./command"
+import { columnsOf, filtersOf, modeOf } from "./filters"
 import { load } from "./load"
 import { Message } from "./message"
-import { initChipJsonTooltip, type Model } from "./model"
+import type { Model } from "./model"
+import { syncStream } from "./update-stream"
 
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PageOutMessage, Resources>
-export type InitReturn = Readonly<{ model: Model; commands: ReadonlyArray<Command.Command<Message, never, Resources>> }>
+export type InitReturn = Readonly<{
+	model: Model
+	commands: ReadonlyArray<Command.Command<Message, never, Resources>>
+}>
 
 export const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
@@ -36,17 +43,25 @@ export const init = (context: PageContext): InitReturn => {
 			patterns: idle(),
 			services: idle(),
 			severities: idle(),
-			viewport: { scrollTop: 0, height: 0 },
+			stream: LogsStream.init("local-logs", []),
+			columns: columnsOf(query),
+			columnOptions: [],
+			wrap: false,
+			density: "compact",
+			toolbarTooltip: Tooltip.init("logs-toolbar-tooltip"),
+			columnsPopover: Popover.init("logs-columns-popover", { align: "end" }),
 			search: { text: q, version: 0, sent: q },
 			modeToggle: ToggleGroup.init({ label: MODE_LABEL, values: [modeOf(query)] }),
 			sections: FilterSections.init(),
 			maybeDetail: Option.none(),
 			isRefreshing: false,
 			copies: {},
-			chipCard: { visible: Option.none(), pendingOpen: Option.none(), pendingClose: Option.none(), generation: 0, isJsonExpanded: false },
-			chipJsonTooltip: initChipJsonTooltip(),
 		},
-		commands: [ReadClock(), Command.mapMessage(FilterSections.ReadRemembered(), toSections)],
+		commands: [
+			ReadClock(),
+			ReadPreferences(),
+			Command.mapMessage(FilterSections.ReadRemembered(), toSections),
+		],
 	}
 }
 
@@ -57,10 +72,10 @@ export const locationChanged = (model: Model, context: PageContext): UpdateRetur
 	const search = q === model.search.sent ? model.search : { ...model.search, text: q, sent: q }
 	// Each mode is its own component in legacy: leaving the list unmounts its detail sheet.
 	const maybeDetail = modeOf(query) === "list" ? model.maybeDetail : Option.none()
-	return load({ ...model, search, maybeDetail }, context)
+	return syncStream(model, load({ ...model, search, maybeDetail }, context), context)
 }
 
-export const navigate = (model: Model, context: PageContext, updates: Record<string, string | null>): UpdateReturn => ({
+export const navigate = (model: Model, context: PageContext, updates: ParamUpdates): UpdateReturn => ({
 	model,
 	outMessage: replaceParams(context.location, updates),
 })
@@ -80,6 +95,9 @@ export const selectPattern = (model: Model, context: PageContext, template: stri
 export const settleRefresh = (model: Model): Model => {
 	const isLoading = (data: AsyncData.AsyncData<unknown, unknown>) =>
 		AsyncData.isLoading(data) || AsyncData.isRefreshing(data)
-	const busy = [model.logs.data, model.patterns.data, model.services.data, model.severities.data].some(isLoading)
+	const busy = Arr.some(
+		[model.logs.data, model.patterns.data, model.services.data, model.severities.data],
+		isLoading,
+	)
 	return model.isRefreshing && !busy ? { ...model, isRefreshing: false } : model
 }

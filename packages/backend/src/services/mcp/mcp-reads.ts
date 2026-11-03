@@ -1,17 +1,24 @@
 import {
 	McpOverviewResponse,
 	McpServersResponse,
+	McpSessionResponse,
+	McpSessionsResponse,
 	McpToolResponse,
 	type McpCallItem,
 	type McpClientItem,
 	type McpOverviewRequest,
 	type McpSeriesPoint,
+	type McpSessionItem,
 	type McpServersRequest,
+	type McpSessionRequest,
+	type McpSessionRequestItem,
+	type McpSessionsRequest,
 	type McpToolRequest,
 } from "@maple/domain/http"
-import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
-import { Array as Arr, DateTime, Effect } from "effect"
-import { CH, parseWarehouseDateTime } from "@maple/query-engine"
+import { MCP_CLIENT_KINDS, UNKNOWN_MCP_CLIENT } from "@maple/domain/mcp-clients"
+import { Array as Arr, DateTime, Effect, Option } from "effect"
+import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
+import * as Integrations from "@maple/query-engine-integrations"
 import { timestampMs } from "@maple/backend/platform/time"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -101,15 +108,72 @@ const splitSeries = (
 		}))
 	})
 
-const clientItems = (
+type ClientReach = Readonly<{
+	client: string
+	kind: string
+	calls: number
+	errors: number
+	connects: number
+	sources: number
+	lastSeen: DateTime.Utc
+}>
+
+const kindOf = (value: string) => MCP_CLIENT_KINDS.find((kind) => kind === value) ?? "unknown"
+
+/**
+ * The reach rows the overview may list as connect-only: under the client and kind selection, and
+ * none under a tool search or failing-only, which tool calls alone can match.
+ */
+export const quietClientsFor = (
+	reach: ReadonlyArray<ClientReach>,
+	selection: Readonly<{ client?: string; kind?: string; search?: string; failingOnly?: boolean }>,
+): ReadonlyArray<ClientReach> =>
+	selection.search !== undefined || selection.failingOnly === true
+		? []
+		: reach.filter(
+				(row) =>
+					(selection.client === undefined || row.client === selection.client) &&
+					(selection.kind === undefined || row.kind === selection.kind),
+			)
+
+/**
+ * Tool-call clients with their reach. `quiet` also lists the clients that connected but called
+ * no tool, after the callers. A quiet row made no tool call and at least one connect, so a caller
+ * past the calls read's limit, or a client that only listed tools, stays out.
+ */
+export const clientItems = (
 	rows: ReadonlyArray<Readonly<{ client: string; kind: string; calls: number; errors: number }>>,
-): ReadonlyArray<McpClientItem> =>
-	rows.map((row) => ({
-		name: row.client,
-		kind: MCP_CLIENT_KINDS.find((kind) => kind === row.kind) ?? "unknown",
-		calls: row.calls,
-		errors: row.errors,
-	}))
+	reach: ReadonlyArray<ClientReach> = [],
+	quiet: ReadonlyArray<ClientReach> = [],
+): ReadonlyArray<McpClientItem> => {
+	const reachOf = new Map(reach.map((row) => [row.client, row]))
+	const callers = new Set(rows.map((row) => row.client))
+	return [
+		...rows.map((row) => {
+			const seen = reachOf.get(row.client)
+			return {
+				name: row.client,
+				kind: kindOf(row.kind),
+				calls: row.calls,
+				errors: row.errors,
+				connects: seen?.connects ?? 0,
+				sources: seen?.sources ?? 0,
+				lastSeenMs: seen === undefined ? 0 : toMs(seen.lastSeen),
+			}
+		}),
+		...quiet
+			.filter((row) => row.calls === 0 && row.connects > 0 && !callers.has(row.client))
+			.map((row) => ({
+				name: row.client,
+				kind: kindOf(row.kind),
+				calls: 0,
+				errors: 0,
+				connects: row.connects,
+				sources: row.sources,
+				lastSeenMs: toMs(row.lastSeen),
+			})),
+	]
+}
 
 export const readMcpServers = Effect.fn("McpReads.servers")(function* (
 	tenant: TenantContext,
@@ -192,7 +256,7 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 	const aggregate = { profile: "aggregation" } as const
 	const [
 		summary,
-		initializers,
+		clientInfo,
 		methods,
 		allClients,
 		clients,
@@ -204,15 +268,16 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 		toolErrors,
 		allTotals,
 		firstSeen,
+		reach,
 	] = yield* Effect.all(
 		[
 			warehouse.compiledQuery(tenant, CH.compile(CH.mcpSpanSummaryQuery(), params), {
 				...aggregate,
 				context: "mcpSpanSummary",
 			}),
-			warehouse.compiledQuery(tenant, CH.compile(CH.mcpInitializersQuery(), params), {
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpClientInfoQuery(), params), {
 				...aggregate,
-				context: "mcpInitializers",
+				context: "mcpClientInfo",
 			}),
 			warehouse.compiledQuery(tenant, CH.compile(CH.mcpMethodsQuery(), params), {
 				...aggregate,
@@ -262,9 +327,15 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 				profile: "list",
 				context: "mcpFirstSeen",
 			}),
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpClientReachQuery(), params), {
+				...aggregate,
+				context: "mcpClientReach",
+			}),
 		],
 		{ concurrency: MCP_READ_CONCURRENCY },
 	)
+	// A tool search or failing-only selection matches tool calls alone, so it hides quiet clients.
+	const quiet = quietClientsFor(reach, payload)
 	const buckets = bucketsOf(window)
 	const sparks = Arr.groupBy(toolSeries, (row) => row.key)
 	const calls = summary.filter((row) => row.method === TOOLS_CALL)
@@ -316,9 +387,9 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 				spark: buckets.map((bucket) => spark.get(bucket) ?? 0),
 			}
 		}),
-		clients: clientItems(clients),
-		allClients: clientItems(allClients),
-		initializers,
+		clients: clientItems(clients, reach, quiet),
+		allClients: clientItems(allClients, reach),
+		clientInfo,
 		failures: Object.entries(failures)
 			.map(([errorType, rows]) => ({ errorType, count: sumBy(rows, (row) => row.count) }))
 			.sort((a, b) => b.count - a.count),
@@ -330,6 +401,7 @@ export const readMcpOverview = Effect.fn("McpReads.overview")(function* (
 			toolErrors: sumBy(failedCalls, (row) => row.spans),
 			errorsWithMessage: sumBy(failedCalls, (row) => row.withMessage),
 			withSession: sumBy(calls, (row) => row.withSession),
+			withUser: sumBy(calls, (row) => row.withUser),
 			withCallerTrace: sumBy(calls, (row) => row.withCallerTrace),
 			protocolVersion,
 			transport,
@@ -430,6 +502,7 @@ export const readMcpTool = Effect.fn("McpReads.tool")(function* (
 	const total = totals[0]
 	const hasCalls = total !== undefined && total.calls > 0
 	return new McpToolResponse({
+		service: payload.service,
 		tool: payload.tool,
 		calls: total?.calls ?? 0,
 		errors: total?.errors ?? 0,
@@ -457,5 +530,387 @@ export const readMcpTool = Effect.fn("McpReads.tool")(function* (
 		slowest: slowest.map(callItem),
 		failed: failed.map(callItem),
 		recent: recent.map(callItem),
+	})
+})
+
+/** Sessions the list reads at most. */
+const SESSION_LIST_LIMIT = 200
+/** Requests the session page reads at most; one more tells it the session was cut. */
+const SESSION_REQUEST_LIMIT = 1_000
+/** (user, client, minute) rows the list reads at most to build user sessions. */
+const USER_ACTIVITY_LIMIT = 50_000
+/** An agent turn can start this long before its first MCP call, and only its first spans may name the session. */
+const AGENT_TURN_LEAD_MS = 3_600_000
+/** How far past its start a user session's page looks for the rest of it. */
+const USER_SESSION_LOOKAHEAD_MS = 86_400_000
+/** A user's stateless requests from one client this far apart start a new session. */
+export const USER_SESSION_GAP_MS = 30 * 60_000
+
+const USER_SESSION_PREFIX = "user:"
+/**
+ * The latest key start a page can read: a day before 9999-12-31T23:59:59.999Z, the last instant a
+ * four-digit-year warehouse time holds, so the start and its lookahead both format.
+ */
+const LATEST_KEY_START_MS = 253_402_300_799_999 - USER_SESSION_LOOKAHEAD_MS
+
+/** base64url: no `/`, `:` or `%`, which the key's separator and the route path would trip on. */
+const toKeyPart = (value: string): string =>
+	btoa(Array.from(new TextEncoder().encode(value), (byte) => String.fromCharCode(byte)).join(""))
+		.replace(/\+/g, "-")
+		.replace(/\//g, "_")
+		.replace(/=+$/, "")
+
+const fromKeyPart = Option.liftThrowable((part: string): string =>
+	new TextDecoder("utf-8", { fatal: true }).decode(
+		Uint8Array.from(atob(part.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0)),
+	),
+)
+
+/** A user session's key: its first request, its client and its user, so its page can find it again. */
+export const userSessionKey = (startMs: number, client: string, user: string): string =>
+	`${USER_SESSION_PREFIX}${startMs}:${toKeyPart(client)}:${toKeyPart(user)}`
+
+/** The parts of a user session's key; `undefined` for anything else, an issued session's id included. */
+export const parseUserSessionKey = (
+	key: string,
+): Readonly<{ startMs: number; client: string; user: string }> | undefined => {
+	if (!key.startsWith(USER_SESSION_PREFIX)) return undefined
+	const parts = key.slice(USER_SESSION_PREFIX.length).split(":")
+	const [start = "", client = "", user = ""] = parts
+	const startMs = Number(start)
+	// A start a date can hold: past it the warehouse time it formats to would throw.
+	if (
+		parts.length !== 3 ||
+		!/^\d+$/.test(start) ||
+		startMs > LATEST_KEY_START_MS ||
+		client === "" ||
+		user === ""
+	)
+		return undefined
+	return Option.match(Option.all([fromKeyPart(client), fromKeyPart(user)]), {
+		onNone: () => undefined,
+		onSome: ([clientName, userId]) =>
+			clientName === "" || userId === "" ? undefined : { startMs, client: clientName, user: userId },
+	})
+}
+
+type ActivityRow = Readonly<{
+	user: string
+	client: string
+	kind: string
+	userName: string
+	requests: number
+	calls: number
+	errors: number
+	tools: ReadonlyArray<string | null>
+	firstSeen: DateTime.Utc
+	lastSeen: DateTime.Utc
+}>
+
+type UserSession = McpSessionItem & Readonly<{ user: string }>
+
+/**
+ * A stateless server's sessions: each user's minutes from one client, in order, split where the
+ * user went quiet for `gapMs`.
+ */
+export const stitchUserSessions = (
+	rows: ReadonlyArray<ActivityRow>,
+	gapMs: number = USER_SESSION_GAP_MS,
+): ReadonlyArray<UserSession> =>
+	rows
+		.toSorted(
+			(a, b) =>
+				a.user.localeCompare(b.user) ||
+				a.client.localeCompare(b.client) ||
+				toMs(a.firstSeen) - toMs(b.firstSeen),
+		)
+		.reduce<Array<UserSession & { readonly toolSet: ReadonlySet<string> }>>((sessions, row) => {
+			const firstMs = toMs(row.firstSeen)
+			const lastMs = toMs(row.lastSeen)
+			const tools = row.tools.filter((tool): tool is string => tool !== null)
+			const open = sessions.at(-1)
+			if (
+				open !== undefined &&
+				open.user === row.user &&
+				open.client === row.client &&
+				firstMs - open.lastSeenMs < gapMs
+			) {
+				const toolSet = new Set([...open.toolSet, ...tools])
+				sessions[sessions.length - 1] = {
+					...open,
+					userName: open.userName ?? (row.userName === "" ? null : row.userName),
+					requests: open.requests + row.requests,
+					calls: open.calls + row.calls,
+					errors: open.errors + row.errors,
+					tools: toolSet.size,
+					toolSet,
+					lastSeenMs: Math.max(open.lastSeenMs, lastMs),
+				}
+				return sessions
+			}
+			const toolSet = new Set(tools)
+			sessions.push({
+				sessionId: userSessionKey(firstMs, row.client, row.user),
+				source: "user",
+				user: row.user,
+				userName: row.userName === "" ? null : row.userName,
+				client: row.client,
+				kind: kindOf(row.kind),
+				requests: row.requests,
+				calls: row.calls,
+				errors: row.errors,
+				tools: toolSet.size,
+				toolSet,
+				firstSeenMs: firstMs,
+				lastSeenMs: lastMs,
+			})
+			return sessions
+		}, [])
+		.map(({ toolSet: _toolSet, ...session }) => session)
+
+export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
+	tenant: TenantContext,
+	payload: McpSessionsRequest,
+) {
+	const warehouse = yield* WarehouseQueryService
+	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.mcp.service": payload.service })
+	const window = windowOf(payload)
+	const params = { orgId: tenant.orgId, serviceName: payload.service, ...window }
+	const selection: CH.McpSessionFilter = {
+		client: payload.client,
+		kind: payload.kind,
+		search: payload.search,
+	}
+	const aggregate = { profile: "aggregation" } as const
+	const [summary, allClients, totals, issued, activityRows, activity] = yield* Effect.all(
+		[
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpSpanSummaryQuery(), params), {
+				...aggregate,
+				context: "mcpSessionCoverage",
+			}),
+			// Every MCP request, not only tool calls: a session can hold just initialize and tools/list.
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpClientReachQuery(), params), {
+				...aggregate,
+				context: "mcpSessionClients",
+			}),
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpSessionTotalsQuery(selection), params), {
+				...aggregate,
+				context: "mcpSessionTotals",
+			}),
+			warehouse.compiledQuery(
+				tenant,
+				CH.compile(
+					CH.mcpSessionListQuery(
+						{ ...selection, failingOnly: payload.failingOnly },
+						SESSION_LIST_LIMIT,
+					),
+					params,
+				),
+				{ ...aggregate, context: "mcpSessionList" },
+			),
+			warehouse.compiledQuery(
+				tenant,
+				CH.compile(CH.mcpUserActivityQuery(selection, USER_ACTIVITY_LIMIT + 1), params),
+				{ ...aggregate, context: "mcpUserActivity" },
+			),
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpSessionActivityQuery(selection), params), {
+				...aggregate,
+				context: "mcpSessionActivity",
+			}),
+		],
+		{ concurrency: MCP_READ_CONCURRENCY },
+	)
+	// One row past the limit says the read was cut; it is never stitched.
+	const userSessions = stitchUserSessions(activityRows.slice(0, USER_ACTIVITY_LIMIT))
+	const failingUserSessions = userSessions.filter((session) => session.errors > 0)
+	const calls = summary.filter((row) => row.method === TOOLS_CALL)
+	const total = totals[0]
+	const sessions = [
+		...issued.map((row): McpSessionItem => ({
+			sessionId: row.sessionId,
+			source: "issued",
+			user: row.user === "" ? null : row.user,
+			userName: row.userName === "" ? null : row.userName,
+			client: row.client === "" ? UNKNOWN_MCP_CLIENT : row.client,
+			kind: kindOf(row.kind),
+			requests: row.requests,
+			calls: row.calls,
+			errors: row.errors,
+			tools: row.tools,
+			firstSeenMs: toMs(row.firstSeen),
+			lastSeenMs: toMs(row.lastSeen),
+		})),
+		...(payload.failingOnly === true ? failingUserSessions : userSessions),
+	]
+		.sort((a, b) => b.lastSeenMs - a.lastSeenMs)
+		.slice(0, SESSION_LIST_LIMIT)
+	const activeBy = new Map(activity.map((row) => [timestampMs(row.bucket), row]))
+	yield* Effect.annotateCurrentSpan({
+		"maple.mcp.sessions": (total?.sessions ?? 0) + userSessions.length,
+		"maple.mcp.user_sessions": userSessions.length,
+		"maple.mcp.user_activity_rows": activityRows.length,
+	})
+	const isUserActivityCut = activityRows.length > USER_ACTIVITY_LIMIT
+	return new McpSessionsResponse({
+		service: payload.service,
+		totals: {
+			sessions: (total?.sessions ?? 0) + userSessions.length,
+			failingSessions: (total?.failingSessions ?? 0) + failingUserSessions.length,
+			users: total?.users ?? 0,
+			calls: total?.calls ?? 0,
+			errors: total?.errors ?? 0,
+		},
+		activity: bucketsOf(window).map((bucket) => ({
+			bucket,
+			sessions: activeBy.get(bucket)?.sessions ?? 0,
+			users: activeBy.get(bucket)?.users ?? 0,
+		})),
+		toolCalls: sumBy(calls, (row) => row.spans),
+		otherRequests: sumBy(
+			summary.filter((row) => row.method !== TOOLS_CALL),
+			(row) => row.spans,
+		),
+		withSession: sumBy(calls, (row) => row.withSession),
+		withUser: sumBy(calls, (row) => row.withUser),
+		inSession: sumBy(calls, (row) => row.inSession),
+		isUserActivityCut,
+		sessions,
+		allClients: clientItems(allClients, allClients),
+	})
+})
+
+type SessionRow = Readonly<{ traceId: string; linkTraceId: string }>
+
+/** Each request's caller traces, its own first: `params._meta` parents the span, a link is the fallback. */
+const callerTraces = (row: SessionRow): ReadonlyArray<string> =>
+	[row.traceId, row.linkTraceId].filter((id) => id !== "")
+
+/** The Agent Session of each request: the first of its caller traces that one is filed under. */
+export const agentSessionsOf = (
+	rows: ReadonlyArray<SessionRow>,
+	filed: ReadonlyArray<Readonly<{ traceId: string; sessionId: string }>>,
+): ReadonlyArray<string | null> => {
+	const sessionOf = new Map(filed.map((row) => [row.traceId, row.sessionId]))
+	return rows.map((row) => callerTraces(row).flatMap((id) => sessionOf.get(id) ?? [])[0] ?? null)
+}
+
+/**
+ * A user session's own bounds, found again from its key: that user's minutes from the client from
+ * the session's first request on, split as the list splits them. `undefined` when it is gone.
+ */
+const userSessionBounds = Effect.fn("McpReads.userSessionBounds")(function* (
+	tenant: TenantContext,
+	payload: McpSessionRequest,
+	key: Readonly<{ startMs: number; client: string; user: string }>,
+) {
+	const warehouse = yield* WarehouseQueryService
+	const window = windowOf(payload)
+	const rows = yield* warehouse.compiledQuery(
+		tenant,
+		CH.compile(CH.mcpUserActivityQuery({ user: key.user, client: key.client }, USER_ACTIVITY_LIMIT), {
+			orgId: tenant.orgId,
+			serviceName: payload.service,
+			startTime: formatWarehouseDateTime(key.startMs),
+			// A link can carry a window that ends before the session it names: read on past it.
+			endTime: formatWarehouseDateTime(
+				Math.max(parseWarehouseDateTime(window.endTime), key.startMs + USER_SESSION_LOOKAHEAD_MS),
+			),
+		}),
+		{ profile: "list", context: "mcpUserSessionBounds" },
+	)
+	return stitchUserSessions(rows).find((session) => session.firstSeenMs === key.startMs)
+})
+
+export const readMcpSession = Effect.fn("McpReads.session")(function* (
+	tenant: TenantContext,
+	payload: McpSessionRequest,
+) {
+	const warehouse = yield* WarehouseQueryService
+	yield* Effect.annotateCurrentSpan({
+		orgId: tenant.orgId,
+		"maple.mcp.service": payload.service,
+		"maple.mcp.session.id": payload.sessionId,
+	})
+	const window = windowOf(payload)
+	const parsed = parseUserSessionKey(payload.sessionId)
+	const bounds = parsed === undefined ? undefined : yield* userSessionBounds(tenant, payload, parsed)
+	// An issued id can look like a user session's key; with no such user session it is read as issued.
+	const userKey = bounds === undefined ? undefined : parsed
+	yield* Effect.annotateCurrentSpan({
+		"maple.mcp.session.source": userKey === undefined ? "issued" : "user",
+	})
+	const read =
+		userKey === undefined || bounds === undefined
+			? yield* warehouse.compiledQuery(
+					tenant,
+					CH.compile(CH.mcpSessionRequestsQuery(SESSION_REQUEST_LIMIT + 1), {
+						orgId: tenant.orgId,
+						serviceName: payload.service,
+						sessionId: payload.sessionId,
+						...window,
+					}),
+					{ profile: "list", context: "mcpSessionRequests" },
+				)
+			: yield* warehouse.compiledQuery(
+					tenant,
+					CH.compile(CH.mcpUserSessionRequestsQuery(SESSION_REQUEST_LIMIT + 1), {
+						orgId: tenant.orgId,
+						serviceName: payload.service,
+						userId: userKey.user,
+						client: userKey.client,
+						// Whole seconds around the session's own first and last request.
+						startTime: formatWarehouseDateTime(bounds.firstSeenMs),
+						endTime: formatWarehouseDateTime(bounds.lastSeenMs + 1_000),
+					}),
+					{ profile: "list", context: "mcpUserSessionRequests" },
+				)
+	const rows = read.slice(0, SESSION_REQUEST_LIMIT)
+	const traceIds = [...new Set(rows.flatMap(callerTraces))]
+	const firstMs = rows[0] === undefined ? parseWarehouseDateTime(window.startTime) : toMs(rows[0].timestamp)
+	const lastRow = rows.at(-1)
+	const lastMs = lastRow === undefined ? 0 : toMs(lastRow.timestamp)
+	const filed =
+		traceIds.length === 0
+			? []
+			: yield* warehouse.compiledQuery(
+					tenant,
+					CH.compile(Integrations.aiSessionsOfTracesQuery(traceIds), {
+						orgId: tenant.orgId,
+						startTime: formatWarehouseDateTime(firstMs - AGENT_TURN_LEAD_MS),
+						// A user session is read past the window's end; its callers' traces run as far.
+						endTime: formatWarehouseDateTime(
+							Math.max(parseWarehouseDateTime(window.endTime), lastMs + 1_000),
+						),
+					}),
+					{ profile: "list", context: "mcpSessionAgentSessions" },
+				)
+	const agentSessions = agentSessionsOf(rows, filed)
+	const named = rows.find((row) => row.client !== UNKNOWN_MCP_CLIENT)
+	yield* Effect.annotateCurrentSpan({
+		"maple.mcp.session.requests": rows.length,
+		"maple.mcp.session.agent_sessions": new Set(agentSessions.filter((id) => id !== null)).size,
+	})
+	return new McpSessionResponse({
+		service: payload.service,
+		sessionId: payload.sessionId,
+		source: userKey === undefined ? "issued" : "user",
+		user: rows.find((row) => row.user !== "")?.user ?? null,
+		userName: rows.find((row) => row.userName !== "")?.userName ?? null,
+		client: named?.client ?? UNKNOWN_MCP_CLIENT,
+		kind: kindOf(named?.kind ?? "unknown"),
+		protocolVersion: rows.find((row) => row.protocolVersion !== "")?.protocolVersion ?? "",
+		requests: rows.map((row, index): McpSessionRequestItem => ({
+			timeMs: toMs(row.timestamp),
+			method: row.method,
+			tool: row.tool === "" ? null : row.tool,
+			requestId: row.requestId,
+			durationNs: row.duration,
+			errorType: row.errorType === "" ? null : row.errorType,
+			message: row.message === "" ? null : row.message,
+			traceId: row.traceId,
+			spanId: row.spanId,
+			agentSessionId: agentSessions[index] ?? null,
+		})),
+		isTruncated: read.length > SESSION_REQUEST_LIMIT,
 	})
 })

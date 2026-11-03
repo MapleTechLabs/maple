@@ -7,7 +7,7 @@
  */
 import { createHmac } from "node:crypto"
 import { describe, expect, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import { HttpServerRequest } from "effect/http"
 import { MAX_TIMESTAMP_SKEW_SECONDS, SIGNING_SECRET_CONFIG } from "./api"
 
@@ -100,7 +100,7 @@ describe("slack webhook ingress", () => {
 
 	it.effect("refuses a body that does not match its signature, and reads nothing out of it", () =>
 		Effect.gen(function* () {
-			const error = yield* call(mention, { signature: `v0=${"0".repeat(64)}` }).pipe(Effect.flip)
+			const error = yield* call(mention, { signature: `v0=${Str.repeat(64)("0")}` }).pipe(Effect.flip)
 			expect(error._tag).toBe("@maple/chat-platform/ConnectorIngressError")
 			expect(error.message).toBe(REJECTED)
 		}),
@@ -120,14 +120,14 @@ describe("slack webhook ingress", () => {
 			// attacker which one to fix; the reason goes on the span instead.
 			const reasons = ["signature", "timestamp", "mismatch", "malformed", "stale", "missing"]
 			for (const options of [
-				{ signature: `v0=${"0".repeat(64)}` },
+				{ signature: `v0=${Str.repeat(64)("0")}` },
 				{ signature: "not-a-signature" },
 				{ timestamp: String(MAX_TIMESTAMP_SKEW_SECONDS + 60) },
 				{ timestamp: "not-a-timestamp" },
 			]) {
 				const error = yield* call(mention, options).pipe(Effect.flip)
 				expect(error.message).toBe(REJECTED)
-				for (const reason of reasons) expect(error.message.toLowerCase()).not.toContain(reason)
+				for (const reason of reasons) expect(Str.toLowerCase(error.message)).not.toContain(reason)
 			}
 		}),
 	)
@@ -137,7 +137,7 @@ describe("slack webhook ingress", () => {
 			// The one branch that puts request content in the response. If verification ran after
 			// parsing, this would answer 200 with the challenge and Slack would accept any URL.
 			const body = JSON.stringify({ type: "url_verification", challenge: "abc123", token: "t" })
-			const error = yield* call(body, { signature: `v0=${"0".repeat(64)}` }).pipe(Effect.flip)
+			const error = yield* call(body, { signature: `v0=${Str.repeat(64)("0")}` }).pipe(Effect.flip)
 			expect(error._tag).toBe("@maple/chat-platform/ConnectorIngressError")
 			expect(error.message).not.toContain("abc123")
 		}),

@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { ApiKeyId, ApiKeyNotFoundError, OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -234,9 +234,9 @@ describe("ApiKeysService.roll", () => {
 					{ concurrency: 2 },
 				)
 
-				const succeeded = exits.filter(Exit.isSuccess)
+				const succeeded = Arr.filter(exits, Exit.isSuccess)
 				assert.strictEqual(succeeded.length, 1, "exactly one roll may win the source row")
-				const losers = exits.filter(Exit.isFailure)
+				const losers = Arr.filter(exits, Exit.isFailure)
 				assert.strictEqual(losers.length, 1)
 				assert.instanceOf(Option.getOrUndefined(Exit.findErrorOption(losers[0])), ApiKeyNotFoundError)
 
@@ -393,7 +393,7 @@ describe("ApiKeysService across orgs", () => {
 			)
 			const { keys } = yield* svc.list(orgId)
 			assert.deepStrictEqual(
-				keys.map((listed) => [listed.id, listed.revoked]),
+				Arr.map(keys, (listed) => [listed.id, listed.revoked]),
 				[[key.id, false]],
 			)
 		})

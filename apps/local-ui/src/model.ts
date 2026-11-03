@@ -1,10 +1,11 @@
-import * as Dialog from "@maple/web/ui/dialog"
-import * as Popover from "@maple/web/ui/popover"
-import * as Tabs from "@maple/web/ui/tabs"
-import * as Toast from "@maple/web/ui/toast"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Popover from "@maple/views/ui/popover"
+import * as Tabs from "@maple/views/ui/tabs"
+import * as Toast from "@maple/views/ui/toast"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
-import { LoadFailure } from "./data/local-query"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { PresenceResult } from "./data/signal-presence"
 import { Copies } from "./page/kit/copies"
 import { LocalEnv, Theme } from "./env"
@@ -56,6 +57,8 @@ export const Model = Schema.Struct({
 	/** The connect popover's copy buttons. */
 	copies: Copies,
 	toasts: Toast.Model,
+	/** The app-wide tooltip every `tooltipTrigger` opens. */
+	tooltip: TooltipHost.Model,
 	page: PageModel,
 })
 export type Model = typeof Model.Type

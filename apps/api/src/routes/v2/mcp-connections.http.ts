@@ -2,7 +2,7 @@ import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant } from "@maple/domain/http"
 import { MapleApiV2, isoTimestamp, paginateArray } from "@maple/domain/http/v2"
 import type { V2McpConnection } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { isAdmin } from "@maple/backend/services/auth/auth"
 import { McpConnectionsService, type McpConnection } from "@maple/backend/services/auth/McpConnectionsService"
@@ -34,7 +34,7 @@ export const HttpV2McpConnectionsLive = HttpApiBuilder.group(MapleApiV2, "mcpCon
 				Effect.gen(function* () {
 					const { orgId, viewer } = yield* currentViewer
 					const live = yield* connections.list(orgId, viewer)
-					const page = yield* paginateArray(live.map(toV2McpConnection), query)
+					const page = yield* paginateArray(Arr.map(live, toV2McpConnection), query)
 					return { object: "list" as const, ...page }
 				}),
 			)

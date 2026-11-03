@@ -1,13 +1,13 @@
 import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2SourceWithSecret } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { expect as expectView, given, Mount, role, scene, text } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { StackPlatform } from "../../lib/onboarding-stack"
-import * as Dialog from "../../ui/dialog"
-import * as Tabs from "../../ui/tabs"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Tabs from "@maple/views/ui/tabs"
 import type { PageContext } from "../contract"
 import { Message as FlowMessage } from "../sources/new/message"
 import { init, Message, type Model, update as updateWith } from "./quick-start"
@@ -24,7 +24,7 @@ const context: PageContext = {
 }
 const update = (model: Model, message: Message) => updateWith(model, message, true, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const atConnect = (platforms: ReadonlyArray<StackPlatform>): Model => ({
 	...init("maple-onboarding-v6-org_parity", false, false, "/", "org_parity").model,

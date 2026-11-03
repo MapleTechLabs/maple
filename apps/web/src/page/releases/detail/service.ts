@@ -1,10 +1,10 @@
 import type { ReleaseServiceImpact } from "../../../components/releases/release-model"
 import { deriveReleaseImpacts } from "../../../components/releases/release-model"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { ChartRuntime, LoadChartRuntime } from "../../../charts/chart-runtime"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import { ChartRuntime, LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import { commitDetailKey } from "../../kit/commit-card"
 import type { Resources } from "../../../platform/resources"
 import type { PageContext, PageReturn } from "../../contract"
@@ -36,12 +36,10 @@ export const baselineOf = (model: Model, serviceName: string): string | undefine
 	Option.getOrUndefined(
 		Option.flatMap(AsyncData.getData(model.releases.data), (data) =>
 			Option.fromUndefinedOr(
-				deriveOf(data)
-					.impacts.filter(
-						(impact) =>
-							impact.serviceName === serviceName && impact.commitSha === model.commitSha,
-					)
-					.toSorted((a, b) => b.spanCount - a.spanCount)[0]?.baseline?.commitSha,
+				Arr.filter(
+					deriveOf(data).impacts,
+					(impact) => impact.serviceName === serviceName && impact.commitSha === model.commitSha,
+				).toSorted((a, b) => b.spanCount - a.spanCount)[0]?.baseline?.commitSha,
 			),
 		),
 	)
@@ -58,23 +56,24 @@ export const derivedOf = (model: Model, serviceName: string): ServiceDerived | u
 	Option.getOrUndefined(
 		Option.map(AsyncData.getData(model.detail.data), (detail) => {
 			const impacts = deriveReleaseImpacts(
-				detail.versions.map((row) => ({ ...row })),
-				detail.timeline.map((row) => ({ ...row })),
+				Arr.map(detail.versions, (row) => ({ ...row })),
+				Arr.map(detail.timeline, (row) => ({ ...row })),
 			)
 			return {
 				detail,
 				impacts,
-				impact: impacts
-					.filter((candidate) => candidate.commitSha === model.commitSha)
-					.toSorted((a, b) => b.spanCount - a.spanCount)[0],
-				releases: detail.timeline
-					.filter((point) => point.serviceName === serviceName)
-					.map((point) => ({
+				impact: Arr.filter(impacts, (candidate) => candidate.commitSha === model.commitSha).toSorted(
+					(a, b) => b.spanCount - a.spanCount,
+				)[0],
+				releases: Arr.map(
+					Arr.filter(detail.timeline, (point) => point.serviceName === serviceName),
+					(point) => ({
 						bucket: point.bucket,
 						commitSha: point.commitSha,
 						count: point.count,
 						errorCount: 0,
-					})),
+					}),
+				),
 			}
 		}),
 	)
@@ -111,7 +110,7 @@ export const markersOf = (model: Model, derived: ServiceDerived | undefined) =>
 		? []
 		: commitMarkers(
 				derived.releases,
-				seriesPoints(model, derived).map((point) => point.bucket),
+				Arr.map(seriesPoints(model, derived), (point) => point.bucket),
 				commitsOf(model),
 			)
 
@@ -124,12 +123,13 @@ export const followLoaded = (
 ): Return => {
 	const derived = derivedOf(model, serviceName)
 	if (derived === undefined || derived.impact === undefined) return { model }
-	const fingerprints = derived.detail.errorFingerprints
-		.slice(0, FINGERPRINT_LIMIT)
-		.map((row) => row.fingerprintHash)
+	const fingerprints = Arr.map(
+		derived.detail.errorFingerprints.slice(0, FINGERPRINT_LIMIT),
+		(row) => row.fingerprintHash,
+	)
 	const issuesQuery = {
 		service_name: serviceName,
-		fingerprint_hash: fingerprints.join(","),
+		fingerprint_hash: Arr.join(fingerprints, ","),
 		limit: FINGERPRINT_LIMIT,
 	}
 	const issuesKey = requestKey(context.orgId, "errorIssues.list", issuesQuery)
@@ -155,7 +155,8 @@ export const followLoaded = (
 					changeset: slot,
 					command: FetchChangeset({ key: changesetKey, ranges }),
 				}))
-	const shas = markerShas(markersOf(model, derived)).filter(
+	const shas = Arr.filter(
+		markerShas(markersOf(model, derived)),
 		(sha) => sha !== model.commitSha && model.markerCommits[sha] === undefined && isResolvableSha(sha),
 	)
 	return withCommands(
@@ -171,13 +172,13 @@ export const followLoaded = (
 			}),
 			markerCommits: {
 				...model.markerCommits,
-				...Object.fromEntries(shas.map((sha) => [sha, AsyncData.Loading()])),
+				...Rec.fromEntries(Arr.map(shas, (sha) => [sha, AsyncData.Loading()])),
 			},
 		},
 		[
 			...Option.match(issues, { onNone: () => [], onSome: ({ command }) => [command] }),
 			...Option.match(changeset, { onNone: () => [], onSome: ({ command }) => [command] }),
-			...shas.map((sha) => FetchMarkerCommit({ key: commitDetailKey(context.orgId, sha), sha })),
+			...Arr.map(shas, (sha) => FetchMarkerCommit({ key: commitDetailKey(context.orgId, sha), sha })),
 		],
 	)
 }
@@ -213,7 +214,11 @@ export const followService = (model: Model, context: PageContext, mode: RequestM
 	const requested: Return = Option.match(Keyed.request(runtime.model.detail, key, mode), {
 		onNone: () => runtime,
 		onSome: (detail) =>
-			withCommands({ ...runtime.model, detail }, [FetchReleaseDetail({ key, ...input, refresh: mode === "Refresh" })], runtime),
+			withCommands(
+				{ ...runtime.model, detail },
+				[FetchReleaseDetail({ key, ...input, refresh: mode === "Refresh" })],
+				runtime,
+			),
 	})
 	const loaded = followLoaded(requested.model, context, serviceName, mode)
 	return withCommands(loaded.model, loaded.commands ?? [], requested)

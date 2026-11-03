@@ -1,4 +1,4 @@
-import { Clock, Effect, Schema, type Types } from "effect"
+import { Clock, Effect, Schema, type Types, Array as Arr, String as Str } from "effect"
 import { ReplaysFacetsRequest, SessionId, SessionTraceSummariesRequest, TraceId } from "@maple/domain/http"
 import { SessionTag } from "@maple/domain/query-engine"
 import { MapleInternalHttp } from "./warehouse-services"
@@ -64,7 +64,8 @@ export const listReplays = Effect.fn("SessionReplays.listReplays")(function* ({
 	data: ListReplaysInput
 }) {
 	const input = yield* decodeInput(ListReplaysInput, data ?? {}, "listReplays")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const result = yield* runWarehouseQueryV2("listReplays", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Http
@@ -95,7 +96,7 @@ export const listReplays = Effect.fn("SessionReplays.listReplays")(function* ({
 		}),
 	)
 	return {
-		data: result.data.map(replayListItemFromV2),
+		data: Arr.map(result.data, replayListItemFromV2),
 		hasMore: result.has_more,
 		nextCursor: result.next_cursor,
 	}
@@ -128,7 +129,8 @@ export const getReplaysFacets = Effect.fn("SessionReplays.facets")(function* ({
 	data: ReplaysFacetsInput
 }) {
 	const input = yield* decodeInput(ReplaysFacetsInput, data ?? {}, "replaysFacets")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const result = yield* runWarehouseQuery("replaysFacets", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -214,7 +216,7 @@ export const getReplay = Effect.fn("SessionReplays.getReplay")(function* ({
 // All replay resource reads use v2; payload reads remain manifest-first and bounded.
 
 /** Warehouse `YYYY-MM-DD HH:mm:ss` → the ISO-8601 the v2 query params take. */
-const toIsoWindow = (value: string) => new Date(`${value.replace(" ", "T")}Z`).toISOString()
+const toIsoWindow = (value: string) => new Date(`${Str.replace(" ", "T")(value)}Z`).toISOString()
 
 const replayWindow = (input: { windowStart?: string; windowEnd?: string }) => {
 	const query: Types.Mutable<V2SessionReplayWindowQuery> = {}
@@ -318,7 +320,7 @@ export const getSessionTranscript = Effect.fn("SessionReplays.sessionTranscript"
 			}).pipe(Effect.catchIf(Schema.is(V2SessionReplayNotFound.schema), () => Effect.succeed([])))
 		}),
 	)
-	return { data: events.map(replayEventFromV2) }
+	return { data: Arr.map(events, replayEventFromV2) }
 })
 
 // Reverse correlation: replays observing a trace
@@ -336,7 +338,8 @@ export const getReplaysForTrace = Effect.fn("SessionReplays.replaysForTrace")(fu
 	data: ReplaysForTraceInput
 }) {
 	const input = yield* decodeInput(ReplaysForTraceInput, data ?? {}, "replaysForTrace")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const replays = yield* runWarehouseQueryV2("replaysForTrace", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Http
@@ -353,7 +356,7 @@ export const getReplaysForTrace = Effect.fn("SessionReplays.replaysForTrace")(fu
 		}),
 	)
 	return {
-		data: replays.map((replay) => ({
+		data: Arr.map(replays, (replay) => ({
 			sessionId: replay.id,
 			startTime: replay.start_time,
 			durationMs: replay.duration_ms,

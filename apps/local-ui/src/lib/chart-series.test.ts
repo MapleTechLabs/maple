@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { pivotSeries } from "./chart-series"
+import { Array as Arr } from "effect"
 
 const window = {
 	startMs: Date.parse("2026-07-30T14:00:00Z"),
@@ -17,7 +18,7 @@ describe("pivotSeries", () => {
 			window,
 			"zero",
 		)
-		expect(rows.map((row) => row["GET /"])).toEqual([0, 3, 0, 0, 5, 0])
+		expect(Arr.map(rows, (row) => row["GET /"])).toEqual([0, 3, 0, 0, 5, 0])
 		expect(rows[0]?.bucket).toBe("2026-07-30T14:00:00.000Z")
 	})
 

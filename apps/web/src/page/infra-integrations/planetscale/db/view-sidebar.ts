@@ -1,14 +1,14 @@
 import type { BranchCandidate } from "../../../../components/infra/planetscale/branch-selection"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as FilterSections from "../../../../ui/filters/filter-sections"
-import { filterSection } from "../../../../ui/filters/filter-section"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import { filterSection } from "@maple/views/ui/filters/filter-section"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
-} from "../../../../ui/filters/filter-sidebar"
+} from "@maple/views/ui/filters/filter-sidebar"
 import {
 	BRANCH_ROLE_LABEL,
 	BRANCH_STATE_LABEL,
@@ -19,6 +19,7 @@ import {
 	type PlanetScaleFilters,
 } from "../filters"
 import { Message, type Model } from "./model"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `PlanetScaleFilterSidebar`.
 
@@ -32,14 +33,18 @@ const countBy = <K extends string>(
 	candidates: ReadonlyArray<BranchCandidate>,
 	of: (c: BranchCandidate) => K,
 ) =>
-	keys
-		.map((name) => ({ name, count: candidates.filter((candidate) => of(candidate) === name).length }))
-		.filter((option) => option.count > 0)
+	Arr.filter(
+		Arr.map(keys, (name) => ({
+			name,
+			count: Arr.filter(candidates, (candidate) => of(candidate) === name).length,
+		})),
+		(option) => option.count > 0,
+	)
 
 const isLabelled = <L extends Readonly<Record<string, string>>>(
 	labels: L,
 	name: string,
-): name is Extract<keyof L, string> => Object.hasOwn(labels, name)
+): name is Extract<keyof L, string> => Rec.has(labels, name)
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
@@ -58,7 +63,7 @@ export const planetscaleSidebar = (
 		...filterSidebarBody(h, "planetscale-filters", [
 			filterSection(h, {
 				title: FILTER_SECTION_LABEL.branches,
-				options: candidates.map((candidate) => ({ name: candidate.name, count: 1 })),
+				options: Arr.map(candidates, (candidate) => ({ name: candidate.name, count: 1 })),
 				selected: filters.branches ?? [],
 				isSearchable: true,
 				defaultOpen: true,

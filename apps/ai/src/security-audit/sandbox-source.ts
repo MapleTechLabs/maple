@@ -8,7 +8,7 @@ import type {
 	RepositoryTarget,
 	SandboxCommandResult,
 } from "@maple/backend/services/sandbox/RepoSandboxService"
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import { SourceReadError, type SourceOutput, type SourceReaderApi } from "./source"
 
 const failure = (what: string) => (error: { readonly message: string }) =>
@@ -25,7 +25,7 @@ const output =
 			? Effect.succeed({ text: result.stdout, truncated: result.truncated })
 			: Effect.fail(
 					new SourceReadError({
-						message: `${what} (exit ${result.exitCode}): ${result.stderr.trim().slice(0, 300)}`,
+						message: `${what} (exit ${result.exitCode}): ${Str.slice(0, 300)(Str.trim(result.stderr))}`,
 					}),
 				)
 
@@ -70,7 +70,7 @@ export const sandboxSource = (
 					"--",
 					`:(literal)${path}`,
 					// Git ORs pathspecs: everything under the path, and the name anywhere.
-					`:(glob)**/${basename.replace(/[*?[\]\\]/g, "\\$&")}`,
+					`:(glob)**/${Str.replace(/[*?[\]\\]/g, "\\$&")(basename)}`,
 				],
 			})
 			.pipe(

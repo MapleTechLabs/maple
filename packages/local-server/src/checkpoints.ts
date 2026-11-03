@@ -5,7 +5,16 @@ import { Worker } from "node:worker_threads"
 import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { lstat, mkdir, readFile, readdir, rm, rmdir, stat } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
-import { Duration, Effect, Option, Schema } from "effect"
+import {
+	DateTime,
+	Duration,
+	Effect,
+	Option,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { CHDB_VERSION, MAPLE_VERSION } from "./version"
@@ -38,6 +47,7 @@ import {
 	storeOpenMarkerPath,
 	writeStoreMarkerDurable,
 } from "./store-version"
+import { decodeJsonEffect, decodeJsonSync, encodeJson } from "./json"
 
 const STATE_FORMAT_VERSION = 1
 const MANIFEST_FORMAT_VERSION = 2
@@ -55,11 +65,11 @@ const CheckpointUuid = Schema.String.check(Schema.isPattern(CHECKPOINT_ID))
 // rather than the branded checkpoint schema types above.
 const validateId = (value: string, kind: string): string => {
 	if (!CHECKPOINT_ID.test(value)) throw new Error(`invalid ${kind} ID: ${value}`)
-	return value.toLowerCase()
+	return Str.toLowerCase(value)
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 const requiredString = (record: Record<string, unknown>, key: string): string => {
 	const value = record[key]
@@ -304,6 +314,15 @@ export class CheckpointRetainedError extends Schema.TaggedError<CheckpointRetain
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
+/** A best-effort checkpoint file operation that failed; callers ignore or remap it. */
+export class CheckpointFileError extends Schema.TaggedError<CheckpointFileError>()(
+	"@maple/cli/CheckpointFileError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
+const checkpointFileError = (cause: unknown): CheckpointFileError =>
+	new CheckpointFileError({ message: errorMessage(cause), cause })
+
 const errorCause = (error: unknown): string =>
 	error instanceof Error ? (error.stack ?? error.message) : String(error)
 
@@ -433,7 +452,7 @@ const assertContained = (root: string, candidate: string, label: string): string
 	const absoluteRoot = resolve(root)
 	const absoluteCandidate = resolve(candidate)
 	const rel = relative(absoluteRoot, absoluteCandidate)
-	if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+	if (rel === "" || rel === ".." || Str.startsWith(`..${sep}`)(rel) || isAbsolute(rel)) {
 		throw new Error(`${label} escapes configured root`)
 	}
 	return absoluteCandidate
@@ -451,7 +470,7 @@ const assertNoSymlink = async (root: string, candidate: string): Promise<void> =
 	}
 	const rel = relative(absoluteRoot, absoluteCandidate)
 	let current = absoluteRoot
-	for (const part of rel.split(sep)) {
+	for (const part of Str.split(sep)(rel)) {
 		current = join(current, part)
 		try {
 			if ((await lstat(current)).isSymbolicLink()) {
@@ -493,16 +512,19 @@ const assertCheckpointInfrastructureSafe = async (dataDir: string): Promise<void
 }
 
 const xmlEscape = (value: string): string =>
-	value
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;")
-		.replace(/'/g, "&apos;")
+	Str.replace(
+		/'/g,
+		"&apos;",
+	)(
+		Str.replace(
+			/"/g,
+			"&quot;",
+		)(Str.replace(/>/g, "&gt;")(Str.replace(/</g, "&lt;")(Str.replace(/&/g, "&amp;")(value)))),
+	)
 
 const dataDirWithSlash = (dataDir: string): string => {
 	const abs = resolve(dataDir)
-	return abs.endsWith(sep) ? abs : `${abs}${sep}`
+	return Str.endsWith(sep)(abs) ? abs : `${abs}${sep}`
 }
 
 export const writeBackupConfig = (path: string, sourceDataDir?: string): void => {
@@ -558,13 +580,13 @@ export const postCheckpointBackup = (
 	const url = `${serverUrl(host, port)}/local/checkpoint/backup`
 	return Effect.gen(function* () {
 		const token = yield* Effect.try({
-			try: () => readFileSync(`${resolve(dataDir)}.maintenance-token`, "utf8").trim(),
+			try: () => Str.trim(readFileSync(`${resolve(dataDir)}.maintenance-token`, "utf8")),
 			catch: (error) => localQueryError(0, `failed to read maintenance token: ${errorMessage(error)}`),
 		})
 		const client = yield* HttpClient.HttpClient
 		const request = HttpClientRequest.post(url).pipe(
 			HttpClientRequest.setHeader("x-maple-maintenance-token", token),
-			HttpClientRequest.bodyText(JSON.stringify({ checkpointId }), "application/json"),
+			HttpClientRequest.bodyText(encodeJson({ checkpointId }), "application/json"),
 		)
 		const response = yield* client
 			.execute(request)
@@ -576,10 +598,11 @@ export const postCheckpointBackup = (
 		)
 		if (response.status < 200 || response.status >= 300)
 			return yield* localQueryError(response.status, responseText)
-		return yield* Effect.try({
-			try: () => JSON.parse(responseText) as unknown,
-			catch: (error) => localQueryError(response.status, errorMessage(error), errorCause(error)),
-		})
+		return yield* decodeJsonEffect(responseText).pipe(
+			Effect.mapError((error) =>
+				localQueryError(response.status, errorMessage(error), errorCause(error)),
+			),
+		)
 	})
 	// Deliberately NO client-side timeout. The server runs BACKUP through a
 	// synchronous db.exec that cannot observe cancellation, so a timeout here
@@ -590,20 +613,19 @@ export const postCheckpointBackup = (
 }
 
 export const isMissingBackupConfigurationError = (error: unknown): boolean => {
-	const detail =
-		error instanceof LocalQueryError
-			? error.detail
-			: error instanceof Error
-				? error.message
-				: String(error)
-	const lower = detail.toLowerCase()
+	const detail = Schema.is(LocalQueryError)(error)
+		? error.detail
+		: error instanceof Error
+			? error.message
+			: String(error)
+	const lower = Str.toLowerCase(detail)
 	const backupSpecific =
-		lower.includes("backups.allowed_disk") ||
-		lower.includes("backups.allowed_path") ||
-		(lower.includes("backup") &&
-			(lower.includes("not allowed") ||
-				lower.includes("unknown disk") ||
-				lower.includes("allowed disk")))
+		Str.includes("backups.allowed_disk")(lower) ||
+		Str.includes("backups.allowed_path")(lower) ||
+		(Str.includes("backup")(lower) &&
+			(Str.includes("not allowed")(lower) ||
+				Str.includes("unknown disk")(lower) ||
+				Str.includes("allowed disk")(lower)))
 	return backupSpecific
 }
 
@@ -611,24 +633,26 @@ const JsonRow = Schema.Record(Schema.String, Schema.Unknown)
 const decodeJsonRow = Schema.decodeUnknownSync(JsonRow)
 
 const readJsonRows = (text: string): ReadonlyArray<Record<string, unknown>> =>
-	text
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0)
-		.map((line) => {
+	Arr.map(
+		Arr.filter(
+			Arr.map(Str.split("\n")(text), (line) => Str.trim(line)),
+			(line) => line.length > 0,
+		),
+		(line) => {
 			try {
-				return decodeJsonRow(JSON.parse(line) as unknown)
+				return decodeJsonRow(decodeJsonSync(line))
 			} catch (error) {
 				throw new Error(`invalid JSONEachRow result: ${errorMessage(error)}`)
 			}
-		})
+		},
+	)
 
 const countFrom = (rows: ReadonlyArray<Record<string, unknown>>): number => {
 	const row = rows[0]
 	if (!row) throw new Error("count query returned no rows")
 	const value = row["count()"] ?? row.count
 	const count = typeof value === "number" ? value : Number(value ?? 0)
-	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid count result: ${value}`)
+	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid count result: ${String(value)}`)
 	return count
 }
 
@@ -653,15 +677,22 @@ const decodeTableDefinitionRow = Schema.decodeUnknownSync(TableDefinitionRowSche
 /** Rows per UTC day and each table's TTL, so two measurements taken on different
  * days can still be compared on the days neither side's TTL could have touched. */
 const measureRetainedDays = (db: Chdb, countedOn: string): RetainedDays => {
-	const quoted = RAW_TELEMETRY_TTL_COLUMNS.map(([table]) => `'${table}'`).join(", ")
+	const quoted = Arr.join(
+		Arr.map(RAW_TELEMETRY_TTL_COLUMNS, ([table]) => `'${table}'`),
+		", ",
+	)
 	const definitions = new Map(
-		readJsonRows(
-			db.query(
-				`SELECT name, engine_full FROM system.tables WHERE database = 'default' AND name IN (${quoted})`,
+		Arr.map(
+			Arr.map(
+				readJsonRows(
+					db.query(
+						`SELECT name, engine_full FROM system.tables WHERE database = 'default' AND name IN (${quoted})`,
+					),
+				),
+				(row) => decodeTableDefinitionRow(row),
 			),
-		)
-			.map((row) => decodeTableDefinitionRow(row))
-			.map((row) => [row.name, row.engine_full] as const),
+			(row) => [row.name, row.engine_full] as const,
+		),
 	)
 	const tables: Record<string, RetainedDays["tables"][string]> = {}
 	for (const [table, column] of RAW_TELEMETRY_TTL_COLUMNS) {
@@ -688,23 +719,30 @@ const VALIDATION_DAY_MS = 86_400_000
 export const retainedDaysMatch = (left: RetainedDays, right: RetainedDays): boolean => {
 	const comparedOn = left.countedOn > right.countedOn ? left.countedOn : right.countedOn
 	const comparedMs = Date.parse(`${comparedOn}T00:00:00Z`)
-	return RAW_TELEMETRY_TTL_COLUMNS.every(([table]) => {
+	return Arr.every(RAW_TELEMETRY_TTL_COLUMNS, ([table]) => {
 		const leftTable = left.tables[table]
 		const rightTable = right.tables[table]
 		if (leftTable === undefined || rightTable === undefined) return leftTable === rightTable
 		// The shorter TTL decides which days either side may already have dropped.
-		const knownTtls = [leftTable.ttlDays, rightTable.ttlDays].filter(
+		const knownTtls = Arr.filter(
+			[leftTable.ttlDays, rightTable.ttlDays],
 			(days): days is number => days !== null,
 		)
 		const ttlDays = knownTtls.length === 0 ? null : Math.min(...knownTtls)
 		const firstKept =
 			ttlDays === null
 				? null
-				: new Date(comparedMs - Math.max(ttlDays - RETAINED_MARGIN_DAYS, 0) * VALIDATION_DAY_MS)
-						.toISOString()
-						.slice(0, 10)
-		const days = new Set([...Object.keys(leftTable.days), ...Object.keys(rightTable.days)])
-		return [...days].every(
+				: Str.slice(
+						0,
+						10,
+					)(
+						new Date(
+							comparedMs - Math.max(ttlDays - RETAINED_MARGIN_DAYS, 0) * VALIDATION_DAY_MS,
+						).toISOString(),
+					)
+		const days = new Set([...Rec.keys(leftTable.days), ...Rec.keys(rightTable.days)])
+		return Arr.every(
+			[...days],
 			(day) =>
 				(firstKept !== null && day < firstKept) ||
 				(leftTable.days[day] ?? 0) === (rightTable.days[day] ?? 0),
@@ -724,7 +762,7 @@ const validateRestoredDatabase = (db: Chdb): CheckpointValidation => ({
 		db,
 		"SELECT count() FROM system.tables WHERE database = 'default' AND engine = 'MaterializedView'",
 	),
-	retained: measureRetainedDays(db, new Date().toISOString().slice(0, 10)),
+	retained: measureRetainedDays(db, Str.slice(0, 10)(new Date().toISOString())),
 })
 
 /** Open and validate a restored store in the current process. Production
@@ -800,7 +838,7 @@ const validateRestoredDatabaseInFreshProcess = (
 	expected: CheckpointValidation,
 ): CheckpointValidation => {
 	const entry = process.argv[1]
-	const childArgs = entry && !entry.startsWith("/$bunfs") ? [entry] : []
+	const childArgs = entry && !Str.startsWith("/$bunfs")(entry) ? [entry] : []
 	const child = spawnSync(process.execPath, childArgs, {
 		env: { ...process.env, [CHECKPOINT_REOPEN_PROBE_ENV]: resolve(dataDir) },
 		encoding: "utf8",
@@ -808,19 +846,19 @@ const validateRestoredDatabaseInFreshProcess = (
 		maxBuffer: 1024 * 1024,
 		stdio: ["ignore", "pipe", "pipe"],
 	})
-	const stderr = child.stderr.trim()
+	const stderr = Str.trim(child.stderr)
 	if (child.error) {
 		throw new Error(`fresh-process checkpoint reopen probe failed to run: ${child.error.message}`)
 	}
 	if (child.status !== 0) {
 		throw new Error(
 			`fresh-process checkpoint reopen probe failed${child.signal ? ` (${child.signal})` : ""}` +
-				(stderr ? `: ${stderr.slice(-4096)}` : ""),
+				(stderr ? `: ${Str.slice(-4096)(stderr)}` : ""),
 		)
 	}
 	let parsed: CheckpointValidation
 	try {
-		parsed = parseValidation(JSON.parse(child.stdout.trim()) as unknown)
+		parsed = parseValidation(decodeJsonSync(Str.trim(child.stdout)))
 	} catch (error) {
 		throw new Error(
 			`fresh-process checkpoint reopen probe returned invalid output: ${error instanceof Error ? error.message : String(error)}`,
@@ -906,7 +944,7 @@ export const parseCheckpointState = (value: unknown): CheckpointState => {
 const readStateFileOptional = async (dataDir: string): Promise<CheckpointState | null> => {
 	try {
 		await assertCheckpointInfrastructureSafe(dataDir)
-		return parseCheckpointState(JSON.parse(await readFile(checkpointStatePath(dataDir), "utf8")))
+		return parseCheckpointState(decodeJsonSync(await readFile(checkpointStatePath(dataDir), "utf8")))
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
 		throw error
@@ -935,12 +973,13 @@ const checkpointLikePaths = async (dataDir: string): Promise<string[]> => {
 }
 
 const assertNoLegacyLayout = (dataDir: string): void => {
-	const legacy = ["building", "current", "previous"]
-		.map((name) => join(checkpointRoot(dataDir), name))
-		.filter(existsSync)
+	const legacy = Arr.filter(
+		Arr.map(["building", "current", "previous"], (name) => join(checkpointRoot(dataDir), name)),
+		existsSync,
+	)
 	if (legacy.length > 0) {
 		throw new Error(
-			`legacy preview checkpoint layout detected; refusing to infer or migrate state. Preserve and move aside after inspection: ${legacy.join(", ")}`,
+			`legacy preview checkpoint layout detected; refusing to infer or migrate state. Preserve and move aside after inspection: ${Arr.join(legacy, ", ")}`,
 		)
 	}
 }
@@ -953,7 +992,7 @@ export const readCheckpointState = async (dataDir: string): Promise<CheckpointSt
 		throw new Error(
 			paths.length === 0
 				? `checkpoint state not found at ${checkpointStatePath(dataDir)}`
-				: `checkpoint state missing while checkpoint data exists; refusing to infer selection: ${paths.join(", ")}`,
+				: `checkpoint state missing while checkpoint data exists; refusing to infer selection: ${Arr.join(paths, ", ")}`,
 		)
 	}
 	await resolveCheckpoint(dataDir, state.current, state)
@@ -1053,7 +1092,7 @@ const resolveCheckpointById = async (
 	await assertRealDirectory(snapshotDir, "checkpoint snapshot")
 	await assertRealFile(snapshotManifestPath(dataDir, checkpointId), "checkpoint manifest")
 	const manifest = parseCheckpointManifest(
-		JSON.parse(await readFile(snapshotManifestPath(dataDir, checkpointId), "utf8")),
+		decodeJsonSync(await readFile(snapshotManifestPath(dataDir, checkpointId), "utf8")),
 		checkpointId,
 		compatibility,
 	)
@@ -1190,7 +1229,7 @@ export const withRestoredCheckpoint = async <A>(
 	const sourceRelation = relative(sourceDataDir, scratchRoot)
 	if (
 		scratchRoot === sourceDataDir ||
-		(sourceRelation !== "" && sourceRelation !== ".." && !sourceRelation.startsWith(`..${sep}`))
+		(sourceRelation !== "" && sourceRelation !== ".." && !Str.startsWith(`..${sep}`)(sourceRelation))
 	) {
 		throw new Error("scratch root must not be the live data directory or one of its descendants")
 	}
@@ -1206,8 +1245,8 @@ export const withRestoredCheckpoint = async <A>(
 	if (options.scratchSubdir !== undefined) {
 		if (
 			scratchParentName.length === 0 ||
-			scratchParentName.includes(sep) ||
-			scratchParentName.includes("/") ||
+			Str.includes(sep)(scratchParentName) ||
+			Str.includes("/")(scratchParentName) ||
 			scratchParentName === "." ||
 			scratchParentName === ".."
 		) {
@@ -1302,7 +1341,7 @@ const readMaintenanceOwner = (lockPath: string): Promise<LockHolder | "absent" |
 	const ownerPath = join(lockPath, "owner.json")
 	return assertRealFile(ownerPath, "maintenance lock owner")
 		.then(async () =>
-			Schema.decodeUnknownSync(LockHolderSchema)(JSON.parse(await readFile(ownerPath, "utf8"))),
+			Schema.decodeUnknownSync(LockHolderSchema)(decodeJsonSync(await readFile(ownerPath, "utf8"))),
 		)
 		.catch((error: NodeJS.ErrnoException): "absent" | "uncertain" =>
 			error?.code === "ENOENT" ? "absent" : "uncertain",
@@ -1388,7 +1427,7 @@ const acquireMaintenance = async (
 		const ownerPath = join(lockPath, "owner.json")
 		await assertRealFile(ownerPath, "maintenance lock owner")
 		const current = Schema.decodeUnknownSync(MaintenanceOwnerSchema)(
-			JSON.parse(await readFile(ownerPath, "utf8")),
+			decodeJsonSync(await readFile(ownerPath, "utf8")),
 		)
 		if (current.operationId !== operationId || current.pid !== process.pid) {
 			throw new Error(`maintenance lock ownership changed unexpectedly: ${lockPath}`)
@@ -1433,17 +1472,18 @@ export const reconcileCheckpointOperations = async (
 	if (entries.length === 0) return
 	if (entries.length !== 1) {
 		throw new Error(
-			`multiple checkpoint operations require operator inspection: ${entries
-				.map((entry) => join(operationsRoot, entry.name))
-				.join(", ")}`,
+			`multiple checkpoint operations require operator inspection: ${Arr.join(
+				Arr.map(entries, (entry) => join(operationsRoot, entry.name)),
+				", ",
+			)}`,
 		)
 	}
 	const entry = entries[0]!
-	if (!entry.isDirectory() || !entry.name.startsWith("checkpoint-")) {
+	if (!entry.isDirectory() || !Str.startsWith("checkpoint-")(entry.name)) {
 		throw new Error(`unrecognized checkpoint operation debris: ${join(operationsRoot, entry.name)}`)
 	}
 	const entryOperationId = validateOperationId(
-		entry.name.slice("checkpoint-".length),
+		Str.slice("checkpoint-".length)(entry.name),
 		"operation directory",
 	)
 	const entryDir = join(operationsRoot, entry.name)
@@ -1452,7 +1492,7 @@ export const reconcileCheckpointOperations = async (
 	await assertNoSymlink(operationsRoot, intentPath)
 	await assertRealDirectory(entryDir, "checkpoint operation")
 	await assertRealFile(intentPath, "checkpoint operation intent")
-	const operation = parseOperation(JSON.parse(await readFile(intentPath, "utf8")))
+	const operation = parseOperation(decodeJsonSync(await readFile(intentPath, "utf8")))
 	if (operation.operationId !== entryOperationId) {
 		throw new Error(
 			`checkpoint operation identity mismatch (directory: ${entryOperationId}; intent: ${operation.operationId})`,
@@ -1651,10 +1691,10 @@ export const assertCheckpointPinIdentity = async (
 	const pinDir = join(pinsRoot, validatedCheckpointId)
 	// The pin file must live directly under the named checkpoint's pin dir.
 	const resolvedPinPath = resolve(pinPath)
-	if (relative(pinDir, resolvedPinPath).startsWith(`..${sep}`)) {
+	if (Str.startsWith(`..${sep}`)(relative(pinDir, resolvedPinPath))) {
 		throw new Error(`pin path escapes checkpoint pin directory: ${pinPath}`)
 	}
-	if (!resolvedPinPath.endsWith(".json") || dirname(resolvedPinPath) !== resolve(pinDir)) {
+	if (!Str.endsWith(".json")(resolvedPinPath) || dirname(resolvedPinPath) !== resolve(pinDir)) {
 		throw new Error(`pin path is not a direct child of the checkpoint pin directory: ${pinPath}`)
 	}
 	const baseName = basename(resolvedPinPath, ".json")
@@ -1665,12 +1705,12 @@ export const assertCheckpointPinIdentity = async (
 	}
 	await assertNoSymlink(pinDir, resolvedPinPath)
 	await assertRealFile(resolvedPinPath, "checkpoint pin")
-	const parsed = JSON.parse(await readFile(resolvedPinPath, "utf8")) as unknown
+	const parsed = decodeJsonSync(await readFile(resolvedPinPath, "utf8"))
 	const expectedKeys = new Set(["formatVersion", "pinId", "checkpointId", "purpose", "createdAt"])
 	if (
 		!isRecord(parsed) ||
-		Object.keys(parsed).some((key) => !expectedKeys.has(key)) ||
-		[...expectedKeys].some((key) => !(key in parsed)) ||
+		Arr.some(Rec.keys(parsed), (key) => !expectedKeys.has(key)) ||
+		Arr.some([...expectedKeys], (key) => !(key in parsed)) ||
 		parsed.formatVersion !== 1 ||
 		validateId(requiredString(parsed, "pinId"), "pin") !== baseName ||
 		validateId(requiredString(parsed, "checkpointId"), "checkpoint") !== validatedCheckpointId ||
@@ -1798,7 +1838,7 @@ export const retireCheckpointIfEligible = async (
 		await assertNoSymlink(retirement, retirementIntent)
 		await assertRealFile(retirementIntent, "checkpoint retirement intent")
 		const parsed = Schema.decodeUnknownSync(RetirementRecordSchema)(
-			JSON.parse(await readFile(retirementIntent, "utf8")),
+			decodeJsonSync(await readFile(retirementIntent, "utf8")),
 		)
 		if (
 			parsed.retirementId !== retirementId ||
@@ -1812,7 +1852,7 @@ export const retireCheckpointIfEligible = async (
 		await assertNoSymlink(retirement, retirementComplete)
 		await assertRealFile(retirementComplete, "checkpoint retirement completion")
 		const complete = Schema.decodeUnknownSync(RetirementRecordSchema)(
-			JSON.parse(await readFile(retirementComplete, "utf8")),
+			decodeJsonSync(await readFile(retirementComplete, "utf8")),
 		)
 		if (
 			complete.retirementId !== retirementId ||
@@ -1870,12 +1910,12 @@ const removeCompletedRetirement = async (
 	await assertRealFile(intent, "checkpoint retirement intent")
 	await assertRealFile(complete, "checkpoint retirement completion")
 	const intentValue = Schema.decodeUnknownSync(RetirementRecordSchema)(
-		JSON.parse(await readFile(intent, "utf8")),
+		decodeJsonSync(await readFile(intent, "utf8")),
 	)
 	const completeValue = Schema.decodeUnknownSync(RetirementRecordSchema)(
-		JSON.parse(await readFile(complete, "utf8")),
+		decodeJsonSync(await readFile(complete, "utf8")),
 	)
-	if (JSON.stringify(intentValue) !== JSON.stringify(completeValue)) {
+	if (encodeJson(intentValue) !== encodeJson(completeValue)) {
 		throw new Error(`checkpoint retirement records do not match: ${retirement}`)
 	}
 	const cleanup = `${retirement}.cleanup-${randomUUID()}`
@@ -1947,7 +1987,7 @@ const removeSweepDebris = async (dataDir: string): Promise<void> => {
 	if (!existsSync(retiringRoot)) return
 	await assertRealDirectory(retiringRoot, "checkpoint retirement root")
 	for (const entry of await readdir(retiringRoot, { withFileTypes: true })) {
-		if (!entry.isDirectory() || !entry.name.startsWith(SWEEP_ENTRY_PREFIX)) continue
+		if (!entry.isDirectory() || !Str.startsWith(SWEEP_ENTRY_PREFIX)(entry.name)) continue
 		await rm(join(retiringRoot, entry.name), { recursive: true })
 	}
 	await syncDirectory(retiringRoot)
@@ -1965,15 +2005,19 @@ export const sweepUnreferencedCheckpoints = (
 	state: CheckpointState,
 ): Effect.Effect<ReadonlyArray<CheckpointId>> =>
 	Effect.gen(function* () {
-		yield* Effect.tryPromise(() => removeSweepDebris(dataDir)).pipe(Effect.ignore)
-		const candidates = yield* Effect.tryPromise(() => unreferencedCheckpointIds(dataDir, state)).pipe(
-			Effect.orElseSucceed((): ReadonlyArray<CheckpointId> => []),
+		yield* Effect.tryPromise({ try: () => removeSweepDebris(dataDir), catch: checkpointFileError }).pipe(
+			Effect.ignore,
 		)
+		const candidates = yield* Effect.tryPromise({
+			try: () => unreferencedCheckpointIds(dataDir, state),
+			catch: checkpointFileError,
+		}).pipe(Effect.orElseSucceed((): ReadonlyArray<CheckpointId> => []))
 		const retired: CheckpointId[] = []
 		for (const checkpointId of candidates) {
-			const outcome = yield* Effect.tryPromise(() =>
-				retireUnreferencedCheckpoint(dataDir, checkpointId, state),
-			).pipe(Effect.option)
+			const outcome = yield* Effect.tryPromise({
+				try: () => retireUnreferencedCheckpoint(dataDir, checkpointId, state),
+				catch: checkpointFileError,
+			}).pipe(Effect.option)
 			if (Option.isSome(outcome) && !existsSync(checkpointSnapshotDir(dataDir, checkpointId))) {
 				retired.push(checkpointId)
 			}
@@ -1994,31 +2038,38 @@ export const RESET_PRESERVED_PIN_PURPOSE = "reset-preserved"
 const preserveCheckpointsAcrossReset = (
 	dataDir: string,
 	operationId: CheckpointOperationId,
-): Effect.Effect<ReadonlyArray<CheckpointId>, unknown> =>
+): Effect.Effect<ReadonlyArray<CheckpointId>, CheckpointFileError> =>
 	Effect.gen(function* () {
 		// A registry this build cannot read cannot rotate either: every later
 		// checkpoint refuses it. It needs no pin and must not block the reset.
-		const state = yield* Effect.tryPromise(() => readStateFileOptional(dataDir)).pipe(
-			Effect.orElseSucceed(() => null),
-		)
+		const state = yield* Effect.tryPromise({
+			try: () => readStateFileOptional(dataDir),
+			catch: checkpointFileError,
+		}).pipe(Effect.orElseSucceed(() => null))
 		if (state === null) return []
-		const candidates = yield* Effect.tryPromise(() => snapshotIds(dataDir))
+		const candidates = yield* Effect.tryPromise({
+			try: () => snapshotIds(dataDir),
+			catch: checkpointFileError,
+		})
 		const preserved: CheckpointId[] = []
 		for (const checkpointId of candidates) {
-			const resolved = yield* Effect.tryPromise(() =>
-				resolveCheckpointById(dataDir, checkpointId, "registry"),
-			).pipe(Effect.option)
+			const resolved = yield* Effect.tryPromise({
+				try: () => resolveCheckpointById(dataDir, checkpointId, "registry"),
+				catch: checkpointFileError,
+			}).pipe(Effect.option)
 			if (Option.isNone(resolved)) continue
 			// A failed pin write fails the reset: clearing the store while a kept
 			// checkpoint stays retirable would break the promise the reset makes.
-			yield* Effect.tryPromise(() =>
-				writeCheckpointPin(
-					dataDir,
-					checkpointId,
-					`${RESET_PRESERVED_PIN_PURPOSE}:${operationId}`,
-					randomUUID(),
-				),
-			)
+			yield* Effect.tryPromise({
+				try: () =>
+					writeCheckpointPin(
+						dataDir,
+						checkpointId,
+						`${RESET_PRESERVED_PIN_PURPOSE}:${operationId}`,
+						randomUUID(),
+					),
+				catch: checkpointFileError,
+			})
 			preserved.push(checkpointId)
 		}
 		return preserved
@@ -2028,9 +2079,13 @@ const snapshotIds = async (dataDir: string): Promise<ReadonlyArray<CheckpointId>
 	const root = checkpointSnapshotsRoot(dataDir)
 	if (!existsSync(root)) return []
 	await assertRealDirectory(root, "checkpoint snapshots")
-	return (await readdir(root, { withFileTypes: true }))
-		.filter((entry) => entry.isDirectory() && CHECKPOINT_ID.test(entry.name))
-		.map((entry) => validateCheckpointId(entry.name))
+	return Arr.map(
+		Arr.filter(
+			await readdir(root, { withFileTypes: true }),
+			(entry) => entry.isDirectory() && CHECKPOINT_ID.test(entry.name),
+		),
+		(entry) => validateCheckpointId(entry.name),
+	)
 }
 
 export interface PreservedCheckpointPin {
@@ -2054,10 +2109,10 @@ export const listPreservedCheckpointPins = async (
 		if (!dir.isDirectory() || !CHECKPOINT_ID.test(dir.name)) continue
 		const checkpointId = validateCheckpointId(dir.name)
 		for (const file of await readdir(join(pinsRoot, dir.name), { withFileTypes: true })) {
-			if (!file.isFile() || !file.name.endsWith(".json")) continue
+			if (!file.isFile() || !Str.endsWith(".json")(file.name)) continue
 			const pinPath = join(pinsRoot, dir.name, file.name)
 			const pin = await assertCheckpointPinIdentity(dataDir, checkpointId, pinPath)
-			if (!pin.purpose.startsWith(`${RESET_PRESERVED_PIN_PURPOSE}:`)) continue
+			if (!Str.startsWith(`${RESET_PRESERVED_PIN_PURPOSE}:`)(pin.purpose)) continue
 			pins.push({
 				checkpointId,
 				pinPath,
@@ -2102,7 +2157,7 @@ export const releasePreservedCheckpoints = (
 				catch: retainedError,
 			})
 			const retired = state === null ? [] : yield* sweepUnreferencedCheckpoints(dataDir, state)
-			return { released: [...new Set(pins.map((pin) => pin.checkpointId))], retired }
+			return { released: [...new Set(Arr.map(pins, (pin) => pin.checkpointId))], retired }
 		}),
 	)
 }
@@ -2117,29 +2172,40 @@ const CheckpointFailuresSchema = Schema.Struct({
 type CheckpointFailures = Schema.Schema.Type<typeof CheckpointFailuresSchema>
 
 const readCheckpointFailures = (dataDir: string): Effect.Effect<CheckpointFailures | null> =>
-	Effect.tryPromise(async () =>
-		existsSync(checkpointFailuresPath(dataDir))
-			? Schema.decodeUnknownSync(CheckpointFailuresSchema)(
-					JSON.parse(await readFile(checkpointFailuresPath(dataDir), "utf8")),
-				)
-			: null,
-	).pipe(Effect.orElseSucceed(() => null))
+	Effect.tryPromise({
+		try: async () =>
+			existsSync(checkpointFailuresPath(dataDir))
+				? decodeJsonSync(await readFile(checkpointFailuresPath(dataDir), "utf8"))
+				: null,
+		catch: checkpointFileError,
+	}).pipe(
+		Effect.flatMap((raw) =>
+			raw === null ? Effect.succeed(null) : Schema.decodeUnknownEffect(CheckpointFailuresSchema)(raw),
+		),
+		Effect.orElseSucceed(() => null),
+	)
 
 const recordCheckpointFailure = (dataDir: string, message: string): Effect.Effect<void> =>
-	Effect.flatMap(readCheckpointFailures(dataDir), (previous) =>
-		Effect.tryPromise(() =>
-			durableJson(checkpointFailuresPath(dataDir), {
-				formatVersion: 1,
-				consecutiveFailures: (previous?.consecutiveFailures ?? 0) + 1,
-				lastFailureAt: new Date().toISOString(),
-				lastError: message.slice(0, 2048),
-			} satisfies CheckpointFailures),
-		),
+	Effect.flatMap(Effect.all([readCheckpointFailures(dataDir), DateTime.now]), ([previous, now]) =>
+		Effect.tryPromise({
+			try: () =>
+				durableJson(checkpointFailuresPath(dataDir), {
+					formatVersion: 1,
+					consecutiveFailures: (previous?.consecutiveFailures ?? 0) + 1,
+					lastFailureAt: DateTime.formatIso(now),
+					lastError: Str.slice(0, 2048)(message),
+				} satisfies CheckpointFailures),
+			catch: checkpointFileError,
+		}),
 	).pipe(Effect.ignore)
 
 const clearCheckpointFailures = (dataDir: string): Effect.Effect<void> =>
-	Effect.tryPromise(async () => {
-		if (existsSync(checkpointFailuresPath(dataDir))) await durableRemove(checkpointFailuresPath(dataDir))
+	Effect.tryPromise({
+		try: async () => {
+			if (existsSync(checkpointFailuresPath(dataDir)))
+				await durableRemove(checkpointFailuresPath(dataDir))
+		},
+		catch: checkpointFileError,
 	}).pipe(Effect.ignore)
 
 export interface CheckpointRefreshBackoff {
@@ -2183,7 +2249,7 @@ export const formatCheckpointRefreshBackoff = (
 		: `checkpoint refresh failed ${backoff.consecutiveFailures} time(s) in a row` +
 			(backoff.lastError === null
 				? ""
-				: ` (last: ${backoff.lastError.split("\n")[0]?.slice(0, 200)})`) +
+				: ` (last: ${Str.split("\n")(backoff.lastError)[0]?.slice(0, 200)})`) +
 			`; next attempt in ${Duration.format(backoff.delay)}. Run \`${retryCommand}\` to retry now.`
 
 const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (options: CheckpointOptions) {
@@ -2414,7 +2480,10 @@ const parseResetTransaction = (value: unknown, expectedDataDir: string): ResetTr
 	if (!isAbsolute(dataDir) || resolve(dataDir) !== resolve(expectedDataDir)) {
 		throw new Error("reset transaction data directory does not match its configured owner")
 	}
-	if (new Set(targets).size !== targets.length || [...targets].sort().join("\0") !== targets.join("\0")) {
+	if (
+		new Set(targets).size !== targets.length ||
+		Arr.join([...targets].sort(), "\0") !== Arr.join(targets, "\0")
+	) {
 		throw new Error("reset transaction targets must be unique and sorted")
 	}
 	return transaction
@@ -2424,7 +2493,7 @@ const readResetTransaction = async (dataDir: string): Promise<ResetTransaction |
 	const path = resetTransactionPath(dataDir)
 	try {
 		await assertRealFile(path, "reset transaction")
-		return parseResetTransaction(JSON.parse(await readFile(path, "utf8")), dataDir)
+		return parseResetTransaction(decodeJsonSync(await readFile(path, "utf8")), dataDir)
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
 		throw error
@@ -2525,7 +2594,7 @@ const beginResetTransactionUnlocked = async (
 	}
 	if (unknown.length > 0) {
 		throw new Error(
-			`unrecognized data-directory entries were preserved; refusing reset: ${unknown.sort().join(", ")}`,
+			`unrecognized data-directory entries were preserved; refusing reset: ${Arr.join(unknown.sort(), ", ")}`,
 		)
 	}
 	const transaction: ResetTransaction = {
@@ -2548,7 +2617,9 @@ const parseRestoreTransaction = (value: unknown): RestoreTransaction => {
 const readRestoreTransaction = async (dataDir: string): Promise<RestoreTransaction | null> => {
 	try {
 		await assertRealFile(restoreTransactionPath(dataDir), "restore transaction")
-		return parseRestoreTransaction(JSON.parse(await readFile(restoreTransactionPath(dataDir), "utf8")))
+		return parseRestoreTransaction(
+			decodeJsonSync(await readFile(restoreTransactionPath(dataDir), "utf8")),
+		)
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
 		throw error
@@ -2572,7 +2643,7 @@ const readyIdentityMatches = (dataDir: string, transaction: RestoreTransaction):
 			const info = lstatSync(path)
 			if (info.isSymbolicLink() || !info.isFile()) return false
 			const parsed = Schema.decodeUnknownSync(RestoreReadySchema)(
-				JSON.parse(readFileSync(path, "utf8")),
+				decodeJsonSync(readFileSync(path, "utf8")),
 			)
 			if (
 				parsed.operationId === transaction.operationId &&
@@ -2665,16 +2736,18 @@ const reconcileRestoreTransactionUnlocked = async (
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") return
 			throw error
 		}
-		const debris = names
-			.filter(
+		const debris = Arr.map(
+			Arr.filter(
+				names,
 				(name) =>
-					(name.startsWith(prefix) && !name.includes(".quarantine-")) ||
+					(Str.startsWith(prefix)(name) && !Str.includes(".quarantine-")(name)) ||
 					name === `${basename(resolve(dataDir))}.restore-transaction.json`,
-			)
-			.map((name) => join(parent, name))
+			),
+			(name) => join(parent, name),
+		)
 		if (debris.length > 0) {
 			throw new Error(
-				`restore-like paths exist without a valid transaction; refusing to infer ownership: ${debris.join(", ")}`,
+				`restore-like paths exist without a valid transaction; refusing to infer ownership: ${Arr.join(debris, ", ")}`,
 			)
 		}
 		return
@@ -2965,6 +3038,6 @@ export const resolveChdbConfigFile = (
 				else writeIngestConfig(path)
 				return path
 			},
-			catch: (error) => error,
+			catch: checkpointFileError,
 		}).pipe(Effect.orElseSucceed(() => undefined))
 	})

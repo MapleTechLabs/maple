@@ -1,9 +1,9 @@
-import { Effect, Option } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Mount } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../../ui/icon"
-import { spinner } from "../../../../ui/spinner"
+import { icon } from "@maple/views/ui/icon"
+import { spinner } from "@maple/views/ui/spinner"
 import {
 	trace,
 	traceCollapsible,
@@ -11,7 +11,7 @@ import {
 	traceIcon,
 	traceLine,
 	traceTitle,
-} from "../../../../ui/trace"
+} from "@maple/views/ui/trace"
 import { dotLoader } from "./dot-loader"
 import { toolActivity, toolIcon, toolLabel } from "./tool-metadata"
 import {
@@ -23,6 +23,8 @@ import {
 } from "./tool-output"
 import { deriveToolStatus, type ToolStatus } from "./transcript-rows"
 import type { ToolPart } from "./ui-message"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // `Tool`, `ToolRow` and `ToolGroup`: a tool call's row and a run of them grouped.
 /** What a tool row needs from its host: whether a panel is open, and the Message that toggles it. */
@@ -87,23 +89,23 @@ const statusGlyph = <M>(h: HtmlBuilder<M>, status: ToolStatus, live: boolean, to
 }
 
 const argumentRows = <M>(h: HtmlBuilder<M>, record: Readonly<Record<string, unknown>>): ReadonlyArray<Html> =>
-	Object.entries(record)
-		.filter(([, value]) => value !== null && value !== undefined)
-		.map(([key, value]) =>
+	Arr.map(
+		Arr.filter(Rec.toEntries(record), ([, value]) => value !== null && value !== undefined),
+		([key, value]) =>
 			h.div(
 				[h.Class("flex gap-2")],
 				[
 					h.span([h.Class("shrink-0")], [key, ":"]),
 					h.span(
 						[h.Class("min-w-0 font-mono break-all whitespace-pre-wrap text-foreground")],
-						[typeof value === "string" ? value : JSON.stringify(value)],
+						[typeof value === "string" ? value : encodeJson(value)],
 					),
 				],
 			),
-		)
+	)
 
 const panelContent = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>): ReadonlyArray<Html> => {
-	const record = Option.filter(inputRecord(part.input), (input) => Object.keys(input).length > 0)
+	const record = Option.filter(inputRecord(part.input), (input) => Rec.keys(input).length > 0)
 	const structured = extractStructuredData(part.output)
 	const outputText = extractOutputText(part.output)
 	return [
@@ -127,11 +129,7 @@ const panelContent = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>):
 						[
 							h.p([h.Class("mb-1 font-medium text-severity-error")], ["Error"]),
 							h.pre(
-								[
-									h.Class(
-										"max-h-40 overflow-auto whitespace-pre-wrap text-severity-error",
-									),
-								],
+								[h.Class("max-h-40 overflow-auto whitespace-pre-wrap text-severity-error")],
 								[part.errorText],
 							),
 						],
@@ -164,7 +162,7 @@ const panelContent = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>):
 }
 
 const hasPanel = (part: ToolPart): boolean =>
-	Option.exists(inputRecord(part.input), (input) => Object.keys(input).length > 0) ||
+	Option.exists(inputRecord(part.input), (input) => Rec.keys(input).length > 0) ||
 	Option.isSome(extractStructuredData(part.output)) ||
 	extractOutputText(part.output) !== null ||
 	part.errorText !== undefined
@@ -220,8 +218,8 @@ type Tally = { readonly label: string; readonly icon: ReturnType<typeof toolIcon
 const tally = (names: ReadonlyArray<string>): ReadonlyArray<Tally> =>
 	names.reduce<ReadonlyArray<Tally>>((acc, name) => {
 		const label = toolLabel(name)
-		return acc.some((entry) => entry.label === label)
-			? acc.map((entry) => (entry.label === label ? { ...entry, count: entry.count + 1 } : entry))
+		return Arr.some(acc, (entry) => entry.label === label)
+			? Arr.map(acc, (entry) => (entry.label === label ? { ...entry, count: entry.count + 1 } : entry))
 			: [...acc, { label, icon: toolIcon(name), count: 1 }]
 	}, [])
 
@@ -234,10 +232,10 @@ export const toolGroup = <M>(
 	keyHint: string,
 	host: PanelHost<M>,
 ): Html => {
-	const running = parts.filter((part) => deriveToolStatus(part.state) === "running")
-	const errorCount = parts.filter((part) => deriveToolStatus(part.state) === "error").length
+	const running = Arr.filter(parts, (part) => deriveToolStatus(part.state) === "running")
+	const errorCount = Arr.filter(parts, (part) => deriveToolStatus(part.state) === "error").length
 	const current = running[running.length - 1]
-	const tools = tally(parts.map((part) => part.toolName))
+	const tools = tally(Arr.map(parts, (part) => part.toolName))
 	const named = tools.slice(0, NAMED_TOOLS)
 	const hidden = tools.length - named.length
 	const line =
@@ -249,11 +247,13 @@ export const toolGroup = <M>(
 					...runningClock(h, host.clockMount),
 				])
 			: traceLine(h, {}, [
-					...named.map((tool) => traceIcon(h, [icon(h, tool.icon, { className: "size-3.5" })])),
+					...Arr.map(named, (tool) =>
+						traceIcon(h, [icon(h, tool.icon, { className: "size-3.5" })]),
+					),
 					traceTitle(
 						h,
 						[
-							...named.map((tool, index) =>
+							...Arr.map(named, (tool, index) =>
 								h.span(
 									[],
 									[
@@ -303,7 +303,7 @@ export const toolGroup = <M>(
 				content: () => [
 					trace(
 						h,
-						parts.map((part) => toolRow(h, part, host)),
+						Arr.map(parts, (part) => toolRow(h, part, host)),
 						"max-h-[55vh] overflow-y-auto",
 					),
 				],

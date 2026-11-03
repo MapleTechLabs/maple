@@ -1,20 +1,36 @@
-import { DEFAULT_HEATMAP_COLOR_SCALE, HEATMAP_COLOR_SCALES, type PanelType, STAT_AGGREGATES } from "@maple/domain/http"
+import {
+	DEFAULT_HEATMAP_COLOR_SCALE,
+	HEATMAP_COLOR_SCALES,
+	type PanelType,
+	STAT_AGGREGATES,
+} from "@maple/domain/http"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { input } from "../../../ui/input"
+import { input } from "@maple/views/ui/input"
 import { toSeriesFieldOptions } from "./drafts"
 import type { EditorState } from "./editor-state"
 import { Message } from "./message"
 import { ProductEdit } from "./product-edit"
 import type { Model } from "./model"
-import { checkboxRow, divider, legendField, queryOptions, railSetting, segments, unitField } from "./view-rail"
+import {
+	checkboxRow,
+	divider,
+	legendField,
+	queryOptions,
+	railSetting,
+	segments,
+	unitField,
+} from "./view-rail"
 import { thresholds } from "./view-rail-thresholds"
 import { pageSelect } from "./view-select"
+import { hstack } from "@maple/views/ui/stack"
+import { grid } from "@maple/views/ui/grid"
+import { Array as Arr, String as Str } from "effect"
 
 // Each non-timeseries panel type's `ConfigPanel` over the `WidgetSettings` fields.
 
 type H = HtmlBuilder<Message>
 
-const titleCase = (value: string): string => `${value.charAt(0).toUpperCase()}${value.slice(1)}`
+const titleCase = (value: string): string => `${Str.toUpperCase(value.charAt(0))}${Str.slice(1)(value)}`
 
 /** `ScalarReduction`: the aggregate, and the series it reduces (the first while unset or gone). */
 const scalarReduction = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => {
@@ -29,7 +45,7 @@ const scalarReduction = (h: H, model: Model, state: EditorState): ReadonlyArray<
 			model,
 			"stat-aggregate",
 			state.statAggregate,
-			STAT_AGGREGATES.map((value) => ({ value, label: value })),
+			Arr.map(STAT_AGGREGATES, (value) => ({ value, label: value })),
 			{
 				className: "w-full",
 				toView: (parts) => railSetting(h, "stat-aggregate", "Aggregate", true, parts),
@@ -40,7 +56,7 @@ const scalarReduction = (h: H, model: Model, state: EditorState): ReadonlyArray<
 			model,
 			"stat-value-field",
 			valueField,
-			fields.map((field) => ({ value: field, label: field })),
+			Arr.map(fields, (field) => ({ value: field, label: field })),
 			{
 				className: "w-full",
 				toView: (parts) => railSetting(h, "stat-value-field", "Value field", true, parts),
@@ -65,22 +81,31 @@ const numberInput = (
 
 /** `GaugeRange`: the arc's sweep. */
 const gaugeRange = (h: H, state: EditorState): Html =>
-	h.div(
-		[h.Class("grid grid-cols-2 gap-2")],
-		[
-			railSetting(h, "gauge-min", "Min", state.gaugeMin !== "", [
-				numberInput(h, "gauge-min", state.gaugeMin, "0", (value) => Message.ChangedGaugeBound({ bound: "min", value })),
-			]),
-			railSetting(h, "gauge-max", "Max", state.gaugeMax !== "", [
-				numberInput(h, "gauge-max", state.gaugeMax, "100", (value) => Message.ChangedGaugeBound({ bound: "max", value })),
-			]),
-		],
-	)
+	grid(h, { cols: 2, gap: "2" }, [
+		railSetting(h, "gauge-min", "Min", state.gaugeMin !== "", [
+			numberInput(h, "gauge-min", state.gaugeMin, "0", (value) =>
+				Message.ChangedGaugeBound({ bound: "min", value }),
+			),
+		]),
+		railSetting(h, "gauge-max", "Max", state.gaugeMax !== "", [
+			numberInput(h, "gauge-max", state.gaugeMax, "100", (value) =>
+				Message.ChangedGaugeBound({ bound: "max", value }),
+			),
+		]),
+	])
 
 /** `Sparkline`: only in builder mode, since it re-runs the builder's queries. */
 const sparkline = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> =>
 	model.sourceMode === "builder"
-		? [checkboxRow(h, "qb-sparkline", "Show sparkline", state.sparklineEnabled, Message.ToggledSparkline())]
+		? [
+				checkboxRow(
+					h,
+					"qb-sparkline",
+					"Show sparkline",
+					state.sparklineEnabled,
+					Message.ToggledSparkline(),
+				),
+			]
 		: []
 
 /** `RowLimit`. */
@@ -96,13 +121,16 @@ const rowLimit = (h: H, state: EditorState): Html =>
 const rampSwatch = (h: H, scale: string): Html =>
 	h.span(
 		[h.Class("flex shrink-0 gap-px")],
-		[0, 1, 2, 3, 4].map((stop) =>
-			h.span([h.Class("size-2 rounded-xs"), h.Style({ backgroundColor: `var(--heatmap-${scale}-${stop})` })]),
+		Arr.map([0, 1, 2, 3, 4], (stop) =>
+			h.span([
+				h.Class("size-2 rounded-xs"),
+				h.Style({ backgroundColor: `var(--heatmap-${scale}-${stop})` }),
+			]),
 		),
 	)
 
 const swatchLabel = (h: H, scale: string): ReadonlyArray<Html | string> => [
-	h.span([h.Class("flex items-center gap-2")], [rampSwatch(h, scale), titleCase(scale)]),
+	hstack(h, { gap: "2", as: "span" }, [rampSwatch(h, scale), titleCase(scale)]),
 ]
 
 /** `HeatmapColors`: an unset palette shows the ramp the chart already renders. */
@@ -112,7 +140,7 @@ const heatmapColors = (h: H, model: Model, state: EditorState): ReadonlyArray<Ht
 		model,
 		"heatmap-colors",
 		state.heatmapColorScale ?? DEFAULT_HEATMAP_COLOR_SCALE,
-		HEATMAP_COLOR_SCALES.map((scale) => ({ value: scale, label: titleCase(scale) })),
+		Arr.map(HEATMAP_COLOR_SCALES, (scale) => ({ value: scale, label: titleCase(scale) })),
 		{
 			className: "w-full",
 			renderValue: (value) => swatchLabel(h, value),
@@ -167,7 +195,12 @@ const funnelStepPercent = (h: H, state: EditorState): Html => {
 }
 
 /** The `ConfigPanel` of a panel type other than line, bar and area. */
-export const typeSettings = (h: H, model: Model, state: EditorState, panel: PanelType): ReadonlyArray<Html> => {
+export const typeSettings = (
+	h: H,
+	model: Model,
+	state: EditorState,
+	panel: PanelType,
+): ReadonlyArray<Html> => {
 	switch (panel) {
 		case "stat":
 			return [
@@ -197,7 +230,12 @@ export const typeSettings = (h: H, model: Model, state: EditorState, panel: Pane
 		case "histogram":
 			return queryOptions(h, model, state)
 		case "funnel":
-			return [divider(h), funnelVariant(h, state), funnelStepPercent(h, state), ...queryOptions(h, model, state)]
+			return [
+				divider(h),
+				funnelVariant(h, state),
+				funnelStepPercent(h, state),
+				...queryOptions(h, model, state),
+			]
 		case "paths":
 			return [divider(h), ...queryOptions(h, model, state)]
 		default:

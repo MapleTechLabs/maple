@@ -10,6 +10,7 @@
  * that spans a cut is closed at the end of one message and reopened at the top of the next.
  */
 import { MAX_APPROVAL_OUTCOME_CHARS, type ChatBlock } from "./blocks"
+import { Array as Arr, String as Str } from "effect"
 
 export const splitBlocks = (
 	blocks: ReadonlyArray<ChatBlock>,
@@ -65,9 +66,10 @@ const blockWeight = (block: ChatBlock): number => {
 		case "entity":
 			return block.label.length + (block.detail?.length ?? 0) + (block.url?.length ?? 0)
 		case "activity":
-			return block.tools.reduce(
-				(total, tool) => total + tool.label.length + (tool.detail?.length ?? 0),
+			return Arr.reduce(
+				block.tools,
 				0,
+				(total, tool) => total + tool.label.length + (tool.detail?.length ?? 0),
 			)
 		case "approval":
 			// Charged for an outcome it may not have yet, so that deciding a proposal cannot move its
@@ -82,8 +84,12 @@ const blockWeight = (block: ChatBlock): number => {
 			return (
 				block.title.length +
 				block.summary.length +
-				block.fields.reduce((total, field) => total + field.label.length + field.value.length, 0) +
-				block.footer.reduce((total, part) => total + part.length, 0)
+				Arr.reduce(
+					block.fields,
+					0,
+					(total, field) => total + field.label.length + field.value.length,
+				) +
+				Arr.reduce(block.footer, 0, (total, part) => total + part.length)
 			)
 	}
 }
@@ -114,13 +120,13 @@ export const cutMarkdown = (markdown: string, maxChars: number): Array<string> =
 	}
 	const flush = () => {
 		if (empty) return
-		chunks.push(fence === null ? current.join("\n") : `${current.join("\n")}\n${FENCE}`)
+		chunks.push(fence === null ? Arr.join(current, "\n") : `${Arr.join(current, "\n")}\n${FENCE}`)
 		current = fence === null ? [] : [fence]
 		length = fence === null ? 0 : fence.length
 		empty = true
 	}
 
-	for (const line of markdown.split("\n")) {
+	for (const line of Str.split("\n")(markdown)) {
 		// A line that OPENS a fence pays for the closing ``` from its own budget, and counts as open
 		// the moment its first character is packed — not after the whole line, which left an opener
 		// that had to be cut mid-line sitting unbalanced at the end of a chunk.
@@ -150,8 +156,8 @@ export const cutMarkdown = (markdown: string, maxChars: number): Array<string> =
 			// At least one character, always: a budget small enough to leave no room would otherwise
 			// slice from the tail and repeat the line instead of advancing through it.
 			const room = Math.max(lineBudget - length - (current.length === 0 ? 0 : 1), 1)
-			pack(rest.slice(0, room))
-			rest = rest.slice(room)
+			pack(Str.slice(0, room)(rest))
+			rest = Str.slice(room)(rest)
 			flush()
 			if (rest.length === 0) break
 		}
@@ -164,7 +170,7 @@ export const cutMarkdown = (markdown: string, maxChars: number): Array<string> =
 
 const FENCE = "```"
 
-const isFence = (line: string): boolean => line.trimStart().startsWith(FENCE)
+const isFence = (line: string): boolean => Str.startsWith(FENCE)(Str.trimStart(line))
 
 /** An info string is at most this long once a cut has to repeat it at the top of every chunk. */
 const MAX_REOPENER_CHARS = 24
@@ -177,6 +183,6 @@ const MAX_REOPENER_CHARS = 24
  * the budget, forever — the cut has to repeat the fence, not the content that shared its line.
  */
 const reopener = (line: string): string => {
-	const info = line.trimStart().slice(FENCE.length).trim().split(/\s+/)[0] ?? ""
-	return `${FENCE}${info}`.slice(0, MAX_REOPENER_CHARS)
+	const info = Str.split(/\s+/)(Str.trim(Str.slice(FENCE.length)(Str.trimStart(line))))[0] ?? ""
+	return Str.slice(0, MAX_REOPENER_CHARS)(`${FENCE}${info}`)
 }

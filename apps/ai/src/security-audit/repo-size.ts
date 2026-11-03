@@ -3,7 +3,7 @@
  * and reported as covered. One bounded command measures the pinned commit in the sandbox.
  */
 import type { SecurityAuditLimits } from "@maple/backend/services/security-audit/limits"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 export interface RepoSize {
 	/** Commits reachable from the pinned commit. */
@@ -27,14 +27,17 @@ export const REPO_SIZE_COMMAND = {
 	command: "bash",
 	args: [
 		"-c",
-		[
-			// The sandbox runs this with bash: pipefail makes a failing git fail the probe, not read as 0.
-			"set -euo pipefail",
-			"commits=$(git --no-optional-locks rev-list --count HEAD)",
-			`tree=$(git --no-optional-locks ls-tree -r -l HEAD | awk '$2 == "blob" { n++; s += $4 } END { printf "%d %.0f", n, s }')`,
-			"lfs=$(git --no-optional-locks ls-files -- ':(attr:filter=lfs)' | wc -l)",
-			'echo "$commits $tree $lfs"',
-		].join("\n"),
+		Arr.join(
+			[
+				// The sandbox runs this with bash: pipefail makes a failing git fail the probe, not read as 0.
+				"set -euo pipefail",
+				"commits=$(git --no-optional-locks rev-list --count HEAD)",
+				`tree=$(git --no-optional-locks ls-tree -r -l HEAD | awk '$2 == "blob" { n++; s += $4 } END { printf "%d %.0f", n, s }')`,
+				"lfs=$(git --no-optional-locks ls-files -- ':(attr:filter=lfs)' | wc -l)",
+				'echo "$commits $tree $lfs"',
+			],
+			"\n",
+		),
 	],
 } as const
 
@@ -42,9 +45,9 @@ const COUNT = /^\d+$/
 
 /** The probe's line as a size; None for anything else (a failed or cut probe proves nothing). */
 export const parseRepoSize = (stdout: string): Option.Option<RepoSize> => {
-	const parts = stdout.trim().split(/\s+/)
-	if (parts.length !== 4 || !parts.every((part) => COUNT.test(part))) return Option.none()
-	const [commits, files, bytes, lfsFiles] = parts.map(Number)
+	const parts = Str.split(/\s+/)(Str.trim(stdout))
+	if (parts.length !== 4 || !Arr.every(parts, (part) => COUNT.test(part))) return Option.none()
+	const [commits, files, bytes, lfsFiles] = Arr.map(parts, Number)
 	return commits === undefined || files === undefined || bytes === undefined || lfsFiles === undefined
 		? Option.none()
 		: Option.some({ commits, files, bytes, lfsFiles })
@@ -82,4 +85,4 @@ export const hostedSizeViolations = (bytes: number, limits: SecurityAuditLimits)
 
 /** The failure reason a refused run is marked with. */
 export const refusalReason = (violations: ReadonlyArray<string>): string =>
-	`repository_refused: the repository was not audited because ${violations.join("; ")}.`
+	`repository_refused: the repository was not audited because ${Arr.join(violations, "; ")}.`

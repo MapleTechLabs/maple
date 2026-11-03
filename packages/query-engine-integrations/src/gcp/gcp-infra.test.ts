@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
@@ -55,15 +55,12 @@ describe("gcpInfraMetricsSQL", () => {
 			expect(sql, service).not.toContain("IN ()")
 			// Metric names only: `gcp.resource.labels.*` are identity attributes, and
 			// `gcp.metric.labels.*` point attributes.
-			const names = [...sql.matchAll(/'(gcp\.(?!resource\.|metric\.)[a-z_.]+)'/g)].map(
+			const names = Arr.map(
+				[...sql.matchAll(/'(gcp\.(?!resource\.|metric\.)[a-z_.]+)'/g)],
 				(match) => match[1],
 			)
 			expect(names.sort(), service).toEqual([
-				...new Set(
-					gcpInfraMetrics(service)
-						.map((metric) => metric.name)
-						.sort(),
-				),
+				...new Set(Arr.map(gcpInfraMetrics(service), (metric) => metric.name).sort()),
 			])
 		}
 	})

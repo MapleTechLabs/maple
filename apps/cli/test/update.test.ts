@@ -6,7 +6,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Duration, Effect, Exit } from "effect"
+import { Duration, Effect, Exit, String as Str } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { FetchHttpClient } from "effect/http"
 import {
@@ -155,7 +155,7 @@ describe("update HTTP", () => {
 				),
 			)
 			strictEqual(statusError._tag, "@maple/cli/UpdateError")
-			ok(statusError.message.includes("503"))
+			ok(Str.includes("503")(statusError.message))
 
 			const decodeError = yield* Effect.flip(
 				withFetch(
@@ -164,7 +164,7 @@ describe("update HTTP", () => {
 				),
 			)
 			strictEqual(decodeError._tag, "@maple/cli/UpdateError")
-			ok(decodeError.message.includes("decode"))
+			ok(Str.includes("decode")(decodeError.message))
 		}),
 	)
 
@@ -180,7 +180,7 @@ describe("update HTTP", () => {
 			})
 		})
 		const error = await Effect.runPromise(Effect.flip(withFetch(fetchLatestTag(5), fetchStub)))
-		ok(error.message.includes("timed out"))
+		ok(Str.includes("timed out")(error.message))
 		strictEqual(aborted, true)
 	})
 
@@ -189,7 +189,7 @@ describe("update HTTP", () => {
 		const destination = join(dir, "release.tar.gz")
 		const fetchStub = stubFetch(async (input: string | URL | Request) => {
 			const url = input instanceof Request ? input.url : String(input)
-			return url.endsWith(".sha256")
+			return Str.endsWith(".sha256")(url)
 				? new Response("abc123  release.tar.gz\n")
 				: new Response("release-bytes")
 		})
@@ -278,7 +278,7 @@ describe("extractTar", () => {
 				yield* __testables.extractTar(join(dir, "b.tar.gz"), join(dir, "out"))
 				ok(existsSync(join(dir, "out", "bundle", "maple")), "bundle was not extracted")
 				strictEqual(
-					readFileSync(join(dir, "out", "bundle", "maple"), "utf8").includes("echo hi"),
+					Str.includes("echo hi")(readFileSync(join(dir, "out", "bundle", "maple"), "utf8")),
 					true,
 				)
 				rmSync(dir, { recursive: true, force: true })
@@ -292,7 +292,7 @@ describe("extractTar", () => {
 				writeFileSync(join(dir, "b.tar.gz"), "definitely not a gzip stream")
 				const error = yield* Effect.flip(__testables.extractTar(join(dir, "b.tar.gz"), dir))
 				ok(
-					error.message.startsWith("could not extract bundle:"),
+					Str.startsWith("could not extract bundle:")(error.message),
 					`unexpected message: ${error.message}`,
 				)
 				// Proves stderr was drained rather than dropped with the pipe.
@@ -317,7 +317,7 @@ describe("mapFsError", () => {
 				const failure = yield* Effect.flip(fs.makeDirectory(join(locked, "child")))
 				const mapped = __testables.mapFsError(failure, locked)
 				ok(
-					mapped.message.includes("re-run the installer"),
+					Str.includes("re-run the installer")(mapped.message),
 					`permission advice was lost: ${mapped.message}`,
 				)
 				chmodSync(locked, 0o700)

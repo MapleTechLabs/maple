@@ -1,5 +1,5 @@
 import type { V2OnboardingChecklist, V2OnboardingChecklistStep } from "@maple/domain/http/v2"
-import { Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as OnboardingChecklist from "../../shell/onboarding-checklist"
 import * as OnboardingChecklistView from "../../shell/onboarding-checklist-view"
@@ -36,14 +36,14 @@ const checklistOf = (
 		step("connect_mcp_agent", "Connect an MCP agent", done[3] ?? false),
 		step("invite_teammate", "Invite a teammate", done[4] ?? false, true),
 	]
-	const required = steps.filter((entry) => !entry.optional)
+	const required = Arr.filter(steps, (entry) => !entry.optional)
 	return {
 		object: "onboarding_checklist",
 		status,
 		reward_amount_usd: 30,
 		deadline_at: new Date(nowMs + 17 * HOUR + 42 * 60_000).toISOString(),
 		claimed_at: status === "claimed" ? new Date(nowMs).toISOString() : null,
-		completed_count: required.filter((entry) => entry.completed).length,
+		completed_count: Arr.filter(required, (entry) => entry.completed).length,
 		total_count: required.length,
 		steps,
 	}
@@ -128,7 +128,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 export const lab = defineLabWithFlags("Onboarding checklist", {
 	Model,
 	Flags: Model,
-	flags: Effect.sync(() => ({ nowMs: Date.now() })),
+	flags: Effect.map(Clock.currentTimeMillis, (nowMs) => ({ nowMs })),
 	init: (flags) => ({ model: { nowMs: flags.nowMs } }),
 	update: (model) => ({ model }),
 	view,

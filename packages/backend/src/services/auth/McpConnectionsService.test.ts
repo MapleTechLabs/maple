@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { createHash } from "node:crypto"
 import { McpConnectionId, OrgId, RoleName, UserId } from "@maple/domain/http"
-import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -115,9 +115,9 @@ describe("McpConnectionsService", () => {
 			yield* connect("Windsurf", bob, otherOrgId)
 
 			const asBob = yield* connections.list(orgId, { userId: bob, seesAll: false })
-			expect(asBob.map((c) => c.clientName)).toEqual(["Cursor"])
+			expect(Arr.map(asBob, (c) => c.clientName)).toEqual(["Cursor"])
 			const asAdmin = yield* connections.list(orgId, admin)
-			expect(asAdmin.map((c) => c.clientName).sort()).toEqual(["Claude Code", "Cursor"])
+			expect(Arr.map(asAdmin, (c) => c.clientName).sort()).toEqual(["Claude Code", "Cursor"])
 		}).pipe(Effect.provide(makeLayer(createTestDb(createdDbs)))),
 	)
 
@@ -133,7 +133,7 @@ describe("McpConnectionsService", () => {
 			yield* apiKeys.create(orgId, alice, { name: "CI" })
 
 			const { keys } = yield* apiKeys.list(orgId)
-			expect(keys.map((key) => key.name).sort()).toEqual(["CI", "Laptop"])
+			expect(Arr.map(keys, (key) => key.name).sort()).toEqual(["CI", "Laptop"])
 		}).pipe(Effect.provide(makeLayer(createTestDb(createdDbs)))),
 	)
 

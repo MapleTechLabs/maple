@@ -1,4 +1,5 @@
 import type { Exposure, Runtimes } from "../page/security/telemetry/model"
+import { Array as Arr } from "effect"
 
 // Fixtures for the Security Center's Exposure and Runtimes tabs, for `/lab/security` and the page's
 // scene tests. Built relative to `now` so relative times read the same.
@@ -23,7 +24,7 @@ export const catchAllExposureOf = (nowMs: number): Exposure => {
 		...base,
 		signatures: [
 			...base.signatures,
-			...paths.map((signature) => ({
+			...Arr.map(paths, (signature) => ({
 				signature,
 				service: "web-app",
 				requests: 30,
@@ -197,16 +198,20 @@ export const exposureOf = (nowMs: number): Exposure => ({
 			lastSeen: at(nowMs, 2 * DAY),
 		},
 	],
-	timeline: Array.from({ length: 28 }, (_, index) => index)
-		.filter((index) => index % 3 !== 1)
-		.map((index) => {
+	timeline: Arr.map(
+		Arr.filter(
+			Array.from({ length: 28 }, (_, index) => index),
+			(index) => index % 3 !== 1,
+		),
+		(index) => {
 			const bucket = Math.floor(nowMs / SIX_HOURS) * SIX_HOURS - (27 - index) * SIX_HOURS
 			return {
 				bucket: new Date(bucket).toISOString(),
 				requests: 20 + ((index * 37) % 90),
 				answered: (index * 11) % 20,
 			}
-		}),
+		},
+	),
 })
 
 /** One row per posture (end of life, behind, no version, unknown cycle, no release data, Bun as Node.js, Bun, supported, untracked) and per advisory state. */

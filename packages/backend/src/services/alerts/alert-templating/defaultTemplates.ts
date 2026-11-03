@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /**
  * Built-in default notification templates.
  *
@@ -11,7 +12,10 @@
 
 export const DEFAULT_TITLE_TEMPLATE = "{{ event.emoji }} {{ rule.name }} — {{ event.label }}"
 
-export const DEFAULT_BODY_TEMPLATE = [
-	"{{ signal.label }} is *{{ observed }}* ({{ comparator.label }} {{ threshold }}{{#if thresholdUpper}} and {{ thresholdUpper }}{{/if}}) over the last {{ window }}.",
-	"*Severity:* {{ severity }} · *Group:* {{ group }}",
-].join("\n")
+export const DEFAULT_BODY_TEMPLATE = Arr.join(
+	[
+		"{{ signal.label }} is *{{ observed }}* ({{ comparator.label }} {{ threshold }}{{#if thresholdUpper}} and {{ thresholdUpper }}{{/if}}) over the last {{ window }}.",
+		"*Severity:* {{ severity }} · *Group:* {{ group }}",
+	],
+	"\n",
+)

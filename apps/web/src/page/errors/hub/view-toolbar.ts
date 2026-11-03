@@ -4,15 +4,18 @@ import { cn } from "@maple/ui/lib/utils"
 import { HUB_SORTS, SEVERITY_FILTERS, type SeverityFilter } from "../../../lib/errors/hub-params"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as SelectView from "../../../ui/select-view"
-import { skeleton } from "../../../ui/skeleton"
-import { statusDot } from "../../../ui/status-dot"
-import * as TabsView from "../../../ui/tabs-view"
+import * as SelectView from "@maple/views/ui/select-view"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
+import * as TabsView from "@maple/views/ui/tabs-view"
 import { SEVERITY_FILL, SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../kit/severity"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { searchInput } from "../../../ui/search-input"
+import { searchInput } from "@maple/views/ui/search-input"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The errors stat strip, list toolbar, search and the sort and severity selects.
 
@@ -60,7 +63,7 @@ export const statStrip = (h: H, model: Model): Html | null =>
 									stat(h, formatErrorRate(summary.errorRate), "of all spans"),
 								],
 							),
-							h.span([h.Class("text-xs text-foreground-subtle")], ["in the last 24 hours"]),
+							typography(h, { size: "xs", tone: "subtle" }, ["in the last 24 hours"]),
 						],
 					),
 	})
@@ -82,14 +85,14 @@ const SEVERITY_TRIGGER_LABEL = { ...SEVERITY_FILTER_LABEL, all: "Severity" } sat
 >
 
 const isSeverityFilter = (value: string): value is SeverityFilter =>
-	SEVERITY_FILTERS.some((filter) => filter === value)
+	Arr.some(SEVERITY_FILTERS, (filter) => filter === value)
 
 /** `SeverityFilterDot`: the four real levels stacked for "all", the hollow ring for unset. */
 const severityFilterDot = (h: H, value: SeverityFilter): Html =>
 	value === "all"
 		? h.span(
 				[h.AriaHidden(true), h.Class("flex shrink-0 -space-x-1")],
-				SEVERITY_ORDER.map((severity) =>
+				Arr.map(SEVERITY_ORDER, (severity) =>
 					statusDot(h, {
 						tone: "custom",
 						size: "lg",
@@ -105,15 +108,15 @@ const severityContent = (
 	labels: Record<SeverityFilter, string>,
 ): ReadonlyArray<Html | string> =>
 	isSeverityFilter(value)
-		? [h.span([h.Class("flex items-center gap-2")], [severityFilterDot(h, value), labels[value]])]
+		? [hstack(h, { gap: "2", as: "span" }, [severityFilterDot(h, value), labels[value]])]
 		: ["Severity"]
 
-const SORT_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = HUB_SORTS.map((value) => ({
+const SORT_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(HUB_SORTS, (value) => ({
 	_tag: "Item",
 	item: { value, label: SORT_LABEL[value] },
 }))
 
-const SEVERITY_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = SEVERITY_FILTERS.map((value) => ({
+const SEVERITY_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(SEVERITY_FILTERS, (value) => ({
 	_tag: "Item",
 	item: { value, label: SEVERITY_FILTER_LABEL[value] },
 }))
@@ -131,8 +134,9 @@ const toolbarSearch = (h: H, draft: string): Html =>
 	})
 
 /** `ListToolbar`: view tabs, then search, sort, severity and the count readout. */
-export const toolbar = (h: H, model: Model, count: ReadonlyArray<string> | null): Html =>
+export const toolbar = (h: H, model: Model, count: ReadonlyArray<string> | null, className?: string): Html =>
 	listToolbar(h, {
+		className,
 		leading: h.submodel({
 			slotId: "errors-view-tabs",
 			model: model.tabs,

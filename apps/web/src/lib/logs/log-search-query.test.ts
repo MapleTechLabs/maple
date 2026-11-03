@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { parseLogSearch } from "./log-search-query"
+import { String as Str } from "effect"
 
 const TRACE = "4b1f2c3d4e5f60718293a4b5c6d7e8f9"
 
@@ -11,7 +12,7 @@ describe("parseLogSearch", () => {
 	})
 
 	it("reads 32 hex characters as a trace id, lowercased", () => {
-		expect(parseLogSearch(` ${TRACE.toUpperCase()} `)).toEqual({ kind: "trace", traceId: TRACE })
+		expect(parseLogSearch(` ${Str.toUpperCase(TRACE)} `)).toEqual({ kind: "trace", traceId: TRACE })
 	})
 
 	it("lifts the trace id out of a traceparent header", () => {
@@ -24,7 +25,7 @@ describe("parseLogSearch", () => {
 	it("treats anything else as message text", () => {
 		expect(parseLogSearch("conn reset")).toEqual({ kind: "text", text: "conn reset" })
 		// 31 hex characters is not a trace id.
-		expect(parseLogSearch(TRACE.slice(1))).toEqual({ kind: "text", text: TRACE.slice(1) })
+		expect(parseLogSearch(Str.slice(1)(TRACE))).toEqual({ kind: "text", text: Str.slice(1)(TRACE) })
 	})
 
 	it("quotes force a text search for an id-shaped string", () => {

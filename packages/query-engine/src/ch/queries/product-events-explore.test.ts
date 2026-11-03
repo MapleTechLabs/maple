@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, String as Str } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	productEventAttributeKeysQuery,
@@ -17,7 +17,7 @@ const params = {
 	bucketSeconds: 3600,
 }
 
-const oneLine = (sql: string): string => sql.replace(/\s+/g, " ")
+const oneLine = (sql: string): string => Str.replace(/\s+/g, " ")(sql)
 
 describe("productEventsTimeseriesQuery", () => {
 	it("scopes to the org and buckets on the parameter", () => {

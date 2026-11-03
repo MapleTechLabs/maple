@@ -13,9 +13,11 @@ import {
 	parseReplyCommand,
 	reviewerMention,
 	prReviewFailureReason,
+	PrReviewCoverageUnit,
 	PrReviewReport,
 	scorePrReview,
 } from "./pr-review"
+import { Array as Arr } from "effect"
 
 describe("normalizePrReviewSubmission", () => {
 	it("keeps a finding that names a file and a new-side line", () => {
@@ -69,7 +71,7 @@ describe("normalizePrReviewSubmission", () => {
 			resolved: '["f1"]',
 		})
 		assert.deepEqual(
-			report.findings.map((finding) => finding.title),
+			Arr.map(report.findings, (finding) => finding.title),
 			["kept"],
 		)
 		assert.equal(report.coverage[0]?.unit, "GET /a")
@@ -90,7 +92,7 @@ describe("normalizePrReviewSubmission", () => {
 		})
 		assert.equal(droppedFindings, 3)
 		assert.deepEqual(
-			report.findings.map((finding) => finding.title),
+			Arr.map(report.findings, (finding) => finding.title),
 			["kept"],
 		)
 	})
@@ -105,7 +107,7 @@ describe("normalizePrReviewSubmission", () => {
 		})
 		assert.equal(droppedFindings, 2)
 		assert.deepEqual(
-			report.findings.map((finding) => finding.checkId),
+			Arr.map(report.findings, (finding) => finding.checkId),
 			["REN-DUAL"],
 		)
 	})
@@ -126,7 +128,7 @@ describe("normalizePrReviewSubmission", () => {
 		})
 		assert.equal(droppedFindings, 0)
 		assert.deepEqual(
-			report.findings.map((finding) => [finding.category, finding.checkId]),
+			Arr.map(report.findings, (finding) => [finding.category, finding.checkId]),
 			[
 				["security", undefined],
 				["correctness", undefined],
@@ -235,7 +237,7 @@ describe("normalizePrReviewSubmission", () => {
 describe("scorePrReview", () => {
 	const withFindings = (severities: ReadonlyArray<string>) =>
 		normalizePrReviewSubmission({
-			findings: severities.map((severity, line) => ({
+			findings: Arr.map(severities, (severity, line) => ({
 				path: "a.ts",
 				line: line + 1,
 				checkId: "SPAN-01",
@@ -343,7 +345,14 @@ describe("confidencePrReview", () => {
 			summary: "s",
 			coverage:
 				extra.unobservable === true
-					? [{ unit: "cron", kind: "background", instrumented: false, evidence: "no span" }]
+					? [
+							new PrReviewCoverageUnit({
+								unit: "cron",
+								kind: "background",
+								instrumented: false,
+								evidence: "no span",
+							}),
+						]
 					: [],
 			findings,
 			...(extra.tests === undefined ? undefined : { tests: extra.tests }),
@@ -356,8 +365,9 @@ describe("confidencePrReview", () => {
 	const score = (...args: Parameters<typeof reportWith>) =>
 		confidencePrReview(reportWith(...args))?.confidence
 
-	it("reads 10 for a clean change, whatever its notes or a medium risk", () => {
+	it("reads 10 for a clean change, whatever its notes or its risk", () => {
 		assert.equal(score([], { tests: "covered", risk: "low" }), 10)
+		assert.equal(score([], { tests: "covered", risk: "high" }), 10)
 		assert.equal(score([], { tests: "covered", risk: "medium" }), 10)
 		assert.equal(score([], { tests: "not_needed", risk: "medium" }), 10)
 		assert.equal(score([finding("info"), finding("info")], { tests: "covered", risk: "medium" }), 10)
@@ -366,7 +376,7 @@ describe("confidencePrReview", () => {
 
 	it("takes whole points off for untested behavior, a high-risk area and unobservable work", () => {
 		assert.equal(score([], { tests: "partial", risk: "medium" }), 9)
-		assert.equal(score([], { tests: "covered", risk: "high" }), 9)
+		assert.equal(score([], { tests: "partial", risk: "high" }), 8)
 		assert.equal(score([], { tests: "missing", risk: "low" }), 8)
 		assert.equal(score([], { tests: "covered", risk: "low", unobservable: true }), 9)
 		assert.equal(score([], { tests: "missing", risk: "high", unobservable: true }), 6)

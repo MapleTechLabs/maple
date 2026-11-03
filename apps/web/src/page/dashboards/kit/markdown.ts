@@ -1,6 +1,7 @@
 import { validateUrlScheme } from "@maple/ui/lib/sanitizers"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { inlineCode } from "../../../ui/inline-code"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { Array as Arr, String as Str } from "effect"
 
 // The markdown widget's renderer: headings, bullet
 // and numbered lists, paragraphs; inline links, bold, italic and code.
@@ -17,7 +18,7 @@ const renderInline = <M>(h: HtmlBuilder<M>, text: string): ReadonlyArray<Html | 
 	const pieces = matches.reduce<{ cursor: number; nodes: ReadonlyArray<Html | string> }>(
 		(state, match) => {
 			const segment = match[0]
-			const before = match.index > state.cursor ? [text.slice(state.cursor, match.index)] : []
+			const before = match.index > state.cursor ? [Str.slice(state.cursor, match.index)(text)] : []
 			return {
 				cursor: match.index + segment.length,
 				nodes: [...state.nodes, ...before, ...inlineToken(h, segment)],
@@ -25,11 +26,11 @@ const renderInline = <M>(h: HtmlBuilder<M>, text: string): ReadonlyArray<Html | 
 		},
 		{ cursor: 0, nodes: [] },
 	)
-	return pieces.cursor < text.length ? [...pieces.nodes, text.slice(pieces.cursor)] : pieces.nodes
+	return pieces.cursor < text.length ? [...pieces.nodes, Str.slice(pieces.cursor)(text)] : pieces.nodes
 }
 
 const inlineToken = <M>(h: HtmlBuilder<M>, segment: string): ReadonlyArray<Html | string> => {
-	if (segment.startsWith("[")) {
+	if (Str.startsWith("[")(segment)) {
 		const link = LINK_RE.exec(segment)
 		if (link === null) return []
 		const label = link[1] ?? ""
@@ -60,9 +61,9 @@ const inlineToken = <M>(h: HtmlBuilder<M>, segment: string): ReadonlyArray<Html 
 					),
 				]
 	}
-	if (segment.startsWith("**")) return [h.strong([], [segment.slice(2, -2)])]
-	if (segment.startsWith("*")) return [h.em([], [segment.slice(1, -1)])]
-	return [inlineCode(h, {}, [segment.slice(1, -1)])]
+	if (Str.startsWith("**")(segment)) return [h.strong([], [Str.slice(2, -2)(segment)])]
+	if (Str.startsWith("*")(segment)) return [h.em([], [Str.slice(1, -1)(segment)])]
+	return [inlineCode(h, {}, [Str.slice(1, -1)(segment)])]
 }
 
 type Block =
@@ -81,7 +82,7 @@ const flushParagraph = (state: ParseState): ParseState =>
 		? state
 		: {
 				...state,
-				blocks: [...state.blocks, { kind: "paragraph", text: state.paragraph.join(" ") }],
+				blocks: [...state.blocks, { kind: "paragraph", text: Arr.join(state.paragraph, " ") }],
 				paragraph: [],
 			}
 
@@ -91,7 +92,7 @@ const flushList = (state: ParseState): ParseState =>
 		: { ...state, blocks: [...state.blocks, { kind: "list", ...state.list }], list: null }
 
 const parseLine = (state: ParseState, rawLine: string): ParseState => {
-	const line = rawLine.trim()
+	const line = Str.trim(rawLine)
 	if (line === "") return flushList(flushParagraph(state))
 	const heading = HEADING_RE.exec(line)
 	if (heading !== null) {
@@ -133,7 +134,7 @@ const renderBlock = <M>(h: HtmlBuilder<M>, block: Block): Html => {
 		}
 		case "list": {
 			const className = `pl-5 ${block.isOrdered ? "list-decimal" : "list-disc"} space-y-0.5`
-			const items = block.items.map((item) => h.li([], renderInline(h, item)))
+			const items = Arr.map(block.items, (item) => h.li([], renderInline(h, item)))
 			return block.isOrdered ? h.ol([h.Class(className)], items) : h.ul([h.Class(className)], items)
 		}
 	}
@@ -141,8 +142,10 @@ const renderBlock = <M>(h: HtmlBuilder<M>, block: Block): Html => {
 
 /** `renderMarkdown`: the note's blocks in order. */
 export const renderMarkdown = <M>(h: HtmlBuilder<M>, content: string): ReadonlyArray<Html> => {
-	const parsed = content
-		.split(/\r?\n/)
-		.reduce<ParseState>(parseLine, { blocks: [], paragraph: [], list: null })
-	return flushList(flushParagraph(parsed)).blocks.map((block) => renderBlock(h, block))
+	const parsed = Str.split(/\r?\n/)(content).reduce<ParseState>(parseLine, {
+		blocks: [],
+		paragraph: [],
+		list: null,
+	})
+	return Arr.map(flushList(flushParagraph(parsed)).blocks, (block) => renderBlock(h, block))
 }

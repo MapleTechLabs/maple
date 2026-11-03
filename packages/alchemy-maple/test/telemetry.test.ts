@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { Effect, Exit, Layer, Redacted, Scope } from "effect"
+import { Effect, Exit, Layer, Redacted, Scope, Array as Arr } from "effect"
 import * as Output from "alchemy/Output"
 import { AlchemyContext } from "alchemy/AlchemyContext"
 import {
@@ -19,7 +19,7 @@ const host = () => {
 		Type: "Cloudflare.Worker",
 		id: "api",
 		env: {},
-		get: () => Effect.succeed(undefined),
+		get: () => Effect.undefined,
 		set: (id, output) => {
 			bound.set(id, output)
 			return Effect.succeed(id)
@@ -41,13 +41,13 @@ describe("Maple.Telemetry", () => {
 						endpoint: "https://ingest.test",
 						environment: "production",
 					}),
-				).pipe(Effect.provide(Layer.succeed(RuntimeContext, context)))
+				).pipe(Effect.provideService(RuntimeContext, context))
 				assert.deepStrictEqual([...bound.keys()].sort(), [
 					"MAPLE_ENDPOINT",
 					"MAPLE_ENVIRONMENT",
 					"MAPLE_INGEST_KEY",
 				])
-				assert.isTrue([...bound.values()].every(Output.isOutput))
+				assert.isTrue(Arr.every([...bound.values()], Output.isOutput))
 				assert.isDefined(context.telemetry)
 			}).pipe(Effect.scoped),
 	)
@@ -56,7 +56,7 @@ describe("Maple.Telemetry", () => {
 		Effect.gen(function* () {
 			const { bound, context } = host()
 			yield* Layer.build(Telemetry({ serviceName: "api" })).pipe(
-				Effect.provide(Layer.succeed(RuntimeContext, context)),
+				Effect.provideService(RuntimeContext, context),
 			)
 			assert.strictEqual(bound.size, 0)
 			assert.isDefined(context.telemetry)
@@ -152,7 +152,7 @@ describe("Maple.Telemetry at runtime", () => {
 			const { context } = host()
 			yield* Layer.build(
 				Telemetry({ serviceName: "api", ingestKey: Redacted.make("maple_sk_bound") }),
-			).pipe(Effect.provide(Layer.succeed(RuntimeContext, context)))
+			).pipe(Effect.provideService(RuntimeContext, context))
 			assert.isDefined(context.telemetry)
 			const secret = packEnvValueKeepRedacted(Redacted.make("maple_sk_bound"))
 			const env = {
@@ -166,7 +166,7 @@ describe("Maple.Telemetry at runtime", () => {
 				),
 				event,
 			)
-			yield* Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(services))
+			yield* Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(services))
 			assert.deepStrictEqual(authorizations, [])
 			yield* Scope.close(event, Exit.void)
 			assert.deepStrictEqual(authorizations, ["Bearer maple_sk_bound"])

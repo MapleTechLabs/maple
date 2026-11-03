@@ -1,3 +1,6 @@
+import { encodeJson } from "./json"
+import { String as Str } from "effect"
+
 export const DEFAULT_LOCAL_HOST = "127.0.0.1"
 export const DEFAULT_LOCAL_PORT = 4318
 
@@ -8,8 +11,8 @@ export const DEFAULT_REMOTE_UI_URL = "https://local.maple.dev"
 /** Bun expects bare IPv6 listener addresses, while users commonly copy the
  * bracketed form used in URLs. Accept either form at the CLI boundary. */
 export const normalizeHost = (host: string): string => {
-	const trimmed = host.trim()
-	return trimmed.startsWith("[") && trimmed.endsWith("]") ? trimmed.slice(1, -1) : trimmed
+	const trimmed = Str.trim(host)
+	return Str.startsWith("[")(trimmed) && Str.endsWith("]")(trimmed) ? Str.slice(1, -1)(trimmed) : trimmed
 }
 
 /** Validate a bare listener/advertise host before it reaches URL construction
@@ -22,7 +25,7 @@ export const validateHost = (host: string): string => {
 		throw new Error("expected a bare hostname or IP address without a scheme, port, or path")
 	}
 	if (!URL.canParse(serverUrl(normalized, 80))) {
-		throw new Error(`invalid hostname or IP address ${JSON.stringify(host)}`)
+		throw new Error(`invalid hostname or IP address ${encodeJson(host)}`)
 	}
 	return normalized
 }
@@ -39,10 +42,10 @@ export const connectionHostForBindHost = (host: string): string => {
 
 /** Browser URL hostnames that resolve to the browser machine itself. */
 export const isLoopbackHostname = (hostname: string): boolean => {
-	const normalized = hostname.toLowerCase()
+	const normalized = Str.toLowerCase(hostname)
 	return (
 		normalized === "localhost" ||
-		normalized.endsWith(".localhost") ||
+		Str.endsWith(".localhost")(normalized) ||
 		normalized === "127.0.0.1" ||
 		normalized === "::1" ||
 		normalized === "[::1]"
@@ -66,7 +69,7 @@ export const resolveAdvertiseHost = (
 }
 
 const urlHost = (host: string): string =>
-	host.includes(":") && !(host.startsWith("[") && host.endsWith("]")) ? `[${host}]` : host
+	Str.includes(":")(host) && !(Str.startsWith("[")(host) && Str.endsWith("]")(host)) ? `[${host}]` : host
 
 export const serverUrl = (host: string, port: number): string => `http://${urlHost(host)}:${port}`
 
@@ -84,10 +87,10 @@ const parseHostedUiUrl = (baseUrl: string): URL => {
 	try {
 		url = new URL(baseUrl)
 	} catch {
-		throw new Error(`invalid hosted UI URL ${JSON.stringify(baseUrl)}: expected an absolute HTTP(S) URL`)
+		throw new Error(`invalid hosted UI URL ${encodeJson(baseUrl)}: expected an absolute HTTP(S) URL`)
 	}
 	if (url.protocol !== "http:" && url.protocol !== "https:") {
-		throw new Error(`invalid hosted UI URL ${JSON.stringify(baseUrl)}: expected an absolute HTTP(S) URL`)
+		throw new Error(`invalid hosted UI URL ${encodeJson(baseUrl)}: expected an absolute HTTP(S) URL`)
 	}
 	return url
 }

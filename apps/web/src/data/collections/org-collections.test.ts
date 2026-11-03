@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "@effect/vitest"
-import { Context, Effect, Option } from "effect"
+import { Context, Effect } from "effect"
 import { SessionBearer } from "../../platform/session-bearer"
 import { makeSyncFetch } from "./org-collections"
 
 const bearer = Context.make(SessionBearer, {
-	token: Effect.succeed(Option.some("session-token")),
-	freshToken: Effect.succeed(Option.some("session-token")),
+	token: Effect.succeedSome("session-token"),
+	freshToken: Effect.succeedSome("session-token"),
 })
 
 const alertRulesUrl = "https://sync.example.com/api/sync/shape?shape=alert_rules"

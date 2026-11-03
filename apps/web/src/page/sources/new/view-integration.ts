@@ -2,8 +2,8 @@ import type { V2Source } from "@maple/domain/http/v2"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button, linkButton } from "../../../ui/button"
-import { icon } from "../../../ui/icon"
+import { button, linkButton } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
 import { type DataIntegration, flowEmbed } from "../../integrations/embed"
 import { canContinue, type FlowSpec } from "../../integrations/flow"
 import { sourceHref } from "../kit/shared"
@@ -11,6 +11,7 @@ import { Message } from "./message"
 import type { FlowHost, Model } from "./model"
 import { flowSpecOf } from "./update"
 import { flowFooter } from "./view-footer"
+import { Array as Arr } from "effect"
 
 // `/sources/new?integration=`: the integration's current step, then the footer that moves between them.
 
@@ -20,7 +21,8 @@ type H = HtmlBuilder<Message>
 const sourcesOfIntegration = (model: Model, integration: DataIntegration): ReadonlyArray<V2Source> =>
 	integration === "warpstream"
 		? []
-		: AsyncData.getOrElse(model.list.data, (): ReadonlyArray<V2Source> => []).filter(
+		: Arr.filter(
+				AsyncData.getOrElse(model.list.data, (): ReadonlyArray<V2Source> => []),
 				(source) => source.platform === integration,
 			)
 

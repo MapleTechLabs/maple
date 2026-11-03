@@ -10,7 +10,6 @@ import {
 } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import {
 	ROLLOUT_COMPLETE_SHARE,
 	shortReleaseLabel,
@@ -20,16 +19,19 @@ import {
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { severityBadge } from "../../errors/kit/severity"
-import { emptyMessage } from "../../../ui/empty"
-import { listRow } from "../../../ui/list-row"
-import { panel, panelBody, panelHeader } from "../../../ui/panel"
-import { skeleton } from "../../../ui/skeleton"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { truncatedText } from "../../../ui/truncated-text"
-import { serviceDot } from "../../../ui/values"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { listRow } from "@maple/views/ui/list-row"
+import { panel, panelBody, panelHeader } from "@maple/views/ui/panel"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { commitAvatar, firstLine, releaseHealthFigure, releaseHref } from "../kit"
 import { type Overlays, releaseHealthPill } from "../overlays-view"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `ReleaseDeployOverview`'s sections, `ReleaseChangeset` and `IssueList` + `IssueLine`.
 
@@ -48,8 +50,8 @@ export const sectionCard = <M>(
 	])
 
 export const deploySummary = <M>(h: HtmlBuilder<M>, group: ReleaseGroup, clock: Clock): Html => {
-	const services = new Set(group.services.map((impact) => impact.serviceName)).size
-	const flagged = group.services.filter((impact) => impact.health !== "healthy").length
+	const services = new Set(Arr.map(group.services, (impact) => impact.serviceName)).size
+	const flagged = Arr.filter(group.services, (impact) => impact.health !== "healthy").length
 	return h.div(
 		[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5 text-xs text-muted-foreground")],
 		[
@@ -71,7 +73,9 @@ export const deploySummary = <M>(h: HtmlBuilder<M>, group: ReleaseGroup, clock: 
 			h.span(
 				[],
 				[
-					h.span([h.Class("font-medium tabular-nums text-foreground")], [String(services)]),
+					typography(h, { tone: "foreground", weight: "medium", numeric: true }, [
+						String(services),
+					]),
 					" ",
 					pluralize(services, "service"),
 				],
@@ -79,10 +83,9 @@ export const deploySummary = <M>(h: HtmlBuilder<M>, group: ReleaseGroup, clock: 
 			h.span(
 				[],
 				[
-					h.span(
-						[h.Class("font-medium tabular-nums text-foreground")],
-						[formatNumber(group.spanCount)],
-					),
+					typography(h, { tone: "foreground", weight: "medium", numeric: true }, [
+						formatNumber(group.spanCount),
+					]),
 					" ",
 					"requests",
 				],
@@ -106,7 +109,7 @@ const beforeAfter = <M>(
 		[
 			...(before === undefined
 				? []
-				: [h.span([h.Class("text-3xs text-foreground-subtle")], [format(before), " →"])]),
+				: [typography(h, { size: "3xs", tone: "subtle" }, [format(before), " →"])]),
 			h.span(
 				[
 					h.Class(
@@ -159,7 +162,7 @@ const serviceRow = <M>(
 										releaseHealthPill(
 											h,
 											overlays,
-											`release-pill-${`${impact.serviceName}-${impact.environment}`.replace(/[^A-Za-z0-9_-]/g, "_")}`,
+											`release-pill-${Str.replace(/[^A-Za-z0-9_-]/g, "_")(`${impact.serviceName}-${impact.environment}`)}`,
 											impact.health,
 											releaseHealthFigure(impact),
 										),
@@ -172,9 +175,13 @@ const serviceRow = <M>(
 			tableCell(
 				h,
 				[impact.baseline ? shortReleaseLabel(impact.baseline.commitSha) : EMPTY_VALUE],
-				"font-mono text-2xs text-muted-foreground",
+				typographyClass({ size: "2xs", tone: "muted", mono: true }),
 			),
-			tableCell(h, [formatNumber(impact.spanCount)], "text-right font-mono tabular-nums"),
+			tableCell(
+				h,
+				[formatNumber(impact.spanCount)],
+				typographyClass({ mono: true, numeric: true, className: "text-right" }),
+			),
 			tableCell(h, [
 				beforeAfter(
 					h,
@@ -223,30 +230,23 @@ export const deployServices = <M>(
 		h,
 		{
 			title: "Services",
-			action: h.span(
-				[h.Class("text-2xs text-foreground-subtle")],
-				["against the version each replaced"],
-			),
+			action: typography(h, { size: "2xs", tone: "subtle" }, ["against the version each replaced"]),
 		},
 		[
 			table(h, { size: "sm" }, [
 				tableHeader(h, [
-					tableRow(
-						h,
-						[
-							tableHead(h, ["Service"], "pl-4"),
-							tableHead(h, ["Replaced"]),
-							tableHead(h, ["Requests"], "text-right"),
-							tableHead(h, ["Error rate"]),
-							tableHead(h, ["p95"]),
-							tableHead(h, ["Live share"], "pr-4 text-right"),
-						],
-						eyebrowVariants(),
-					),
+					tableRow(h, [
+						tableHead(h, ["Service"], "pl-4"),
+						tableHead(h, ["Replaced"]),
+						tableHead(h, ["Requests"], "text-right"),
+						tableHead(h, ["Error rate"]),
+						tableHead(h, ["p95"]),
+						tableHead(h, ["Live share"], "pr-4 text-right"),
+					]),
 				]),
 				tableBody(
 					h,
-					rows.map((impact) => serviceRow(h, impact, environments, timeSearch, overlays)),
+					Arr.map(rows, (impact) => serviceRow(h, impact, environments, timeSearch, overlays)),
 				),
 			]),
 		],
@@ -272,7 +272,7 @@ export type ChangesetState =
 export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, clock: Clock): Html => {
 	if (state._tag === "NoBase")
 		return sectionCard(h, { title: "What shipped" }, [
-			emptyMessage(h, {}, ["No earlier version in this window to compare against."]),
+			emptyMessage(h, {}, ["No earlier version in this window to compare against"]),
 		])
 	if (state._tag === "NotShas")
 		return sectionCard(h, { title: "What shipped" }, [
@@ -280,10 +280,10 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 				"These versions are not commit shas, so the commits between them are unknown.",
 			]),
 		])
-	const action = h.span(
-		[h.Class("text-2xs text-foreground-subtle")],
-		["since ", h.span([h.Class("font-mono")], [shortReleaseLabel(state.base)])],
-	)
+	const action = typography(h, { size: "2xs", tone: "subtle" }, [
+		"since ",
+		h.span([h.Class("font-mono")], [shortReleaseLabel(state.base)]),
+	])
 	if (state._tag === "Loading")
 		return sectionCard(h, { title: "What shipped", action }, [
 			h.div([h.Class("space-y-2 p-3")], [skeleton(h, "h-4 w-3/4"), skeleton(h, "h-4 w-1/2")]),
@@ -306,7 +306,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 			h.div(
 				[h.Class("max-h-80 overflow-y-auto")],
 				[
-					...range.commits.map((commit) => {
+					...Arr.map(range.commits, (commit) => {
 						const subject = firstLine(commit.message)
 						const pr = pullRequestUrl(subject, commit.htmlUrl)
 						const author = commit.authorLogin ?? commit.authorName ?? "Unknown author"
@@ -322,35 +322,27 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 									[h.Class("mt-px shrink-0")],
 									[commitAvatar(h, commit.authorAvatarUrl, author)],
 								),
-								h.div(
-									[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
-									[
-										h.a(
-											[
-												h.Href(pr?.url ?? commit.htmlUrl),
-												h.Target("_blank"),
-												h.Rel("noreferrer"),
-												h.Class("truncate text-foreground hover:underline active:underline"),
-												h.Title(subject),
-											],
-											[subject],
-										),
-										h.span(
-											[
-												h.Class(
-													"flex items-center gap-1.5 text-2xs text-muted-foreground",
-												),
-											],
-											[
-												h.span(
-													[h.Class("font-mono")],
-													[shortReleaseLabel(commit.sha)],
-												),
-												h.span([h.Class("truncate")], [author]),
-											],
-										),
-									],
-								),
+								vstack(h, { gap: "0.5", shrink: true, grow: true }, [
+									h.a(
+										[
+											h.Href(pr?.url ?? commit.htmlUrl),
+											h.Target("_blank"),
+											h.Rel("noreferrer"),
+											h.Class(
+												"truncate text-foreground hover:underline active:underline",
+											),
+											h.Title(subject),
+										],
+										[subject],
+									),
+									h.span(
+										[h.Class("flex items-center gap-1.5 text-2xs text-muted-foreground")],
+										[
+											h.span([h.Class("font-mono")], [shortReleaseLabel(commit.sha)]),
+											h.span([h.Class("truncate")], [author]),
+										],
+									),
+								]),
 								h.span(
 									[
 										h.Class(
@@ -414,11 +406,15 @@ const issueLine = <M>(
 		trailing: h.span(
 			[h.Class("contents")],
 			[
-				h.span(
-					[
-						h.Class("font-mono text-xs tabular-nums text-muted-foreground"),
-						h.Title("Occurrences on this version in the window"),
-					],
+				typography(
+					h,
+					{
+						size: "xs",
+						tone: "muted",
+						mono: true,
+						numeric: true,
+						attributes: [h.Title("Occurrences on this version in the window")],
+					},
 					[formatNumber(occurrences ?? issue.occurrenceCount), "×"],
 				),
 				relativeTime(h, {
@@ -457,12 +453,12 @@ export const issueList = <M>(
 				[
 					h.Class(
 						options.issues.length === 0
-							? "text-2xs text-foreground-subtle"
+							? typographyClass({ size: "2xs", tone: "subtle" })
 							: options.tone === "error"
 								? "text-2xs font-medium text-severity-error"
 								: options.tone === "warn"
 									? "text-2xs font-medium text-severity-warn"
-									: "text-2xs text-muted-foreground",
+									: typographyClass({ size: "2xs", tone: "muted" }),
 					),
 				],
 				[String(options.issues.length)],
@@ -473,7 +469,7 @@ export const issueList = <M>(
 				? emptyMessage(h, {}, [options.empty])
 				: h.div(
 						[h.Class("space-y-px p-2")],
-						options.issues.map((issue) =>
+						Arr.map(options.issues, (issue) =>
 							issueLine(
 								h,
 								issue,

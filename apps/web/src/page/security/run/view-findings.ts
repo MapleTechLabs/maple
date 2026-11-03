@@ -2,12 +2,13 @@ import type { SecurityAuditFinding, SecurityAuditRunDetail } from "@maple/domain
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { linkButton } from "../../../ui/button"
-import * as DialogView from "../../../ui/dialog-view"
-import { badge } from "../../../ui/display"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { panel, panelHeader } from "../../../ui/panel"
+import { linkButton } from "@maple/views/ui/button"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { textLink } from "@maple/views/ui/text-link"
 import { findingBody } from "../kit/finding-body"
 import { bucketOf, countByBucket, sectionsOf, type SeverityBucket } from "../kit/findings"
 import { findingBadge, findingGroups, severityTabs, trailingText } from "../kit/findings-view"
@@ -15,7 +16,10 @@ import { FINDING_STATUS_LABEL, gateOf, isLive, locationOf } from "../kit/format"
 import { gateState, placeholderRows } from "../kit/parts"
 import { countOf, openFindingOf } from "./derive"
 import { Message, type Model } from "./model"
-import { emptyMessage } from "../../../ui/empty"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // What the run reported, first on the page: severity tabs over severity groups, each finding
 // opening in a side sheet.
@@ -46,22 +50,24 @@ const reportLinks = (h: H, run: SecurityAuditRunDetail): ReadonlyArray<Html> =>
 					[h.Class("flex flex-wrap items-center gap-3 px-4 py-2.5 text-xs")],
 					[
 						h.span([h.Class("text-muted-foreground")], ["Reports:"]),
-						...(
+						...Arr.map(
 							[
 								["report", "REPORT.md"],
 								["findingsDetail", "FINDINGS-DETAIL.md"],
 								["needsValidation", "NEEDS-VALIDATION.md"],
-							] as const
-						).map(([report, label]) =>
-							h.button(
-								[
-									h.Key(report),
-									h.Type("button"),
-									h.Class("font-mono underline underline-offset-2 hover:text-foreground active:text-foreground"),
-									h.OnClick(Message.ClickedReport({ report })),
-								],
-								[label],
-							),
+							] as const,
+							([report, label]) =>
+								textLink(
+									h,
+									{
+										tone: "muted",
+										isMono: true,
+										className: "underline",
+										onClick: Message.ClickedReport({ report }),
+										attributes: [h.Key(report)],
+									},
+									[label],
+								),
 						),
 					],
 				),
@@ -83,7 +89,8 @@ const findingsList = (h: H, model: Model, findings: ReadonlyArray<SecurityAuditF
 	const shown =
 		model.severity === null
 			? findings
-			: findings.filter(
+			: Arr.filter(
+					findings,
 					(finding) => finding.verdict === "rejected" || bucketOf(finding) === model.severity,
 				)
 	return findingGroups(h, {
@@ -127,7 +134,7 @@ export const findingsSection = (h: H, model: Model, run: SecurityAuditRunDetail)
 					h.div(
 						[h.Class("flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2")],
 						[
-							h.span([h.Class("text-sm font-medium")], ["Findings"]),
+							typography(h, { size: "sm", weight: "medium" }, ["Findings"]),
 							...(findings.length === 0
 								? []
 								: [
@@ -169,16 +176,12 @@ export const findingSheet = (h: H, model: Model): Html => {
 					? []
 					: [
 							DialogView.dialogHeader(h, "sheet", [
-								h.div(
-									[h.Class("flex flex-wrap items-center gap-2")],
-									[
-										findingBadge(h, finding),
-										h.span(
-											[h.Class("font-mono text-xs text-muted-foreground")],
-											[locationOf(finding.record) ?? ""],
-										),
-									],
-								),
+								hstack(h, { gap: "2", wrap: true }, [
+									findingBadge(h, finding),
+									typography(h, { size: "xs", tone: "muted", mono: true }, [
+										locationOf(finding.record) ?? "",
+									]),
+								]),
 								DialogView.dialogTitle(h, "sheet", id, finding.record.title),
 								h.div(
 									[h.Class("pt-1")],
@@ -201,7 +204,7 @@ export const findingSheet = (h: H, model: Model): Html => {
 								),
 							]),
 							DialogView.dialogPanel(h, "sheet", id, [
-								h.div([h.Class("flex flex-col gap-4")], findingBody(h, finding)),
+								vstack(h, { gap: "4" }, findingBody(h, finding)),
 							]),
 						],
 		},

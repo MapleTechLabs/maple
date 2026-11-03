@@ -4,11 +4,11 @@ import type {
 	V2StatusPageBreakGlassToken,
 	V2StatusPagePublishResult,
 } from "@maple/domain/http/v2"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
-import type { LoadFailure } from "../../../data/load-failure"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Dialog from "../../../ui/dialog"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { statusPageHref, statusPagesHref } from "../shared/commands"
 import { DeletePage, PublishPage, RevokeToken, RotateToken, SaveSettings } from "./command"
@@ -57,7 +57,7 @@ export const changeSetting = (model: Model, field: SettingsTextField, value: str
 			})
 		: withSettings(model, (form) => ({
 				...form,
-				[field]: field === "slug" ? value.trim().toLowerCase() : value,
+				[field]: field === "slug" ? Str.toLowerCase(Str.trim(value)) : value,
 			}))
 
 export const changeTheme = (model: Model, change: Partial<ThemeForm>): Return =>

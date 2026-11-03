@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { AuthorizationUnavailableError } from "@maple/domain/http"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { type ClerkMembershipRow, collectMemberships } from "./OrgMembershipService"
 
 const row = (id: string, role = "org:member"): ClerkMembershipRow => ({
@@ -54,7 +54,7 @@ describe("collectMemberships", () => {
 			)
 
 			assert.deepStrictEqual(
-				result.memberships.map((membership) => membership.orgId),
+				Arr.map(result.memberships, (membership) => membership.orgId),
 				["org_ok"],
 			)
 		}),

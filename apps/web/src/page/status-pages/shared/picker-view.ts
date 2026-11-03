@@ -1,14 +1,19 @@
 import type { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import * as Checkbox from "../../../ui/checkbox"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { input } from "../../../ui/input"
-import { nativeOption, nativeSelect } from "../../../ui/native-select"
+import { button } from "@maple/views/ui/button"
+import * as Checkbox from "@maple/views/ui/checkbox"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { input } from "@maple/views/ui/input"
+import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
+import { label } from "@maple/views/ui/label"
 import { COMPONENT_STATUS_LABEL, COMPONENT_STATUS_OPTIONS } from "./derive"
 import { checkedRows, monitorTarget, type Picker, PickerMessage, type PickerRow, rowIssue } from "./picker"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { dividedList } from "@maple/views/ui/rule"
+import { Array as Arr, String as Str } from "effect"
 
 // The checklist view: checked rows rename, group and move in place; the URL field and the
 // add-by-hand row sit under it.
@@ -27,7 +32,7 @@ export type PickerViewOptions<M> = Readonly<{
 }>
 
 const rowId = (prefix: string, row: PickerRow, part: string) =>
-	`${prefix}-${part}-${row.key.replace(":", "-")}`
+	`${prefix}-${part}-${Str.replace(":", "-")(row.key)}`
 
 const textInput = <M>(
 	h: HtmlBuilder<M>,
@@ -66,40 +71,33 @@ const moveButtons = <M>(
 	row: PickerRow,
 	position: Readonly<{ isFirst: boolean; isLast: boolean }>,
 ): Html => {
-	const name = row.name.trim() === "" ? "component" : row.name.trim()
-	return h.div(
-		[h.Class("flex shrink-0 items-center")],
-		[
-			iconButton(
-				h,
-				{
-					label: `Move ${name} up`,
-					size: "icon-xs",
-					isDisabled: options.isDisabled === true || position.isFirst,
-					attributes: [
-						h.OnClick(
-							options.toMessage(PickerMessage.ClickedMoveRow({ key: row.key, offset: -1 })),
-						),
-					],
-				},
-				[icon(h, "ChevronUpIcon")],
-			),
-			iconButton(
-				h,
-				{
-					label: `Move ${name} down`,
-					size: "icon-xs",
-					isDisabled: options.isDisabled === true || position.isLast,
-					attributes: [
-						h.OnClick(
-							options.toMessage(PickerMessage.ClickedMoveRow({ key: row.key, offset: 1 })),
-						),
-					],
-				},
-				[icon(h, "ChevronDownIcon")],
-			),
-		],
-	)
+	const name = Str.trim(row.name) === "" ? "component" : Str.trim(row.name)
+	return hstack(h, { className: "shrink-0" }, [
+		iconButton(
+			h,
+			{
+				label: `Move ${name} up`,
+				size: "icon-xs",
+				isDisabled: options.isDisabled === true || position.isFirst,
+				attributes: [
+					h.OnClick(options.toMessage(PickerMessage.ClickedMoveRow({ key: row.key, offset: -1 }))),
+				],
+			},
+			[icon(h, "ChevronUpIcon")],
+		),
+		iconButton(
+			h,
+			{
+				label: `Move ${name} down`,
+				size: "icon-xs",
+				isDisabled: options.isDisabled === true || position.isLast,
+				attributes: [
+					h.OnClick(options.toMessage(PickerMessage.ClickedMoveRow({ key: row.key, offset: 1 }))),
+				],
+			},
+			[icon(h, "ChevronDownIcon")],
+		),
+	])
 }
 
 const editFields = <M>(
@@ -111,43 +109,46 @@ const editFields = <M>(
 	const error = rowIssue(row)
 	const nameId = rowId(options.idPrefix, row, "name")
 	const isDisabled = options.isDisabled === true
-	return h.div(
-		[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
-		[
-			h.div(
-				[h.Class("grid gap-2 sm:grid-cols-[minmax(0,1fr)_9rem]")],
-				[
-					textInput(h, {
-						id: nameId,
-						// Focused as it mounts, so the first keystroke after "Add" lands in it.
-						extra:
-							options.focusOnMount !== undefined && options.picker.autofocusKey === row.key
-								? [options.focusOnMount]
-								: [],
-						label: `Shown as, ${label}`,
-						value: row.name,
-						placeholder: row.monitorId === null ? "Component name" : label,
-						isDisabled,
-						error,
-						onInput: (value) =>
-							options.toMessage(PickerMessage.ChangedRowName({ key: row.key, value })),
-					}),
-					textInput(h, {
-						id: rowId(options.idPrefix, row, "group"),
-						label: `Group of ${label}`,
-						value: row.group,
-						placeholder: "Group",
-						isDisabled,
-						onInput: (value) =>
-							options.toMessage(PickerMessage.ChangedRowGroup({ key: row.key, value })),
-					}),
-				],
-			),
-			...(error === null
-				? []
-				: [h.p([h.Id(`${nameId}-error`), h.Class("text-xs text-destructive")], [error])]),
-		],
-	)
+	return vstack(h, { gap: "1", shrink: true, grow: true }, [
+		h.div(
+			[h.Class("grid gap-2 sm:grid-cols-[minmax(0,1fr)_9rem]")],
+			[
+				textInput(h, {
+					id: nameId,
+					// Focused as it mounts, so the first keystroke after "Add" lands in it.
+					extra:
+						options.focusOnMount !== undefined && options.picker.autofocusKey === row.key
+							? [options.focusOnMount]
+							: [],
+					label: `Shown as, ${label}`,
+					value: row.name,
+					placeholder: row.monitorId === null ? "Component name" : label,
+					isDisabled,
+					error,
+					onInput: (value) =>
+						options.toMessage(PickerMessage.ChangedRowName({ key: row.key, value })),
+				}),
+				textInput(h, {
+					id: rowId(options.idPrefix, row, "group"),
+					label: `Group of ${label}`,
+					value: row.group,
+					placeholder: "Group",
+					isDisabled,
+					onInput: (value) =>
+						options.toMessage(PickerMessage.ChangedRowGroup({ key: row.key, value })),
+				}),
+			],
+		),
+		...(error === null
+			? []
+			: [
+					typography(
+						h,
+						{ size: "xs", tone: "destructive", as: "p", attributes: [h.Id(`${nameId}-error`)] },
+						[error],
+					),
+				]),
+	])
 }
 
 const statusSelect = <M>(
@@ -171,7 +172,7 @@ const statusSelect = <M>(
 				),
 			],
 		},
-		COMPONENT_STATUS_OPTIONS.map((status) => nativeOption(status, COMPONENT_STATUS_LABEL[status])),
+		Arr.map(COMPONENT_STATUS_OPTIONS, (status) => nativeOption(status, COMPONENT_STATUS_LABEL[status])),
 	)
 
 const monitorRowView = <M>(
@@ -181,7 +182,7 @@ const monitorRowView = <M>(
 	monitor: V2UptimeMonitor | undefined,
 	position: Readonly<{ isFirst: boolean; isLast: boolean }>,
 ): Html => {
-	const label = monitor?.name ?? row.name
+	const name = monitor?.name ?? row.name
 	const inputId = rowId(options.idPrefix, row, "check")
 	const target = monitor === undefined ? "" : monitorTarget(monitor)
 	return h.li(
@@ -190,32 +191,28 @@ const monitorRowView = <M>(
 			h.Class(cn("flex items-start gap-3 px-3 py-2.5", row.isChecked ? "" : "text-muted-foreground")),
 		],
 		[
-			h.label(
-				[h.Id(Checkbox.labelId(inputId)), h.Class("mt-1.5 flex shrink-0 items-center")],
-				[
-					...Checkbox.view(h, {
-						model: { isChecked: row.isChecked },
-						toParentMessage: () => options.toMessage(PickerMessage.ToggledRow({ key: row.key })),
-						id: `${inputId}-root`,
-						inputId,
-						isDisabled: options.isDisabled,
-						ariaLabel: `Show ${label} on the page`,
-					}),
-				],
-			),
+			label(h, { className: "mt-1.5 flex shrink-0", attributes: [h.Id(Checkbox.labelId(inputId))] }, [
+				...Checkbox.view(h, {
+					model: { isChecked: row.isChecked },
+					toParentMessage: () => options.toMessage(PickerMessage.ToggledRow({ key: row.key })),
+					id: `${inputId}-root`,
+					inputId,
+					isDisabled: options.isDisabled,
+					ariaLabel: `Show ${name} on the page`,
+				}),
+			]),
 			row.isChecked
-				? h.div(
-						[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
-						[
-							editFields(h, options, row, label),
-							h.p([h.Class("truncate font-mono text-xs text-muted-foreground")], [target]),
-						],
-					)
+				? vstack(h, { gap: "1", shrink: true, grow: true }, [
+						editFields(h, options, row, name),
+						typography(h, { size: "xs", tone: "muted", mono: true, truncate: true, as: "p" }, [
+							target,
+						]),
+					])
 				: h.div(
 						[h.Class("flex min-w-0 flex-1 flex-col gap-0.5 pt-1")],
 						[
-							h.span([h.Class("truncate text-sm")], [label]),
-							h.span([h.Class("truncate font-mono text-xs")], [target]),
+							typography(h, { size: "sm", truncate: true }, [name]),
+							typography(h, { size: "xs", mono: true, truncate: true }, [target]),
 						],
 					),
 			...(row.isChecked && options.isOrderable !== false
@@ -231,7 +228,7 @@ const manualRowView = <M>(
 	row: PickerRow,
 	position: Readonly<{ isFirst: boolean; isLast: boolean }>,
 ): Html => {
-	const label = row.name.trim() === "" ? "the new component" : row.name.trim()
+	const label = Str.trim(row.name) === "" ? "the new component" : Str.trim(row.name)
 	return h.li(
 		[h.Key(row.key), h.Class("flex items-start gap-3 px-3 py-2.5")],
 		[
@@ -239,39 +236,28 @@ const manualRowView = <M>(
 				[h.AriaHidden(true), h.Class("mt-2 flex size-4 shrink-0 items-center justify-center")],
 				[icon(h, "PencilIcon", { size: 12, className: "text-muted-foreground" })],
 			),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
-				[
-					editFields(h, options, row, label),
-					h.div(
-						[h.Class("flex items-center gap-2")],
-						[
-							statusSelect(h, options, row, label),
-							h.span([h.Class("text-xs text-muted-foreground")], ["Updated by hand"]),
+			vstack(h, { gap: "1", shrink: true, grow: true }, [
+				editFields(h, options, row, label),
+				hstack(h, { gap: "2" }, [
+					statusSelect(h, options, row, label),
+					typography(h, { size: "xs", tone: "muted" }, ["Updated by hand"]),
+				]),
+			]),
+			hstack(h, { className: "shrink-0" }, [
+				...(options.isOrderable === false ? [] : [moveButtons(h, options, row, position)]),
+				iconButton(
+					h,
+					{
+						label: `Remove ${label}`,
+						size: "icon-xs",
+						isDisabled: options.isDisabled,
+						attributes: [
+							h.OnClick(options.toMessage(PickerMessage.ClickedRemoveRow({ key: row.key }))),
 						],
-					),
-				],
-			),
-			h.div(
-				[h.Class("flex shrink-0 items-center")],
-				[
-					...(options.isOrderable === false ? [] : [moveButtons(h, options, row, position)]),
-					iconButton(
-						h,
-						{
-							label: `Remove ${label}`,
-							size: "icon-xs",
-							isDisabled: options.isDisabled,
-							attributes: [
-								h.OnClick(
-									options.toMessage(PickerMessage.ClickedRemoveRow({ key: row.key })),
-								),
-							],
-						},
-						[icon(h, "XmarkIcon")],
-					),
-				],
-			),
+					},
+					[icon(h, "XmarkIcon")],
+				),
+			]),
 		],
 	)
 }
@@ -297,62 +283,62 @@ const urlField = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>): Html => 
 			h.AriaLabel("Monitor a URL"),
 		],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					input(h, {
-						id,
+			hstack(h, { gap: "2", wrap: true }, [
+				input(h, {
+					id,
+					size: "sm",
+					type: "url",
+					className: "min-w-0 flex-1 basis-48",
+					controlClassName: "font-mono",
+					isDisabled: options.isDisabled === true || picker.isCreatingMonitor,
+					attributes: [
+						h.AriaLabel("URL to monitor"),
+						h.Value(picker.url),
+						h.Placeholder("https://api.acme.com"),
+						h.OnInput((value) => options.toMessage(PickerMessage.ChangedUrl({ value }))),
+						...(picker.urlIssue === null
+							? []
+							: [h.AriaInvalid(true), h.AriaDescribedBy(`${id}-error`)]),
+					],
+				}),
+				button(
+					h,
+					{
 						size: "sm",
-						type: "url",
-						className: "min-w-0 flex-1 basis-48",
-						controlClassName: "font-mono",
-						isDisabled: options.isDisabled === true || picker.isCreatingMonitor,
-						attributes: [
-							h.AriaLabel("URL to monitor"),
-							h.Value(picker.url),
-							h.Placeholder("https://api.acme.com"),
-							h.OnInput((value) => options.toMessage(PickerMessage.ChangedUrl({ value }))),
-							...(picker.urlIssue === null
-								? []
-								: [h.AriaInvalid(true), h.AriaDescribedBy(`${id}-error`)]),
-						],
-					}),
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							type: "submit",
-							isLoading: picker.isCreatingMonitor,
-							isDisabled: options.isDisabled,
-						},
-						["Monitor it"],
-					),
-					// Without rows the URL field is all the picker shows, so it stays open.
-					...(picker.rows.length === 0
-						? []
-						: [
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "ghost",
-										isDisabled: picker.isCreatingMonitor,
-										attributes: [
-											h.OnClick(options.toMessage(PickerMessage.ClickedCancelUrl())),
-										],
-									},
-									["Cancel"],
-								),
-							]),
-				],
-			),
+						variant: "outline",
+						type: "submit",
+						isLoading: picker.isCreatingMonitor,
+						isDisabled: options.isDisabled,
+					},
+					["Monitor it"],
+				),
+				// Without rows the URL field is all the picker shows, so it stays open.
+				...(picker.rows.length === 0
+					? []
+					: [
+							button(
+								h,
+								{
+									size: "sm",
+									variant: "ghost",
+									isDisabled: picker.isCreatingMonitor,
+									attributes: [
+										h.OnClick(options.toMessage(PickerMessage.ClickedCancelUrl())),
+									],
+								},
+								["Cancel"],
+							),
+						]),
+			]),
 			picker.urlIssue === null
-				? h.p(
-						[h.Class("text-xs text-muted-foreground")],
-						["Maple checks it every minute and the page shows its uptime."],
-					)
-				: h.p([h.Id(`${id}-error`), h.Class("text-xs text-destructive")], [picker.urlIssue]),
+				? typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						"Maple checks it every minute and the page shows its uptime.",
+					])
+				: typography(
+						h,
+						{ size: "xs", tone: "destructive", as: "p", attributes: [h.Id(`${id}-error`)] },
+						[picker.urlIssue],
+					),
 		],
 	)
 }
@@ -365,55 +351,50 @@ export const pickerView = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>):
 		isLast: checked.at(-1)?.key === row.key,
 	})
 	const isEmpty = picker.rows.length === 0
-	return h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			...(isEmpty
-				? [
-						h.p(
-							[h.Class("text-sm text-muted-foreground")],
-							["Paste a URL to monitor, or add a component you'll update by hand."],
-						),
-					]
-				: [
-						h.ul(
-							[h.AriaLabel("Components"), h.Class("divide-y rounded-md border")],
-							picker.rows.map((row) =>
-								row.monitorId === null
-									? manualRowView(h, options, row, positionOf(row))
-									: monitorRowView(
-											h,
-											options,
-											row,
-											options.monitors.find((monitor) => monitor.id === row.monitorId),
-											positionOf(row),
-										),
-							),
-						),
+	return vstack(h, { gap: "3" }, [
+		...(isEmpty
+			? [
+					typography(h, { size: "sm", tone: "muted", as: "p" }, [
+						"Paste a URL to monitor, or add a component you'll update by hand.",
 					]),
-			h.div(
-				[h.Class("flex flex-col items-start gap-2")],
-				[
-					urlField(h, options),
-					button(
+				]
+			: [
+					dividedList(
 						h,
-						{
-							size: "sm",
-							variant: "ghost",
-							isDisabled: options.isDisabled,
-							className: "h-auto max-w-full self-start text-left whitespace-normal",
-							attributes: [
-								h.OnClick(options.toMessage(PickerMessage.ClickedAddManual())),
-								// Keys typed before the new row mounts reach the button; they belong to the row.
-								h.OnKeyDown((key) =>
-									options.toMessage(PickerMessage.PressedKeyOnAdd({ key })),
-								),
-							],
-						},
-						[icon(h, "PlusIcon"), "Add a component without a monitor"],
+						{ as: "ul", attributes: [h.AriaLabel("Components")] },
+						Arr.map(picker.rows, (row) =>
+							row.monitorId === null
+								? manualRowView(h, options, row, positionOf(row))
+								: monitorRowView(
+										h,
+										options,
+										row,
+										options.monitors.find((monitor) => monitor.id === row.monitorId),
+										positionOf(row),
+									),
+						),
 					),
-				],
-			),
-		],
-	)
+				]),
+		h.div(
+			[h.Class("flex flex-col items-start gap-2")],
+			[
+				urlField(h, options),
+				button(
+					h,
+					{
+						size: "sm",
+						variant: "ghost",
+						isDisabled: options.isDisabled,
+						className: "h-auto max-w-full self-start text-left whitespace-normal",
+						attributes: [
+							h.OnClick(options.toMessage(PickerMessage.ClickedAddManual())),
+							// Keys typed before the new row mounts reach the button; they belong to the row.
+							h.OnKeyDown((key) => options.toMessage(PickerMessage.PressedKeyOnAdd({ key }))),
+						],
+					},
+					[icon(h, "PlusIcon"), "Add a component without a monitor"],
+				),
+			],
+		),
+	])
 }

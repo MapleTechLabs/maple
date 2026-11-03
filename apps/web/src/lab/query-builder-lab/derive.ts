@@ -2,22 +2,23 @@ import { formulaLabel, queryLabel } from "@maple/query-engine/query-builder"
 import type { TimeseriesQuerySetDiagnostics } from "@maple/query-engine/query-set"
 import { QUERY_BUILDER_METRIC_TYPES, type QueryBuilderMetricType } from "@maple/query-model"
 import type { QueryDraft } from "../../page/kit/query-builder/draft"
-import type { ScrollAreaOverflowY } from "../../ui/scroll-area"
+import type { ScrollAreaOverflowY } from "@maple/views/ui/scroll-area"
 import type { FormulaDraft, MetricRow, RunPoint, ScrollMetrics } from "./model"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // The lab's pure helpers.
 
 const isMetricType = (value: string): value is QueryBuilderMetricType =>
-	QUERY_BUILDER_METRIC_TYPES.some((type) => type === value)
+	Arr.some(QUERY_BUILDER_METRIC_TYPES, (type) => type === value)
 
 /** `toRunPoints`: each row's bucket and its finite numeric series. */
 export const toRunPoints = (
 	rows: ReadonlyArray<Readonly<Record<string, string | number>>>,
 ): ReadonlyArray<RunPoint> =>
-	rows.map((row) => ({
+	Arr.map(rows, (row) => ({
 		bucket: String(row["bucket"] ?? ""),
-		series: Object.fromEntries(
-			Object.entries(row).flatMap(([key, value]) => {
+		series: Rec.fromEntries(
+			Arr.flatMap(Rec.toEntries(row), ([key, value]) => {
 				if (key === "bucket") return []
 				const numeric = typeof value === "number" ? value : Number(value)
 				return Number.isFinite(numeric) ? [[key, numeric] as const] : []
@@ -27,13 +28,14 @@ export const toRunPoints = (
 
 /** `debugWarnings`: the queries that fell back to a wider range. */
 export const debugWarnings = (diagnostics: TimeseriesQuerySetDiagnostics): ReadonlyArray<string> =>
-	diagnostics.queries
-		.filter((entry) => entry.fallbackUsed)
-		.map((entry) => `${entry.queryName} used fallback range`)
+	Arr.map(
+		Arr.filter(diagnostics.queries, (entry) => entry.fallbackUsed),
+		(entry) => `${entry.queryName} used fallback range`,
+	)
 
 /** The first six series keys across the points, in first-seen order. */
 export const seriesKeysOf = (points: ReadonlyArray<RunPoint>): ReadonlyArray<string> =>
-	Array.from(new Set(points.flatMap((point) => Object.keys(point.series)))).slice(0, 6)
+	Array.from(new Set(Arr.flatMap(points, (point) => Rec.keys(point.series)))).slice(0, 6)
 
 export type MetricOption = Readonly<{
 	value: string
@@ -44,13 +46,14 @@ export type MetricOption = Readonly<{
 
 /** `metricOptions`: one option per known name and type, first occurrence wins. */
 export const metricOptionsOf = (rows: ReadonlyArray<MetricRow>): ReadonlyArray<MetricOption> => {
-	const options = rows.flatMap((row): ReadonlyArray<MetricOption> => {
+	const options = Arr.flatMap(rows, (row): ReadonlyArray<MetricOption> => {
 		const { metricType } = row
 		if (!isMetricType(metricType)) return []
 		const value = `${row.metricName}::${metricType}`
 		return [{ value, label: `${row.metricName} (${metricType})`, metricName: row.metricName, metricType }]
 	})
-	return options.filter(
+	return Arr.filter(
+		options,
 		(option, index) => options.findIndex((other) => other.value === option.value) === index,
 	)
 }
@@ -59,7 +62,7 @@ export const metricOptionsOf = (rows: ReadonlyArray<MetricRow>): ReadonlyArray<M
 export const parseMetricSelection = (
 	raw: string,
 ): Readonly<{ metricName: string; metricType: QueryBuilderMetricType }> | null => {
-	const [metricName = "", metricType = ""] = raw.split("::")
+	const [metricName, metricType = ""] = Str.split("::")(raw)
 	if (metricName === "" || !isMetricType(metricType)) return null
 	return { metricName, metricType }
 }
@@ -71,7 +74,7 @@ export const withFirstMetric = (
 ): ReadonlyArray<QueryDraft> => {
 	const [first] = options
 	if (first === undefined) return queries
-	return queries.map((query) =>
+	return Arr.map(queries, (query) =>
 		query.dataSource !== "metrics" || query.metricName !== ""
 			? query
 			: { ...query, metricName: first.metricName, metricType: first.metricType },
@@ -79,10 +82,10 @@ export const withFirstMetric = (
 }
 
 export const relabelQueries = (queries: ReadonlyArray<QueryDraft>): ReadonlyArray<QueryDraft> =>
-	queries.map((query, index) => ({ ...query, name: queryLabel(index) }))
+	Arr.map(queries, (query, index) => ({ ...query, name: queryLabel(index) }))
 
 export const relabelFormulas = (formulas: ReadonlyArray<FormulaDraft>): ReadonlyArray<FormulaDraft> =>
-	formulas.map((formula, index) => ({ ...formula, name: formulaLabel(index) }))
+	Arr.map(formulas, (formula, index) => ({ ...formula, name: formulaLabel(index) }))
 
 // copied: the lab's own `GROUP_BY_OPTIONS` (not query-engine's, which lists other fields).
 const GROUP_BY_OPTIONS = {
@@ -99,12 +102,15 @@ export const groupByOptionsOf = (
 ): ReadonlyArray<string> => [
 	...GROUP_BY_OPTIONS[dataSource],
 	...(dataSource === "traces"
-		? attributeKeys
-				.filter(
+		? Arr.map(
+				Arr.filter(
+					attributeKeys,
 					(key) =>
-						!key.startsWith("http.request.header.") && !key.startsWith("http.response.header."),
-				)
-				.map((key) => `attr.${key}`)
+						!Str.startsWith("http.request.header.")(key) &&
+						!Str.startsWith("http.response.header.")(key),
+				),
+				(key) => `attr.${key}`,
+			)
 		: []),
 ]
 

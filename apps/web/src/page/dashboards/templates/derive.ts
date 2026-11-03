@@ -1,8 +1,9 @@
 import type { V2DashboardTemplate, V2DashboardTemplatePreview } from "@maple/domain/http/v2"
 import { ALL_VALUE, type ResolvedVariable, type VariableValues } from "@maple/query-engine"
 import { countLabel } from "@maple/ui/lib/format"
-import type { IconName } from "../../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 import type { MetricSeen } from "./model"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /** The empty-dashboard template, pinned below the list and excluded from every count. */
 export const BLANK_TEMPLATE_ID = "blank"
@@ -18,18 +19,22 @@ export const CATEGORY_ORDER = ["application", "database", "infrastructure", "mes
 
 /** "3 stats · 3 charts": line, area and bar all read as charts. */
 export const compositionLabel = (preview: V2DashboardTemplate["preview"]): string => {
-	const stats = preview.filter((widget) => widget.kind === "stat").length
-	const tables = preview.filter((widget) => widget.kind === "table").length
-	const lists = preview.filter((widget) => widget.kind === "list").length
+	const stats = Arr.filter(preview, (widget) => widget.kind === "stat").length
+	const tables = Arr.filter(preview, (widget) => widget.kind === "table").length
+	const lists = Arr.filter(preview, (widget) => widget.kind === "list").length
 	const charts = preview.length - stats - tables - lists
-	return [
-		stats > 0 ? countLabel(stats, "stat") : null,
-		charts > 0 ? countLabel(charts, "chart") : null,
-		tables > 0 ? countLabel(tables, "table") : null,
-		lists > 0 ? countLabel(lists, "list") : null,
-	]
-		.filter((part) => part !== null)
-		.join(" · ")
+	return Arr.join(
+		Arr.filter(
+			[
+				stats > 0 ? countLabel(stats, "stat") : null,
+				charts > 0 ? countLabel(charts, "chart") : null,
+				tables > 0 ? countLabel(tables, "table") : null,
+				lists > 0 ? countLabel(lists, "list") : null,
+			],
+			(part) => part !== null,
+		),
+		" · ",
+	)
 }
 
 export const widgetCountLabel = (template: V2DashboardTemplate): string =>
@@ -37,12 +42,12 @@ export const widgetCountLabel = (template: V2DashboardTemplate): string =>
 
 /** Matches name, description and tags. */
 export const templateMatches = (template: V2DashboardTemplate, query: string): boolean => {
-	const needle = query.trim().toLowerCase()
+	const needle = Str.toLowerCase(Str.trim(query))
 	if (needle.length === 0) return true
 	return (
-		template.name.toLowerCase().includes(needle) ||
-		template.description.toLowerCase().includes(needle) ||
-		template.tags.some((tag) => tag.toLowerCase().includes(needle))
+		Str.includes(needle)(Str.toLowerCase(template.name)) ||
+		Str.includes(needle)(Str.toLowerCase(template.description)) ||
+		Arr.some(template.tags, (tag) => Str.includes(needle)(Str.toLowerCase(tag)))
 	)
 }
 
@@ -111,22 +116,22 @@ const READY: TemplateReadiness = {
 const prefixLabel = (prefix: string): string | null => (prefix === "" ? null : `${prefix}*`)
 
 const firstPrefixLabel = (prefixes: ReadonlyArray<string>): string | null =>
-	prefixes.map(prefixLabel).find((value) => value !== null) ?? null
+	Arr.map(prefixes, prefixLabel).find((value) => value !== null) ?? null
 
 /** `computeTemplateReadiness`: `metrics: null` (unknown) reads every template as ready. */
 export const computeReadiness = (
 	templates: ReadonlyArray<V2DashboardTemplate>,
 	metrics: ReadonlyArray<MetricSeen> | null,
 ): ReadonlyMap<string, TemplateReadiness> => {
-	if (metrics === null) return new Map(templates.map((template) => [template.id, READY]))
+	if (metrics === null) return new Map(Arr.map(templates, (template) => [template.id, READY]))
 	const matches = (prefix: string) =>
-		prefix === "" ? metrics : metrics.filter((metric) => metric.metricName.startsWith(prefix))
+		prefix === "" ? metrics : Arr.filter(metrics, (metric) => Str.startsWith(prefix)(metric.metricName))
 	return new Map(
-		templates.map((template): [string, TemplateReadiness] => {
+		Arr.map(templates, (template): [string, TemplateReadiness] => {
 			const prefixes = template.requiredMetricPrefixes
 			if (prefixes.length === 0) return [template.id, READY]
-			const matched = prefixes.map(matches)
-			const ready = matched.every((rows) => rows.length > 0)
+			const matched = Arr.map(prefixes, matches)
+			const ready = Arr.every(matched, (rows) => rows.length > 0)
 			const flat = matched.flat()
 			return [
 				template.id,
@@ -136,7 +141,7 @@ export const computeReadiness = (
 						? null
 						: (template.requirement?.missing ?? `no ${firstPrefixLabel(prefixes) ?? "data"}`),
 					prefixLabel: firstPrefixLabel(prefixes),
-					metricCount: new Set(flat.map((metric) => metric.metricName)).size,
+					metricCount: new Set(Arr.map(flat, (metric) => metric.metricName)).size,
 					lastSeen: flat.reduce<string | null>(
 						(latest, metric) =>
 							latest === null || metric.lastSeen > latest ? metric.lastSeen : latest,
@@ -153,8 +158,8 @@ export const computeReadiness = (
  * declared default, else All. Without these a `"$project"` filter reaches the query literally.
  */
 export const previewVariableValues = (variables: V2DashboardTemplatePreview["variables"]): VariableValues =>
-	Object.fromEntries(
-		variables.flatMap((variable): ReadonlyArray<readonly [string, ResolvedVariable]> =>
+	Rec.fromEntries(
+		Arr.flatMap(variables, (variable): ReadonlyArray<readonly [string, ResolvedVariable]> =>
 			variable.defaultValue !== undefined && variable.defaultValue !== ""
 				? [[variable.name, { value: variable.defaultValue, isAll: false, options: [] }]]
 				: variable.includeAll === true

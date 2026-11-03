@@ -2,6 +2,7 @@ import type { SupabaseAdvisorLint, SupabaseLogIssue, SupabaseProjectInsights } f
 import { formatPercent } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
 import { logSourceLabel, SATURATION } from "../health"
+import { Array as Arr, String as Str } from "effect"
 
 // "Needs attention": advisor findings, recurring error logs and connection saturation, worst first.
 
@@ -34,7 +35,7 @@ const advisorItem = (lint: SupabaseAdvisorLint): AttentionItem => ({
 	label: lint.advisor === "security" ? "Security" : "Performance",
 	tone: lint.level === "ERROR" ? "crit" : "warn",
 	title: lint.title,
-	detail: `Advisor · ${lint.detail.replaceAll("`", "")}`,
+	detail: `Advisor · ${Str.replaceAll("`", "")(lint.detail)}`,
 	lastSeen: null,
 })
 
@@ -59,7 +60,10 @@ const saturationItem = (peak: number, limit: number): AttentionItem => ({
 /** Advisor errors, error logs, saturation, then advisor warnings; uncapped, the panel shows the first `MAX_ATTENTION_ITEMS`. */
 export const needsAttention = (inputs: AttentionInputs): ReadonlyArray<AttentionItem> => {
 	const advisors = inputs.insights?.advisors
-	const logs = inputs.issues.filter((issue) => issue.maxSeverity >= ERROR_SEVERITY).map(issueItem)
+	const logs = Arr.map(
+		Arr.filter(inputs.issues, (issue) => issue.maxSeverity >= ERROR_SEVERITY),
+		issueItem,
+	)
 	const connections = inputs.connections
 	const saturation =
 		connections !== null &&
@@ -68,9 +72,9 @@ export const needsAttention = (inputs: AttentionInputs): ReadonlyArray<Attention
 			? [saturationItem(connections.peak, connections.limit)]
 			: []
 	return [
-		...(advisors?.error ?? []).map(advisorItem),
+		...Arr.map(advisors?.error ?? [], advisorItem),
 		...logs,
 		...saturation,
-		...(advisors?.warn ?? []).map(advisorItem),
+		...Arr.map(advisors?.warn ?? [], advisorItem),
 	]
 }

@@ -1,4 +1,4 @@
-import { Effect, Result } from "effect"
+import { Effect, Result, Array as Arr, String as Str } from "effect"
 import { deepStrictEqual, ok, strictEqual, throws } from "node:assert"
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -156,7 +156,7 @@ const exampleProjectors = (): ProjectorRegistry =>
 				return value
 			},
 			decodeConfig: (value) => {
-				if (typeof value !== "object" || value === null || Array.isArray(value))
+				if (typeof value !== "object" || value === null || Arr.isArray(value))
 					throw new Error("example projector config must be an object")
 				return {}
 			},
@@ -226,14 +226,19 @@ describe("LocalEventingRuntime", () => {
 				strictEqual(observed(runtime.evaluateOtlp("logs", exampleRecordObserved)).events.length, 1)
 
 				const malformed = structuredClone(exampleRecordObserved)
-				firstLogRecord(malformed).attributes = firstLogRecord(malformed).attributes.filter(
+				firstLogRecord(malformed).attributes = Arr.filter(
+					firstLogRecord(malformed).attributes,
 					({ key }) => key !== "example.collection.name",
 				)
 				strictEqual(observed(runtime.evaluateOtlp("logs", malformed)).failures.length, 1)
 
 				const mismatched = structuredClone(exampleRecordObserved)
-				firstLogRecord(mismatched).attributes = firstLogRecord(mismatched).attributes.map((entry) =>
-					entry.key === "example.record.sequence" ? attr(entry.key, { stringValue: "42" }) : entry,
+				firstLogRecord(mismatched).attributes = Arr.map(
+					firstLogRecord(mismatched).attributes,
+					(entry) =>
+						entry.key === "example.record.sequence"
+							? attr(entry.key, { stringValue: "42" })
+							: entry,
 				)
 				deepStrictEqual(observed(runtime.evaluateOtlp("logs", mismatched)).typeMismatchFields, [
 					"attribute:example.record.sequence",
@@ -254,10 +259,10 @@ describe("LocalEventingRuntime", () => {
 				ok(operationOutcomes.includes("projection:failure"))
 				ok(operationOutcomes.includes("selector_type_mismatch:observed"))
 				const serialized = metrics.attributes()
-				strictEqual(serialized.includes("Observe example events"), false)
-				strictEqual(serialized.includes("01K20EXAMPLERECORD42"), false)
-				strictEqual(serialized.includes("example-record-observed"), false)
-				strictEqual(serialized.includes("example.record.sequence"), false)
+				strictEqual(Str.includes("Observe example events")(serialized), false)
+				strictEqual(Str.includes("01K20EXAMPLERECORD42")(serialized), false)
+				strictEqual(Str.includes("example-record-observed")(serialized), false)
+				strictEqual(Str.includes("example.record.sequence")(serialized), false)
 			} finally {
 				await store.close()
 			}
@@ -284,7 +289,10 @@ describe("LocalEventingRuntime", () => {
 		aliasedRecord.attributes = [
 			attr("event.id", { stringValue: "   " }),
 			attr("cloudevents.id", { stringValue: " cloud-event-42 " }),
-			...aliasedRecord.attributes.filter(({ key }) => !["event.id", "cloudevents.id"].includes(key)),
+			...Arr.filter(
+				aliasedRecord.attributes,
+				({ key }) => !["event.id", "cloudevents.id"].includes(key),
+			),
 		]
 		const [aliasedSignal] = run(normalizeOtlpLogs(aliased, "2026-08-07T20:00:00Z"))
 		strictEqual(aliasedSignal?.occurrenceId, "cloud-event-42")
@@ -292,7 +300,7 @@ describe("LocalEventingRuntime", () => {
 
 		const derivedA = structuredClone(aliased)
 		const derivedARecord = firstLogRecord(derivedA)
-		derivedARecord.attributes = derivedARecord.attributes.map((entry) =>
+		derivedARecord.attributes = Arr.map(derivedARecord.attributes, (entry) =>
 			["event.id", "cloudevents.id"].includes(entry.key)
 				? attr(entry.key, { stringValue: entry.key === "event.id" ? "" : " \t " })
 				: entry,
@@ -453,7 +461,7 @@ describe("LocalEventingRuntime", () => {
 				strictEqual(staged.inserted, 1)
 				strictEqual(run(runtime.listReady()).events.length, 0)
 				deepStrictEqual(
-					run(runtime.listStaged()).events.map(({ event }) => event),
+					Arr.map(run(runtime.listStaged()).events, ({ event }) => event),
 					first.events,
 				)
 				run(runtime.activate(projection({ revision: 2, enabled: false })))
@@ -482,7 +490,7 @@ describe("LocalEventingRuntime", () => {
 				deepStrictEqual(retry.recoveredEventIds, staged.eventIds)
 				run(runtime.markReady(retry.recoveredEventIds))
 				deepStrictEqual(
-					run(runtime.listReady()).events.map(({ event }) => event),
+					Arr.map(run(runtime.listReady()).events, ({ event }) => event),
 					first.events,
 				)
 				deepStrictEqual(run(runtime.listStaged()).events, [])
@@ -501,7 +509,7 @@ describe("LocalEventingRuntime", () => {
 				const first = firstLogRecord(request)
 				first.attributes.push(attr("example.projector.ignored", { stringValue: "first" }))
 				const second = structuredClone(first)
-				second.attributes = second.attributes.map((entry) =>
+				second.attributes = Arr.map(second.attributes, (entry) =>
 					entry.key === "example.projector.ignored"
 						? attr(entry.key, { stringValue: "second" })
 						: entry,

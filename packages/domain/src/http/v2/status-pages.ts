@@ -1,5 +1,5 @@
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
-import { Schema, Struct } from "effect"
+import { Option, Schema, Struct, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	StatusPageAutoIncidents,
 	StatusPageComponentId,
@@ -600,7 +600,7 @@ const hexOrNull = (value: string | null | undefined): string | null =>
 export const normalizeStatusPageConfig = (config: StatusPageConfig) => {
 	const theme = { ...DEFAULT_STATUS_PAGE_THEME, ...config.theme }
 	return {
-		name: config.name.trim(),
+		name: Str.trim(config.name),
 		slug: config.slug,
 		description: textOrNull(config.description),
 		website_url: textOrNull(config.website_url),
@@ -617,9 +617,9 @@ export const normalizeStatusPageConfig = (config: StatusPageConfig) => {
 			card: hexOrNull(theme.card),
 			border: hexOrNull(theme.border),
 		},
-		components: config.components.map((component) => ({
+		components: Arr.map(config.components, (component) => ({
 			...(component.id === undefined ? undefined : { id: component.id }),
-			name: component.name.trim(),
+			name: Str.trim(component.name),
 			description: textOrNull(component.description),
 			group: textOrNull(component.group),
 			monitor_id: component.monitor_id ?? null,
@@ -629,27 +629,36 @@ export const normalizeStatusPageConfig = (config: StatusPageConfig) => {
 	}
 }
 
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+/** `JSON.stringify`: `undefined` for a value JSON cannot represent. */
+const stringifyJson = (value: unknown): string | undefined => Option.getOrUndefined(encodeJsonOption(value))
+
 /** JSON with object keys sorted at every depth; arrays keep their order. */
 const canonicalJson = (value: unknown): string => {
-	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`
+	if (Arr.isArray(value)) return `[${Arr.join(Arr.map(value, canonicalJson), ",")}]`
 	if (typeof value === "object" && value !== null)
-		return `{${Object.entries(value)
-			.filter(([, entry]) => entry !== undefined)
-			.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-			.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
-			.join(",")}}`
-	return JSON.stringify(value) ?? "null"
+		return `{${Arr.join(
+			Arr.map(
+				Arr.filter(Rec.toEntries(value), ([, entry]) => entry !== undefined).sort(([left], [right]) =>
+					left < right ? -1 : left > right ? 1 : 0,
+				),
+				([key, entry]) => `${stringifyJson(key)}:${canonicalJson(entry)}`,
+			),
+			",",
+		)}}`
+	return stringifyJson(value) ?? "null"
 }
 
 /** cyrb53 over UTF-16 code units: 53 bits, the same in browsers, workerd and Node. */
 const cyrb53 = (text: string): number => {
 	const seed: readonly [number, number] = [0xdeadbeef, 0x41c6ce57]
-	const [a, b] = Array.from({ length: text.length }, (_, index) => text.charCodeAt(index)).reduce(
+	const [a, b] = Arr.reduce(
+		Array.from({ length: text.length }, (_, index) => text.charCodeAt(index)),
+		seed,
 		([h1, h2], code): readonly [number, number] => [
 			Math.imul(h1 ^ code, 2654435761),
 			Math.imul(h2 ^ code, 1597334677),
 		],
-		seed,
 	)
 	const a1 = Math.imul(a ^ (a >>> 16), 2246822507) ^ Math.imul(b ^ (b >>> 13), 3266489909)
 	const b1 = Math.imul(b ^ (b >>> 16), 2246822507) ^ Math.imul(a1 ^ (a1 >>> 13), 3266489909)
@@ -705,7 +714,7 @@ export interface StatusPageConfigChanges extends StatusPageConfigChangeSet {
 	readonly duplicateIds: ReadonlyArray<StatusPageComponentId>
 }
 
-const sameValue = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
+const sameValue = (left: unknown, right: unknown) => stringifyJson(left) === stringifyJson(right)
 
 /** What applying `next` over the page's current config would change; components by name. */
 export const diffStatusPageConfig = (
@@ -715,35 +724,43 @@ export const diffStatusPageConfig = (
 	const before = normalizeStatusPageConfig(current)
 	const after = normalizeStatusPageConfig(next)
 	const existing = new Map(
-		before.components.flatMap((component) =>
+		Arr.flatMap(before.components, (component) =>
 			component.id === undefined ? [] : [[component.id, component] as const],
 		),
 	)
-	const listedIds = after.components.flatMap((component) =>
+	const listedIds = Arr.flatMap(after.components, (component) =>
 		component.id === undefined ? [] : [component.id],
 	)
 	const listed = new Set(listedIds)
-	const keptOrder = listedIds.filter((id) => existing.has(id))
+	const keptOrder = Arr.filter(listedIds, (id) => existing.has(id))
 	return {
-		fields: PAGE_CONFIG_FIELDS.filter((field) => !sameValue(before[field], after[field])),
-		created: after.components.filter((component) => component.id === undefined).map((c) => c.name),
-		updated: after.components.flatMap((component) => {
+		fields: Arr.filter(PAGE_CONFIG_FIELDS, (field) => !sameValue(before[field], after[field])),
+		created: Arr.map(
+			Arr.filter(after.components, (component) => component.id === undefined),
+			(c) => c.name,
+		),
+		updated: Arr.flatMap(after.components, (component) => {
 			const previous = component.id === undefined ? undefined : existing.get(component.id)
 			if (previous === undefined) return []
-			const changed = COMPONENT_CONFIG_FIELDS.some(
+			const changed = Arr.some(
+				COMPONENT_CONFIG_FIELDS,
 				(field) => !sameValue(previous[field], component[field]),
 			)
 			return changed ? [component.name] : []
 		}),
-		deleted: before.components
-			.filter((component) => component.id !== undefined && !listed.has(component.id))
-			.map((component) => component.name),
+		deleted: Arr.map(
+			Arr.filter(
+				before.components,
+				(component) => component.id !== undefined && !listed.has(component.id),
+			),
+			(component) => component.name,
+		),
 		reordered: !sameValue(
 			keptOrder,
-			[...existing.keys()].filter((id) => listed.has(id)),
+			Arr.filter([...existing.keys()], (id) => listed.has(id)),
 		),
-		unknownIds: [...listed].filter((id) => !existing.has(id)),
-		duplicateIds: [...listed].filter((id) => listedIds.indexOf(id) !== listedIds.lastIndexOf(id)),
+		unknownIds: Arr.filter([...listed], (id) => !existing.has(id)),
+		duplicateIds: Arr.filter([...listed], (id) => listedIds.indexOf(id) !== listedIds.lastIndexOf(id)),
 	}
 }
 

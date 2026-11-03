@@ -7,9 +7,9 @@ import type {
 	SecurityAuditTarget,
 } from "@maple/domain/http"
 import type { SecurityAuditFindingStatus } from "@maple/domain/security-audit"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData } from "foldkit"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { SecurityFindingsSearch } from "../../../route/search"
 import { type Gate, gateOf, isLive, isSameMonth, locationOf } from "../kit/format"
 import { bucketOf, type BucketCounts, countsFromRun, isUnverified, SEVERITY_BUCKETS } from "../kit/findings"
@@ -22,7 +22,7 @@ export const activeRepositoriesOf = (model: Model): ReadonlyArray<GithubRepoSumm
 	Option.match(AsyncData.getData(model.githubStatus.data), {
 		onNone: () => [],
 		onSome: (status) =>
-			status.connected ? status.repositories.filter((repo) => repo.status === "active") : [],
+			status.connected ? Arr.filter(status.repositories, (repo) => repo.status === "active") : [],
 	})
 
 export const targetsOf = (model: Model): ReadonlyArray<SecurityAuditTarget> =>
@@ -38,13 +38,9 @@ export const runsOf = (model: Model): ReadonlyArray<SecurityAuditRun> =>
 		onSome: (response) => [...response.runs].sort((a, b) => b.startedAt - a.startedAt),
 	})
 
-export const latestRunOf = (
-	runs: ReadonlyArray<SecurityAuditRun>,
-	targetId: string,
-): SecurityAuditRun | undefined => runs.find((run) => run.targetId === targetId)
-
 /** Live runs in either list: polling keeps going while any is. */
-export const runningRuns = (model: Model): ReadonlyArray<SecurityAuditRun> => allRuns(model).filter(isLive)
+export const runningRuns = (model: Model): ReadonlyArray<SecurityAuditRun> =>
+	Arr.filter(allRuns(model), isLive)
 
 export const latestDetailOf = (model: Model, runId: string): SecurityAuditRunDetail | null =>
 	Option.getOrNull(
@@ -69,31 +65,33 @@ export const findingsStateOf = (model: Model): FindingsState => {
 		return gate === null ? { _tag: "Failed", failure: model.targets.data.error } : { _tag: "Gated", gate }
 	}
 	const targets = targetsOf(model)
-	const slots = targets.map((target) => model.findings[target.id])
-	const failures = slots.flatMap((slot) =>
+	const slots = Arr.map(targets, (target) => model.findings[target.id])
+	const failures = Arr.flatMap(slots, (slot) =>
 		slot !== undefined && AsyncData.isFailure(slot.data) ? [slot.data.error] : [],
 	)
-	const gated = failures.map(gateOf).find((gate) => gate !== null)
+	const gated = Arr.map(failures, gateOf).find((gate) => gate !== null)
 	if (gated !== undefined && gated !== null) return { _tag: "Gated", gate: gated }
 	const failure = failures[0]
 	if (failure !== undefined) return { _tag: "Failed", failure }
 	if (!AsyncData.hasData(model.targets.data)) return { _tag: "Loading" }
-	const loaded = slots.map((slot) => (slot === undefined ? Option.none() : AsyncData.getData(slot.data)))
-	if (loaded.some(Option.isNone)) return { _tag: "Loading" }
+	const loaded = Arr.map(slots, (slot) =>
+		slot === undefined ? Option.none() : AsyncData.getData(slot.data),
+	)
+	if (Arr.some(loaded, Option.isNone)) return { _tag: "Loading" }
 	return {
 		_tag: "Ready",
-		findings: loaded.flatMap((response) =>
+		findings: Arr.flatMap(loaded, (response) =>
 			Option.match(response, { onNone: () => [], onSome: (r) => r.findings }),
 		),
-		isRefreshing: slots.some((slot) => slot !== undefined && AsyncData.isRefreshing(slot.data)),
+		isRefreshing: Arr.some(slots, (slot) => slot !== undefined && AsyncData.isRefreshing(slot.data)),
 	}
 }
 
 export const openConfirmed = (findings: ReadonlyArray<SecurityAuditFinding>) =>
-	findings.filter((finding) => finding.verdict === "confirmed" && finding.status === "open")
+	Arr.filter(findings, (finding) => finding.verdict === "confirmed" && finding.status === "open")
 
 export const openNeedsValidation = (findings: ReadonlyArray<SecurityAuditFinding>) =>
-	findings.filter((finding) => finding.verdict === "needs_validation" && finding.status === "open")
+	Arr.filter(findings, (finding) => finding.verdict === "needs_validation" && finding.status === "open")
 
 /** Open leads, worst first: by severity, an estimate counting as one; proven before unverified at
  * the same level; unscored leads last; then by when they were last seen. */
@@ -111,7 +109,7 @@ export const openLeads = (
 const CLOSED_UNIT_STATUSES: ReadonlyArray<string> = ["covered", "candidate", "not_applicable", "out_of_scope"]
 
 export const coverageOf = (detail: SecurityAuditRunDetail): Readonly<{ closed: number; total: number }> => ({
-	closed: CLOSED_UNIT_STATUSES.reduce((sum, status) => sum + (detail.unitCounts[status] ?? 0), 0),
+	closed: Arr.reduce(CLOSED_UNIT_STATUSES, 0, (sum, status) => sum + (detail.unitCounts[status] ?? 0)),
 	total: detail.unitTotal,
 })
 
@@ -119,7 +117,7 @@ export const coverageOf = (detail: SecurityAuditRunDetail): Readonly<{ closed: n
 export const coverageAcross = (
 	model: Model,
 ): Readonly<{ closed: number; total: number; targets: number }> | null => {
-	const details = targetsOf(model).flatMap((target) => {
+	const details = Arr.flatMap(targetsOf(model), (target) => {
 		const run = latestRunFor(model, target.id)
 		const detail = run === undefined ? null : latestDetailOf(model, run.id)
 		return detail === null || detail.unitTotal === 0 ? [] : [coverageOf(detail)]
@@ -140,7 +138,7 @@ export const coverageAcross = (
 export const coverageSettled = (model: Model): boolean =>
 	Option.isSome(AsyncData.getData(model.targets.data)) &&
 	Option.isSome(AsyncData.getData(model.runs.data)) &&
-	targetsOf(model).every((target) => {
+	Arr.every(targetsOf(model), (target) => {
 		const run = latestRunFor(model, target.id)
 		return run === undefined || latestDetailOf(model, run.id) !== null
 	})
@@ -168,22 +166,22 @@ const fresher = (a: SecurityAuditRun, b: SecurityAuditRun): SecurityAuditRun =>
 /** Runs merged by id, the fresher copy kept, newest first. */
 const mergeRuns = (lists: ReadonlyArray<ReadonlyArray<SecurityAuditRun>>): ReadonlyArray<SecurityAuditRun> =>
 	[
-		...lists
-			.flat()
-			.reduce((byId, run) => {
-				const held = byId.get(run.id)
-				return byId.set(run.id, held === undefined ? run : fresher(held, run))
-			}, new Map<string, SecurityAuditRun>())
-			.values(),
+		...Arr.reduce(lists.flat(), new Map<string, SecurityAuditRun>(), (byId, run) => {
+			const held = byId.get(run.id)
+			return byId.set(run.id, held === undefined ? run : fresher(held, run))
+		}).values(),
 	].sort((a, b) => b.startedAt - a.startedAt)
 
 /** A target's runs: its own list and the polled global list together, so neither goes stale. */
 export const runsForTarget = (model: Model, targetId: string): ReadonlyArray<SecurityAuditRun> =>
-	mergeRuns([targetRunsOf(model, targetId) ?? [], runsOf(model).filter((run) => run.targetId === targetId)])
+	mergeRuns([
+		targetRunsOf(model, targetId) ?? [],
+		Arr.filter(runsOf(model), (run) => run.targetId === targetId),
+	])
 
 /** Every run either list holds. */
 export const allRuns = (model: Model): ReadonlyArray<SecurityAuditRun> =>
-	mergeRuns([runsOf(model), ...targetsOf(model).map((target) => targetRunsOf(model, target.id) ?? [])])
+	mergeRuns([runsOf(model), ...Arr.map(targetsOf(model), (target) => targetRunsOf(model, target.id) ?? [])])
 
 export const latestRunFor = (model: Model, targetId: string): SecurityAuditRun | undefined =>
 	runsForTarget(model, targetId)[0]
@@ -206,11 +204,11 @@ export const runCountsOf = (
 ): Readonly<{ buckets: BucketCounts; unverified: number }> | null => {
 	const responses = [
 		Option.getOrNull(AsyncData.getData(model.runs.data)),
-		...Object.values(model.targetRuns).map((slot) => Option.getOrNull(AsyncData.getData(slot.data))),
+		...Arr.map(Rec.values(model.targetRuns), (slot) => Option.getOrNull(AsyncData.getData(slot.data))),
 	]
-	const counts = responses
-		.map((response) => response?.findingCounts?.[runId])
-		.find((entry) => entry !== undefined)
+	const counts = Arr.map(responses, (response) => response?.findingCounts?.[runId]).find(
+		(entry) => entry !== undefined,
+	)
 	return counts === undefined ? null : { buckets: countsFromRun(counts), unverified: counts.unverified }
 }
 
@@ -229,19 +227,17 @@ export type Spend = Readonly<{
 
 /** This month's runs across every target's own list (the global list stops at the cap). */
 export const spendThisMonth = (model: Model): Spend => {
-	const lists = targetsOf(model).map((target) => targetRunsOf(model, target.id))
-	const isPartial = lists.some((runs) => runs === null || runs.length >= RUN_LIST_CAP)
-	return allRuns(model)
-		.filter((run) => isSameMonth(run.startedAt, model.nowMs))
-		.reduce<Spend>(
-			(sum, run) => ({
-				costUsd: sum.costUsd + (run.costUsd ?? 0) + run.sandboxUsd,
-				tokens: sum.tokens + run.inputTokens + run.outputTokens,
-				unpriced: sum.unpriced + (run.costUsd === null ? 1 : 0),
-				isPartial: sum.isPartial,
-			}),
-			{ costUsd: 0, tokens: 0, unpriced: 0, isPartial },
-		)
+	const lists = Arr.map(targetsOf(model), (target) => targetRunsOf(model, target.id))
+	const isPartial = Arr.some(lists, (runs) => runs === null || runs.length >= RUN_LIST_CAP)
+	return Arr.filter(allRuns(model), (run) => isSameMonth(run.startedAt, model.nowMs)).reduce<Spend>(
+		(sum, run) => ({
+			costUsd: sum.costUsd + (run.costUsd ?? 0) + run.sandboxUsd,
+			tokens: sum.tokens + run.inputTokens + run.outputTokens,
+			unpriced: sum.unpriced + (run.costUsd === null ? 1 : 0),
+			isPartial: sum.isPartial,
+		}),
+		{ costUsd: 0, tokens: 0, unpriced: 0, isPartial },
+	)
 }
 
 // FINDINGS LIST
@@ -255,14 +251,15 @@ export const statusTabOf = (search: SecurityFindingsSearch): StatusTab => search
 const matchesStatus = (status: SecurityAuditFindingStatus, tab: StatusTab) => tab === "all" || status === tab
 
 export const countForTab = (findings: ReadonlyArray<SecurityAuditFinding>, tab: StatusTab): number =>
-	findings.filter((finding) => finding.verdict !== "rejected" && matchesStatus(finding.status, tab)).length
+	Arr.filter(findings, (finding) => finding.verdict !== "rejected" && matchesStatus(finding.status, tab))
+		.length
 
 const matchesQuery = (finding: SecurityAuditFinding, query: string): boolean => {
 	if (query === "") return true
-	const haystack = [finding.record.title, locationOf(finding.record) ?? "", finding.fingerprint]
-		.join("\n")
-		.toLowerCase()
-	return haystack.includes(query.toLowerCase())
+	const haystack = Str.toLowerCase(
+		Arr.join([finding.record.title, locationOf(finding.record) ?? "", finding.fingerprint], "\n"),
+	)
+	return Str.includes(Str.toLowerCase(query))(haystack)
 }
 
 /** The rows the toolbar leaves before the severity tile: what the tiles count. */
@@ -272,12 +269,13 @@ export const toolbarFindings = (
 	query: string,
 ): ReadonlyArray<SecurityAuditFinding> => {
 	const tab = statusTabOf(search)
-	return findings.filter(
+	return Arr.filter(
+		findings,
 		(finding) =>
 			matchesStatus(finding.status, tab) &&
 			(search.rejected === true || finding.verdict !== "rejected") &&
 			(search.target === undefined || finding.targetId === search.target) &&
-			matchesQuery(finding, query.trim()),
+			matchesQuery(finding, Str.trim(query)),
 	)
 }
 
@@ -287,7 +285,8 @@ export const filteredFindings = (
 	search: SecurityFindingsSearch,
 	query: string,
 ): ReadonlyArray<SecurityAuditFinding> =>
-	toolbarFindings(findings, search, query).filter(
+	Arr.filter(
+		toolbarFindings(findings, search, query),
 		(finding) =>
 			search.severity === undefined ||
 			finding.verdict === "rejected" ||

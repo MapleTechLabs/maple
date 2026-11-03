@@ -2,21 +2,22 @@ import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
 import { SEVERITY_TONE } from "@maple/web-data/anomalies/format"
 import { anomalyIncidentFromV2 } from "../../../lib/services/anomalies"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { statusDot } from "../../../ui/status-dot"
+import { badge } from "@maple/views/ui/display"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { anomalyRow } from "../../anomalies/kit/row"
 import { sectionHeading } from "../../kit/section-heading"
 import type { Model } from "./model"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The related anomalies section and the open anomaly badge.
 
 export const relatedAnomaliesOf = (model: Model): ReadonlyArray<AnomalyIncidentDocument> =>
 	Option.match(AsyncData.getData(model.anomalies.data), {
 		onNone: () => [],
-		onSome: (incidents) => incidents.map(anomalyIncidentFromV2),
+		onSome: (incidents) => Arr.map(incidents, anomalyIncidentFromV2),
 	})
 
 /** Nothing at all (header included) when no detector incident points here. */
@@ -28,11 +29,16 @@ export const relatedAnomaliesSection = <M>(
 	if (incidents.length === 0) return []
 	const sorted = [...incidents].sort((a, b) => {
 		if ((a.status === "open") !== (b.status === "open")) return a.status === "open" ? -1 : 1
-		return b.lastTriggeredAt.localeCompare(a.lastTriggeredAt)
+		return Str.localeCompare(a.lastTriggeredAt)(b.lastTriggeredAt)
 	})
 	return [
-		h.section(
-			[h.AriaLabelledBy("related-anomalies-heading"), h.Class("flex shrink-0 flex-col gap-3.5")],
+		vstack(
+			h,
+			{
+				as: "section",
+				className: "shrink-0 gap-3.5",
+				attributes: [h.AriaLabelledBy("related-anomalies-heading")],
+			},
 			[
 				sectionHeading(h, {
 					id: "related-anomalies-heading",
@@ -40,8 +46,12 @@ export const relatedAnomaliesSection = <M>(
 					hint: countLabel(sorted.length, "detector incident"),
 				}),
 				h.div(
-					[h.Class("overflow-hidden rounded-md border border-border-subtle divide-y divide-border-subtle")],
-					sorted.map((incident) =>
+					[
+						h.Class(
+							"overflow-hidden rounded-md border border-border-subtle divide-y divide-border-subtle",
+						),
+					],
+					Arr.map(sorted, (incident) =>
 						anomalyRow(h, {
 							incident,
 							nowMs: options.nowMs,
@@ -60,16 +70,13 @@ export const openAnomalyBadge = <M>(
 	h: HtmlBuilder<M>,
 	incidents: ReadonlyArray<AnomalyIncidentDocument>,
 ): ReadonlyArray<Html> => {
-	const open = incidents.filter((incident) => incident.status === "open")
+	const open = Arr.filter(incidents, (incident) => incident.status === "open")
 	if (open.length === 0) return []
 	const tone =
-		SEVERITY_TONE[open.some((incident) => incident.severity === "critical") ? "critical" : "warning"]
+		SEVERITY_TONE[Arr.some(open, (incident) => incident.severity === "critical") ? "critical" : "warning"]
 	return [
 		badge(h, { variant: "outline", className: tone.badge }, [
-			h.span(
-				[h.Class("flex items-center gap-1.5")],
-				[statusDot(h, { tone: tone.tone }), "Anomaly open"],
-			),
+			hstack(h, { gap: "1.5", as: "span" }, [statusDot(h, { tone: tone.tone }), "Anomaly open"]),
 		]),
 	]
 }

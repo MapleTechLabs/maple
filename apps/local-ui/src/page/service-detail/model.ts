@@ -1,8 +1,9 @@
-import * as Chart from "@maple/web/charts/chart"
-import { ChartRuntime } from "@maple/web/charts/chart-runtime"
-import { ThemeColors } from "@maple/web/charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { Schema } from "effect"
-import { SlotSchema } from "../../data/slot"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { ServiceCatalogEntry } from "../services/model"
 
 // The service detail page's data, as Schemas.
@@ -49,10 +50,10 @@ export const Model = Schema.TaggedStruct("ServiceDetailPage", {
 	maybeAnchorMs: Schema.Option(Schema.Number),
 	/** The clock at the last read: relative times and `chartWindow`'s "now". */
 	nowMs: Schema.Number,
-	overview: SlotSchema(Overview),
-	operations: SlotSchema(Schema.Array(OperationRow)),
-	timeseries: SlotSchema(Schema.Array(SeriesPoint)),
-	golden: SlotSchema(Schema.Array(GoldenSignalRow)),
+	overview: KeyedSchema(Overview, LoadFailure),
+	operations: KeyedSchema(Schema.Array(OperationRow), LoadFailure),
+	timeseries: KeyedSchema(Schema.Array(SeriesPoint), LoadFailure),
+	golden: KeyedSchema(Schema.Array(GoldenSignalRow), LoadFailure),
 	overviewUpdatedAtMs: Schema.Number,
 	isRefreshing: Schema.Boolean,
 	chartRuntime: ChartRuntime,

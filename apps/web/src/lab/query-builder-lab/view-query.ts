@@ -6,17 +6,17 @@ import {
 } from "../../lib/query-builder/performance-hints"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AsyncData } from "foldkit"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { QueryChange, type AddOnKey } from "../../page/kit/query-builder/change"
 import type { QueryDraft } from "../../page/kit/query-builder/draft"
 import { textInput } from "../../page/kit/query-builder/parts"
 import { whereEditor } from "../../page/kit/query-builder/where-editor"
-import { button } from "../../ui/button"
-import { card, cardHeader, cardPanel } from "../../ui/card"
-import * as Checkbox from "../../ui/checkbox"
-import { icon } from "../../ui/icon"
-import { label } from "../../ui/label"
-import { toggle } from "../../ui/toggle"
+import { button } from "@maple/views/ui/button"
+import { card, cardHeader, cardPanel } from "@maple/views/ui/card"
+import * as Checkbox from "@maple/views/ui/checkbox"
+import { icon } from "@maple/views/ui/icon"
+import { label } from "@maple/views/ui/label"
+import { toggle } from "@maple/views/ui/toggle"
 import { metricOptionsOf } from "./derive"
 import { Message, type Model } from "./model"
 import { fieldEyebrow, labSelect } from "./view-controls"
@@ -238,7 +238,7 @@ const addOnToggles = (h: H, query: QueryDraft): Html =>
 			fieldEyebrow(h, "Add-ons"),
 			h.div(
 				[h.Class("flex flex-wrap gap-1.5")],
-				ADD_ONS.map((addOn) => {
+				Arr.map(ADD_ONS, (addOn) => {
 					const isOn = query.addOns[addOn.key]
 					// A pressed toggle with a check, so an add-on in use reads as on at a glance.
 					return toggle(

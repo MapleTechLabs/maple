@@ -1,18 +1,17 @@
 import { formatRate } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { skeletonListGapStyles, skeletonListStyles } from "@maple/ui/styles/ui/skeleton"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../charts/chart"
-import * as Sparkline from "../../../charts/sparkline"
-import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
-import { emptyMessage } from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { panel } from "../../../ui/panel"
-import { skeleton } from "../../../ui/skeleton"
-import { table, tableBody, tableCell, tableHeader, tableRow } from "../../../ui/table"
-import { errorRateValue, latencyValue } from "../../../ui/values"
+import * as Chart from "@maple/views/charts/chart"
+import * as Sparkline from "@maple/views/charts/sparkline"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { panel } from "@maple/views/ui/panel"
+import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
+import { table, tableBody, tableCell, tableHeader, tableRow } from "@maple/views/ui/table"
+import { errorRateValue, latencyValue } from "@maple/views/ui/values"
 import { callsPerSecond, windowSeconds } from "./derive"
 import { sortRows } from "../../kit/table-sort"
 import { TRACE_DETAIL_LIMIT_SECONDS } from "./derive-tables"
@@ -28,6 +27,9 @@ import {
 	tableSkeletonHead,
 	tableTitle,
 } from "./view-table-cells"
+import { hstack, vstackClass } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
+import { Array as Arr } from "effect"
 
 // The Operations tab: one table, p50 and the activity sparkline hidden below `md`.
 // TODO(row-keyboard): Enter / Space on a focused row does not drill down yet; click does.
@@ -40,25 +42,18 @@ const toSparkline = (message: Chart.Message) => Message.GotChartMessage({ chartI
 const loadingState = (h: H): Html =>
 	panel(h, {}, [
 		...tableSkeletonHead(h, "Operations"),
-		h.div(
-			[
-				h.AriaBusy(true),
-				h.Class(cn(skeletonListStyles, skeletonListGapStyles.px, "gap-0")),
-				h.DataAttribute("slot", "skeleton-list"),
-			],
-			Array.from({ length: 10 }, () =>
-				h.div(
-					[h.Class("flex h-11 items-center gap-3 border-b px-4 last:border-b-0")],
-					[
-						skeleton(h, "h-3 flex-1"),
-						skeleton(h, "h-3 w-12"),
-						skeleton(h, "h-3 w-10"),
-						skeleton(h, "h-3 w-12"),
-						skeleton(h, "hidden h-5 w-24 md:block"),
-					],
-				),
-			),
-		),
+		skeletonList(h, {
+			rows: 10,
+			className: "gap-0",
+			renderRow: () =>
+				hstack(h, { gap: "3", className: stripClass("skeletonRow") }, [
+					skeleton(h, "h-3 flex-1"),
+					skeleton(h, "h-3 w-12"),
+					skeleton(h, "h-3 w-10"),
+					skeleton(h, "h-3 w-12"),
+					skeleton(h, "hidden h-5 w-24 md:block"),
+				]),
+		}),
 	])
 
 const operationRow = (
@@ -120,7 +115,7 @@ const operationRow = (
 						view: Sparkline.view,
 						viewInputs: {
 							chartId: `ops-${op.spanName}`,
-							values: op.sparkline.map((point) => point.count),
+							values: Arr.map(op.sparkline, (point) => point.count),
 							color: context.color,
 							className: "ml-auto h-5 w-24",
 							revision: 0,
@@ -150,8 +145,8 @@ const operationsTable = (
 	const seconds = model.window === null ? 0 : windowSeconds(model.window)
 	const context = {
 		seconds,
-		maxCalls: operations.reduce((acc, op) => Math.max(acc, op.estimatedSpanCount), 0),
-		maxP95: operations.reduce((acc, op) => Math.max(acc, op.p95DurationMs), 0),
+		maxCalls: Arr.reduce(operations, 0, (acc, op) => Math.max(acc, op.estimatedSpanCount)),
+		maxP95: Arr.reduce(operations, 0, (acc, op) => Math.max(acc, op.p95DurationMs)),
 		color: resolveColor(theme ?? {}, SPARKLINE_TOKEN),
 	}
 	const sorted = sortRows(operations, sort, (op, key) =>
@@ -189,25 +184,28 @@ const operationsTable = (
 							tableRow(h, [
 								tableCell(
 									h,
-									[emptyMessage(h, {}, ["No operations recorded in this window."])],
+									[emptyMessage(h, {}, ["No operations recorded in this window"])],
 									"whitespace-normal p-0",
 									[h.Attribute("colspan", "6")],
 								),
 							]),
 						]
-					: sorted.map((op) => operationRow(h, op, context)),
+					: Arr.map(sorted, (op) => operationRow(h, op, context)),
 			),
 		]),
 	])
 }
+
+const retry = Message.ClickedRetry({ target: "Operations" })
 
 /** The Operations tab: skeleton, error, or the sortable table (window note past 30 days). */
 export const operationsTab = (h: H, model: Model, theme: ThemeColors | null): Html =>
 	AsyncData.match(model.operations.data, {
 		onIdle: () => loadingState(h),
 		onLoading: () => loadingState(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load operations" }),
-		onStale: ({ error }) => errorState(h, { failure: error, title: "Couldn't load operations" }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load operations", onRetry: retry }),
+		onStale: ({ error }) =>
+			errorState(h, { failure: error, title: "Couldn't load operations", onRetry: retry }),
 		onRefreshing: (operations) => operationsBody(h, model, operations, theme, true),
 		onSuccess: (operations) => operationsBody(h, model, operations, theme, false),
 	})
@@ -222,7 +220,7 @@ const operationsBody = (
 	const isLimited = model.window !== null && windowSeconds(model.window) > TRACE_DETAIL_LIMIT_SECONDS
 	return h.div(
 		[
-			h.Class(cn("flex flex-col gap-3", refreshingClass(isWaiting))),
+			h.Class(cn(vstackClass({ gap: "3" }), refreshingClass(isWaiting))),
 			...(isWaiting ? [h.AriaBusy(true)] : []),
 		],
 		[...(isLimited ? [rangeNote(h, "Operation")] : []), operationsTable(h, model, operations, theme)],

@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { HttpTaggedError, publicHttpErrorDefinitionFor } from "./error-policy"
 import {
 	OrgClickHouseSettingsEncryptionError,
@@ -376,11 +376,13 @@ export type WarehouseTokenRouteError = ErrorInstance<(typeof warehouseTokenRoute
 export type WarehouseRouteError = WarehouseSettingsRouteError | WarehouseTokenRouteError
 
 /** Exact tags derived from the class tuple for tag-based consumers. */
-export const warehouseErrorTags = warehouseHttpErrors.map(
+export const warehouseErrorTags = Arr.map(
+	warehouseHttpErrors,
 	(errorClass) => publicHttpErrorDefinitionFor(errorClass).tag,
 ) as ReadonlyArray<WarehouseErrorTag>
 
 /** Exact tags for ordinary reads, derived from the same classes as the union and OpenAPI schemas. */
-export const warehouseReadErrorTags = warehouseReadHttpErrors.map(
+export const warehouseReadErrorTags = Arr.map(
+	warehouseReadHttpErrors,
 	(errorClass) => publicHttpErrorDefinitionFor(errorClass).tag,
 ) as ReadonlyArray<WarehouseReadError["_tag"]>

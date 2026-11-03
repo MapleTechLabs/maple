@@ -1,6 +1,7 @@
-import * as FilterSections from "@maple/web/ui/filters/filter-sections"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { Schema } from "effect"
-import { SlotSchema } from "../../data/slot"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { Copies } from "../kit/copies"
 
 // The traces list and its facets, as Schemas.
@@ -56,8 +57,8 @@ export const Model = Schema.TaggedStruct("TracesPage", {
 	maybeAnchorMs: Schema.Option(Schema.Number),
 	/** The clock at the last read, for relative times. */
 	nowMs: Schema.Number,
-	traces: SlotSchema(TracePages),
-	facets: SlotSchema(TraceFacets),
+	traces: KeyedSchema(TracePages, LoadFailure),
+	facets: KeyedSchema(TraceFacets, LoadFailure),
 	isFetchingNextPage: Schema.Boolean,
 	/** Bumped when the list is refetched or rekeyed; a next page from an older generation is dropped. */
 	pageGeneration: Schema.Number,

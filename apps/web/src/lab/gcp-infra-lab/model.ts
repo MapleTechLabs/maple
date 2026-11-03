@@ -1,10 +1,10 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { ChartRuntime } from "../../charts/chart-runtime"
-import { ThemeColors } from "../../charts/theme-colors"
+import { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
 import * as GcpList from "../../page/infra-integrations/gcp/list/model"
 import * as TimeRangePicker from "../../page/kit/time-range-picker"
-import * as Menu from "../../ui/menu"
+import * as Menu from "@maple/views/ui/menu"
 
 // `/lab/gcp-infra`: the Google Cloud list over fixtures, its
 // `GcpListState` held here instead of the URL.

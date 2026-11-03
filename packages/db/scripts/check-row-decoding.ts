@@ -14,7 +14,17 @@
 import * as PgClient from "@effect/sql-pg/PgClient"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Console, Effect, Exit, Layer, Redacted, Schema } from "effect"
+import {
+	Console,
+	Effect,
+	Exit,
+	Layer,
+	Redacted,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { allTables } from "../src/tables"
 import { withBranchConnection } from "./planetscale-connection"
@@ -36,8 +46,9 @@ interface TableReport {
 /** The table's primary-key columns by key, for stable paging and for naming a failing row. */
 const primaryKeys = (table: AnyTable): ReadonlyArray<string> => {
 	const sqlNames = table.ddl.table.primaryKey?.columns ?? []
-	const keys = Object.keys(table.columns)
-	return sqlNames.map(
+	const keys = Rec.keys(table.columns)
+	return Arr.map(
+		sqlNames,
 		(sqlName) => keys.find((key) => (table.columns[key]?.sqlName ?? key) === sqlName) ?? sqlName,
 	)
 }
@@ -58,7 +69,15 @@ const pageFailures = (
 			Effect.map((exit): ReadonlyArray<Failure> =>
 				Exit.isSuccess(exit)
 					? []
-					: [{ key: keys.map((k) => String(row[k])).join("/"), error: String(exit.cause) }],
+					: [
+							{
+								key: Arr.join(
+									Arr.map(keys, (k) => String(row[k])),
+									"/",
+								),
+								error: String(exit.cause),
+							},
+						],
 			),
 		),
 	).pipe(Effect.map((failures) => failures.flat()))
@@ -91,7 +110,7 @@ const decodeTable = (orm: Orm.DatabaseApi, table: AnyTable) => {
 			const compiled = yield* PG.compile(
 				PG.from(table)
 					.select()
-					.orderBy(($) => keys.map((key) => [$[key]!, "asc"] as const))
+					.orderBy(($) => Arr.map(keys, (key) => [$[key]!, "asc"] as const))
 					.limit(PAGE)
 					.offset(offset),
 			)
@@ -118,16 +137,19 @@ const printReport = (report: TableReport) =>
 		const status = report.failures === 0 ? "ok  " : "FAIL"
 		yield* Console.log(`${status} ${report.table}: ${report.rows} rows, ${report.failures} undecodable`)
 		yield* Effect.forEach(report.samples, (sample) =>
-			Console.log(`       ${sample.key}: ${sample.error.split("\n").slice(0, 6).join(" | ")}`),
+			Console.log(
+				`       ${sample.key}: ${Arr.join(Str.split("\n")(sample.error).slice(0, 6), " | ")}`,
+			),
 		)
 	})
 
 const check = (url: string) =>
 	Effect.gen(function* () {
-		const orm = Orm.fromSqlClient(yield* SqlClient.SqlClient, { dialect: PG.postgresDialect })
+		const sql = yield* SqlClient.SqlClient
+		const orm = Orm.fromSqlClient(sql, { dialect: PG.postgresDialect })
 		const reports = yield* Effect.forEach(allTables, (table) => checkTable(orm, table))
 		yield* Effect.forEach(reports, printReport)
-		return reports.reduce((sum, report) => sum + report.failures, 0)
+		return Arr.reduce(reports, 0, (sum, report) => sum + report.failures)
 	}).pipe(
 		// The script's entry point: it owns the connection.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
@@ -137,7 +159,7 @@ const check = (url: string) =>
 	)
 
 const main = async (): Promise<void> => {
-	const branch = process.argv.slice(2).find((arg) => !arg.startsWith("--")) ?? "main"
+	const branch = process.argv.slice(2).find((arg) => !Str.startsWith("--")(arg)) ?? "main"
 	const databaseUrl = process.env.DATABASE_URL
 	const run = (url: string) =>
 		Effect.runPromise(check(url)).then((failures) => {

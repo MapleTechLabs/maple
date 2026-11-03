@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Duration, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Duration, Effect, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -17,6 +17,11 @@ import {
 	makeWarehouseStub,
 	tracesRow,
 } from "./alerts-service-test-support"
+import { LinearAlertDestinationConfig } from "@maple/domain/http"
+
+/** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
+const requestBodyText = (body: RequestInit["body"]): string =>
+	body instanceof Uint8Array ? new TextDecoder().decode(body) : typeof body === "string" ? body : ""
 
 const trackedDbs: TestDb[] = []
 
@@ -45,7 +50,7 @@ const linearServer = () => {
 			})
 		}
 		if (url !== "https://api.linear.app/graphql") return new Response("ok", { status: 200 })
-		const body = JSON.parse(String(init?.body))
+		const body = JSON.parse(requestBodyText(init?.body))
 		const operation: Operation = { name: body.operationName, variables: body.variables }
 		operations.push(operation)
 		switch (operation.name) {
@@ -181,11 +186,16 @@ describe("AlertsService with a Linear destination", () => {
 		return Effect.gen(function* () {
 			yield* connectLinear(testDb, linear.fetch, orgId)
 			const alerts = yield* AlertsService
-			const destination = yield* alerts.createDestination(orgId, asUserId("user_linear"), adminRoles, {
-				type: "linear",
-				name: "Engineering triage",
-				teamId: "team_1",
-			})
+			const destination = yield* alerts.createDestination(
+				orgId,
+				asUserId("user_linear"),
+				adminRoles,
+				new LinearAlertDestinationConfig({
+					type: "linear",
+					name: "Engineering triage",
+					teamId: "team_1",
+				}),
+			)
 			assert.strictEqual(destination.summary, "Linear · Engineering")
 			assert.strictEqual(destination.channelLabel, "ENG")
 			assert.strictEqual(destination.linearTeamId, "team_1")
@@ -198,16 +208,21 @@ describe("AlertsService with a Linear destination", () => {
 			)
 			assert.strictEqual(tested.message, "Linear team Engineering (ENG) is reachable")
 			assert.notInclude(
-				linear.operations.map((operation) => operation.name),
+				Arr.map(linear.operations, (operation) => operation.name),
 				"MapleIssueCreate",
 			)
 
 			const error = yield* alerts
-				.createDestination(orgId, asUserId("user_linear"), adminRoles, {
-					type: "linear",
-					name: "Elsewhere",
-					teamId: "team_unknown",
-				})
+				.createDestination(
+					orgId,
+					asUserId("user_linear"),
+					adminRoles,
+					new LinearAlertDestinationConfig({
+						type: "linear",
+						name: "Elsewhere",
+						teamId: "team_unknown",
+					}),
+				)
 				.pipe(Effect.flip)
 			assert.include(error.message, "not in the connected Linear workspace")
 		}).pipe(
@@ -227,11 +242,16 @@ describe("AlertsService with a Linear destination", () => {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			yield* connectLinear(testDb, linear.fetch, orgId)
 			const alerts = yield* AlertsService
-			const destination = yield* alerts.createDestination(orgId, userId, adminRoles, {
-				type: "linear",
-				name: "Engineering triage",
-				teamId: "team_1",
-			})
+			const destination = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new LinearAlertDestinationConfig({
+					type: "linear",
+					name: "Engineering triage",
+					teamId: "team_1",
+				}),
+			)
 			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
 
 			yield* alerts.runSchedulerTick()
@@ -258,11 +278,11 @@ describe("AlertsService with a Linear destination", () => {
 			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 
-			const comments = linear.operations.filter((operation) => operation.name === "MapleComment")
+			const comments = Arr.filter(linear.operations, (operation) => operation.name === "MapleComment")
 			assert.lengthOf(comments, 1)
 			assert.include(String(comments[0]!.variables.input?.body), "Resolved")
 			assert.lengthOf(
-				linear.operations.filter((operation) => operation.name === "MapleIssueCreate"),
+				Arr.filter(linear.operations, (operation) => operation.name === "MapleIssueCreate"),
 				1,
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: linear.fetch })))
@@ -291,7 +311,7 @@ describe("AlertsService with a Linear destination", () => {
 					scope: "read,write",
 				})
 			}
-			const name: unknown = JSON.parse(String(init?.body)).operationName
+			const name: unknown = JSON.parse(requestBodyText(init?.body)).operationName
 			return json(
 				name === "MapleIssueCreate" || name === "MapleComment"
 					? answers[name]

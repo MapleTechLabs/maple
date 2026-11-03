@@ -3,7 +3,7 @@ import type {
 	SecurityAuditFindingTriageStatus,
 	SecurityAuditTarget,
 } from "@maple/domain/http"
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Model } from "./model"
 
@@ -38,8 +38,8 @@ export const TRIAGE_STATUSES: ReadonlyArray<SecurityAuditFindingTriageStatus> = 
 const REASON_MAX = 2000
 
 export const reasonErrorOf = (reason: string): string | null =>
-	reason.trim() === ""
+	Str.trim(reason) === ""
 		? "A reason is required. It is recorded in the org audit log with your name."
-		: reason.trim().length > REASON_MAX
+		: Str.trim(reason).length > REASON_MAX
 			? `Keep the reason under ${REASON_MAX} characters.`
 			: null

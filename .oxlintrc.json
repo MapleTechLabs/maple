@@ -43,21 +43,37 @@
 		"maple/no-effect-die": "error",
 		"maple/no-ordie-compiled-query": "error",
 		"maple/no-raw-tool-layer": "error",
-		"maple/no-react-use-effect": "warn",
+		"maple/no-react-use-effect": "error",
 		"maple/no-record-string-any": "error",
 		"maple/no-try-catch": "error",
 		"maple/no-date-parse": "error",
-		"typescript/no-explicit-any": "warn",
+		"typescript/no-explicit-any": "error",
 		"typescript/no-non-null-assertion": "error",
 		"no-alert": "error",
+		"no-loss-of-precision": "error",
+		"no-unused-vars": [
+			"error",
+			{ "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_" }
+		],
+		"no-extra-boolean-cast": "error",
+		"no-unsafe-optional-chaining": "error",
+		"no-unused-expressions": "error",
+		"no-useless-escape": "error",
+		"oxc/double-comparisons": "error",
+		"typescript/no-non-null-asserted-optional-chain": "error",
+		"typescript/prefer-as-const": "error",
+		"unicorn/no-new-array": "error",
+		"unicorn/no-thenable": "error",
+		"unicorn/no-useless-fallback-in-spread": "error",
+		"unicorn/prefer-string-starts-ends-with": "error",
 		"oxc/approx-constant": "warn",
 		"no-plusplus": "off",
 		"require-yield": "off"
 	},
 	"overrides": [
-		// The dashboard's design rules (docs/design-rules.md), on the app and its kit.
+		// The dashboard's design rules (docs/design-rules.md), on the apps and their kit.
 		{
-			"files": ["apps/web/src/**", "packages/ui/src/**"],
+			"files": ["apps/web/src/**", "apps/local-ui/src/**", "packages/views/src/**", "packages/ui/src/**"],
 			"rules": {
 				"maple/couldnt-copy": "error",
 				"maple/hover-needs-active": "error",
@@ -67,7 +83,34 @@
 				"maple/no-raw-shadow": "error",
 				"maple/no-transition-all": "error",
 				"maple/single-tooltip-delay": "error",
-				"maple/tone-alpha-steps": "error"
+				"maple/tone-alpha-steps": "error",
+				"maple/no-raw-color": "error",
+				"maple/no-arbitrary-text-size": "error"
+			}
+		},
+		// Build from the kit (docs/design-rules.md): pages compose packages/views/src/ui and each app's page/kit.
+		// Existing sites are ratcheted per file by scripts/oxlint-plugins/ui-kit-baseline.json.
+		{
+			"files": ["apps/web/src/**", "apps/local-ui/src/**", "packages/views/src/**"],
+			"rules": {
+				"maple/no-kit-styles-in-pages": "error",
+				"maple/no-raw-control": "error",
+				"maple/no-raw-heading": "error"
+			}
+		},
+		// The kit itself, the lab that showcases it, and tests render raw elements.
+		{
+			"files": [
+				"packages/views/src/ui/**",
+				"apps/web/src/page/kit/**",
+				"apps/local-ui/src/page/kit/**",
+				"apps/web/src/lab/**",
+				"**/*.test.ts"
+			],
+			"rules": {
+				"maple/no-kit-styles-in-pages": "off",
+				"maple/no-raw-control": "off",
+				"maple/no-raw-heading": "off"
 			}
 		},
 		// Lab fixtures hold sample telemetry (log bodies, error messages), not UI copy.
@@ -273,6 +316,11 @@
 			],
 			"rules": { "maple/no-date-parse": "off" }
 		},
+		// Astro templates are `{expression}` blocks the parser reads as bare statements.
+		{
+			"files": ["**/*.astro"],
+			"rules": { "no-unused-expressions": "off" }
+		},
 		// Test cases that cannot catch a bug: assertion-free, existence-only, constant pins,
 		// Tailwind class pins, source greps, exact command lists and SQL projection pins.
 		// Rationale per rule in scripts/oxlint-plugins/test-slop.mjs.
@@ -286,6 +334,7 @@
 				"test-slop/no-source-text-assertions": "error",
 				"test-slop/no-sql-text-pin": "error",
 				"test-slop/no-weak-only-assertions": "error",
+				"vitest/valid-describe-callback": "error",
 				"vitest/expect-expect": [
 					"error",
 					{
@@ -343,6 +392,19 @@
 			"rules": {
 				"anti-slop/no-shape-in-symbol-names": "off"
 			}
+		},
+		// `any` burndown: drop each file as its casts get real types.
+		{
+			"files": [
+				"apps/ai/src/security-audit/workflow.run.test.ts",
+				"apps/api/scripts/bench-startup-cpu.ts",
+				"apps/api/src/workflows/ClickHouseSchemaApplyWorkflow.run.test.ts",
+				"packages/auth/src/index.ts",
+				"packages/backend/src/platform/durable-step.test.ts",
+				"packages/effect-sdk/src/client/flushable.test.ts",
+				"packages/web-data/src/warehouse/custom-charts.ts"
+			],
+			"rules": { "typescript/no-explicit-any": "off" }
 		},
 		// Standalone generic DSLs use `any` as a variance placeholder; Maple product code may not.
 		{
@@ -487,8 +549,8 @@
 		// Code views highlight through lib/highlight, whose output falls back to plain text past the
 		// display cap; a span per token of a megabyte log body froze the log sheet.
 		{
-			"files": ["apps/web/src/**/*.ts", "apps/local-ui/src/**/*.ts"],
-			"excludeFiles": ["apps/web/src/lib/highlight.ts"],
+			"files": ["apps/web/src/**/*.ts", "packages/views/src/**/*.ts", "apps/local-ui/src/**/*.ts"],
+			"excludeFiles": ["packages/views/src/lib/highlight.ts"],
 			"rules": {
 				"no-restricted-imports": [
 					"error",
@@ -613,7 +675,7 @@
 					{
 						"patterns": [
 							{
-								"regex": "(^|/)(dispatcher|mcp-service-graph)$",
+								"regex": "(^|/)(dispatcher|mcp-service-graph|mcp-tool-graph)$",
 								"allowTypeImports": true,
 								"message": "The tool graph loads lazily through McpToolExecutorLoader; import its types only."
 							}

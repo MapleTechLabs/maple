@@ -1,3 +1,8 @@
+import { Schema, Array as Arr } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+
 export type McpClient = "claude-code" | "cursor" | "windsurf" | "other"
 
 export const MCP_CLIENTS: ReadonlyArray<{ readonly id: McpClient; readonly label: string }> = [
@@ -8,7 +13,7 @@ export const MCP_CLIENTS: ReadonlyArray<{ readonly id: McpClient; readonly label
 ]
 
 export const isMcpClient = (value: unknown): value is McpClient =>
-	MCP_CLIENTS.some((client) => client.id === value)
+	Arr.some(MCP_CLIENTS, (client) => client.id === value)
 
 const authHeaders = (apiKey: string | undefined) =>
 	apiKey ? { headers: { Authorization: `Bearer ${apiKey}` } } : undefined
@@ -24,7 +29,7 @@ export function mcpClientConfig(client: McpClient, endpoint: string, apiKey?: st
 			: client === "cursor"
 				? { url: endpoint, ...authHeaders(apiKey) }
 				: { type: "http", url: endpoint, ...authHeaders(apiKey) }
-	return JSON.stringify({ mcpServers: { maple: server } }, null, 2)
+	return encodePrettyJson({ mcpServers: { maple: server } })
 }
 
 export function claudeCodeCommand(endpoint: string, apiKey?: string): string {
@@ -34,8 +39,8 @@ export function claudeCodeCommand(endpoint: string, apiKey?: string): string {
 
 /** Cursor's one-click install deeplink: the server entry, base64 JSON. */
 export const cursorInstallUrl = (endpoint: string): string =>
-	`cursor://anysphere.cursor-deeplink/mcp/install?name=maple&config=${encodeURIComponent(btoa(JSON.stringify({ url: endpoint })))}`
+	`cursor://anysphere.cursor-deeplink/mcp/install?name=maple&config=${encodeURIComponent(btoa(encodeJson({ url: endpoint })))}`
 
 /** VS Code's one-click install link: the named server entry, URL-encoded JSON. */
 export const vscodeInstallUrl = (endpoint: string): string =>
-	`vscode:mcp/install?${encodeURIComponent(JSON.stringify({ name: "maple", type: "http", url: endpoint }))}`
+	`vscode:mcp/install?${encodeURIComponent(encodeJson({ name: "maple", type: "http", url: endpoint }))}`

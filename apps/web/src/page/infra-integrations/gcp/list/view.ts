@@ -27,17 +27,17 @@ import { formatPercentColumn, pluralize } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
-import { ResolveThemeColors, type ThemeColors } from "../../../../charts/theme-colors"
-import { button } from "../../../../ui/button"
-import { textLink } from "../../../../ui/text-link"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
-import type * as Menu from "../../../../ui/menu"
-import { skeleton } from "../../../../ui/skeleton"
-import { statusDot } from "../../../../ui/status-dot"
+import { pressable } from "@maple/views/ui/pressable"
+import { ResolveThemeColors, type ThemeColors } from "@maple/views/charts/theme-colors"
+import { textLink } from "@maple/views/ui/text-link"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import type * as Menu from "@maple/views/ui/menu"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { integrationNotConnected } from "../../kit/empty-states"
@@ -81,6 +81,9 @@ import {
 	servicesTable,
 	subscriptionsTable,
 } from "./view-tables"
+import { removableChip } from "@maple/views/ui/removable-chip"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `GcpPage`, `GcpInfra` and `GcpListPage`. `gcpListPageParts` and `titleRow` are what the lab reuses.
 
@@ -128,12 +131,18 @@ const loadedDescription = (
 	views: ReadonlyArray<GcpView>,
 ): string | undefined => {
 	if (projects.length === 0) return intro.description
-	const kinds = views.filter((option) => option !== GCP_RESOURCES_TAB).map((option) => VIEW_LABEL[option])
-	return [
-		`${projects.length} ${pluralize(projects.length, "project")}`,
-		...(kinds.length === 0 ? [] : [kinds.join(", ")]),
-		"metrics every 5 minutes",
-	].join(" · ")
+	const kinds = Arr.map(
+		Arr.filter(views, (option) => option !== GCP_RESOURCES_TAB),
+		(option) => VIEW_LABEL[option],
+	)
+	return Arr.join(
+		[
+			`${projects.length} ${pluralize(projects.length, "project")}`,
+			...(kinds.length === 0 ? [] : [Arr.join(kinds, ", ")]),
+			"metrics every 5 minutes",
+		],
+		" · ",
+	)
 }
 
 /** `tabs` goes to the header's `tabs` slot, pinned under the title row. */
@@ -164,20 +173,21 @@ const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends 
 	const { rows, rules } = options
 	const scope = rules.scopes.find((candidate) => candidate === state.scope)
 	const query = state.q ?? ""
-	const needle = query.trim().toLowerCase()
+	const needle = Str.toLowerCase(Str.trim(query))
 	const shown = sortByAttention(
 		rules,
-		rows.filter(
+		Arr.filter(
+			rows,
 			(row) =>
 				(scope === undefined || rules.inScope(row, scope)) &&
-				(needle === "" || row.keys.join(" ").toLowerCase().includes(needle)),
+				(needle === "" || Str.includes(needle)(Str.toLowerCase(Arr.join(row.keys, " ")))),
 		),
 	)
 	const emptyMessage = options.failed
 		? `Maple could not read the ${options.title} metrics. Reload to try again.`
 		: rows.length === 0
-			? `No ${options.title} metrics in this time range.`
-			: `No ${options.noun} match. Clear the search or scope.`
+			? `No ${options.title} metrics in this window`
+			: `No ${options.noun} match these filters`
 	return [
 		gcpBand(h, {
 			rows,
@@ -189,7 +199,7 @@ const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends 
 		searchToolbar(h, {
 			id: "gcp-search",
 			value: query,
-			placeholder: `Filter ${options.noun}`,
+			placeholder: `Filter ${options.noun}…`,
 			onInput: (value) => Message.ChangedSearch({ value }),
 			onClear: Message.ClickedClearSearch(),
 			trailing:
@@ -205,44 +215,19 @@ const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends 
 /** `FilterChipRail` with the one region chip. */
 const regionChip = (h: H, region: string): Html => {
 	const label = `region ${region}`
-	return h.div(
-		[h.Class("flex flex-wrap items-center gap-1.5"), h.AriaLabel("Active filters")],
-		[
-			h.span(
-				[
-					h.Class(
-						"inline-flex items-center gap-1 rounded-sm border border-border-subtle bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground",
-					),
-				],
-				[
-					h.span([h.Class("max-w-[22ch] truncate text-foreground-soft")], [label]),
-					button(
-						h,
-						{
-							variant: "ghost",
-							size: "icon-2xs",
-							className: "text-muted-foreground hover:text-foreground active:text-foreground",
-							attributes: [
-								h.AriaLabel(`Remove ${label}`),
-								h.OnClick(Message.ClickedClearRegion()),
-							],
-						},
-						[icon(h, "XmarkIcon")],
-					),
-				],
-			),
-			textLink(
-				h,
-				{
-					tone: "muted",
-					isMono: true,
-					className: "ml-1 text-3xs",
-					onClick: Message.ClickedClearRegion(),
-				},
-				["Clear all"],
-			),
-		],
-	)
+	return hstack(h, { gap: "1.5", wrap: true, attributes: [h.AriaLabel("Active filters")] }, [
+		removableChip(h, { label, onRemove: Message.ClickedClearRegion() }),
+		textLink(
+			h,
+			{
+				tone: "muted",
+				isMono: true,
+				className: "ml-1 text-3xs",
+				onClick: Message.ClickedClearRegion(),
+			},
+			["Clear all"],
+		),
+	])
 }
 
 // The dot beside the name carries a warning; only a critical note keeps its colour in the text.
@@ -275,41 +260,37 @@ const projectsStrip = (
 ): Html =>
 	h.div(
 		[h.Class("flex flex-col overflow-hidden rounded-md border md:flex-row")],
-		projects
-			.toSorted((a, b) => (share.get(b) ?? 0) - (share.get(a) ?? 0))
-			.map((project) => {
+		Arr.map(
+			projects.toSorted((a, b) => (share.get(b) ?? 0) - (share.get(a) ?? 0)),
+			(project) => {
 				const fraction = share.get(project) ?? 0
 				const projectHealth = health.get(project)
 				const problem = projectHealth !== undefined && projectHealth.tone !== "ok"
-				return h.button(
-					[
-						h.Type("button"),
-						h.OnClick(Message.SelectedProject({ project })),
-						h.Class(
+				return pressable(
+					h,
+					{
+						onClick: Message.SelectedProject({ project }),
+						className:
 							"flex min-w-0 flex-1 flex-col gap-2 border-b px-4 py-3 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken md:border-b-0 md:border-l md:first:border-l-0",
-						),
-					],
+					},
 					[
-						h.span(
-							[h.Class("flex items-center gap-2")],
-							[
-								...healthDotOf(h, projectHealth),
-								h.span(
-									[h.Class("truncate font-mono text-xs font-medium text-foreground")],
-									[project],
-								),
-								h.span(
-									[h.Class("ml-auto flex items-baseline gap-1 whitespace-nowrap")],
-									[
-										h.span(
-											[h.Class("font-mono text-2xs tabular-nums text-foreground")],
-											[formatPercentColumn(fraction)],
-										),
-										h.span([h.Class("text-3xs text-muted-foreground")], [shareUnit]),
-									],
-								),
-							],
-						),
+						hstack(h, { gap: "2", as: "span" }, [
+							...healthDotOf(h, projectHealth),
+							h.span(
+								[h.Class("truncate font-mono text-xs font-medium text-foreground")],
+								[project],
+							),
+							h.span(
+								[h.Class("ml-auto flex items-baseline gap-1 whitespace-nowrap")],
+								[
+									h.span(
+										[h.Class("font-mono text-2xs tabular-nums text-foreground")],
+										[formatPercentColumn(fraction)],
+									),
+									typography(h, { size: "3xs", tone: "muted" }, [shareUnit]),
+								],
+							),
+						]),
 						h.span(
 							[h.Class("block h-1 w-full overflow-hidden rounded-full bg-muted")],
 							[
@@ -327,7 +308,8 @@ const projectsStrip = (
 						),
 					],
 				)
-			}),
+			},
+		),
 	)
 
 const infraView = (h: H, model: Model, connectors: ReturnType<typeof metricsConnectors>): PageParts => {
@@ -355,7 +337,7 @@ const infraView = (h: H, model: Model, connectors: ReturnType<typeof metricsConn
 		return {
 			header: intro,
 			isFailed: true,
-			body: failures.map((failure) =>
+			body: Arr.map(failures, (failure) =>
 				errorState(h, {
 					failure,
 					title: "Couldn't load Google Cloud workloads",
@@ -555,7 +537,7 @@ export const gcpListPageParts = (h: H, input: ListPageInput): PageParts => {
 			? viewTabStrip(
 					h,
 					"Google Cloud views",
-					views.map((option) => ({
+					Arr.map(views, (option) => ({
 						id: option,
 						title:
 							option === GCP_RESOURCES_TAB || counts === null

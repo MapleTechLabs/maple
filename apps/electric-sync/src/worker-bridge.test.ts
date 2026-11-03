@@ -2,7 +2,7 @@ import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MapleHttpTracingLive, workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Exit, Layer, Schema, Scope } from "effect"
+import { Effect, Exit, Layer, Schema, Scope, Array as Arr, Record as Rec, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
 import { ElectricSyncRouter } from "./routes/shape.http"
 import {
@@ -45,18 +45,16 @@ const ExportedTraces = Schema.Struct({
 const decodeExportedTraces = Schema.decodeUnknownSync(ExportedTraces)
 
 const exportedSpans = (recorded: ReadonlyArray<RecordedRequest>): Array<ExportedSpan> =>
-	recorded
-		.filter((request) => request.url.endsWith("/v1/traces"))
-		.flatMap((request) => {
-			const body = decodeExportedTraces(JSON.parse(request.body ?? "{}"))
-			return (body.resourceSpans ?? []).flatMap((resource) =>
-				resource.scopeSpans.flatMap((scope) => scope.spans),
-			)
-		})
+	Arr.filter(recorded, (request) => Str.endsWith("/v1/traces")(request.url)).flatMap((request) => {
+		const body = decodeExportedTraces(JSON.parse(request.body ?? "{}"))
+		return Arr.flatMap(body.resourceSpans ?? [], (resource) =>
+			Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
+		)
+	})
 
 const statusCodeOf = (span: ExportedSpan | undefined): number | undefined => {
 	const value = span?.attributes.find((attribute) => attribute.key === "http.response.status_code")?.value
-	return value === undefined ? undefined : Number(Object.values(value)[0])
+	return value === undefined ? undefined : Number(Rec.values(value)[0])
 }
 
 const appLayer = (options: { readonly ensureConfigured?: Effect.Effect<void, never> } = {}) =>
@@ -117,7 +115,7 @@ const event = (
 		return {
 			status: response.status,
 			flushedBeforeClose,
-			server: spans.filter((span) => span.kind === SERVER_KIND),
+			server: Arr.filter(spans, (span) => span.kind === SERVER_KIND),
 		}
 	}).pipe(Effect.scoped)
 
@@ -163,7 +161,7 @@ describe("electric-sync through alchemy's Worker bridge", () => {
 				authorization: "Bearer secret",
 				cookie: "session=secret",
 			})
-			const keys = (server[0]?.attributes ?? []).map((attribute) => attribute.key)
+			const keys = Arr.map(server[0]?.attributes ?? [], (attribute) => attribute.key)
 			assert.include(keys, "http.request.header.cf-ray")
 			assert.notInclude(keys, "http.request.header.authorization")
 			assert.notInclude(keys, "http.request.header.cookie")

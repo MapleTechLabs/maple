@@ -1,6 +1,7 @@
 import type { FactoryLink } from "../../../components/service-map/three/factory-routing"
 import * as THREE from "three"
 import type { Running, Scope } from "./kit"
+import { String as Str } from "effect"
 
 const SAMPLES = 512
 const programKey = () => "factory-flow-v1"
@@ -92,17 +93,25 @@ export function factoryMotion(
 	})
 	const onBeforeCompile = (shader: MotionShader) => {
 		Object.assign(shader.uniforms, uniforms)
-		shader.vertexShader = shader.vertexShader
-			.replace("#include <common>", `#include <common>\n${declarations}`)
-			.replace("void main() {", `void main() {\n${placement}`)
-			.replace(
+		shader.vertexShader = Str.replace(
+			"#include <begin_vertex>",
+			"#include <begin_vertex>\ntransformed = factoryCenter + factoryRotation * transformed * factoryScale;",
+		)(
+			Str.replace(
 				"#include <beginnormal_vertex>",
 				"#include <beginnormal_vertex>\nobjectNormal = factoryRotation * objectNormal;",
-			)
-			.replace(
-				"#include <begin_vertex>",
-				"#include <begin_vertex>\ntransformed = factoryCenter + factoryRotation * transformed * factoryScale;",
-			)
+			)(
+				Str.replace(
+					"void main() {",
+					`void main() {\n${placement}`,
+				)(
+					Str.replace(
+						"#include <common>",
+						`#include <common>\n${declarations}`,
+					)(shader.vertexShader),
+				),
+			),
+		)
 	}
 	return { phases, material: { onBeforeCompile, customProgramCacheKey: programKey } }
 }

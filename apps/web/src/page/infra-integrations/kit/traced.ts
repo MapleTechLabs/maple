@@ -1,6 +1,6 @@
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
-import { Effect, Schema } from "effect"
-import { toLoadFailure } from "../../../data/load-failure"
+import { Effect, Schema, Array as Arr } from "effect"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 
 // The traced services of a window, for the infra pages' "Traced as": an integration names its
@@ -17,14 +17,15 @@ export type TracedService = typeof TracedService.Type
 
 export const loadTraced = (window: TimeWindow) =>
 	getServiceOverview({ data: { startTime: window.startTime, endTime: window.endTime } }).pipe(
-		Effect.map((response): ReadonlyArray<TracedService> =>
-			response.data.map((row) => ({
-				serviceName: row.serviceName,
-				errorRate: row.errorRate,
-				throughput: row.throughput,
-				p95LatencyMs: row.p95LatencyMs,
-			})),
-		),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<TracedService> =>
+				Arr.map(response.data, (row) => ({
+					serviceName: row.serviceName,
+					errorRate: row.errorRate,
+					throughput: row.throughput,
+					p95LatencyMs: row.p95LatencyMs,
+				})),
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)

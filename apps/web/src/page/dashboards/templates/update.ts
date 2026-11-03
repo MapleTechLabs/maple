@@ -2,16 +2,16 @@ import { DashboardWidgetSchema } from "@maple/domain/http"
 import type { V2DashboardTemplate } from "@maple/domain/http/v2"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
 import { AsyncData } from "foldkit"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command } from "foldkit"
-import * as Chart from "../../../charts/chart"
-import { LoadChartRuntime } from "../../../charts/chart-runtime"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import { AppRoute, hrefOf } from "../../../route"
 import type { DashboardsTemplatesSearch } from "../../../route/search"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { planWidget } from "../kit/widget-data"
 import {
 	AwaitCreated,
@@ -154,7 +154,7 @@ const planPreview = (model: Model, context: PageContext): Return => {
 	// `ResolvedDashboardVariablesProvider` declares no variables, so nothing waits on one.
 	const variables = { names: [], values: previewVariableValues(preview.variables) }
 	const initial: PreviewPlan = { gates: model.gates, requests: model.requests, commands: [], asked: [] }
-	const planned = shown.reduce((state, widget) => {
+	const planned = Arr.reduce(shown, initial, (state, widget) => {
 		const gate = planWidget({
 			orgId: context.orgId,
 			dataSource: widget.dataSource,
@@ -174,14 +174,14 @@ const planPreview = (model: Model, context: PageContext): Return => {
 				asked: [...state.asked, key],
 			}),
 		})
-	}, initial)
+	})
 	return {
 		model: {
 			...model,
 			gates: planned.gates,
 			requests: planned.requests,
-			charts: Object.fromEntries(
-				shown.map((widget) => [widget.id, model.charts[widget.id] ?? Chart.init()]),
+			charts: Rec.fromEntries(
+				Arr.map(shown, (widget) => [widget.id, model.charts[widget.id] ?? Chart.init()]),
 			),
 		},
 		commands: planned.commands,
@@ -199,10 +199,11 @@ const selectionHref = (templateId: string | undefined) =>
 /** `createFromTemplate`: only filled parameters are sent. */
 const create = (model: Model, templateId: string): Return => {
 	if (model.isCreating) return { model }
-	const parameters = Object.fromEntries(
-		Object.entries(model.parameters)
-			.map(([key, value]) => [key, value.trim()] as const)
-			.filter(([, value]) => value.length > 0),
+	const parameters = Rec.fromEntries(
+		Arr.filter(
+			Arr.map(Rec.toEntries(model.parameters), ([key, value]) => [key, Str.trim(value)] as const),
+			([, value]) => value.length > 0,
+		),
 	)
 	return {
 		model: { ...model, isCreating: true },
@@ -240,7 +241,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const preview = Keyed.accept(model.preview, key, result)
 			const widgets = Option.match(AsyncData.getData(preview.data), {
 				onNone: () => model.previewWidgets,
-				onSome: (data) => data.widgets.flatMap((widget) => Option.toArray(decodeWidget(widget))),
+				onSome: (data) => Arr.flatMap(data.widgets, (widget) => Option.toArray(decodeWidget(widget))),
 			})
 			return planPreview({ ...model, preview, previewWidgets: widgets }, context)
 		},
@@ -280,7 +281,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ElapsedSearchDebounce: ({ generation }) =>
 			generation === model.searchGeneration
-				? { model: { ...model, query: model.searchDraft.trim() } }
+				? { model: { ...model, query: Str.trim(model.searchDraft) } }
 				: { model },
 		ChangedFilter: ({ filter }) => ({ model: { ...model, filter } }),
 		ClickedTemplate: ({ templateId }) => navigate(model, selectionHref(templateId), true),

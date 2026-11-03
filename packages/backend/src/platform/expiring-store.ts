@@ -2,7 +2,7 @@
  * Keyed values that expire, held in a Ref. A store made once and provided to every event outlives
  * the event's layer, which is how a Worker keeps a cache for the isolate instead of the batch.
  */
-import { Clock, Effect, HashMap, Option, Ref } from "effect"
+import { Clock, Effect, HashMap, Option, Ref, Array as Arr } from "effect"
 
 interface Entry<A> {
 	readonly value: A
@@ -31,7 +31,7 @@ const makeRoom = <A>(entries: HashMap.HashMap<string, Entry<A>>, now: number, ma
 	const byExpiry = Array.from(live).sort(([, a], [, b]) => a.expiresAtMs - b.expiresAtMs)
 	return HashMap.removeMany(
 		live,
-		byExpiry.slice(0, HashMap.size(live) - maxEntries + 1).map(([key]) => key),
+		Arr.map(byExpiry.slice(0, HashMap.size(live) - maxEntries + 1), ([key]) => key),
 	)
 }
 

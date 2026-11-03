@@ -1,6 +1,6 @@
 import { resolveRelativeRangeToWarehouse } from "@maple/query-engine"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -8,7 +8,7 @@ import { readEffectiveTimeZone, readSelectedTimeZone } from "../platform/time-zo
 import { presetLabel } from "../page/kit/time-controls"
 import { dashboardPage } from "../page/kit/dashboard-page"
 import * as TimeRangePicker from "../page/kit/time-range-picker"
-import { kbd } from "../ui/display"
+import { kbd } from "@maple/views/ui/display"
 
 // The header time range picker over plain state, and a strip
 // printing the window and two fixed instants in the effective zone.
@@ -159,7 +159,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 				[
 					h.dl(
 						[h.Class("divide-y divide-border-subtle rounded-lg border border-border-subtle")],
-						rowsOf(model).map((row) =>
+						Arr.map(rowsOf(model), (row) =>
 							h.div(
 								[
 									h.Key(row.label),

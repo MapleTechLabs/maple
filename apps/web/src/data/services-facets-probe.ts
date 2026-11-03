@@ -2,7 +2,7 @@ import { getServicesFacets } from "@maple/web-data/warehouse/services"
 import { Effect, Schema } from "effect"
 import { IdleTtl } from "./idle-ttl"
 import { ReadCache } from "./read-cache"
-import type { RequestKey } from "./request-key"
+import type { RequestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "./time-range"
 
 /** The operation the pages key the facets slot under: `requestKey(org, SERVICES_FACETS, { data })`. */

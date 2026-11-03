@@ -9,6 +9,12 @@ import {
 	type RepoSandboxServiceApi,
 } from "@maple/backend/services/sandbox/RepoSandboxService"
 import {
+	ExecutorService,
+	type ExecutorServiceApi,
+	ExecutorServiceError,
+} from "@maple/backend/services/sandbox/ExecutorService"
+import { ExecutorInstall } from "@maple/domain/executor"
+import {
 	SecurityAuditStore,
 	type SecurityAuditOrgStore,
 } from "@maple/backend/services/security-audit/SecurityAuditStore"
@@ -24,7 +30,20 @@ import {
 	type Finding,
 } from "@maple/security-audit"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Cause, ConfigProvider, Duration, Effect, Exit, Layer, Logger, Option, Schema } from "effect"
+import {
+	Cause,
+	ConfigProvider,
+	Duration,
+	Effect,
+	Exit,
+	Layer,
+	Logger,
+	Option,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import {
 	SecurityAuditCredits,
@@ -36,7 +55,7 @@ import { auditWithAgents, toSandboxStepError } from "./workflow.run"
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const SHA = "a".repeat(40)
+const SHA = Str.repeat(40)("a")
 const refs = {
 	surface: "src/routes/keys.ts#POST /keys",
 	boundary: "src/auth.ts#requireOrg",
@@ -122,7 +141,10 @@ const sandbox = (
 		prepare: () => Effect.void,
 		exec: (_org, _target, options) =>
 			Effect.suspend(() => {
-				if (options.command === "bash" && options.args.some((arg) => arg.includes("awk -F/"))) {
+				if (
+					options.command === "bash" &&
+					Arr.some(options.args, (arg) => Str.includes("awk -F/")(arg))
+				) {
 					commands.push("list directories")
 					return ok("src\nsrc/routes\n")
 				}
@@ -132,17 +154,25 @@ const sandbox = (
 				}
 				if (options.args.includes("ls-files")) {
 					commands.push("list manifests")
-					return ok(Object.keys(tree).join("\n"))
+					return ok(Arr.join(Rec.keys(tree), "\n"))
 				}
-				const shown = options.args.find((arg) => arg.startsWith("HEAD:"))?.slice("HEAD:".length)
+				const shown = options.args.find((arg) => Str.startsWith("HEAD:")(arg))?.slice("HEAD:".length)
 				if (shown !== undefined) return ok(tree[shown] ?? "")
-				commands.push([options.command, ...options.args].join(" "))
+				commands.push(Arr.join([options.command, ...options.args], " "))
 				return ok(options.args[0] === "rev-parse" ? `${SHA}\n` : "src/routes/keys.ts\n")
 			}),
 		grep: () => ok(""),
 		listFiles: () => ok(""),
 		readFile: () => ok(""),
 	}
+}
+
+/** A deployment without an execution sandbox, as every test has unless it provides one. */
+const unboundExecutor: ExecutorServiceApi = {
+	available: false,
+	prepare: () => Effect.die("no executor in this test"),
+	run: () => Effect.die("no executor in this test"),
+	destroy: () => Effect.void,
 }
 
 /** A step service that records names and replays a recorded result, as Cloudflare does after a restart. */
@@ -164,6 +194,7 @@ const replayingStep = (recorded: Map<string, unknown>): Cloudflare.WorkflowStep[
 /** The store over a fresh database, and an HTTP client no test reaches: billing is unconfigured. */
 const testLayer = () =>
 	Layer.mergeAll(
+		Layer.succeed(ExecutorService, unboundExecutor),
 		SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
 		SecurityAuditCredits.unmetered,
 		BillingCustomerResolver.standalone,
@@ -214,7 +245,8 @@ describe("auditWithAgents", () => {
 			const unlistable: RepoSandboxServiceApi = {
 				...base,
 				exec: (org, repo, options) =>
-					options.command === "bash" && options.args.some((arg) => arg.includes("awk -F/"))
+					options.command === "bash" &&
+					Arr.some(options.args, (arg) => Str.includes("awk -F/")(arg))
 						? Effect.succeed({
 								exitCode: 128,
 								stdout: "",
@@ -233,8 +265,8 @@ describe("auditWithAgents", () => {
 			)
 			assert.isTrue(calls.length > 0)
 			assert.isTrue(
-				warnings.some((message) =>
-					String(message).includes("Could not list the repository's directories"),
+				Arr.some(warnings, (message) =>
+					Str.includes("Could not list the repository's directories")(String(message)),
 				),
 			)
 		}).pipe(Effect.provide(testLayer())),
@@ -258,7 +290,7 @@ describe("auditWithAgents", () => {
 				[
 					result.status,
 					Option.map(finished, (r) => [r.status, r.sourceRef]),
-					units.map((u) => u.status),
+					Arr.map(units, (u) => u.status),
 				],
 				// The row records the pinned commit, which the next run diffs against.
 				["complete", Option.some(["complete", SHA]), ["covered"]],
@@ -292,7 +324,7 @@ describe("auditWithAgents", () => {
 			)
 			const hunter = prompts.find((i) => i.role === "hunter")?.prompt ?? ""
 			assert.include(hunter, "src/\n  routes/")
-			assert.strictEqual(commands.filter((c) => c === "list directories").length, 1)
+			assert.strictEqual(Arr.filter(commands, (c) => c === "list directories").length, 1)
 		}).pipe(Effect.provide(testLayer())),
 	)
 
@@ -318,37 +350,36 @@ describe("auditWithAgents", () => {
 			)
 			const row = yield* store.getRun(run.id)
 			const valuesOf = (kind: string) =>
-				charges.flatMap(({ body }) => (body.properties.kind === kind ? [body.value] : []))
+				Arr.flatMap(charges, ({ body }) => (body.properties.kind === kind ? [body.value] : []))
 			assert.isTrue(calls.length >= 8)
 			assert.deepStrictEqual(
 				{
 					sandbox: valuesOf("sandbox"),
 					model: valuesOf("model"),
-					keys: new Set(charges.map((c) => c.key)).size,
+					keys: new Set(Arr.map(charges, (c) => c.key)).size,
 					runSandboxUsd: Option.map(row, (r) => r.sandboxUsd),
 				},
 				{
-					sandbox: calls.map(() => 0.05),
-					model: calls.map(() => aiCreditsUsd(0.25)),
+					sandbox: Arr.map(calls, () => 0.05),
+					model: Arr.map(calls, () => aiCreditsUsd(0.25)),
 					keys: calls.length * 2,
-					runSandboxUsd: Option.some(calls.reduce((sum) => sum + 0.05, 0)),
+					runSandboxUsd: Option.some(Arr.reduce(calls, 0, (sum) => sum + 0.05)),
 				},
 			)
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
-					SecurityAuditCredits.unmetered,
-					BillingCustomerResolver.standalone,
-					Layer.succeed(HttpClient.HttpClient, recording),
-					ConfigProvider.layer(
-						ConfigProvider.fromUnknown({
-							AUTUMN_SECRET_KEY: "am_sk_test",
-							SECURITY_AUDIT_SANDBOX_FEE_USD: "0.05",
-						}),
-					),
+			Effect.provide([
+				Layer.succeed(ExecutorService, unboundExecutor),
+				SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
+				SecurityAuditCredits.unmetered,
+				BillingCustomerResolver.standalone,
+				Layer.succeed(HttpClient.HttpClient, recording),
+				ConfigProvider.layer(
+					ConfigProvider.fromUnknown({
+						AUTUMN_SECRET_KEY: "am_sk_test",
+						SECURITY_AUDIT_SANDBOX_FEE_USD: "0.05",
+					}),
 				),
-			),
+			]),
 		)
 	})
 
@@ -387,20 +418,19 @@ describe("auditWithAgents", () => {
 				{ status: "complete", charges: 0, runSandboxUsd: Option.some(0), modelUsd: true },
 			)
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
-					noCredits,
-					BillingCustomerResolver.standalone,
-					Layer.succeed(HttpClient.HttpClient, recording),
-					ConfigProvider.layer(
-						ConfigProvider.fromUnknown({
-							AUTUMN_SECRET_KEY: "am_sk_test",
-							SECURITY_AUDIT_SANDBOX_FEE_USD: "0.05",
-						}),
-					),
+			Effect.provide([
+				Layer.succeed(ExecutorService, unboundExecutor),
+				SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
+				noCredits,
+				BillingCustomerResolver.standalone,
+				Layer.succeed(HttpClient.HttpClient, recording),
+				ConfigProvider.layer(
+					ConfigProvider.fromUnknown({
+						AUTUMN_SECRET_KEY: "am_sk_test",
+						SECURITY_AUDIT_SANDBOX_FEE_USD: "0.05",
+					}),
 				),
-			),
+			]),
 		)
 	})
 
@@ -475,17 +505,16 @@ describe("auditWithAgents", () => {
 				{ status: "incomplete", agents: 3, reason: Option.some(true) },
 			)
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
-					runningOut,
-					BillingCustomerResolver.standalone,
-					Layer.succeed(
-						HttpClient.HttpClient,
-						HttpClient.make(() => Effect.die("no network in tests")),
-					),
+			Effect.provide([
+				Layer.succeed(ExecutorService, unboundExecutor),
+				SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
+				runningOut,
+				BillingCustomerResolver.standalone,
+				Layer.succeed(
+					HttpClient.HttpClient,
+					HttpClient.make(() => Effect.die("no network in tests")),
 				),
-			),
+			]),
 		)
 	})
 
@@ -515,26 +544,26 @@ describe("auditWithAgents", () => {
 				{
 					// One spend check per agent, plus the five that met the outage.
 					extraChecks:
-						attempts.filter((name) => name.startsWith("org-budget:")).length - calls.length,
+						Arr.filter(attempts, (name) => Str.startsWith("org-budget:")(name)).length -
+						calls.length,
 					unavailable: Option.map(row, (r) =>
-						(r.incompleteReason ?? "").includes("org_budget_unavailable"),
+						Str.includes("org_budget_unavailable")(r.incompleteReason ?? ""),
 					),
 					ran: calls.length > 1,
 				},
 				{ extraChecks: 5, unavailable: Option.some(false), ran: true },
 			)
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
-					flaky,
-					BillingCustomerResolver.standalone,
-					Layer.succeed(
-						HttpClient.HttpClient,
-						HttpClient.make(() => Effect.die("no network in tests")),
-					),
+			Effect.provide([
+				Layer.succeed(ExecutorService, unboundExecutor),
+				SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
+				flaky,
+				BillingCustomerResolver.standalone,
+				Layer.succeed(
+					HttpClient.HttpClient,
+					HttpClient.make(() => Effect.die("no network in tests")),
 				),
-			),
+			]),
 		)
 	})
 
@@ -609,6 +638,169 @@ describe("auditWithAgents", () => {
 			}).pipe(Effect.provide(testLayer())),
 	)
 
+	describe("with an execution sandbox", () => {
+		/** An executor that records what it was asked, preparing with `prepared` (or failing). */
+		const recordingExecutor = (prepared: "installed" | "fails" | "unavailable") => {
+			const asked: Array<string> = []
+			const executor: ExecutorServiceApi = {
+				available: true,
+				prepare: (_org, runId, target) =>
+					Effect.suspend(() => {
+						asked.push(`prepare ${runId} ${target.sha}`)
+						return prepared === "fails"
+							? Effect.fail(
+									new ExecutorServiceError({
+										message: "npm ci failed",
+										reason: "prepare_failed",
+									}),
+								)
+							: prepared === "unavailable"
+								? Effect.fail(
+										new ExecutorServiceError({
+											message: "the executor could not start its container",
+											reason: "unavailable",
+										}),
+									)
+								: Effect.succeed([
+										new ExecutorInstall({
+											dir: ".",
+											manager: "npm",
+											outcome: "installed",
+											detail: "added 3",
+										}),
+									])
+					}),
+				run: () => Effect.die("no command runs in this test"),
+				destroy: (runId) => Effect.sync(() => void asked.push(`destroy ${runId}`)),
+			}
+			return { executor, asked }
+		}
+
+		/** What the agents were given: execution or not, and every prompt. */
+		interface Seen {
+			execution: boolean | undefined
+			readonly prompts: Array<string>
+		}
+
+		/** Agents that record whether they were given execution, and every prompt. */
+		const watched = (seen: Seen) => (_source: unknown, execution?: unknown) => {
+			seen.execution = execution !== undefined
+			const agents = scriptedAgents([])
+			return Effect.succeed<AuditAgentsApi>({
+				run: (invocation) => {
+					seen.prompts.push(invocation.prompt)
+					return agents.run(invocation)
+				},
+			})
+		}
+
+		it.effect("prepares a Node repository once, gives agents execution, and destroys it after", () =>
+			Effect.gen(function* () {
+				const { store, target } = yield* setup
+				const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+				const { executor, asked } = recordingExecutor("installed")
+				const seen: Seen = { execution: undefined, prompts: [] }
+				yield* auditWithAgents(payloadFor(run.id), watched(seen)).pipe(
+					Effect.provideService(
+						RepoSandboxService,
+						sandbox([], SMALL_REPO, { "package.json": "{}", "package-lock.json": "{}" }),
+					),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+					Effect.provideService(ExecutorService, executor),
+				)
+				const row = yield* store.getRun(run.id)
+				assert.deepStrictEqual(asked, [`prepare ${run.id} ${SHA}`, `destroy ${run.id}`])
+				assert.isTrue(seen.execution)
+				assert.isTrue(
+					Arr.some(seen.prompts, (prompt) =>
+						Str.includes("The parent-approved OS-enforced sandbox is available")(prompt),
+					),
+				)
+				assert.isTrue(
+					Arr.some(seen.prompts, (prompt) => Str.includes("the root (npm, installed)")(prompt)),
+				)
+				assert.deepStrictEqual(
+					Option.map(row, (r) => r.executionProfile?.mode ?? "none"),
+					Option.some("executable"),
+				)
+			}).pipe(Effect.provide(testLayer())),
+		)
+
+		it.effect("runs source-only, saying why, when prepare fails", () =>
+			Effect.gen(function* () {
+				const { store, target } = yield* setup
+				const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+				const { executor, asked } = recordingExecutor("fails")
+				const seen: Seen = { execution: undefined, prompts: [] }
+				yield* auditWithAgents(payloadFor(run.id), watched(seen)).pipe(
+					Effect.provideService(
+						RepoSandboxService,
+						sandbox([], SMALL_REPO, { "package.json": "{}" }),
+					),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+					Effect.provideService(ExecutorService, executor),
+				)
+				const row = yield* store.getRun(run.id)
+				assert.deepStrictEqual(asked, [`prepare ${run.id} ${SHA}`])
+				assert.isFalse(seen.execution)
+				assert.isTrue(
+					Arr.some(seen.prompts, (prompt) =>
+						Str.includes("could not prepare the repository: npm ci failed")(prompt),
+					),
+				)
+				assert.deepStrictEqual(
+					Option.map(row, (r) => [r.executionProfile?.mode, r.executionProfile?.reasons.at(-1)]),
+					Option.some([
+						"source_only",
+						"the execution sandbox could not prepare the repository: npm ci failed",
+					]),
+				)
+			}).pipe(Effect.provide(testLayer())),
+		)
+
+		it.effect("degrades to source-only, never a failed run, when the executor stays unavailable", () =>
+			Effect.gen(function* () {
+				const { store, target } = yield* setup
+				const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+				const { executor } = recordingExecutor("unavailable")
+				const seen: Seen = { execution: undefined, prompts: [] }
+				yield* auditWithAgents(payloadFor(run.id), watched(seen)).pipe(
+					Effect.provideService(
+						RepoSandboxService,
+						sandbox([], SMALL_REPO, { "package.json": "{}" }),
+					),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+					Effect.provideService(ExecutorService, executor),
+				)
+				const row = yield* store.getRun(run.id)
+				assert.isFalse(seen.execution)
+				assert.deepStrictEqual(
+					Option.map(row, (r) => [r.status === "failed", r.executionProfile?.mode ?? "none"]),
+					Option.some([false, "source_only"]),
+				)
+			}).pipe(Effect.provide(testLayer())),
+		)
+
+		it.effect("prepares nothing for a repository in an ecosystem the sandbox cannot run", () =>
+			Effect.gen(function* () {
+				const { store, target } = yield* setup
+				const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+				const { executor, asked } = recordingExecutor("installed")
+				const seen: Seen = { execution: undefined, prompts: [] }
+				yield* auditWithAgents(payloadFor(run.id), watched(seen)).pipe(
+					Effect.provideService(
+						RepoSandboxService,
+						sandbox([], SMALL_REPO, { "go.mod": "module acme.dev/api\n" }),
+					),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+					Effect.provideService(ExecutorService, executor),
+				)
+				assert.deepStrictEqual(asked, [])
+				assert.isFalse(seen.execution)
+			}).pipe(Effect.provide(testLayer())),
+		)
+	})
+
 	it.effect("keeps a recorded size verdict on replay when the limits changed since", () =>
 		Effect.gen(function* () {
 			const { store, target } = yield* setup
@@ -669,7 +861,7 @@ describe("auditWithAgents", () => {
 			const step: Cloudflare.WorkflowStep["Service"] = {
 				...replaying,
 				do: (options) =>
-					options.name.startsWith("org-budget:")
+					Str.startsWith("org-budget:")(options.name)
 						? Effect.die(new Error("step timed out after 30 seconds"))
 						: replaying.do(options),
 			}
@@ -704,7 +896,7 @@ describe("auditWithAgents", () => {
 			const step: Cloudflare.WorkflowStep["Service"] = {
 				...replaying,
 				do: (options) =>
-					options.name.startsWith("agent:")
+					Str.startsWith("agent:")(options.name)
 						? Effect.die(
 								new Error(
 									"Connection closed: this Durable Object instance is no longer active. Reconnect or retry the request.",
@@ -783,7 +975,7 @@ describe("auditWithAgents", () => {
 				[
 					second,
 					replay.status,
-					[...recorded.keys()].filter((k) => k.startsWith("agent:")).length,
+					Arr.filter([...recorded.keys()], (k) => Str.startsWith("agent:")(k)).length,
 					yield* store.orgSpendUsd(0),
 				],
 				// The replay bills no agent's sandbox fee a second time.
@@ -814,7 +1006,7 @@ describe("auditWithAgents", () => {
 			)
 			const units = yield* store.listUnits(next.id)
 			assert.deepStrictEqual(
-				[commands, units.map((u) => u.unit.prior_status)],
+				[commands, Arr.map(units, (u) => u.unit.prior_status)],
 				[
 					[
 						"git rev-parse HEAD",
@@ -851,7 +1043,7 @@ describe("auditWithAgents, prior runs", () => {
 			)
 			const units = yield* store.listUnits(run.id)
 			assert.deepStrictEqual(
-				[commands, units.map((u) => u.unit.prior_status)],
+				[commands, Arr.map(units, (u) => u.unit.prior_status)],
 				[["git rev-parse HEAD", "measure size", "list manifests", "list directories"], ["none"]],
 			)
 		}).pipe(Effect.provide(testLayer())),
@@ -901,7 +1093,7 @@ describe("auditWithAgents, prior runs", () => {
 			)
 			const units = yield* store.listUnits(next.id)
 			assert.deepStrictEqual(
-				units.map((u) => u.unit.prior_status),
+				Arr.map(units, (u) => u.unit.prior_status),
 				["prior_covered_changed_source"],
 			)
 		}).pipe(Effect.provide(testLayer())),
@@ -996,7 +1188,7 @@ describe("auditWithAgents, settling", () => {
 			)
 			const findings = yield* store.listFindings(target.id)
 			assert.deepStrictEqual(
-				findings.map((f) => f.status),
+				Arr.map(findings, (f) => f.status),
 				["open"],
 			)
 		}).pipe(Effect.provide(testLayer())),
@@ -1024,7 +1216,7 @@ describe("auditWithAgents, settling", () => {
 			)
 			const findings = yield* store.listFindings(target.id)
 			assert.deepStrictEqual(
-				findings.map((f) => f.status),
+				Arr.map(findings, (f) => f.status),
 				["open"],
 			)
 		}).pipe(Effect.provide(testLayer())),
@@ -1085,9 +1277,9 @@ describe("auditWithAgents, settling", () => {
 				assert.deepStrictEqual(
 					[
 						result.status,
-						calls.every((id) => id.startsWith("recon-")),
+						Arr.every(calls, (id) => Str.startsWith("recon-")(id)),
 						Option.map(row, (r) => [r.status, r.incompleteReason]),
-						findings.map((f) => f.status),
+						Arr.map(findings, (f) => f.status),
 					],
 					// Only the reconnaissance already admitted alongside the first agent ran; nothing after.
 					["incomplete", true, Option.some(["incomplete", "cancelled"]), ["open"]],
@@ -1119,7 +1311,7 @@ describe("auditWithAgents, settling", () => {
 				)
 				const findings = yield* store.listFindings(target.id)
 				assert.deepStrictEqual(
-					findings.map((f) => [f.fingerprint, f.status]),
+					Arr.map(findings, (f) => [f.fingerprint, f.status]),
 					[["keys/roll-missing-org-scope", "fixed"]],
 				)
 			}).pipe(Effect.provide(testLayer())),
@@ -1176,7 +1368,7 @@ const nativeStep = (attempts: Array<string>) =>
 			attempts.push(name)
 			return callback({ step: { name, count: 1 }, attempt: n, config }).catch((error: unknown) =>
 				error instanceof Error &&
-				error.message.startsWith("[alchemy-workflow-failure:v1]") &&
+				Str.startsWith("[alchemy-workflow-failure:v1]")(error.message) &&
 				n <= (config.retries?.limit ?? 0)
 					? attempt(name, config, callback, n + 1)
 					: Promise.reject(error),
@@ -1275,7 +1467,7 @@ describe("sandbox failures across a step", () => {
 			assert.deepStrictEqual(
 				[
 					exit._tag,
-					attempts.filter((name) => name === "refuse").length,
+					Arr.filter(attempts, (name) => name === "refuse").length,
 					Option.map(row, (r) => [r.status, r.error?.startsWith("repository_refused:")]),
 				],
 				["Failure", 2, Option.some(["failed", true])],
@@ -1299,7 +1491,7 @@ describe("sandbox failures across a step", () => {
 			assert.deepStrictEqual(
 				[
 					result.status,
-					attempts.filter((name) => name === "save-execution-profile").length,
+					Arr.filter(attempts, (name) => name === "save-execution-profile").length,
 					Option.map(row, (r) => [r.status, r.executionProfile?.mode]),
 				],
 				["complete", 2, Option.some(["complete", "source_only"])],

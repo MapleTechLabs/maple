@@ -3,6 +3,7 @@ import { executeLocalQuery } from "@maple/query-engine/local"
 import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { cachedAs, withCache } from "../../data/cached"
+import { localFailure } from "../../data/local-query"
 import { Message } from "./message"
 import { LocalTable } from "./model"
 
@@ -29,7 +30,7 @@ export const FetchTables = Command.define("FetchQueryConsoleTables", {
 			succeeded: (tables, fetchedAtMs) => Message.SucceededFetchTables({ key, tables, fetchedAtMs }),
 		}).pipe(
 			Effect.catch((error) =>
-				Effect.succeed(Message.FailedFetchTables({ key, failure: { message: describeQueryError(error).detail } })),
+				Effect.succeed(Message.FailedFetchTables({ key, failure: localFailure({ message: describeQueryError(error).detail }) })),
 			),
 		),
 })

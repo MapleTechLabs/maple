@@ -1,16 +1,16 @@
-import { LOGS_TABLE_BENCH_ROWS } from "../../bench/logs-table-bench-fixture"
-import { Effect, Option, Schema, Stream } from "effect"
+import { FIXTURE_LOG_LINKS, LOGS_TABLE_BENCH_ROWS } from "@maple/views/fixtures/logs-table-bench-fixture"
+import { Effect, Option, Schema, Stream, Array as Arr } from "effect"
 import { Mount, Subscription, Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
-import { logTimeFormat, toLogRowView } from "../../../ui/logs/log-row-view"
-import * as LogsStream from "../../../ui/logs/logs-stream"
-import * as LogsStreamView from "../../../ui/logs/logs-stream-view"
-import { listFooterText, ViewerFlags, viewerFlags } from "../../../ui/logs/viewer"
+import { logTimeFormat, toLogRowView } from "@maple/views/ui/logs/log-row-view"
+import * as LogsStream from "@maple/views/ui/logs/logs-stream"
+import * as LogsStreamView from "@maple/views/ui/logs/logs-stream-view"
+import { listFooterText, ViewerFlags, viewerFlags } from "@maple/views/ui/logs/viewer"
 import { defineLabWithFlags } from "../../define"
 import { foldLabToasts, initLabToasts, labRoot } from "../../toasts"
-import * as Toast from "../../../ui/toast"
+import * as Toast from "@maple/views/ui/toast"
 import { installLogsBench } from "../../bench/logs-harness"
 
 /**
@@ -57,7 +57,9 @@ const init = (flags: ViewerFlags): Update.Return<Model, Message> => {
 		model: {
 			stream: LogsStream.init(
 				"logs-bench",
-				LOGS_TABLE_BENCH_ROWS.map((log) => toLogRowView(log, PINNED_COLUMNS, time)),
+				Arr.map(LOGS_TABLE_BENCH_ROWS, (log) =>
+					toLogRowView(log, PINNED_COLUMNS, time, FIXTURE_LOG_LINKS),
+				),
 			),
 			timeZone: flags.timeZone,
 			toasts: initLabToasts(),

@@ -1,9 +1,9 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../../../ui/eyebrow"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 import { type AttentionItem, MAX_ATTENTION_ITEMS, needsAttention } from "./attention"
 import type { HealthStrip } from "./derive"
 import { Message } from "./message"
@@ -28,7 +28,7 @@ const itemRow = (h: H, item: AttentionItem, timeZone: string): Html =>
 				[
 					item.lastSeen === null
 						? item.detail
-						: `${item.detail} · last ${formatClockInTimezone(item.lastSeen, { timeZone }).slice(0, 5)}`,
+						: `${item.detail} · last ${Str.slice(0, 5)(formatClockInTimezone(item.lastSeen, { timeZone }))}`,
 				],
 			),
 		],
@@ -89,14 +89,14 @@ export const attentionPanel = (h: H, model: Model, strip: HealthStrip | null, ti
 						? [
 								h.ul(
 									[h.AriaLabel("Needs attention")],
-									items
-										.slice(0, MAX_ATTENTION_ITEMS)
-										.map((item) => itemRow(h, item, timeZone)),
+									Arr.map(items.slice(0, MAX_ATTENTION_ITEMS), (item) =>
+										itemRow(h, item, timeZone),
+									),
 								),
 							]
 						: failures.length > 0
 							? []
-							: [panelEmpty(h, ["Nothing needs attention."])]),
+							: [panelEmpty(h, ["Nothing needs attention"])]),
 				],
 	)
 }

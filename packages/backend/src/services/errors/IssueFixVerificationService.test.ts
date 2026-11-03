@@ -1,6 +1,17 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Predicate, Schema } from "effect"
+import {
+	Cause,
+	ConfigProvider,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Predicate,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { OrgId, type PullRequestSummary, type WorkflowState } from "@maple/domain/http"
 import { ErrorIssueId } from "@maple/domain/primitives"
 import * as Orm from "@maple-dev/effect-orm/database"
@@ -111,7 +122,7 @@ const seedIssue = (options: SeedIssueOptions = {}) =>
 					id,
 					orgId: ORG,
 					kind: "error",
-					fingerprintHash: `fp-${id.slice(0, 8)}`,
+					fingerprintHash: `fp-${Str.slice(0, 8)(id)}`,
 					serviceName: "checkout",
 					exceptionType: "TypeError",
 					exceptionMessage: "undefined is not a function",
@@ -181,7 +192,7 @@ const readEventTypes = (issueId: ErrorIssueId) =>
 					.where(($) => [$.issueId.eq(issueId)]),
 			),
 		)
-		return rows.map((row) => row.type)
+		return Arr.map(rows, (row) => row.type)
 	})
 
 const mergeEvent = (overrides: Partial<PullRequestEventInput> = {}): PullRequestEventInput => ({
@@ -375,7 +386,8 @@ describe("linkPullRequest hydration", () => {
 		Effect.gen(function* () {
 			const mergedAtMs = Date.now() - HOUR
 			const layer = makeLayer({
-				pullRequest: () => summary({ state: "merged", mergedAtMs, mergeCommitSha: "a".repeat(40) }),
+				pullRequest: () =>
+					summary({ state: "merged", mergedAtMs, mergeCommitSha: Str.repeat(40)("a") }),
 			})
 			yield* Effect.gen(function* () {
 				const service = yield* IssueFixVerificationService

@@ -10,7 +10,9 @@ import {
 	type AlertThreshold,
 	type AlertThresholds,
 } from "@maple/domain/http"
-import { Array as Arr } from "effect"
+import { Array as Arr, Schema } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** Destinations an incident at `severity` notifies: its tier and every tier under it. */
 const destinationsUpTo = (
@@ -67,7 +69,7 @@ export const tierConditionChanged = (
 	b: { readonly comparator: string; readonly thresholds: AlertThresholds },
 ): boolean => {
 	const key = (rule: typeof a) =>
-		JSON.stringify([
+		encodeJson([
 			rule.comparator,
 			rule.thresholds.map((t) => [t.severity, t.value, t.upper, t.recoveryValue]),
 		])

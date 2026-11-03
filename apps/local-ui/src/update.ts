@@ -1,8 +1,9 @@
 import type { Resources } from "./platform/resources"
-import * as Dialog from "@maple/web/ui/dialog"
-import * as Popover from "@maple/web/ui/popover"
-import * as Tabs from "@maple/web/ui/tabs"
-import * as Toast from "@maple/web/ui/toast"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Popover from "@maple/views/ui/popover"
+import * as Tabs from "@maple/views/ui/tabs"
+import * as Toast from "@maple/views/ui/toast"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 import { Option, Result } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { UrlRequest } from "foldkit/navigation"
@@ -117,6 +118,15 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			return {
 				model: { ...model, toasts: next.model },
 				commands: Command.mapMessages(next.commands ?? [], (toast) => Message.GotToastMessage({ message: toast })),
+			}
+		},
+		GotTooltipMessage: ({ message: child }) => {
+			const next = TooltipHost.update(model.tooltip, child)
+			return {
+				model: { ...model, tooltip: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (tooltip) =>
+					Message.GotTooltipMessage({ message: tooltip }),
+				),
 			}
 		},
 		GotPageMessage: ({ message: child }) => updatePageMessage(model, child),

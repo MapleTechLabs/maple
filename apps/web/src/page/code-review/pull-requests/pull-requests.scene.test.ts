@@ -1,9 +1,9 @@
 import { CodeReviewDetail, PrReviewId } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Result, Schema, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
-import * as Dialog from "../../../ui/dialog"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 import { FrameMessage } from "../kit/frame"
 import { SheetMessage } from "../kit/review-sheet"
 import { context, names, NOW, PAYMENTS, window } from "../kit/test-fixtures"
@@ -23,7 +23,7 @@ const review = {
 	title: "Fix",
 	url: "https://github.com/acme-shop/payments/pull/7",
 	authorLogin: null,
-	headSha: "a".repeat(40),
+	headSha: Str.repeat(40)("a"),
 	status: "completed",
 	skipReason: null,
 	verdict: null,

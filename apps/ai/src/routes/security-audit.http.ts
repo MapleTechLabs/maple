@@ -37,7 +37,7 @@ import {
 } from "@maple/domain/security-audit"
 import type { SecurityAuditFindingRow, SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
 import { AuditStoreError } from "@maple/security-audit"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, DateTime, Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SecurityAuditWorkflowStarter } from "@maple/backend/platform/bindings"
 import { isAdmin, requireAdmin } from "@maple/backend/services/auth/auth"
@@ -146,9 +146,9 @@ const toUnit = (row: SecurityAuditUnitSummary): SecurityAuditUnit => ({
 	failedAttempts: row.fields?.failed_attempts ?? null,
 	resultFingerprints: (row.fields?.result_fingerprints ?? []).slice(0, MAX_RESULT_FINGERPRINTS),
 	carriedFingerprint: row.fields?.carried_fingerprint ?? null,
-	unresolved: (row.fields?.unresolved ?? [])
-		.slice(0, MAX_UNRESOLVED)
-		.map((note) => note.slice(0, MAX_UNRESOLVED_CHARS)),
+	unresolved: Arr.map((row.fields?.unresolved ?? []).slice(0, MAX_UNRESOLVED), (note) =>
+		Str.slice(0, MAX_UNRESOLVED_CHARS)(note),
+	),
 })
 
 /** A store failure is the database's, never the caller's: a 503 that names the operation. */
@@ -221,9 +221,11 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 		 */
 		const orgSettings = (store: SecurityAuditOrgStore) =>
 			Effect.gen(function* () {
-				const row = Option.getOrNull(yield* orUnavailable(store.getSettings()))
+				const settings = yield* orUnavailable(store.getSettings())
+				const row = Option.getOrNull(settings)
 				const llm = yield* loadLlmSettings
-				const window = securityAuditSpendWindow(yield* Clock.currentTimeMillis)
+				const now = yield* Clock.currentTimeMillis
+				const window = securityAuditSpendWindow(now)
 				const spentUsd = yield* orUnavailable(store.orgSpendUsd(window.since))
 				const models = securityAuditModelIds(llm, {
 					discovery: row?.discoveryModel ?? null,
@@ -245,7 +247,8 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			Effect.gen(function* () {
 				const bytes = yield* repositorySize.bytes(orgId, repository)
 				if (Option.isNone(bytes)) return
-				const violations = hostedSizeViolations(bytes.value, yield* securityAuditLimits)
+				const limits = yield* securityAuditLimits
+				const violations = hostedSizeViolations(bytes.value, limits)
 				if (violations.length === 0) return
 				return yield* new SecurityAuditRepositoryTooLargeError({
 					message: refusalReason(violations),
@@ -368,7 +371,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 				Effect.gen(function* () {
 					const { store } = yield* orgAccess
 					const rows = yield* orUnavailable(store.listTargets())
-					return { targets: rows.map(toTarget) }
+					return { targets: Arr.map(rows, toTarget) }
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listTargets")),
 			)
 			.handle("startRun", ({ params, payload }) =>
@@ -382,7 +385,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 							message: `This organization has spent its $${org.monthlySpendLimitUsd.toLocaleString("en-US")} monthly security audit limit.`,
 							limitUsd: org.monthlySpendLimitUsd,
 							spentUsd: org.spentUsd,
-							resetsAt: decodeIso(new Date(org.resetsAt).toISOString()),
+							resetsAt: decodeIso(DateTime.formatIso(DateTime.makeUnsafe(org.resetsAt))),
 						})
 					}
 					yield* refuseOversized(tenant.orgId, target.repository)
@@ -410,7 +413,8 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						}),
 					)
 					// The target's models, else the org's, as this region serves them; fixed for the run.
-					const models = securityAuditModelIds(yield* loadLlmSettings, {
+					const llmSettings = yield* loadLlmSettings
+					const models = securityAuditModelIds(llmSettings, {
 						discovery: target.discoveryModel ?? org.discoveryModel,
 						validation: target.validationModel ?? org.validationModel,
 					})
@@ -469,10 +473,12 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					const rows = yield* orUnavailable(
 						store.listRuns(query.targetId === undefined ? {} : { targetId: query.targetId }),
 					)
-					const runs = rows.map(toRun)
+					const runs = Arr.map(rows, toRun)
 					// Members may list runs but not read findings, so only admins see what each reported.
 					if (!isAdmin(tenant.roles)) return { runs }
-					const findingCounts = yield* orUnavailable(store.countRunFindings(rows.map((r) => r.id)))
+					const findingCounts = yield* orUnavailable(
+						store.countRunFindings(Arr.map(rows, (r) => r.id)),
+					)
 					return { runs, findingCounts }
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listRuns")),
 			)
@@ -487,7 +493,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						architectureMd: run.architectureMd,
 						executionProfile: run.executionProfile,
 						unitCounts,
-						unitTotal: Object.values(unitCounts).reduce((sum, n) => sum + n, 0),
+						unitTotal: Arr.reduce(Rec.values(unitCounts), 0, (sum, n) => sum + n),
 					}
 				}).pipe(Effect.withSpan("HttpSecurityAudit.getRun")),
 			)
@@ -526,7 +532,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					const { store } = yield* adminAccess
 					const run = yield* requireRun(store, params.runId)
 					const rows = yield* orUnavailable(store.listUnitSummaries(run.id))
-					return { units: rows.map(toUnit) }
+					return { units: Arr.map(rows, toUnit) }
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listRunUnits")),
 			)
 			.handle("listRunEvents", ({ params, query }) =>
@@ -540,7 +546,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 							beforeId: query.beforeId,
 						}),
 					)
-					return { events: rows.map(toEvent) }
+					return { events: Arr.map(rows, toEvent) }
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listRunEvents")),
 			)
 			.handle("listRunFindings", ({ params }) =>
@@ -548,7 +554,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					const { store } = yield* adminAccess
 					const run = yield* requireRun(store, params.runId)
 					const rows = yield* orUnavailable(store.listRunFindingViews(run.id))
-					return { findings: rows.map(toFinding) }
+					return { findings: Arr.map(rows, toFinding) }
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listRunFindings")),
 			)
 			.handle("listFindings", ({ params, query }) =>
@@ -558,9 +564,10 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					const rows = yield* orUnavailable(store.listFindings(target.id))
 					const includeRejected = query.includeRejected === "true"
 					return {
-						findings: rows
-							.filter((row) => includeRejected || row.verdict !== "rejected")
-							.map(toFinding),
+						findings: Arr.map(
+							Arr.filter(rows, (row) => includeRejected || row.verdict !== "rejected"),
+							toFinding,
+						),
 					}
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listFindings")),
 			)

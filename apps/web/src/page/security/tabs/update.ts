@@ -1,13 +1,13 @@
 import type { SecurityAuditRun } from "@maple/domain/http"
 import type { SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { Result } from "effect"
+import { Result, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { AppRoute, hrefOf } from "../../../route"
 import type { SecurityFindingsSearch, SecurityRunsSearch } from "../../../route/search"
-import * as Select from "../../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { chain, chainAll, slotStep } from "../../kit/keyed-step"
 import * as AddTarget from "../kit/add-target"
@@ -42,14 +42,14 @@ type Return = PageReturn<Model, Message>
 
 export type SecurityTabsRoute = Extract<
 	AppRoute,
-	{ readonly _tag: "Security" | "SecurityFindings" | "SecurityRuns" }
+	{ readonly _tag: "SecurityCode" | "SecurityCodeFindings" | "SecurityCodeRuns" }
 >
 
 const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
 const tabOfRoute = (route: SecurityTabsRoute): Tab =>
-	route._tag === "Security" ? "overview" : route._tag === "SecurityFindings" ? "findings" : "runs"
+	route._tag === "SecurityCode" ? "overview" : route._tag === "SecurityCodeFindings" ? "findings" : "runs"
 
 // SELECTS
 
@@ -155,7 +155,7 @@ const readLatestRun = (
 const followTargets = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
 	chainAll(
 		model,
-		targetsOf(model).flatMap((target) => [
+		Arr.flatMap(targetsOf(model), (target) => [
 			(next: Model) => readFindings(next, context, target.id, mode),
 			(next: Model) => readTargetRuns(next, context, target.id, mode),
 		]),
@@ -163,13 +163,16 @@ const followTargets = (model: Model, context: PageContext, mode: Keyed.ReadMode)
 
 /** Each target's latest run, for its coverage. */
 const followRuns = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
-	const latest = targetsOf(model).flatMap((target) => {
+	const latest = Arr.flatMap(targetsOf(model), (target) => {
 		const run = latestRunFor(model, target.id)
 		return run === undefined ? [] : [run]
 	})
 	return chainAll(
 		model,
-		latest.map((run) => (next: Model) => readLatestRun(next, context, run, isLive(run) ? mode : "Load")),
+		Arr.map(
+			latest,
+			(run) => (next: Model) => readLatestRun(next, context, run, isLive(run) ? mode : "Load"),
+		),
 	)
 }
 
@@ -178,8 +181,9 @@ const finishedSince = (
 	before: ReadonlyArray<SecurityAuditRun>,
 	after: ReadonlyArray<SecurityAuditRun>,
 ): ReadonlyArray<SecurityAuditRun> =>
-	after.filter(
-		(run) => !isLive(run) && before.some((previous) => previous.id === run.id && isLive(previous)),
+	Arr.filter(
+		after,
+		(run) => !isLive(run) && Arr.some(before, (previous) => previous.id === run.id && isLive(previous)),
 	)
 
 /** A write changed the targets or runs (and so the spend): read them again past any read in flight. */
@@ -188,21 +192,22 @@ const afterWrite = (model: Model, context: PageContext): Return =>
 		(next) => readTargets(next, context, "Supersede"),
 		(next) => readRuns(next, context, "Supersede"),
 		(next) => readSettings(next, context, "Supersede"),
-		...targetsOf(model).map(
+		...Arr.map(
+			targetsOf(model),
 			(target) => (next: Model) => readTargetRuns(next, context, target.id, "Supersede"),
 		),
 	])
 
 /** Each target once, in first-seen order. */
 const uniqueTargets = (runs: ReadonlyArray<SecurityAuditRun>): ReadonlyArray<SecurityAuditTargetId> => [
-	...new Set(runs.map((run) => run.targetId)),
+	...new Set(Arr.map(runs, (run) => run.targetId)),
 ]
 
 // ENTRY
 
 const searchesOf = (route: SecurityTabsRoute, model?: Model) => ({
-	findingsSearch: route._tag === "SecurityFindings" ? route.search : (model?.findingsSearch ?? {}),
-	runsSearch: route._tag === "SecurityRuns" ? route.search : (model?.runsSearch ?? {}),
+	findingsSearch: route._tag === "SecurityCodeFindings" ? route.search : (model?.findingsSearch ?? {}),
+	runsSearch: route._tag === "SecurityCodeRuns" ? route.search : (model?.runsSearch ?? {}),
 })
 
 export const init = (route: SecurityTabsRoute, context: PageContext): Return => {
@@ -249,7 +254,7 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 /** Same instance: the tab or its search changed. The data is shared, so nothing is read again. */
 export const routeChanged = (model: Model, route: SecurityTabsRoute, _context: PageContext): Return => {
 	const searches = searchesOf(route, model)
-	const isFindings = route._tag === "SecurityFindings"
+	const isFindings = route._tag === "SecurityCodeFindings"
 	return {
 		model: withSelectValues({
 			...model,
@@ -258,7 +263,7 @@ export const routeChanged = (model: Model, route: SecurityTabsRoute, _context: P
 			// Turning rejected on shows them, not a folded header.
 			collapsed:
 				searches.findingsSearch.rejected === true && model.findingsSearch.rejected !== true
-					? model.collapsed.filter((held) => held !== "rejected")
+					? Arr.filter(model.collapsed, (held) => held !== "rejected")
 					: model.collapsed,
 			// Leaving Findings drops a pending debounce, so it cannot navigate back there.
 			searchGeneration: isFindings ? model.searchGeneration : model.searchGeneration + 1,
@@ -273,14 +278,14 @@ export const routeChanged = (model: Model, route: SecurityTabsRoute, _context: P
 
 // NAVIGATION
 
-const draftQuery = (draft: string): string | undefined => draft.trim() || undefined
+const draftQuery = (draft: string): string | undefined => Str.trim(draft) || undefined
 
 const navigate = (model: Model, url: string, isReplace = false): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({ url, isReplace }),
 })
 
-const findingsUrl = (search: SecurityFindingsSearch) => hrefOf(AppRoute.SecurityFindings({ search }))
+const findingsUrl = (search: SecurityFindingsSearch) => hrefOf(AppRoute.SecurityCodeFindings({ search }))
 
 /** The URL's filters with the search box as typed: a filter change does not wait out the debounce. */
 const searchWithDraft = (model: Model): SecurityFindingsSearch => {
@@ -317,7 +322,7 @@ const selectStep = (
 
 const runsTargetChanged = (model: Model, value: string): Return => {
 	const search: SecurityRunsSearch = value === "all" ? {} : { target: value }
-	return navigate(model, hrefOf(AppRoute.SecurityRuns({ search })))
+	return navigate(model, hrefOf(AppRoute.SecurityCodeRuns({ search })))
 }
 
 // ADD TARGET
@@ -404,20 +409,23 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const before = allRuns(model)
 			const next: Model = { ...model, runs: Keyed.accept(model.runs, key, result) }
 			const finished = finishedSince(before, allRuns(next))
-			const known = new Set(before.map((run) => run.id))
-			const started = runsOf(next).filter((run) => !known.has(run.id))
+			const known = new Set(Arr.map(before, (run) => run.id))
+			const started = Arr.filter(runsOf(next), (run) => !known.has(run.id))
 			// A target whose run finished or started has a stale own list: read it past any in flight.
 			const changed = known.size === 0 ? [] : uniqueTargets([...finished, ...started])
 			return chainAll(next, [
-				...changed.map(
+				...Arr.map(
+					changed,
 					(targetId) => (updated: Model) => readTargetRuns(updated, context, targetId, "Supersede"),
 				),
 				(updated) => followRuns(updated, context, "Refresh"),
 				// A finished run's answers supersede reads sent while it was still live.
-				...finished.map(
+				...Arr.map(
+					finished,
 					(run) => (updated: Model) => readFindings(updated, context, run.targetId, "Supersede"),
 				),
-				...finished.map(
+				...Arr.map(
+					finished,
 					(run) => (updated: Model) => readLatestRun(updated, context, run, "Supersede"),
 				),
 			])
@@ -433,10 +441,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const finished = finishedSince(allRuns(model), allRuns(next))
 			return chainAll(next, [
 				(updated) => followRuns(updated, context, "Load"),
-				...finished.map(
+				...Arr.map(
+					finished,
 					(run) => (updated: Model) => readFindings(updated, context, run.targetId, "Supersede"),
 				),
-				...finished.map(
+				...Arr.map(
+					finished,
 					(run) => (updated: Model) => readLatestRun(updated, context, run, "Supersede"),
 				),
 			])
@@ -477,7 +487,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					? []
 					: [(next: Model) => readSettings(next, context, "Refresh")]),
 				// A live run the global list no longer holds is still followed through its target's list.
-				...uniqueTargets(runningRuns(model)).map(
+				...Arr.map(
+					uniqueTargets(runningRuns(model)),
 					(targetId) => (next: Model) => readTargetRuns(next, context, targetId, "Refresh"),
 				),
 			]),
@@ -604,7 +615,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return navigate(
 				bucket === null
 					? model
-					: { ...model, collapsed: model.collapsed.filter((held) => held !== bucket) },
+					: { ...model, collapsed: Arr.filter(model.collapsed, (held) => held !== bucket) },
 				findingsUrl(bucket === null ? rest : { ...rest, severity: bucket }),
 			)
 		},
@@ -612,7 +623,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: {
 				...model,
 				collapsed: model.collapsed.includes(bucket)
-					? model.collapsed.filter((held) => held !== bucket)
+					? Arr.filter(model.collapsed, (held) => held !== bucket)
 					: [...model.collapsed, bucket],
 			},
 		}),

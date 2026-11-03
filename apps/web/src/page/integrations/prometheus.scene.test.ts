@@ -1,10 +1,10 @@
 import { OrgId } from "@maple/domain"
 import { V2ScrapeTarget } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../data/load-failure"
-import * as Field from "../../ui/field"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Field from "@maple/views/ui/field"
 import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -16,9 +16,9 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const steps = (model: Model, messages: ReadonlyArray<Message>) =>
-	messages.reduce((current, message) => pageUpdate(current, message).model, model)
+	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message).model)
 
 const target = Schema.decodeUnknownSync(V2ScrapeTarget)({
 	id: "scrp_YoxMqYdzUJ1tH4BqCWxPH3",

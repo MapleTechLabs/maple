@@ -1,3 +1,4 @@
+import { cn } from "@maple/ui/lib/utils"
 import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as ChecklistView from "./onboarding-checklist-view"
@@ -9,12 +10,13 @@ import {
 	breadcrumbList,
 	breadcrumbPage,
 	breadcrumbSeparator,
-} from "../ui/breadcrumb"
-import { separator } from "../ui/display"
-import { sidebarTrigger } from "../ui/sidebar"
+} from "@maple/views/ui/breadcrumb"
+import { separator } from "@maple/views/ui/display"
+import { sidebarTrigger } from "@maple/views/ui/sidebar"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { type SourceLink, sourceLinkButton } from "./source-link"
+import { Array as Arr } from "effect"
 
 // The top bar's breadcrumbs.
 
@@ -28,8 +30,8 @@ export type BreadcrumbEntry = Readonly<{
 
 const CRUMB_LABEL = "block max-w-[40ch] truncate"
 
-const crumb = (h: HtmlBuilder<Message>, entry: BreadcrumbEntry): Html =>
-	breadcrumbItem(h, { className: "min-w-0", title: entry.label }, [
+const crumb = (h: HtmlBuilder<Message>, entry: BreadcrumbEntry, className?: string): Html =>
+	breadcrumbItem(h, { className: cn("min-w-0", className), title: entry.label }, [
 		entry.href === undefined
 			? breadcrumbPage(h, CRUMB_LABEL, [entry.label])
 			: breadcrumbLink(h, { className: CRUMB_LABEL, href: entry.href }, [entry.label]),
@@ -87,10 +89,14 @@ export const topbar = (
 				breadcrumbList(
 					h,
 					isTitleOnly(breadcrumbs) ? "sr-only" : "flex-nowrap",
-					breadcrumbs.flatMap((entry, index) => [
-						...(index > 0 ? [breadcrumbSeparator(h, "shrink-0")] : []),
-						crumb(h, entry),
-					]),
+					// Phones keep only the page's own crumb; its heading below names the rest.
+					Arr.flatMap(breadcrumbs, (entry, index) => {
+						const isEarlier = index < breadcrumbs.length - 1
+						return [
+							...(index > 0 ? [breadcrumbSeparator(h, "shrink-0 max-sm:hidden")] : []),
+							crumb(h, entry, isEarlier ? "max-sm:hidden" : undefined),
+						]
+					}),
 				),
 			]),
 			h.div(

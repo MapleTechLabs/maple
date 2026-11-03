@@ -1,5 +1,25 @@
 # @maple/cli
 
+## 0.3.4
+
+### Patch Changes
+
+- 0bfd6bd: Maple Local now closes its store when the host process exits before scope teardown (another handler calling `process.exit()`, or a write to a closed stdout), so the next start no longer fails with a dirty-store error. A session sharing another session's server that finds a dirty store during takeover now logs the refusal and recovery steps once instead of retrying forever.
+
+## 0.3.3
+
+### Patch Changes
+
+- 08119e1: The local server now allows the `traceparent`, `tracestate`, `baggage` and `b3` request headers from the local dashboard, so an instrumented dashboard's queries and status probes no longer fail CORS preflight.
+
+## 0.3.2
+
+### Patch Changes
+
+- c9fef22: `maple start` no longer refuses with "already running" in a container image without `ps` when a stale PID file names an unrelated live process (such as the container's init). `maple schema` commands run as PID 1 no longer mistake a dead server's PID file for a live server.
+- Updated dependencies [1c7c733]
+    - @maple-dev/effect-sdk@0.13.1
+
 ## 0.3.1
 
 ### Patch Changes

@@ -1,16 +1,16 @@
 import { isUnexpectedError } from "@maple/web-data/lib/error-messages"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { linkButton } from "../../../ui/button"
-import * as DialogView from "../../../ui/dialog-view"
-import { emptyMessage } from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import type * as Select from "../../../ui/select"
-import { view as selectView } from "../../../ui/select-view"
-import { settingRow } from "../../../ui/setting-row"
+import { linkButton } from "@maple/views/ui/button"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import type * as Select from "@maple/views/ui/select"
+import { view as selectView } from "@maple/views/ui/select-view"
+import { settingRow } from "@maple/views/ui/setting-row"
 import type { PageViewInputs } from "../../contract"
 import { codeReviewLayout } from "../kit/layout"
 import { bar, repositoryListSkeleton, withSlowNote } from "../kit/skeletons"
@@ -27,6 +27,7 @@ import {
 	MODEL_OPTIONS,
 } from "./update"
 import { settingsSection, settingsSections } from "../../settings/kit/section"
+import { typography } from "@maple/views/ui/typography"
 
 // `CodeReviewSettingsView`: the code review settings page.
 
@@ -34,7 +35,7 @@ type H = HtmlBuilder<Message>
 
 const MODEL_ENTRIES = [
 	{ _tag: "Item" as const, item: { value: DEFAULT_MODEL, label: DEFAULT_MODEL_LABEL } },
-	...MODEL_OPTIONS.map((model) => ({
+	...Arr.map(MODEL_OPTIONS, (model) => ({
 		_tag: "Item" as const,
 		item: { value: model.id, label: model.label },
 	})),
@@ -100,14 +101,11 @@ const notConnected = (h: H, isConnected: boolean): Html =>
 				isConnected ? "No repositories yet" : "Connect GitHub to review pull requests",
 			],
 		),
-		h.p(
-			[h.Class("text-sm text-muted-foreground")],
-			[
-				isConnected
-					? "Grant the Maple GitHub App access to a repository, and it appears here."
-					: "Maple reviews pull requests through its GitHub App. Install it on the repositories you want reviewed.",
-			],
-		),
+		typography(h, { size: "sm", tone: "muted", as: "p" }, [
+			isConnected
+				? "Grant the Maple GitHub App access to a repository, and it appears here."
+				: "Maple reviews pull requests through its GitHub App. Install it on the repositories you want reviewed.",
+		]),
 		linkButton(
 			h,
 			{
@@ -156,10 +154,9 @@ const repoConfigBody = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.repoConfig.data, {
 		onEmpty: () => rulesFormSkeleton(h, "repository"),
 		onFailure: (failure) =>
-			h.p(
-				[h.Class("text-xs text-severity-error"), h.Role("alert")],
-				[isUnexpectedError(failure) ? "Couldn't load the repository's rules." : failure.message],
-			),
+			typography(h, { size: "xs", tone: "error", as: "p", attributes: [h.Role("alert")] }, [
+				isUnexpectedError(failure) ? "Couldn't load the repository's rules." : failure.message,
+			]),
 		onData: () =>
 			model.repoForm === null
 				? h.empty

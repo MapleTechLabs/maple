@@ -1,17 +1,18 @@
 import { type ErrorIssueId, ErrorIssuePullRequestId, type IssueSeverity } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { LoadChartRuntime } from "../../../charts/chart-runtime"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
-import * as Combobox from "../../../ui/combobox"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Dialog from "../../../ui/dialog"
-import * as Menu from "../../../ui/menu"
-import * as Select from "../../../ui/select"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
+import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -247,6 +248,8 @@ export const init = (
 		severitySelect: Select.init("issue-severity", { value: "none", selectedIndex: null }),
 		fingerprintCopy: CopyButton.init(),
 		issueIdCopy: CopyButton.init(),
+		promptCopy: CopyButton.init(),
+		chart: Chart.init(),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		busy: [],
@@ -291,7 +294,10 @@ export const routeChanged = (
 ): Return => {
 	const next = { ...model, search: route.search }
 	return routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({ model: next, commands: [resolveCommand(route.search, context, snapModeOf(model.refreshVersion))] }),
+		resolve: (): Return => ({
+			model: next,
+			commands: [resolveCommand(route.search, context, snapModeOf(model.refreshVersion))],
+		}),
 		requestAll: () => ({ model: next }),
 	})
 }
@@ -395,7 +401,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		MountedRightRail: () =>
 			model.isRightRailMounted
 				? { model }
-				: applySteps({ ...model, isRightRailMounted: true }, [loadedReads(context), vcsStep(context)]),
+				: applySteps({ ...model, isRightRailMounted: true }, [
+						loadedReads(context),
+						vcsStep(context),
+					]),
 		CompletedFetchEvents: ({ key, result }) => ({
 			model: { ...model, events: Keyed.accept(model.events, key, result) },
 		}),
@@ -545,7 +554,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			]),
 		ChangedCommentDraft: ({ value }) => ({ model: { ...model, commentDraft: value } }),
 		ClickedComment: () => {
-			const body = model.commentDraft.trim()
+			const body = Str.trim(model.commentDraft)
 			return body.length === 0 || model.isCommenting
 				? { model }
 				: {
@@ -690,5 +699,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(issueIdCopy) => ({ issueIdCopy }),
 				(next) => Message.GotIssueIdCopyMessage({ message: next }),
 			),
-		GotChartMessage: () => ({ model }),
+		GotPromptCopyMessage: ({ message: inner }) =>
+			lift(
+				model,
+				CopyButton.update(model.promptCopy, inner),
+				(promptCopy) => ({ promptCopy }),
+				(next) => Message.GotPromptCopyMessage({ message: next }),
+			),
+		GotChartMessage: ({ message: inner }) =>
+			lift(
+				model,
+				Chart.update(model.chart, inner),
+				(chart) => ({ chart }),
+				(next) => Message.GotChartMessage({ message: next }),
+			),
 	})

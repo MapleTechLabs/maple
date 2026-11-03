@@ -1,6 +1,6 @@
 // The investigation conversation's starter suggestions and the noun for its subject's kind.
 
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 
 const signalLabel = (signalType: string): string => {
 	switch (signalType) {
@@ -20,7 +20,7 @@ const signalLabel = (signalType: string): string => {
 			return "SQL query result"
 		default:
 			// Never leak a raw enum into prose: these read mid-sentence.
-			return signalType.replace(/[_-]+/g, " ")
+			return Str.replace(/[_-]+/g, " ")(signalType)
 	}
 }
 
@@ -61,13 +61,13 @@ export const investigationNoun = (kind: InvestigationKind): string => KIND_NOUN[
 const CHIP_SCOPE_MAX = 32
 
 export const chipScope = (raw: string): string => {
-	const head = raw.split(/[(\n,;—]/)[0]!.trim()
-	const text = head.length > 0 ? head : raw.trim()
+	const head = Str.trim(Str.split(/[(\n,;—]/)(raw)[0]!)
+	const text = head.length > 0 ? head : Str.trim(raw)
 	if (text.length <= CHIP_SCOPE_MAX) return text
 	// A clause this long is a sentence, whose subject is its first word: prefer that
 	// whole word over a mid-word ellipsis.
-	const first = text.split(/\s+/)[0]!
-	return first.length > CHIP_SCOPE_MAX ? `${first.slice(0, CHIP_SCOPE_MAX - 1).trimEnd()}…` : first
+	const first = Str.split(/\s+/)(text)[0]!
+	return first.length > CHIP_SCOPE_MAX ? `${Str.trimEnd(Str.slice(0, CHIP_SCOPE_MAX - 1)(first))}…` : first
 }
 
 const CHIP_PHRASE_MAX = 36
@@ -77,8 +77,8 @@ const CHIP_PHRASE_MAX = 36
  * Its front is the identifying part, so this truncates instead of lifting a subject word.
  */
 export const chipPhrase = (raw: string): string => {
-	const text = raw.split("\n")[0]!.trim()
-	return text.length > CHIP_PHRASE_MAX ? `${text.slice(0, CHIP_PHRASE_MAX - 1).trimEnd()}…` : text
+	const text = Str.trim(Str.split("\n")(raw)[0]!)
+	return text.length > CHIP_PHRASE_MAX ? `${Str.trimEnd(Str.slice(0, CHIP_PHRASE_MAX - 1)(text))}…` : text
 }
 
 /** Starter prompts tuned to the kind + signal + scope of the investigation. */
@@ -118,7 +118,7 @@ export const investigationSuggestions = (ctx: InvestigationContext): string[] =>
 
 	if (ctx.kind === "anomaly") {
 		const sig = ctx.signalType ?? ""
-		if (sig.includes("latency")) {
+		if (Str.includes("latency")(sig)) {
 			return [
 				`Slowest operations in ${scope} right now`,
 				`Top 10 slowest traces in ${scope}`,
@@ -126,7 +126,7 @@ export const investigationSuggestions = (ctx: InvestigationContext): string[] =>
 				`Recent deploys or config changes in ${scope}`,
 			]
 		}
-		if (sig.includes("error")) {
+		if (Str.includes("error")(sig)) {
 			return [
 				`Top exceptions in ${scope} in the last ${windowM}m`,
 				`Which errors drove the spike?`,

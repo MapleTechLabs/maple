@@ -1,6 +1,6 @@
 import type { McpToolRegistrar } from "./types"
 import { toMcpHttpError } from "../lib/map-http-error"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { ListAlertDestinationsOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -30,7 +30,8 @@ export function registerListAlertDestinationsTool(server: McpToolRegistrar) {
 				.listDestinations(tenant.orgId)
 				.pipe(Effect.mapError(toMcpHttpError("list_alert_destinations")))
 
-			const destinations = result.destinations.filter(
+			const destinations = Arr.filter(
+				result.destinations,
 				(d) =>
 					(params.type === undefined || d.type === params.type) &&
 					(params.enabled_only !== true || d.enabled),
@@ -43,7 +44,7 @@ export function registerListAlertDestinationsTool(server: McpToolRegistrar) {
 			})
 
 			return {
-				destinations: destinations.map((d) => ({
+				destinations: Arr.map(destinations, (d) => ({
 					id: d.id,
 					publicId: encodePublicId(PublicIdPrefixes.alertDestination, d.id),
 					name: d.name,
@@ -78,7 +79,7 @@ export function registerListAlertDestinationsTool(server: McpToolRegistrar) {
 							doc.text(`Total: ${output.total} destination${output.total !== 1 ? "s" : ""}`),
 							doc.table(
 								["ID", "REST id", "Name", "Type", "Target", "Enabled", "Last error"],
-								output.destinations.map((d) => [
+								Arr.map(output.destinations, (d) => [
 									d.id,
 									d.publicId,
 									d.name,

@@ -1,9 +1,9 @@
 import type { TranscriptRow } from "@maple/agent-sessions"
 import { cn } from "@maple/ui/lib/utils"
-import { Stream } from "effect"
+import { Stream, Array as Arr, String as Str } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { emptyMessage } from "../../../ui/empty"
+import { emptyMessage } from "@maple/views/ui/empty"
 import { virtualAttributes, virtualize } from "../kit/virtualize"
 import type { SessionData } from "./derive"
 import { Message } from "./message"
@@ -124,12 +124,12 @@ export const transcript = (h: H, model: Model, data: SessionData, timeZone: stri
 	const rows = transcriptRows(model, data)
 	if (rows.length === 0)
 		return emptyMessage(h, {}, [
-			model.query.trim() === ""
+			Str.trim(model.query) === ""
 				? "No AI activity in this session. Its spans are HTTP and database work, which the transcript excludes. The Traces view shows them."
 				: "No blocks match this filter.",
 		])
 	const context: BlockContext = { model, data, timeZone, continued: continuedKeys(rows) }
-	const mounted = model.transcriptWindow.items.flatMap((item) => {
+	const mounted = Arr.flatMap(model.transcriptWindow.items, (item) => {
 		const row = rows[item.index]
 		return row === undefined ? [] : [{ row, index: item.index }]
 	})
@@ -140,8 +140,8 @@ export const transcript = (h: H, model: Model, data: SessionData, timeZone: stri
 				[
 					...virtualAttributes(
 						h,
-						rows.map((row) => row.key),
-						rows.map((row) => ROW_ESTIMATE[row.kind]),
+						Arr.map(rows, (row) => row.key),
+						Arr.map(rows, (row) => ROW_ESTIMATE[row.kind]),
 						model.scroll ?? undefined,
 					),
 					h.OnMount(VirtualizeTranscript()),
@@ -149,7 +149,7 @@ export const transcript = (h: H, model: Model, data: SessionData, timeZone: stri
 				[
 					h.div(
 						[h.Class("relative w-full")],
-						mounted.map(({ row, index }) =>
+						Arr.map(mounted, ({ row, index }) =>
 							h.div(
 								[
 									h.Key(row.key),

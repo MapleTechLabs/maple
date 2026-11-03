@@ -7,25 +7,29 @@ import { getSpanKindLabel } from "@maple/ui/lib/span-kind"
 import { spanStartMs } from "@maple/ui/lib/span-tree"
 import { severityTone, TONE_COLOR, TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../../ui/display"
-import { icon } from "../../../../ui/icon"
-import { iconButton } from "../../../../ui/icon-button"
-import { traceStatusBadge } from "../../../../ui/trace-badges"
-import { truncatedId } from "../../../../ui/truncated-id"
-import { truncatedText } from "../../../../ui/truncated-text"
-import { serviceDot } from "../../../../ui/values"
-import type { SpanNodeData } from "../trace-data"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { traceStatusBadge } from "@maple/views/ui/trace-badges"
+import { truncatedId } from "@maple/views/ui/truncated-id"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { serviceDot } from "@maple/views/ui/values"
+import type { SpanNodeData } from "@maple/views/traces/trace-data"
 import { Message } from "./model"
 import { rowPlatform } from "./platform"
 import { type Mark, serviceRuntime, spanTech } from "./tech"
 import { countDescendants, type TreeRow, treeLevel } from "./tree"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 // `SpanRow` (packages/ui/src/components/traces/span-row.tsx) and `PixelDurationBar`.
 
 // copied: `outcomeBadgeStyle(true)` (cloud-platforms/types.ts pulls in the React icon set).
-const BAD_OUTCOME_STYLE = "bg-severity-error-a2 text-severity-error border-severity-error-a3"
+const BAD_OUTCOME_STYLE = typographyClass({
+	tone: "error",
+	className: "bg-severity-error-a2 border-severity-error-a3",
+})
 
 const MAX_INDENT_DEPTH = 10
 const TOTAL_BLOCKS = 27
@@ -58,13 +62,11 @@ const treeGuides = (h: HtmlBuilder<Message>, row: TreeRow, isExpanded: boolean):
 				h.Style({ width: `${shown * COLUMN_PX}px`, "margin-right": shown === 0 ? "-8px" : "0px" }),
 			],
 			[
-				...row.rails
-					.slice(0, shown)
-					.flatMap((continues, column) =>
-						continues
-							? [h.span([h.Class(`${RAIL} inset-y-0`), h.Style({ left: x(column) })], [])]
-							: [],
-					),
+				...Arr.flatMap(row.rails.slice(0, shown), (continues, column) =>
+					continues
+						? [h.span([h.Class(`${RAIL} inset-y-0`), h.Style({ left: x(column) })], [])]
+						: [],
+				),
 				...(isElbowShown
 					? [
 							h.span(
@@ -98,11 +100,16 @@ const treeGuides = (h: HtmlBuilder<Message>, row: TreeRow, isExpanded: boolean):
 		),
 		...(level > MAX_INDENT_DEPTH
 			? [
-					h.span(
-						[
-							h.Class("shrink-0 font-mono text-3xs tabular-nums text-muted-foreground"),
-							h.Title(`Depth ${level}`),
-						],
+					typography(
+						h,
+						{
+							size: "3xs",
+							tone: "muted",
+							mono: true,
+							numeric: true,
+							className: "shrink-0",
+							attributes: [h.Title(`Depth ${level}`)],
+						},
 						["L", String(level)],
 					),
 				]
@@ -302,7 +309,7 @@ const nameLabel = (h: HtmlBuilder<Message>, span: SpanNodeData, httpInfo: HttpIn
 			[h.Class("min-w-0 truncate font-mono text-xs"), h.Title(span.spanName)],
 			[
 				h.span([h.Class("text-muted-foreground")], [receiver]),
-				h.span([h.Class("font-semibold text-foreground")], [method]),
+				typography(h, { tone: "foreground", weight: "semibold" }, [method]),
 				...(args === "" ? [] : [h.span([h.Class("text-muted-foreground")], [args])]),
 			],
 		)
@@ -335,7 +342,7 @@ const codeLocation = (span: SpanNodeData): CodeLocation | null => {
 	const path = attrs["code.file.path"] ?? attrs["code.filepath"] ?? ""
 	if (path === "") return null
 	return {
-		file: path.slice(path.lastIndexOf("/") + 1),
+		file: Str.slice(path.lastIndexOf("/") + 1)(path),
 		path,
 		line: attrs["code.line.number"] ?? attrs["code.lineno"] ?? "",
 	}
@@ -483,10 +490,10 @@ export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext):
 					...edgeLabel(h, span),
 					...(hasChildren && !ctx.isExpanded
 						? [
-								h.span(
-									[h.Class("shrink-0 text-3xs text-muted-foreground")],
-									["+", String(countDescendants(span))],
-								),
+								typography(h, { size: "3xs", tone: "muted", className: "shrink-0" }, [
+									"+",
+									String(countDescendants(span)),
+								]),
 							]
 						: []),
 					...locationLabel(h, row),

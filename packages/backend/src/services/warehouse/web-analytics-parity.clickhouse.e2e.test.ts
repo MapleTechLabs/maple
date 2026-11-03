@@ -22,7 +22,7 @@
 //     network rows must never reach `product_events`, and custom rows must.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Result } from "effect"
+import { Result, Array as Arr, Record as Rec, String as Str } from "effect"
 import * as CH from "@maple/query-engine/ch"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import {
@@ -46,7 +46,8 @@ const ORG_ID = "org_web_analytics_parity"
  * the assertion that caught it and the reason it exists.
  */
 const DAY_MS = 86_400_000
-const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 19)
+const chDateTime = (epochMs: number): string =>
+	Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 /** Midnight, three days back — comfortably inside the TTL horizon on both ends. */
 const BASE_MS = Math.floor((Date.now() - 3 * DAY_MS) / DAY_MS) * DAY_MS
 const at = (offsetMs: number): string => chDateTime(BASE_MS + offsetMs)
@@ -216,13 +217,17 @@ const SEED_SESSIONS: ReadonlyArray<SeedSession> = [
 	sess("s4", 1, { startTime: at(4 * HOUR_MS) }),
 ]
 
-const quote = (value: string): string => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
 
 const seed = async (): Promise<void> => {
-	const eventRows = SEED_EVENTS.map(
-		(row) =>
-			`(${quote(ORG_ID)}, ${quote(row.sessionId)}, ${quote(row.ts)}, ${row.seq}, ${quote(row.type)}, ${quote(row.url)}, ${quote(row.message ?? "")}, map())`,
-	).join(",\n")
+	const eventRows = Arr.join(
+		Arr.map(
+			SEED_EVENTS,
+			(row) =>
+				`(${quote(ORG_ID)}, ${quote(row.sessionId)}, ${quote(row.ts)}, ${row.seq}, ${quote(row.type)}, ${quote(row.url)}, ${quote(row.message ?? "")}, map())`,
+		),
+		",\n",
+	)
 	await clickhouseExec(
 		`INSERT INTO session_events (OrgId, SessionId, Timestamp, Seq, Type, Url, Message, Attributes) VALUES\n${eventRows}`,
 		database,
@@ -233,13 +238,15 @@ const seed = async (): Promise<void> => {
 	// before they are ever visible — seeding that way leaves this suite asserting
 	// over pre-deduplicated rows, which is the one state it exists to rule out.
 	await clickhouseExec(`SYSTEM STOP MERGES session_replays`, database)
-	for (const version of [...new Set(SEED_SESSIONS.map((row) => row.version))].sort()) {
-		const sessionRows = SEED_SESSIONS.filter((row) => row.version === version)
-			.map(
+	for (const version of [...new Set(Arr.map(SEED_SESSIONS, (row) => row.version))].sort()) {
+		const sessionRows = Arr.join(
+			Arr.map(
+				Arr.filter(SEED_SESSIONS, (row) => row.version === version),
 				(row) =>
 					`(${quote(ORG_ID)}, ${quote(row.sessionId)}, ${quote(row.startTime)}, ${row.durationMs}, ${row.pageViews}, ${row.version}, ${quote(row.visitorId)}, ${row.visitorIsNew}, ${quote(row.referrerHost)}, ${quote(row.country)}, ${quote(row.deviceType)}, ${quote(row.browserName)}, ${quote(row.osName)}, ${quote(row.language)}, ${quote(row.utmSource)}, ${quote(row.host)}, ${quote(row.entryPath)}, ${quote(row.exitPath)})`,
-			)
-			.join(",\n")
+			),
+			",\n",
+		)
 		await clickhouseExec(
 			`INSERT INTO session_replays (OrgId, SessionId, StartTime, DurationMs, PageViews, Version, VisitorId, VisitorIsNew, ReferrerHost, Country, DeviceType, BrowserName, OsName, Language, UtmSource, Host, EntryPath, ExitPath) VALUES\n${sessionRows}`,
 			database,
@@ -267,7 +274,7 @@ const runJson = async (sql: string): Promise<ReadonlyArray<Record<string, unknow
  * outcome and asserting otherwise would be asserting a bug.
  */
 const assertSourcesSwapped = (rawSql: string, rollupSql: string): void => {
-	if (!rawSql.includes("FROM session_events")) {
+	if (!Str.includes("FROM session_events")(rawSql)) {
 		assert.strictEqual(
 			rollupSql,
 			rawSql,
@@ -283,7 +290,7 @@ const assertSourcesSwapped = (rawSql: string, rollupSql: string): void => {
  * `ORDER BY count DESC` tie-break is not stable, and a tie flipping is not a
  * parity failure. */
 const canonical = (rows: ReadonlyArray<Record<string, unknown>>): string =>
-	JSON.stringify([...rows].map((row) => JSON.stringify(row)).sort())
+	JSON.stringify(Arr.map([...rows], (row) => JSON.stringify(row)).sort())
 
 /** The filter matrix. Each entry is applied to all five queries in both variants. */
 const FILTER_CASES: ReadonlyArray<{ readonly label: string; readonly filters: CH.WebAnalyticsFilters }> = [
@@ -397,7 +404,7 @@ describe.skipIf(!clickhouseE2eEnabled)("web analytics raw-vs-rollup parity", () 
 		// background merge may already have collapsed the v1/v2 pairs, so the raw
 		// row count is 4 or 6 depending on timing. That nondeterminism is exactly
 		// why every count over that table is `uniq(SessionId)`.
-		const distinct = new Set(SEED_SESSIONS.map((row) => row.sessionId)).size
+		const distinct = new Set(Arr.map(SEED_SESSIONS, (row) => row.sessionId)).size
 		assert.strictEqual(
 			Number(replays[0]?.n),
 			distinct,
@@ -409,9 +416,9 @@ describe.skipIf(!clickhouseE2eEnabled)("web analytics raw-vs-rollup parity", () 
 		const rows = await runJson(
 			"SELECT Kind, count() AS n FROM product_events GROUP BY Kind ORDER BY Kind",
 		)
-		const byKind = Object.fromEntries(rows.map((row) => [String(row.Kind), Number(row.n)]))
-		const expectedNavigation = SEED_EVENTS.filter((row) => row.type === "navigation").length
-		const expectedCustom = SEED_EVENTS.filter((row) => row.type === "custom").length
+		const byKind = Rec.fromEntries(Arr.map(rows, (row) => [String(row.Kind), Number(row.n)]))
+		const expectedNavigation = Arr.filter(SEED_EVENTS, (row) => row.type === "navigation").length
+		const expectedCustom = Arr.filter(SEED_EVENTS, (row) => row.type === "custom").length
 		assert.deepStrictEqual(byKind, { custom: expectedCustom, navigation: expectedNavigation })
 
 		// The reserved-name collision lands as a custom row, not a page view.
@@ -552,19 +559,27 @@ const FUNNEL_SESSIONS: ReadonlyArray<SeedSession> = [
 ]
 
 const seedFunnel = async (): Promise<void> => {
-	const eventRows = FUNNEL_EVENTS.map(
-		(row) =>
-			`(${quote(FUNNEL_ORG_ID)}, ${quote(row.sessionId)}, ${quote(row.ts)}, ${row.seq}, ${quote(row.type)}, ${quote(row.url)}, ${quote(row.message ?? "")}, map(), ${quote(row.visitorId)}, ${quote(row.userId)})`,
-	).join(",\n")
+	const eventRows = Arr.join(
+		Arr.map(
+			FUNNEL_EVENTS,
+			(row) =>
+				`(${quote(FUNNEL_ORG_ID)}, ${quote(row.sessionId)}, ${quote(row.ts)}, ${row.seq}, ${quote(row.type)}, ${quote(row.url)}, ${quote(row.message ?? "")}, map(), ${quote(row.visitorId)}, ${quote(row.userId)})`,
+		),
+		",\n",
+	)
 	await clickhouseExec(
 		`INSERT INTO session_events (OrgId, SessionId, Timestamp, Seq, Type, Url, Message, Attributes, VisitorId, UserId) VALUES\n${eventRows}`,
 		database,
 	)
 	// f5 carries UserId so identity_links_mv links v1 → u1.
-	const sessionRows = FUNNEL_SESSIONS.map(
-		(row) =>
-			`(${quote(FUNNEL_ORG_ID)}, ${quote(row.sessionId)}, ${quote(row.startTime)}, ${row.version}, ${quote(row.visitorId)}, ${quote(row.sessionId === "f5" ? "u1" : "")}, ${quote(row.referrerHost)}, ${quote(row.country)}, ${quote(row.utmSource)})`,
-	).join(",\n")
+	const sessionRows = Arr.join(
+		Arr.map(
+			FUNNEL_SESSIONS,
+			(row) =>
+				`(${quote(FUNNEL_ORG_ID)}, ${quote(row.sessionId)}, ${quote(row.startTime)}, ${row.version}, ${quote(row.visitorId)}, ${quote(row.sessionId === "f5" ? "u1" : "")}, ${quote(row.referrerHost)}, ${quote(row.country)}, ${quote(row.utmSource)})`,
+		),
+		",\n",
+	)
 	await clickhouseExec(
 		`INSERT INTO session_replays (OrgId, SessionId, StartTime, Version, VisitorId, UserId, ReferrerHost, Country, UtmSource) VALUES\n${sessionRows}`,
 		database,
@@ -592,7 +607,7 @@ const funnelCounts = async (opts: CH.ProductEventsFunnelOpts): Promise<ReadonlyA
 	const rows = await runJson(
 		CH.compileUnsafe(Result.getOrThrow(CH.productEventsFunnelQuery(opts)), funnelWindow).sql,
 	)
-	return rows.map((row) => Number(row.count))
+	return Arr.map(rows, (row) => Number(row.count))
 }
 
 const breakdownRows = async (
@@ -601,7 +616,7 @@ const breakdownRows = async (
 	const rows = await runJson(
 		CH.compileUnsafe(Result.getOrThrow(CH.productEventsFunnelBreakdownQuery(opts)), funnelWindow).sql,
 	)
-	return rows.map((row) => [row.group, Number(row.step), Number(row.count)])
+	return Arr.map(rows, (row) => [row.group, Number(row.step), Number(row.count)])
 }
 
 describe.skipIf(!clickhouseE2eEnabled)("product events funnels", () => {
@@ -714,7 +729,7 @@ describe.skipIf(!clickhouseE2eEnabled)("product events funnels", () => {
 			CH.compileUnsafe(CH.productEventNamesQuery({ limit: 10 }), funnelWindow).sql,
 		)
 		assert.deepStrictEqual(
-			rows.map((row) => [
+			Arr.map(rows, (row) => [
 				row.eventName,
 				row.kind,
 				Number(row.count),
@@ -742,21 +757,21 @@ const timingRows = async (opts: CH.ProductEventsFunnelOpts) => {
 	const rows = await runJson(
 		CH.compileUnsafe(Result.getOrThrow(CH.productEventsFunnelTimingQuery(opts)), funnelWindow).sql,
 	)
-	return rows.map((row) => [Number(row.step), Number(row.p50Ms), Number(row.p90Ms)])
+	return Arr.map(rows, (row) => [Number(row.step), Number(row.p50Ms), Number(row.p90Ms)])
 }
 
 const leaverRows = async (opts: CH.ProductEventsFunnelOpts) => {
 	const rows = await runJson(
 		CH.compileUnsafe(Result.getOrThrow(CH.productEventsFunnelLeaversQuery(opts)), funnelWindow).sql,
 	)
-	return rows.map((row) => [Number(row.step), row.next, Number(row.count)])
+	return Arr.map(rows, (row) => [Number(row.step), row.next, Number(row.count)])
 }
 
 const pathRows = async (opts: CH.ProductEventsPathsOpts) => {
 	const rows = await runJson(
 		CH.compileUnsafe(Result.getOrThrow(CH.productEventsPathsQuery(opts)), funnelWindow).sql,
 	)
-	return rows.map((row) => [Number(row.hop), row.fromNode, row.toNode, Number(row.count)])
+	return Arr.map(rows, (row) => [Number(row.hop), row.fromNode, row.toNode, Number(row.count)])
 }
 
 describe.skipIf(!clickhouseE2eEnabled)("product events funnel drop-off details", () => {
@@ -916,7 +931,7 @@ describe.skipIf(!clickhouseE2eEnabled)("product events paths", () => {
 			windowSeconds: 60,
 		})
 		assert.deepStrictEqual(
-			rows.filter((row) => row[2] === "scroll"),
+			Arr.filter(rows, (row) => row[2] === "scroll"),
 			[[1, "/", "scroll", 1]],
 		)
 	})

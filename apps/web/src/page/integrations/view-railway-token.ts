@@ -1,12 +1,13 @@
 import { RailwayConnectRequest } from "@maple/domain/http"
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import * as Field from "../../ui/field"
-import { input } from "../../ui/input"
+import { button } from "@maple/views/ui/button"
+import * as Field from "@maple/views/ui/field"
+import { input } from "@maple/views/ui/input"
 import { whereToFind } from "../kit/connect-flow"
 import { Message } from "./message"
 import type { RailwayCardModel } from "./railway"
+import { hstack } from "@maple/views/ui/stack"
 
 // `RailwayTokenForm`: the connect flow's Connect step, and Update credential on the connected card.
 
@@ -24,7 +25,7 @@ export const railwayTokenForm = (
 	form: RailwayCardModel["connect"],
 	options: Readonly<{ mode: "connect" | "rotate"; canCancel: boolean }>,
 ): Html => {
-	const trimmed = form.token.value.trim()
+	const trimmed = Str.trim(form.token.value)
 	const isValid = Option.isSome(decodeConnectRequest({ token: trimmed }))
 	const isTokenInvalid = trimmed.length > 0 && !isValid
 	const hasError = !form.isSubmitting && form.error !== null
@@ -35,13 +36,10 @@ export const railwayTokenForm = (
 		[h.Class("flex w-full flex-col gap-4 text-left"), h.OnSubmit(Message.SubmittedRailwayToken())],
 		[
 			Field.field(h, { className: "items-stretch gap-2", state }, [
-				h.div(
-					[h.Class("flex items-center justify-between gap-2")],
-					[
-						Field.fieldLabel(h, { ids, state }, "Account or workspace token"),
-						whereToFind(h, "Create a token in Railway", TOKENS_URL),
-					],
-				),
+				hstack(h, { gap: "2", justify: "between" }, [
+					Field.fieldLabel(h, { ids, state }, "Account or workspace token"),
+					whereToFind(h, "Create a token in Railway", TOKENS_URL),
+				]),
 				input(h, {
 					id: ids.control,
 					type: "password",
@@ -66,27 +64,24 @@ export const railwayTokenForm = (
 								: "Project tokens only see one environment, so Maple asks for an account or workspace token.",
 						),
 			]),
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					button(h, { type: "submit", isDisabled: !isValid, isLoading: form.isSubmitting }, [
-						options.mode === "rotate" ? "Update token" : "Check token",
-					]),
-					...(options.canCancel
-						? [
-								button(
-									h,
-									{
-										variant: "outline",
-										isDisabled: form.isSubmitting,
-										attributes: [h.OnClick(Message.ClickedRailwayRotateCancel())],
-									},
-									["Cancel"],
-								),
-							]
-						: []),
-				],
-			),
+			hstack(h, { gap: "2", wrap: true }, [
+				button(h, { type: "submit", isDisabled: !isValid, isLoading: form.isSubmitting }, [
+					options.mode === "rotate" ? "Update token" : "Check token",
+				]),
+				...(options.canCancel
+					? [
+							button(
+								h,
+								{
+									variant: "outline",
+									isDisabled: form.isSubmitting,
+									attributes: [h.OnClick(Message.ClickedRailwayRotateCancel())],
+								},
+								["Cancel"],
+							),
+						]
+					: []),
+			]),
 		],
 	)
 }

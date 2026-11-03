@@ -6,10 +6,11 @@ import { DEFAULT_RULESET, READ_ONLY_RULESET } from "../../chat/permissions"
 import { profileForTurn } from "../../chat/profiles"
 import { CHAT_BUDGET } from "../../chat/budgets"
 import type { AgentDefinition } from "../../chat/agents"
+import { Array as Arr } from "effect"
 
 describe("MUTATING_TOOL_NAMES", () => {
 	it("every approval-gated tool exists in the registry", () => {
-		const registered = new Set(mapleToolCatalog.map((d) => d.name))
+		const registered = new Set(Arr.map(mapleToolCatalog, (d) => d.name))
 		for (const name of MUTATING_TOOL_NAMES) {
 			expect(registered.has(name), `missing registered tool: ${name}`).toBe(true)
 		}

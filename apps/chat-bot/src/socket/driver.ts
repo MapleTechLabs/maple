@@ -11,7 +11,7 @@
  * would do exactly the same for a connector for any other platform.
  */
 import type { ChatConnectorId, ConnectorRequest, SocketStep } from "@maple/chat-platform"
-import { Duration, Effect, Schema } from "effect"
+import { Duration, Effect, Schema, Record as Rec } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { InboundHandler } from "../inbound.ts"
 
@@ -60,7 +60,7 @@ const issueRequest = Effect.fnUntraced(
 		const client = yield* HttpClient.HttpClient
 		const contentType = request.headers.get("content-type") ?? "application/json"
 		const built = HttpClientRequest.make(request.method)(request.url, {
-			headers: Object.fromEntries(request.headers),
+			headers: Rec.fromEntries(request.headers),
 		}).pipe(HttpClientRequest.bodyText(request.body, contentType))
 		const response = yield* client.execute(built)
 		if (response.status >= 400) {
@@ -90,8 +90,7 @@ const issueRequest = Effect.fnUntraced(
 			)
 		return effect.pipe(
 			Effect.catchTag("HttpClientError", (error) => dropped(error.reason._tag)),
-			Effect.timeout(REQUEST_TIMEOUT),
-			Effect.catchTag("TimeoutError", () => dropped("TimeoutError")),
+			Effect.timeoutOrElse({ duration: REQUEST_TIMEOUT, orElse: () => dropped("TimeoutError") }),
 		)
 	},
 )

@@ -1,4 +1,4 @@
-import { DateTime } from "effect"
+import { DateTime, Array as Arr, Record as Rec, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	alertChecksOf,
@@ -63,7 +63,7 @@ describe("servicesOf", () => {
 
 	it("cuts a runaway service name", () => {
 		const [service] = servicesOf(
-			[serviceRow({ serviceName: "x".repeat(300) })],
+			[serviceRow({ serviceName: Str.repeat(300)("x") })],
 			{ distinctRecent: 1, distinctPrior: 1 },
 			AT_MS,
 		).top
@@ -81,7 +81,7 @@ describe("resourceAttributesOf", () => {
 			],
 			1000,
 		)
-		const byKey = Object.fromEntries(attributes.map((attribute) => [attribute.key, attribute]))
+		const byKey = Rec.fromEntries(Arr.map(attributes, (attribute) => [attribute.key, attribute]))
 		expect(byKey["environment"]).toEqual({
 			key: "environment",
 			notSetShare: 0.25,
@@ -137,7 +137,7 @@ describe("resourceAttributesOf", () => {
 			100,
 		)
 		const versions = attributes.find((attribute) => attribute.key === "telemetry.sdk.version")!
-		expect(versions.values.map((value) => value.value)).toEqual([
+		expect(Arr.map(versions.values, (value) => value.value)).toEqual([
 			"1.7.0",
 			"1.6.0",
 			"1.5.0",

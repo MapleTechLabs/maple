@@ -11,7 +11,7 @@ import * as PgClient from "@effect/sql-pg/PgClient"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as Migrate from "@maple-dev/effect-orm/migrate"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Effect, Layer, Redacted, Schema } from "effect"
+import { Effect, Layer, Redacted, Schema, Array as Arr } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { bundledMigrations, migrateBundled } from "../src/migrate"
 
@@ -22,7 +22,8 @@ const Newest = Schema.Struct({ name: Schema.NullOr(Schema.String) })
 
 /** The newest migration drizzle-kit recorded, when the database has its ledger and no effect-orm one. */
 const drizzleHead = Effect.gen(function* () {
-	const orm = Orm.fromSqlClient(yield* SqlClient.SqlClient, { dialect: PG.postgresDialect })
+	const sql = yield* SqlClient.SqlClient
+	const orm = Orm.fromSqlClient(sql, { dialect: PG.postgresDialect })
 	const [found] = yield* orm.query(
 		Orm.sql`SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS drizzle,
 			to_regclass(${Migrate.LEDGER_TABLES.migrations}) IS NOT NULL AS "effectOrm"`,
@@ -48,7 +49,10 @@ const program = Effect.gen(function* () {
 	yield* Effect.log(
 		applied.length === 0
 			? "Up to date"
-			: `Applied ${applied.map((migration) => migration.name).join(", ")}`,
+			: `Applied ${Arr.join(
+					Arr.map(applied, (migration) => migration.name),
+					", ",
+				)}`,
 	)
 })
 

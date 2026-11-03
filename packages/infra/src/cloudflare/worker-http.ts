@@ -61,4 +61,7 @@ export const bridgeHandler = <E, R>(
 		E,
 		R | Scope.Scope | HttpServerRequest.HttpServerRequest
 	>,
-): HttpEffect => handler as HttpEffect
+): HttpEffect => {
+	// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- see SAFETY above
+	return handler as HttpEffect
+}

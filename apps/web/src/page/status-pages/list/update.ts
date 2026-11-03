@@ -1,6 +1,6 @@
 import { Option } from "effect"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { AppRoute } from "../../../route"
 import type { PageContext, PageReturn } from "../../contract"
 import { FetchListSession, FetchStatusPages, ReadListClock } from "./command"

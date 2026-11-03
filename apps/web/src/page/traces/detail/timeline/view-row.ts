@@ -5,14 +5,19 @@ import { spanEventMarkers, type TimelineSpanEvent } from "@maple/ui/lib/span-eve
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { describeSpan } from "../../../../service-map/trace-flow/span-category"
-import { icon } from "../../../../ui/icon"
-import { iconButton } from "../../../../ui/icon-button"
+import { describeSpan } from "@maple/views/service-map/trace-flow/span-category"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import type { Bar } from "./layout"
 import { Message } from "./message"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `TraceTimelineRow` (packages/ui/src/components/traces/trace-timeline-row.tsx).
-// TODO(tooltip): event-marker tooltips and the hover span tooltip are not ported (triggers only).
+// TODO(tooltip): the hover span tooltip (`spanTooltipContent`, rich and pointer-following) is not
+// ported; it also needs the trace's total duration and start, which RowState does not carry.
 
 const MAX_INDENT_DEPTH = 12
 const BAR_LEFT = "clamp(-50%, calc((var(--b0) - var(--vp0)) * var(--vpk) * 1%), 150%)"
@@ -111,7 +116,16 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 				? [
 						h.span(
 							[
-								attr(h, "shrink-0 font-mono text-3xs tabular-nums text-muted-foreground"),
+								attr(
+									h,
+									typographyClass({
+										size: "3xs",
+										tone: "muted",
+										mono: true,
+										numeric: true,
+										className: "shrink-0",
+									}),
+								),
 								h.Title(`Depth ${bar.depth}`),
 							],
 							["L", String(bar.depth)],
@@ -127,7 +141,8 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 							// The native title carries the shortcut hint, so no tooltip trigger per row.
 							hasTooltip: false,
 							// No coarse-pointer hit area: it would cover the span label beside it.
-							className: "text-muted-foreground hover:text-foreground active:text-foreground pointer-coarse:after:hidden",
+							className:
+								"text-muted-foreground hover:text-foreground active:text-foreground pointer-coarse:after:hidden",
 							attributes: [
 								h.Tabindex(-1),
 								h.Title(`${verb} — ⌥ for the whole subtree`),
@@ -139,7 +154,7 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 					)
 				: h.span([attr(h, "inline-block size-4 shrink-0")], []),
 			h.span(
-				[attr(h, "flex shrink-0 items-center"), h.Title(category.label)],
+				[attr(h, hstackClass({ className: "shrink-0" })), h.Title(category.label)],
 				[
 					icon(h, category.icon, {
 						size: 12,
@@ -154,7 +169,8 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 						cn(
 							"truncate font-mono font-medium text-foreground-soft",
 							bar.isError && TONE_TEXT.crit,
-							bar.span.isMissing === true && "italic text-muted-foreground",
+							bar.span.isMissing === true &&
+								typographyClass({ tone: "muted", className: "italic" }),
 						),
 					),
 				],
@@ -191,10 +207,7 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 				? [
 						h.span(
 							[
-								attr(
-									h,
-									"flex items-center gap-0.5 shrink-0 text-4xs text-foreground-subtle",
-								),
+								attr(h, "flex items-center gap-0.5 shrink-0 text-4xs text-foreground-subtle"),
 								h.Title(countLabel(bar.childCount, "hidden span")),
 							],
 							[icon(h, "UiLayersIcon", { size: 9 }), String(bar.childCount)],
@@ -218,12 +231,14 @@ const eventMarkers = (h: H, bar: Bar, state: RowState, events: ReadonlyArray<Tim
 			attr(h, "pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2"),
 			h.Style({ height: `${ROW_HEIGHT - 8}px` }),
 		],
-		spanEventMarkers(events, bar.offsetStartMs, bar.span.durationMs).map((marker, index) =>
+		Arr.map(spanEventMarkers(events, bar.offsetStartMs, bar.span.durationMs), (marker, index) =>
 			h.span(
 				[
 					h.AriaLabel(eventLabel(marker)),
-					// A native hover label until the marker tooltip is ported.
-					h.Title(eventLabel(marker)),
+					...tooltipTrigger(
+						h,
+						`${marker.name === "" ? "(unnamed event)" : marker.name} ${marker.offsetLabel}`,
+					),
 					attr(
 						h,
 						"pointer-events-auto absolute -top-0.5 -bottom-0.5 z-[1] flex w-2 -translate-x-1/2 justify-center",
@@ -329,7 +344,11 @@ const timelineCell = (h: H, bar: Bar, state: RowState, durationLabel: string): H
 							...(isLabelLeft ? [h.DataAttribute("side", "left")] : []),
 							...(isOffscreen ? [h.Style({ visibility: "hidden" })] : []),
 						],
-						[h.span([attr(h, "text-foreground-soft")], [bar.span.spanName]), " · ", durationLabel],
+						[
+							h.span([attr(h, "text-foreground-soft")], [bar.span.spanName]),
+							" · ",
+							durationLabel,
+						],
 					),
 				],
 			),

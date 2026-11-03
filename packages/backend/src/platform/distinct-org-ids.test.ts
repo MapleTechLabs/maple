@@ -3,7 +3,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssues, ErrorIssueStates, OrgClickHouseSettings } from "@maple/db/tables"
 import { ErrorIssueId, OrgId } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { selectDistinctOrgIds } from "@maple/backend/platform/distinct-org-ids"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -56,7 +56,7 @@ describe("selectDistinctOrgIds", () => {
 			)
 
 			assert.deepStrictEqual([...loose], ["org_a", "org_b", "org_c"])
-			assert.deepStrictEqual([...loose].sort(), baseline.map((row) => row.orgId).sort())
+			assert.deepStrictEqual([...loose].sort(), Arr.map(baseline, (row) => row.orgId).sort())
 		}),
 	)
 
@@ -86,7 +86,7 @@ describe("selectDistinctOrgIds", () => {
 					)
 					yield* client.run(
 						PG.insertInto(OrgClickHouseSettings).values(
-							["org_z", "org_y"].map((orgId) => ({
+							Arr.map(["org_z", "org_y"], (orgId) => ({
 								orgId: asOrgId(orgId),
 								chUrl: "https://ch.example",
 								chUser: "default",

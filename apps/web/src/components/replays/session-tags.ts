@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import {
 	SESSION_QUALITY_TAGS,
 	SESSION_TAG_THRESHOLDS,
@@ -64,11 +64,11 @@ export const asSessionTag = (name: string): SessionTag | undefined => SESSION_TA
 export const sessionTagsFromSearch = (
 	tags: ReadonlyArray<string> | undefined,
 ): Array<SessionTag> | undefined => {
-	const valid = (tags ?? []).filter(isSessionTag)
+	const valid = Arr.filter(tags ?? [], isSessionTag)
 	return valid.length > 0 ? valid : undefined
 }
 
-export const isQualityTier = (tag: SessionTag) => SESSION_QUALITY_TAGS.some((quality) => quality === tag)
+export const isQualityTier = (tag: SessionTag) => Arr.some(SESSION_QUALITY_TAGS, (quality) => quality === tag)
 
 /**
  * The selection after a checkbox change. A newly ticked tier drops any other tier,
@@ -80,7 +80,9 @@ export const nextTagSelection = (
 ): Array<SessionTag> => {
 	const next = sessionTagsFromSearch(values) ?? []
 	const addedTier = next.find((tag) => isQualityTier(tag) && !previous.includes(tag))
-	return addedTier === undefined ? next : next.filter((tag) => !isQualityTier(tag) || tag === addedTier)
+	return addedTier === undefined
+		? next
+		: Arr.filter(next, (tag) => !isQualityTier(tag) || tag === addedTier)
 }
 
 /** The quality tier worth flagging on a row: everything but `engaged`. */

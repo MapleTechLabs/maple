@@ -1,4 +1,5 @@
 import type { McpToolCatalogEntry } from "@maple/domain/http"
+import { Array as Arr, String as Str } from "effect"
 
 export type McpToolGroupId =
 	| "alerts"
@@ -53,8 +54,8 @@ const RULES: ReadonlyArray<readonly [McpToolGroupId, ReadonlyArray<string>]> = [
 ]
 
 export function mcpToolGroupOf(name: string): McpToolGroupId {
-	const tokens = new Set(name.toLowerCase().split("_"))
-	const rule = RULES.find(([, words]) => words.some((word) => tokens.has(word)))
+	const tokens = new Set(Str.split("_")(Str.toLowerCase(name)))
+	const rule = RULES.find(([, words]) => Arr.some(words, (word) => tokens.has(word)))
 	return rule === undefined ? "other" : rule[0]
 }
 
@@ -65,7 +66,9 @@ export interface McpToolGroup {
 }
 
 const matches = (tool: McpToolCatalogEntry, needle: string) =>
-	[tool.name, tool.title, tool.description].some((field) => field.toLowerCase().includes(needle))
+	Arr.some([tool.name, tool.title, tool.description], (field) =>
+		Str.includes(needle)(Str.toLowerCase(field)),
+	)
 
 /**
  * Tools grouped by topic in display order, empty groups dropped. Within a group reads come
@@ -75,13 +78,13 @@ export function groupMcpTools(
 	tools: ReadonlyArray<McpToolCatalogEntry>,
 	search = "",
 ): ReadonlyArray<McpToolGroup> {
-	const needle = search.trim().toLowerCase()
-	const visible = needle === "" ? tools : tools.filter((tool) => matches(tool, needle))
-	return MCP_TOOL_GROUPS.flatMap(({ id, label }) => {
-		const members = visible.filter((tool) => mcpToolGroupOf(tool.name) === id)
+	const needle = Str.toLowerCase(Str.trim(search))
+	const visible = needle === "" ? tools : Arr.filter(tools, (tool) => matches(tool, needle))
+	return Arr.flatMap(MCP_TOOL_GROUPS, ({ id, label }) => {
+		const members = Arr.filter(visible, (tool) => mcpToolGroupOf(tool.name) === id)
 		if (members.length === 0) return []
 		const sorted = members.toSorted(
-			(a, b) => Number(b.readOnly) - Number(a.readOnly) || a.name.localeCompare(b.name),
+			(a, b) => Number(b.readOnly) - Number(a.readOnly) || Str.localeCompare(b.name)(a.name),
 		)
 		return [{ id, label, tools: sorted }]
 	})

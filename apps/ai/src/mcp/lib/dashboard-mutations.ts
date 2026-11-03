@@ -1,4 +1,14 @@
-import { Clock, Effect, Result, Schema, SchemaIssue, SchemaTransformation } from "effect"
+import {
+	Clock,
+	DateTime,
+	Effect,
+	Result,
+	Schema,
+	SchemaIssue,
+	SchemaTransformation,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { randomUUID } from "node:crypto"
 import {
@@ -22,6 +32,7 @@ import {
 import type { DashboardRow } from "@maple/domain/mcp-outputs"
 import { WIDGET_DATA_SOURCE_KINDS } from "@maple/widgets/dashboard"
 import { CurrentMcpTenant } from "./query-warehouse"
+import { stringifyJson } from "./json"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { McpInvalidInputError, McpQueryError } from "../tools/types"
 
@@ -32,6 +43,7 @@ export type DashboardWidget = typeof DashboardWidgetSchema.Type
 const decodeIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 
 const parseJsonValue = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonValue = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
 const jsonTransformation = (hint: (value: unknown) => string | undefined) =>
 	SchemaTransformation.transformEffect<unknown, string>({
@@ -45,7 +57,7 @@ const jsonTransformation = (hint: (value: unknown) => string | undefined) =>
 						: Effect.fail(new SchemaIssue.InvalidValue({ message }, value))
 				}),
 			),
-		encode: (value) => Effect.succeed(JSON.stringify(value)),
+		encode: (value) => encodeJsonValue(value).pipe(Effect.mapError((error) => error.issue)),
 	})
 
 const noHint = (): undefined => undefined
@@ -116,8 +128,8 @@ export const legacyDataSourceHint = (value: unknown): string | undefined => {
 			? '{"kind":"static"}'
 			: endpoint === "raw_sql_chart"
 				? '{"kind":"raw_sql","sql":"SELECT …"}'
-				: endpoint.startsWith("custom_query_builder_")
-					? `{"kind":"query","resultShape":"${endpoint.slice("custom_query_builder_".length)}","queries":[…]}`
+				: Str.startsWith("custom_query_builder_")(endpoint)
+					? `{"kind":"query","resultShape":"${Str.slice("custom_query_builder_".length)(endpoint)}","queries":[…]}`
 					: `{"kind":"route","endpoint":"${endpoint}","params":{…}}`
 
 	return (
@@ -144,8 +156,8 @@ export const dataSourceKindHint = (value: unknown): string | undefined => {
 	if (Result.isFailure(decodeObject(value))) return undefined
 	const decoded = decodeKindField(value)
 	const kind = Result.isFailure(decoded) ? undefined : decoded.success.kind
-	if (WIDGET_DATA_SOURCE_KINDS.some((known) => known === kind)) return undefined
-	return `${kind === undefined ? "The data source has no `kind`" : `Unknown data-source kind ${JSON.stringify(kind)}`}. Valid shapes: ${DATA_SOURCE_VARIANTS}.`
+	if (Arr.some(WIDGET_DATA_SOURCE_KINDS, (known) => known === kind)) return undefined
+	return `${kind === undefined ? "The data source has no `kind`" : `Unknown data-source kind ${stringifyJson(kind)}`}. Valid shapes: ${DATA_SOURCE_VARIANTS}.`
 }
 
 /** The same hint, one level in: a whole widget whose `dataSource` is the v2 shape. */
@@ -212,7 +224,7 @@ export const toMcpDashboardError =
 					message:
 						error.details.length === 0
 							? error.message
-							: `${error.message}\n- ${error.details.join("\n- ")}`,
+							: `${error.message}\n- ${Arr.join(error.details, "\n- ")}`,
 				})
 			default:
 				return new McpQueryError({ message: error.message, pipeName: tool, cause: error })
@@ -290,7 +302,7 @@ export const withDashboardMutation = Effect.fn("McpDashboardMutations.withDashbo
 			Effect.gen(function* () {
 				const nextWidgets = yield* transform(existing.widgets)
 				const nowMillis = yield* Clock.currentTimeMillis
-				const now = decodeIsoDateTimeString(new Date(nowMillis).toISOString())
+				const now = decodeIsoDateTimeString(DateTime.formatIso(DateTime.makeUnsafe(nowMillis)))
 
 				// Everything but the widgets and `updatedAt` is carried forward
 				// wholesale. Naming the fields here is exactly what used to drop

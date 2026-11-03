@@ -14,7 +14,18 @@
  */
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import type { ChatEvent, ChatTurnEndEvent } from "@maple/domain/chat-session"
-import { Cause, Clock, Effect, Fiber, Ref, Schedule, Semaphore, Stream } from "effect"
+import {
+	Cause,
+	Clock,
+	Effect,
+	Fiber,
+	Ref,
+	Schedule,
+	Semaphore,
+	Stream,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import type { ChatMessageRef, ChatOutbound, ChatTarget, ChatWritePhase } from "./outbound"
 import {
 	renderChatMessage,
@@ -99,10 +110,11 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 						const group = index < groups.length ? groups[index] : NO_BLOCKS
 						// A fingerprint of what this message should now say, not a wire format — nothing decodes
 						// it, it is only ever compared with the previous flush's.
-						// oxlint-disable-next-line effecttsgo/prefer-schema-over-json
+						// oxlint-disable-next-line effecttsgo/global-json-in-effect
 						const rendered = JSON.stringify(group)
 						if (index >= posted.length) {
-							posted.push(yield* transport.post(target, group, phase))
+							const postedMessage = yield* transport.post(target, group, phase)
+							posted.push(postedMessage)
 							sent.push(rendered)
 							// At least once: a run lost between the post and this report posts it again later.
 							if (options.onPosted !== undefined) yield* options.onPosted([...posted])
@@ -196,9 +208,10 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 const report = (message: string) => (cause: Cause.Cause<unknown>) =>
 	Effect.logWarning(message).pipe(
 		Effect.annotateLogs({
-			"error.type": Cause.prettyErrors(cause)
-				.map((error) => error.name)
-				.join(";"),
+			"error.type": Arr.join(
+				Arr.map(Cause.prettyErrors(cause), (error) => error.name),
+				";",
+			),
 		}),
 	)
 
@@ -256,7 +269,7 @@ const turnEndNotice = (event: ChatTurnEndEvent): ChatNoticeBlock | null => {
 				text:
 					event.error === undefined
 						? "Failed before finishing."
-						: `Failed: ${event.error.slice(0, MAX_ERROR_CHARS)}`,
+						: `Failed: ${Str.slice(0, MAX_ERROR_CHARS)(event.error)}`,
 			}
 	}
 }

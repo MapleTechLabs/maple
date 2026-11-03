@@ -14,6 +14,7 @@ import {
 	PlanetScaleWebhookQueueProducer,
 	ReplayBlobBucket,
 	SchemaApplyWorkflow,
+	VcsBackfillQueueProducer,
 	VcsSyncQueueProducer,
 } from "@maple/backend/platform/bindings"
 const rejectIO = () => Effect.die("Unexpected external I/O in cold-path probe")
@@ -21,6 +22,7 @@ const queue = { sendBatch: rejectIO }
 const limiter = { limit: rejectIO }
 export const offlinePorts = Layer.mergeAll(
 	Layer.succeed(VcsSyncQueueProducer, queue),
+	Layer.succeed(VcsBackfillQueueProducer, queue),
 	Layer.succeed(PlanetScaleWebhookQueueProducer, queue),
 	Layer.succeed(AuditEventsQueueProducer, queue),
 	Layer.succeed(CancellationReviewQueueProducer, queue),

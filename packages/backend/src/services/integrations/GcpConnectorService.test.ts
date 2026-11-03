@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import { hashIngestKey } from "@maple/db"
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
 import { GcpProjectId, GcpResourceNumber, OrgId, UserId } from "@maple/domain/primitives"
@@ -117,7 +117,12 @@ describe("GcpConnectorService", () => {
 		const testDb = createTestDb(trackedDbs)
 		const sources = () =>
 			Effect.promise(() =>
-				testDb.pglite.query<{ kind: string; platform: string; name: string; connector: string | null }>(
+				testDb.pglite.query<{
+					kind: string
+					platform: string
+					name: string
+					connector: string | null
+				}>(
 					`SELECT s.kind, s.platform, s.name, c.id AS connector
 					FROM sources s LEFT JOIN gcp_connectors c ON c.source_id = s.id`,
 				),
@@ -128,7 +133,12 @@ describe("GcpConnectorService", () => {
 			// A refused duplicate leaves no source behind.
 			yield* Effect.flip(gcp.create(orgId, userId, projectScope("acme-prod")))
 			assert.deepStrictEqual((yield* sources()).rows, [
-				{ kind: "integration", platform: "gcp", name: "Google Cloud acme-prod", connector: connector.id },
+				{
+					kind: "integration",
+					platform: "gcp",
+					name: "Google Cloud acme-prod",
+					connector: connector.id,
+				},
 			])
 
 			yield* gcp.delete(orgId, connector.id)
@@ -149,7 +159,10 @@ describe("GcpConnectorService", () => {
 			const gcp = yield* GcpConnectorService
 			const connector = yield* gcp.create(orgId, userId, organizationScope)
 			yield* Effect.promise(() =>
-				queryFirstRow(testDb, "UPDATE sources SET last_poll_error = 'Permission denied' RETURNING id"),
+				queryFirstRow(
+					testDb,
+					"UPDATE sources SET last_poll_error = 'Permission denied' RETURNING id",
+				),
 			)
 			yield* gcp.update(orgId, connector.id, { metricsEnabled: false })
 			assert.isNull(yield* sourceError())
@@ -441,7 +454,7 @@ describe("GcpConnectorService", () => {
 				const all = yield* gcp.resources(orgId, {})
 				assert.strictEqual(all.total, 4)
 				assert.deepStrictEqual(
-					all.resources.map((resource) => resource.name),
+					Arr.map(all.resources, (resource) => resource.name),
 					[
 						"//cloudresourcemanager.googleapis.com/projects/111",
 						"//cloudresourcemanager.googleapis.com/projects/222",
@@ -508,7 +521,7 @@ describe("GcpConnectorService", () => {
 					name: "api",
 				})
 				assert.deepStrictEqual(
-					[named.total, named.resources.map((resource) => resource.name)],
+					[named.total, Arr.map(named.resources, (resource) => resource.name)],
 					[1, [api]],
 				)
 				// A segment in the middle of the name is not the resource's name.
@@ -517,7 +530,7 @@ describe("GcpConnectorService", () => {
 
 				const theirs = yield* gcp.resources(otherOrgId, {})
 				assert.deepStrictEqual(
-					theirs.resources.map((resource) => resource.projectId),
+					Arr.map(theirs.resources, (resource) => resource.projectId),
 					["elsewhere"],
 				)
 			}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))

@@ -1,13 +1,15 @@
 import { fromV2IngestRuleAction, type V2IngestRule } from "@maple/domain/http/v2"
 import type { IngestRuleCondition } from "@maple/domain/ingest-rules"
 import { type ConditionDraft, type Draft, emptyDraft, joinList } from "./form"
+import { Array as Arr } from "effect"
 
 // The empty state's starting points, and the draft an existing rule fills.
 
 export const TEMPLATE_IDS = ["redact-pii", "drop-debug-logs", "drop-health-checks", "hash-user-ids"] as const
 export type TemplateId = (typeof TEMPLATE_IDS)[number]
 
-export const isTemplateId = (value: string): value is TemplateId => TEMPLATE_IDS.some((id) => id === value)
+export const isTemplateId = (value: string): value is TemplateId =>
+	Arr.some(TEMPLATE_IDS, (id) => id === value)
 
 const condition = (
 	id: number,
@@ -85,7 +87,7 @@ export const draftFromRule = (rule: V2IngestRule): Draft => {
 		name: rule.name,
 		enabled: rule.enabled,
 		signals: rule.signals,
-		conditions: rule.conditions.map(conditionDraft),
+		conditions: Arr.map(rule.conditions, conditionDraft),
 		nextConditionId: rule.conditions.length + 1,
 		...(action._tag === "drop"
 			? { actionType: "drop", keepPercent: String(action.keepPercent) }
@@ -93,7 +95,7 @@ export const draftFromRule = (rule: V2IngestRule): Draft => {
 					actionType: "redact",
 					keys: joinList(action.keys),
 					detectors: action.detectors,
-					patterns: action.patterns.join("\n"),
+					patterns: Arr.join(action.patterns, "\n"),
 					scopes: action.scopes,
 					method: action.method,
 				}),

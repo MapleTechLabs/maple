@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Result } from "effect"
+import { Result, String as Str } from "effect"
 import { decodeSyncRequest } from "./request"
 
 const decode = (query: string) => decodeSyncRequest(new URLSearchParams(query))
@@ -43,7 +43,7 @@ describe("decodeShapeRequest", () => {
 		)
 		assert.strictEqual(expectFailure("shape=investigation_v2&scope=").message.length > 0, true)
 		assert.strictEqual(
-			expectFailure(`shape=investigation_v2&scope=${"x".repeat(129)}`).message,
+			expectFailure(`shape=investigation_v2&scope=${Str.repeat(129)("x")}`).message,
 			"Shape investigation_v2 requires a scope",
 		)
 	})

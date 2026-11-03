@@ -2,6 +2,9 @@ import { execFileSync } from "node:child_process"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { cpus, loadavg, platform, release, totalmem } from "node:os"
 import { dirname, resolve } from "node:path"
+import { Schema, Array as Arr, String as Str } from "effect"
+
+const encodeJsonTabbed = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
 
 export interface Summary {
 	readonly n: number
@@ -21,12 +24,12 @@ export const summarize = (samples: ReadonlyArray<number>): Summary => {
 		p50: round(at(0.5)),
 		p95: round(at(0.95)),
 		max: round(sorted.at(-1) ?? 0),
-		mean: round(sorted.reduce((a, b) => a + b, 0) / Math.max(1, sorted.length)),
+		mean: round(Arr.reduce(sorted, 0, (a, b) => a + b) / Math.max(1, sorted.length)),
 	}
 }
 
 const gitSha = (): string =>
-	execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim()
+	Str.trim(execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }))
 
 export const environment = () => ({
 	date: new Date().toISOString(),
@@ -36,7 +39,7 @@ export const environment = () => ({
 	cpu: cpus()[0]?.model ?? "unknown",
 	cores: cpus().length,
 	memoryGb: Math.round(totalmem() / 2 ** 30),
-	loadavgAtStart: loadavg().map((l) => Math.round(l * 100) / 100),
+	loadavgAtStart: Arr.map(loadavg(), (l) => Math.round(l * 100) / 100),
 })
 
 /** `--name value` / `--flag` argv parsing with defaults. */
@@ -45,14 +48,14 @@ export const flag = (name: string, fallback: string): string => {
 	return i >= 0 && i + 1 < process.argv.length ? process.argv[i + 1]! : fallback
 }
 export const list = (name: string, fallback: string): string[] =>
-	flag(name, fallback).split(",").filter(Boolean)
-export const numbers = (name: string, fallback: string): number[] => list(name, fallback).map(Number)
+	Arr.filter(Str.split(",")(flag(name, fallback)), Boolean)
+export const numbers = (name: string, fallback: string): number[] => Arr.map(list(name, fallback), Number)
 
 /** Write the JSON report under `docs/benchmarks/` (or `--out`). */
 export const writeReport = (defaultName: string, report: unknown): string => {
 	const out = resolve(flag("out", resolve(import.meta.dir, "../../../docs/benchmarks", defaultName)))
 	mkdirSync(dirname(out), { recursive: true })
-	writeFileSync(out, `${JSON.stringify(report, null, "\t")}\n`)
+	writeFileSync(out, `${encodeJsonTabbed(report)}\n`)
 	return out
 }
 
@@ -61,5 +64,5 @@ export const burnCpu = (n: number): (() => void) => {
 	const workers = Array.from({ length: n }, () =>
 		Bun.spawn(["bun", "-e", "for(;;){}"], { stdout: "ignore", stderr: "ignore" }),
 	)
-	return () => workers.forEach((w) => w.kill())
+	return () => Arr.forEach(workers, (w) => w.kill())
 }

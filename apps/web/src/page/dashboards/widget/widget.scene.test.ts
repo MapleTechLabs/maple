@@ -1,8 +1,8 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
 import { dataSourceQuerySet } from "@maple/widgets/dashboard"
-import { Option, Schema } from "effect"
-import { ResolveThemeColors } from "../../../charts/theme-colors"
+import { Option, Schema, Array as Arr } from "effect"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -14,7 +14,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { update } from "./page-update"
 import { init, isDirty, previewWidgetOf } from "./update"
-import * as Tabs from "../../../ui/tabs"
+import * as Tabs from "@maple/views/ui/tabs"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -24,7 +24,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const throughput = {
 	id: "throughput",
@@ -69,17 +69,18 @@ const stored = document.widgets[0]
 const route = (widgetId: string) => ({ dashboardId: "dash_platform", widgetId, search: {} })
 
 const opened = (widgetId = "throughput") =>
-	[
-		Message.CompletedReadClock({ nowMs: NOW }),
-		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
-	].reduce(
-		(step, message) => {
-			const next = pageUpdate(step.model, message)
-			return { model: next.model, commands: [...step.commands, ...(next.commands ?? [])] }
-		},
+	Arr.reduce(
+		[
+			Message.CompletedReadClock({ nowMs: NOW }),
+			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
+		],
 		{
 			model: init(route(widgetId), context).model,
 			commands: [] as ReadonlyArray<{ readonly name: string }>,
+		},
+		(step, message) => {
+			const next = pageUpdate(step.model, message)
+			return { model: next.model, commands: [...step.commands, ...(next.commands ?? [])] }
 		},
 	)
 
@@ -144,7 +145,9 @@ describe("widget editor", () => {
 	test("a failed time-range save is reported, a saved one is quiet", () => {
 		const model = opened().model
 		expect(pageUpdate(model, Message.CompletedSaveTimeRange({ error: null })).outMessage).toBeUndefined()
-		expect(pageUpdate(model, Message.CompletedSaveTimeRange({ error: "Dashboard is read-only" })).outMessage).toEqual(
+		expect(
+			pageUpdate(model, Message.CompletedSaveTimeRange({ error: "Dashboard is read-only" })).outMessage,
+		).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "error",
 				title: "Dashboard is read-only",
@@ -157,7 +160,7 @@ describe("widget editor", () => {
 
 	test("the first focus in the query editor starts every autocomplete lookup, once", () => {
 		const focused = pageUpdate(opened().model, Message.FocusedQueryEditor())
-		expect(names(focused.commands).filter((name) => name === FetchAutocomplete.name)).toHaveLength(7)
+		expect(Arr.filter(names(focused.commands), (name) => name === FetchAutocomplete.name)).toHaveLength(7)
 		expect(names(pageUpdate(focused.model, Message.FocusedQueryEditor()).commands)).toEqual([])
 	})
 })
@@ -187,7 +190,10 @@ describe("widget lowering", () => {
 	})
 
 	test("the Raw SQL tab is an unsaved change; Apply writes the SQL only once it scopes to the org", () => {
-		const sqlTab = pageUpdate(opened().model, Message.GotSourceTabsMessage({ message: Tabs.Message.ClickedTab({ index: 1 }) })).model
+		const sqlTab = pageUpdate(
+			opened().model,
+			Message.GotSourceTabsMessage({ message: Tabs.Message.ClickedTab({ index: 1 }) }),
+		).model
 		expect(isDirty(sqlTab)).toBe(true)
 		expect(previewWidgetOf(sqlTab)?.dataSource).toMatchObject({ kind: "raw_sql" })
 		const unscoped = pageUpdate(sqlTab, Message.ChangedSql({ value: "SELECT 1 AS value" })).model

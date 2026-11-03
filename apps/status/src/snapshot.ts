@@ -12,7 +12,7 @@ import {
 	type StatusPagePublisherHeartbeat,
 	type StatusPageSnapshot,
 } from "@maple/domain/status-page"
-import { Effect, Option, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import type { StatusEnv, StatusStorageError } from "./ports"
 
 /** A cached copy younger than this is served without asking KV. */
@@ -89,14 +89,14 @@ const readThrough = <A>(
 	})
 
 const decodePageId = (raw: string): Option.Option<string> => {
-	const id = raw.trim()
+	const id = Str.trim(raw)
 	return /^[0-9a-f-]{36}$/u.test(id) ? Option.some(id) : Option.none()
 }
 
 /** The page a hostname serves: KV `host:`, R2 `hosts/` when KV fails, then any cached answer. */
 export const pageIdForHost = (env: StatusEnv, hostname: string): Effect.Effect<Lookup<string>> =>
 	readThrough(env, {
-		cacheKey: cacheKey("host", hostname.toLowerCase()),
+		cacheKey: cacheKey("host", Str.toLowerCase(hostname)),
 		kvKey: StatusPageKeys.host(hostname),
 		r2Key: StatusPageKeys.hostObject(hostname),
 		kvMissIsFinal: true,
@@ -127,6 +127,7 @@ export const loadSnapshot = (
 	}).pipe(Effect.map((lookup) => (lookup._tag === "found" ? Option.some(lookup.value) : Option.none())))
 
 const decodeOverlayJson = Schema.decodeUnknownOption(Schema.fromJsonString(StatusPageOverlay))
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 export interface ListedOverlay {
 	/** Every listed key, decodable or not: the entry cap counts these. */
@@ -193,14 +194,15 @@ export const rememberOverlay = (
 ): Effect.Effect<StatusPageOverlay> =>
 	cachedOverlayEntries(env, pageId).pipe(
 		Effect.flatMap((previous) => {
-			const listed = new Set(entries.map((entry) => entry.id))
-			const recent = previous.filter(
+			const listed = new Set(Arr.map(entries, (entry) => entry.id))
+			const recent = Arr.filter(
+				previous,
 				(entry) => !listed.has(entry.id) && env.nowMs - entry.at < LIST_LAG_MS,
 			)
 			const overlay: StatusPageOverlay = { entries: [...entries, ...recent] }
 			return env.storage
 				.cachePut(cacheKey("overlay", pageId), {
-					value: JSON.stringify(overlay),
+					value: encodeJson(overlay),
 					storedAt: env.nowMs,
 				})
 				.pipe(Effect.ignore, Effect.as(overlay))

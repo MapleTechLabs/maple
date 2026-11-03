@@ -1,9 +1,9 @@
 import { V2ApiKey } from "@maple/domain/http/v2"
 import { Schema } from "effect"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Dialog from "../../../ui/dialog"
-import * as Menu from "../../../ui/menu"
-import * as Select from "../../../ui/select"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
+import * as Select from "@maple/views/ui/select"
 import * as CreateDialog from "./create-dialog"
 import * as RollDialog from "./roll-dialog"
 

@@ -1,13 +1,14 @@
+import { Schema, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { textInput } from "../../page/kit/query-builder/parts"
 import { timeControls } from "../../page/kit/time-controls"
 import * as TimeRangePicker from "../../page/kit/time-range-picker"
-import { button } from "../../ui/button"
-import { card, cardDescription, cardFooter, cardHeader, cardPanel, cardTitle } from "../../ui/card"
-import { separator } from "../../ui/display"
-import { icon } from "../../ui/icon"
-import { scrollArea } from "../../ui/scroll-area"
+import { button } from "@maple/views/ui/button"
+import { card, cardDescription, cardFooter, cardHeader, cardPanel, cardTitle } from "@maple/views/ui/card"
+import { separator } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { scrollArea } from "@maple/views/ui/scroll-area"
 import { MeasureScrollArea } from "./command"
 import { scrollOverflowOf } from "./derive"
 import { type FormulaDraft, Message, type Model } from "./model"
@@ -15,6 +16,8 @@ import { DEFAULT_PRESET } from "./update"
 import { fieldEyebrow } from "./view-controls"
 import { queryRow } from "./view-query"
 import { resultsContent } from "./view-results"
+
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 // `QueryBuilderLabPage` inside `DashboardLayout`: the header time controls and the lab card.
 
@@ -172,17 +175,13 @@ const statePreview = (h: H, model: Model): Html =>
 					),
 				],
 				[
-					JSON.stringify(
-						{
-							startTime: model.window.startTime,
-							endTime: model.window.endTime,
-							queries: model.queries,
-							formulas: model.formulas,
-							submittedInput: model.submitted,
-						},
-						null,
-						2,
-					),
+					encodePrettyJson({
+						startTime: model.window.startTime,
+						endTime: model.window.endTime,
+						queries: model.queries,
+						formulas: model.formulas,
+						submittedInput: model.submitted,
+					}),
 				],
 			),
 		],
@@ -231,8 +230,8 @@ export const view = (model: Model, h: H): Html =>
 								h.div(
 									[h.Class("space-y-2")],
 									[
-										...model.queries.map((query) => queryRow(h, model, query)),
-										...model.formulas.map((formula) => formulaRow(h, formula)),
+										...Arr.map(model.queries, (query) => queryRow(h, model, query)),
+										...Arr.map(model.formulas, (formula) => formulaRow(h, formula)),
 									],
 								),
 								resultsCard(h, model),

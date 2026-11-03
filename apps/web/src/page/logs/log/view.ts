@@ -1,15 +1,17 @@
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { BreadcrumbEntry } from "../../../shell"
-import { linkButton } from "../../../ui/button"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { keyValue, keyValueList } from "../../../ui/key-value"
-import { skeleton } from "../../../ui/skeleton"
+import { linkButton } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { keyValue, keyValueList } from "@maple/views/ui/key-value"
+import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import * as LogDetail from "../detail"
+import * as LogDetail from "@maple/views/logs/log-sheet"
+import { logTraceHref } from "../log-links"
 import { Message, type Model } from "./model"
 
 type H = HtmlBuilder<Message>
@@ -17,12 +19,12 @@ type H = HtmlBuilder<Message>
 const BACK = { href: "/logs", label: "Back to Logs" }
 
 const bodyExcerpt = (body: string): string => {
-	const trimmed = body.trim()
-	return trimmed.length > 48 ? `${trimmed.slice(0, 48)}…` : trimmed || "Log"
+	const trimmed = Str.trim(body)
+	return trimmed.length > 48 ? `${Str.slice(0, 48)(trimmed)}…` : trimmed || "Log"
 }
 
 const loading = (h: H): ReadonlyArray<Html> => [
-	skeleton(h, "h-24 w-full rounded-md"),
+	skeletonBlock(h, { height: "24" }),
 	h.div(
 		[h.Class("grid gap-3 lg:grid-cols-[1fr_minmax(360px,440px)]")],
 		[skeleton(h, "h-64 w-full rounded-md"), skeleton(h, "h-64 w-full rounded-md")],
@@ -40,13 +42,16 @@ const missingState = (h: H, options: Readonly<{ title: string; description: stri
 		],
 		[
 			h.div(
-				[h.AriaHidden(true), h.Class("rounded-md border bg-card/50 p-2.5 text-muted-foreground")],
+				[
+					h.AriaHidden(true),
+					h.Class("rounded-md border bg-surface-faint p-2.5 text-muted-foreground"),
+				],
 				[icon(h, "CircleWarningIcon", { size: 18 })],
 			),
 			h.div(
 				[h.Class("max-w-md space-y-1")],
 				[
-					h.h2([h.Class("font-prose text-sm font-medium text-foreground")], [options.title]),
+					heading(h, { level: 2, variant: "subsection", className: "font-prose" }, [options.title]),
 					h.p(
 						[h.Class("font-prose text-ui text-balance text-muted-foreground")],
 						[options.description],
@@ -90,7 +95,7 @@ const body = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
 							slotId: "log-page-panels",
 							model: model.detail,
 							view: LogDetail.pageView,
-							viewInputs: { timeZone },
+							viewInputs: { timeZone, traceHref: logTraceHref },
 							toParentMessage: (message) => Message.GotDetailMessage({ message }),
 						}),
 					],

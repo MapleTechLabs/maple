@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 // Where a traced service runs: each platform integration writes its metrics under `service.name` =
 // the resource's name (a Worker's under `cloudflare-worker/<script>`), so the resource and the
 // traced service of that name are one thing. Infra pages and service pages link by this rule.
@@ -50,7 +51,8 @@ export const SERVICE_RUNTIME_KINDS = {
 	},
 } as const satisfies Record<ServiceRuntimeKindId, ServiceRuntimeKind>
 
-export const SERVICE_RUNTIME_MARKERS: ReadonlyArray<string> = SERVICE_RUNTIME_KIND_IDS.map(
+export const SERVICE_RUNTIME_MARKERS: ReadonlyArray<string> = Arr.map(
+	SERVICE_RUNTIME_KIND_IDS,
 	(kind) => SERVICE_RUNTIME_KINDS[kind].marker,
 )
 
@@ -65,6 +67,6 @@ export const runtimeMetricServiceNames = (service: string): ReadonlyArray<string
 
 /** The traced service a platform resource's `service.name` belongs to. */
 export const tracedServiceOfRuntime = (metricServiceName: string): string =>
-	metricServiceName.startsWith(CLOUDFLARE_WORKER_SERVICE_PREFIX)
-		? metricServiceName.slice(CLOUDFLARE_WORKER_SERVICE_PREFIX.length)
+	Str.startsWith(CLOUDFLARE_WORKER_SERVICE_PREFIX)(metricServiceName)
+		? Str.slice(CLOUDFLARE_WORKER_SERVICE_PREFIX.length)(metricServiceName)
 		: metricServiceName

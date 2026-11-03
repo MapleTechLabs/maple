@@ -1,5 +1,5 @@
-import type { FilterOption } from "@maple/web/ui/filters/filter-section"
-import { Option } from "effect"
+import type { FilterOption } from "@maple/views/ui/filters/filter-section"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Catalog, Model, ServiceCatalogEntry } from "./model"
 
@@ -18,15 +18,18 @@ export const filtersOf = (query: URLSearchParams): ServicesFilters => ({
 })
 
 export const activeFilterCount = (filters: ServicesFilters): number =>
-	[filters.env, filters.ns].filter(Boolean).length
+	Arr.filter([filters.env, filters.ns], Boolean).length
 
 const dataOf = (slot: Model["catalog"]): Catalog => Option.getOrElse(AsyncData.getData(slot.data), () => [])
 
 /** The rows: the filtered catalog, narrowed client-side by the name search. */
-export const visibleEntries = (model: Model, filters: ServicesFilters): ReadonlyArray<ServiceCatalogEntry> => {
+export const visibleEntries = (
+	model: Model,
+	filters: ServicesFilters,
+): ReadonlyArray<ServiceCatalogEntry> => {
 	const all = dataOf(model.catalog)
 	const needle = filters.search?.toLowerCase()
-	return needle ? all.filter((entry) => entry.serviceName.toLowerCase().includes(needle)) : all
+	return needle ? Arr.filter(all, (entry) => Str.includes(needle)(Str.toLowerCase(entry.serviceName))) : all
 }
 
 /** With no filter the filtered and unfiltered queries are one key, so the rows slot answers both. */
@@ -38,10 +41,12 @@ const countBy = (
 	pick: (entry: ServiceCatalogEntry) => ReadonlyArray<string>,
 ): ReadonlyArray<FilterOption> => {
 	const counts = new Map<string, number>()
-	entries.forEach((entry) => pick(entry).forEach((name) => counts.set(name, (counts.get(name) ?? 0) + 1)))
-	return [...counts.entries()]
-		.map(([name, count]) => ({ name, count }))
-		.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+	Arr.forEach(entries, (entry) =>
+		Arr.forEach(pick(entry), (name) => counts.set(name, (counts.get(name) ?? 0) + 1)),
+	)
+	return Arr.map([...counts.entries()], ([name, count]) => ({ name, count })).sort(
+		(a, b) => b.count - a.count || Str.localeCompare(b.name)(a.name),
+	)
 }
 
 /** Facets from the unfiltered catalog, each counted under the other facet only. */
@@ -49,7 +54,13 @@ export const facetsOf = (model: Model, filters: ServicesFilters) => {
 	const all = dataOf(unfilteredSlot(model, filters))
 	const { env, ns } = filters
 	return {
-		envFacets: countBy(ns ? all.filter((e) => e.serviceNamespaces.includes(ns)) : all, (e) => e.deploymentEnvironments),
-		nsFacets: countBy(env ? all.filter((e) => e.deploymentEnvironments.includes(env)) : all, (e) => e.serviceNamespaces),
+		envFacets: countBy(
+			ns ? Arr.filter(all, (e) => e.serviceNamespaces.includes(ns)) : all,
+			(e) => e.deploymentEnvironments,
+		),
+		nsFacets: countBy(
+			env ? Arr.filter(all, (e) => e.deploymentEnvironments.includes(env)) : all,
+			(e) => e.serviceNamespaces,
+		),
 	}
 }

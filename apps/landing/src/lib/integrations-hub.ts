@@ -10,6 +10,7 @@ import { AGENT_FRAMEWORK_GUIDES, AGENT_GATEWAY_GUIDES, AGENT_GUIDE_LANGUAGES } f
 import type { AgentGuide } from "./agent-tracing-guides"
 import type { BrandMarkId } from "./brand-marks"
 import type { LanguageId } from "./docs-languages"
+import { Array as Arr } from "effect"
 
 type Msg = () => string
 
@@ -126,7 +127,7 @@ const languages: HubTile[] = [
 	},
 ]
 
-const LANGUAGE_LABELS = new Map<string, string>(AGENT_GUIDE_LANGUAGES.map((l) => [l.id, l.label]))
+const LANGUAGE_LABELS = new Map<string, string>(Arr.map(AGENT_GUIDE_LANGUAGES, (l) => [l.id, l.label]))
 
 // The guide's languages are the hint: literal names, so ja and ko read the same tokens.
 const agentTile = (g: AgentGuide): HubTile => ({
@@ -134,7 +135,10 @@ const agentTile = (g: AgentGuide): HubTile => ({
 	hint:
 		g.languages[0] === "other"
 			? "OpenTelemetry GenAI"
-			: g.languages.map((id) => LANGUAGE_LABELS.get(id) ?? id).join(", "),
+			: Arr.join(
+					Arr.map(g.languages, (id) => LANGUAGE_LABELS.get(id) ?? id),
+					", ",
+				),
 	href: doc(`agent-tracing/${g.slug}`),
 	icon: g.icon,
 })
@@ -284,7 +288,7 @@ export const HUB_CATEGORIES: readonly HubCategory[] = [
 		icon: "sparkle-2",
 		title: m.intg_cat_agents_title,
 		lede: m.intg_cat_agents_lede,
-		tiles: [...AGENT_FRAMEWORK_GUIDES, ...AGENT_GATEWAY_GUIDES].map(agentTile),
+		tiles: Arr.map([...AGENT_FRAMEWORK_GUIDES, ...AGENT_GATEWAY_GUIDES], agentTile),
 	},
 	{ id: "cloud", icon: "cloud", title: m.intg_cat_cloud_title, lede: m.intg_cat_cloud_lede, tiles: cloud },
 	{
@@ -303,5 +307,3 @@ export const HUB_CATEGORIES: readonly HubCategory[] = [
 	},
 	{ id: "code", icon: "laptop", title: m.intg_cat_code_title, lede: m.intg_cat_code_lede, tiles: code },
 ]
-
-export const HUB_TILE_COUNT = HUB_CATEGORIES.reduce((n, c) => n + c.tiles.length, 0)

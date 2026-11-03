@@ -2,8 +2,9 @@ import { Command, type Update } from "foldkit"
 import { Message as IntegrationsMessage } from "../../page/integrations/message"
 import { runtimeToggled } from "../../page/integrations/update-gcp-configure"
 import type { Resources } from "../../platform/resources"
-import * as Select from "../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import { Message, type Model, SCENARIOS, type ScenarioState } from "./model"
+import { Array as Arr } from "effect"
 
 export type Return = Update.Return<Model, Message, Resources>
 
@@ -13,7 +14,7 @@ type Step = Readonly<{
 }>
 
 export const init = (): Model => ({
-	scenarios: SCENARIOS.map((scenario, index) => ({
+	scenarios: Arr.map(SCENARIOS, (scenario, index) => ({
 		filter: scenario.initial,
 		filterMode: Select.init(`gcp-lab-filter-mode-${index}`, {
 			value: scenario.initial.keep === false ? "set" : "keep",
@@ -56,7 +57,9 @@ export const update = (model: Model, message: Message): Return =>
 			if (state === undefined) return { model }
 			const next = step(state, inner)
 			return {
-				model: { scenarios: model.scenarios.map((entry, at) => (at === index ? next.state : entry)) },
+				model: {
+					scenarios: Arr.map(model.scenarios, (entry, at) => (at === index ? next.state : entry)),
+				},
 				commands: Command.mapMessages(next.commands, (child) =>
 					Message.GotScenarioMessage({ index, message: child }),
 				),

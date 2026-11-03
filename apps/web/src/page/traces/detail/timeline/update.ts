@@ -1,4 +1,4 @@
-import * as Select from "../../../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import {
 	collectAllCollapsibleIds,
 	collectDescendantParentIds,
@@ -20,7 +20,12 @@ import {
 } from "@maple/ui/components/traces/trace-timeline-types"
 import { summarizeClockSkew } from "@maple/ui/lib/span-tree"
 import { Command } from "foldkit"
-import { type SpanEvents, type SpanNodeData, type TraceData, toSpanNode } from "../trace-data"
+import {
+	type SpanEvents,
+	type SpanNodeData,
+	type TraceData,
+	toSpanNode,
+} from "@maple/views/traces/trace-data"
 import { FocusSearch, ReadSidebarWidth, ScrollToRow } from "./command"
 import {
 	collectParentIdsByLevel,
@@ -33,6 +38,7 @@ import {
 } from "./layout"
 import { Message, OutMessage } from "./message"
 import type { Model, Viewport } from "./model"
+import { Array as Arr, String as Str } from "effect"
 
 export type UpdateReturn = Readonly<{
 	model: Model
@@ -42,11 +48,41 @@ export type UpdateReturn = Readonly<{
 
 export const colorByOf = (id: string): ColorByField => colorByFromId(id) ?? DEFAULT_COLOR_BY
 
-/** The visible rows of the current tree, expansion and color scheme. */
-export const barsOf = (model: Model): ReadonlyArray<Bar> =>
-	layoutSpans(model.rootSpans, new Set(model.expandedSpanIds), colorByOf(model.colorBy), model.traceStartMs)
+type BarsEntry = Readonly<{
+	expandedSpanIds: Model["expandedSpanIds"]
+	colorBy: string
+	traceStartMs: number
+	bars: ReadonlyArray<Bar>
+}>
 
-const legacyTree = (rootSpans: ReadonlyArray<SpanNodeData>) => rootSpans.map(toSpanNode)
+const barsCache = new WeakMap<Model["rootSpans"], BarsEntry>()
+
+/** The visible rows of the current tree, expansion and color scheme, laid out once per change. */
+export const barsOf = (model: Model): ReadonlyArray<Bar> => {
+	const cached = barsCache.get(model.rootSpans)
+	if (
+		cached !== undefined &&
+		cached.expandedSpanIds === model.expandedSpanIds &&
+		cached.colorBy === model.colorBy &&
+		cached.traceStartMs === model.traceStartMs
+	)
+		return cached.bars
+	const bars = layoutSpans(
+		model.rootSpans,
+		new Set(model.expandedSpanIds),
+		colorByOf(model.colorBy),
+		model.traceStartMs,
+	)
+	barsCache.set(model.rootSpans, {
+		expandedSpanIds: model.expandedSpanIds,
+		colorBy: model.colorBy,
+		traceStartMs: model.traceStartMs,
+		bars,
+	})
+	return bars
+}
+
+const legacyTree = (rootSpans: ReadonlyArray<SpanNodeData>) => Arr.map(rootSpans, toSpanNode)
 
 const indexOf = (model: Model, spanId: string): number =>
 	barsOf(model).findIndex((bar) => bar.span.spanId === spanId)
@@ -80,7 +116,7 @@ export const init = (input: InitInput): UpdateReturn => {
 		rootSpans: trace.rootSpans,
 		totalDurationMs: trace.totalDurationMs,
 		traceStartTime: input.traceStartTime,
-		services: [...new Set(trace.spans.map((span) => span.serviceName))],
+		services: [...new Set(Arr.map(trace.spans, (span) => span.serviceName))],
 		totalSpanCount: countSpans(trace.rootSpans),
 		skew: summarizeClockSkew(tree),
 		traceStartMs,
@@ -161,7 +197,7 @@ const toggleCollapse = (model: Model, spanId: string, wholeSubtree: boolean): Mo
 	const isExpanding = !next.has(spanId)
 	const node = barsOf(model).find((bar) => bar.span.spanId === spanId)?.span
 	const descendants = wholeSubtree && node !== undefined ? collectDescendantParentIds(toSpanNode(node)) : []
-	;[spanId, ...descendants].forEach((id) => (isExpanding ? next.add(id) : next.delete(id)))
+	Arr.forEach([spanId, ...descendants], (id) => (isExpanding ? next.add(id) : next.delete(id)))
 	return withExpanded(model, next)
 }
 
@@ -181,7 +217,7 @@ const collapseOneLevel = (model: Model): Model =>
 const navigateSearch = (model: Model, direction: 1 | -1): UpdateReturn => {
 	const bars = barsOf(model)
 	const matches = computeSearchMatches(bars, model.searchQuery)
-	const rows = bars.flatMap((bar, index) => (matches.has(bar.span.spanId) ? [index] : []))
+	const rows = Arr.flatMap(bars, (bar, index) => (matches.has(bar.span.spanId) ? [index] : []))
 	const n = rows.length
 	if (n === 0) return { model }
 	const cursor = model.matchCursor
@@ -216,7 +252,7 @@ const panBy = (model: Model, fraction: number): Model => {
 const pressedKey = (model: Model, key: string, isShift: boolean): UpdateReturn => {
 	const bars = barsOf(model)
 	const focused = model.focusedIndex === null ? undefined : bars[model.focusedIndex]
-	switch (key.toLowerCase()) {
+	switch (Str.toLowerCase(key)) {
 		case "arrowdown":
 			return focus(
 				model,

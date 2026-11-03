@@ -1,10 +1,10 @@
 import { AWS_INFRA_KIND_IDS, type AwsInfraKindId } from "@maple/domain/aws-infra"
 import { Command } from "foldkit"
-import * as Chart from "../../../../charts/chart"
-import { LoadChartRuntime } from "../../../../charts/chart-runtime"
-import { chartBucketSeconds } from "../../../../charts/infra-metric-series"
-import * as Keyed from "../../../../data/keyed"
-import { requestKey } from "../../../../data/request-key"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
@@ -16,6 +16,7 @@ import { chartIds } from "./charts"
 import { CompleteReloadSpin, FetchTimeseries, FetchTraced, ResolveWindow } from "./command"
 import { Message, type RequestMode } from "./message"
 import type { Model } from "./model"
+import { Array as Arr, Record as Rec } from "effect"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -23,7 +24,7 @@ type Route = { readonly kind: string; readonly name: string; readonly search: Se
 
 export const DEFAULT_PRESET = "6h"
 
-const isKind = (kind: string): kind is AwsInfraKindId => AWS_INFRA_KIND_IDS.some((id) => id === kind)
+const isKind = (kind: string): kind is AwsInfraKindId => Arr.some(AWS_INFRA_KIND_IDS, (id) => id === kind)
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>
 	ResolveWindow({
@@ -76,7 +77,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		nowMs: 0,
 		timeseries: Keyed.idle(),
 		traced: Keyed.idle(),
-		charts: Object.fromEntries((kind === null ? [] : chartIds(kind)).map((id) => [id, Chart.init()])),
+		charts: Rec.fromEntries(Arr.map(kind === null ? [] : chartIds(kind), (id) => [id, Chart.init()])),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		timePicker: TimeRangePicker.init("aws-resource-time-range"),

@@ -2,7 +2,8 @@ import type { CatalogPlan, CatalogPlanItem } from "@maple/domain/http"
 import { isPricingCardFeature } from "@maple/domain/billing"
 import { formatCurrency } from "@maple/domain/format"
 import { formatCount, formatQuoteUnits, quoteUnits } from "../../lib/billing/usage"
-import type { IconName } from "../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
+import { Array as Arr, String as Str } from "effect"
 
 // The data side of `PricingCards`: which plans show, their prices, metered rows and buttons.
 
@@ -39,9 +40,9 @@ export const PLATFORM_FEATURE_ICONS = new Map<string, IconName>([
 
 export const getPlanSlug = (plan: CatalogPlan): string => {
 	if (plan.autoEnable) return "starter"
-	const id = plan.id.toLowerCase()
+	const id = Str.toLowerCase(plan.id)
 	if (id === "starter" || id === "startup") return id
-	const name = plan.name.toLowerCase()
+	const name = Str.toLowerCase(plan.name)
 	if (name === "starter" || name === "startup") return name
 	return "startup"
 }
@@ -70,7 +71,7 @@ const padCents = (text: string): string =>
 	text.replace(/\$(\d+)\.(\d)(?!\d)/g, (_, dollars: string, tenths: string) => `$${dollars}.${tenths}0`)
 
 const normalizeDetailText = (text: string): string =>
-	padCents(text.replace(/\bper\s+(?:[\d,]+\s+)?(?:logs?|traces?|metrics?)\b/i, "per GB"))
+	padCents(Str.replace(/\bper\s+(?:[\d,]+\s+)?(?:logs?|traces?|metrics?)\b/i, "per GB")(text))
 
 /** Autumn words the rate per billing block; events are quoted per million, in its style. */
 const formatDetail = (item: CatalogPlanItem): string | undefined => {
@@ -131,9 +132,9 @@ export const getButtonConfig = (plan: CatalogPlan): ButtonConfig => {
 export type FeatureRow = Readonly<{ featureId: string; label: string; value: string; detail: string | null }>
 
 export const getFeatureRows = (plan: CatalogPlan): ReadonlyArray<FeatureRow> =>
-	plan.items
-		.filter((item) => isPricingCardFeature(item.featureId))
-		.map((item) => {
+	Arr.map(
+		Arr.filter(plan.items, (item) => isPricingCardFeature(item.featureId)),
+		(item) => {
 			const detail = formatDetail(item)
 			return {
 				featureId: item.featureId,
@@ -141,4 +142,5 @@ export const getFeatureRows = (plan: CatalogPlan): ReadonlyArray<FeatureRow> =>
 				value: formatIncludedUsage(item),
 				detail: detail ?? null,
 			}
-		})
+		},
+	)

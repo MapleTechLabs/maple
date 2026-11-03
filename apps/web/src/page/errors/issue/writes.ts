@@ -1,9 +1,9 @@
 import { allowedTransitionsForAll, type IssueSeverity } from "@maple/domain/http"
-import { Option, Result } from "effect"
+import { Option, Result, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { Resources } from "../../../platform/resources"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { WORKFLOW_LABEL } from "../kit/workflow"
 import { EvaluateEscalation, RunIssueWrite } from "./command"
@@ -116,7 +116,8 @@ export const evaluatedEscalation = (
 		}),
 		onSuccess: (preview) => {
 			if (preview.outcome !== "route") return startWrite(model, { _tag: "SetSeverity", severity })
-			const names = preview.destinationIds.map(
+			const names = Arr.map(
+				preview.destinationIds,
 				(id) => model.destinations.find((destination) => destination.id === id)?.name ?? id,
 			)
 			return liftConfirm(

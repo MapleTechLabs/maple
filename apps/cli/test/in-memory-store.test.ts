@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Effect, Exit, Option } from "effect"
+import { Effect, Exit, Option, Array as Arr } from "effect"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -128,7 +128,7 @@ describe("sweepStaleDiscoveryFiles", () => {
 		const removed = await Effect.runPromise(sweepStaleDiscoveryFiles(dir, (pid) => pid === 222))
 
 		expect(removed).toEqual([dead])
-		expect([dead, live, persistent, otherStore].map(existsSync)).toEqual([false, true, true, true])
+		expect(Arr.map([dead, live, persistent, otherStore], existsSync)).toEqual([false, true, true, true])
 	})
 })
 

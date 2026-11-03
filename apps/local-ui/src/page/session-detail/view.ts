@@ -1,15 +1,19 @@
-import { button } from "@maple/web/ui/button"
-import { icon } from "@maple/web/ui/icon"
-import { spinner } from "@maple/web/ui/spinner"
-import { truncatedText } from "@maple/web/ui/truncated-text"
+import { button } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { scrollRegion } from "@maple/views/ui/scroll-region"
+import { spinner } from "@maple/views/ui/spinner"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { failureWithoutData, isPending } from "../../data/slot"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
 import type { PageViewInputs } from "../kit/inputs"
 import type { TimeFormat } from "../kit/local-time"
+import { loadingFill } from "../kit/page-body"
 import { refreshButton } from "../kit/toolbar"
-import { errorState } from "../kit/view-states"
 import { Message } from "./message"
 import type { Model, SessionDetail } from "./model"
 import { card } from "./view-bits"
@@ -20,11 +24,11 @@ import { transcript } from "./view-transcript"
 // The session detail page.
 
 const transcriptBody = (h: HtmlBuilder<Message>, model: Model, session: SessionDetail): Html => {
-	if (isPending(model.transcript)) return spinner(h, "size-4")
+	if (isAwaitingFirstData(model.transcript)) return spinner(h, "size-4")
 	const failure = failureWithoutData(model.transcript)
-	if (Option.isSome(failure)) return errorState(h, { label: "transcript", failure: failure.value })
+	if (Option.isSome(failure)) return errorState(h, { failure: failure.value, title: "Couldn’t load transcript" })
 	const events = Option.getOrElse(AsyncData.getData(model.transcript.data), () => [])
-	if (events.length === 0) return h.p([h.Class("text-sm text-muted-foreground")], ["No distilled events for this session."])
+	if (events.length === 0) return typography(h, { as: "p", size: "sm", tone: "muted" }, ["No distilled events for this session."])
 	return transcript(h, events, session.startTime)
 }
 
@@ -38,7 +42,7 @@ const sessionBody = (h: HtmlBuilder<Message>, model: Model, session: SessionDeta
 			h.div(
 				[h.Class("mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]")],
 				[
-					h.div([h.Class("flex flex-col gap-5")], [clientCard(h, session, label), tracesCard(h, model, session.traceIds)]),
+					vstack(h, { gap: "5" }, [clientCard(h, session, label), tracesCard(h, model, session.traceIds)]),
 					card(h, "Event transcript", [transcriptBody(h, model, session)]),
 				],
 			),
@@ -47,29 +51,35 @@ const sessionBody = (h: HtmlBuilder<Message>, model: Model, session: SessionDeta
 }
 
 const content = (h: HtmlBuilder<Message>, model: Model, timeFormat: TimeFormat): Html => {
-	if (isPending(model.detail)) return h.div([h.Class("flex h-full items-center justify-center")], [spinner(h)])
+	if (isAwaitingFirstData(model.detail)) return loadingFill(h)
 	const failure = failureWithoutData(model.detail)
-	if (Option.isSome(failure)) return errorState(h, { label: "session", failure: failure.value, onRetry: Message.ClickedRetryDetail() })
+	if (Option.isSome(failure))
+		return errorState(h, {
+			failure: failure.value, title: "Couldn’t load session",
+			onRetry: Message.ClickedRetryDetail(),
+		})
 	const session = Option.getOrNull(AsyncData.getData(model.detail.data))
 	if (session === null)
-		return h.div([h.Class("flex h-full items-center justify-center text-sm text-muted-foreground")], ["Session not found."])
+		return hstack(h, { justify: "center", className: "h-full text-sm text-muted-foreground" }, ["Session not found."])
 	return sessionBody(h, model, session, timeFormat)
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((opened, inputs, h) => {
 	// "Live" and "started 3m ago" follow the root's clock.
 	const model = { ...opened, nowMs: Math.max(opened.nowMs, inputs.clockMs) }
-	return h.div(
-		[h.Class("flex h-full flex-col")],
+	return vstack(
+		h,
+		{ className: "h-full" },
 		[
-			h.div(
-				[h.Class("flex shrink-0 items-center gap-3 border-b px-4 py-2")],
+			hstack(
+				h,
+				{ gap: "3", className: "shrink-0 border-b px-4 py-2" },
 				[
 					button(h, { variant: "ghost", size: "sm", className: "gap-1.5", attributes: [h.OnClick(Message.ClickedBack())] }, [
 						icon(h, "ArrowLeftIcon"),
 						inputs.context.canGoBack ? "Back" : "Sessions",
 					]),
-					truncatedText(h, { text: model.sessionId, mono: true, className: "text-xs text-muted-foreground" }, [model.sessionId]),
+					truncatedText(h, { text: model.sessionId, mono: true, className: typographyClass({ size: "xs", tone: "muted" }) }, [model.sessionId]),
 					refreshButton(h, {
 						isSpinning: model.isRefreshing,
 						hasNewData: inputs.hasNewDataSince(model.detailUpdatedAtMs),
@@ -78,7 +88,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((opened,
 					}),
 				],
 			),
-			h.div([h.Class("min-h-0 flex-1 overflow-auto")], [content(h, model, inputs.context.timeFormat)]),
+			scrollRegion(h, {}, [content(h, model, inputs.context.timeFormat)]),
 		],
 	)
 })

@@ -4,26 +4,45 @@
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { packageKey } from "@maple/domain/package-advisories"
 import { parseLockfile } from "@maple/lockfiles"
-import { Console, Effect, Layer } from "effect"
+import { Console, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { basename, dirname } from "node:path"
 import { PackageAdvisoryCatalog } from "../src/services/security/PackageAdvisoryCatalog"
 
-interface OsvScannerOutput {
-	readonly results?: ReadonlyArray<{
-		readonly packages?: ReadonlyArray<{
-			readonly package: { readonly name: string; readonly version: string; readonly ecosystem: string }
-			readonly groups?: ReadonlyArray<{
-				readonly ids: ReadonlyArray<string>
-				readonly aliases?: ReadonlyArray<string>
-			}>
-		}>
-	}>
-}
+const OsvScannerOutput = Schema.Struct({
+	results: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				packages: Schema.optionalKey(
+					Schema.Array(
+						Schema.Struct({
+							package: Schema.Struct({
+								name: Schema.String,
+								version: Schema.String,
+								ecosystem: Schema.String,
+							}),
+							groups: Schema.optionalKey(
+								Schema.Array(
+									Schema.Struct({
+										ids: Schema.Array(Schema.String),
+										aliases: Schema.optionalKey(Schema.Array(Schema.String)),
+									}),
+								),
+							),
+						}),
+					),
+				),
+			}),
+		),
+	),
+})
+type OsvScannerOutput = typeof OsvScannerOutput.Type
+
+const decodeOsvScannerOutput = Schema.decodeUnknownSync(Schema.fromJsonString(OsvScannerOutput))
 
 const osvScanner = (path: string): OsvScannerOutput => {
 	const run = Bun.spawnSync(["osv-scanner", "scan", "source", "--format", "json", "--lockfile", path])
-	return JSON.parse(run.stdout.toString() || "{}")
+	return decodeOsvScannerOutput(run.stdout.toString() || "{}")
 }
 
 const layer = PackageAdvisoryCatalog.layer.pipe(
@@ -35,40 +54,54 @@ const compare = (path: string) =>
 	Effect.gen(function* () {
 		const manifests = new Map<string, string>()
 		const manifest = Bun.file(`${dirname(path)}/package.json`)
-		if (yield* Effect.promise(() => manifest.exists()))
-			manifests.set("package.json", yield* Effect.promise(() => manifest.text()))
+		if (yield* Effect.promise(() => manifest.exists())) {
+			const manifestText = yield* Effect.promise(() => manifest.text())
+			manifests.set("package.json", manifestText)
+		}
 		const content = yield* Effect.promise(() => Bun.file(path).text())
 		const parsed = yield* parseLockfile({ path: basename(path), content, manifests })
 		const catalog = yield* PackageAdvisoryCatalog
 		const { byPackage: ours } = yield* catalog.advisories(parsed.packages)
 
 		const theirs = new Map(
-			(osvScanner(path).results ?? [])
-				.flatMap((result) => result.packages ?? [])
-				.map((pkg) => [
+			Arr.map(
+				Arr.flatMap(osvScanner(path).results ?? [], (result) => result.packages ?? []),
+				(pkg) => [
 					`${pkg.package.ecosystem}:${pkg.package.name}@${pkg.package.version}`,
-					(pkg.groups ?? []).map((group) => new Set([...group.ids, ...(group.aliases ?? [])])),
-				]),
+					Arr.map(pkg.groups ?? [], (group) => new Set([...group.ids, ...(group.aliases ?? [])])),
+				],
+			),
 		)
-		const lines = parsed.packages.flatMap((ref) => {
+		const lines = Arr.flatMap(parsed.packages, (ref) => {
 			const key = packageKey(ref)
-			const mine = (ours.get(key) ?? []).map((advisory) => new Set([advisory.id, ...advisory.aliases]))
-			// osv-scanner reports Go versions without the `v`.
-			const other = theirs.get(key) ?? theirs.get(key.replace("@v", "@")) ?? []
-			const missing = other.filter(
-				(group) => !mine.some((names) => [...group].some((id) => names.has(id))),
+			const mine = Arr.map(
+				ours.get(key) ?? [],
+				(advisory) => new Set([advisory.id, ...advisory.aliases]),
 			)
-			const extra = mine.filter(
-				(names) => !other.some((group) => [...group].some((id) => names.has(id))),
+			// osv-scanner reports Go versions without the `v`.
+			const other = theirs.get(key) ?? theirs.get(Str.replace("@v", "@")(key)) ?? []
+			const missing = Arr.filter(
+				other,
+				(group) => !Arr.some(mine, (names) => Arr.some([...group], (id) => names.has(id))),
+			)
+			const extra = Arr.filter(
+				mine,
+				(names) => !Arr.some(other, (group) => Arr.some([...group], (id) => names.has(id))),
 			)
 			return missing.length === 0 && extra.length === 0
 				? []
 				: [
-						`  ${key}: ${mine.length} vs ${other.length}; only osv-scanner ${missing.map((g) => [...g][0]).join(",")}; only ours ${extra.map((n) => [...n][0]).join(",")}`,
+						`  ${key}: ${mine.length} vs ${other.length}; only osv-scanner ${Arr.join(
+							Arr.map(missing, (g) => [...g][0]),
+							",",
+						)}; only ours ${Arr.join(
+							Arr.map(extra, (n) => [...n][0]),
+							",",
+						)}`,
 					]
 		})
-		const total = [...ours.values()].reduce((sum, list) => sum + list.length, 0)
-		const theirTotal = [...theirs.values()].reduce((sum, list) => sum + list.length, 0)
+		const total = Arr.reduce([...ours.values()], 0, (sum, list) => sum + list.length)
+		const theirTotal = Arr.reduce([...theirs.values()], 0, (sum, list) => sum + list.length)
 		yield* Console.log(
 			`${lines.length === 0 ? "MATCH" : "DIFF "} ${path}: ${parsed.packages.length} packages, ${total} advisories (osv-scanner ${theirTotal})`,
 		)
@@ -77,7 +110,6 @@ const compare = (path: string) =>
 	})
 
 const results = await Effect.runPromise(
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
 	Effect.forEach(process.argv.slice(2), compare).pipe(Effect.provide(layer)),
 )
-process.exit(results.every(Boolean) ? 0 : 1)
+process.exit(Arr.every(results, Boolean) ? 0 : 1)

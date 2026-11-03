@@ -4,7 +4,16 @@ import { ApnsClient } from "@maple/backend/platform/Apns"
 import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
 import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import {
+	ConfigProvider,
+	Context,
+	Effect,
+	Layer,
+	ManagedRuntime,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import {
@@ -437,9 +446,10 @@ describe("v2 alerts over HTTP", () => {
 		expect(second.body.data).toHaveLength(45)
 		expect(second.body.has_more).toBe(false)
 		expect(second.body.next_cursor).toBeNull()
-		expect(new Set([...first.body.data, ...second.body.data].map((item) => item.id)).size).toBe(105)
+		expect(new Set(Arr.map([...first.body.data, ...second.body.data], (item) => item.id)).size).toBe(105)
 		expect(
-			[...first.body.data, ...second.body.data].some(
+			Arr.some(
+				[...first.body.data, ...second.body.data],
 				(item) => item.delivery_key === "foreign-delivery",
 			),
 		).toBe(false)
@@ -856,7 +866,7 @@ describe("v2 alerts over HTTP", () => {
 	it("previews a raw SQL alert for alerts:write keys", async () => {
 		const harness = makeHarness({
 			...warehouseStub,
-			rawSqlQuery: () => Effect.succeed([{ value: 42, samples: 20 }]),
+			rawSqlQuery: () => Effect.succeed([{ bucket: "2026-01-01 00:10:00", value: 42, samples: 20 }]),
 		})
 		const key = await harness.bootstrapKey(["alerts:write"])
 		const response = await harness.request("POST", "/v2/alerts/rules/preview", key.secret, {
@@ -865,7 +875,7 @@ describe("v2 alerts over HTTP", () => {
 				severity: "warning",
 				signal_type: "raw_query",
 				raw_query_sql:
-					"SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+					"SELECT $__timeGroup(Timestamp) AS bucket, count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp) GROUP BY bucket",
 				raw_query_reducer: "max",
 				comparator: "gt",
 				threshold: 10,
@@ -894,7 +904,7 @@ describe("v2 alerts over HTTP", () => {
 		const harness = makeHarness({
 			...warehouseStub,
 			rawSqlQuery: (_tenant, sql) =>
-				sql.includes("2026-01-01")
+				Str.includes("2026-01-01")(sql)
 					? Effect.fail(
 							new WarehouseQuotaExceededError({
 								message: "Memory limit exceeded",
@@ -932,7 +942,7 @@ describe("v2 alerts over HTTP", () => {
 			const timestamp = new Date(Date.UTC(2026, 0, 1) + (2_005 - index) * 1_000).toISOString()
 			return {
 				timestamp,
-				groupKey: `service=api-${String(index).padStart(4, "0")}`,
+				groupKey: `service=api-${Str.padStart(4, "0")(String(index))}`,
 				status: "healthy",
 				signalType: "error_rate",
 				comparator: "gt",
@@ -961,8 +971,10 @@ describe("v2 alerts over HTTP", () => {
 				const limit = Number(/LIMIT\s+(\d+)/i.exec(compiledQueryOf(compiled).sql)?.[1] ?? 100)
 				const before = /Timestamp < '([^']+)'/i.exec(compiledQueryOf(compiled).sql)?.[1]
 				const status = /Status = '([^']+)'/i.exec(compiledQueryOf(compiled).sql)?.[1]
-				const beforeMs = before === undefined ? undefined : Date.parse(`${before.replace(" ", "T")}Z`)
-				const rows = checkRows.filter(
+				const beforeMs =
+					before === undefined ? undefined : Date.parse(`${Str.replace(" ", "T")(before)}Z`)
+				const rows = Arr.filter(
+					checkRows,
 					(row) =>
 						(beforeMs === undefined || Date.parse(row.timestamp) < beforeMs) &&
 						(status === undefined || row.status === status),

@@ -22,7 +22,18 @@ import {
 	type ChatDestination,
 	type ChatWorkspaceSettings,
 } from "@maple/chat-platform"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
@@ -268,12 +279,9 @@ const make: Effect.Effect<
 	}
 
 	const requireConnector = (connectorId: ChatConnectorId) =>
-		Option.match(
+		Effect.fromOption(
 			Arr.findFirst(registry, (connector) => connector.id === connectorId),
-			{
-				onNone: () => Effect.fail(notFound(`No chat connector named ${connectorId}`)),
-				onSome: (connector) => Effect.succeed(connector),
-			},
+			() => notFound(`No chat connector named ${connectorId}`),
 		)
 
 	/** The identity half of a connector, or the failure a connector without one earns. */
@@ -290,9 +298,9 @@ const make: Effect.Effect<
 	const validateSettings = (connector: ChatConnector<unknown>, settings: ChatWorkspaceSettings) =>
 		connector.install
 			.decodeSettings(
-				Object.fromEntries(
-					Object.entries(settings).flatMap(([key, value]) =>
-						value.trim().length > 0 ? [[key, value.trim()] as const] : [],
+				Rec.fromEntries(
+					Arr.flatMap(Rec.toEntries(settings), ([key, value]) =>
+						Str.trim(value).length > 0 ? [[key, Str.trim(value)] as const] : [],
 					),
 				),
 			)
@@ -466,7 +474,7 @@ const make: Effect.Effect<
 				connector: connectorId,
 				externalWorkspaceId: installed.externalWorkspaceId,
 			})
-			return yield* Effect.fail(new IntegrationsForbiddenError({ message: CROSS_ORG_CONFLICT_MESSAGE }))
+			return yield* new IntegrationsForbiddenError({ message: CROSS_ORG_CONFLICT_MESSAGE })
 		}
 		yield* Effect.logInfo("Chat workspace linked", {
 			orgId,
@@ -483,7 +491,8 @@ const make: Effect.Effect<
 		callbackUrl: string,
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.connector": connectorId })
-		const identity = yield* requireIdentity(yield* requireConnector(connectorId))
+		const connector = yield* requireConnector(connectorId)
+		const identity = yield* requireIdentity(connector)
 		const state = randomBytes(24).toString("base64url")
 		// The URL first, as the install does: an unconfigured connector fails here,
 		// before a state row nobody will ever redeem is written.
@@ -521,7 +530,8 @@ const make: Effect.Effect<
 		initiator: OAuthFlowInitiator,
 	) {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connectorId })
-		const identity = yield* requireIdentity(yield* requireConnector(connectorId))
+		const connector = yield* requireConnector(connectorId)
+		const identity = yield* requireIdentity(connector)
 		const row = yield* consumeState(params, identityStateProvider(connectorId), initiator)
 		const now = yield* Clock.currentTimeMillis
 		const orgId = yield* decodeOrgId(row.orgId).pipe(
@@ -598,7 +608,7 @@ const make: Effect.Effect<
 			),
 		)
 		const row = rows[0]
-		if (row === undefined) return yield* Effect.fail(notFound("No chat workspace with this id"))
+		if (row === undefined) return yield* notFound("No chat workspace with this id")
 		return row
 	})
 
@@ -621,7 +631,7 @@ const make: Effect.Effect<
 		)
 		const stored = updated[0]
 		// Lost a race with an unlink: the row was there a statement ago.
-		if (stored === undefined) return yield* Effect.fail(notFound("No chat workspace with this id"))
+		if (stored === undefined) return yield* notFound("No chat workspace with this id")
 		return toSummary(stored)
 	})
 
@@ -639,7 +649,7 @@ const make: Effect.Effect<
 		)
 		const row = deleted[0]
 		if (row === undefined) {
-			return yield* Effect.fail(notFound("No chat workspace with this id"))
+			return yield* notFound("No chat workspace with this id")
 		}
 		yield* Effect.logInfo("Chat workspace unlinked", { orgId, connector: row.connector })
 	})
@@ -662,15 +672,13 @@ const make: Effect.Effect<
 					),
 			}),
 		)
-		if (Option.isNone(workspace)) return yield* Effect.fail(notFound("No chat workspace with this id"))
+		if (Option.isNone(workspace)) return yield* notFound("No chat workspace with this id")
 		const name = workspace.value.connector.manifest.name
 		const missing = missingOutboundConfig(workspace.value, env.CHAT_CONNECTOR_OUTBOUND_CONFIG)
 		if (missing.length > 0) {
-			return yield* Effect.fail(
-				new IntegrationsConfigurationError({
-					message: `${name} is not configured on this deployment (${missing.join(", ")})`,
-				}),
-			)
+			return yield* new IntegrationsConfigurationError({
+				message: `${name} is not configured on this deployment (${Arr.join(missing, ", ")})`,
+			})
 		}
 		const transport = yield* chatOutboundTransport(
 			workspace.value,

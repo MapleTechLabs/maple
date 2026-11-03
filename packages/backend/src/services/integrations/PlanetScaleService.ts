@@ -22,7 +22,18 @@ import {
 	type PlanetScaleEventRow,
 } from "@maple/db/tables"
 import * as PlanetScale from "@distilled.cloud/planetscale"
-import { Cause, Clock, Context, Duration, Effect, Layer, Predicate, Schema } from "effect"
+import {
+	DateTime,
+	Cause,
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Predicate,
+	Schema,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -311,8 +322,8 @@ const parseEventCursor = (
 	if (cursor === undefined || cursor === "") return null
 	const separator = cursor.indexOf(":")
 	if (separator <= 0) return null
-	const occurredAtMs = Number(cursor.slice(0, separator))
-	const id = cursor.slice(separator + 1)
+	const occurredAtMs = Number(Str.slice(0, separator)(cursor))
+	const id = Str.slice(separator + 1)(cursor)
 	if (!Number.isFinite(occurredAtMs) || id === "") return null
 	return { occurredAtMs, id }
 }
@@ -743,7 +754,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 												database: row.name,
 												error: summarizeCause(cause),
 											}),
-											Effect.map(() => 0),
+											Effect.as(0),
 										),
 							),
 						),
@@ -779,7 +790,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 										orgId: connection.orgId,
 										error: summarizeCause(cause),
 									}),
-									Effect.map(() => 0),
+									Effect.as(0),
 								),
 					),
 				)
@@ -973,11 +984,9 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				)
 				const connection = connections[0]
 				if (connection === undefined) {
-					return yield* Effect.fail(
-						new IntegrationsNotConnectedError({
-							message: "PlanetScale is not connected for this organization",
-						}),
-					)
+					return yield* new IntegrationsNotConnectedError({
+						message: "PlanetScale is not connected for this organization",
+					})
 				}
 
 				// Default to the database's production branch from the inventory.
@@ -1010,8 +1019,8 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 						organization: connection.psOrganization,
 						database: options.database,
 						branch,
-						from: new Date(options.startTime).toISOString(),
-						to: new Date(options.endTime).toISOString(),
+						from: DateTime.formatIso(DateTime.makeUnsafe(options.startTime)),
+						to: DateTime.formatIso(DateTime.makeUnsafe(options.endTime)),
 						sort: "totalTime",
 						dir: "desc",
 						per_page: limit,
@@ -1034,7 +1043,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 									: Effect.fail(error),
 					}),
 				)
-				if (insights instanceof PlanetScaleQueryInsightsResponse) return insights
+				if (Schema.is(PlanetScaleQueryInsightsResponse)(insights)) return insights
 				const insightRows = yield* decodeConsumed(
 					Schema.Array(InsightRowSchema),
 					"Query Insights",
@@ -1145,7 +1154,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 
 /** Normalize PlanetScale's product kind to "mysql" | "postgresql". */
 const normalizeKind = (kind: string | null | undefined): string => {
-	const normalized = (kind ?? "").toLowerCase()
-	if (normalized.includes("postgres")) return "postgresql"
+	const normalized = Str.toLowerCase(kind ?? "")
+	if (Str.includes("postgres")(normalized)) return "postgresql"
 	return "mysql"
 }

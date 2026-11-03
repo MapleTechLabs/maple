@@ -3,7 +3,7 @@
  * the same note. Each issue still goes through the single-issue service path and its legality
  * checks; a refusal is reported per id instead of failing the whole call.
  */
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import type { ErrorIssueId } from "@maple/domain/http"
 import { issueIdParam } from "./error-issue-shared"
 import { McpInvalidInputError } from "./types"
@@ -24,7 +24,14 @@ export interface IssueBatchResult {
 
 /** Dedupes and caps the list; ids that are not issue UUIDs become per-id failures. */
 export const decodeIssueIds = (raw: ReadonlyArray<string>, parameter: string) => {
-	const unique = Array.from(new Set(raw.map((value) => value.trim()).filter((value) => value !== "")))
+	const unique = Array.from(
+		new Set(
+			Arr.filter(
+				Arr.map(raw, (value) => Str.trim(value)),
+				(value) => value !== "",
+			),
+		),
+	)
 	if (unique.length === 0) {
 		return Effect.fail(new McpInvalidInputError({ message: `${parameter} is empty.`, parameter }))
 	}
@@ -36,7 +43,7 @@ export const decodeIssueIds = (raw: ReadonlyArray<string>, parameter: string) =>
 			}),
 		)
 	}
-	return Effect.succeed(unique.map((value) => ({ raw: value, id: decodeIssueId(value) })))
+	return Effect.succeed(Arr.map(unique, (value) => ({ raw: value, id: decodeIssueId(value) })))
 }
 
 /** Runs `run` for every decoded id and folds each outcome into an `IssueBatchResult`. */

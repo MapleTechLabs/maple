@@ -1,5 +1,5 @@
 /** What a rule write can tell the caller about its first evaluation, from a short preview. */
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, DateTime, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { IsoDateTimeString } from "@maple/domain"
 import {
 	AlertRulePreviewRequest,
@@ -28,11 +28,11 @@ export const minSampleCountWarning = (
 	minimumSampleCount: number,
 ): string | null => {
 	if (minimumSampleCount <= 0) return null
-	const withData = points.filter((p) => p.skipReason !== "no_data" && p.sampleCount > 0)
+	const withData = Arr.filter(points, (p) => p.skipReason !== "no_data" && p.sampleCount > 0)
 	if (withData.length === 0) return null
-	const below = withData.filter((p) => p.sampleCount < minimumSampleCount)
+	const below = Arr.filter(withData, (p) => p.sampleCount < minimumSampleCount)
 	if (below.length < withData.length) return null
-	const counts = withData.map((p) => p.sampleCount)
+	const counts = Arr.map(withData, (p) => p.sampleCount)
 	const lo = Math.min(...counts)
 	const hi = Math.max(...counts)
 	const seen = lo === hi ? `${lo}` : `${lo}-${hi}`
@@ -40,7 +40,7 @@ export const minSampleCountWarning = (
 }
 
 const decodeIso = Schema.decodeUnknownSync(IsoDateTimeString)
-const isoAt = (ms: number) => decodeIso(new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z"))
+const isoAt = (ms: number) => decodeIso(Str.replace(/\.\d{3}Z$/, "Z")(new Date(ms).toISOString()))
 const decodePreviewRequest = Schema.decodeUnknownEffect(AlertRulePreviewRequest)
 
 type PreviewOutcome = { readonly error: string } | { readonly response: AlertRulePreviewResponse }
@@ -65,7 +65,9 @@ export const firstEvaluation = Effect.fn("McpTool.alertFirstEvaluation")(functio
 	const alerts = yield* AlertsService
 	const now = yield* Clock.currentTimeMillis
 	const nextEvaluationAt = enabled
-		? new Date(Math.ceil((now + 1) / SCHEDULER_TICK_MS) * SCHEDULER_TICK_MS).toISOString()
+		? DateTime.formatIso(
+				DateTime.makeUnsafe(Math.ceil((now + 1) / SCHEDULER_TICK_MS) * SCHEDULER_TICK_MS),
+			)
 		: null
 	const lookbackMs = Math.max(rule.windowMinutes * 6, 60) * 60_000
 
@@ -94,8 +96,8 @@ export const firstEvaluation = Effect.fn("McpTool.alertFirstEvaluation")(functio
 		return { evaluation, warnings: noWarnings }
 	}
 
-	const current = preview.response.series.flatMap((series) => {
-		const complete = series.points.filter((p) => p.provisional !== true)
+	const current = Arr.flatMap(preview.response.series, (series) => {
+		const complete = Arr.filter(series.points, (p) => p.provisional !== true)
 		const latest = complete.at(-1) ?? series.points.at(-1)
 		return latest === undefined
 			? []
@@ -111,7 +113,7 @@ export const firstEvaluation = Effect.fn("McpTool.alertFirstEvaluation")(functio
 				]
 	})
 	const warning = minSampleCountWarning(
-		preview.response.series.flatMap((s) => s.points),
+		Arr.flatMap(preview.response.series, (s) => s.points),
 		rule.minimumSampleCount ?? 0,
 	)
 	const evaluation: typeof AlertRuleFirstEvaluation.Type = { nextEvaluationAt, current }

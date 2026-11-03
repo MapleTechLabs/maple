@@ -1,9 +1,9 @@
 // BOUNDARY: The fake HTTP service models JSON documents owned by the Maple API.
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Redacted, Schema } from "effect"
+import { Effect, Exit, Layer, Redacted, Schema, Array as Arr, String as Str } from "effect"
 import { adopt } from "alchemy/AdoptPolicy"
 import { renamedFrom } from "alchemy/Rename"
-import * as Core from "alchemy/Test/Core"
+import * as Core from "@alchemy.run/test/Core"
 import * as Provider from "alchemy/Provider"
 import * as State from "alchemy/State"
 import * as Drift from "alchemy/Drift"
@@ -23,14 +23,14 @@ const makeHarness = () => {
 	const documents = new Map<string, Document>()
 	const calls: Array<{ method: string; path: string; body?: unknown }> = []
 	let sequence = 0
-	const collectionPath = (path: string) => path.slice(0, path.lastIndexOf("/"))
+	const collectionPath = (path: string) => Str.slice(0, path.lastIndexOf("/"))(path)
 	const missing = (path: string) =>
 		makeMapleApiResponseError(404, {
-			_tag: path.startsWith("/v2/api_keys/")
+			_tag: Str.startsWith("/v2/api_keys/")(path)
 				? MapleErrorTags.apiKeyNotFound
-				: path.startsWith("/v2/dashboards/")
+				: Str.startsWith("/v2/dashboards/")(path)
 					? MapleErrorTags.dashboardNotFound
-					: path.startsWith("/v2/alerts/rules/")
+					: Str.startsWith("/v2/alerts/rules/")(path)
 						? MapleErrorTags.alertRuleNotFound
 						: MapleErrorTags.alertDestinationNotFound,
 			type: "not_found_error",
@@ -65,11 +65,15 @@ const makeHarness = () => {
 		get: (path) =>
 			Effect.suspend((): ReturnType<MapleApiContract["get"]> => {
 				calls.push({ method: "GET", path })
-				if (path.includes("?"))
+				if (Str.includes("?")(path))
 					return Effect.succeed({
-						data: [...documents.entries()]
-							.filter(([key]) => collectionPath(key) === path.split("?")[0])
-							.map(([, doc]) => structuredClone(doc)),
+						data: Arr.map(
+							Arr.filter(
+								[...documents.entries()],
+								([key]) => collectionPath(key) === Str.split("?")(path)[0],
+							),
+							([, doc]) => structuredClone(doc),
+						),
 						has_more: false,
 						next_cursor: null,
 					})
@@ -79,8 +83,8 @@ const makeHarness = () => {
 		post: (path, body) =>
 			Effect.suspend(() => {
 				calls.push({ method: "POST", path, body })
-				if (path.endsWith("/roll")) {
-					const old = documents.get(path.slice(0, -5))
+				if (Str.endsWith("/roll")(path)) {
+					const old = documents.get(Str.slice(0, -5)(path))
 					if (!old) return Effect.fail(missing(path))
 					const { id: _id, key_prefix: _prefix, ...props } = old
 					const next = insert("/v2/api_keys", props)
@@ -103,7 +107,7 @@ const makeHarness = () => {
 				calls.push({ method: "DELETE", path })
 				const old = documents.get(path)
 				if (!old) return Effect.fail(missing(path))
-				if (path.startsWith("/v2/api_keys/")) old.revoked = true
+				if (Str.startsWith("/v2/api_keys/")(path)) old.revoked = true
 				else documents.delete(path)
 				return Effect.void
 			}),
@@ -215,9 +219,12 @@ describe("Alchemy engine lifecycle", () => {
 				expect((yield* stack.plan(program("2"))).resources.key.action).toBe("update")
 				h.calls.length = 0
 				yield* stack.deploy(program("2"))
-				expect(h.calls.filter((call) => call.method === "POST").map((call) => call.path)).toEqual([
-					`/v2/api_keys/${initial.id}/roll`,
-				])
+				expect(
+					Arr.map(
+						Arr.filter(h.calls, (call) => call.method === "POST"),
+						(call) => call.path,
+					),
+				).toEqual([`/v2/api_keys/${initial.id}/roll`])
 			}),
 		)
 	})
@@ -285,9 +292,9 @@ describe("Alchemy engine lifecycle", () => {
 				expect(second.configuration).toEqual({ name: "Health", refresh_interval_seconds: 300 })
 				expect((yield* stack.plan(Dashboard("health", updated))).resources.health.action).toBe("noop")
 				expect((yield* h.sync(stack)).resources.health.action).toBe("unchanged")
-				expect(h.calls.filter((call) => call.method === "POST" || call.method === "DELETE")).toEqual(
-					[],
-				)
+				expect(
+					Arr.filter(h.calls, (call) => call.method === "POST" || call.method === "DELETE"),
+				).toEqual([])
 			}),
 		)
 	})
@@ -306,9 +313,9 @@ describe("Alchemy engine lifecycle", () => {
 				expect(Exit.isFailure(exit)).toBe(true)
 				expect(h.documents.get(`/v2/dashboards/${first.id}`)).toMatchObject({ name: "Health" })
 				expect(h.documents.get(`/v2/dashboards/${second.id}`)).toMatchObject({ name: "Second" })
-				expect(h.calls.filter((call) => call.method === "POST" || call.method === "DELETE")).toEqual(
-					[],
-				)
+				expect(
+					Arr.filter(h.calls, (call) => call.method === "POST" || call.method === "DELETE"),
+				).toEqual([])
 			}),
 		)
 	})
@@ -388,7 +395,7 @@ describe("Alchemy engine lifecycle", () => {
 						other.deploy(AlertRule("errors", { ...ruleProps, threshold: 0.9 })),
 					)
 					expect(Exit.isFailure(exit)).toBe(true)
-					expect(h.calls.every((call) => call.method === "GET")).toBe(true)
+					expect(Arr.every(h.calls, (call) => call.method === "GET")).toBe(true)
 					yield* other.destroy()
 					expect(h.documents.get(`/v2/alerts/rules/${original.ruleId}`)?.threshold).toBe(0.05)
 				}
@@ -418,7 +425,7 @@ describe("Alchemy engine lifecycle", () => {
 					expect(h.documents.get(`/v2/alerts/rules/${original.id}`)!.tags).not.toEqual(firstTags)
 					h.calls.length = 0
 					expect(Exit.isFailure(yield* Effect.exit(owner.destroy()))).toBe(true)
-					expect(h.calls.some((call) => call.method === "DELETE")).toBe(false)
+					expect(Arr.some(h.calls, (call) => call.method === "DELETE")).toBe(false)
 					expect(h.documents.has(`/v2/alerts/rules/${original.id}`)).toBe(true)
 					yield* taker.destroy()
 					expect(h.documents.has(`/v2/alerts/rules/${original.id}`)).toBe(false)
@@ -581,7 +588,7 @@ describe("Alchemy engine lifecycle", () => {
 								),
 							),
 						).toBe(true)
-						expect(h.calls.every((call) => call.method === "GET")).toBe(true)
+						expect(Arr.every(h.calls, (call) => call.method === "GET")).toBe(true)
 					}
 				}),
 			)

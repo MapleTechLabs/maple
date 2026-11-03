@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../contract"
 import { Message } from "./message"
@@ -26,7 +26,7 @@ const finished = (model: Model, value: OAuthReturnOutcome | null) =>
 
 describe("a provider return finished by the dashboard", () => {
 	test("the page asks to finish a return on every load", () => {
-		const names = (init({ search: {} }, context).commands ?? []).map(({ name }) => name)
+		const names = Arr.map(init({ search: {} }, context).commands ?? [], ({ name }) => name)
 		expect(names).toContain("CompleteIntegrationsOAuthReturn")
 	})
 
@@ -56,7 +56,7 @@ describe("a provider return finished by the dashboard", () => {
 			loaded,
 			outcome({ connector: "hazel", chat: { kind: "workspace", name: "Acme", reason: null } }),
 		)
-		expect((result.commands ?? []).map(({ name }) => name)).toEqual(["LoadIntegrationsChatConnectors"])
+		expect(Arr.map(result.commands ?? [], ({ name }) => name)).toEqual(["LoadIntegrationsChatConnectors"])
 		expect(result.model.statuses.chat.key).not.toBe(loaded.statuses.chat.key)
 		expect(result.outMessage?._tag).toBe("RequestedNavigation")
 	})
@@ -107,13 +107,16 @@ describe("a return relayed by a tab whose popup lost its opener", () => {
 		const connecting = update(loaded, Message.ClickedConnect(), context).model
 		const result = relayed(connecting, "linear", "success")
 		expect(result.model.connect.active).toBeNull()
-		expect((result.commands ?? []).map(({ name }) => name)).toEqual(["LoadIntegrationsLinearStatus"])
+		expect(Arr.map(result.commands ?? [], ({ name }) => name)).toEqual(["LoadIntegrationsLinearStatus"])
 		expect(result.model.statuses.linear.key).not.toBe(loaded.statuses.linear.key)
 		expect(result.outMessage?._tag).toBe("RequestedToast")
 	})
 
 	test("the relaying tab tracked the connection, so this one does not", () => {
-		const names = (relayed(opened("github"), "github", "success").commands ?? []).map(({ name }) => name)
+		const names = Arr.map(
+			relayed(opened("github"), "github", "success").commands ?? [],
+			({ name }) => name,
+		)
 		expect(names).not.toContain("TrackIntegrationConnected")
 	})
 })

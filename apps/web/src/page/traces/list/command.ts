@@ -4,14 +4,14 @@ import {
 	type ListTracesInput,
 	type Trace,
 } from "@maple/web-data/warehouse/traces"
-import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { TracesSearch } from "../../../route/search"
-import { portalToBody } from "../../../ui/overlay/portal"
+import { portalToBody } from "@maple/views/ui/overlay/portal"
 import { autocompleteLookup, AutocompleteLookup } from "../../kit/autocomplete-lookups"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import type { Search } from "./derive"
@@ -119,12 +119,14 @@ const toRow = (trace: Trace): TraceRow => ({
 
 const fetchPage = (search: Search, window: TimeWindow, pinnedNamespace: string | null, offset: number) =>
 	listTraces({ data: listInput(search, window, pinnedNamespace, offset) }).pipe(
-		Effect.map((response): TracesPage => ({
-			rows: response.data.map(toRow),
-			scannedCount: response.meta.scannedCount,
-			hiddenCount: response.meta.hiddenCount,
-		})),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): TracesPage => ({
+				rows: Arr.map(response.data, toRow),
+				scannedCount: response.meta.scannedCount,
+				hiddenCount: response.meta.hiddenCount,
+			}),
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -245,13 +247,15 @@ export const PlaceAdvancedCursor = Command.define("PlaceTracesAdvancedCursor", {
 		}),
 })
 
-type EditorMessage =
-	| typeof Message.EditedAdvanced.Type
-	| typeof Message.FocusedAdvanced.Type
-	| typeof Message.BlurredAdvanced.Type
-	| typeof Message.MovedAdvancedCursor.Type
-	| typeof Message.PressedAdvancedKey.Type
-	| typeof Message.SubmittedAdvanced.Type
+const EditorMessage = Schema.Union([
+	Message.EditedAdvanced,
+	Message.FocusedAdvanced,
+	Message.BlurredAdvanced,
+	Message.MovedAdvancedCursor,
+	Message.PressedAdvancedKey,
+	Message.SubmittedAdvanced,
+])
+type EditorMessage = typeof EditorMessage.Type
 
 /**
  * The `WhereClauseEditor` textarea's events with what Foldkit's handlers do not carry: the caret,
@@ -322,7 +326,7 @@ export const MountWhereEditor = Mount.defineStream("MountTracesWhereEditor", {
 							},
 						],
 					]
-					listeners.forEach(([type, listener]) => textarea.addEventListener(type, listener))
+					Arr.forEach(listeners, ([type, listener]) => textarea.addEventListener(type, listener))
 					if (document.activeElement === textarea)
 						send(Message.FocusedAdvanced({ cursor: caret() }))
 					return { textarea, listeners }

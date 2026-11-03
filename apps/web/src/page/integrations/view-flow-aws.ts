@@ -1,12 +1,13 @@
 import type { V2AwsConnection } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import * as Field from "../../ui/field"
-import { icon } from "../../ui/icon"
-import { input } from "../../ui/input"
-import { skeleton } from "../../ui/skeleton"
+import { heading } from "@maple/views/ui/heading"
+import { button } from "@maple/views/ui/button"
+import * as Field from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
+import { input } from "@maple/views/ui/input"
+import { skeleton } from "@maple/views/ui/skeleton"
 import {
 	type CheckRow,
 	flowColumns,
@@ -28,6 +29,8 @@ import type { Model } from "./model"
 import { ingestPanel, roleName } from "./view-aws"
 import { dataPicker, NAMESPACE_LABEL } from "./view-aws-choose"
 import { methodSelect, SMALL, setupBody } from "./view-aws-setup"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstackClass } from "@maple/views/ui/stack"
 
 // AWS in the connect flow: deploy a read-only role, pick regions and services, then deploy the
 // metric stream and watch the first delivery.
@@ -81,47 +84,44 @@ const accountForm = (h: H, model: Model): Html => {
 	)
 	const state = Field.stateOf(card.accountId, card.createError !== null)
 	return h.form(
-		[h.Class("flex flex-col gap-2"), h.OnSubmit(Message.SubmittedAwsAccount())],
+		[h.Class(vstackClass({ gap: "2" })), h.OnSubmit(Message.SubmittedAwsAccount())],
 		[
 			Field.field(h, { className: "items-stretch gap-2", state }, [
 				Field.fieldLabel(h, { ids: ACCOUNT_IDS, state }, "AWS account ID"),
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
-					[
-						input(h, {
-							id: ACCOUNT_IDS.control,
-							className: "min-w-48 flex-1",
-							controlClassName: "font-mono tabular-nums",
-							fieldState: state,
-							attributes: [
-								h.Autocomplete("off"),
-								h.Placeholder("123456789012"),
-								h.InputMode("numeric"),
-								...Field.controlAttributes(h, card.accountId, (message) =>
-									Message.GotAwsAccountIdMessage({ message }),
+				hstack(h, { gap: "2", wrap: true }, [
+					input(h, {
+						id: ACCOUNT_IDS.control,
+						className: "min-w-48 flex-1",
+						controlClassName: typographyClass({ mono: true, numeric: true }),
+						fieldState: state,
+						attributes: [
+							h.Autocomplete("off"),
+							h.Placeholder("123456789012"),
+							h.InputMode("numeric"),
+							...Field.controlAttributes(h, card.accountId, (message) =>
+								Message.GotAwsAccountIdMessage({ message }),
+							),
+							h.AriaLabelledBy(ACCOUNT_IDS.label),
+							...(card.createError === null ? [] : [h.AriaInvalid(true)]),
+						],
+					}),
+					button(h, { type: "submit", isDisabled: !isValid, isLoading: card.isCreating }, [
+						"Build the role stack",
+					]),
+					...(awsStatusOf(model)?.connections.length === 0
+						? []
+						: [
+								button(
+									h,
+									{
+										variant: "outline",
+										isDisabled: card.isCreating,
+										attributes: [h.OnClick(Message.ClickedAwsAddCancel())],
+									},
+									["Cancel"],
 								),
-								h.AriaLabelledBy(ACCOUNT_IDS.label),
-								...(card.createError === null ? [] : [h.AriaInvalid(true)]),
-							],
-						}),
-						button(h, { type: "submit", isDisabled: !isValid, isLoading: card.isCreating }, [
-							"Build the role stack",
-						]),
-						...(awsStatusOf(model)?.connections.length === 0
-							? []
-							: [
-									button(
-										h,
-										{
-											variant: "outline",
-											isDisabled: card.isCreating,
-											attributes: [h.OnClick(Message.ClickedAwsAddCancel())],
-										},
-										["Cancel"],
-									),
-								]),
-					],
-				),
+							]),
+				]),
 				card.createError === null
 					? Field.fieldDescription(
 							h,
@@ -168,7 +168,7 @@ const accountLine = (h: H, connection: V2AwsConnection): Html =>
 		[
 			icon(h, "CircleCheckIcon", { size: 14, className: "text-severity-info" }),
 			h.span([], ["AWS account ID"]),
-			h.span([h.Class("font-mono tabular-nums")], [connection.account_id]),
+			typography(h, { mono: true, numeric: true }, [connection.account_id]),
 			button(h, { size: "sm", variant: "ghost", attributes: [h.OnClick(Message.ClickedAwsAdd())] }, [
 				"Change",
 			]),
@@ -182,7 +182,7 @@ const checkButton = (h: H, model: Model, connection: V2AwsConnection, label: str
 			size: "sm",
 			variant: "outline",
 			className: "w-fit",
-			isLoading: model.awsCard.checking.some((entry) => entry.id === connection.id),
+			isLoading: Arr.some(model.awsCard.checking, (entry) => entry.id === connection.id),
 			attributes: [h.OnClick(Message.ClickedAwsCheck({ id: connection.id }))],
 		},
 		[label],
@@ -202,7 +202,9 @@ const waitingForRole = (
 			h.div(
 				[h.Class("flex flex-wrap items-center justify-between gap-2")],
 				[
-					h.h3([h.Class("text-sm")], [`Run the role stack in ${connection.account_id}`]),
+					heading(h, { level: 3, variant: "subsection" }, [
+						`Run the role stack in ${connection.account_id}`,
+					]),
 					methodSelect(h, model, "role"),
 				],
 			),
@@ -268,7 +270,7 @@ const roleDeployed = (
 				],
 				[
 					h.dt([h.Class("text-muted-foreground")], ["Account"]),
-					h.dd([h.Class("font-mono tabular-nums")], [connection.account_id]),
+					h.dd([h.Class(typographyClass({ mono: true, numeric: true }))], [connection.account_id]),
 					h.dt([h.Class("text-muted-foreground")], ["Role"]),
 					h.dd([h.Class("font-mono text-xs [overflow-wrap:anywhere]")], [connection.role_arn]),
 				],
@@ -323,7 +325,7 @@ const selectionRail = (h: H, model: Model, connection: V2AwsConnection): Html =>
 			{
 				icon: "GlobeIcon",
 				title: countLabel(selection.regions.length, "region"),
-				detail: selection.regions.length === 0 ? "None picked" : selection.regions.join(", "),
+				detail: selection.regions.length === 0 ? "None picked" : Arr.join(selection.regions, ", "),
 			},
 			{
 				icon: "LayersIcon",
@@ -331,7 +333,10 @@ const selectionRail = (h: H, model: Model, connection: V2AwsConnection): Html =>
 				detail:
 					selection.namespaces.length === 0
 						? "None picked"
-						: selection.namespaces.map((namespace) => NAMESPACE_LABEL[namespace]).join(", "),
+						: Arr.join(
+								Arr.map(selection.namespaces, (namespace) => NAMESPACE_LABEL[namespace]),
+								", ",
+							),
 			},
 			{
 				icon: "ChartLineIcon",
@@ -400,7 +405,7 @@ const streamRail = (h: H): Html =>
 const deployCard = (h: H, model: Model, connection: V2AwsConnection): Html => {
 	const card = model.awsCard
 	const selection = selectionOf(connection, card.selection)
-	const regions = selection.regions.join(", ")
+	const regions = Arr.join(selection.regions, ", ")
 	if (!isSelectionSaved(connection, selection))
 		return stepCard(h, { icon: "LayersIcon", title: "Deploy the metric stream" }, [
 			h.p(
@@ -411,7 +416,13 @@ const deployCard = (h: H, model: Model, connection: V2AwsConnection): Html => {
 			),
 			...(card.metricsError === null
 				? []
-				: [h.p([h.Class("text-xs text-severity-error"), h.Role("alert")], [card.metricsError])]),
+				: [
+						typography(
+							h,
+							{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
+							[card.metricsError],
+						),
+					]),
 			button(
 				h,
 				{
@@ -525,7 +536,7 @@ const liveRows = (
 						: "Waiting for the stack in each region. Run the script above.",
 					extra: foundChips(
 						h,
-						regions.map((region) => ({ label: region })),
+						Arr.map(regions, (region) => ({ label: region })),
 					),
 				},
 		firstDelivery,

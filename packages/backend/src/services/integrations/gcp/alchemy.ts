@@ -4,13 +4,14 @@ import {
 	GCP_READER_SCOPE_ROLES,
 	type GcpSetupPlan,
 } from "@maple/domain/gcp"
+import { Schema, Array as Arr, String as Str } from "effect"
 import type { GcpExisting } from "./terraform"
 
 // The alchemy the stack is written for: version 2 is in beta, and resource props still change.
 const ALCHEMY_VERSION = "2.0.0-beta.83"
 
 /** A TypeScript string literal. */
-const ts = (value: string): string => JSON.stringify(value)
+const ts: (value: string) => string = Schema.encodeSync(Schema.fromJsonString(Schema.String))
 
 // Alchemy creates a project sink, the topic and the subscription in the project it signs in to.
 const SINKS = { project: "Sink", folder: "FolderSink", organization: "OrganizationSink" } as const
@@ -94,7 +95,7 @@ const readerSection = (plan: GcpSetupPlan, reader: NonNullable<GcpSetupPlan["rea
 ${
 	plan.scopeType === "project"
 		? `    // The narrowest predefined roles for Maple's reads, and the quota they count against.
-    for (const role of [${[...GCP_READER_SCOPE_ROLES, GCP_READER_PROJECT_ROLE].map(ts).join(", ")}]) {
+    for (const role of [${Arr.join(Arr.map([...GCP_READER_SCOPE_ROLES, GCP_READER_PROJECT_ROLE], ts), ", ")}]) {
       yield* GCP.IAM.Member(\`maple-reader-\${role.split("/")[1]}\`, {
         kind: "project",
         name: PROJECT_ID,
@@ -105,7 +106,7 @@ ${
 `
 		: `    // The narrowest predefined roles for Maple's reads, on the ${plan.scopeType}: ScopeIamMember
     // (below the stack) grants them, since GCP.IAM.Member reaches projects only.
-    for (const role of [${GCP_READER_SCOPE_ROLES.map(ts).join(", ")}]) {
+    for (const role of [${Arr.join(Arr.map(GCP_READER_SCOPE_ROLES, ts), ", ")}]) {
       yield* ScopeIamMember(\`maple-reader-\${role.split("/")[1]}\`, {
         resource: SCOPE,
         role,
@@ -113,7 +114,7 @@ ${
       })
     }
     // The quota Maple's reads count against, on the host project.
-    yield* GCP.IAM.Member(${ts(`maple-reader-${GCP_READER_PROJECT_ROLE.split("/")[1]}`)}, {
+    yield* GCP.IAM.Member(${ts(`maple-reader-${Str.split("/")(GCP_READER_PROJECT_ROLE)[1]}`)}, {
       kind: "project",
       name: PROJECT_ID,
       role: ${ts(GCP_READER_PROJECT_ROLE)},
@@ -223,7 +224,11 @@ export const renderGcpAlchemy = (plan: GcpSetupPlan, existing: GcpExisting): str
 					`const LOG_FILTER = ${ts(logs.logFilter)}`,
 				]),
 		...(reader === null ? [] : [`const MAPLE_SERVICE_ACCOUNT = ${ts(reader.mapleServiceAccountEmail)}`]),
-		...(scopeIam ? [`const SCOPE = ${ts(`${plan.scopeType === "folder" ? "folders" : "organizations"}/${plan.scopeId}`)}`] : []),
+		...(scopeIam
+			? [
+					`const SCOPE = ${ts(`${plan.scopeType === "folder" ? "folders" : "organizations"}/${plan.scopeId}`)}`,
+				]
+			: []),
 	]
 	return `// Maple connection for Google Cloud ${plan.scopeType} ${plan.scopeId}
 //   Log forwarding:        ${logs === null ? "off" : "on"}
@@ -233,7 +238,7 @@ export const renderGcpAlchemy = (plan: GcpSetupPlan, existing: GcpExisting): str
 //
 // Written for alchemy ${ALCHEMY_VERSION}: bun add alchemy@${ALCHEMY_VERSION} effect@^4 @effect/platform-bun@^4
 // Alchemy does not wait for an API to be switched on, so switch them on first:
-//   gcloud services enable ${plan.apis.join(" ")} --project=${plan.projectId}
+//   gcloud services enable ${Arr.join(plan.apis, " ")} --project=${plan.projectId}
 // Then deploy as an account allowed to create these resources${scopeIam ? ` and to set the ${plan.scopeType}'s IAM policy` : ""}, in the project it signs in to,
 // which must be ${plan.projectId}. --adopt takes over what an earlier setup ${takeOver ? "created" : "may have left in place: add it then"}:
 //   GOOGLE_ACCESS_TOKEN="$(gcloud auth print-access-token)" GOOGLE_PROJECT_ID=${plan.projectId} bunx alchemy deploy maple.ts --stage maple${takeOver ? " --adopt" : ""}${
@@ -250,7 +255,7 @@ import * as Effect from "effect/Effect"${scopeIam ? `\nimport * as Layer from "e
 
 // The host project holds Maple's Pub/Sub topic, subscription and service accounts.
 const PROJECT_ID = ${ts(plan.projectId)}
-${constants.join("\n")}
+${Arr.join(constants, "\n")}
 ${logs === null ? "" : `if (!/^\\d+$/.test(PROJECT_NUMBER)) throw new Error("Set PROJECT_NUMBER at the top of maple.ts.")\n`}
 ${scopeIam ? `${SCOPE_IAM_MEMBER}\n` : ""}export default Alchemy.Stack(
   ${ts(stackName)},
@@ -265,7 +270,7 @@ ${scopeIam ? `${SCOPE_IAM_MEMBER}\n` : ""}export default Alchemy.Stack(
     state: Alchemy.localState(),
   }`
 			: "{ providers: GCP.providers(), state: Alchemy.localState() }"
-	},
+  },
   Effect.gen(function* () {${logs === null ? "" : logsSection(plan, logs)}${reader === null ? "" : readerSection(plan, reader)}  }),
 )
 `

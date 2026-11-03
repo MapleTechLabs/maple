@@ -1,17 +1,17 @@
 import { formatWarehouseDateTime, parseWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
-import * as Chart from "../../charts/chart"
-import { LoadChartRuntime } from "../../charts/chart-runtime"
-import * as Keyed from "../../data/keyed"
-import { requestKey } from "../../data/request-key"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import { resolveWindow, type TimeWindow } from "../../data/time-range"
 import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
 import type { HomeSearch } from "../../route/search"
-import * as Select from "../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
-import { SignalPresenceData } from "../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
 	DEFAULT_HINT,
@@ -140,7 +140,7 @@ const samplingActive = (model: Model): boolean =>
 	canFetch(model) &&
 	Option.match(AsyncData.getData(model.overviewSeries.data), {
 		onNone: () => false,
-		onSome: (rows) => rows.some((row) => row.hasSampling === true),
+		onSome: (rows) => Arr.some(rows, (row) => row.hasSampling === true),
 	})
 
 /** Sent on mount: facets, open anomaly counts and the usage cards. */
@@ -343,7 +343,7 @@ export const initWith =
 				selectedIndex: 0,
 			}),
 			timePicker: TimeRangePicker.init("overview-time-range"),
-			charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
+			charts: Rec.fromEntries(Arr.map(CHART_IDS, (id) => [id, Chart.init()])),
 			chartRuntime: { _tag: "Loading" },
 			themeColors: null,
 			refreshVersion: 0,
@@ -397,7 +397,7 @@ export const revive = (model: Model, route: { readonly search: Search }, context
 			overviewSeries: Keyed.forgetFailure(model.overviewSeries),
 			logSeries: Keyed.forgetFailure(model.logSeries),
 			refinement: Keyed.forgetFailure(model.refinement),
-			charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
+			charts: Rec.fromEntries(Arr.map(CHART_IDS, (id) => [id, Chart.init()])),
 			chartRuntime: isRuntimeFailed ? { _tag: "Loading" } : model.chartRuntime,
 		},
 		commands: [
@@ -457,7 +457,10 @@ const retryPage = (model: Model, context: PageContext): Return => {
 		"Load",
 	)
 	const facets = retry(synced.model, context, "Facets")
-	const retried: Return = { model: facets.model, commands: [...(synced.commands ?? []), ...(facets.commands ?? [])] }
+	const retried: Return = {
+		model: facets.model,
+		commands: [...(synced.commands ?? []), ...(facets.commands ?? [])],
+	}
 	// One strip can stand for a setup failure too; its own poll is the setup card's retry.
 	const setup = facets.model.setup
 	return setup !== null && AsyncData.isFailure(setup.services)

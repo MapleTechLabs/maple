@@ -16,17 +16,21 @@ import {
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { ThemeColors } from "../../../charts/theme-colors"
-import { button } from "../../../ui/button"
-import { icon } from "../../../ui/icon"
-import { tableCell, tableRow } from "../../../ui/table"
-import { truncatedText } from "../../../ui/truncated-text"
-import { emptyValue, latencyValue, measure, NIL_VALUE } from "../../../ui/values"
+import type { ThemeColors } from "@maple/views/charts/theme-colors"
+import { button } from "@maple/views/ui/button"
+import { pressable } from "@maple/views/ui/pressable"
+import { icon } from "@maple/views/ui/icon"
+import { tableCell, tableRow } from "@maple/views/ui/table"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { emptyValue, latencyValue, measure, NIL_VALUE } from "@maple/views/ui/values"
 import { callsPerSecond } from "./derive"
 import { knownStatusMix, serverShare, type StatusMix } from "./derive-api"
 import { Message } from "./message"
 import type { Endpoint } from "./model-tabs"
 import { SPARK_TOKENS, sparkline } from "./view-api-charts"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The API tab: endpoint rows and group rows.
 
@@ -157,74 +161,70 @@ const endpointRow = (
 			tableCell(
 				h,
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-3")],
-						[
-							// The row's click opens the drawer; this button is its keyboard and screen-reader trigger.
-							h.button(
-								[
-									h.Type("button"),
-									h.Class("sr-only"),
-									h.AriaHasPopup("dialog"),
-									h.AriaExpanded(isSelected),
-									h.AriaLabel(`Open ${endpoint.spanName}`),
-								],
-								[],
-							),
-							methodLabel(
-								h,
-								endpoint.method,
-								// Narrow screens drop the method unless a sibling shares the route.
-								isRouteShared ? "w-9 md:w-10" : "hidden w-10 md:inline-block",
-								!context.isOneMethod,
-							),
-							truncatedText(h, { text: endpoint.route, className: "text-ui" }, [
-								...(head.length > 0
-									? [
-											h.span(
-												// A grouped row's head repeats its stem, so it folds away on narrow screens.
-												[
-													h.Class(
-														cn(
-															"text-muted-foreground",
-															stem.length > 0 && "hidden md:inline",
-														),
-													),
-												],
-												[head],
-											),
-										]
-									: []),
-								h.span(
-									[
-										// A shared index row reads as its method on narrow screens; the header names the path.
-										h.Class(
-											cn(
-												"text-foreground",
-												isRouteShared && tail === "(index)" && "hidden md:inline",
-											),
-										),
-									],
-									[tail],
-								),
-							]),
-							...(isSlowest
+					hstack(h, { gap: "3", shrink: true }, [
+						// The row's click opens the drawer; this button is its keyboard and screen-reader trigger.
+						pressable(
+							h,
+							{
+								label: `Open ${endpoint.spanName}`,
+								className: "sr-only",
+								attributes: [h.AriaHasPopup("dialog"), h.AriaExpanded(isSelected)],
+							},
+							[],
+						),
+						methodLabel(
+							h,
+							endpoint.method,
+							// Narrow screens drop the method unless a sibling shares the route.
+							isRouteShared ? "w-9 md:w-10" : "hidden w-10 md:inline-block",
+							!context.isOneMethod,
+						),
+						truncatedText(h, { text: endpoint.route, className: "text-ui" }, [
+							...(head.length > 0
 								? [
 										h.span(
+											// A grouped row's head repeats its stem, so it folds away on narrow screens.
 											[
 												h.Class(
 													cn(
-														"hidden shrink-0 rounded-sm bg-muted px-1.5 text-3xs md:inline",
-														TONE_TEXT.warn,
+														"text-muted-foreground",
+														stem.length > 0 && "hidden md:inline",
 													),
 												),
 											],
-											["slowest"],
+											[head],
 										),
 									]
 								: []),
-						],
-					),
+							h.span(
+								[
+									// A shared index row reads as its method on narrow screens; the header names the path.
+									h.Class(
+										cn(
+											"text-foreground",
+											isRouteShared && tail === "(index)" && "hidden md:inline",
+										),
+									),
+								],
+								[tail],
+							),
+						]),
+						...(isSlowest
+							? [
+									h.span(
+										[
+											h.Class(
+												cn(
+													"hidden shrink-0 rounded-sm bg-muted px-1.5 text-3xs md:inline",
+													TONE_TEXT.warn,
+												),
+											),
+										],
+										["slowest"],
+									),
+								]
+							: []),
+					]),
 				],
 				cn("max-w-0 py-0 align-middle", stem.length > 0 ? "pl-6 md:pl-9" : "pl-4"),
 			),
@@ -345,7 +345,7 @@ const groupHeaderRow = (
 ) => {
 	const { group } = options
 	const sum = (pick: (endpoint: Endpoint) => number) =>
-		group.endpoints.reduce((acc, endpoint) => acc + pick(endpoint), 0)
+		Arr.reduce(group.endpoints, 0, (acc, endpoint) => acc + pick(endpoint))
 	const mix = knownStatusMix({
 		httpClassifiedSpanCount: sum((endpoint) => endpoint.httpClassifiedSpanCount),
 		httpStatusCount: sum((endpoint) => endpoint.httpStatusCount),
@@ -367,31 +367,28 @@ const groupHeaderRow = (
 			tableCell(
 				h,
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-2")],
-						[
-							icon(h, "ChevronDownIcon", {
-								size: 14,
-								className: "hidden shrink-0 text-muted-foreground md:block",
-							}),
-							h.span(
-								[
-									h.Class(
-										cn(
-											"truncate text-ui",
-											options.muted ? "text-muted-foreground" : "text-foreground",
-										),
+					hstack(h, { gap: "2", shrink: true }, [
+						icon(h, "ChevronDownIcon", {
+							size: 14,
+							className: "hidden shrink-0 text-muted-foreground md:block",
+						}),
+						h.span(
+							[
+								h.Class(
+									cn(
+										"truncate text-ui",
+										options.muted ? "text-muted-foreground" : "text-foreground",
 									),
-									h.Title(options.title),
-								],
-								[options.title],
-							),
-							h.span(
-								[h.Class("hidden shrink-0 text-2xs text-muted-foreground md:inline")],
-								[options.count],
-							),
-						],
-					),
+								),
+								h.Title(options.title),
+							],
+							[options.title],
+						),
+						h.span(
+							[h.Class("hidden shrink-0 text-2xs text-muted-foreground md:inline")],
+							[options.count],
+						),
+					]),
 				],
 				"max-w-0 py-0 pl-4 align-middle",
 			),
@@ -416,7 +413,7 @@ const formatLatencyText = (ms: number) => (ms > 0 ? formatLatency(ms) : EMPTY_VA
 
 /** Whether a sibling in the group serves the same route, so only the method tells them apart. */
 const sharesRoute = (endpoints: ReadonlyArray<Endpoint>, endpoint: Endpoint) =>
-	endpoints.some((other) => other !== endpoint && other.route === endpoint.route)
+	Arr.some(endpoints, (other) => other !== endpoint && other.route === endpoint.route)
 
 /** `GroupRows`: a collapsed bucket with its explainer, or a stem header and its rows. */
 export const groupRows = (
@@ -427,7 +424,7 @@ export const groupRows = (
 ): ReadonlyArray<Html> => {
 	if (group.kind === "unrouted" || group.kind === "probes") {
 		const copy = COLLAPSED_COPY[group.kind]
-		const sample = group.endpoints.slice(0, 2).map((endpoint) => endpoint.route)
+		const sample = Arr.map(group.endpoints.slice(0, 2), (endpoint) => endpoint.route)
 		const remaining = group.endpoints.length - sample.length
 		return [
 			groupHeaderRow(h, {
@@ -443,43 +440,32 @@ export const groupRows = (
 					tableCell(
 						h,
 						[
-							h.div(
-								[h.Class("flex items-center gap-4")],
-								[
-									h.div(
-										[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
+							hstack(h, { gap: "4" }, [
+								vstack(h, { gap: "0.5", shrink: true, grow: true }, [
+									typography(h, { size: "xs", tone: "muted" }, [copy.explainer]),
+									h.span(
+										[h.Class("truncate text-2xs text-foreground-faint")],
 										[
-											h.span(
-												[h.Class("text-xs text-muted-foreground")],
-												[copy.explainer],
-											),
-											h.span(
-												[h.Class("truncate text-2xs text-foreground-faint")],
-												[
-													sample.join("  ·  "),
-													remaining > 0
-														? `  ·  ${formatNumber(remaining)} more`
-														: "",
-												],
-											),
+											Arr.join(sample, "  ·  "),
+											remaining > 0 ? `  ·  ${formatNumber(remaining)} more` : "",
 										],
 									),
-									button(
-										h,
-										{
-											variant: "outline",
-											size: "sm",
-											className: "shrink-0",
-											attributes: [
-												h.OnClick(
-													Message.ClickedToggleEndpointGroup({ kind: group.kind }),
-												),
-											],
-										},
-										[isExpanded ? "Hide" : "Show anyway"],
-									),
-								],
-							),
+								]),
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "sm",
+										className: "shrink-0",
+										attributes: [
+											h.OnClick(
+												Message.ClickedToggleEndpointGroup({ kind: group.kind }),
+											),
+										],
+									},
+									[isExpanded ? "Hide" : "Show anyway"],
+								),
+							]),
 						],
 						"py-2.5 pl-4 pr-4",
 						[h.Attribute("colspan", String(COLUMN_COUNT))],
@@ -488,7 +474,7 @@ export const groupRows = (
 				"border-b hover:bg-transparent active:bg-transparent",
 			),
 			...(isExpanded
-				? group.endpoints.map((endpoint) =>
+				? Arr.map(group.endpoints, (endpoint) =>
 						endpointRow(h, endpoint, "", context, sharesRoute(group.endpoints, endpoint)),
 					)
 				: []),
@@ -506,7 +492,7 @@ export const groupRows = (
 					}),
 				]
 			: []),
-		...group.endpoints.map((endpoint) =>
+		...Arr.map(group.endpoints, (endpoint) =>
 			endpointRow(h, endpoint, group.stem, context, sharesRoute(group.endpoints, endpoint)),
 		),
 	]
@@ -522,7 +508,7 @@ export const visibleEndpoints = (
 	groups: ReadonlyArray<EndpointGroup<Endpoint>>,
 	expanded: ReadonlyArray<string>,
 ): ReadonlyArray<Endpoint> =>
-	groups.flatMap((group) =>
+	Arr.flatMap(groups, (group) =>
 		(group.kind === "unrouted" || group.kind === "probes") && !expanded.includes(group.kind)
 			? []
 			: group.endpoints,

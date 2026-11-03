@@ -1,8 +1,14 @@
 import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
-import { getMcpOverview, getMcpServers, getMcpTool } from "@maple/web-data/warehouse/mcp"
+import {
+	getMcpOverview,
+	getMcpServers,
+	getMcpSession,
+	getMcpSessions,
+	getMcpTool,
+} from "@maple/web-data/warehouse/mcp"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
 import { SEMCONV_MCP_URL } from "../view-kit"
 import { Message, RequestMode } from "./message"
@@ -37,8 +43,10 @@ export const FetchServers = Command.define("FetchMcpServers", {
 	messages: [Message.CompletedFetchServers],
 	execute: ({ key, ...data }) =>
 		getMcpServers({ data }).pipe(
-			Effect.map((response) => ({ servers: response.servers })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => ({ servers: response.servers }),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchServers({ key, result })),
 		),
@@ -56,8 +64,7 @@ export const FetchOverview = Command.define("FetchMcpOverview", {
 	messages: [Message.CompletedFetchOverview],
 	execute: ({ key, ...data }) =>
 		getMcpOverview({ data }).pipe(
-			Effect.map((response) => ({ ...response })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => ({ ...response }), onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchOverview({ key, result })),
 		),
@@ -75,10 +82,38 @@ export const FetchTool = Command.define("FetchMcpTool", {
 	messages: [Message.CompletedFetchTool],
 	execute: ({ key, ...data }) =>
 		getMcpTool({ data }).pipe(
-			Effect.map((response) => ({ ...response })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => ({ ...response }), onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchTool({ key, result })),
+		),
+})
+
+export const FetchSessions = Command.define("FetchMcpSessions", {
+	args: {
+		key: Schema.String,
+		...Window,
+		...Selection,
+		service: Schema.String,
+		search: Schema.UndefinedOr(Schema.String),
+		failingOnly: Schema.Boolean,
+	},
+	messages: [Message.CompletedFetchSessions],
+	execute: ({ key, ...data }) =>
+		getMcpSessions({ data }).pipe(
+			Effect.mapBoth({ onSuccess: (response) => ({ ...response }), onFailure: toLoadFailure }),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchSessions({ key, result })),
+		),
+})
+
+export const FetchSession = Command.define("FetchMcpSession", {
+	args: { key: Schema.String, ...Window, service: Schema.String, sessionId: Schema.String },
+	messages: [Message.CompletedFetchSession],
+	execute: ({ key, ...data }) =>
+		getMcpSession({ data }).pipe(
+			Effect.mapBoth({ onSuccess: (response) => ({ ...response }), onFailure: toLoadFailure }),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchSession({ key, result })),
 		),
 })
 

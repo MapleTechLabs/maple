@@ -1,5 +1,6 @@
 import {
 	CodeReviewTeam,
+	CodeReviewTeamActivity,
 	CodeReviewTeamMember,
 	type CodeReviewTeamQuery,
 	CodeReviewTeamTotals,
@@ -11,7 +12,7 @@ import type { OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PrReviewFindings, PrReviews, VcsRepositories } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -29,11 +30,13 @@ export interface CodeReviewTeamServiceApi {
 
 /** Pull requests read per window: past this the oldest are left out, which a span annotation shows. */
 const MAX_PULL_REQUESTS = 20_000
+/** The activity calendar's reach, whatever the window: a year, as GitHub draws it. */
+export const ACTIVITY_SPAN_MS = 365 * 86_400_000
 /** How far back a pull request's earlier reviews are looked for, to tell a first review from a re-review. */
 const FIRST_REVIEW_LOOKBACK_MS = 180 * 86_400_000
 
 /** GitHub Apps act as `<name>[bot]`; a team page is about people. */
-export const isBotLogin = (login: string) => login.endsWith("[bot]")
+export const isBotLogin = (login: string) => Str.endsWith("[bot]")(login)
 
 export const median = (values: ReadonlyArray<number>): number | null => {
 	if (values.length === 0) return null
@@ -98,10 +101,76 @@ const emptyMember = (login: string): MemberCounts => ({
 	runnerMs: 0,
 })
 
+/** One pull request's first review and merge, for the activity calendar. */
+export interface ActivityPullRequest {
+	readonly repositoryId: string
+	readonly author: string | null
+	/** Epoch ms. */
+	readonly firstCreatedAt: number | null
+	readonly mergedAt: number | null
+}
+
+/** `YYYY-MM-DD` of an epoch ms in a zone. */
+const dayFormatter = (timeZone: string) => {
+	const format = new Intl.DateTimeFormat("en-CA", {
+		timeZone,
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+	})
+	return (ms: number) => format.format(ms)
+}
+
+/** Each pull request's first review and merge in the window, folded by day, person and repository. */
+export const buildActivity = (input: {
+	readonly startTime: number
+	readonly endTime: number
+	readonly timeZone: string
+	readonly pullRequests: ReadonlyArray<ActivityPullRequest>
+	/** `owner/name` by repository id. */
+	readonly repositories: ReadonlyMap<string, string>
+}): ReadonlyArray<CodeReviewTeamActivity> => {
+	const dayOf = dayFormatter(input.timeZone)
+	const cells = new Map<
+		string,
+		{ day: string; login: string; repository: string; opened: number; merged: number }
+	>()
+	const cellOf = (at: number, login: string, repository: string) => {
+		const day = dayOf(at)
+		const key = `${day}\u0000${login}\u0000${repository}`
+		const found = cells.get(key)
+		if (found !== undefined) return found
+		const created = { day, login, repository, opened: 0, merged: 0 }
+		cells.set(key, created)
+		return created
+	}
+	const inWindow = (at: number) => at >= input.startTime && at < input.endTime
+	for (const pr of input.pullRequests) {
+		if (pr.author === null || isBotLogin(pr.author)) continue
+		const repository = input.repositories.get(pr.repositoryId) ?? pr.repositoryId
+		if (pr.firstCreatedAt !== null && inWindow(pr.firstCreatedAt))
+			cellOf(pr.firstCreatedAt, pr.author, repository).opened += 1
+		if (pr.mergedAt !== null && inWindow(pr.mergedAt))
+			cellOf(pr.mergedAt, pr.author, repository).merged += 1
+	}
+	return Arr.map(
+		[...cells.values()].toSorted((a, b) =>
+			a.day === b.day
+				? a.login === b.login
+					? Str.localeCompare(b.repository)(a.repository)
+					: Str.localeCompare(b.login)(a.login)
+				: Str.localeCompare(b.day)(a.day),
+		),
+		(cell) => new CodeReviewTeamActivity(cell),
+	)
+}
+
 /** The pull request authors and CI actors as one row per login, bots left out. */
 export const buildTeam = (input: {
 	readonly startTime: number
 	readonly endTime: number
+	readonly activityStartTime: number
+	readonly activity: ReadonlyArray<CodeReviewTeamActivity>
 	readonly pullRequests: ReadonlyArray<TeamPullRequest>
 	readonly findings: ReadonlyArray<TeamFindingCounts>
 	readonly ci: ReadonlyArray<TeamCiActor>
@@ -116,8 +185,8 @@ export const buildTeam = (input: {
 		members.set(login, created)
 		return created
 	}
-	const findingsOf = new Map(input.findings.map((row) => [`${row.repositoryId}:${row.number}`, row]))
-	const people = input.pullRequests.filter((pr) => pr.author !== null && !isBotLogin(pr.author))
+	const findingsOf = new Map(Arr.map(input.findings, (row) => [`${row.repositoryId}:${row.number}`, row]))
+	const people = Arr.filter(input.pullRequests, (pr) => pr.author !== null && !isBotLogin(pr.author))
 
 	for (const pr of people) {
 		if (pr.author === null) continue
@@ -150,7 +219,7 @@ export const buildTeam = (input: {
 		member.runnerMs += row.runnerMs
 	}
 
-	const merged = people.flatMap((pr) => (pr.mergeSeconds === null ? [] : [pr.mergeSeconds]))
+	const merged = Arr.flatMap(people, (pr) => (pr.mergeSeconds === null ? [] : [pr.mergeSeconds]))
 	return new CodeReviewTeam({
 		startTime: input.startTime,
 		endTime: input.endTime,
@@ -159,22 +228,23 @@ export const buildTeam = (input: {
 			mergedPullRequests: merged.length,
 			medianMergeSeconds: median(merged),
 			medianFirstReviewSeconds: median(
-				people.flatMap((pr) => (pr.firstReviewSeconds === null ? [] : [pr.firstReviewSeconds])),
+				Arr.flatMap(people, (pr) => (pr.firstReviewSeconds === null ? [] : [pr.firstReviewSeconds])),
 			),
-			defaultBranchRuns: input.ci.reduce((sum, row) => sum + row.defaultBranchRuns, 0),
-			defaultBranchFailed: input.ci.reduce((sum, row) => sum + row.defaultBranchFailed, 0),
-			runnerMs: input.ci.reduce((sum, row) => sum + row.runnerMs, 0),
+			defaultBranchRuns: Arr.reduce(input.ci, 0, (sum, row) => sum + row.defaultBranchRuns),
+			defaultBranchFailed: Arr.reduce(input.ci, 0, (sum, row) => sum + row.defaultBranchFailed),
+			runnerMs: Arr.reduce(input.ci, 0, (sum, row) => sum + row.runnerMs),
 			p95QueueMs: input.p95QueueMs,
 		}),
-		members: [...members.values()]
-			.map(
-				(member) =>
-					new CodeReviewTeamMember({
-						...member,
-						medianMergeSeconds: median(mergeSeconds.get(member.login) ?? []),
-					}),
-			)
-			.toSorted((a, b) => a.login.localeCompare(b.login, "en", { sensitivity: "base" })),
+		members: Arr.map(
+			[...members.values()],
+			(member) =>
+				new CodeReviewTeamMember({
+					...member,
+					medianMergeSeconds: median(mergeSeconds.get(member.login) ?? []),
+				}),
+		).toSorted((a, b) => a.login.localeCompare(b.login, "en", { sensitivity: "base" })),
+		activityStartTime: input.activityStartTime,
+		activity: input.activity,
 	})
 }
 
@@ -243,6 +313,36 @@ export class CodeReviewTeamService extends Context.Service<CodeReviewTeamService
 					),
 				)
 
+			/** A year of pull requests, first review and merge alone: the calendar's reach, not the window's. */
+			const readActivity = (
+				orgId: OrgId,
+				window: { readonly start: number; readonly end: number },
+				repositoryId: VcsRepositoryId | undefined,
+			) =>
+				dbExecute((db) =>
+					db.run(
+						PG.from(PrReviews)
+							.select(($) => ({
+								repositoryId: $.repositoryId,
+								number: $.number,
+								author: PG.sql(PG.nullable(PG.text))`max(${$.authorLogin})`,
+								lastCreatedAt: PG.max($.createdAt),
+								firstCreatedAt: PG.min($.createdAt),
+								mergedAt: PG.max($.mergedAt),
+							}))
+							.where(($) => [
+								$.orgId.eq(orgId),
+								// Earlier reviews too, so a re-review is not read as the pull request opening.
+								$.createdAt.gte(window.start - FIRST_REVIEW_LOOKBACK_MS),
+								$.createdAt.lt(window.end),
+								repositoryId === undefined ? undefined : $.repositoryId.eq(repositoryId),
+							])
+							.groupBy("repositoryId", "number")
+							.orderBy(["lastCreatedAt", "desc"])
+							.limit(MAX_PULL_REQUESTS),
+					),
+				)
+
 			const readFindings = (
 				orgId: OrgId,
 				window: { readonly start: number; readonly end: number },
@@ -298,11 +398,16 @@ export class CodeReviewTeamService extends Context.Service<CodeReviewTeamService
 						? repositories
 						: repositories.filter((repo) => repo.id === query.repositoryId)
 				const repository = query.repositoryId === undefined ? undefined : scoped[0]
+				const timeZone = query.timeZone ?? "UTC"
+				const repositoryNames = new Map(scoped.map((repo) => [repo.id, `${repo.owner}/${repo.name}`]))
+				const activityStartTime = endTime - ACTIVITY_SPAN_MS
 				// An id that is not the org's reads as an empty team, never another org's runs.
 				if (query.repositoryId !== undefined && repository === undefined)
 					return buildTeam({
 						startTime,
 						endTime,
+						activityStartTime,
+						activity: [],
 						pullRequests: [],
 						findings: [],
 						ci: [],
@@ -322,9 +427,10 @@ export class CodeReviewTeamService extends Context.Service<CodeReviewTeamService
 					endTime: formatWarehouseDateTime(endTime),
 				}
 				const window = { start: startTime, end: endTime }
-				const [pullRequests, findings, ci, queue] = yield* Effect.all(
+				const [pullRequests, activityPullRequests, findings, ci, queue] = yield* Effect.all(
 					[
 						readPullRequests(orgId, window, query.repositoryId),
+						readActivity(orgId, { start: activityStartTime, end: endTime }, query.repositoryId),
 						readFindings(orgId, window, query.repositoryId),
 						warehouse.compiledQuery(
 							tenant,
@@ -340,6 +446,7 @@ export class CodeReviewTeamService extends Context.Service<CodeReviewTeamService
 				)
 				yield* Effect.annotateCurrentSpan({
 					"maple.code_review.pull_requests": pullRequests.length,
+					"maple.code_review.activity_pull_requests": activityPullRequests.length,
 					"maple.code_review.pull_requests_capped": pullRequests.length >= MAX_PULL_REQUESTS,
 					"maple.code_review.ci_actors": ci.length,
 				})
@@ -347,6 +454,14 @@ export class CodeReviewTeamService extends Context.Service<CodeReviewTeamService
 				return buildTeam({
 					startTime,
 					endTime,
+					activityStartTime,
+					activity: buildActivity({
+						startTime: activityStartTime,
+						endTime,
+						timeZone,
+						pullRequests: activityPullRequests,
+						repositories: repositoryNames,
+					}),
 					pullRequests,
 					findings,
 					ci,

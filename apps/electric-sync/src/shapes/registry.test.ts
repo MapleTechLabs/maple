@@ -6,6 +6,7 @@ import {
 	SUBSCRIPTION_NAMES,
 	subscriptionScopeColumn,
 } from "./registry"
+import { String as Str } from "effect"
 
 describe("isShapeName", () => {
 	it("accepts whitelisted shapes and rejects everything else", () => {
@@ -53,7 +54,7 @@ describe("scoped shapes", () => {
 	it("rejects an absent or unbounded scope value", () => {
 		assert.isFalse(isValidScopeValue(null))
 		assert.isFalse(isValidScopeValue(""))
-		assert.isFalse(isValidScopeValue("x".repeat(129)))
+		assert.isFalse(isValidScopeValue(Str.repeat(129)("x")))
 		assert.isTrue(isValidScopeValue("inv_YofPTrK9782DWwcnXhpcCw"))
 	})
 })

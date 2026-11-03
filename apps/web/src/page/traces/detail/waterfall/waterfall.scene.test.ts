@@ -1,5 +1,5 @@
 import { SpanId, TraceId } from "@maple/domain"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import {
 	all,
 	click,
@@ -14,7 +14,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import type { SpanNodeData, TraceData } from "../trace-data"
+import type { SpanNodeData, TraceData } from "@maple/views/traces/trace-data"
 import { Message, type Model, OutMessage } from "./model"
 import { init, setSelectedSpanId, update } from "./update"
 import { view as waterfallView } from "./view"
@@ -29,7 +29,7 @@ const node = (
 	status = "Ok",
 ): SpanNodeData => ({
 	traceId,
-	spanId: Schema.decodeSync(SpanId)(id.padEnd(16, "0")),
+	spanId: Schema.decodeSync(SpanId)(Str.padEnd(16, "0")(id)),
 	parentSpanId: "",
 	spanName: `span ${id}`,
 	serviceName: "storefront",
@@ -40,11 +40,11 @@ const node = (
 	statusMessage: "",
 	spanAttributes: {},
 	resourceAttributes: {},
-	children: children.map((child) => ({ ...child, parentSpanId: id.padEnd(16, "0") })),
+	children: Arr.map(children, (child) => ({ ...child, parentSpanId: Str.padEnd(16, "0")(id) })),
 	depth,
 })
 
-const idOf = (id: string) => id.padEnd(16, "0")
+const idOf = (id: string) => Str.padEnd(16, "0")(id)
 
 /** root → a → b → c: three parents, four rows. */
 const small: TraceData = {

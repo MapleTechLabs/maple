@@ -19,6 +19,7 @@ import {
 import { durableStep } from "@maple/backend/platform/durable-step"
 import { trackSecurityAuditCharge } from "@maple/backend/services/billing/autumn-tracker"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
+import { ExecutorService } from "@maple/backend/services/sandbox/ExecutorService"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { securityAuditLimits } from "@maple/backend/services/security-audit/limits"
 import {
@@ -40,6 +41,8 @@ import {
 	type AuditStoreApi,
 	type AuditStoreError,
 	changedMatcher,
+	type ExecutionPolicy,
+	type ExecutionProfile,
 	EVERYTHING_CHANGED,
 	type PriorRun,
 	runAudit,
@@ -56,6 +59,8 @@ import {
 	Predicate,
 	Schedule,
 	Schema,
+	Array as Arr,
+	String as Str,
 } from "effect"
 import { HttpClient } from "effect/http"
 import {
@@ -68,6 +73,13 @@ import {
 import { makeAuditAgents } from "./agents"
 import { changedPaths } from "./changed-paths"
 import { inspectDependencies } from "./dependencies"
+import {
+	type AuditExecutionApi,
+	AuditExecutionError,
+	EXECUTION_TOOL_GUIDANCE,
+	executableEcosystem,
+	executionPolicy,
+} from "./execution"
 import {
 	AuditRepositoryRefusedError,
 	parseRepoSize,
@@ -108,7 +120,7 @@ export const toSandboxStepError =
 	(step: string) =>
 	(error: SandboxError): AuditSandboxStepError =>
 		new AuditSandboxStepError({
-			message: `${step}: ${describeSandboxError(error)}`.slice(0, 1_000),
+			message: Str.slice(0, 1_000)(`${step}: ${describeSandboxError(error)}`),
 			step,
 			sandboxTag: error._tag,
 		})
@@ -127,6 +139,22 @@ const AGENT_STEP = {
 	retries: { limit: 1, delay: "30 seconds", backoff: "constant" },
 	timeout: "30 minutes",
 } as const
+
+/** A prepare fetches the commit and installs its lockfiles; its wait is 22 minutes, retried once. */
+const PREPARE_STEP = {
+	retries: { limit: 1, delay: "30 seconds", backoff: "constant" },
+	timeout: "30 minutes",
+} as const
+
+/** The profile once prepare failed: nothing ran, and why. */
+const preparedNothing = (profile: ExecutionProfile, why: string): ExecutionProfile => ({
+	...profile,
+	mode: "source_only",
+	reasons: [
+		...profile.reasons,
+		`the execution sandbox could not prepare the repository: ${Str.slice(0, 300)(why)}`,
+	],
+})
 
 /** Counting a very large tree takes a while; the sandbox's own ceiling is 120 seconds. */
 const REPO_SIZE_TIMEOUT_SECONDS = 120
@@ -185,7 +213,7 @@ const durableAgents = (
 			Effect.catchDefect((defect) =>
 				Effect.fail(
 					refused(
-						`the organization's audit spend step died: ${Cause.pretty(Cause.die(defect)).slice(0, 600)}`,
+						`the organization's audit spend step died: ${Str.slice(0, 600)(Cause.pretty(Cause.die(defect)))}`,
 						"org_budget_unavailable",
 					),
 				),
@@ -260,7 +288,7 @@ const runAgentStep = (
 		Effect.catchDefect((defect) =>
 			Effect.fail(
 				new AuditAgentError({
-					message: `agent step died: ${Cause.pretty(Cause.die(defect)).slice(0, 600)}`,
+					message: `agent step died: ${Str.slice(0, 600)(Cause.pretty(Cause.die(defect)))}`,
 					role: invocation.role,
 					agentId: invocation.agentId,
 				}),
@@ -275,7 +303,10 @@ const runAgentStep = (
  */
 export const auditWithAgents = <E, R>(
 	payload: SecurityAuditWorkflowPayload,
-	agentsFor: (source: SourceReaderApi) => Effect.Effect<AuditAgentsApi, E, R>,
+	agentsFor: (
+		source: SourceReaderApi,
+		execution?: AuditExecutionApi,
+	) => Effect.Effect<AuditAgentsApi, E, R>,
 	options: { readonly ownKey?: boolean } = {},
 ) =>
 	Effect.gen(function* () {
@@ -289,6 +320,8 @@ export const auditWithAgents = <E, R>(
 		const self = yield* store.getRun(payload.runId)
 		// Settled already (by its own settle step, or failed by its starter): a replay must not redo it.
 		if (Option.isSome(self) && self.value.finishedAt !== null) {
+			// An eviction between settle and destroy lands here; destroying again is a no-op.
+			yield* (yield* ExecutorService).destroy(payload.runId)
 			return {
 				status: self.value.status === "complete" ? ("complete" as const) : ("incomplete" as const),
 				invocations: self.value.invocationsSpent,
@@ -304,11 +337,11 @@ export const auditWithAgents = <E, R>(
 				Effect.andThen(sandbox.exec(orgId, target, { command: "git", args: ["rev-parse", "HEAD"] })),
 				Effect.mapError(toSandboxStepError("resolve-commit")),
 				Effect.flatMap((result) =>
-					result.exitCode === 0 && /^[0-9a-f]{40}$/.test(result.stdout.trim())
-						? Effect.succeed(result.stdout.trim())
+					result.exitCode === 0 && /^[0-9a-f]{40}$/.test(Str.trim(result.stdout))
+						? Effect.succeed(Str.trim(result.stdout))
 						: Effect.fail(
 								new AuditCommitUnresolvedError({
-									message: `cannot pin ${payload.ref}: ${result.stderr.trim().slice(0, 300)}`,
+									message: `cannot pin ${payload.ref}: ${Str.slice(0, 300)(Str.trim(result.stderr))}`,
 								}),
 							),
 				),
@@ -330,11 +363,12 @@ export const auditWithAgents = <E, R>(
 				if (Option.isNone(size)) {
 					return {
 						violations: [
-							`its size could not be measured (exit ${result.exitCode}: ${result.stderr.trim().slice(0, 300)})`,
+							`its size could not be measured (exit ${result.exitCode}: ${Str.slice(0, 300)(Str.trim(result.stderr))})`,
 						],
 					}
 				}
-				return { violations: repoLimitViolations(size.value, yield* securityAuditLimits) }
+				const limits = yield* securityAuditLimits
+				return { violations: repoLimitViolations(size.value, limits) }
 			}),
 			STEP_RETRY,
 		)
@@ -351,12 +385,72 @@ export const auditWithAgents = <E, R>(
 			)
 			return yield* new AuditRepositoryRefusedError({ message: reason, violations })
 		}
-		// Labelling only: which ecosystems it builds with, and what it could not install.
-		const executionProfile = yield* durableStep(
+		// Which ecosystems it builds with, and so whether the execution sandbox can run it.
+		const executor = yield* ExecutorService
+		const scanned = yield* durableStep(
 			"execution-profile",
-			inspectDependencies(sandbox, orgId, pinned),
+			inspectDependencies(sandbox, orgId, pinned, executor.available ? executableEcosystem : undefined),
 			STEP_RETRY,
 		)
+		const executorTarget = { repository: payload.repository, sha }
+		// Prepared once per run before any agent; a failure leaves the run source-only, with why.
+		// A transient one fails the step, so the Workflow retries it before giving up on execution.
+		const prepareAttempted = scanned.mode === "executable"
+		const prepared = !prepareAttempted
+			? undefined
+			: yield* durableStep(
+					"prepare-executor",
+					executor.prepare(orgId, payload.runId, executorTarget).pipe(
+						Effect.map((installs) => ({
+							ok: true as const,
+							installs: Arr.map(installs, ({ dir, manager, outcome, detail }) => ({
+								dir,
+								manager,
+								outcome,
+								detail,
+							})),
+						})),
+						Effect.catchIf(
+							(error) => error.reason !== "unavailable",
+							(error) => Effect.succeed({ ok: false as const, error: error.message }),
+						),
+					),
+					PREPARE_STEP,
+				).pipe(
+					// An interrupt is an eviction: the replay prepares again, so it must not read as a failure.
+					Effect.catchCauseIf(
+						(cause) => !Cause.hasInterruptsOnly(cause),
+						(cause) =>
+							Effect.succeed({
+								ok: false as const,
+								error: Str.slice(0, 300)(Cause.pretty(cause)),
+							}),
+					),
+				)
+		const executionProfile =
+			prepared === undefined || prepared.ok ? scanned : preparedNothing(scanned, prepared.error)
+		const execution: ExecutionPolicy =
+			prepared?.ok === true
+				? executionPolicy(prepared.installs)
+				: {
+						_tag: "Unavailable",
+						blocker:
+							Arr.join(executionProfile.reasons, "; ") ||
+							"no execution sandbox for this repository",
+					}
+		const auditExecution: AuditExecutionApi | undefined =
+			prepared?.ok === true
+				? {
+						run: (agentId, command) =>
+							executor
+								.run(orgId, payload.runId, executorTarget, { ...command, agentId })
+								.pipe(
+									Effect.mapError(
+										(error) => new AuditExecutionError({ message: error.message }),
+									),
+								),
+					}
+				: undefined
 		yield* durableStep(
 			"save-execution-profile",
 			store.setExecutionProfile(payload.runId, executionProfile),
@@ -375,7 +469,7 @@ export const auditWithAgents = <E, R>(
 								Effect.annotateLogs({
 									runId: payload.runId,
 									exitCode: result.exitCode,
-									stderr: result.stderr.slice(0, 500),
+									stderr: Str.slice(0, 500)(result.stderr),
 								}),
 								Effect.as(""),
 							),
@@ -423,7 +517,7 @@ export const auditWithAgents = <E, R>(
 					)
 		const changedSincePrior = changedMatcher(changed)
 
-		const agents = yield* agentsFor(sandboxSource(sandbox, orgId, pinned))
+		const agents = yield* agentsFor(sandboxSource(sandbox, orgId, pinned), auditExecution)
 		const credits = yield* SecurityAuditCredits
 		const httpClient = yield* HttpClient.HttpClient
 		const ownKey = options.ownKey === true
@@ -472,7 +566,8 @@ export const auditWithAgents = <E, R>(
 					onNone: () => limits.defaultMonthlySpendLimitUsd,
 					onSome: (row) => row.monthlySpendLimitUsd,
 				})
-				const { since } = securityAuditSpendWindow(yield* Clock.currentTimeMillis)
+				const now = yield* Clock.currentTimeMillis
+				const { since } = securityAuditSpendWindow(now)
 				const reservation = yield* store.reserveOrgInvocation(payload.runId, agentId, {
 					since,
 					limitUsd,
@@ -492,41 +587,30 @@ export const auditWithAgents = <E, R>(
 				Effect.andThen(store.recordAgentCost(payload.runId, agentId, costUsd)),
 			)
 
+		const workflowStep = yield* Effect.context<Cloudflare.WorkflowStep>()
 		const result = yield* runAudit({
 			runId: payload.runId,
 			repo: payload.repository,
-			target: `the repository ${payload.repository} at commit ${sha}, read through your tools${payload.scopePaths.length === 0 ? "" : `; this run is scoped to ${payload.scopePaths.join(", ")}, so map those paths and only what they depend on or are reached from`}`,
+			target: `the repository ${payload.repository} at commit ${sha}, read through your tools${payload.scopePaths.length === 0 ? "" : `; this run is scoped to ${Arr.join(payload.scopePaths, ", ")}, so map those paths and only what they depend on or are reached from`}`,
 			sourceRef: sha,
 			profile: payload.profile,
 			scopePaths: payload.scopePaths,
 			budget: payload.budget,
-			execution: {
-				_tag: "Unavailable",
-				blocker:
-					"the repository sandbox does not yet provide per-agent scratch space, resource limits and artifact promotion",
-			},
+			execution,
 			executionProfile,
-			toolGuidance: AUDIT_TOOL_GUIDANCE,
+			toolGuidance:
+				auditExecution === undefined
+					? AUDIT_TOOL_GUIDANCE
+					: `${AUDIT_TOOL_GUIDANCE} ${EXECUTION_TOOL_GUIDANCE}`,
 			repoTree,
 			prior,
 			changedSincePrior,
 		}).pipe(
 			// The run composes the engine with its host here.
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
-			Effect.provide(
-				Layer.mergeAll(
-					Layer.succeed(
-						AuditAgents,
-						durableAgents(
-							agents,
-							yield* Effect.context<Cloudflare.WorkflowStep>(),
-							admit,
-							charge,
-						),
-					),
-					Layer.succeed(AuditStore, retried(store)),
-				),
-			),
+			Effect.provide([
+				Layer.succeed(AuditAgents, durableAgents(agents, workflowStep, admit, charge)),
+				Layer.succeed(AuditStore, retried(store)),
+			]),
 		)
 		// One durable, retried step: a replay neither double-counts usage nor re-settles the run.
 		const settle = Effect.gen(function* () {
@@ -540,17 +624,14 @@ export const auditWithAgents = <E, R>(
 			// the finding is not tied to a unit this run left unaudited (deferred, blocked, out of scope).
 			const row = yield* store.getRun(payload.runId)
 			const unaudited = new Set(
-				result.ledger
-					.filter(
-						(u) =>
-							u.status !== "covered" &&
-							u.status !== "candidate" &&
-							u.status !== "not_applicable",
-					)
-					.flatMap((u) => [
-						...u.result_fingerprints,
-						...(u.carried_fingerprint === undefined ? [] : [u.carried_fingerprint]),
-					]),
+				Arr.filter(
+					result.ledger,
+					(u) =>
+						u.status !== "covered" && u.status !== "candidate" && u.status !== "not_applicable",
+				).flatMap((u) => [
+					...u.result_fingerprints,
+					...(u.carried_fingerprint === undefined ? [] : [u.carried_fingerprint]),
+				]),
 			)
 			if (
 				result.status === "complete" &&
@@ -564,7 +645,7 @@ export const auditWithAgents = <E, R>(
 				// Cancelled (or otherwise finished) meanwhile: never mark fixed, and finishRun keeps its outcome.
 				row.value.finishedAt === null
 			) {
-				const reported = new Set(result.findings.map((f) => f.fingerprint))
+				const reported = new Set(Arr.map(result.findings, (f) => f.fingerprint))
 				const gone = (yield* store.listFindings(row.value.targetId)).filter(
 					(f) =>
 						f.status === "open" &&
@@ -572,14 +653,14 @@ export const auditWithAgents = <E, R>(
 						!reported.has(f.fingerprint) &&
 						!unaudited.has(f.fingerprint) &&
 						changedSincePrior([
-							...f.record.trace.map((t) => t.file),
-							...f.record.evidence.map((e) => e.file),
+							...Arr.map(f.record.trace, (t) => t.file),
+							...Arr.map(f.record.evidence, (e) => e.file),
 						]),
 				)
 				if (gone.length > 0)
 					yield* store.markFixed(
 						row.value.targetId,
-						gone.map((f) => f.fingerprint),
+						Arr.map(gone, (f) => f.fingerprint),
 						payload.runId,
 					)
 			}
@@ -587,10 +668,12 @@ export const auditWithAgents = <E, R>(
 				payload.runId,
 				result.status === "complete"
 					? { status: "complete" }
-					: { status: "incomplete", reason: result.incompleteReasons.join("; ") },
+					: { status: "incomplete", reason: Arr.join(result.incompleteReasons, "; ") },
 			)
 		})
 		yield* durableStep("settle", settle, STEP_RETRY)
+		if (auditExecution !== undefined)
+			yield* durableStep("destroy-executor", executor.destroy(payload.runId), STEP_RETRY)
 		return { status: result.status, invocations: result.invocations, records: result.findings.length }
 	}).pipe(
 		// A run that dies (no sandbox on this stage, a step past its retries) still leaves its row
@@ -603,8 +686,10 @@ export const auditWithAgents = <E, R>(
 						const store = (yield* SecurityAuditStore).forOrg(orgId)
 						yield* store.finishRun(payload.runId, {
 							status: "failed",
-							error: Cause.pretty(cause).slice(0, 2_000),
+							error: Str.slice(0, 2_000)(Cause.pretty(cause)),
 						})
+						// A run that died leaves no executor running until its inactivity timeout.
+						yield* (yield* ExecutorService).destroy(payload.runId)
 					}).pipe(Effect.ignore),
 		),
 	)
@@ -623,12 +708,21 @@ export const runSecurityAuditWorkflow = (payload: SecurityAuditWorkflowPayload) 
 			onNone: () => deploySettings,
 			onSome: (apiKey) => withOrgOpenRouterKey(deploySettings, apiKey),
 		})
-		return yield* auditWithAgents(payload, (source) => agentsOn(settings, payload, source), {
-			ownKey: Option.isSome(orgKey),
-		})
+		return yield* auditWithAgents(
+			payload,
+			(source, execution) => agentsOn(settings, payload, source, execution),
+			{
+				ownKey: Option.isSome(orgKey),
+			},
+		)
 	})
 
-const agentsOn = (settings: LlmSettings, payload: SecurityAuditWorkflowPayload, source: SourceReaderApi) =>
+const agentsOn = (
+	settings: LlmSettings,
+	payload: SecurityAuditWorkflowPayload,
+	source: SourceReaderApi,
+	execution: AuditExecutionApi | undefined,
+) =>
 	Effect.gen(function* () {
 		const tags = {
 			surface: "chat" as const,
@@ -639,7 +733,7 @@ const agentsOn = (settings: LlmSettings, payload: SecurityAuditWorkflowPayload, 
 			discovery: resolveSecurityAuditModel(settings, "discovery", tags, payload.models.discovery),
 			validation: resolveSecurityAuditModel(settings, "validation", tags, payload.models.validation),
 		}
-		return yield* makeAuditAgents(models, source).pipe(
+		return yield* makeAuditAgents(models, source, execution).pipe(
 			// The Workflow run is the entry point that owns these clients.
 			// oxlint-disable-next-line effecttsgo/strict-effect-provide
 			Effect.provide(layerLlm(settings)),

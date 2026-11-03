@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import * as TagEditor from "../kit/tag-editor"
@@ -16,9 +16,9 @@ const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const run = (model: Model, messages: ReadonlyArray<Message>) =>
-	messages.reduce((current, message) => pageUpdate(current, message).model, model)
+	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message).model)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const document = Schema.decodeUnknownSync(DashboardDocument)({
 	id: "dash_rw",
@@ -44,13 +44,19 @@ const ready = (): Model =>
 describe("a write failing behind an open dialog", () => {
 	test("the variables dialog's Save still writes", () => {
 		const failed = run(ready(), [menuPick("variables"), failedWrite])
-		const saved = pageUpdate(failed, Message.GotVariablesManagerMessage({ message: ManagerModel.Message.SubmittedForm() }))
+		const saved = pageUpdate(
+			failed,
+			Message.GotVariablesManagerMessage({ message: ManagerModel.Message.SubmittedForm() }),
+		)
 		expect(names(saved.commands)).toContain(SaveVariables.name)
 	})
 
 	test("the tag editor's Save still writes", () => {
 		const failed = run(ready(), [menuPick("tags"), failedWrite])
-		const saved = pageUpdate(failed, Message.GotTagEditorMessage({ message: TagEditor.Message.ClickedSaveTags() }))
+		const saved = pageUpdate(
+			failed,
+			Message.GotTagEditorMessage({ message: TagEditor.Message.ClickedSaveTags() }),
+		)
 		expect(names(saved.commands)).toContain(SaveTags.name)
 	})
 

@@ -1,8 +1,8 @@
-import { Schema } from "effect"
-import * as Chart from "../../../../charts/chart"
-import { KeyedSchema } from "../../../../data/keyed"
-import { LoadFailure } from "../../../../data/load-failure"
-import * as Dialog from "../../../../ui/dialog"
+import { Schema, Array as Arr, Record as Rec } from "effect"
+import * as Chart from "@maple/views/charts/chart"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 import { ApiBucket, EndpointDetail } from "../model-tabs"
 
 // The API tab's endpoint drawer: one endpoint's page in a sheet over the table.
@@ -30,5 +30,5 @@ export const init = (id: string): Model => ({
 	dialog: Dialog.init(id, "sheet"),
 	details: {},
 	series: {},
-	charts: Object.fromEntries(PEEK_CHART_IDS.map((chartId) => [chartId, Chart.init()])),
+	charts: Rec.fromEntries(Arr.map(PEEK_CHART_IDS, (chartId) => [chartId, Chart.init()])),
 })

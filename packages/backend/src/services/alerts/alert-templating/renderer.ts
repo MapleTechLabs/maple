@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 /**
  * Safe `{{ variable }}` template renderer for alert notifications.
  *
@@ -75,7 +76,7 @@ export const renderTemplate = (template: string, context: TemplateContext): Rend
 
 const firstNonEmpty = (...values: ReadonlyArray<string | null | undefined>): string | null => {
 	for (const value of values) {
-		if (typeof value === "string" && value.trim() !== "") return value
+		if (typeof value === "string" && Str.trim(value) !== "") return value
 	}
 	return null
 }

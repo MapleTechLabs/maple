@@ -8,9 +8,10 @@ import {
 } from "../../../components/vcs/commit-markers/marker-layout"
 import { parseBucketMs } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
-import type { PlotGeometry } from "../../../charts/chart"
+import type { PlotGeometry } from "@maple/views/charts/chart"
 import { firstLine, isResolvableSha } from "./derive-panels"
 import type { CommitData, Release } from "./model"
+import { Array as Arr } from "effect"
 
 // `useCommitMarkers` and `CommitMarkersOverlay`'s geometry (components/vcs/commit-markers/).
 
@@ -20,7 +21,7 @@ export const commitMarkers = (
 	chartBuckets: ReadonlyArray<string>,
 	commits: Readonly<Record<string, CommitData>>,
 ): ReadonlyArray<CommitMarker> =>
-	buildCommitMarkers(releases, chartBuckets).map((marker) => {
+	Arr.map(buildCommitMarkers(releases, chartBuckets), (marker) => {
 		const sha = marker.commits[0]?.sha
 		const commit = sha === undefined || !isResolvableSha(sha) ? undefined : commits[sha]
 		const label =
@@ -30,7 +31,7 @@ export const commitMarkers = (
 
 /** Every sha a marker label resolves (`commitQueryAtom` per representative commit). */
 export const markerShas = (markers: ReadonlyArray<CommitMarker>): ReadonlyArray<string> =>
-	markers.flatMap((marker) => {
+	Arr.flatMap(markers, (marker) => {
 		const sha = marker.commits[0]?.sha
 		return sha !== undefined && isResolvableSha(sha) ? [sha] : []
 	})
@@ -56,15 +57,13 @@ export type MarkerLayout = Readonly<{ groups: ReadonlyArray<LabelGroup>; labeled
 export const markerLayout = (markers: ReadonlyArray<CommitMarker>, plot: PlotGeometry): MarkerLayout => {
 	const plotLeft = plot.x
 	const plotRight = plot.x + plot.width
-	const positioned: Array<PositionedMarker> = markers
-		.flatMap((marker) => {
-			const x = markerPixel(marker.bucket, plot)
-			return x === null ? [] : [{ marker, x }]
-		})
-		.toSorted((a, b) => a.x - b.x)
+	const positioned: Array<PositionedMarker> = Arr.flatMap(markers, (marker) => {
+		const x = markerPixel(marker.bucket, plot)
+		return x === null ? [] : [{ marker, x }]
+	}).toSorted((a, b) => a.x - b.x)
 	if (!shouldRenderLabels(positioned, plotLeft, plotRight)) {
 		return {
-			groups: positioned.map((entry): LabelGroup => ({
+			groups: Arr.map(positioned, (entry): LabelGroup => ({
 				key: entry.marker.bucket,
 				dashXs: [entry.x],
 				label: entry.marker.label,

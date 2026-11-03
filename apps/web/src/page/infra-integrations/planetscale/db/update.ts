@@ -1,14 +1,14 @@
 import { AsyncData, Command } from "foldkit"
-import * as Chart from "../../../../charts/chart"
-import { LoadChartRuntime } from "../../../../charts/chart-runtime"
-import * as Keyed from "../../../../data/keyed"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Keyed from "@maple/views/data/keyed"
 import { requestSlot } from "../../kit/slot"
-import { requestKey } from "../../../../data/request-key"
+import { requestKey } from "@maple/views/data/request-key"
 import type { Resources } from "../../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../../route"
-import * as FilterSections from "../../../../ui/filters/filter-sections"
-import * as Select from "../../../../ui/select"
-import * as Tooltip from "../../../../ui/tooltip"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import * as Select from "@maple/views/ui/select"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
@@ -27,6 +27,7 @@ import {
 } from "./command"
 import { eventsInputOf, filtersOf, insightsInputOf, timeseriesInputOf } from "./derive"
 import { Message, type Model, type RequestMode } from "./model"
+import { Array as Arr, Record as Rec } from "effect"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -135,7 +136,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		insights: Keyed.idle(),
 		measure: "connections",
 		breakdownSort: { key: "value", dir: "desc" },
-		charts: Object.fromEntries(CHART_METRICS.map((metric) => [metric, Chart.init()])),
+		charts: Rec.fromEntries(Arr.map(CHART_METRICS, (metric) => [metric, Chart.init()])),
 		branchSelect: Select.init("planetscale-branch-select", { value: "", selectedIndex: null }),
 		filterSections: FilterSections.init(),
 		tooltip: Tooltip.init("planetscale-db-tooltip"),
@@ -170,7 +171,10 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 		const scoped = requestScoped(next, context, "Load")
 		return {
 			model: scoped.model,
-			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion)), ...(scoped.commands ?? [])],
+			commands: [
+				resolveCommand(next, context, snapModeOf(model.refreshVersion)),
+				...(scoped.commands ?? []),
+			],
 		}
 	}
 	return routeWindowStep(model.search, route.search, {

@@ -12,6 +12,8 @@ import {
 	ScrapeTargetId,
 	ScrapeTargetNotFoundError,
 	ScrapeTargetStoredConfigInvalidError,
+	UpdateScrapeTargetRequest,
+	CreateScrapeTargetRequest,
 	UserId,
 	type ScrapeTargetPersistenceError,
 	type OrgId,
@@ -153,6 +155,7 @@ const toPersistenceError = (error: unknown) =>
 	})
 
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
 const decodeStoredDiscoveryConfig = (row: ScrapeTargetRow) =>
 	Schema.decodeUnknownEffect(DiscoveryConfigSchema)(row.discoveryConfigJson).pipe(
@@ -422,11 +425,9 @@ export class PlanetScaleConnectionService extends Context.Service<
 				// it would provision a scrape target that 403s on every scrape.
 				const grantedOrgs = yield* psOAuth.listOrganizations(orgId)
 				if (!grantedOrgs.some((org) => org.name === organization)) {
-					return yield* Effect.fail(
-						new IntegrationsValidationError({
-							message: `The PlanetScale authorization does not grant access to organization "${organization}" — re-authorize or pick another organization.`,
-						}),
-					)
+					return yield* new IntegrationsValidationError({
+						message: `The PlanetScale authorization does not grant access to organization "${organization}" — re-authorize or pick another organization.`,
+					})
 				}
 
 				// Probe what the grant can do against this org. Branch metrics come from the
@@ -438,11 +439,9 @@ export class PlanetScaleConnectionService extends Context.Service<
 				// grant row must exist here — getValidAccessToken just used it.
 				const connectedByUserId = yield* psOAuth.connectedByUserId(orgId)
 				if (connectedByUserId === null) {
-					return yield* Effect.fail(
-						new IntegrationsNotConnectedError({
-							message: "PlanetScale is not connected for this organization",
-						}),
-					)
+					return yield* new IntegrationsNotConnectedError({
+						message: "PlanetScale is not connected for this organization",
+					})
 				}
 
 				const now = yield* Clock.currentTimeMillis
@@ -486,7 +485,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 					yield* scrapeTargetsService.update(
 						orgId,
 						adoptable.id,
-						{
+						new UpdateScrapeTargetRequest({
 							...(!keepsToken ? { authType: "planetscale_oauth" } : undefined),
 							...(request.includeBranches !== undefined
 								? {
@@ -499,32 +498,35 @@ export class PlanetScaleConnectionService extends Context.Service<
 									}
 								: undefined),
 							enabled: keepsToken,
-						},
+						}),
 						// The integration owns this row, so it writes past the
 						// managed-row guard the generic scrape API is held to.
 						{ allowManaged: true },
 					)
 					scrapeTargetId = adoptable.id
 				} else {
-					const created = yield* scrapeTargetsService.create(orgId, {
-						name: `PlanetScale (${organization})`,
-						targetType: "planetscale",
-						organization,
-						authType: "planetscale_oauth",
-						...(request.includeBranches !== undefined
-							? {
-									includeBranches: request.includeBranches,
-								}
-							: undefined),
-						...(request.excludeBranches !== undefined
-							? {
-									excludeBranches: request.excludeBranches,
-								}
-							: undefined),
-						// Holds the branch filters for the metrics API poller; Prometheus
-						// discovery rejects the OAuth grant, so it never scrapes.
-						enabled: false,
-					})
+					const created = yield* scrapeTargetsService.create(
+						orgId,
+						new CreateScrapeTargetRequest({
+							name: `PlanetScale (${organization})`,
+							targetType: "planetscale",
+							organization,
+							authType: "planetscale_oauth",
+							...(request.includeBranches !== undefined
+								? {
+										includeBranches: request.includeBranches,
+									}
+								: undefined),
+							...(request.excludeBranches !== undefined
+								? {
+										excludeBranches: request.excludeBranches,
+									}
+								: undefined),
+							// Holds the branch filters for the metrics API poller; Prometheus
+							// discovery rejects the OAuth grant, so it never scrapes.
+							enabled: false,
+						}),
+					)
 					scrapeTargetId = created.id
 					createdTarget = true
 				}
@@ -581,12 +583,10 @@ export class PlanetScaleConnectionService extends Context.Service<
 								)
 							}
 							if (claimed.length !== 1) {
-								return yield* Effect.fail(
-									new IntegrationsPersistenceError({
-										message:
-											"Replacement PlanetScale scrape target disappeared before binding",
-									}),
-								)
+								return yield* new IntegrationsPersistenceError({
+									message:
+										"Replacement PlanetScale scrape target disappeared before binding",
+								})
 							}
 
 							if (existing !== null) {
@@ -604,11 +604,9 @@ export class PlanetScaleConnectionService extends Context.Service<
 										.returning("id"),
 								)
 								if (rebound.length !== 1) {
-									return yield* Effect.fail(
-										new IntegrationsPersistenceError({
-											message: "PlanetScale connection disappeared before rebinding",
-										}),
-									)
+									return yield* new IntegrationsPersistenceError({
+										message: "PlanetScale connection disappeared before rebinding",
+									})
 								}
 
 								const previousTargetId = existing.scrapeTargetId
@@ -630,11 +628,9 @@ export class PlanetScaleConnectionService extends Context.Service<
 							}
 
 							if (encryptedWebhookSecret === null) {
-								return yield* Effect.fail(
-									new IntegrationsPersistenceError({
-										message: "Missing webhook secret for new PlanetScale connection",
-									}),
-								)
+								return yield* new IntegrationsPersistenceError({
+									message: "Missing webhook secret for new PlanetScale connection",
+								})
 							}
 							const inserted = yield* db.run(
 								PG.insertInto(PlanetscaleConnections)
@@ -655,11 +651,9 @@ export class PlanetScaleConnectionService extends Context.Service<
 									.returning("id"),
 							)
 							if (inserted.length !== 1) {
-								return yield* Effect.fail(
-									new IntegrationsPersistenceError({
-										message: "Failed to persist PlanetScale connection",
-									}),
-								)
+								return yield* new IntegrationsPersistenceError({
+									message: "Failed to persist PlanetScale connection",
+								})
 							}
 							return []
 						}),
@@ -703,11 +697,9 @@ export class PlanetScaleConnectionService extends Context.Service<
 			yield* Effect.annotateCurrentSpan({ orgId })
 			const connection = yield* selectConnection(orgId)
 			if (connection === null) {
-				return yield* Effect.fail(
-					new IntegrationsNotConnectedError({
-						message: "Connect PlanetScale before adding a metrics service token",
-					}),
-				)
+				return yield* new IntegrationsNotConnectedError({
+					message: "Connect PlanetScale before adding a metrics service token",
+				})
 			}
 
 			// Validate the token against the metrics discovery endpoint before
@@ -719,44 +711,39 @@ export class PlanetScaleConnectionService extends Context.Service<
 			)
 			if (sdStatus < 200 || sdStatus >= 300) {
 				if (sdStatus !== 401 && sdStatus !== 403) {
-					return yield* Effect.fail(
-						new IntegrationsUpstreamError({
-							message: `PlanetScale metrics discovery failed (HTTP ${sdStatus}). Try again shortly.`,
-						}),
-					)
+					return yield* new IntegrationsUpstreamError({
+						message: `PlanetScale metrics discovery failed (HTTP ${sdStatus}). Try again shortly.`,
+					})
 				}
-				return yield* Effect.fail(
-					new IntegrationsValidationError({
-						message:
-							"PlanetScale rejected the service token for the metrics endpoint. Create the token in the organization settings with the read_metrics_endpoints permission.",
-					}),
-				)
+				return yield* new IntegrationsValidationError({
+					message:
+						"PlanetScale rejected the service token for the metrics endpoint. Create the token in the organization settings with the read_metrics_endpoints permission.",
+				})
 			}
 
 			const target = yield* selectManagedTarget(connection)
 			if (target === null) {
 				if (connection.scrapeTargetId === null) {
-					return yield* Effect.fail(
-						new IntegrationsPersistenceError({
-							message: "The PlanetScale connection has no managed scrape target",
-						}),
-					)
+					return yield* new IntegrationsPersistenceError({
+						message: "The PlanetScale connection has no managed scrape target",
+					})
 				}
-				return yield* Effect.fail(
-					new ScrapeTargetNotFoundError({
-						targetId: connection.scrapeTargetId,
-						message: "The managed PlanetScale scrape target no longer exists",
-					}),
-				)
+				return yield* new ScrapeTargetNotFoundError({
+					targetId: connection.scrapeTargetId,
+					message: "The managed PlanetScale scrape target no longer exists",
+				})
 			}
+			const authCredentials = yield* encodeJson({ tokenId, tokenSecret: request.tokenSecret }).pipe(
+				Effect.orDie,
+			)
 			yield* scrapeTargetsService.update(
 				orgId,
 				target.id,
-				{
+				new UpdateScrapeTargetRequest({
 					authType: "token",
-					authCredentials: JSON.stringify({ tokenId, tokenSecret: request.tokenSecret }),
+					authCredentials,
 					enabled: true,
-				},
+				}),
 				{ allowManaged: true },
 			)
 

@@ -1,5 +1,5 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { Chdb, RAW_TELEMETRY_TTL_COLUMNS } from "./chdb"
 import { decodeJsonEachRow } from "./chdb-rows"
 import { LOCAL_SCHEMA_MANIFEST } from "./schema-identity"
@@ -69,8 +69,8 @@ export const inspectPhysicalSchema = (db: Pick<Chdb, "query">): PhysicalSchema =
 		list.push({
 			name: column.name,
 			type: column.type,
-			...(!!column.default_kind ? { defaultKind: column.default_kind } : undefined),
-			...(!!column.default_expression ? { defaultExpression: column.default_expression } : undefined),
+			...(column.default_kind ? { defaultKind: column.default_kind } : undefined),
+			...(column.default_expression ? { defaultExpression: column.default_expression } : undefined),
 			...(!(!column.compression_codec || column.compression_codec === "NONE")
 				? {
 						codec: column.compression_codec,
@@ -88,13 +88,13 @@ export const inspectPhysicalSchema = (db: Pick<Chdb, "query">): PhysicalSchema =
 	const ttlFromDefinition = (definition: string): string | undefined =>
 		definition.match(/\bTTL\s+(.+?)(?=\bSETTINGS\b|$)/is)?.[1]?.trim()
 	const indexesFromDefinition = (definition: string): string[] =>
-		[...definition.matchAll(/\bINDEX\s+([A-Za-z_][A-Za-z0-9_]*)\b/gi)].map((match) => match[1]!)
+		Arr.map([...definition.matchAll(/\bINDEX\s+([A-Za-z_][A-Za-z0-9_]*)\b/gi)], (match) => match[1]!)
 	return {
-		objects: tables.map((table): PhysicalSchemaObject => ({
+		objects: Arr.map(tables, (table): PhysicalSchemaObject => ({
 			name: table.name,
-			kind: table.engine.toLowerCase().includes("materializedview")
+			kind: Str.includes("materializedview")(Str.toLowerCase(table.engine))
 				? "materialized_view"
-				: table.engine.toLowerCase() === "view"
+				: Str.toLowerCase(table.engine) === "view"
 					? "view"
 					: "table",
 			columns: columnsByTable.get(table.name) ?? [],
@@ -148,10 +148,10 @@ export const assertPhysicalSchema = (
 	const mismatches = comparePhysicalSchema(expected, inspectPhysicalSchema(db), formatViewBody(db))
 	if (mismatches.length > 0) {
 		throw new Error(
-			`physical local schema does not match the bundled schema: ${mismatches
-				.slice(0, 8)
-				.map((mismatch) => `${mismatch.object}: ${mismatch.reason}`)
-				.join("; ")}`,
+			`physical local schema does not match the bundled schema: ${Arr.join(
+				Arr.map(mismatches.slice(0, 8), (mismatch) => `${mismatch.object}: ${mismatch.reason}`),
+				"; ",
+			)}`,
 		)
 	}
 }
@@ -166,7 +166,7 @@ export const assertCurrentPhysicalSchema = (db: Pick<Chdb, "query">, retentionDa
 			? LOCAL_SCHEMA_MANIFEST
 			: withRawTelemetryRetentionFloor(
 					LOCAL_SCHEMA_MANIFEST,
-					RAW_TELEMETRY_TTL_COLUMNS.map(([table]) => table),
+					Arr.map(RAW_TELEMETRY_TTL_COLUMNS, ([table]) => table),
 					retentionDays,
 				),
 	)

@@ -1,14 +1,14 @@
 import { snapTimestamp } from "@maple/web-data/lib/time-range"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
-import * as TraceFlow from "../../../service-map/trace-flow/trace-flow"
-import * as Dialog from "../../../ui/dialog"
-import * as Resizable from "../../../ui/resizable"
-import * as Tabs from "../../../ui/tabs"
+import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Resizable from "@maple/views/ui/resizable"
+import * as Tabs from "@maple/views/ui/tabs"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { copyToast } from "../../kit/clipboard"
 import {
@@ -28,10 +28,11 @@ import { withListQuery } from "./list-query"
 import { Message, type TraceView } from "./message"
 import type { Model } from "./model"
 import { type LoadedTrace, loadedTrace, selectedSpanOf } from "./select"
-import * as SpanPanel from "./span-panel"
+import * as SpanPanel from "@maple/views/traces/span-panel"
+import * as InfraCorrelation from "../../kit/infra-correlation"
 import { splitLayout } from "./split"
 import * as Timeline from "./timeline"
-import { toSpanNode } from "./trace-data"
+import { toSpanNode } from "@maple/views/traces/trace-data"
 import * as Waterfall from "./waterfall"
 
 type Return = PageReturn<Model, Message>
@@ -97,9 +98,9 @@ const enterTab = (model: Model, trace: LoadedTrace, view: TraceView): Return => 
 		return { model: { ...cleared, waterfall: next.model }, commands: liftWaterfall(next.commands) }
 	}
 	const graph = TraceFlow.buildFlowGraph({
-		rootSpans: trace.data.rootSpans.map(toSpanNode),
+		rootSpans: Arr.map(trace.data.rootSpans, toSpanNode),
 		totalDurationMs: trace.data.totalDurationMs,
-		services: [...new Set(trace.data.spans.map((span) => span.serviceName))],
+		services: [...new Set(Arr.map(trace.data.spans, (span) => span.serviceName))],
 	})
 	const flowModel = { ...TraceFlow.init(), selectedSpanId: Option.fromNullishOr(selectedSpanId) }
 	return { model: { ...cleared, flow: { graph, model: flowModel } } }
@@ -113,24 +114,35 @@ const syncPanel = (model: Model, context: PageContext, trace: LoadedTrace): Retu
 			model: {
 				...model,
 				spanPanel: null,
+				spanInfra: null,
 				split: withLayout(model.split, splitLayout(1, model.splitWidth)),
 			},
 		}
 	const next = SpanPanel.init({
 		span,
-		traceId: model.traceId,
 		traceStartTime: trace.traceStartTime,
 		totalDurationMs: trace.data.totalDurationMs,
-		orgId: context.orgId,
 	})
 	return {
 		model: {
 			...model,
 			spanPanel: next.model,
+			spanInfra: InfraCorrelation.init(`span-${span.spanId}-infra`, context.orgId),
 			split: withLayout(model.split, splitLayout(2, model.splitWidth)),
 		},
 		commands: liftPanel(next.commands),
 	}
+}
+
+/** `TraceAttributeFilterProvider`: a fresh list query carrying only this attribute. */
+const attributeFilterUrl = (scope: "span" | "resource", key: string, value: string, isExclude: boolean) => {
+	const entry = isExclude ? { key, value, negated: true } : { key, value }
+	return hrefOf(
+		AppRoute.Traces({
+			search:
+				scope === "resource" ? { resourceAttributeFilters: [entry] } : { attributeFilters: [entry] },
+		}),
+	)
 }
 
 /** A panel joining or leaving the group lays it out from the panels' `defaultSize`s again. */
@@ -173,7 +185,6 @@ const followTrace = (model: Model, context: PageContext, trace: LoadedTrace): Re
 		totalDurationMs: trace.data.totalDurationMs,
 	}
 	const eventsKey = requestKey(org, "getTraceSpanEvents", { data: eventsInput })
-	const replaysKey = requestKey(org, "getReplaysForTrace", { data: { traceId } })
 	const windowed = Option.match(window, {
 		onNone: (): ReadonlyArray<Step> => [],
 		onSome: ({ startTime, endTime }) => {
@@ -208,19 +219,33 @@ const followTrace = (model: Model, context: PageContext, trace: LoadedTrace): Re
 					(spanEvents) => ({ spanEvents }),
 					() => FetchSpanEvents({ key: eventsKey, ...eventsInput }),
 				)),
-		...step(
-			model.replaySessionId,
-			replaysKey,
-			(replaySessionId) => ({ replaySessionId }),
-			() => FetchReplays({ key: replaysKey, traceId }),
-		),
 		...windowed,
 	]
-	return {
-		model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
-		commands: steps.map((step) => step.command),
-	}
+	return applySteps(model, steps)
 }
+
+const applySteps = (model: Model, steps: ReadonlyArray<Step>): Return => ({
+	model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
+	commands: Arr.map(steps, (step) => step.command),
+})
+
+/** Replays need only the trace id, so they load beside the hierarchy instead of after it. */
+const requestReplays = (model: Model, context: PageContext): Return =>
+	Option.match(decodeTraceId(model.traceId), {
+		onNone: () => ({ model }),
+		onSome: (traceId) => {
+			const key = requestKey(context.orgId, "getReplaysForTrace", { data: { traceId } })
+			return applySteps(
+				model,
+				step(
+					model.replaySessionId,
+					key,
+					(replaySessionId) => ({ replaySessionId }),
+					() => FetchReplays({ key, traceId }),
+				),
+			)
+		},
+	})
 
 const requestHierarchy = (model: Model, context: PageContext): Return =>
 	Option.match(decodeTraceId(model.traceId), {
@@ -275,9 +300,10 @@ export const init = (route: Route, context: PageContext, isPeek = false): Return
 		waterfall: null,
 		flow: null,
 		spanPanel: null,
+		spanInfra: null,
 		isPeek,
 	}
-	const requested = requestHierarchy(model, context)
+	const requested = chain(requestHierarchy(model, context), (next) => requestReplays(next, context))
 	const reads = isPeek ? [ReadClock()] : [ReadClock(), ReadListQuery()]
 	return { model: requested.model, commands: [...reads, ...(requested.commands ?? [])] }
 }
@@ -457,9 +483,24 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			if (out === undefined) return lifted
 			if (out._tag === "Closed") return chain(lifted, closeSpanPanel)
 			if (out._tag === "SelectedSpanId") return chain(lifted, (m) => selectSpan(m, out.spanId))
+			// TODO(log-sheet): a log row should open the log detail sheet; it is not wired here yet.
+			if (out._tag === "SelectedLog") return lifted
 			return {
 				...lifted,
-				outMessage: PageOutMessage.RequestedNavigation({ url: out.url, isReplace: false }),
+				outMessage: PageOutMessage.RequestedNavigation({
+					url: attributeFilterUrl(out.scope, out.key, out.value, out.isExclude),
+					isReplace: false,
+				}),
+			}
+		},
+		GotSpanInfraMessage: ({ message: inner }) => {
+			if (model.spanInfra === null) return { model }
+			const next = InfraCorrelation.update(model.spanInfra, inner)
+			return {
+				model: { ...model, spanInfra: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotSpanInfraMessage({ message }),
+				),
 			}
 		},
 	})

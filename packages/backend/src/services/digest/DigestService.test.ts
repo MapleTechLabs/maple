@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Layer, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId, WarehouseQueryError } from "@maple/domain/http"
 import type { WeeklyDigestProps } from "@maple/email/weekly-digest-core"
@@ -504,7 +504,7 @@ describe("DigestService.generateDigestData", () => {
 			const props = yield* digest.generateDigestData(ORG_ID)
 
 			assert.deepStrictEqual(
-				props.services.map((s) => `${s.name}/${s.namespace}/${s.environment}`).sort(),
+				Arr.map(props.services, (s) => `${s.name}/${s.namespace}/${s.environment}`).sort(),
 				["api/edge/production", "api/edge/staging"],
 			)
 		}).pipe(Effect.provide(layer))
@@ -518,7 +518,7 @@ describe("DigestService.generateDigestData", () => {
 			const props = yield* digest.generateDigestData(ORG_ID)
 
 			assert.deepStrictEqual(
-				props.environmentGroups.map((g) => [g.environment, g.requests]),
+				Arr.map(props.environmentGroups, (g) => [g.environment, g.requests]),
 				[
 					["production", 1_000_000],
 					["staging", 5_000],
@@ -529,7 +529,7 @@ describe("DigestService.generateDigestData", () => {
 			for (const group of props.environmentGroups) {
 				assert.strictEqual(
 					group.requests,
-					group.services.reduce((sum, s) => sum + s.requests, 0),
+					Arr.reduce(group.services, 0, (sum, s) => sum + s.requests),
 				)
 			}
 		}).pipe(Effect.provide(layer))
@@ -545,7 +545,7 @@ describe("DigestService.generateDigestData", () => {
 			// Environment IS a grouping key on the overview query, so summing its
 			// rows is exact.
 			assert.deepStrictEqual(
-				props.breakdown.environments.map((r) => [r.label, r.requests]),
+				Arr.map(props.breakdown.environments, (r) => [r.label, r.requests]),
 				[
 					["production", 1_000_000],
 					["staging", 5_000],
@@ -556,7 +556,7 @@ describe("DigestService.generateDigestData", () => {
 			// all 1,005,000 requests under "edge". The namespace-grouped query shows
 			// the traffic is really split with "checkout".
 			assert.deepStrictEqual(
-				props.breakdown.namespaces.map((r) => [r.label, r.requests]),
+				Arr.map(props.breakdown.namespaces, (r) => [r.label, r.requests]),
 				[
 					["edge", 700_000],
 					["checkout", 305_000],
@@ -629,7 +629,7 @@ describe("DigestService.generateDigestData", () => {
 			// Both come from the same day-aligned window and the same weighted
 			// count, so the bars add up to the headline number.
 			assert.strictEqual(
-				props.series.reduce((sum, point) => sum + point.requests, 0),
+				Arr.reduce(props.series, 0, (sum, point) => sum + point.requests),
 				props.summary.requests.value,
 			)
 		}).pipe(Effect.provide(layer))
@@ -646,7 +646,7 @@ describe("DigestService.generateDigestData", () => {
 				namespaces: ["edge"],
 			})
 
-			const scoped = seen.filter((call) =>
+			const scoped = Arr.filter(seen, (call) =>
 				[
 					"digestServiceOverviewCompare",
 					"digestTracesSummary",

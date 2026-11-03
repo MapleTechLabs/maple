@@ -6,7 +6,7 @@
  * is the one its check accepts.
  */
 import { generateKeyPairSync } from "node:crypto"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 
 /** Maple's signing key in tests: the private half goes in the env, the fake verifies with the public. */
@@ -72,7 +72,7 @@ const PolicyProperties = Schema.Struct({ ManagedPolicyName: Schema.String })
 const ProviderProperties = Schema.Struct({ Url: Schema.String, ClientIdList: Schema.Array(Schema.String) })
 
 const providerArnOf = (accountId: string, issuer: string) =>
-	`arn:aws:iam::${accountId}:oidc-provider/${issuer.replace(/^https:\/\//u, "")}`
+	`arn:aws:iam::${accountId}:oidc-provider/${Str.replace(/^https:\/\//u, "")(issuer)}`
 
 /** The role a template creates, and the OIDC provider it registers, as a deploy would in `accountId`. */
 export const deployTemplate = (
@@ -80,22 +80,22 @@ export const deployTemplate = (
 	templateJson: string,
 	createsProvider = true,
 ): { readonly role: FakeRole; readonly provider: FakeProvider | undefined } => {
-	const template = Schema.decodeUnknownSync(Template)(JSON.parse(templateJson))
+	const template = Schema.decodeUnknownSync(Schema.fromJsonString(Template))(templateJson)
 	const resources = template.Resources
-	const role = Object.values(resources).find((resource) => resource.Type === "AWS::IAM::Role")
+	const role = Rec.values(resources).find((resource) => resource.Type === "AWS::IAM::Role")
 	if (role === undefined) throw new Error("template has no role")
 	const properties = Schema.decodeUnknownSync(RoleProperties)(role.Properties)
 	const [statement] = properties.AssumeRolePolicyDocument.Statement
 	if (statement === undefined) throw new Error("role has no trust statement")
 	if (statement.Action !== "sts:AssumeRoleWithWebIdentity") throw new Error("role is not federated")
-	const attachedPolicyNames = properties.ManagedPolicyArns.map((arn) => {
-		if (typeof arn === "string") return arn.split("/").at(-1) ?? arn
+	const attachedPolicyNames = Arr.map(properties.ManagedPolicyArns, (arn) => {
+		if (typeof arn === "string") return Str.split("/")(arn).at(-1) ?? arn
 		const policy = resources[arn.Ref]
 		if (policy === undefined) throw new Error(`no resource ${arn.Ref}`)
 		return Schema.decodeUnknownSync(PolicyProperties)(policy.Properties).ManagedPolicyName
 	})
 	const federated = statement.Principal.Federated
-	const providerResource = Object.values(resources).find(
+	const providerResource = Rec.values(resources).find(
 		(resource) => resource.Type === "AWS::IAM::OIDCProvider",
 	)
 	const provider =
@@ -116,19 +116,21 @@ export const deployTemplate = (
 			conditions: statement.Condition.StringEquals,
 			tags: properties.Tags,
 			attachedPolicyNames,
-			canReadSelf: properties.Policies.some((policy) => policy.PolicyName === "maple-self-read"),
+			canReadSelf: Arr.some(properties.Policies, (policy) => policy.PolicyName === "maple-self-read"),
 		},
 		provider:
 			provider === undefined ? undefined : { url: provider.Url, clientIds: provider.ClientIdList },
 	}
 }
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const xml = (status: number, body: string) =>
 	new Response(body, { status, headers: { "content-type": "text/xml" } })
 
 // Maple asks STS for JSON.
 const json = (status: number, body: unknown) =>
-	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+	new Response(encodeJson(body), { status, headers: { "content-type": "application/json" } })
 
 const stsError = (status: number, code: string, message: string) =>
 	json(status, { Error: { Type: "Sender", Code: code, Message: message }, RequestId: "req" })
@@ -147,7 +149,7 @@ const TokenClaims = Schema.Struct({ iss: Schema.String, aud: Schema.String, sub:
 
 /** The claims of `token` when its RS256 signature verifies with `key`. */
 const verifiedClaims = async (key: CryptoKey, token: string) => {
-	const [header, body, signature] = token.split(".")
+	const [header, body, signature] = Str.split(".")(token)
 	if (header === undefined || body === undefined || signature === undefined) return undefined
 	const valid = await crypto.subtle.verify(
 		"RSASSA-PKCS1-v1_5",
@@ -156,7 +158,9 @@ const verifiedClaims = async (key: CryptoKey, token: string) => {
 		new TextEncoder().encode(`${header}.${body}`),
 	)
 	return valid
-		? Schema.decodeUnknownSync(TokenClaims)(JSON.parse(Buffer.from(body, "base64url").toString("utf8")))
+		? Schema.decodeUnknownSync(Schema.fromJsonString(TokenClaims))(
+				Buffer.from(body, "base64url").toString("utf8"),
+			)
 		: undefined
 }
 
@@ -193,7 +197,10 @@ export const makeFakeAws = (issuerPublicKeyPem: string = MAPLE_TEST_OIDC_KEY.pub
 	const sessions = new Map<string, FakeRole>()
 	const calls: Array<string> = []
 	const assumed: Array<string> = []
-	const pem = issuerPublicKeyPem.replace(/-----(BEGIN|END) PUBLIC KEY-----/gu, "").replace(/\s+/gu, "")
+	const pem = Str.replace(
+		/\s+/gu,
+		"",
+	)(Str.replace(/-----(BEGIN|END) PUBLIC KEY-----/gu, "")(issuerPublicKeyPem))
 	const issuerKey = crypto.subtle.importKey(
 		"spki",
 		Buffer.from(pem, "base64"),
@@ -222,7 +229,7 @@ export const makeFakeAws = (issuerPublicKeyPem: string = MAPLE_TEST_OIDC_KEY.pub
 			return stsError(400, "InvalidIdentityToken", "Incorrect token audience")
 		}
 		const role = roles.get(roleArn)
-		const issuer = claims.iss.replace(/^https:\/\//u, "")
+		const issuer = Str.replace(/^https:\/\//u, "")(claims.iss)
 		if (
 			role === undefined ||
 			role.trustedProviderArn !== providerArn ||
@@ -231,7 +238,7 @@ export const makeFakeAws = (issuerPublicKeyPem: string = MAPLE_TEST_OIDC_KEY.pub
 		) {
 			return stsError(403, "AccessDenied", "Not authorized to perform sts:AssumeRoleWithWebIdentity")
 		}
-		const sessionKey = `ASIA${String(sessions.size).padStart(16, "0")}`
+		const sessionKey = `ASIA${Str.padStart(16, "0")(String(sessions.size))}`
 		sessions.set(sessionKey, role)
 		const session = form.get("RoleSessionName") ?? ""
 		return json(200, {
@@ -322,12 +329,14 @@ export const makeFakeAws = (issuerPublicKeyPem: string = MAPLE_TEST_OIDC_KEY.pub
 							)
 						}
 						if (action === "GetRole") {
-							const tags = role.tags
-								.map(
+							const tags = Arr.join(
+								Arr.map(
+									role.tags,
 									(tag) =>
 										`<member><Key>${tag.Key}</Key><Value>${tag.Value}</Value></member>`,
-								)
-								.join("")
+								),
+								"",
+							)
 							return respond(
 								xml(
 									200,
@@ -336,12 +345,14 @@ export const makeFakeAws = (issuerPublicKeyPem: string = MAPLE_TEST_OIDC_KEY.pub
 							)
 						}
 						if (action === "ListAttachedRolePolicies") {
-							const policies = role.attachedPolicyNames
-								.map(
+							const policies = Arr.join(
+								Arr.map(
+									role.attachedPolicyNames,
 									(name) =>
 										`<member><PolicyName>${name}</PolicyName><PolicyArn>arn:aws:iam::${role.accountId}:policy/${name}</PolicyArn></member>`,
-								)
-								.join("")
+								),
+								"",
+							)
 							return respond(
 								xml(
 									200,

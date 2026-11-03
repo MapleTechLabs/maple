@@ -5,7 +5,7 @@ import {
 	decodeChatEvent,
 } from "@maple/domain/chat-session"
 import { apiBaseUrl } from "../../../../lib/services/common/api-base-url"
-import { Clock, Effect, Option, Ref, Schema, Stream } from "effect"
+import { Clock, Effect, Option, Ref, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { HttpClientRequest, HttpClientResponse } from "effect/http"
 import { MapleSyncHttpClient } from "../../../../platform/api-clients"
 import { taskOf } from "./fold"
@@ -75,11 +75,13 @@ const QUICK_CLOSE_MS = 5_000
 
 /** One SSE frame's `data:` lines joined (a payload may span several), or `None`. */
 const frameData = (frame: string): Option.Option<string> => {
-	const data = frame
-		.split("\n")
-		.filter((line) => line.startsWith("data:"))
-		.map((line) => line.slice(5).trimStart())
-		.join("\n")
+	const data = Arr.join(
+		Arr.map(
+			Arr.filter(Str.split("\n")(frame), (line) => Str.startsWith("data:")(line)),
+			(line) => Str.trimStart(Str.slice(5)(line)),
+		),
+		"\n",
+	)
 	return data === "" ? Option.none() : Option.some(data)
 }
 
@@ -133,19 +135,20 @@ export const tailEvents = (
 							return yield* new ChatRequestError({
 								message: `Chat stream request failed: ${response.status}`,
 							})
-						yield* Ref.set(openedAt, yield* Clock.currentTimeMillis)
+						const nowMs = yield* Clock.currentTimeMillis
+						yield* Ref.set(openedAt, nowMs)
 						return response.stream.pipe(
 							Stream.decodeText(),
 							Stream.mapAccum(
 								() => "",
 								(buffer, chunk) => {
-									const frames = (buffer + chunk).split("\n\n")
+									const frames = Str.split("\n\n")(buffer + chunk)
 									const rest = frames.pop() ?? ""
 									return [rest, [frames]] as const
 								},
 							),
 							Stream.map((frames) =>
-								frames.flatMap((frame) =>
+								Arr.flatMap(frames, (frame) =>
 									Option.toArray(
 										Option.flatMap(frameData(frame), (data) =>
 											Option.fromNullishOr(decodeChatEvent(data)),
@@ -195,4 +198,4 @@ export const tailEvents = (
 		}),
 	)
 
-const isEndBatch = (events: ReadonlyArray<ChatEvent>): boolean => events.some(isTopLevelTurnEnd)
+const isEndBatch = (events: ReadonlyArray<ChatEvent>): boolean => Arr.some(events, isTopLevelTurnEnd)

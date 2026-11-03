@@ -1,5 +1,5 @@
 import { lookup } from "node:dns/promises"
-import { Context, Effect } from "effect"
+import { Context, Effect, Array as Arr } from "effect"
 import { HostResolutionError, type ResolveHost } from "./index"
 
 /** `ResolveHost` over the system resolver, every A and AAAA answer. Node and Bun only. */
@@ -11,7 +11,7 @@ export const systemResolveHost: ResolveHost = (hostname) =>
 				message: `could not resolve ${hostname}: ${cause instanceof Error ? cause.message : String(cause)}`,
 				hostname,
 			}),
-	}).pipe(Effect.map((answers) => answers.map((answer) => answer.address)))
+	}).pipe(Effect.map((answers) => Arr.map(answers, (answer) => answer.address)))
 
 /** The resolver `guardPinned` callers use; the system one unless a test swaps it. */
 export const HostResolver = Context.Reference<ResolveHost>("@maple/safe-fetch/HostResolver", {

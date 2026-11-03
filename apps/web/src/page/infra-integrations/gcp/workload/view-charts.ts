@@ -15,18 +15,22 @@ import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../../charts/chart"
-import * as InfraMetricChart from "../../../../charts/infra-metric-chart"
-import type { ThemeColors } from "../../../../charts/theme-colors"
+import { panel } from "@maple/views/ui/panel"
+import * as Chart from "@maple/views/charts/chart"
+import * as InfraMetricChart from "@maple/views/charts/infra-metric-chart"
+import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
-import { icon } from "../../../../ui/icon"
-import { panelStyles, panelToneStyles } from "@maple/ui/styles/ui/panel"
+import { icon } from "@maple/views/ui/icon"
 import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../kit/chart-card"
-import { LINKED_CURSOR_STYLE } from "../../../../charts/linked-cursor"
+import { LINKED_CURSOR_STYLE } from "@maple/views/charts/linked-cursor"
 import { seriesLegend } from "../../../kit/series-legend"
 import type { BucketPoint } from "../data"
 import { MountLinkedCursor } from "./command"
 import { Message, type Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { gridClass } from "@maple/views/ui/grid"
+import { Array as Arr, String as Str } from "effect"
 
 // `CorrelationStrips` as the workload's signals, and `GcpWorkloadCharts`.
 
@@ -56,7 +60,13 @@ const summaryView = (h: H, summary: GcpStripSummary): ReadonlyArray<Html> => [
 		[
 			h.Class(
 				cn(
-					"font-mono text-sm font-semibold tabular-nums text-foreground",
+					typographyClass({
+						size: "sm",
+						tone: "foreground",
+						weight: "semibold",
+						mono: true,
+						numeric: true,
+					}),
 					summary.alert === true && "text-severity-error",
 				),
 			),
@@ -65,7 +75,7 @@ const summaryView = (h: H, summary: GcpStripSummary): ReadonlyArray<Html> => [
 	),
 	...(summary.caption === undefined
 		? []
-		: [h.span([h.Class("font-mono text-3xs text-muted-foreground")], [summary.caption])]),
+		: [typography(h, { size: "3xs", tone: "muted", mono: true }, [summary.caption])]),
 ]
 
 /** The signals that explain each other, on one time axis under one cursor. */
@@ -80,14 +90,10 @@ export const correlationStrips = (
 ): Html => {
 	const strips = gcpWorkloadStrips(service, points, range, maxConnections)
 	const xDomain = gcpStripDomain(points, range.bucketSeconds)
-	return h.section(
-		[
-			h.Class(cn(panelStyles, panelToneStyles.default, "block")),
-			h.DataAttribute("slot", "panel"),
-			h.Style(LINKED_CURSOR_STYLE),
-			h.OnMount(MountLinkedCursor()),
-		],
-		strips.map((strip, index) => {
+	return panel(
+		h,
+		{ className: "block", attributes: [h.Style(LINKED_CURSOR_STYLE), h.OnMount(MountLinkedCursor())] },
+		Arr.map(strips, (strip, index) => {
 			const { spec, info } = InfraMetricChart.infraMetricModel({
 				rows: strip.rows,
 				unit: strip.unit,
@@ -100,19 +106,13 @@ export const correlationStrips = (
 				gradientPrefix: `gcp-strip-${strip.id}`,
 			})
 			return h.div(
-				[h.Class(cn("flex items-center gap-4 px-4 py-3", index > 0 && "border-t"))],
+				[h.Class(cn(hstackClass({ gap: "4", className: "px-4 py-3" }), index > 0 && "border-t"))],
 				[
-					h.div(
-						[h.Class("flex w-36 shrink-0 flex-col gap-0.5")],
-						[
-							h.span(
-								[h.Class("font-prose text-xs font-medium text-foreground")],
-								[strip.label],
-							),
-							h.span([h.Class("font-prose text-3xs text-muted-foreground")], [strip.source]),
-							h.div([h.Class("mt-2 flex flex-col gap-0.5")], summaryView(h, strip.summary)),
-						],
-					),
+					vstack(h, { gap: "0.5", className: "w-36 shrink-0" }, [
+						h.span([h.Class("font-prose text-xs font-medium text-foreground")], [strip.label]),
+						h.span([h.Class("font-prose text-3xs text-muted-foreground")], [strip.source]),
+						h.div([h.Class("mt-2 flex flex-col gap-0.5")], summaryView(h, strip.summary)),
+					]),
 					h.div(
 						[h.Class("min-w-0 flex-1")],
 						[
@@ -127,7 +127,7 @@ export const correlationStrips = (
 										seriesLegend(h, {
 											swatch: "line",
 											className: "pt-1",
-											items: info.series.map((name) => ({
+											items: Arr.map(info.series, (name) => ({
 												key: name,
 												label: info.labelFor(name),
 												color: info.colors.get(name),
@@ -158,14 +158,14 @@ export const workloadCharts = (
 	ctx: ChartsContext,
 ): Html => {
 	const { charts, points, range } = options
-	const xDomain = gcpBuckets(points, range.bucketSeconds).map(({ bucket }) => bucket)
+	const xDomain = Arr.map(gcpBuckets(points, range.bucketSeconds), ({ bucket }) => bucket)
 	return h.div(
 		[
-			h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2"),
+			h.Class(gridClass({ cols: 1, lg: 2, gap: "4" })),
 			h.Style(LINKED_CURSOR_STYLE),
 			h.OnMount(MountLinkedCursor()),
 		],
-		charts.map((spec) => {
+		Arr.map(charts, (spec) => {
 			const rows =
 				spec.kind === "classes"
 					? gcpClassRows(spec.metric, points, range)
@@ -197,7 +197,7 @@ export const workloadCharts = (
 					chartCardMessage(h, spec.note ?? InfraMetricChart.CHART_EMPTY_MESSAGE),
 				])
 			}
-			const names = [...new Set(rows.map((row) => row.attributeValue))]
+			const names = [...new Set(Arr.map(rows, (row) => row.attributeValue))]
 			const colors = resolveSeriesColors(names)
 			return chartCard(
 				h,
@@ -208,7 +208,7 @@ export const workloadCharts = (
 						names.length > 1 || spec.kind === "classes"
 							? seriesLegend(h, {
 									swatch: "line",
-									items: names.map((name) => ({
+									items: Arr.map(names, (name) => ({
 										key: name,
 										label: name,
 										color: colors.get(name),
@@ -226,7 +226,7 @@ export const workloadCharts = (
 							gaps: true,
 							theme: ctx.theme,
 							timeZone: ctx.timeZone,
-							gradientPrefix: `${options.idPrefix}-${spec.title.replace(/\W+/g, "_")}`,
+							gradientPrefix: `${options.idPrefix}-${Str.replace(/\W+/g, "_")(spec.title)}`,
 						}),
 						linkedChartId: `gcp-${spec.title}`,
 						height: CHART_HEIGHT,

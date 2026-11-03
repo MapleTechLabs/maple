@@ -29,7 +29,8 @@ const getQueryBuilderListEffect = Effect.fn("QueryEngine.getQueryBuilderList")(f
 }) {
 	const input = yield* decodeInput(QueryBuilderListInputSchema, data, "getQueryBuilderList")
 
-	const outcome = yield* runListQuerySet(yield* executor, {
+	const queryExecutor = yield* executor
+	const outcome = yield* runListQuerySet(queryExecutor, {
 		querySet: { queries: input.queries },
 		startTime: input.startTime,
 		endTime: input.endTime,

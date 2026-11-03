@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Layer, Tracer } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Tracer, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { isRefusal, makeIngestSender } from "./ingest-sender"
@@ -47,13 +47,11 @@ const send = (fetch: typeof fetch) =>
 				label: "Test metrics",
 			}),
 		),
-		Effect.provide(
-			Layer.mergeAll(
-				FetchHttpClient.layer,
-				Layer.succeed(FetchHttpClient.Fetch, fetch),
-				Env.layer.pipe(Layer.provide(config)),
-			),
-		),
+		Effect.provide([
+			FetchHttpClient.layer,
+			Layer.succeed(FetchHttpClient.Fetch, fetch),
+			Env.layer.pipe(Layer.provide(config)),
+		]),
 	)
 
 describe("makeIngestSender", () => {
@@ -98,9 +96,9 @@ describe("makeIngestSender", () => {
 		return Effect.gen(function* () {
 			yield* Effect.flip(send(gateway([], 403, "<title>Attention Required!</title>")))
 			yield* Effect.flip(send(gateway([], 502, "")))
-			const sends = spans.filter((span) => span.name === "IngestSender.send")
+			const sends = Arr.filter(spans, (span) => span.name === "IngestSender.send")
 			assert.deepStrictEqual(
-				sends.map((span) => [
+				Arr.map(sends, (span) => [
 					span.status._tag === "Ended" && Exit.isSuccess(span.status.exit),
 					span.attributes.get("maple.ingest.outcome"),
 				]),

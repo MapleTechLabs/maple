@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { LogCluster } from "./log-cluster"
 import { LruCache } from "./lru-cache"
 import { Node } from "./node"
@@ -119,12 +119,12 @@ export class Drain {
 	}
 
 	getContentAsTokens(content: string): string[] {
-		let c = content.trim()
+		let c = Str.trim(content)
 		for (const delimiter of this.extraDelimiters) {
-			c = c.split(delimiter).join(" ")
+			c = Arr.join(Str.split(delimiter)(c), " ")
 		}
 		if (c.length === 0) return []
-		return c.split(/\s+/)
+		return Str.split(/\s+/)(c)
 	}
 
 	getSeqDistance(seq1: string[], seq2: string[], includeParams: boolean): [number, number] {
@@ -157,7 +157,7 @@ export class Drain {
 		if (seq1.length !== seq2.length) {
 			throw new DrainInvariantError({ message: "seq1 and seq2 must have equal length" })
 		}
-		return seq1.map((t1, i) => (t1 === seq2[i] ? seq2[i] : this.paramStr))
+		return Arr.map(seq1, (t1, i) => (t1 === seq2[i] ? seq2[i] : this.paramStr))
 	}
 
 	private fastMatch(
@@ -236,7 +236,7 @@ export class Drain {
 		let currentDepth = 1
 		for (const token of templateTokens) {
 			if (currentDepth >= this.maxNodeDepth || currentDepth >= tokenCount) {
-				const newClusterIds = curNode.clusterIds.filter((cid) => this.clusterContains(cid))
+				const newClusterIds = Arr.filter(curNode.clusterIds, (cid) => this.clusterContains(cid))
 				newClusterIds.push(clusterId)
 				curNode.clusterIds = newClusterIds
 				break
@@ -283,7 +283,7 @@ export class Drain {
 
 		const updateType =
 			newTemplateTokens.length === existingCluster.logTemplateTokens.length &&
-			newTemplateTokens.every((t, i) => t === existingCluster.logTemplateTokens[i])
+			Arr.every(newTemplateTokens, (t, i) => t === existingCluster.logTemplateTokens[i])
 				? "none"
 				: "cluster_template_changed"
 

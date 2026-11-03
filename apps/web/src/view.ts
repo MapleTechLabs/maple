@@ -1,5 +1,5 @@
 import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { createKeyedLazy, type Document, type Html, type HtmlBuilder } from "foldkit/html"
 import { bootSplash } from "./layout/boot-splash"
@@ -21,25 +21,25 @@ import * as SignIn from "./page/sign-in"
 import { AppRoute, hrefOf, isPublicRoute } from "./route"
 import * as Shell from "./shell"
 import { resolveSourceLink, type SourceLink } from "./shell/source-link"
-import * as ToastView from "./ui/toast-view"
+import { heading } from "@maple/views/ui/heading"
+import * as ToastView from "@maple/views/ui/toast-view"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
+import { typography } from "@maple/views/ui/typography"
 
 /** Placeholder for a route that is not ported yet: its tag and the session's org. */
 const placeholder = (model: Model, h: HtmlBuilder<Message>, children: ReadonlyArray<Html>): Html =>
 	h.main(
 		[h.Class("flex min-h-screen flex-col gap-2 bg-background p-8 text-foreground")],
 		[
-			h.h1([h.Class("font-display text-xl font-semibold")], [model.route._tag]),
-			h.p(
-				[h.Class("font-mono text-muted-foreground text-xs")],
-				[
-					Session.match(model.session, {
-						Resolving: () => "Session resolving",
-						SignedOut: () => "Signed out",
-						SignedIn: ({ maybeOrgId }) =>
-							`Signed in to ${Option.getOrElse(maybeOrgId, () => "no organization")}`,
-					}),
-				],
-			),
+			heading(h, { level: 1, variant: "title" }, [model.route._tag]),
+			typography(h, { size: "xs", tone: "muted", mono: true, as: "p" }, [
+				Session.match(model.session, {
+					Resolving: () => "Session resolving",
+					SignedOut: () => "Signed out",
+					SignedIn: ({ maybeOrgId }) =>
+						`Signed in to ${Option.getOrElse(maybeOrgId, () => "no organization")}`,
+				}),
+			]),
 			...children,
 		],
 	)
@@ -153,7 +153,7 @@ const sourceLinkOf = (model: Model): SourceLink | null => {
 
 /** A signed-in page inside the shell: the frame around the page, then the shell's overlay layers. */
 const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => {
-	const currentPath = hrefOf(model.route).split("?")[0] ?? "/"
+	const currentPath = Str.split("?")(hrefOf(model.route))[0] ?? "/"
 	const clerk = shellClerkOf(model)
 	return [
 		h.submodel({
@@ -274,6 +274,7 @@ const body = (model: Model, h: HtmlBuilder<Message>): Html =>
 		// insertion point of a page's new nodes would no longer be a child of #app.
 		[
 			...ToastView.regions(h, model.toasts, (message) => Message.GotToastMessage({ message })),
+			TooltipHost.view(h, model.tooltip, (message) => Message.GotTooltipMessage({ message })),
 			...content(model, h),
 		],
 	)

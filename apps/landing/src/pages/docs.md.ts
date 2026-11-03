@@ -7,6 +7,7 @@
 import type { APIRoute } from "astro"
 import { getDocGroups } from "../lib/docs-order"
 import { absolute, blocks, docHeader, markdown } from "../lib/page-markdown"
+import { Array as Arr } from "effect"
 
 export const GET: APIRoute = async ({ site }) => {
 	const groups = await getDocGroups()
@@ -18,15 +19,19 @@ export const GET: APIRoute = async ({ site }) => {
 				"Every Maple doc. Append `.md` to any docs URL, or send `Accept: text/markdown`, to receive the raw markdown source.",
 			),
 			`The full docs as a single file: [${absolute(site, "/llms-full.txt")}](${absolute(site, "/llms-full.txt")})`,
-			...groups.map(({ group, docs }) =>
-				[
-					`## ${group}`,
-					"",
-					...docs.map(
-						(doc) =>
-							`- [${doc.data.title}](${absolute(site, `/docs/${doc.id}.md`)}) — ${doc.data.description}`,
-					),
-				].join("\n"),
+			...Arr.map(groups, ({ group, docs }) =>
+				Arr.join(
+					[
+						`## ${group}`,
+						"",
+						...Arr.map(
+							docs,
+							(doc) =>
+								`- [${doc.data.title}](${absolute(site, `/docs/${doc.id}.md`)}) — ${doc.data.description}`,
+						),
+					],
+					"\n",
+				),
 			),
 		),
 	)

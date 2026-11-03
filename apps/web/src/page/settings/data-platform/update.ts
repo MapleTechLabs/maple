@@ -1,19 +1,21 @@
 import { type OrgClickHouseSettingsResponse, OrgClickHouseSettingsUpsertRequest } from "@maple/domain/http"
 import { snapTimestamp } from "@maple/web-data/lib/time-range"
 import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
-import { Duration, Effect, Option, Result, Schema } from "effect"
+import { Duration, Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
 import { type ConnectionDraft, Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 
-const settle = <A, B>(toMessage: (result: Result.Result<A, ReturnType<typeof toLoadFailure>>) => B) =>
-	<E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
+const settle =
+	<A, B>(toMessage: (result: Result.Result<A, ReturnType<typeof toLoadFailure>>) => B) =>
+	<E, R>(effect: Effect.Effect<A, E, R>) =>
+		effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
 
 /** "Total in the DB": fixed bounds keep the key stable and cover all stored data. */
 const ALL_TIME = {
@@ -31,33 +33,30 @@ const FetchSettings = Command.define("FetchOrgClickHouseSettings", {
 
 const FetchDiff = Command.define("FetchOrgClickHouseSchemaDiff", {
 	messages: [Message.CompletedFetchDiff],
-	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.orgClickHouseSettings.schemaDiff()).pipe(
-		settle((result) => Message.CompletedFetchDiff({ result })),
-	),
+	execute: Effect.flatMap(MapleInternalApiClient, (client) =>
+		client.orgClickHouseSettings.schemaDiff(),
+	).pipe(settle((result) => Message.CompletedFetchDiff({ result }))),
 })
 
 const FetchApplyStatus = Command.define("FetchOrgClickHouseApplyStatus", {
 	args: { sequence: Schema.Number },
 	messages: [Message.CompletedFetchApplyStatus],
 	execute: ({ sequence }) =>
-		Effect.flatMap(MapleInternalApiClient, (client) => client.orgClickHouseSettings.applySchemaStatus()).pipe(
-			settle((result) => Message.CompletedFetchApplyStatus({ sequence, result })),
-		),
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.orgClickHouseSettings.applySchemaStatus(),
+		).pipe(settle((result) => Message.CompletedFetchApplyStatus({ sequence, result }))),
 })
 
 const FetchUsage = Command.define("FetchDataPlatformUsage", {
 	messages: [Message.CompletedFetchUsage],
 	execute: getServiceUsage({ data: ALL_TIME }).pipe(
 		Effect.map((response) =>
-			response.data.reduce(
-				(acc, service) => ({
-					logs: acc.logs + service.totalLogs,
-					traces: acc.traces + service.totalTraces,
-					metrics: acc.metrics + service.totalMetrics,
-					dataSize: acc.dataSize + service.dataSizeBytes,
-				}),
-				{ logs: 0, traces: 0, metrics: 0, dataSize: 0 },
-			),
+			Arr.reduce(response.data, { logs: 0, traces: 0, metrics: 0, dataSize: 0 }, (acc, service) => ({
+				logs: acc.logs + service.totalLogs,
+				traces: acc.traces + service.totalTraces,
+				metrics: acc.metrics + service.totalMetrics,
+				dataSize: acc.dataSize + service.dataSizeBytes,
+			})),
 		),
 		settle((result) => Message.CompletedFetchUsage({ result })),
 	),
@@ -67,9 +66,9 @@ const SaveConnection = Command.define("SaveOrgClickHouseConnection", {
 	args: { request: OrgClickHouseSettingsUpsertRequest },
 	messages: [Message.CompletedSave],
 	execute: ({ request }) =>
-		Effect.flatMap(MapleInternalApiClient, (client) => client.orgClickHouseSettings.upsert({ payload: request })).pipe(
-			settle((result) => Message.CompletedSave({ result })),
-		),
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.orgClickHouseSettings.upsert({ payload: request }),
+		).pipe(settle((result) => Message.CompletedSave({ result }))),
 })
 
 const Disconnect = Command.define("DisconnectOrgClickHouse", {
@@ -82,9 +81,9 @@ const Disconnect = Command.define("DisconnectOrgClickHouse", {
 
 const ApplySchema = Command.define("ApplyOrgClickHouseSchema", {
 	messages: [Message.CompletedApply],
-	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.orgClickHouseSettings.applySchema()).pipe(
-		settle((result) => Message.CompletedApply({ result })),
-	),
+	execute: Effect.flatMap(MapleInternalApiClient, (client) =>
+		client.orgClickHouseSettings.applySchema(),
+	).pipe(settle((result) => Message.CompletedApply({ result }))),
 })
 
 /** The button stays busy until the status poll reports the run (`setTimeout(…, 1500)`). */
@@ -118,7 +117,8 @@ export const init = (): Return => ({
 const toast = (type: "default" | "success" | "error" | "info", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
-const refresh = <A, E>(data: AsyncData.AsyncData<A, E>) => Option.getOrElse(AsyncData.revalidate(data), () => data)
+const refresh = <A, E>(data: AsyncData.AsyncData<A, E>) =>
+	Option.getOrElse(AsyncData.revalidate(data), () => data)
 
 export const savedDraftOf = (settings: OrgClickHouseSettingsResponse): ConnectionDraft => ({
 	url: settings.chUrl ?? "",
@@ -126,20 +126,37 @@ export const savedDraftOf = (settings: OrgClickHouseSettingsResponse): Connectio
 	database: settings.chDatabase ?? "default",
 })
 
-const sameDraft = (a: ConnectionDraft, b: ConnectionDraft) => a.url === b.url && a.user === b.user && a.database === b.database
+const sameDraft = (a: ConnectionDraft, b: ConnectionDraft) =>
+	a.url === b.url && a.user === b.user && a.database === b.database
 
 export const draftOf = (model: Model): ConnectionDraft =>
 	model.draft ??
-	AsyncData.getOrElse(AsyncData.map(model.settings, savedDraftOf), () => ({ url: "", user: "default", database: "default" }))
+	AsyncData.getOrElse(AsyncData.map(model.settings, savedDraftOf), () => ({
+		url: "",
+		user: "default",
+		database: "default",
+	}))
 
 export const isConnectionDirty = (model: Model): boolean =>
 	model.password !== "" ||
 	(model.draft !== null &&
 		model.committedOver === null &&
-		AsyncData.getOrElse(AsyncData.map(model.settings, (settings) => !sameDraft(savedDraftOf(settings), model.draft ?? savedDraftOf(settings))), () => false))
+		AsyncData.getOrElse(
+			AsyncData.map(
+				model.settings,
+				(settings) => !sameDraft(savedDraftOf(settings), model.draft ?? savedDraftOf(settings)),
+			),
+			() => false,
+		))
 
 const isRunActive = (model: Model) =>
-	AsyncData.getOrElse(AsyncData.map(model.applyStatus, (status) => status.status === "queued" || status.status === "running"), () => false)
+	AsyncData.getOrElse(
+		AsyncData.map(
+			model.applyStatus,
+			(status) => status.status === "queued" || status.status === "running",
+		),
+		() => false,
+	)
 
 const liftDialog =
 	(field: "disconnectDialog" | "applyDialog", wrap: (message: Dialog.Message) => Message) =>
@@ -147,7 +164,9 @@ const liftDialog =
 		model: { ...model, [field]: step.model },
 		commands: Command.mapMessages(step.commands ?? [], wrap),
 	})
-const liftDisconnect = liftDialog("disconnectDialog", (message) => Message.GotDisconnectDialogMessage({ message }))
+const liftDisconnect = liftDialog("disconnectDialog", (message) =>
+	Message.GotDisconnectDialogMessage({ message }),
+)
 const liftApply = liftDialog("applyDialog", (message) => Message.GotApplyDialogMessage({ message }))
 
 /** One more apply-status read, numbered so its answer can be ordered against the others. */
@@ -164,7 +183,7 @@ const refreshConnection = (model: Model): Return => ({
 
 const withCommands = (step: Return, commands: ReadonlyArray<Return["commands"]>): Return => ({
 	...step,
-	commands: [...(step.commands ?? []), ...commands.flatMap((list) => list ?? [])],
+	commands: [...(step.commands ?? []), ...Arr.flatMap(commands, (list) => list ?? [])],
 })
 
 /** Back on the tab: the connection, drift and usage stay up while they load again. */
@@ -177,7 +196,12 @@ export const revisit = (model: Model): Return => {
 	const applyStatus = AsyncData.isIdle(model.applyStatus) ? { model: next } : fetchApplyStatus(next)
 	return {
 		model: applyStatus.model,
-		commands: [...settings.commands, ...diff.commands, ...usage.commands, ...(applyStatus.commands ?? [])],
+		commands: [
+			...settings.commands,
+			...diff.commands,
+			...usage.commands,
+			...(applyStatus.commands ?? []),
+		],
 	}
 }
 
@@ -190,31 +214,45 @@ export const update = (model: Model, message: Message): Return =>
 			const isSettled =
 				model.committedOver !== null &&
 				fetched !== null &&
-				(!sameDraft(fetched, model.committedOver) || (model.draft !== null && sameDraft(fetched, model.draft)))
-			const next: Model = isSettled ? { ...model, settings, draft: null, committedOver: null } : { ...model, settings }
-			const isConfigured = AsyncData.getOrElse(AsyncData.map(settings, (doc) => doc.configured), () => false)
+				(!sameDraft(fetched, model.committedOver) ||
+					(model.draft !== null && sameDraft(fetched, model.draft)))
+			const next: Model = isSettled
+				? { ...model, settings, draft: null, committedOver: null }
+				: { ...model, settings }
+			const isConfigured = AsyncData.getOrElse(
+				AsyncData.map(settings, (doc) => doc.configured),
+				() => false,
+			)
 			// `SchemaSection` mounts with the first configured answer and reads the apply status.
 			return isConfigured && AsyncData.isIdle(model.applyStatus)
 				? fetchApplyStatus({ ...next, applyStatus: AsyncData.Loading() })
 				: { model: next }
 		},
-		CompletedFetchDiff: ({ result }) => ({ model: { ...model, diff: AsyncData.settle(model.diff, result) } }),
+		CompletedFetchDiff: ({ result }) => ({
+			model: { ...model, diff: AsyncData.settle(model.diff, result) },
+		}),
 		CompletedFetchApplyStatus: ({ sequence, result }) => {
 			// A late "running" after a newer "succeeded" would restart the poll and toast again.
 			if (sequence <= model.applyStatusAnswered) return { model }
 			const previous = AsyncData.getOrElse(model.applyStatus, () => null)
 			const applyStatus = AsyncData.settle(model.applyStatus, result)
 			const next = { ...model, applyStatus, applyStatusAnswered: sequence }
-			const wasRunning = previous !== null && (previous.status === "queued" || previous.status === "running")
+			const wasRunning =
+				previous !== null && (previous.status === "queued" || previous.status === "running")
 			const current = AsyncData.getOrElse(applyStatus, () => null)
 			if (!wasRunning || current === null) return { model: next }
 			if (current.status === "succeeded")
 				return { ...refreshConnection(next), outMessage: toast("success", "Schema applied") }
 			if (current.status === "failed")
-				return { model: next, outMessage: toast("error", "Schema apply failed", current.errorMessage ?? "") }
+				return {
+					model: next,
+					outMessage: toast("error", "Schema apply failed", current.errorMessage ?? ""),
+				}
 			return { model: next }
 		},
-		CompletedFetchUsage: ({ result }) => ({ model: { ...model, usage: AsyncData.settle(model.usage, result) } }),
+		CompletedFetchUsage: ({ result }) => ({
+			model: { ...model, usage: AsyncData.settle(model.usage, result) },
+		}),
 		ChangedConnection: ({ field, value }) => ({
 			model: { ...model, draft: { ...draftOf(model), [field]: value }, committedOver: null },
 		}),
@@ -222,7 +260,11 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedSave: () => {
 			if (model.isSaving || model.isDisconnecting) return { model }
 			const draft = draftOf(model)
-			const sent = { url: draft.url.trim(), user: draft.user.trim(), database: draft.database.trim() }
+			const sent = {
+				url: Str.trim(draft.url),
+				user: Str.trim(draft.user),
+				database: Str.trim(draft.database),
+			}
 			const request = new OrgClickHouseSettingsUpsertRequest({
 				...sent,
 				...(model.password !== "" && { password: model.password }),
@@ -232,10 +274,25 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedSave: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => {
-					const base = AsyncData.getOrElse(AsyncData.map(model.settings, savedDraftOf), () => draftOf(model))
+					const base = AsyncData.getOrElse(AsyncData.map(model.settings, savedDraftOf), () =>
+						draftOf(model),
+					)
 					const draft = draftOf(model)
-					const committed = { ...model, isSaving: false, password: "", committedOver: base, draft: { url: draft.url.trim(), user: draft.user.trim(), database: draft.database.trim() } }
-					return { ...refreshConnection(committed), outMessage: toast("success", "Connection saved and tested") }
+					const committed = {
+						...model,
+						isSaving: false,
+						password: "",
+						committedOver: base,
+						draft: {
+							url: Str.trim(draft.url),
+							user: Str.trim(draft.user),
+							database: Str.trim(draft.database),
+						},
+					}
+					return {
+						...refreshConnection(committed),
+						outMessage: toast("success", "Connection saved and tested"),
+					}
 				},
 				onFailure: (error) => ({
 					model: { ...model, isSaving: false },
@@ -244,26 +301,47 @@ export const update = (model: Model, message: Message): Return =>
 			}),
 		ClickedDisconnect: () => liftDisconnect(model, Dialog.open(model.disconnectDialog)),
 		GotDisconnectDialogMessage: ({ message: child }) =>
-			model.isDisconnecting ? { model } : liftDisconnect(model, Dialog.update(model.disconnectDialog, child)),
+			model.isDisconnecting
+				? { model }
+				: liftDisconnect(model, Dialog.update(model.disconnectDialog, child)),
 		ClickedConfirmDisconnect: () =>
-			model.isDisconnecting ? { model } : { model: { ...model, isDisconnecting: true }, commands: [Disconnect()] },
+			model.isDisconnecting
+				? { model }
+				: { model: { ...model, isDisconnecting: true }, commands: [Disconnect()] },
 		CompletedDisconnect: ({ result }) => {
-			const closed = liftDisconnect({ ...model, isDisconnecting: false }, Dialog.close(model.disconnectDialog))
+			const closed = liftDisconnect(
+				{ ...model, isDisconnecting: false },
+				Dialog.close(model.disconnectDialog),
+			)
 			return Result.match(result, {
 				onSuccess: () => ({
-					...withCommands(refreshConnection({ ...closed.model, password: "", draft: null, committedOver: null }), [closed.commands]),
+					...withCommands(
+						refreshConnection({
+							...closed.model,
+							password: "",
+							draft: null,
+							committedOver: null,
+						}),
+						[closed.commands],
+					),
 					outMessage: toast("success", "Disconnected"),
 				}),
-				onFailure: (error) => ({ ...closed, outMessage: toast("error", "Couldn't disconnect", error.message) }),
+				onFailure: (error) => ({
+					...closed,
+					outMessage: toast("error", "Couldn't disconnect", error.message),
+				}),
 			})
 		},
-		ClickedRefreshDiff: () => ({ model: { ...model, diff: refresh(model.diff) }, commands: [FetchDiff()] }),
+		ClickedRefreshDiff: () => ({
+			model: { ...model, diff: refresh(model.diff) },
+			commands: [FetchDiff()],
+		}),
 		ToggledUpToDate: () => ({ model: { ...model, showUpToDate: !model.showUpToDate } }),
 		ToggledDrift: ({ name }) => ({
 			model: {
 				...model,
 				collapsedDrift: model.collapsedDrift.includes(name)
-					? model.collapsedDrift.filter((entry) => entry !== name)
+					? Arr.filter(model.collapsedDrift, (entry) => entry !== name)
 					: [...model.collapsedDrift, name],
 			},
 		}),
@@ -281,7 +359,9 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedApply: ({ result }) =>
 			Result.match(result, {
 				onSuccess: (started) => ({
-					...withCommands(fetchApplyStatus({ ...model, applyStatus: refresh(model.applyStatus) }), [[WaitStartingHandoff()]]),
+					...withCommands(fetchApplyStatus({ ...model, applyStatus: refresh(model.applyStatus) }), [
+						[WaitStartingHandoff()],
+					]),
 					outMessage:
 						started.status === "already_running"
 							? toast("info", "A schema apply is already in progress")
@@ -294,9 +374,8 @@ export const update = (model: Model, message: Message): Return =>
 			}),
 		ElapsedStartingHandoff: () => ({ model: { ...model, isStarting: false } }),
 		// A tick while a read is still out waits for it rather than racing it.
-		TickedApplyPoll: () => (model.applyStatusSent > model.applyStatusAnswered ? { model } : fetchApplyStatus(model)),
+		TickedApplyPoll: () =>
+			model.applyStatusSent > model.applyStatusAnswered ? { model } : fetchApplyStatus(model),
 	})
 
 export { isRunActive }
-
-

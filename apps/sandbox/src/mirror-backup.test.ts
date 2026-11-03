@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { SANDBOX_SEED_DIR, SANDBOX_SNAPSHOT_DIR, shellQuote } from "@maple/domain/sandbox"
-import { Duration, Effect, Exit, Option } from "effect"
+import { Duration, Effect, Exit, Option, Array as Arr, String as Str } from "effect"
 import {
 	MIRROR_BACKUP_KEY,
 	MIRROR_BACKUP_REFRESH,
@@ -19,7 +19,7 @@ const record = (id: string): MirrorBackupRecord => ({
 	dir: SANDBOX_SNAPSHOT_DIR,
 	size: 445,
 	name: "maple-mirror",
-	sha256: "a".repeat(64),
+	sha256: Str.repeat(64)("a"),
 	format: "tar+zstd/1",
 })
 
@@ -50,7 +50,7 @@ const fakeHost = (options: {
 		calls,
 		configured: options.configured ?? true,
 		exec: async (command) => {
-			calls.push(`exec:${command.split("\n").at(-1)}`)
+			calls.push(`exec:${Str.split("\n")(command).at(-1)}`)
 			return { exitCode: options.exits?.[next++] ?? 0, stderr: "" }
 		},
 		createBackup: async (backup) => {
@@ -106,7 +106,7 @@ describe("restoreMirror", () => {
 		Effect.gen(function* () {
 			const host = fakeHost({ stored: { id: "backup-1", createdAt: hoursAgo(1) }, exits: [0] })
 			assert.strictEqual(yield* restoreMirror(host), "present")
-			assert.isFalse(host.calls.some((call) => call.startsWith("restore:")))
+			assert.isFalse(Arr.some(host.calls, (call) => Str.startsWith("restore:")(call)))
 		}),
 	)
 
@@ -175,7 +175,7 @@ describe("backupMirror", () => {
 		Effect.gen(function* () {
 			const host = fakeHost({ exits: [3] })
 			assert.strictEqual(yield* backupMirror(host), "no-mirror")
-			assert.isFalse(host.calls.some((call) => call.startsWith("create:")))
+			assert.isFalse(Arr.some(host.calls, (call) => Str.startsWith("create:")(call)))
 		}),
 	)
 

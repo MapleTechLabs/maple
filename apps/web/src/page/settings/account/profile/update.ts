@@ -1,6 +1,6 @@
-import { Effect, Option, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema, String as Str } from "effect"
 import { Command, File } from "foldkit"
-import * as Dialog from "../../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { signOutOfClerk } from "../../../../platform/clerk"
 import { PageOutMessage, type PageReturn } from "../../../contract"
 import { checkImage, clickFileInput } from "../../kit/image-dropzone"
@@ -35,8 +35,9 @@ const SetAvatar = Command.define("SetClerkProfileImage", {
 	args: { file: Schema.NullOr(File.File) },
 	messages: [Message.CompletedSetAvatar],
 	execute: ({ file }) =>
-		withUser(file === null ? "Couldn't remove profile picture" : "Couldn't update profile picture", (user) =>
-			user.setProfileImage({ file }),
+		withUser(
+			file === null ? "Couldn't remove profile picture" : "Couldn't update profile picture",
+			(user) => user.setProfileImage({ file }),
 		).pipe(settled((result) => Message.CompletedSetAvatar({ isRemoved: file === null, result }))),
 })
 
@@ -64,7 +65,8 @@ export const init = (): Return => ({
 	commands: [ReadProfileUser()],
 })
 
-const toast = (type: "success" | "error", title: string) => PageOutMessage.RequestedToast({ type, title, description: "" })
+const toast = (type: "success" | "error", title: string) =>
+	PageOutMessage.RequestedToast({ type, title, description: "" })
 
 /** The name fields: the edits typed against this user, else the saved name. */
 export const namesOf = (model: Model, user: AccountUser) =>
@@ -74,18 +76,22 @@ export const namesOf = (model: Model, user: AccountUser) =>
 
 export const isNameDirty = (model: Model, user: AccountUser): boolean => {
 	const names = namesOf(model, user)
-	return names.firstName.trim() !== user.firstName || names.lastName.trim() !== user.lastName
+	return Str.trim(names.firstName) !== user.firstName || Str.trim(names.lastName) !== user.lastName
 }
 
 /** A user has no unique display name to type back, so the primary email is the confirm string. */
 export const isConfirmMatching = (model: Model, user: AccountUser): boolean =>
-	user.primaryEmail !== null && user.primaryEmail.length > 0 && model.confirmText.trim() === user.primaryEmail
+	user.primaryEmail !== null &&
+	user.primaryEmail.length > 0 &&
+	Str.trim(model.confirmText) === user.primaryEmail
 
 const liftDelete = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
 	const closed = step.outMessage?._tag === "Closed"
 	return {
 		model: { ...model, deleteDialog: step.model, ...(closed && { confirmText: "" }) },
-		commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDeleteDialogMessage({ message })),
+		commands: Command.mapMessages(step.commands ?? [], (message) =>
+			Message.GotDeleteDialogMessage({ message }),
+		),
 	}
 }
 
@@ -111,9 +117,12 @@ export const update = (model: Model, message: Message): Return =>
 			const names = namesOf(model, user)
 			return {
 				model: { ...model, isSavingName: true },
-				commands: [SaveName({ firstName: names.firstName.trim(), lastName: names.lastName.trim() })],
+				commands: [
+					SaveName({ firstName: Str.trim(names.firstName), lastName: Str.trim(names.lastName) }),
+				],
 			}
 		},
+		ClickedDiscardName: () => (model.isSavingName ? { model } : { model: { ...model, draft: null } }),
 		CompletedSaveName: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => ({
@@ -121,7 +130,10 @@ export const update = (model: Model, message: Message): Return =>
 					commands: [ReadProfileUser()],
 					outMessage: toast("success", "Profile updated"),
 				}),
-				onFailure: (error) => ({ model: { ...model, isSavingName: false }, outMessage: toast("error", error) }),
+				onFailure: (error) => ({
+					model: { ...model, isSavingName: false },
+					outMessage: toast("error", error),
+				}),
 			}),
 		ClickedPickAvatar: () => (model.isSavingAvatar ? { model } : { model, commands: [PickAvatar()] }),
 		CompletedPickAvatar: () => ({ model }),
@@ -133,7 +145,10 @@ export const update = (model: Model, message: Message): Return =>
 				onSome: (file) =>
 					Option.match(checkImage(file), {
 						onNone: () => startAvatar(model, file),
-						onSome: (problem) => ({ model: { ...model, isDragging: false }, outMessage: toast("error", problem) }),
+						onSome: (problem) => ({
+							model: { ...model, isDragging: false },
+							outMessage: toast("error", problem),
+						}),
 					}),
 			}),
 		ClickedRemoveAvatar: () => startAvatar(model, null),
@@ -142,9 +157,15 @@ export const update = (model: Model, message: Message): Return =>
 				onSuccess: () => ({
 					model: { ...model, isSavingAvatar: false },
 					commands: [ReadProfileUser()],
-					outMessage: toast("success", isRemoved ? "Profile picture removed" : "Profile picture updated"),
+					outMessage: toast(
+						"success",
+						isRemoved ? "Profile picture removed" : "Profile picture updated",
+					),
 				}),
-				onFailure: (error) => ({ model: { ...model, isSavingAvatar: false }, outMessage: toast("error", error) }),
+				onFailure: (error) => ({
+					model: { ...model, isSavingAvatar: false },
+					outMessage: toast("error", error),
+				}),
 			}),
 		ClickedDelete: () => liftDelete(model, Dialog.open(model.deleteDialog)),
 		GotDeleteDialogMessage: ({ message: child }) =>
@@ -159,6 +180,9 @@ export const update = (model: Model, message: Message): Return =>
 			Result.match(result, {
 				// `afterSignOutUrl` takes the signed-out app to the sign-in page.
 				onSuccess: () => ({ model: { ...model, isDeleting: false } }),
-				onFailure: (error) => ({ model: { ...model, isDeleting: false }, outMessage: toast("error", error) }),
+				onFailure: (error) => ({
+					model: { ...model, isDeleting: false },
+					outMessage: toast("error", error),
+				}),
 			}),
 	})

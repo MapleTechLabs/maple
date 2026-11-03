@@ -5,9 +5,9 @@ import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { button } from "../../ui/button"
-import { eyebrow } from "../../ui/eyebrow"
-import { icon } from "../../ui/icon"
+import { button } from "@maple/views/ui/button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
 import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
 import { SUPABASE_NOT_CONFIGURED } from "../infra-integrations/supabase/connect"
 import { lifecycleOf } from "../infra-integrations/supabase/health"
@@ -32,6 +32,11 @@ import {
 	supabaseProjectNotes,
 	supabaseProjectSwitches,
 } from "./view-supabase"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
+import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // Supabase in the connect flow: authorize an organization, switch on projects, watch the first data land.
 
@@ -69,7 +74,7 @@ const readsRail = (h: H): Html =>
 
 const isWaiting = (model: Model): boolean => model.connect.active?.provider === "supabase"
 
-const muted = (h: H, text: string): Html => h.p([h.Class("text-sm text-muted-foreground")], [text])
+const muted = (h: H, text: string): Html => typography(h, { size: "sm", tone: "muted", as: "p" }, [text])
 
 /** What happens in the Supabase window, before it opens. */
 const windowSteps = (h: H): Html =>
@@ -77,14 +82,11 @@ const windowSteps = (h: H): Html =>
 		[h.Class("flex flex-col gap-2 rounded-md bg-surface-sunken p-4")],
 		[
 			eyebrow(h, { variant: "mono" }, ["In the Supabase window"]),
-			h.ul(
-				[h.Class("flex flex-col gap-1.5 text-sm")],
-				[
-					h.li([], ["Pick the organization that owns your projects"]),
-					h.li([], ["Review the read scopes: projects, analytics, database"]),
-					h.li([], ["Click Authorize. This tab picks it up on its own"]),
-				],
-			),
+			vstack(h, { gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) }, [
+				h.li([], ["Pick the organization that owns your projects"]),
+				h.li([], ["Review the read scopes: projects, analytics, database"]),
+				h.li([], ["Click Authorize. This tab picks it up on its own"]),
+			]),
 		],
 	)
 
@@ -93,16 +95,12 @@ const waitingBlock = (h: H): Html =>
 		[h.Class("flex items-center gap-3 rounded-md bg-surface-sunken p-4")],
 		[
 			icon(h, "ClockIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
-			h.div(
-				[h.Class("flex flex-col gap-0.5")],
-				[
-					h.span([h.Class("text-sm font-medium")], ["Waiting for you to approve in Supabase"]),
-					h.span(
-						[h.Class("text-xs text-muted-foreground")],
-						["Pick an organization in that window, then click Authorize."],
-					),
-				],
-			),
+			vstack(h, { gap: "0.5" }, [
+				typography(h, { size: "sm", weight: "medium" }, ["Waiting for you to approve in Supabase"]),
+				typography(h, { size: "xs", tone: "muted" }, [
+					"Pick an organization in that window, then click Authorize.",
+				]),
+			]),
 		],
 	)
 
@@ -131,7 +129,9 @@ const selfHostedLine = (h: H): Html =>
 			h.a(
 				[
 					h.Href(PROMETHEUS_HREF),
-					h.Class("inline-flex items-center gap-1 text-foreground hover:underline active:underline"),
+					h.Class(
+						"inline-flex items-center gap-1 text-foreground hover:underline active:underline",
+					),
 				],
 				["Use Prometheus", icon(h, "ArrowRightIcon", { size: 12 })],
 			),
@@ -143,18 +143,12 @@ const revokedNotice = (h: H, status: SupabaseIntegrationStatus): Html =>
 		[h.Class("flex gap-3 rounded-md border border-severity-warn-a4 bg-card p-4"), h.Role("alert")],
 		[
 			icon(h, "CircleWarningIcon", { size: 14, className: "mt-0.5 shrink-0 text-severity-warn" }),
-			h.div(
-				[h.Class("flex flex-col gap-1")],
-				[
-					h.span([h.Class("text-sm font-medium")], ["Access revoked"]),
-					h.span(
-						[h.Class("text-xs text-muted-foreground")],
-						[
-							`Supabase no longer accepts Maple's access to ${supabaseOrgName(status)}, so discovery, metrics and log polling are paused. Log drains live in Supabase and keep sending.`,
-						],
-					),
-				],
-			),
+			vstack(h, { gap: "1" }, [
+				typography(h, { size: "sm", weight: "medium" }, ["Access revoked"]),
+				typography(h, { size: "xs", tone: "muted" }, [
+					`Supabase no longer accepts Maple's access to ${supabaseOrgName(status)}, so discovery, metrics and log polling are paused. Log drains live in Supabase and keep sending.`,
+				]),
+			]),
 		],
 	)
 
@@ -214,7 +208,7 @@ const connectStatus = (h: H, model: Model, status: SupabaseIntegrationStatus | n
 				: [
 						foundChips(
 							h,
-							reached.projects.map((project) => ({ label: project.name })),
+							Arr.map(reached.projects, (project) => ({ label: project.name })),
 						),
 					],
 		)
@@ -251,27 +245,31 @@ const chooseRow = (h: H, model: Model, project: Project): Html => {
 			h.Key(project.ref),
 			h.Class(
 				cn(
-					"flex items-center gap-4 border-b border-border-subtle px-4 py-2.5 text-sm last:border-0",
+					hstackClass({
+						gap: "4",
+						className: typographyClass({
+							size: "sm",
+							className: stripClass("row"),
+						}),
+					}),
 					isPaused && "opacity-60",
 				),
 			),
 		],
 		[
-			h.span(
-				[h.Class("flex w-0 min-w-48 flex-1 flex-col")],
-				[
-					h.span([h.Class("truncate"), h.Title(project.name)], [project.name]),
-					h.span(
-						[h.Class("truncate font-mono text-2xs text-muted-foreground")],
-						[
-							[project.region, project.ref, isPaused ? "paused" : ""]
-								.filter((part) => part !== "")
-								.join(" · "),
-						],
+			vstack(h, { grow: true, as: "span", className: "w-0 min-w-48" }, [
+				h.span([h.Class("truncate"), h.Title(project.name)], [project.name]),
+				typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
+					Arr.join(
+						Arr.filter(
+							[project.region, project.ref, isPaused ? "paused" : ""],
+							(part) => part !== "",
+						),
+						" · ",
 					),
-					...supabaseProjectNotes(h, project),
-				],
-			),
+				]),
+				...supabaseProjectNotes(h, project),
+			]),
 			...supabaseProjectSwitches(h, model, project),
 		],
 	)
@@ -283,21 +281,21 @@ const summaryRail = (h: H, status: SupabaseIntegrationStatus): Html => {
 	return flowRail(h, {
 		eyebrow: "You are about to collect",
 		items: [
-			{ icon: "LayersIcon", title: "Projects", detail: of(projects.filter(isCollecting).length) },
+			{ icon: "LayersIcon", title: "Projects", detail: of(Arr.filter(projects, isCollecting).length) },
 			{
 				icon: "MicrochipIcon",
 				title: "Metrics and Postgres health",
-				detail: of(projects.filter((project) => project.metricsEnabled).length),
+				detail: of(Arr.filter(projects, (project) => project.metricsEnabled).length),
 			},
 			{
 				icon: "FileIcon",
 				title: "Logs, polled",
-				detail: of(projects.filter((project) => project.logsEnabled).length),
+				detail: of(Arr.filter(projects, (project) => project.logsEnabled).length),
 			},
 			{
 				icon: "DatabaseIcon",
 				title: "Log drains",
-				detail: of(projects.filter((project) => project.logDrainEnabled).length),
+				detail: of(Arr.filter(projects, (project) => project.logDrainEnabled).length),
 			},
 		],
 		trust: "Change any of this later on the source page. Switches save as you flip them.",
@@ -319,7 +317,7 @@ const chooseStep = (h: H, model: Model): Html => {
 					h,
 					{ ariaLabel: "Supabase projects" },
 					[
-						columnHead(h, { label: "Project", width: "w-0 min-w-48 flex-1" }),
+						columnHead(h, { label: "Project", width: columnClass({ min: "48" }) }),
 						columnHead(h, { label: "Metrics", width: "w-20", align: "right" }),
 						columnHead(h, { label: "Logs", width: "w-20", align: "right" }),
 						columnHead(h, { label: "Drain", width: "w-20", align: "right" }),
@@ -330,9 +328,9 @@ const chooseStep = (h: H, model: Model): Html => {
 									"No projects in this organization yet. Create one in Supabase.",
 								]),
 							]
-						: status.projects.map((project) => chooseRow(h, model, project)),
+						: Arr.map(status.projects, (project) => chooseRow(h, model, project)),
 				),
-				h.p([h.Class("text-xs text-muted-foreground")], [SUPABASE_LOGS_NOTE]),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [SUPABASE_LOGS_NOTE]),
 			]),
 		],
 		summaryRail(h, status),
@@ -360,12 +358,12 @@ const showsUpRail = (h: H): Html =>
 	})
 
 const metricsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow | null => {
-	const watched = projects.filter((project) => project.metricsEnabled)
+	const watched = Arr.filter(projects, (project) => project.metricsEnabled)
 	if (watched.length === 0) return null
 	const data = model.supabaseCard.metrics.data
 	if (AsyncData.isFailure(data))
 		return { state: "failed", title: "First metrics", detail: "Couldn't read the last hour's metrics." }
-	const seen = watched.flatMap((project) => {
+	const seen = Arr.flatMap(watched, (project) => {
 		const row = metricsRowOf(model.supabaseCard.metrics, project.ref)
 		return row === null || row.lastSeen === "" ? [] : [toEpochMs(row.lastSeen)]
 	})
@@ -386,20 +384,20 @@ const metricsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow 
 }
 
 const logsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow | null => {
-	const polled = projects.filter((project) => project.logsEnabled)
-	const drained = projects.filter((project) => project.logDrainEnabled)
+	const polled = Arr.filter(projects, (project) => project.logsEnabled)
+	const drained = Arr.filter(projects, (project) => project.logDrainEnabled)
 	if (polled.length === 0 && drained.length === 0) return null
 	const broken = [
-		...polled.flatMap((project) =>
+		...Arr.flatMap(polled, (project) =>
 			project.logsError === null ? [] : [`${project.name}: ${project.logsError}`],
 		),
-		...drained.flatMap((project) =>
+		...Arr.flatMap(drained, (project) =>
 			project.logDrainError === null ? [] : [`${project.name} drain: ${project.logDrainError}`],
 		),
 	]
-	if (broken.length > 0) return { state: "failed", title: "First logs", detail: broken.join(" · ") }
-	const waiting = polled.filter((project) => project.logsLastPolledAt === null)
-	const latest = polled.reduce((max, project) => Math.max(max, project.logsLastPolledAt ?? 0), 0)
+	if (broken.length > 0) return { state: "failed", title: "First logs", detail: Arr.join(broken, " · ") }
+	const waiting = Arr.filter(polled, (project) => project.logsLastPolledAt === null)
+	const latest = Arr.reduce(polled, 0, (max, project) => Math.max(max, project.logsLastPolledAt ?? 0))
 	if (waiting.length > 0)
 		return {
 			state: "working",
@@ -409,37 +407,47 @@ const logsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow | n
 	return {
 		state: "done",
 		title: "Logs flowing",
-		detail: [
-			polled.length > 0 ? `${countLabel(polled.length, "project")} polled every minute` : "",
-			drained.length > 0
-				? `drain on ${drained.map((project) => project.name).join(", ")}, sending as lines are written`
-				: "",
-		]
-			.filter((part) => part !== "")
-			.join(" · "),
+		detail: Arr.join(
+			Arr.filter(
+				[
+					polled.length > 0 ? `${countLabel(polled.length, "project")} polled every minute` : "",
+					drained.length > 0
+						? `drain on ${Arr.join(
+								Arr.map(drained, (project) => project.name),
+								", ",
+							)}, sending as lines are written`
+						: "",
+				],
+				(part) => part !== "",
+			),
+			" · ",
+		),
 		meta: latest > 0 ? formatRelativeShortFrom(latest, model.nowMs) : null,
 	}
 }
 
 const drainCheck = (drains: ReadonlyArray<Project>): ReadonlyArray<CheckRow> => {
 	if (drains.length === 0) return []
-	const broken = drains.flatMap((project) =>
+	const broken = Arr.flatMap(drains, (project) =>
 		project.logDrainError === null ? [] : [`${project.name}: ${project.logDrainError}`],
 	)
 	return [
 		broken.length > 0
-			? { state: "failed", title: "Log drain", detail: broken.join(" · ") }
+			? { state: "failed", title: "Log drain", detail: Arr.join(broken, " · ") }
 			: {
 					state: "done",
-					title: `Log drain created on ${drains.map((project) => project.name).join(", ")}`,
+					title: `Log drain created on ${Arr.join(
+						Arr.map(drains, (project) => project.name),
+						", ",
+					)}`,
 					detail: "Visible in Supabase under Project Settings, Log Drains",
 				},
 	]
 }
 
 const liveRows = (model: Model, status: SupabaseIntegrationStatus): ReadonlyArray<CheckRow> => {
-	const collecting = status.projects.filter(isCollecting)
-	const drains = collecting.filter((project) => project.logDrainEnabled)
+	const collecting = Arr.filter(status.projects, isCollecting)
+	const drains = Arr.filter(collecting, (project) => project.logDrainEnabled)
 	return [
 		status.revoked
 			? {
@@ -460,7 +468,8 @@ const liveRows = (model: Model, status: SupabaseIntegrationStatus): ReadonlyArra
 					detail: `${countLabel(status.projects.length, "project")}, ${collecting.length} collecting`,
 				},
 		...drainCheck(drains),
-		...[metricsCheck(model, collecting), logsCheck(model, collecting)].filter(
+		...Arr.filter(
+			[metricsCheck(model, collecting), logsCheck(model, collecting)],
 			(row): row is CheckRow => row !== null,
 		),
 	]

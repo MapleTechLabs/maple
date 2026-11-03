@@ -6,13 +6,13 @@ import type {
 import { countLabel } from "@maple/ui/lib/format"
 import { AGENT_ACCENT, TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { badge, kbd, kbdGroup } from "../../../ui/display"
-import { emptyMessage } from "../../../ui/empty"
-import { panel } from "../../../ui/panel"
-import { textarea } from "../../../ui/textarea"
+import { button } from "@maple/views/ui/button"
+import { badge, kbd, kbdGroup } from "@maple/views/ui/display"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { panel } from "@maple/views/ui/panel"
+import { textarea } from "@maple/views/ui/textarea"
 import { messageResponse } from "../../code-review/kit/markdown"
 import { relativeTime } from "../../kit/relative-time"
 import { type ActorIdentity, identityAvatar, resolveActorIdentity } from "../kit/actor"
@@ -26,6 +26,8 @@ import {
 	renderPayload,
 } from "./activity-format"
 import { Message } from "./message"
+import { typography } from "@maple/views/ui/typography"
+import { spaced } from "@maple/views/ui/spaced"
 
 // The issue timeline and the comment composer.
 
@@ -93,9 +95,13 @@ const ledgerRow = (
 	)
 
 const escalationRow = (h: H, escalation: IssueEscalationAttemptDocument, clock: Clock): Html => {
-	const destinations = escalation.deliveries
-		.map((delivery) => `${delivery.destinationName ?? delivery.destinationId}: ${delivery.status}`)
-		.join(", ")
+	const destinations = Arr.join(
+		Arr.map(
+			escalation.deliveries,
+			(delivery) => `${delivery.destinationName ?? delivery.destinationId}: ${delivery.status}`,
+		),
+		", ",
+	)
 	const body =
 		destinations ||
 		escalation.skipReason?.replaceAll("_", " ") ||
@@ -106,7 +112,7 @@ const escalationRow = (h: H, escalation: IssueEscalationAttemptDocument, clock: 
 		escalation.createdAt,
 		TONE_FILL.warn,
 		[
-			h.span([h.Class("font-medium text-foreground")], ["Escalation"]),
+			typography(h, { tone: "foreground", weight: "medium" }, ["Escalation"]),
 			h.span(
 				[h.Class("font-mono text-2xs capitalize text-muted-foreground")],
 				[escalation.severity, " · ", escalation.status],
@@ -171,10 +177,9 @@ const messageRow = (
 								h.div(
 									[h.Class("flex flex-wrap items-baseline gap-x-2 gap-y-0.5")],
 									[
-										h.span(
-											[h.Class("text-sm font-medium text-foreground")],
-											[identity?.name ?? "Unknown"],
-										),
+										typography(h, { size: "sm", tone: "foreground", weight: "medium" }, [
+											identity?.name ?? "Unknown",
+										]),
 										...(isAgent
 											? [
 													badge(
@@ -193,7 +198,7 @@ const messageRow = (
 												]
 											: []),
 										...(verb
-											? [h.span([h.Class("text-xs text-muted-foreground")], [verb])]
+											? [typography(h, { size: "xs", tone: "muted" }, [verb])]
 											: []),
 									],
 								),
@@ -228,13 +233,14 @@ const eventRow = (h: H, event: ErrorIssueEventDocument, previous: Item | undefin
 		event.createdAt,
 		DOT_CLASS[event.type],
 		[
-			h.span([h.Class("font-medium text-foreground")], [EVENT_LABEL[event.type]]),
+			typography(h, { tone: "foreground", weight: "medium" }, [EVENT_LABEL[event.type]]),
 			...(event.fromState && event.toState
 				? [
-						h.span(
-							[h.Class("font-mono text-2xs text-muted-foreground")],
-							[event.fromState, " → ", event.toState],
-						),
+						typography(h, { size: "2xs", tone: "muted", mono: true }, [
+							event.fromState,
+							" → ",
+							event.toState,
+						]),
 					]
 				: []),
 			...authorLabel(h, event.actor),
@@ -252,8 +258,8 @@ export const issueTimeline = (
 	isShowingEarlier: boolean,
 ): Html => {
 	const items: ReadonlyArray<Item> = [
-		...events.map((event): Item => ({ kind: "event", createdAt: event.createdAt, event })),
-		...escalations.map((escalation): Item => ({
+		...Arr.map(events, (event): Item => ({ kind: "event", createdAt: event.createdAt, event })),
+		...Arr.map(escalations, (escalation): Item => ({
 			kind: "escalation",
 			createdAt: escalation.createdAt,
 			escalation,
@@ -261,7 +267,7 @@ export const issueTimeline = (
 	].sort((a, b) => isoMs(a.createdAt) - isoMs(b.createdAt))
 	if (items.length === 0)
 		return emptyMessage(h, { dashed: true, className: "py-10" }, [
-			h.p([h.Class("text-sm font-medium text-foreground")], ["No activity yet"]),
+			typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, ["No activity yet"]),
 			h.p(
 				[h.Class("mt-1 text-xs")],
 				["Comments from your team and notes from agents working this issue land here."],
@@ -279,27 +285,29 @@ export const issueTimeline = (
 							[
 								button(
 									h,
-									{ variant: "ghost", size: "sm", attributes: [h.OnClick(Message.ClickedShowEarlier())] },
+									{
+										variant: "ghost",
+										size: "sm",
+										attributes: [h.OnClick(Message.ClickedShowEarlier())],
+									},
 									["Show ", countLabel(hiddenCount, "earlier event")],
 								),
 							],
 						),
 					]
 				: []),
-			...items
-				.slice(hiddenCount)
-				.map((item, offset) =>
-					item.kind === "escalation"
-						? escalationRow(h, item.escalation, clock)
-						: eventRow(h, item.event, items[hiddenCount + offset - 1], clock),
-				),
+			...Arr.map(items.slice(hiddenCount), (item, offset) =>
+				item.kind === "escalation"
+					? escalationRow(h, item.escalation, clock)
+					: eventRow(h, item.event, items[hiddenCount + offset - 1], clock),
+			),
 		],
 	)
 }
 
 const participantStrip = (h: H, participants: ReadonlyArray<ActorDocument>): ReadonlyArray<Html> => {
 	const seen = new Set<string>()
-	const identities = participants.flatMap((actor) => {
+	const identities = Arr.flatMap(participants, (actor) => {
 		if (seen.has(actor.id)) return []
 		seen.add(actor.id)
 		return [resolveActorIdentity(actor)]
@@ -307,14 +315,14 @@ const participantStrip = (h: H, participants: ReadonlyArray<ActorDocument>): Rea
 	if (identities.length === 0) return []
 	const shown = identities.slice(0, 5)
 	const overflow = identities.length - shown.length
-	const agentCount = identities.filter((identity) => identity.kind === "agent").length
+	const agentCount = Arr.filter(identities, (identity) => identity.kind === "agent").length
 	return [
 		h.div(
 			[h.Class("flex items-center gap-2 px-1 text-xs text-muted-foreground")],
 			[
 				h.span(
 					[h.Class("flex -space-x-1.5")],
-					shown.map((identity) => identityAvatar(h, identity, "sm", "ring-2 ring-background")),
+					Arr.map(shown, (identity) => identityAvatar(h, identity, "sm", "ring-2 ring-background")),
 				),
 				...(overflow > 0 ? [h.span([h.Class("tabular-nums")], [`+${overflow}`])] : []),
 				h.span(
@@ -334,7 +342,7 @@ export const commentComposer = (
 	h: H,
 	options: Readonly<{ draft: string; isPosting: boolean; participants: ReadonlyArray<ActorDocument> }>,
 ): Html => {
-	const canSubmit = !options.isPosting && options.draft.trim().length > 0
+	const canSubmit = !options.isPosting && Str.trim(options.draft).length > 0
 	return h.div(
 		[h.Class(cn("space-y-2", "mt-6"))],
 		[
@@ -350,53 +358,50 @@ export const commentComposer = (
 					),
 				},
 				[
-					h.div(
-						[h.Class("min-w-0 flex-1 space-y-2")],
-						[
-							textarea(h, {
-								id: "comment-input",
-								isUnstyled: true,
-								isDisabled: options.isPosting,
-								controlClassName:
-									"max-h-80 min-h-11 resize-none px-0 py-0 text-sm leading-relaxed placeholder:text-muted-foreground",
-								attributes: [
-									h.Value(options.draft),
-									h.Placeholder("Context, findings, links… markdown supported"),
-									h.OnInput((value) => Message.ChangedCommentDraft({ value })),
-									// Mod+Enter submits (`ClickedComment` guards empty and double sends).
-									h.OnKeyDownPreventDefault((key, modifiers) =>
-										key === "Enter" && (modifiers.metaKey || modifiers.ctrlKey)
-											? Option.some(Message.ClickedComment())
-											: Option.none(),
-									),
-								],
-							}),
-							h.div(
-								[
-									h.Class(
-										"flex items-center justify-between gap-3 text-xs text-muted-foreground",
-									),
-								],
-								[
-									kbdGroup(h, undefined, [
-										kbd(h, undefined, ["⌘"]),
-										kbd(h, undefined, ["↵"]),
-										h.span([h.Class("ml-1")], ["to comment"]),
-									]),
-									button(
-										h,
-										{
-											size: "sm",
-											isDisabled: !canSubmit,
-											isLoading: options.isPosting,
-											attributes: [h.OnClick(Message.ClickedComment())],
-										},
-										["Comment"],
-									),
-								],
-							),
-						],
-					),
+					spaced(h, { space: "2", fill: true }, [
+						textarea(h, {
+							id: "comment-input",
+							isUnstyled: true,
+							isDisabled: options.isPosting,
+							controlClassName:
+								"max-h-80 min-h-11 resize-none px-0 py-0 text-sm leading-relaxed placeholder:text-muted-foreground",
+							attributes: [
+								h.Value(options.draft),
+								h.Placeholder("Context, findings, links… markdown supported"),
+								h.OnInput((value) => Message.ChangedCommentDraft({ value })),
+								// Mod+Enter submits (`ClickedComment` guards empty and double sends).
+								h.OnKeyDownPreventDefault((key, modifiers) =>
+									key === "Enter" && (modifiers.metaKey || modifiers.ctrlKey)
+										? Option.some(Message.ClickedComment())
+										: Option.none(),
+								),
+							],
+						}),
+						h.div(
+							[
+								h.Class(
+									"flex items-center justify-between gap-3 text-xs text-muted-foreground",
+								),
+							],
+							[
+								kbdGroup(h, undefined, [
+									kbd(h, undefined, ["⌘"]),
+									kbd(h, undefined, ["↵"]),
+									h.span([h.Class("ml-1")], ["to comment"]),
+								]),
+								button(
+									h,
+									{
+										size: "sm",
+										isDisabled: !canSubmit,
+										isLoading: options.isPosting,
+										attributes: [h.OnClick(Message.ClickedComment())],
+									},
+									["Comment"],
+								),
+							],
+						),
+					]),
 				],
 			),
 		],

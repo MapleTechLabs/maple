@@ -1,18 +1,17 @@
 import type { CatalogPlan } from "@maple/domain/http"
 import { getPlanDescription, getPlanFeatures, TRIAL_DURATION_DAYS } from "../../lib/billing/plans"
 import { cn } from "@maple/ui/lib/utils"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { card, cardDescription, cardFooter, cardHeader, cardPanel, cardTitle } from "../../ui/card"
-import { badge, separator } from "../../ui/display"
-import { errorState } from "../../ui/error-state"
-import { eyebrow } from "../../ui/eyebrow"
-import { icon } from "../../ui/icon"
-import { skeleton } from "../../ui/skeleton"
-import { panel } from "../../ui/panel"
-import { spinner } from "../../ui/spinner"
+import { button } from "@maple/views/ui/button"
+import { card, cardDescription, cardFooter, cardHeader, cardPanel, cardTitle } from "@maple/views/ui/card"
+import { badge, separator } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { eyebrow, eyebrowVariants } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { panel } from "@maple/views/ui/panel"
+import { spinner } from "@maple/views/ui/spinner"
 import { Message, type Model } from "./pricing-cards"
 import {
 	ENTERPRISE_DATA_FEATURES,
@@ -25,6 +24,9 @@ import {
 	getScenario,
 	PLATFORM_FEATURE_ICONS,
 } from "./pricing-plans"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -86,7 +88,7 @@ const platformFeatures = (h: H, slug: string): Html =>
 			eyebrow(h, { className: "mb-3", as: "div" }, ["Platform features"]),
 			h.div(
 				[h.Class("space-y-2.5")],
-				getPlanFeatures(slug).map((feature) =>
+				Arr.map(getPlanFeatures(slug), (feature) =>
 					h.div(
 						[h.Class("flex items-start gap-2.5 text-sm")],
 						[
@@ -122,23 +124,20 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 		h,
 		[
 			cardHeader(h, [
-				h.div(
-					[h.Class("flex items-center justify-between gap-2")],
-					[
-						cardTitle(h, [plan.name], cn(eyebrowVariants(), isUpgrade && "text-primary")),
-						...(isActive
-							? [badge(h, { variant: "secondary", size: "xs" }, ["Current"])]
-							: isUpgrade
-								? [
-										badge(
-											h,
-											{ variant: "secondary", size: "xs", className: "text-primary" },
-											["Recommended"],
-										),
-									]
-								: []),
-					],
-				),
+				hstack(h, { gap: "2", justify: "between" }, [
+					cardTitle(h, [plan.name], cn(eyebrowVariants(), isUpgrade && "text-primary")),
+					...(isActive
+						? [badge(h, { variant: "secondary", size: "xs" }, ["Current"])]
+						: isUpgrade
+							? [
+									badge(
+										h,
+										{ variant: "secondary", size: "xs", className: "text-primary" },
+										["Recommended"],
+									),
+								]
+							: []),
+				]),
 				h.div(
 					[h.Class("mt-3 flex items-baseline gap-1")],
 					[
@@ -210,10 +209,9 @@ const enterpriseCard = (h: H): Html =>
 		h,
 		[
 			cardHeader(h, [
-				h.div(
-					[h.Class("flex items-center justify-between gap-2")],
-					[cardTitle(h, ["Enterprise"], eyebrowVariants())],
-				),
+				hstack(h, { gap: "2", justify: "between" }, [
+					cardTitle(h, ["Enterprise"], eyebrowVariants()),
+				]),
 				h.div(
 					[h.Class("mt-3 flex items-baseline gap-1")],
 					[
@@ -286,13 +284,10 @@ const checkoutConfirming = (h: H): Html =>
 		},
 		[
 			spinner(h, "size-5"),
-			h.p([h.Class("text-sm font-medium")], ["Confirming your subscription…"]),
-			h.p(
-				[h.Class("text-sm text-muted-foreground")],
-				[
-					"Stripe is letting us know your checkout finished. This usually takes a few seconds; there's nothing else to click.",
-				],
-			),
+			typography(h, { size: "sm", weight: "medium", as: "p" }, ["Confirming your subscription…"]),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [
+				"Stripe is letting us know your checkout finished. This usually takes a few seconds; there's nothing else to click.",
+			]),
 		],
 	)
 
@@ -302,7 +297,7 @@ const checkoutTimedOut = (h: H): Html =>
 		h,
 		{
 			tone: "muted",
-			className: "px-4 py-3 text-sm text-muted-foreground",
+			className: typographyClass({ size: "sm", tone: "muted", className: "px-4 py-3" }),
 			attributes: [h.Role("status")],
 		},
 		[
@@ -328,7 +323,7 @@ export const planCards = (h: H, plans: ReadonlyArray<CatalogPlan>, loadingPlanId
 				),
 			),
 		],
-		[...plans.map((plan) => planCard(h, plan, loadingPlanId)), enterpriseCard(h)],
+		[...Arr.map(plans, (plan) => planCard(h, plan, loadingPlanId)), enterpriseCard(h)],
 	)
 }
 
@@ -339,7 +334,7 @@ const plansGrid = (h: H, plans: ReadonlyArray<CatalogPlan>, model: Model): Html 
 			...(model.checkoutReturn === "TimedOut" ? [checkoutTimedOut(h)] : []),
 			planCards(
 				h,
-				plans.filter((plan) => !plan.addOn && !plan.autoEnable),
+				Arr.filter(plans, (plan) => !plan.addOn && !plan.autoEnable),
 				model.loadingPlanId,
 			),
 		],
@@ -352,7 +347,7 @@ const dataIncluded = (h: H, rows: ReadonlyArray<FeatureRow>, isDetailed: boolean
 			eyebrow(h, { className: "mb-3", as: "div" }, ["Data included"]),
 			h.div(
 				[h.Class("space-y-2.5")],
-				rows.map((row) => dataRow(h, row, isDetailed)),
+				Arr.map(rows, (row) => dataRow(h, row, isDetailed)),
 			),
 		],
 	)

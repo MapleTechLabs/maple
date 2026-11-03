@@ -14,6 +14,7 @@ import {
 	uncheckedFixes,
 	withoutRepeats,
 } from "./findings"
+import { Array as Arr } from "effect"
 
 const tracked = (overrides: Partial<TrackedFinding> = {}): TrackedFinding => ({
 	id: "row-1",
@@ -125,7 +126,7 @@ describe("withoutRepeats", () => {
 		)
 		assert.equal(repeated, 2)
 		assert.deepEqual(
-			fresh.map((f) => [f.line, f.category]),
+			Arr.map(fresh, (f) => [f.line, f.category]),
 			[[11, "security"]],
 		)
 	})
@@ -154,7 +155,7 @@ describe("handles", () => {
 	it("resolves only handles that are open", () => {
 		const open = [tracked(), tracked({ id: "row-2", handle: "F2" })]
 		assert.deepEqual(
-			resolvedByHandle(["f2", "F9"], open).map((f) => f.handle),
+			Arr.map(resolvedByHandle(["f2", "F9"], open), (f) => f.handle),
 			["F2"],
 		)
 	})
@@ -172,11 +173,14 @@ describe("pathIgnored", () => {
 
 describe("renderFollowUp", () => {
 	it("names the changed files and the open handles, and asks for a judgement per finding", () => {
-		const text = renderFollowUp({
-			previousSha: "abcdef1234",
-			changes: { paths: ["src/a.ts"], rewritten: false },
-			open: [tracked()],
-		}).join("\n")
+		const text = Arr.join(
+			renderFollowUp({
+				previousSha: "abcdef1234",
+				changes: { paths: ["src/a.ts"], rewritten: false },
+				open: [tracked()],
+			}),
+			"\n",
+		)
 		assert.include(text, "reviewed before, at abcdef1")
 		assert.include(text, "the rest was already reviewed: src/a.ts.")
 		assert.include(text, "Lines being modified is not enough")
@@ -185,11 +189,14 @@ describe("renderFollowUp", () => {
 	})
 
 	it("says a rebase was compared file by file", () => {
-		const text = renderFollowUp({
-			previousSha: "abcdef1234",
-			changes: { paths: ["src/b.ts"], rewritten: true },
-			open: [],
-		}).join("\n")
+		const text = Arr.join(
+			renderFollowUp({
+				previousSha: "abcdef1234",
+				changes: { paths: ["src/b.ts"], rewritten: true },
+				open: [],
+			}),
+			"\n",
+		)
 		assert.include(text, "rebased or force-pushed")
 		assert.include(text, "the rest was already reviewed: src/b.ts.")
 	})
@@ -201,13 +208,13 @@ describe("renderFollowUp", () => {
 			open: [],
 			recheck: true,
 		})
-		assert.include(followUp.join("\n"), "review the whole diff")
-		assert.isUndefined(followUpScope(["Review pull request #7.", ...followUp].join("\n")))
+		assert.include(Arr.join(followUp, "\n"), "review the whole diff")
+		assert.isUndefined(followUpScope(Arr.join(["Review pull request #7.", ...followUp], "\n")))
 	})
 
 	it("asks for the whole diff when the change could not be compared", () => {
 		for (const changes of [undefined, { paths: undefined, rewritten: true }]) {
-			const text = renderFollowUp({ previousSha: "abcdef1234", changes, open: [] }).join("\n")
+			const text = Arr.join(renderFollowUp({ previousSha: "abcdef1234", changes, open: [] }), "\n")
 			assert.include(text, "review the whole diff")
 		}
 	})
@@ -251,11 +258,14 @@ describe("uncheckedFixes", () => {
 
 describe("followUpScope", () => {
 	const kickoff = (paths: ReadonlyArray<string> | undefined, rewritten = false) =>
-		[
-			"Review pull request #7 of octo/shop.",
-			"",
-			...renderFollowUp({ previousSha: "abcdef1234", changes: { paths, rewritten }, open: [] }),
-		].join("\n")
+		Arr.join(
+			[
+				"Review pull request #7 of octo/shop.",
+				"",
+				...renderFollowUp({ previousSha: "abcdef1234", changes: { paths, rewritten }, open: [] }),
+			],
+			"\n",
+		)
 
 	it("reads back the files renderFollowUp names", () => {
 		assert.deepEqual(followUpScope(kickoff(["src/a.ts", "src/b.ts"])), ["src/a.ts", "src/b.ts"])
@@ -281,7 +291,8 @@ describe("followUpScope", () => {
 
 describe("ignoredPathsInKickoff", () => {
 	it("reads back the patterns the kickoff states", () => {
-		const kickoff = ["Review pull request #7.", renderIgnoredPaths(["generated/", "*.pb.go"]), ""].join(
+		const kickoff = Arr.join(
+			["Review pull request #7.", renderIgnoredPaths(["generated/", "*.pb.go"]), ""],
 			"\n",
 		)
 		assert.deepEqual(ignoredPathsInKickoff(kickoff), ["generated/", "*.pb.go"])
@@ -307,7 +318,7 @@ describe("mergeSavedFindings", () => {
 			finding(40, "Tenant filter missing from `listKeys`"),
 		])
 		assert.deepEqual(
-			merged.map((item) => item.line),
+			Arr.map(merged, (item) => item.line),
 			[10, 40],
 		)
 	})

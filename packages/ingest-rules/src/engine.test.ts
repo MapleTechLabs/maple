@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { IngestRuleSpec } from "@maple/domain/ingest-rules"
 import { INGEST_RULE_LIMITS } from "@maple/domain/ingest-rules"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { applyRules, compileRules, formatDouble, globMatches, scanCut, type RuleRecord } from "./engine"
 import { text } from "./fuzz-arbitraries"
 import { hmacSha256, sha256, toHex, utf8 } from "./sha256"
@@ -40,7 +40,7 @@ describe("sha256", () => {
 		expect(toHex(sha256(utf8("abc")))).toBe(
 			"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
 		)
-		expect(toHex(sha256(utf8("a".repeat(1000))))).toBe(
+		expect(toHex(sha256(utf8(Str.repeat(1000)("a"))))).toBe(
 			"41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3",
 		)
 	})
@@ -72,7 +72,7 @@ describe("sampling", () => {
 
 describe("formatDouble", () => {
 	it("writes doubles the way Rust's {} does", () => {
-		expect([Infinity, -Infinity, Number.NaN, -0, 1e21, 1.5e-7, 2].map(formatDouble)).toEqual([
+		expect(Arr.map([Infinity, -Infinity, Number.NaN, -0, 1e21, 1.5e-7, 2], formatDouble)).toEqual([
 			"inf",
 			"-inf",
 			"NaN",
@@ -110,10 +110,14 @@ describe("applyRules properties", () => {
 		"text with no digits, capitals, @, :, _ or - and no secret keys is untouched",
 		[Attributes],
 		([attributes]) => {
-			const clean = Object.fromEntries(
-				Object.entries(attributes)
-					.filter(([key]) => !key.toLowerCase().includes("secret"))
-					.map(([key, value]) => [key, value.replace(/[0-9@A-Z:_-]/g, "x")]),
+			const clean = Rec.fromEntries(
+				Arr.map(
+					Arr.filter(
+						Rec.toEntries(attributes),
+						([key]) => !Str.includes("secret")(Str.toLowerCase(key)),
+					),
+					([key, value]) => [key, Str.replace(/[0-9@A-Z:_-]/g, "x")(value)],
+				),
 			)
 			expect(keptRecord(logRecord(clean, "plain words only")).attributes).toEqual(clean)
 		},
@@ -127,11 +131,13 @@ describe("scanCut", () => {
 		([value]) => {
 			const cut = scanCut(value)
 			const bytes = (part: string) => utf8(part).length
-			expect(bytes(value.slice(0, cut))).toBeLessThanOrEqual(INGEST_RULE_LIMITS.scanBytes)
-			expect(value.slice(cut, cut + 1)).not.toMatch(/^[\udc00-\udfff]$/u)
+			expect(bytes(Str.slice(0, cut)(value))).toBeLessThanOrEqual(INGEST_RULE_LIMITS.scanBytes)
+			expect(Str.slice(cut, cut + 1)(value)).not.toMatch(/^[\udc00-\udfff]$/u)
 			const next = String.fromCodePoint(value.codePointAt(cut) ?? 0)
 			if (cut < value.length)
-				expect(bytes(value.slice(0, cut)) + bytes(next)).toBeGreaterThan(INGEST_RULE_LIMITS.scanBytes)
+				expect(bytes(Str.slice(0, cut)(value)) + bytes(next)).toBeGreaterThan(
+					INGEST_RULE_LIMITS.scanBytes,
+				)
 		},
 	)
 })

@@ -1,16 +1,18 @@
 import { describe, expect, it } from "vitest"
-import { Exit, Schema } from "effect"
+import { Exit, Schema, Array as Arr, Record as Rec } from "effect"
 import { toInputSchema } from "../tools/registry"
 import { argumentWarnings, formatDecodeFailure, normalizeArguments, suggestParameter } from "./decode-issues"
 import * as P from "./params"
 
 const failureFor = (tool: string, schema: Schema.Codec<unknown, unknown, never, unknown>, input: unknown) => {
 	const published = toInputSchema(schema)
-	const properties = Object.keys((published.properties ?? {}) as object)
+	const properties = Rec.keys((published.properties ?? {}) as object)
 	const normalized = normalizeArguments(input, properties)
 	const exit = Schema.decodeUnknownExit(schema)(normalized.args)
 	if (!Exit.isFailure(exit)) throw new Error("expected a decode failure")
-	const error = exit.cause.reasons.flatMap((reason) => (reason._tag === "Fail" ? [reason.error] : []))[0]
+	const error = Arr.flatMap(exit.cause.reasons, (reason) =>
+		reason._tag === "Fail" ? [reason.error] : [],
+	)[0]
 	if (!Schema.isSchemaError(error)) throw new Error("expected a SchemaError")
 	return formatDecodeFailure(tool, error, published, normalized)
 }
@@ -119,6 +121,129 @@ describe("argument normalization", () => {
 		expect(normalizeArguments({ severity: "fatal" }, ["severity"], {}, enums).args).toEqual({
 			severity: "fatal",
 		})
+	})
+
+	it("reads a camelCase or singular/plural spelling as the declared parameter", () => {
+		const known = ["issue_id", "to_state", "environments", "workflow_state"]
+		const normalized = normalizeArguments(
+			{ issueId: "iss_1", toState: "done", environment: ["prod"], workflow_states: "todo" },
+			known,
+		)
+		expect(normalized.args).toEqual({
+			issue_id: "iss_1",
+			to_state: "done",
+			environments: ["prod"],
+			workflow_state: "todo",
+		})
+		expect(normalized.unknown).toEqual([])
+		// A published alias still wins over the spelling rules.
+		expect(
+			normalizeArguments({ workflowState: "done" }, ["to_state"], { workflow_state: "to_state" }).args,
+		).toEqual({ to_state: "done" })
+	})
+
+	it("reads a relative time_range as the start of a window ending now, and says how", () => {
+		const nowMs = Date.parse("2026-08-20T17:04:05Z")
+		const known = ["start_time", "end_time", "service"]
+		const normalized = normalizeArguments(
+			{ time_range: "6h", service: "api" },
+			known,
+			{},
+			new Map(),
+			nowMs,
+		)
+		expect(normalized.args).toEqual({ start_time: "2026-08-20 11:04:05", service: "api" })
+		expect(Arr.join(argumentWarnings(normalized, "error_detail"), ",")).toContain(
+			"start_time=2026-08-20 11:04:05",
+		)
+		expect(normalizeArguments({ lookback: "last 2 days" }, known, {}, new Map(), nowMs).args).toEqual({
+			start_time: "2026-08-18 17:04:05",
+		})
+		// An explicit start_time wins, and a value that is not a duration stays an unknown key.
+		expect(
+			normalizeArguments(
+				{ time_range: "6h", start_time: "2026-08-20 16:00:00" },
+				known,
+				{},
+				new Map(),
+				nowMs,
+			).args,
+		).toEqual({ start_time: "2026-08-20 16:00:00" })
+		expect(normalizeArguments({ time_range: "today" }, known, {}, new Map(), nowMs).unknown).toHaveLength(
+			1,
+		)
+		// With an end_time the lookback ends there, not at now.
+		expect(
+			normalizeArguments(
+				{ time_range: "2h", end_time: "2026-08-20 12:00:00" },
+				known,
+				{},
+				new Map(),
+				nowMs,
+			).args,
+		).toEqual({ start_time: "2026-08-20 10:00:00", end_time: "2026-08-20 12:00:00" })
+	})
+
+	it("does not read a duration or a non-window key as a lookback", () => {
+		const nowMs = Date.parse("2026-08-20T17:04:05Z")
+		const known = ["start_time", "end_time", "min_duration_ms", "window_minutes"]
+		for (const key of ["min_duration", "window", "duration"]) {
+			const normalized = normalizeArguments({ [key]: "5m" }, known, {}, new Map(), nowMs)
+			expect(normalized.args).toEqual({})
+			expect(Arr.map(normalized.unknown, (entry) => entry.key)).toEqual([key])
+		}
+	})
+
+	it("reads a lookback after aliases: an explicit start wins and the resolved end_time anchors it", () => {
+		const nowMs = Date.parse("2026-08-20T17:04:05Z")
+		const known = ["start_time", "end_time"]
+		const aliases = { since: "start_time", from: "start_time" }
+		expect(
+			normalizeArguments(
+				{ timeRange: "6h", endTime: "2026-08-20 12:00:00" },
+				known,
+				aliases,
+				new Map(),
+				nowMs,
+			).args,
+		).toEqual({ start_time: "2026-08-20 06:00:00", end_time: "2026-08-20 12:00:00" })
+		expect(
+			normalizeArguments(
+				{ time_range: "6h", from: "2026-08-20 16:00:00" },
+				known,
+				aliases,
+				new Map(),
+				nowMs,
+			).args,
+		).toEqual({ start_time: "2026-08-20 16:00:00" })
+		// A duration under an aliased key is a lookback; a timestamp under it is the alias.
+		expect(normalizeArguments({ since: "24h" }, known, aliases, new Map(), nowMs).args).toEqual({
+			start_time: "2026-08-19 17:04:05",
+		})
+		expect(
+			normalizeArguments({ since: "2026-08-20 10:00:00" }, known, aliases, new Map(), nowMs).args,
+		).toEqual({
+			start_time: "2026-08-20 10:00:00",
+		})
+	})
+
+	it("ignores a zero or absurd lookback instead of failing the call", () => {
+		const nowMs = Date.parse("2026-08-20T17:04:05Z")
+		for (const value of ["0h", "99999999999w", "5000d"]) {
+			const normalized = normalizeArguments({ time_range: value }, ["start_time"], {}, new Map(), nowMs)
+			expect(normalized.args).toEqual({})
+			expect(Arr.map(normalized.unknown, (entry) => entry.key)).toEqual(["time_range"])
+		}
+	})
+
+	it("does not map a list onto a parameter that takes one value", () => {
+		const normalized = normalizeArguments({ services: ["api", "web"] }, ["service"])
+		expect(normalized.args).toEqual({})
+		expect(Arr.map(normalized.unknown, (entry) => entry.key)).toEqual(["services"])
+		expect(
+			Arr.map(normalizeArguments({ services: "api,web" }, ["service"]).unknown, (entry) => entry.key),
+		).toEqual(["services"])
+		expect(normalizeArguments({ services: "api" }, ["service"]).args).toEqual({ service: "api" })
 	})
 
 	it("suggests nothing for a key unlike any parameter", () => {

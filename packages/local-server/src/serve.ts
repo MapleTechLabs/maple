@@ -4,7 +4,22 @@
 // `apps/ingest/src/bin/local.rs`. `maple start` calls `startServer`.
 
 import { ProjectorRegistry } from "@maple/eventing-core"
-import { Clock, Context, Effect, Exit, Layer, Metric, Result, Schema, type Scope } from "effect"
+import {
+	Clock,
+	Config,
+	Context,
+	Effect,
+	Exit,
+	Layer,
+	Metric,
+	Option,
+	Result,
+	Schema,
+	type Scope,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import { resolve } from "node:path"
 import { gunzipSync } from "node:zlib"
@@ -81,6 +96,7 @@ import {
 	RetiredDayAuthority,
 	retireLiveDayInServer,
 } from "./archives/retention"
+import { encodeJson } from "./json"
 
 /** Resolves a request path to a static asset (the bundled SPA). Returns
  *  `undefined` to fall through to the SPA shell (client-side routing). */
@@ -192,15 +208,15 @@ export const makeBrowserOriginPolicy = (options: {
 			)
 		trusted.add(origin)
 	}
-	for (const entry of (options.extraOrigins ?? "").split(",")) {
-		const value = entry.trim()
+	for (const entry of Str.split(",")(options.extraOrigins ?? "")) {
+		const value = Str.trim(entry)
 		if (value === "") continue
 		const origin = parseOrigin(value)
 		if (origin === undefined)
 			return Result.fail(
 				new LocalServerConfigError({
 					source: ALLOWED_ORIGINS_ENV,
-					message: `invalid origin ${JSON.stringify(value)} in ${ALLOWED_ORIGINS_ENV}; expected e.g. http://localhost:5173`,
+					message: `invalid origin ${encodeJson(value)} in ${ALLOWED_ORIGINS_ENV}; expected e.g. http://localhost:5173`,
 				}),
 			)
 		trusted.add(origin)
@@ -231,7 +247,11 @@ export const isBrowserOriginAllowed = (
 	if (policy.trustedOrigins.has(originUrl.origin)) return true
 	const loopbackRequest = isLoopbackHostname(requestUrl.hostname)
 	if (loopbackRequest && policy.loopbackDevOrigins.has(originUrl.origin)) return true
-	if (requestUrl.pathname.startsWith("/v1/") && loopbackRequest && isLoopbackHostname(originUrl.hostname))
+	if (
+		Str.startsWith("/v1/")(requestUrl.pathname) &&
+		loopbackRequest &&
+		isLoopbackHostname(originUrl.hostname)
+	)
 		return true
 	// Bun constructs requestUrl from the client's Host header. Keep that behavior:
 	// this comparison is the load-bearing DNS-rebinding check for non-loopback UI traffic.
@@ -240,7 +260,7 @@ export const isBrowserOriginAllowed = (
 	// a loopback name, so loopback aliases of this listener count as same-origin.
 	return (
 		originUrl.host === requestUrl.host &&
-		((policy.anySameOriginHost && !requestUrl.pathname.startsWith("/v1/")) ||
+		((policy.anySameOriginHost && !Str.startsWith("/v1/")(requestUrl.pathname)) ||
 			policy.browserHosts.includes(originUrl.hostname) ||
 			isLoopbackHostname(originUrl.hostname))
 	)
@@ -264,23 +284,22 @@ export const corsHeadersForAllowedOrigin = (
 		? {
 				"access-control-allow-origin": origin,
 				"access-control-allow-methods": "GET, POST, OPTIONS",
-				// `x-maple-sdk` is the SDK identity hint every browser SDK sends on
-				// every request; a listener that does not allow it fails preflight
-				// for the whole SDK.
+				// Instrumented dashboards propagate W3C and B3 trace context on
+				// queries and status probes as well as SDK ingest requests.
 				"access-control-allow-headers":
-					"content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key",
+					"content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key, traceparent, tracestate, baggage, b3",
 				"access-control-allow-private-network": "true",
 				vary: "Origin",
 			}
 		: undefined
 
 const withCors = (response: Response, headers: Readonly<Record<string, string>> | undefined): Response => {
-	if (headers) for (const [name, value] of Object.entries(headers)) response.headers.set(name, value)
+	if (headers) for (const [name, value] of Rec.toEntries(headers)) response.headers.set(name, value)
 	return response
 }
 
 const json = (body: unknown, status = 200): Response =>
-	new Response(JSON.stringify(body), {
+	new Response(encodeJson(body), {
 		status,
 		headers: { "content-type": "application/json" },
 	})
@@ -304,7 +323,7 @@ export const describeThrown = (error: unknown): string => {
 				const message = error.message
 				if (typeof message === "string" && message !== "") return message
 			}
-			const json = JSON.stringify(error)
+			const json = encodeJson(error)
 			// `{}` here means every own property was non-enumerable or unserializable
 			// (a `Response`, a class instance) — the empty object is the bug, so say so.
 			if (json !== undefined && json !== "{}") return json
@@ -342,7 +361,7 @@ function decodeOtlp(
 	maximumBytes = MAX_DECOMPRESSED_OTLP_BYTES,
 ): Result.Result<unknown, OtlpBodyTooLarge | OtlpDecodeFailed> {
 	let bytes = raw
-	if (contentEncoding && contentEncoding.includes("gzip")) {
+	if (contentEncoding && Str.includes("gzip")(contentEncoding)) {
 		const inflated = Result.try({
 			try: () => gunzipSync(raw, { maxOutputLength: maximumBytes }),
 			catch: (error) =>
@@ -357,7 +376,7 @@ function decodeOtlp(
 		bytes = inflated.success
 	}
 	const decodedBytes = bytes
-	if (contentType.includes("json"))
+	if (Str.includes("json")(contentType))
 		return Result.try({
 			try: (): unknown =>
 				Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(
@@ -454,7 +473,7 @@ const ingest = (
 				stopIngest(
 					text(
 						`decode ${signal}: ${failure.message}`,
-						failure instanceof OtlpBodyTooLarge ? 413 : 400,
+						Schema.is(OtlpBodyTooLarge)(failure) ? 413 : 400,
 					),
 					requestBytes,
 				),
@@ -494,7 +513,7 @@ const ingest = (
 		let batches = yield* Effect.try({
 			try: () => encodeFor(signal, decoded),
 			catch: (error) =>
-				error instanceof OtlpFieldError
+				Schema.is(OtlpFieldError)(error)
 					? stopIngest(text(`decode ${signal}: ${error.message}`, 400), requestBytes)
 					: stopIngest(text(`encode ${signal}: ${describeThrown(error)}`, 500), requestBytes),
 		})
@@ -511,7 +530,7 @@ const ingest = (
 			Effect.catchDefect((defect) => rejectProjection(503)({ message: describeThrown(defect) })),
 		)
 		let rejected = 0
-		batches = batches.map((batch) => {
+		batches = Arr.map(batches, (batch) => {
 			const filtered = authority.filterBatch(batch.datasource, batch.ndjson)
 			rejected += filtered.rejected
 			return { ...batch, ndjson: filtered.ndjson, rowCount: filtered.accepted }
@@ -522,7 +541,7 @@ const ingest = (
 		const accepted = yield* Effect.uninterruptible(
 			Effect.gen(function* () {
 				const accepted = yield* inserts
-					.insert(batches.filter((batch) => batch.rowCount > 0))
+					.insert(Arr.filter(batches, (batch) => batch.rowCount > 0))
 					.pipe(
 						Effect.catchTag("@maple/cli/LocalInsertError", (error) =>
 							Effect.fail(
@@ -548,7 +567,7 @@ const ingest = (
 		)
 		const droppedEvents = staged.dropped
 		const errorMessage = rejected > 0 ? "telemetry from permanently retired UTC days was rejected" : ""
-		if (contentType.includes("json")) {
+		if (Str.includes("json")(contentType)) {
 			const rejectedField =
 				signal === "traces"
 					? { rejectedSpans: rejected }
@@ -618,7 +637,7 @@ async function handleQuery(
 	if (Result.isFailure(prepared)) {
 		const failure = prepared.failure
 		return finish(
-			failure instanceof ReadOnlyQueryRejected
+			Schema.is(ReadOnlyQueryRejected)(failure)
 				? text(`${READ_ONLY_REJECTION_PREFIX}${failure.message}`, 400)
 				: text(`query failed: ${failure.message}`, 400),
 			sql.length,
@@ -637,7 +656,7 @@ async function handleQuery(
 		// 400, not 500: a failing statement is a problem with the submitted SQL,
 		// and a 5xx would make the shared warehouse executor retry it.
 		return finish(
-			output.failure instanceof ChdbClosedError
+			Schema.is(ChdbClosedError)(output.failure)
 				? text("server is shutting down", 503)
 				: text(`query failed: ${describeThrown(output.failure)}`, 400),
 			sql.length,
@@ -654,18 +673,21 @@ async function handleQuery(
 
 // The UI is apps/local-ui's build, so this mirrors its worker's header set
 // (apps/local-ui/src/worker-entry.ts) minus HSTS, which plain-http loopback ignores.
-const UI_CONTENT_SECURITY_POLICY = [
-	"default-src 'self'",
-	"script-src 'self' 'wasm-unsafe-eval'",
-	"style-src 'self' 'unsafe-inline'",
-	"img-src 'self' data:",
-	"font-src 'self' data:",
-	"connect-src 'self' http://127.0.0.1:* http://localhost:*",
-	"object-src 'none'",
-	"base-uri 'none'",
-	"form-action 'none'",
-	"frame-ancestors 'none'",
-].join("; ")
+const UI_CONTENT_SECURITY_POLICY = Arr.join(
+	[
+		"default-src 'self'",
+		"script-src 'self' 'wasm-unsafe-eval'",
+		"style-src 'self' 'unsafe-inline'",
+		"img-src 'self' data:",
+		"font-src 'self' data:",
+		"connect-src 'self' http://127.0.0.1:* http://localhost:*",
+		"object-src 'none'",
+		"base-uri 'none'",
+		"form-action 'none'",
+		"frame-ancestors 'none'",
+	],
+	"; ",
+)
 
 const UI_SECURITY_HEADERS = {
 	"content-security-policy": UI_CONTENT_SECURITY_POLICY,
@@ -680,7 +702,7 @@ const uiResponse = (body: Uint8Array | string, contentType: string): Response =>
 	new Response(body, { headers: { ...UI_SECURITY_HEADERS, "content-type": contentType } })
 
 export function serveAsset(assets: AssetResolver, pathname: string): Response {
-	const path = pathname === "/" ? "index.html" : pathname.replace(/^\//, "")
+	const path = pathname === "/" ? "index.html" : Str.replace(/^\//, "")(pathname)
 	const hit = assets(path)
 	if (hit) return uiResponse(hit.body, hit.contentType)
 	// Unknown path → serve the SPA shell so the client router can take over.
@@ -957,7 +979,7 @@ const readBoundedJsonResult = async (
 }
 
 const bodyFailureResponse = (failure: BodyFailure): Response =>
-	failure instanceof RequestBodyTooLargeError ? text(failure.message, 413) : text("invalid JSON body", 400)
+	Schema.is(RequestBodyTooLargeError)(failure) ? text(failure.message, 413) : text("invalid JSON body", 400)
 
 const readBoundedJson = (req: Request, maximumBytes: number): Effect.Effect<unknown, BodyFailure> =>
 	Effect.promise(() => readBoundedJsonResult(req, maximumBytes)).pipe(Effect.flatMap(Effect.fromResult))
@@ -1145,7 +1167,7 @@ const handleCheckpointBackup = (
 			{ onExcessProperty: "error" },
 		)(body)
 		if (Result.isFailure(decoded)) return text("invalid checkpoint fields", 400)
-		const checkpointId = decoded.success.checkpointId.toLowerCase()
+		const checkpointId = Str.toLowerCase(decoded.success.checkpointId)
 		const controlStore = yield* LocalEventingControlStore
 		// The gate has drained every admitted request, so neither database changes between captures.
 		const controlBytes = yield* gate.exclusiveEffect(
@@ -1458,7 +1480,7 @@ const handleEventingRead = (
 		if (url.pathname === "/local/eventing/consumers")
 			return yield* eventing.listConsumers.pipe(Effect.map(json), readFailed("consumer read"))
 		if (url.pathname === "/local/eventing/outbox") {
-			const query = decodeOutboxQuery(Object.fromEntries(url.searchParams))
+			const query = decodeOutboxQuery(Rec.fromEntries(url.searchParams))
 			if (Result.isFailure(query)) return text(`invalid outbox query: ${query.failure.message}`, 400)
 			const { state = "ready", limit = 100, after = 0 } = query.success
 			return yield* (
@@ -1580,7 +1602,7 @@ const makeFetch =
 		const denied = accessDenied(context.auth, { maintenanceToken, consumerToken }, req, url, Date.now())
 		if (denied !== null) {
 			if (denied.status === 401)
-				context.countRejection(url.pathname.startsWith("/v1/") ? "ingest" : "read")
+				context.countRejection(Str.startsWith("/v1/")(url.pathname) ? "ingest" : "read")
 			return respond(denied)
 		}
 		if (url.pathname === "/health") return respond(text("OK"))
@@ -1658,7 +1680,7 @@ const makeFetch =
 			if (url.pathname === "/local/retention/retire")
 				return respond(await handleRetirement(db, authority, gate, maintenanceToken, req))
 		}
-		if (req.method === "GET" && url.pathname.startsWith("/local/eventing/"))
+		if (req.method === "GET" && Str.startsWith("/local/eventing/")(url.pathname))
 			return respond(await runSpan(handleEventingRead(maintenanceToken, req, url)))
 		if (req.method === "GET" && options.assets) return respond(serveAsset(options.assets, url.pathname))
 		return respond(text("not found", 404))
@@ -1691,11 +1713,16 @@ export const startServer = (
 	Scope.Scope
 > =>
 	Effect.gen(function* () {
+		const extraOrigins = yield* Config.String(ALLOWED_ORIGINS_ENV).pipe(
+			Config.option,
+			Effect.map(Option.getOrUndefined),
+			Effect.orElseSucceed(() => undefined),
+		)
 		const policy = yield* Effect.fromResult(
 			makeBrowserOriginPolicy({
 				browserHosts: options.browserHosts,
 				hostedOrigin: options.corsOrigin,
-				extraOrigins: process.env[ALLOWED_ORIGINS_ENV],
+				extraOrigins,
 				anySameOriginHost: options.auth?.accessToken !== undefined,
 			}),
 		)

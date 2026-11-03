@@ -1,4 +1,4 @@
-import { Schema, SchemaGetter } from "effect"
+import { Schema, SchemaGetter, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	RAW_SQL_ENDPOINT,
 	SORT_DIRECTIONS,
@@ -47,13 +47,13 @@ const StringRecord = Schema.Record(Schema.String, Schema.String)
 const UnknownRecordWire = Schema.Record(Schema.String, Schema.Unknown)
 const decodeJsonValueSync = Schema.decodeUnknownSync(Schema.Json)
 
-const isJsonArray = (value: Schema.Json): value is Schema.JsonArray => Array.isArray(value)
+const isJsonArray = (value: Schema.Json): value is Schema.JsonArray => Arr.isArray(value)
 
 const mapDecodedJsonKeys = (value: Schema.Json, mapKey: (key: string) => string): Schema.Json => {
-	if (isJsonArray(value)) return value.map((item) => mapDecodedJsonKeys(item, mapKey))
+	if (isJsonArray(value)) return Arr.map(value, (item) => mapDecodedJsonKeys(item, mapKey))
 	if (typeof value !== "object" || value === null) return value
-	return Object.fromEntries(
-		Object.entries(value).map(([key, item]) => [mapKey(key), mapDecodedJsonKeys(item, mapKey)]),
+	return Rec.fromEntries(
+		Arr.map(Rec.toEntries(value), ([key, item]) => [mapKey(key), mapDecodedJsonKeys(item, mapKey)]),
 	)
 }
 
@@ -61,9 +61,9 @@ const mapJsonKeys = (value: unknown, mapKey: (key: string) => string): Schema.Js
 	mapDecodedJsonKeys(decodeJsonValueSync(value), mapKey)
 
 const toSnakeKey = (key: string): string =>
-	key.replace(/[A-Z]/g, (character) => `_${character.toLowerCase()}`)
+	key.replace(/[A-Z]/g, (character) => `_${Str.toLowerCase(character)}`)
 const toCamelKey = (key: string): string =>
-	key.replace(/_([a-z])/g, (_, character: string) => character.toUpperCase())
+	key.replace(/_([a-z])/g, (_, character: string) => Str.toUpperCase(character))
 
 /** Opaque widget params still obey the v2 recursive snake_case wire convention. */
 const UnknownRecord = UnknownRecordWire.pipe(

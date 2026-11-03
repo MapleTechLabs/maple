@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import * as Animation from "@foldkit/ui/animation"
 import {
 	click,
@@ -13,9 +13,9 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
-import * as Menu from "../../../ui/menu"
-import { MountMenu } from "../../../ui/menu"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Menu from "@maple/views/ui/menu"
+import { MountMenu } from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { incidentRow, NOW, ORG } from "../shared/test-rows"
 import { monitorHref } from "../shared/uptime-commands"
@@ -31,14 +31,15 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const onUptime = (): Model => {
 	const entered = init({ _tag: "Alerts", search: { tab: "uptime" } }, context).model
-	return [
-		Message.ReadClock({ nowMs: NOW }),
-		Message.CompletedFetchSession({ orgId: ORG, isAdmin: true }),
-	].reduce((model, message) => pageUpdate(model, message).model, entered)
+	return Arr.reduce(
+		[Message.ReadClock({ nowMs: NOW }), Message.CompletedFetchSession({ orgId: ORG, isAdmin: true })],
+		entered,
+		(model, message) => pageUpdate(model, message).model,
+	)
 }
 
 const withMonitors = (monitors: ReadonlyArray<UptimeMonitor>): Model => {
@@ -70,23 +71,27 @@ const NAMESPACES = { "checkout-api": "shop", "payments-api": "billing" }
 describe("alerts hub inbox, uptime incidents", () => {
 	test("an uptime incident reads as its monitor being down, without the ungrouped key", () => {
 		const entered = init({ _tag: "Alerts", search: {} }, context).model
-		const model = [
-			Message.ReadClock({ nowMs: NOW }),
-			Message.UpdatedRules({ orgId: ORG, rows: [] }),
-			Message.UpdatedIncidents({
-				orgId: ORG,
-				rows: [
-					incidentRow({
-						rule_name: "checkout-api",
-						signal_type: "uptime",
-						comparator: "gte",
-						threshold: 1,
-						last_observed_value: 1,
-						group_key: "__total__",
-					}),
-				],
-			}),
-		].reduce((current, message) => pageUpdate(current, message).model, entered)
+		const model = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedRules({ orgId: ORG, rows: [] }),
+				Message.UpdatedIncidents({
+					orgId: ORG,
+					rows: [
+						incidentRow({
+							rule_name: "checkout-api",
+							signal_type: "uptime",
+							comparator: "gte",
+							threshold: 1,
+							last_observed_value: 1,
+							group_key: "__total__",
+						}),
+					],
+				}),
+			],
+			entered,
+			(current, message) => pageUpdate(current, message).model,
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
@@ -243,11 +248,15 @@ describe("alerts hub, Uptime tab", () => {
 	})
 
 	test("Clear filters on an empty result resets the query, status and type", () => {
-		const filtered = [
-			Message.ChangedUptimeQuery({ value: "nothing-matches" }),
-			Message.ClickedUptimeStatus({ filter: "down" }),
-			Message.ChangedUptimeKind({ kind: "tcp" }),
-		].reduce((model, message) => pageUpdate(model, message).model, withMonitors(THREE))
+		const filtered = Arr.reduce(
+			[
+				Message.ChangedUptimeQuery({ value: "nothing-matches" }),
+				Message.ClickedUptimeStatus({ filter: "down" }),
+				Message.ChangedUptimeKind({ kind: "tcp" }),
+			],
+			withMonitors(THREE),
+			(model, message) => pageUpdate(model, message).model,
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(filtered),

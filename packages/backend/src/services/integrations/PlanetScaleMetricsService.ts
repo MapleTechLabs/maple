@@ -21,7 +21,7 @@ import {
 	type ScrapeTargetRow,
 } from "@maple/db/tables"
 import * as PlanetScale from "@distilled.cloud/planetscale"
-import { Cause, Clock, Context, Duration, Effect, Layer, Schema } from "effect"
+import { DateTime, Cause, Clock, Context, Duration, Effect, Layer, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -237,8 +237,8 @@ export class PlanetScaleMetricsService extends Context.Service<
 					branch: branch.branch,
 					// Repeated `metrics=` parameters keep only the last; one comma list keeps them all.
 					metrics: [apiMetricsFor(branch.kind).join(",")],
-					from: new Date(startMs).toISOString(),
-					to: new Date(endMs).toISOString(),
+					from: DateTime.formatIso(DateTime.makeUnsafe(startMs)),
+					to: DateTime.formatIso(DateTime.makeUnsafe(endMs)),
 				}),
 			)
 			const series = yield* decodeConsumed(

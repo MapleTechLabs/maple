@@ -1,11 +1,11 @@
 import { OrgId } from "@maple/domain"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../charts/chart"
-import { LoadChartRuntime } from "../charts/chart-runtime"
-import { ResolveThemeColors } from "../charts/theme-colors"
-import * as Keyed from "../data/keyed"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import * as Keyed from "@maple/views/data/keyed"
 import { isoMs } from "../page/alerts/shared/time"
 import type { PageContext } from "../page/contract"
 import { Message } from "../page/alerts/uptime-monitor/message"
@@ -68,7 +68,7 @@ const sampleAt = (atMs: number, index: number): CheckSample => {
 		ttfbMs: (70 + jitter(index + 0.3) * 120) * spike,
 		transferMs: index % 13 === 0 ? jitter(index + 0.4) * 2 : 0,
 	}
-	const total = Object.values(phases).reduce((sum, ms) => sum + ms, 0)
+	const total = Arr.reduce(Rec.values(phases), 0, (sum, ms) => sum + ms)
 	return {
 		at: new Date(atMs).toISOString(),
 		durationMs: failed ? 2_400 : total + 1,
@@ -83,32 +83,37 @@ const quantile = (sorted: ReadonlyArray<number>, q: number): number =>
 	sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * q) - 1))] ?? 0
 
 const mean = (values: ReadonlyArray<number>): number =>
-	values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length
+	values.length === 0 ? 0 : Arr.reduce(values, 0, (sum, value) => sum + value) / values.length
 
 const fixtureStats = (window: LabWindow): CheckStats => {
 	const { windowMs, bucketMs: stepMs } = WINDOWS[window]
 	const startMs = NOW_MS - windowMs
 	const checkCount = Math.floor((NOW_MS - FIRST_CHECK_MS) / CHECK_EVERY_MS)
-	const samples = Array.from({ length: checkCount }, (_, index) =>
-		sampleAt(FIRST_CHECK_MS + index * CHECK_EVERY_MS, index),
-	).filter((sample) => isoMs(sample.at) >= startMs && !inOutage(isoMs(sample.at)))
+	const samples = Arr.filter(
+		Array.from({ length: checkCount }, (_, index) =>
+			sampleAt(FIRST_CHECK_MS + index * CHECK_EVERY_MS, index),
+		),
+		(sample) => isoMs(sample.at) >= startMs && !inOutage(isoMs(sample.at)),
+	)
 	const buckets = Array.from({ length: windowMs / stepMs }, (_, index) => startMs + index * stepMs)
 	const inBucket = (bucketMs: number) =>
-		samples.filter((sample) => {
+		Arr.filter(samples, (sample) => {
 			const at = isoMs(sample.at)
 			return at >= bucketMs && at < bucketMs + stepMs
 		})
 	// Like the warehouse (`trimSparseLeadingBuckets`), the points start at the first bucket with a check.
 	const firstCheckMs = samples[0] === undefined ? startMs : isoMs(samples[0].at)
-	const points = buckets.flatMap((bucketMs): ReadonlyArray<CheckPoint> => {
+	const points = Arr.flatMap(buckets, (bucketMs): ReadonlyArray<CheckPoint> => {
 		const checks = inBucket(bucketMs)
-		const sorted = checks.map((sample) => sample.durationMs).toSorted((a, b) => a - b)
+		const sorted = Arr.map(checks, (sample) => sample.durationMs).toSorted((a, b) => a - b)
 		if (bucketMs + stepMs <= firstCheckMs) return []
 		return [
 			{
 				bucket: new Date(bucketMs).toISOString(),
 				errorRate:
-					checks.length === 0 ? 0 : checks.filter((sample) => !sample.ok).length / checks.length,
+					checks.length === 0
+						? 0
+						: Arr.filter(checks, (sample) => !sample.ok).length / checks.length,
 				p50LatencyMs: quantile(sorted, 0.5),
 				p95LatencyMs: quantile(sorted, 0.95),
 				p99LatencyMs: quantile(sorted, 0.99),
@@ -117,23 +122,25 @@ const fixtureStats = (window: LabWindow): CheckStats => {
 			},
 		]
 	})
-	const phases = buckets.flatMap((bucketMs): ReadonlyArray<PhasePoint> => {
-		const timed = inBucket(bucketMs).flatMap((sample) => (sample.phases === null ? [] : [sample.phases]))
+	const phases = Arr.flatMap(buckets, (bucketMs): ReadonlyArray<PhasePoint> => {
+		const timed = Arr.flatMap(inBucket(bucketMs), (sample) =>
+			sample.phases === null ? [] : [sample.phases],
+		)
 		return timed.length === 0
 			? []
 			: [
 					{
 						bucket: new Date(bucketMs).toISOString(),
 						timedChecks: timed.length,
-						dnsMs: mean(timed.map((phase) => phase.dnsMs)),
-						connectMs: mean(timed.map((phase) => phase.connectMs)),
-						tlsMs: mean(timed.map((phase) => phase.tlsMs)),
-						ttfbMs: mean(timed.map((phase) => phase.ttfbMs)),
-						transferMs: mean(timed.map((phase) => phase.transferMs)),
+						dnsMs: mean(Arr.map(timed, (phase) => phase.dnsMs)),
+						connectMs: mean(Arr.map(timed, (phase) => phase.connectMs)),
+						tlsMs: mean(Arr.map(timed, (phase) => phase.tlsMs)),
+						ttfbMs: mean(Arr.map(timed, (phase) => phase.ttfbMs)),
+						transferMs: mean(Arr.map(timed, (phase) => phase.transferMs)),
 					},
 				]
 	})
-	const sorted = samples.map((sample) => sample.durationMs).toSorted((a, b) => a - b)
+	const sorted = Arr.map(samples, (sample) => sample.durationMs).toSorted((a, b) => a - b)
 	return {
 		window,
 		points,
@@ -143,7 +150,7 @@ const fixtureStats = (window: LabWindow): CheckStats => {
 		windowStartMs: startMs,
 		windowEndMs: NOW_MS,
 		checks: samples.length,
-		failures: samples.filter((sample) => !sample.ok).length,
+		failures: Arr.filter(samples, (sample) => !sample.ok).length,
 		p50Ms: quantile(sorted, 0.5),
 		p95Ms: quantile(sorted, 0.95),
 		p99Ms: quantile(sorted, 0.99),
@@ -163,7 +170,7 @@ type Return = Update.Return<Model, Message, Resources>
 
 /** The page's own reads and writes are dropped: the fixture is all the data there is. */
 const withoutReads = (commands: ReadonlyArray<Command.Command<Message, never, Resources>> | undefined) =>
-	(commands ?? []).filter((command) => !/^(Fetch|Toggle|Check)Uptime/.test(command.name))
+	Arr.filter(commands ?? [], (command) => !/^(Fetch|Toggle|Check)Uptime/.test(command.name))
 
 export const init = (_flags: Flags): Return => ({
 	model: {
@@ -226,7 +233,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 						[
 							responseTimePanel(h, model, context),
 							phaseBreakdownPanel(h, model, context),
-							...[checksScatterPanel(h, model, timeZone)].flatMap((panel) =>
+							...Arr.flatMap([checksScatterPanel(h, model, timeZone)], (panel) =>
 								panel === null ? [] : [panel],
 							),
 						],

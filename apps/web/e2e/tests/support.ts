@@ -1,4 +1,5 @@
 import type { Browser } from "@e2e-dev/web"
+import { String as Str } from "effect"
 
 declare global {
 	interface Window {
@@ -8,7 +9,7 @@ declare global {
 
 /** The preview's API origin: `app-pr-<n>` serves its API at `api-pr-<n>`. */
 export const apiUrl = (appUrl: string): string =>
-	process.env.MAPLE_E2E_API_URL ?? appUrl.replace("://app-", "://api-")
+	process.env.MAPLE_E2E_API_URL ?? Str.replace("://app-", "://api-")(appUrl)
 
 /**
  * A v2 API call made from the page, so it carries the signed-in Clerk session. The body
@@ -49,4 +50,4 @@ export const api = async <T>(
 }
 
 /** A run-unique suffix, so rules and destinations from earlier runs never collide. */
-export const runTag = (): string => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+export const runTag = (): string => `${Date.now().toString(36)}${Str.slice(2, 6)(Math.random().toString(36))}`

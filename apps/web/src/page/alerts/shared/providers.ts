@@ -2,9 +2,10 @@ import { type ChatConnectorManifest, chatConnectorManifests } from "@maple/chat-
 import type { AlertDestinationType } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon, type IconName } from "../../../ui/icon"
-import { manifestGlyph } from "../../../ui/manifest-glyph"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { manifestGlyph } from "@maple/views/ui/manifest-glyph"
 import { LINEAR_ACCENT } from "../../integrations/catalog"
+import { Array as Arr, String as Str } from "effect"
 
 // `PROVIDERS` and `ProviderLogo`: the destination providers and their marks.
 
@@ -151,7 +152,7 @@ const CHAT = PROVIDERS.get("chat")
 
 /** `CHAT_PROVIDERS`: a `chat` destination drawn as its connector (name, accent and mark). */
 const CHAT_PROVIDERS: ReadonlyMap<string, DestinationProvider> = new Map(
-	chatConnectorManifests.flatMap((manifest) =>
+	Arr.flatMap(chatConnectorManifests, (manifest) =>
 		CHAT === undefined
 			? []
 			: [
@@ -236,7 +237,7 @@ export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<
 			]
 		if (provider.monogram !== undefined || options.isLogoBroken) {
 			const mono = provider.monogram ?? {
-				letter: provider.label.slice(0, 1),
+				letter: Str.slice(0, 1)(provider.label),
 				gradient: [provider.accent, provider.accent] as const,
 			}
 			return [

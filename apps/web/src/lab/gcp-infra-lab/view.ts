@@ -1,4 +1,4 @@
-import { INITIAL_LOCALE } from "../../page/kit/locale"
+import { INITIAL_LOCALE } from "@maple/views/lib/locale"
 import {
 	BUCKET_SECONDS,
 	CLOUD_SQL_INSTANCES,
@@ -13,13 +13,14 @@ import {
 import { gcpRequestedView, gcpSparks, gcpWindowSeconds } from "../../components/infra/gcp/list-model"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ResolveThemeColors } from "../../charts/theme-colors"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import * as GcpList from "../../page/infra-integrations/gcp/list/model"
 import { viewHref } from "../../page/infra-integrations/gcp/list/update"
 import { gcpListPageParts, THEME_TOKENS, titleRow } from "../../page/infra-integrations/gcp/list/view"
 import { dashboardPage } from "../../page/kit/dashboard-page"
-import { segmentedSelect } from "../../ui/segmented-select"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { Message, type Model } from "./model"
+import { Array as Arr } from "effect"
 
 const SPARKS = gcpSparks(SPARKLINE_READS, { startTime: START, endTime: END, bucketSeconds: BUCKET_SECONDS })
 
@@ -93,7 +94,7 @@ export const overlay = (model: Model, h: HtmlBuilder<Message>): Html =>
 			segmentedSelect(h, {
 				size: "xs",
 				ariaLabel: "Lab view",
-				options: VIEWS.map((value) => ({ value, label: VIEW_LABEL[value] })),
+				options: Arr.map(VIEWS, (value) => ({ value, label: VIEW_LABEL[value] })),
 				value: VIEWS.find((view) => view === model.state.view) ?? "services",
 				onChange: (view) => Message.ClickedLabView({ view }),
 			}),

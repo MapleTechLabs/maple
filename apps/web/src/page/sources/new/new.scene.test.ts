@@ -7,7 +7,7 @@ import {
 	V2SourceWithSecret,
 } from "@maple/domain/http/v2"
 import { CloudflareIntegrationStatus } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
 	Command,
@@ -21,9 +21,9 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
-import * as Field from "../../../ui/field"
-import * as Tabs from "../../../ui/tabs"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Field from "@maple/views/ui/field"
+import * as Tabs from "@maple/views/ui/tabs"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { Message as IntegrationMessage } from "../../integrations/message"
 import { ScrollToTop } from "./command"
@@ -41,7 +41,7 @@ const context: PageContext = {
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const route = (platform?: "nodejs" | "kubernetes") => ({
 	_tag: "SourcesNew" as const,
 	search: platform === undefined ? {} : { platform },
@@ -409,30 +409,31 @@ describe("connect a source", () => {
 			created_at: "2026-10-01T00:00:00.000Z",
 			updated_at: "2026-10-01T00:00:00.000Z",
 		})
-		const added = [
-			() =>
-				IntegrationMessage.GotFormFieldMessage({
-					field: "url",
-					message: Field.Message.ChangedValue({ value: target.url }),
-				}),
-			() => IntegrationMessage.SubmittedTargetForm(),
-			() => IntegrationMessage.CompletedSave({ isEdit: false, id: target.id, failure: null }),
-			(model: Model) =>
-				IntegrationMessage.CompletedLoadScrapeTargets({
-					key: model.integrations.statuses.scrapeTargets.key ?? "",
-					result: Result.succeed([target]),
-				}),
-			() =>
-				IntegrationMessage.CompletedProbe({
-					id: target.id,
-					failure: null,
-					success: true,
-					error: null,
-				}),
-		].reduce(
+		const added = Arr.reduce(
+			[
+				() =>
+					IntegrationMessage.GotFormFieldMessage({
+						field: "url",
+						message: Field.Message.ChangedValue({ value: target.url }),
+					}),
+				() => IntegrationMessage.SubmittedTargetForm(),
+				() => IntegrationMessage.CompletedSave({ isEdit: false, id: target.id, failure: null }),
+				(model: Model) =>
+					IntegrationMessage.CompletedLoadScrapeTargets({
+						key: model.integrations.statuses.scrapeTargets.key ?? "",
+						result: Result.succeed([target]),
+					}),
+				() =>
+					IntegrationMessage.CompletedProbe({
+						id: target.id,
+						failure: null,
+						success: true,
+						error: null,
+					}),
+			],
+			entered,
 			(model, message) =>
 				pageUpdate(model, Message.GotIntegrationsMessage({ message: message(model) })).model,
-			entered,
 		)
 		expect(added.hasAddedTarget).toBe(true)
 		scene(

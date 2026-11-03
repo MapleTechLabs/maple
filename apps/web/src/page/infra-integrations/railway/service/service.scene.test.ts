@@ -1,9 +1,9 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
-import { ResolveThemeColors, ThemeMessage } from "../../../../charts/theme-colors"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../../contract"
 import type { RailwayServiceRow } from "../model"
 import { Message } from "./message"
@@ -20,7 +20,7 @@ const route = { serviceId: "svc_api", search: { environmentId: "env_prod" } }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const service: RailwayServiceRow = {
 	environmentId: "env_prod",
@@ -113,7 +113,7 @@ describe("railway service", () => {
 				Message.CompletedFetchTraced({
 					key: loaded.traced.key ?? "",
 					result: Result.succeed(
-						serviceNames.map((serviceName) => ({
+						Arr.map(serviceNames, (serviceName) => ({
 							serviceName,
 							errorRate: 0,
 							throughput: 1,

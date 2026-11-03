@@ -5,15 +5,19 @@ import {
 	EMPTY_TTL_OVERRIDES,
 	type RawTableTtlOverrides,
 } from "./ttl-override"
+import { Array as Arr, String as Str } from "effect"
 
 const rawLogs = {
 	name: "logs",
-	content: [
-		'ENGINE "MergeTree"',
-		'ENGINE_PARTITION_KEY "toDate(TimestampTime)"',
-		'ENGINE_SORTING_KEY "OrgId, ServiceName, TimestampTime, Timestamp"',
-		'ENGINE_TTL "toDate(TimestampTime) + INTERVAL 90 DAY"',
-	].join("\n"),
+	content: Arr.join(
+		[
+			'ENGINE "MergeTree"',
+			'ENGINE_PARTITION_KEY "toDate(TimestampTime)"',
+			'ENGINE_SORTING_KEY "OrgId, ServiceName, TimestampTime, Timestamp"',
+			'ENGINE_TTL "toDate(TimestampTime) + INTERVAL 90 DAY"',
+		],
+		"\n",
+	),
 }
 
 const rawTraces = {
@@ -48,15 +52,13 @@ describe("applyRawTtlOverrides", () => {
 	})
 
 	it("rewrites all four raw metrics datasources when metricsRetentionDays is set", () => {
-		const raws = [
-			"metrics_sum",
-			"metrics_gauge",
-			"metrics_histogram",
-			"metrics_exponential_histogram",
-		].map((name) => ({
-			name,
-			content: `ENGINE "MergeTree"\nENGINE_TTL "toDate(TimeUnix) + INTERVAL 365 DAY"`,
-		}))
+		const raws = Arr.map(
+			["metrics_sum", "metrics_gauge", "metrics_histogram", "metrics_exponential_histogram"],
+			(name) => ({
+				name,
+				content: `ENGINE "MergeTree"\nENGINE_TTL "toDate(TimeUnix) + INTERVAL 365 DAY"`,
+			}),
+		)
 		const result = applyRawTtlOverrides(raws, { ...EMPTY_TTL_OVERRIDES, metricsRetentionDays: 180 })
 		for (const row of result) {
 			expect(row.content).toContain("INTERVAL 180 DAY")
@@ -121,6 +123,6 @@ describe("computeEffectiveRevision", () => {
 	it("differs from the base revision as soon as any override is set", () => {
 		const r = computeEffectiveRevision(base, { ...EMPTY_TTL_OVERRIDES, metricsRetentionDays: 180 })
 		expect(r).not.toBe(base)
-		expect(r.startsWith(`${base}:`)).toBe(true)
+		expect(Str.startsWith(`${base}:`)(r)).toBe(true)
 	})
 })

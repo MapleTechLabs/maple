@@ -1,6 +1,6 @@
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Command } from "foldkit"
-import * as Keyed from "../../../data/keyed"
+import * as Keyed from "@maple/views/data/keyed"
 import type { Resources } from "../../../platform/resources"
 
 // The S8 request step (`Keyed.request` writes the slot and yields its fetch), shared by every
@@ -58,5 +58,5 @@ export const applySteps = <Model, Message>(
 	readonly commands: ReadonlyArray<Command.Command<Message, never, Resources>>
 } => ({
 	model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
-	commands: steps.flatMap((step) => step.commands),
+	commands: Arr.flatMap(steps, (step) => step.commands),
 })

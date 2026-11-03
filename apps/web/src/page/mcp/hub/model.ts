@@ -1,30 +1,41 @@
-import { McpOverviewResponse, McpServersResponse, McpToolResponse } from "@maple/domain/http"
+import {
+	McpOverviewResponse,
+	McpServersResponse,
+	McpSessionResponse,
+	McpSessionsResponse,
+	McpToolResponse,
+} from "@maple/domain/http"
 import { Schema } from "effect"
-import * as Chart from "../../../charts/chart"
-import { ChartRuntime } from "../../../charts/chart-runtime"
-import { ThemeColors } from "../../../charts/theme-colors"
-import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { McpServersSearch } from "../../../route/search"
-import * as Select from "../../../ui/select"
-import * as ToggleGroup from "../../../ui/toggle-group"
+import * as Select from "@maple/views/ui/select"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import type { PresetValue } from "../../kit/time-controls"
 
-// `/mcp-servers`, `/mcp-servers/:service` and `/mcp-servers/:service/tools/:tool`: one page, three views.
+// `/mcp-servers`, a server, its tool pages, its sessions and one session: one page, five views.
 
-export const DEFAULT_MCP_PRESET = "1d"
+export const DEFAULT_MCP_PRESET: PresetValue = "24h"
 
 export const McpView = Schema.TaggedUnion({
 	Servers: {},
 	Server: { service: Schema.String },
 	Tool: { service: Schema.String, tool: Schema.String },
+	Sessions: { service: Schema.String },
+	Session: { service: Schema.String, sessionId: Schema.String },
 })
 export type McpView = typeof McpView.Type
 
 export const ServersData = Schema.Struct(McpServersResponse.fields)
 export const OverviewData = Schema.Struct(McpOverviewResponse.fields)
 export const ToolData = Schema.Struct(McpToolResponse.fields)
+export const SessionsData = Schema.Struct(McpSessionsResponse.fields)
+export const SessionData = Schema.Struct(McpSessionResponse.fields)
 
 export const Model = Schema.Struct({
 	view: McpView,
@@ -34,6 +45,8 @@ export const Model = Schema.Struct({
 	servers: KeyedSchema(ServersData, LoadFailure),
 	overview: KeyedSchema(OverviewData, LoadFailure),
 	tool: KeyedSchema(ToolData, LoadFailure),
+	sessions: KeyedSchema(SessionsData, LoadFailure),
+	session: KeyedSchema(SessionData, LoadFailure),
 	percentileToggle: ToggleGroup.Model,
 	clientToggle: ToggleGroup.Model,
 	callsToggle: ToggleGroup.Model,

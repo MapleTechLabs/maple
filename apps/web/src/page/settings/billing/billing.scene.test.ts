@@ -1,6 +1,6 @@
 import { AttachResult, BillingAccount, BillingCustomer, BillingProfile } from "@maple/domain/http"
 import { V2IngestRuleStats } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -8,10 +8,10 @@ import { Message, type Model } from "./model"
 import { Message as DetailsMessage } from "./details/model"
 import { customerChanged, init, requestRuleStats, revisit, spendModelOf, update } from "./update"
 import { usageTable } from "./view-usage"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const customer = Schema.decodeUnknownSync(BillingCustomer)({
 	id: "org_acme",

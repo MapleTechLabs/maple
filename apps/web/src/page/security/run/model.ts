@@ -10,13 +10,13 @@ import {
 import { SecurityAuditRunId } from "@maple/domain/security-audit"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
-import * as Dialog from "../../../ui/dialog"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 import { ParsedMarkdown } from "../../kit/markdown"
 import { SeverityBucket } from "../kit/findings"
 
-// `/security/runs/$runId`: one audit run, live while it is in progress.
+// `/security/code/runs/$runId`: one audit run, live while it is in progress.
 
 export const UnitFilter = Schema.Literals([
 	"all",

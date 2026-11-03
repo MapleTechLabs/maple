@@ -7,6 +7,7 @@ backend, ClickHouse/Tinybird as the warehouse, PlanetScale Postgres for relation
 
 - `apps/*`: deployables (web, api, ai, ingest, alerting, cli, landing, sandbox, ...).
 - `packages/*`: shared code that knows Maple (`domain`, `query-engine`, `backend`, `ui`, `db`, ...).
+  `views` is the Foldkit kit, charts and service map that `apps/web` and `apps/local-ui` share.
 - `lib/*`: zero Maple knowledge, could ship as a standalone OSS library. A `lib/` package that
   imports `@maple/domain` must move to `packages/`. New packages default to `packages/`.
 
@@ -110,8 +111,9 @@ truthiness.
 - **Self-tracing:** the API traces itself through ingest; keep `withTracerDisabledWhen()` and avoid
   spans on hot paths like token validation.
 - **UI:** the dashboard (`apps/web`) and Maple Local (`apps/local-ui`) are Foldkit + `@foldkit/ui` +
-  Tailwind 4, Nucleo icons.
-  Add icons to `apps/web/src/ui/icons.generated.ts` (element trees) from the local Nucleo DB:
+  Tailwind 4, Nucleo icons. Dashboard pages are built from the kit only; read `apps/web/CLAUDE.md`
+  before UI work (find the component in `packages/views/src/ui/INDEX.md`, build missing ones in the kit).
+  Add icons to `packages/views/src/ui/icons.generated.ts` (element trees) from the local Nucleo DB:
   ```bash
   sqlite3 "~/Library/Application Support/Nucleo/icons/data.sqlite3" \
     "SELECT id, name, set_id FROM icons WHERE klass='outline' AND grid=24 AND name LIKE '%search%';"

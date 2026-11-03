@@ -5,11 +5,11 @@ import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../../ui/empty"
-import { errorState } from "../../../../ui/error-state"
-import { activeFilterChips } from "../../../../ui/filters/active-filter-chips"
-import { icon } from "../../../../ui/icon"
+import { button } from "@maple/views/ui/button"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { activeFilterChips } from "@maple/views/ui/filters/active-filter-chips"
+import { icon } from "@maple/views/ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { facetChips } from "../../kit/facets"
@@ -19,7 +19,7 @@ import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
 import { offsetPager, pageRangeLabel } from "../../kit/offset-pager"
 import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
-import { filteredEmpty } from "../../../kit/signal-empty-state"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { kubernetesViewTabs, pickTimeSearch } from "../../kit/view-tabs"
 import * as PeekView from "../peek/view"
 import { MountPodPeek } from "../peek-rows"
@@ -30,6 +30,7 @@ import { type FilterParam, Message, type PodScope } from "./message"
 import type { Model, PodCounts } from "./model"
 import { DEFAULT_PRESET, filtersOf, pageIndexOf, peekOf, sortOf } from "./update"
 import { filtersRail } from "./view-filters"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // `PodsPage` in `KubernetesShell`.
 
@@ -136,11 +137,12 @@ const listArea = (h: H, model: Model, page: PodsPage, inputs: PageViewInputs): H
 	const searchText = model.search.q ?? ""
 	const scope = model.search.scope
 	const offset = pageIndexOf(model) * PAGE_SIZE
-	const hasStructuredFilter = Object.values(filtersOf(model.search)).some(
+	const hasStructuredFilter = Arr.some(
+		Rec.values(filtersOf(model.search)),
 		(values) => (values?.length ?? 0) > 0,
 	)
 	const hasAnyNarrowing =
-		hasStructuredFilter || searchText.trim() !== "" || scope !== undefined || offset > 0
+		hasStructuredFilter || Str.trim(searchText) !== "" || scope !== undefined || offset > 0
 	const endedPods = AsyncData.getOrElse(model.summary.data, () => null)?.endedPods ?? 0
 	const pods = page.data
 	if (pods.length === 0 && !hasAnyNarrowing && endedPods === 0)
@@ -181,13 +183,16 @@ const listArea = (h: H, model: Model, page: PodsPage, inputs: PageViewInputs): H
 			}),
 			activeFilterChips(h, {
 				className: "mb-0",
-				chips: facetChips(FACETS, (param) => model.search[param]).map((chip) => ({
-					id: chip.param,
-					label: chip.label,
-					values: chip.values,
-					isNegated: chip.isNegated,
-					onRemove: Message.RemovedFilterChip({ param: chip.param }),
-				})),
+				chips: Arr.map(
+					facetChips(FACETS, (param) => model.search[param]),
+					(chip) => ({
+						id: chip.param,
+						label: chip.label,
+						values: chip.values,
+						isNegated: chip.isNegated,
+						onRemove: Message.RemovedFilterChip({ param: chip.param }),
+					}),
+				),
 			}),
 			pods.length === 0
 				? filteredEmpty(h, {

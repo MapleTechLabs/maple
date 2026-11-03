@@ -17,14 +17,18 @@ import {
 	type TracerProvider,
 	trace,
 } from "@opentelemetry/api"
+import { CompositePropagator, W3CBaggagePropagator, W3CTraceContextPropagator } from "@opentelemetry/core"
 import { registerInstrumentations } from "@opentelemetry/instrumentation"
 import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch"
 import { XMLHttpRequestInstrumentation } from "@opentelemetry/instrumentation-xml-http-request"
 import { JsonTraceSerializer } from "@opentelemetry/otlp-transformer"
 import { resourceFromAttributes } from "@opentelemetry/resources"
-import type { ReadableSpan, Span, SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base"
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
-import { WebTracerProvider } from "@opentelemetry/sdk-trace-web"
+import type { ReadableSpan, Span, SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace"
+import {
+	BatchSpanProcessor,
+	StackContextManager,
+	TracerProvider as SdkTracerProvider,
+} from "@opentelemetry/sdk-trace"
 import {
 	ATTR_SERVICE_NAME,
 	ATTR_SERVICE_VERSION,
@@ -246,7 +250,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 		shutdown: () => Promise.resolve(),
 	}
 
-	const provider = new WebTracerProvider({
+	const provider = new SdkTracerProvider({
 		resource: resourceFromAttributes(resourceAttributes(config)),
 		sampler: new SessionSampler(config.tracingSampleRate),
 		// The id only — the rest of the identity (email, group) belongs on the
@@ -254,10 +258,18 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 		spanProcessors: [
 			new TraceIdCollector(() => config.identity?.id),
 			connectionTracker,
-			new BatchSpanProcessor(exporter, { scheduledDelayMillis: EXPORT_INTERVAL_MS }),
+			new BatchSpanProcessor({ exporter, scheduledDelayMillis: EXPORT_INTERVAL_MS }),
 		],
 	})
-	provider.register()
+	// What the old WebTracerProvider.register() did: the provider, W3C trace
+	// context + baggage propagation, and a stack context manager.
+	trace.setGlobalTracerProvider(provider)
+	propagation.setGlobalPropagator(
+		new CompositePropagator({
+			propagators: [new W3CTraceContextPropagator(), new W3CBaggagePropagator()],
+		}),
+	)
+	context.setGlobalContextManager(new StackContextManager().enable())
 	mapleProvider = provider
 	// The OTel globals are first-write-wins. If a host app registered its own
 	// provider before us, ours never became the global one: remember whether we

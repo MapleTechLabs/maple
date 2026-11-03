@@ -92,9 +92,7 @@ const markMentionable = Effect.fn("Hazel.request", { kind: "client" })(function*
 		)
 	yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
 	if (response.status < 200 || response.status >= 300) {
-		return yield* Effect.fail(
-			installFailed(`Making the Hazel bot mentionable failed with HTTP ${response.status}`),
-		)
+		return yield* installFailed(`Making the Hazel bot mentionable failed with HTTP ${response.status}`)
 	}
 })
 
@@ -110,20 +108,16 @@ const installFailed = (message: string) => new ChatInstallFailed({ connector: HA
  */
 const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 	const denied = input.params.get("error")
-	if (denied !== null) return yield* Effect.fail(installFailed(`Hazel declined the install: ${denied}`))
+	if (denied !== null) return yield* installFailed(`Hazel declined the install: ${denied}`)
 	const code = input.params.get("code")
-	if (code === null) return yield* Effect.fail(installFailed("Hazel's callback carried no install code"))
+	if (code === null) return yield* installFailed("Hazel's callback carried no install code")
 	const token = yield* requireConfig(input.config, HAZEL_CONNECTOR_ID, BOT_TOKEN_CONFIG)
 	const response = yield* redeem(token, code, input.redirectUri)
 	if (response.status === 400) {
-		return yield* Effect.fail(
-			installFailed("Hazel refused the install code: it expired or was already used"),
-		)
+		return yield* installFailed("Hazel refused the install code: it expired or was already used")
 	}
 	if (response.status < 200 || response.status >= 300) {
-		return yield* Effect.fail(
-			installFailed(`Hazel install redemption failed with HTTP ${response.status}`),
-		)
+		return yield* installFailed(`Hazel install redemption failed with HTTP ${response.status}`)
 	}
 	const json = yield* response.json.pipe(
 		Effect.mapError(() => installFailed("Hazel returned a non-JSON install response")),

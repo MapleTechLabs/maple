@@ -2,7 +2,8 @@ import type { Resources } from "../../platform/resources"
 import { boundsForRange, type TimeBounds } from "../../lib/time"
 import { Array, Option } from "effect"
 import { AsyncData, type Command } from "foldkit"
-import { keyOf, request } from "../../data/slot"
+import { requestKeepingFailure } from "@maple/views/data/keyed"
+import { keyOf } from "../../data/local-query"
 import { type PageContext, rangeOf } from "../contract"
 import { queryOf } from "../../route"
 import { FetchFacets, FetchTraces } from "./command"
@@ -55,9 +56,9 @@ export const load = (
 				onNone: () => 1,
 				onSome: (data) => (force && model.traces.key === tracesKey ? Math.max(1, data.pages.length) : 1),
 			})
-			const traces = request(model.traces, tracesKey, force)
+			const traces = requestKeepingFailure(model.traces, tracesKey, force ? "Refresh" : "Load")
 			const facetsKey = keyFor("trace-facets", context, bounds)
-			const facets = spanScope ? Option.none() : request(model.facets, facetsKey, force)
+			const facets = spanScope ? Option.none() : requestKeepingFailure(model.facets, facetsKey, force ? "Refresh" : "Load")
 			return {
 				model: {
 					...model,

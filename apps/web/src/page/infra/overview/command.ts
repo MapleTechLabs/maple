@@ -17,11 +17,11 @@ import { containersSummary, listHosts, podsSummary } from "@maple/web-data/wareh
 import { getRailwayServices } from "@maple/web-data/warehouse/railway-infra"
 import { getSupabaseProjects } from "@maple/web-data/warehouse/supabase-infra"
 import { getServiceMapPlanetScale } from "@maple/web-data/warehouse/service-map"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
 import { loadInfraPresence } from "../../../data/infra-surfaces"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { Message } from "./message"
 import { SourceId, type SourceReading } from "./model"
@@ -39,13 +39,9 @@ const read = (source: SourceId, window: TimeWindow) => {
 				reading(summarizeHosts(response.data, window.endTime)),
 			)
 		case "containers":
-			return Effect.map(containersSummary({ data }), (counts) =>
-				reading(summarizeContainers(counts)),
-			)
+			return Effect.map(containersSummary({ data }), (counts) => reading(summarizeContainers(counts)))
 		case "kubernetes":
-			return Effect.map(podsSummary({ data }), (counts) =>
-				reading(summarizePods(counts)),
-			)
+			return Effect.map(podsSummary({ data }), (counts) => reading(summarizePods(counts)))
 		case "cloudflare":
 			return Effect.map(getCloudflareZones({ data }), ({ zones }) =>
 				reading(summarizeCloudflare(zones)),
@@ -63,7 +59,10 @@ const read = (source: SourceId, window: TimeWindow) => {
 					Option.match(status, {
 						onNone: () => [],
 						onSome: ({ projects: discovered }) =>
-							discovered.map((project): readonly [string, string] => [project.ref, project.name]),
+							Arr.map(discovered, (project): readonly [string, string] => [
+								project.ref,
+								project.name,
+							]),
 					}),
 				)
 				return reading(summarizeSupabase(projects, names))

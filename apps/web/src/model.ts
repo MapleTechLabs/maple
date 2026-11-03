@@ -8,7 +8,8 @@ import * as Preload from "./page/preload"
 import { RootToastAction } from "./page/contract"
 import { PageMessage, PageSlot } from "./page/registry"
 import * as SignIn from "./page/sign-in"
-import * as Toast from "./ui/toast"
+import * as Toast from "@maple/views/ui/toast"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 import { AppRoute } from "./route"
 import { SessionTimeRange } from "./route/session-time-range"
 import * as Shell from "./shell"
@@ -43,6 +44,8 @@ export const Model = Schema.Struct({
 	toastActions: Schema.Record(Schema.String, PageMessage),
 	/** A toast's root-level action, by toast id (Reconnect). */
 	toastRootActions: Schema.Record(Schema.String, RootToastAction),
+	/** The app-wide tooltip every `tooltipTrigger` opens. */
+	tooltip: TooltipHost.Model,
 	/** The routed page (`page/registry.ts`): built on route entry, dropped on leave. */
 	page: Schema.NullOr(PageSlot),
 	/** Page instances built so far; the next build is stamped `pageInstances + 1`. */

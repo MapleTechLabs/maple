@@ -23,7 +23,7 @@ export class SecurityAuditRepositorySize extends Context.Service<
 		const bytes: SecurityAuditRepositorySizeApi["bytes"] = Effect.fn("SecurityAuditRepositorySize.bytes")(
 			function* (orgId, repository) {
 				return yield* vcs.repositorySizeBytes(orgId, repository).pipe(
-					Effect.map(Option.some),
+					Effect.asSome,
 					Effect.catch((error) =>
 						Effect.logWarning("Could not read a repository's size before its clone").pipe(
 							Effect.annotateLogs({ orgId, repository, error: error.message }),

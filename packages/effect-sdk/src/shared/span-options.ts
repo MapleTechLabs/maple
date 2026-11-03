@@ -4,7 +4,7 @@
 //
 // BOUNDARY: a span's failure can be any value, so error predicates take `unknown`
 // and `failureIdentifier` narrows it.
-import { Predicate } from "effect"
+import { Predicate, Array as Arr, String as Str } from "effect"
 import type { Exit, Tracer } from "effect"
 
 /** A finished span, as handed to the `dropSpan` predicate. */
@@ -83,7 +83,7 @@ export interface SpanFilter {
 
 const prefixMatcher = (prefixes: Iterable<string> | undefined): ((name: string) => boolean) | undefined => {
 	const list = prefixes === undefined ? [] : [...prefixes]
-	return list.length > 0 ? (name) => list.some((prefix) => name.startsWith(prefix)) : undefined
+	return list.length > 0 ? (name) => Arr.some(list, (prefix) => Str.startsWith(prefix)(name)) : undefined
 }
 
 // A failure's stable identifier: its `_tag`, else its `Error.name`. An error

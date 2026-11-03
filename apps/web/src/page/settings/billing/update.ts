@@ -23,14 +23,25 @@ import {
 } from "../../../lib/billing/controls"
 import { buildSpendModel, SPEND_FEATURES, type SpendModel } from "../../../lib/billing/spend"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
-import { Cause, Clock, Duration, Effect, Option, Result, Schema } from "effect"
+import {
+	Cause,
+	Clock,
+	DateTime,
+	Duration,
+	Effect,
+	Option,
+	Result,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { AsyncData, Command, Dom } from "foldkit"
-import * as Chart from "../../../charts/chart"
+import * as Chart from "@maple/views/charts/chart"
 import { trackProduct } from "../../../data/analytics"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiClient, MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { currentClerkUser } from "../../../platform/clerk"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
 import * as Details from "./details/update"
@@ -137,9 +148,11 @@ const FetchRuleStats = Command.define("FetchBillingRuleStats", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const nowMs = yield* Clock.currentTimeMillis
-			const start = new Date(Math.max(startMs, nowMs - RULE_STATS_MAX_MS)).toISOString()
+			const start = DateTime.formatIso(
+				DateTime.makeUnsafe(Math.max(startMs, nowMs - RULE_STATS_MAX_MS)),
+			)
 			return yield* client.ingestRules.stats({
-				query: { start_time: start, end_time: new Date(nowMs).toISOString() },
+				query: { start_time: start, end_time: DateTime.formatIso(DateTime.makeUnsafe(nowMs)) },
 			})
 		}).pipe(loaded((result) => Message.CompletedFetchRuleStats({ result }))),
 })
@@ -166,17 +179,18 @@ const FetchOrgChoices = Command.define("FetchBillingOrgChoices", {
 	execute: currentClerkUser.pipe(
 		Effect.map((user): ReadonlyArray<OrgChoice> => {
 			const activeId = window.Clerk?.organization?.id
-			return (user.organizationMemberships ?? [])
-				.filter(
+			return Arr.map(
+				Arr.filter(
+					user.organizationMemberships ?? [],
 					(membership) =>
 						membership.role === "org:admin" && membership.organization.id !== activeId,
-				)
-				.map(({ organization }) => ({
+				),
+				({ organization }) => ({
 					orgId: OrgId.make(organization.id),
 					name: organization.name,
 					imageUrl: organization.hasImage ? (organization.imageUrl ?? "") : "",
-				}))
-				.toSorted((a, b) => a.name.localeCompare(b.name))
+				}),
+			).toSorted((a, b) => Str.localeCompare(b.name)(a.name))
 		}),
 		loaded((result) => Message.CompletedFetchOrgChoices({ result })),
 	),
@@ -607,7 +621,7 @@ export const update = (
 				onFailure: (error) =>
 					same({
 						model: { ...model, isOpeningPortal: false },
-						outMessage: toast("error", error.message || "Couldn't open the billing portal."),
+						outMessage: toast("error", error.message || "Couldn't open the billing portal"),
 					}),
 			}),
 		CompletedRedirect: () => same({ model }),
@@ -654,7 +668,7 @@ export const update = (
 				onFailure: (error) =>
 					same({
 						model: { ...model, isSavingCap: false },
-						outMessage: toast("error", "The overage cap could not be saved.", error.message),
+						outMessage: toast("error", "Couldn't save the overage cap", error.message),
 					}),
 			}),
 		ToggledBreakdown: () => same({ model: { ...model, isBreakdownOpen: !model.isBreakdownOpen } }),
@@ -689,7 +703,7 @@ export const update = (
 									daily: revalidate(model.daily),
 								},
 								commands: [FetchPlans(), FetchInvoices(), FetchDaily()],
-								outMessage: toast("success", "Plan updated successfully"),
+								outMessage: toast("success", "Plan updated"),
 							}),
 				onFailure: (error) =>
 					same({

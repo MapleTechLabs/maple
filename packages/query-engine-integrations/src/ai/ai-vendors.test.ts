@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { mapAiSpan, resolveAiIntegration } from "./ai-integrations"
 import { AI_VENDOR_INTEGRATIONS } from "./ai-vendors"
 import type { AiSessionSpansOutput } from "./ai-sessions"
+import { Record as Rec } from "effect"
 
 const row = (vendorId: string, spanAttributes: Record<string, string>): AiSessionSpansOutput => ({
 	traceId: "a1e33a5cc671a33952cc0e1117701290",
@@ -581,7 +582,7 @@ describe("the vendor merge only ever adds keys", () => {
 		// baseline every override has to reproduce.
 		const baseline = mapAiSpan(row("unknown:other", LEGACY_ONLY_SPAN)).genAi
 
-		for (const vendorId of Object.keys(AI_VENDOR_INTEGRATIONS)) {
+		for (const vendorId of Rec.keys(AI_VENDOR_INTEGRATIONS)) {
 			expect(mapAiSpan(row(vendorId, LEGACY_ONLY_SPAN)).genAi).toEqual(baseline)
 		}
 	})

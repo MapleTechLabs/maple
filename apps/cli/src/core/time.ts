@@ -1,7 +1,7 @@
 // Time-range resolution for the CLI commands. Every bound leaves here as a
 // ClickHouse-style `YYYY-MM-DD HH:mm:ss` UTC string, whatever the user typed.
 
-import { Clock, Effect, Option, Result, Schema } from "effect"
+import { Clock, Effect, Option, Result, Schema, String as Str } from "effect"
 
 export interface Range {
 	readonly startTime: string
@@ -14,7 +14,7 @@ export class TimeRangeError extends Schema.TaggedError<TimeRangeError>()("@maple
 	hint: Schema.optionalKey(Schema.String),
 }) {}
 
-const pad = (n: number): string => String(n).padStart(2, "0")
+const pad = (n: number): string => Str.padStart(2, "0")(String(n))
 
 export const formatDateTimeUTC = (d: Date): string =>
 	`${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
@@ -25,7 +25,7 @@ const UNIT_MS = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 } as co
 
 /** Parse a relative window like `30m`, `6h`, `7d`, `2w` to milliseconds. */
 export const sinceToMs = (since: string): number | null => {
-	const match = since.trim().match(SINCE_RE)
+	const match = Str.trim(since).match(SINCE_RE)
 	if (!match) return null
 	const unit = match[2]
 	const n = Number(match[1])
@@ -40,9 +40,9 @@ const TIMESTAMP_RE =
 
 const zoneOffsetMs = (zone: string | undefined): number => {
 	if (zone === undefined || zone === "Z" || zone === "z") return 0
-	const sign = zone.startsWith("-") ? -1 : 1
-	const digits = zone.slice(1).replace(":", "")
-	return sign * (Number(digits.slice(0, 2)) * 60 + Number(digits.slice(2, 4))) * 60_000
+	const sign = Str.startsWith("-")(zone) ? -1 : 1
+	const digits = Str.replace(":", "")(Str.slice(1)(zone))
+	return sign * (Number(Str.slice(0, 2)(digits)) * 60 + Number(Str.slice(2, 4)(digits))) * 60_000
 }
 
 /**
@@ -51,7 +51,7 @@ const zoneOffsetMs = (zone: string | undefined): number => {
  * without a zone.
  */
 export const parseTimestampMs = (input: string): number | null => {
-	const match = input.trim().match(TIMESTAMP_RE)
+	const match = Str.trim(input).match(TIMESTAMP_RE)
 	if (!match) return null
 	const [, y, mo, d, h = "00", mi = "00", s = "00", zone] = match
 	const year = Number(y)

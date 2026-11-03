@@ -1,16 +1,14 @@
 import { docsUrl } from "../../../lib/docs"
-import { cn } from "@maple/ui/lib/utils"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { AsyncData, Submodel } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import * as CopyButton from "../../../ui/copy-button"
-import * as DialogView from "../../../ui/dialog-view"
-import { icon } from "../../../ui/icon"
-import { inputGroup, inputGroupAddon, inputGroupButton } from "../../../ui/input-group"
-import { skeleton } from "../../../ui/skeleton"
-import * as TabsView from "../../../ui/tabs-view"
-import { textarea } from "../../../ui/textarea"
+import { button, linkButton } from "@maple/views/ui/button"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { icon } from "@maple/views/ui/icon"
+import { inputGroup, inputGroupAddon, inputGroupButton } from "@maple/views/ui/input-group"
+import { skeleton } from "@maple/views/ui/skeleton"
+import * as TabsView from "@maple/views/ui/tabs-view"
+import { textarea } from "@maple/views/ui/textarea"
 import { Message, type Model, MountInstallModal, type Snippet } from "./install-modal"
 import {
 	dockerCommand,
@@ -20,6 +18,7 @@ import {
 	isCustomEndpoint,
 	maskToken,
 } from "./install-snippets"
+import { typography } from "@maple/views/ui/typography"
 
 // `InstallHostModal`'s dialog. Rendered only while open or closing.
 
@@ -79,7 +78,7 @@ const snippetPanel = (h: H, model: Model, panel: SnippetPanel): Html =>
 			])
 
 const note = (h: H, children: ReadonlyArray<Html | string>): Html =>
-	h.p([h.Class("text-muted-foreground text-xs")], children)
+	typography(h, { size: "xs", tone: "muted", as: "p" }, children)
 
 const code = (h: H, text: string): Html => h.code([h.Class("font-mono")], [text])
 
@@ -177,23 +176,19 @@ const content = (h: H, model: Model, close: ReadonlyArray<ChildAttribute>): Read
 	]),
 	DialogView.dialogFooter(h, "dialog", [
 		button(h, { variant: "outline", attributes: [...close] }, ["Close"]),
-		h.a(
-			[
-				h.Href(
-					docsUrl(
-						model.tabs.selected === "docker"
-							? "docker"
-							: model.tabs.selected === "hosts"
-								? "hosts"
-								: "kubernetes",
-					),
+		linkButton(
+			h,
+			{
+				variant: "outline",
+				href: docsUrl(
+					model.tabs.selected === "docker"
+						? "docker"
+						: model.tabs.selected === "hosts"
+							? "hosts"
+							: "kubernetes",
 				),
-				h.Target("_blank"),
-				h.Rel("noopener noreferrer"),
-				h.AriaLabel("View docs"),
-				h.Class(cn(buttonVariants({ variant: "outline" }))),
-				h.DataAttribute("slot", "button"),
-			],
+				attributes: [h.Target("_blank"), h.Rel("noopener noreferrer"), h.AriaLabel("View docs")],
+			},
 			["View docs"],
 		),
 	]),

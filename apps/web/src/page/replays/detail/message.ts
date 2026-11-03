@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
-import * as CopyButton from "../../../ui/copy-button"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import {
 	EventFilter,
 	EventRow,
@@ -52,6 +52,8 @@ export const Message = defineMessageUnion({
 	/** A feed Mount handed its range to the live engine. */
 	FedTrailingEvents: {},
 	ClickedRetryPlayer: {},
+	/** The page failure card's Try again: re-reads whichever entry read failed. */
+	ClickedRetryDetail: {},
 	PickedRailTab: { tab: RailTab },
 	PickedEventFilter: { filter: EventFilter },
 	ClickedEvent: { index: Schema.Number, timestamp: Schema.String },

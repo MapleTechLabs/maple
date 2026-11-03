@@ -1,9 +1,9 @@
 import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2GcpIntegration } from "@maple/domain/http/v2"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test, vi } from "vitest"
-import * as Menu from "../../ui/menu"
-import { toLoadFailure } from "../../data/load-failure"
+import * as Menu from "@maple/views/ui/menu"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../contract"
 import { ReadRemoved, WriteRemoved } from "./gcp"
 import { Message } from "./message"
@@ -14,7 +14,7 @@ const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const publicId = encodePublicId(PublicIdPrefixes.gcpConnector, "00000000-0000-4000-8000-000000000402")
 
@@ -91,7 +91,7 @@ describe("google cloud card", () => {
 			sent.model,
 			Message.CompletedGcpDisconnect({ id, cleanupScript: "echo bye", failure: null }),
 		)
-		expect(done.model.gcpCard.removed.map((entry) => entry.cleanupScript)).toEqual(["echo bye"])
+		expect(Arr.map(done.model.gcpCard.removed, (entry) => entry.cleanupScript)).toEqual(["echo bye"])
 		expect(names(done.commands)).toEqual(
 			expect.arrayContaining(["WriteGcpRemovedConnectors", "LoadIntegrationsGcpStatus"]),
 		)
@@ -101,7 +101,7 @@ describe("google cloud card", () => {
 		)
 		expect(failed.model.gcpCard.removed).toEqual([])
 		expect(failed.outMessage).toEqual(
-			expect.objectContaining({ _tag: "RequestedToast", title: "Couldn't disconnect" }),
+			expect.objectContaining({ _tag: "RequestedToast", title: "Couldn't disconnect Google Cloud" }),
 		)
 	})
 

@@ -5,7 +5,7 @@ import {
 	DashboardVariableSchema,
 	TimeRangeSchema,
 } from "@maple/domain/http"
-import { Clock, Duration, Effect, Queue, Random, Result, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Queue, Random, Result, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { createQueryDraft } from "@maple/query-engine/query-builder"
 import { makeQueryDataSource } from "@maple/widgets/dashboard"
@@ -25,7 +25,7 @@ import { fetchVariableOptions } from "../kit/variables"
 import { deriveDefaultWidgetTitle } from "../widget/drafts"
 import { Message } from "./message"
 import { ShareMessage } from "./share"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { presetById } from "./picker-catalog"
 import { applySectionEdit, SectionEdit } from "./section-edit"
 
@@ -78,11 +78,17 @@ export const FetchShares = Command.define("FetchDashboardShares", {
 			const client = yield* MapleApiV2Client
 			const id = yield* decodeDashboardId(dashboardId)
 			const shares = yield* client.dashboards.listShares({ params: { id } })
-			return shares.map((share) => ({ widgetId: share.widgetId ?? null, mode: share.mode, token: share.token }))
+			return Arr.map(shares, (share) => ({
+				widgetId: share.widgetId ?? null,
+				mode: share.mode,
+				token: share.token,
+			}))
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
-			Effect.map((result) => Message.GotShareMessage({ message: ShareMessage.CompletedFetchShares({ seq, result }) })),
+			Effect.map((result) =>
+				Message.GotShareMessage({ message: ShareMessage.CompletedFetchShares({ seq, result }) }),
+			),
 		),
 })
 
@@ -149,7 +155,8 @@ export const CloneWidget = Command.define("CloneDashboardWidget", {
 	execute: ({ orgId, dashboardId, widgetId }) =>
 		Effect.gen(function* () {
 			const nowMs = yield* Clock.currentTimeMillis
-			const newId = generateWidgetId(nowMs, yield* Random.next)
+			const random = yield* Random.next
+			const newId = generateWidgetId(nowMs, random)
 			return yield* toWriteMessage(
 				mutateDashboard(orgId, dashboardId, (document, nowIso) =>
 					withClone(document, widgetId, newId, nowIso),
@@ -196,11 +203,13 @@ export const ExportDashboard = Command.define("ExportDashboardJson", {
 
 // MOUNTS
 
-type HandleMessage =
-	| typeof Message.PressedGrip.Type
-	| typeof Message.PressedResizeHandle.Type
-	| typeof Message.PressedGripKey.Type
-	| typeof Message.BlurredGrip.Type
+const HandleMessage = Schema.Union([
+	Message.PressedGrip,
+	Message.PressedResizeHandle,
+	Message.PressedGripKey,
+	Message.BlurredGrip,
+])
+type HandleMessage = typeof HandleMessage.Type
 
 /** This grid's own cell for an event target on one of its handles (`cellOf`). */
 const handleCellOf = (container: Element, target: EventTarget | null, selector: string) => {
@@ -334,13 +343,17 @@ const quantizeWidthPx = (widthPx: number): number | undefined =>
 
 /**
  * `useInViewportSticky` + `useMeasuredWidthPx` on a tile's root: its quantized width now and on
- * every resize, and (once) that it came within 200 px of the viewport for 200 ms.
+ * every resize, that it came within 200 px of the viewport for 200 ms, and that it left again.
  */
 export const WatchWidget = Mount.defineStream("WatchDashboardWidget", {
 	args: { widgetId: Schema.String },
-	messages: [Message.MeasuredWidget, Message.RevealedWidget],
+	messages: [Message.MeasuredWidget, Message.RevealedWidget, Message.HidWidget],
 	execute: ({ element, widgetId }) =>
-		Stream.callback<typeof Message.MeasuredWidget.Type | typeof Message.RevealedWidget.Type>((queue) =>
+		Stream.callback<
+			| typeof Message.MeasuredWidget.Type
+			| typeof Message.RevealedWidget.Type
+			| typeof Message.HidWidget.Type
+		>((queue) =>
 			Effect.acquireRelease(
 				Effect.sync(() => {
 					const measure = (width: number) => {
@@ -350,23 +363,24 @@ export const WatchWidget = Mount.defineStream("WatchDashboardWidget", {
 					}
 					measure(element.getBoundingClientRect().width)
 					const resizes = new ResizeObserver((entries) =>
-						entries.forEach((entry) => measure(entry.contentRect.width)),
+						Arr.forEach(entries, (entry) => measure(entry.contentRect.width)),
 					)
 					resizes.observe(element)
-					const reveal = { timer: 0, isDone: false }
+					const reveal = { timer: 0, isShown: false }
 					const intersections = new IntersectionObserver(
 						(entries) => {
-							if (reveal.isDone) return
-							const isIntersecting = entries.some((entry) => entry.isIntersecting)
-							if (isIntersecting && reveal.timer === 0) {
+							const isIntersecting = Arr.some(entries, (entry) => entry.isIntersecting)
+							if (isIntersecting && !reveal.isShown && reveal.timer === 0) {
 								reveal.timer = window.setTimeout(() => {
-									reveal.isDone = true
-									intersections.disconnect()
+									reveal.timer = 0
+									reveal.isShown = true
 									Queue.offerUnsafe(queue, Message.RevealedWidget({ widgetId }))
 								}, 200)
-							} else if (!isIntersecting && reveal.timer !== 0) {
+							} else if (!isIntersecting) {
 								window.clearTimeout(reveal.timer)
 								reveal.timer = 0
+								if (reveal.isShown) Queue.offerUnsafe(queue, Message.HidWidget({ widgetId }))
+								reveal.isShown = false
 							}
 						},
 						{ rootMargin: "200px" },
@@ -431,8 +445,11 @@ export const AddWidget = Command.define("AddDashboardWidget", {
 	execute: ({ orgId, dashboardId, presetId, chartId, target }) =>
 		Effect.gen(function* () {
 			const picked = pickedWidget({ presetId, chartId })
-			if (picked === null) return Message.CompletedWrite({ result: Result.succeed("Synced" satisfies WriteSync) })
-			const id = generateWidgetId(yield* Clock.currentTimeMillis, yield* Random.next)
+			if (picked === null)
+				return Message.CompletedWrite({ result: Result.succeed("Synced" satisfies WriteSync) })
+			const now = yield* Clock.currentTimeMillis
+			const random = yield* Random.next
+			const id = generateWidgetId(now, random)
 			return yield* toWriteMessage(
 				mutateDashboard(orgId, dashboardId, (document, nowIso) =>
 					withAddedWidget(
@@ -484,7 +501,11 @@ export const SaveVariables = Command.define("SaveDashboardVariables", {
 	messages: [Message.CompletedWrite],
 	execute: ({ orgId, dashboardId, variables }) =>
 		toWriteMessage(
-			mutateDashboard(orgId, dashboardId, (document, nowIso) => ({ ...document, variables, updatedAt: nowIso })),
+			mutateDashboard(orgId, dashboardId, (document, nowIso) => ({
+				...document,
+				variables,
+				updatedAt: nowIso,
+			})),
 		),
 })
 

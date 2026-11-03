@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 // Build-time version string. `scripts/build-local-binary.sh` bakes the real
 // release tag in via `bun build --define '__MAPLE_VERSION__="v1.2.3"'`, so a
 // compiled `maple --version` reports exactly the release it was built from.
@@ -16,7 +17,7 @@ const raw = typeof __MAPLE_VERSION__ !== "undefined" ? __MAPLE_VERSION__ : "dev"
 
 // The CLI framework prints "<name> v<version>", so strip a leading "v" from
 // release tags like "v0.5.0" to avoid a doubled "vv0.5.0".
-export const MAPLE_VERSION: string = raw.replace(/^v/, "")
+export const MAPLE_VERSION: string = Str.replace(/^v/, "")(raw)
 
 // The libchdb release the build pairs with (e.g. "v26.7.3"), baked in via
 // `--define` from packages/local-server/libchdb.json by both the `maple` build

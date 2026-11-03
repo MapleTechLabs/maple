@@ -1,6 +1,6 @@
 import { AlertRuleId, AnomalyIncidentId, DashboardId, ErrorIssueId } from "@maple/domain/http"
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { pipe, Schema } from "effect"
+import { pipe, Schema, Record as Rec } from "effect"
 import { Route } from "foldkit"
 import { query, schemaSegment, slash } from "foldkit/route"
 import { AppRoute } from "./app-route"
@@ -138,15 +138,16 @@ const routers = {
 	),
 	CodeReviewSettings: pipe(path("code-review", "settings"), Route.mapTo(AppRoute.CodeReviewSettings)),
 	Security: pipe(path("security"), Route.mapTo(AppRoute.Security)),
-	SecurityFindings: pipe(
-		path("security", "findings"),
+	SecurityCode: pipe(path("security", "code"), Route.mapTo(AppRoute.SecurityCode)),
+	SecurityCodeFindings: pipe(
+		path("security", "code", "findings"),
 		search(Search.SecurityFindingsSearch),
-		Route.mapTo(AppRoute.SecurityFindings),
+		Route.mapTo(AppRoute.SecurityCodeFindings),
 	),
-	SecurityRuns: pipe(
-		path("security", "runs"),
+	SecurityCodeRuns: pipe(
+		path("security", "code", "runs"),
 		search(Search.SecurityRunsSearch),
-		Route.mapTo(AppRoute.SecurityRuns),
+		Route.mapTo(AppRoute.SecurityCodeRuns),
 	),
 	SecurityExposure: pipe(path("security", "exposure"), Route.mapTo(AppRoute.SecurityExposure)),
 	SecurityRuntimes: pipe(path("security", "runtimes"), Route.mapTo(AppRoute.SecurityRuntimes)),
@@ -156,15 +157,37 @@ const routers = {
 		Route.mapTo(AppRoute.SecurityDependencies),
 	),
 	SecurityRun: pipe(
-		path("security", "runs"),
+		path("security", "code", "runs"),
 		slash(schemaSegment("runId", SecurityAuditRunId)),
 		Route.mapTo(AppRoute.SecurityRun),
 	),
 	SecurityFinding: pipe(
-		path("security", "findings"),
+		path("security", "code", "findings"),
 		slash(schemaSegment("targetId", SecurityAuditTargetId)),
 		slash(boundedSegment("fingerprint", 1024)),
 		Route.mapTo(AppRoute.SecurityFinding),
+	),
+	// The code audit's pages before they moved under `/security/code`; `routeRedirect` sends them on.
+	SecurityLegacyFindings: pipe(
+		path("security", "findings"),
+		search(Search.SecurityFindingsSearch),
+		Route.mapTo(AppRoute.SecurityLegacyFindings),
+	),
+	SecurityLegacyRuns: pipe(
+		path("security", "runs"),
+		search(Search.SecurityRunsSearch),
+		Route.mapTo(AppRoute.SecurityLegacyRuns),
+	),
+	SecurityLegacyRun: pipe(
+		path("security", "runs"),
+		slash(schemaSegment("runId", SecurityAuditRunId)),
+		Route.mapTo(AppRoute.SecurityLegacyRun),
+	),
+	SecurityLegacyFinding: pipe(
+		path("security", "findings"),
+		slash(schemaSegment("targetId", SecurityAuditTargetId)),
+		slash(boundedSegment("fingerprint", 1024)),
+		Route.mapTo(AppRoute.SecurityLegacyFinding),
 	),
 	Dashboard: pipe(
 		path("dashboards"),
@@ -319,6 +342,21 @@ const routers = {
 		search(Search.McpServersSearch),
 		Route.mapTo(AppRoute.McpServerTool),
 	),
+	McpServerSessions: pipe(
+		path("mcp-servers"),
+		slash(segment("serviceName")),
+		slash(path("sessions")),
+		search(Search.McpServersSearch),
+		Route.mapTo(AppRoute.McpServerSessions),
+	),
+	McpServerSession: pipe(
+		path("mcp-servers"),
+		slash(segment("serviceName")),
+		slash(path("sessions")),
+		slash(segment("sessionId")),
+		search(Search.McpServersSearch),
+		Route.mapTo(AppRoute.McpServerSession),
+	),
 	AgentSessionTools: pipe(
 		path("agent-sessions", "tools"),
 		search(Search.AgentSessionToolsSearch),
@@ -467,11 +505,13 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.InfraPlanetscale,
 		routers.InfraRailway,
 		routers.InfraSupabase,
+		routers.McpServerSession,
+		routers.McpServerSessions,
 		routers.McpServerTool,
 		routers.McpServer,
 		routers.AgentSessionTools,
 		routers.ErrorIssues,
-		...Object.values(routers),
+		...Rec.values(routers),
 	),
 	AppRoute.NotFound,
 )

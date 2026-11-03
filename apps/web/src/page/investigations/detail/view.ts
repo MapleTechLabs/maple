@@ -1,6 +1,5 @@
 import type { IssueSeverity } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { pageScrollAreaStyles } from "@maple/ui/styles/ui/page-layout"
 import { investigationHeadline, investigationScope } from "@maple/web-data/investigations/display"
 import { Mount, Submodel } from "foldkit"
 import {
@@ -14,16 +13,16 @@ import { contextOf, placeholderOf, suggestionsOf } from "./conversation"
 import { investigationNoun } from "./investigation-context"
 import { diagnosisReportCard, reportOfDiagnosis } from "./view-diagnosis-card"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../../route"
 import type { BreadcrumbEntry } from "../../../shell"
-import { button } from "../../../ui/button"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import * as MenuView from "../../../ui/menu-view"
-import * as Tooltip from "../../../ui/tooltip"
+import { button } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import * as MenuView from "@maple/views/ui/menu-view"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import type { PageViewInputs } from "../../contract"
-import { dashboardPage } from "../../kit/dashboard-page"
+import { dashboardPage, pageScrollArea } from "../../kit/dashboard-page"
 import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { linkTabStrip } from "../../kit/underline-tabs"
@@ -43,6 +42,8 @@ import {
 	type TipTrigger,
 } from "./view-sections"
 import { verdictCard } from "./view-verdict"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The investigation page: `InvestigationView`, `InvestigationHeader`, `InvestigationTabs`.
 
@@ -95,49 +96,43 @@ const headerActions = (h: H, model: Model, investigation: V2Investigation): Html
 			: [{ _tag: "Item" as const, value: "resolve", label: "Mark resolved", isDisabled: isBusy }]),
 	]
 	return detailActions(h, [
-		h.div(
-			[h.Class("flex items-center gap-2")],
-			[
-				button(
-					h,
-					{
-						size: "sm",
-						variant: primary.variant,
-						isDisabled: isBusy,
-						attributes: [h.OnClick(Message.ClickedPrimary())],
-					},
-					[primary.label],
-				),
-				h.submodel({
-					slotId: "investigation-actions",
-					model: model.actionsMenu,
-					view: MenuView.view,
-					viewInputs: {
-						entries,
-						align: "end",
-						toView: ({ trigger, withTrigger }) =>
-							h.span(
-								[h.Class("contents")],
-								withTrigger(
-									button(
-										h,
-										{
-											variant: "outline",
-											size: "icon-sm",
-											attributes: [
-												h.AriaLabel("More investigation actions"),
-												...trigger,
-											],
-										},
-										[icon(h, "DotsVerticalIcon")],
-									),
+		hstack(h, { gap: "2" }, [
+			button(
+				h,
+				{
+					size: "sm",
+					variant: primary.variant,
+					isDisabled: isBusy,
+					attributes: [h.OnClick(Message.ClickedPrimary())],
+				},
+				[primary.label],
+			),
+			h.submodel({
+				slotId: "investigation-actions",
+				model: model.actionsMenu,
+				view: MenuView.view,
+				viewInputs: {
+					entries,
+					align: "end",
+					toView: ({ trigger, withTrigger }) =>
+						h.span(
+							[h.Class("contents")],
+							withTrigger(
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "icon-sm",
+										attributes: [h.AriaLabel("More investigation actions"), ...trigger],
+									},
+									[icon(h, "DotsVerticalIcon")],
 								),
 							),
-					},
-					toParentMessage: (message) => Message.GotActionsMenuMessage({ message }),
-				}),
-			],
-		),
+						),
+				},
+				toParentMessage: (message) => Message.GotActionsMenuMessage({ message }),
+			}),
+		]),
 	])
 }
 
@@ -154,19 +149,22 @@ const tabs = (h: H, investigation: V2Investigation, active: Tab): Html => {
 	return linkTabStrip(
 		h,
 		"Investigation sections",
-		TABS.filter((tab) => tab.value !== "evidence" || evidenceCount > 0).map((tab) => ({
-			key: tab.value,
-			href: hrefOf(
-				AppRoute.Investigation({
-					id: investigation.id,
-					search: tab.value === "overview" ? {} : { tab: tab.value },
-				}),
-			),
-			label: tab.label,
-			count: tab.value === "evidence" ? evidenceCount : undefined,
-			isCurrent: tab.value === active,
-			isRouteActive: tab.value === active,
-		})),
+		Arr.map(
+			Arr.filter(TABS, (tab) => tab.value !== "evidence" || evidenceCount > 0),
+			(tab) => ({
+				key: tab.value,
+				href: hrefOf(
+					AppRoute.Investigation({
+						id: investigation.id,
+						search: tab.value === "overview" ? {} : { tab: tab.value },
+					}),
+				),
+				label: tab.label,
+				count: tab.value === "evidence" ? evidenceCount : undefined,
+				isCurrent: tab.value === active,
+				isRouteActive: tab.value === active,
+			}),
+		),
 	)
 }
 
@@ -191,15 +189,12 @@ const documentTab = (
 					...(signals === null ? [] : [signals]),
 				]
 	return [
-		h.div(
-			[h.DataAttribute("slot", "page-scroll-area"), h.Class(pageScrollAreaStyles)],
-			[
-				h.div(
-					[h.Class("flex flex-col gap-7")],
-					[...sections, investigationMeta(h, model, investigation)],
-				),
-			],
-		),
+		pageScrollArea(h, {}, [
+			h.div(
+				[h.Class("flex flex-col gap-7")],
+				[...sections, investigationMeta(h, model, investigation)],
+			),
+		]),
 		...(isResolved ? [] : [h.div([h.Class("shrink-0 px-4 pb-4")], [followUpComposer(h)])]),
 	]
 }

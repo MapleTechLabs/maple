@@ -7,6 +7,7 @@ import {
 	type GcpSetupPlan,
 } from "@maple/domain/gcp"
 import type { V2GcpConnector } from "@maple/domain/http/v2"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 import { gcpScopeRoles } from "./gcp-connector-state"
 
@@ -31,6 +32,8 @@ export interface GcpManualStep {
 }
 
 const CONSOLE = "https://console.cloud.google.com"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const ROLE_NAMES = new Map([
 	["roles/monitoring.viewer", "Monitoring Viewer"],
@@ -190,7 +193,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 				fields: [
 					field(
 						"Message body",
-						JSON.stringify({
+						encodeJson({
 							logName: `projects/${host}/logs/maple-setup`,
 							jsonPayload: { logs: true },
 						}),
@@ -237,7 +240,10 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 							field("Principal", reader.serviceAccountEmail),
 							field(
 								"Roles",
-								[...GCP_READER_SCOPE_ROLES, GCP_READER_PROJECT_ROLE].map(roleName).join(", "),
+								Arr.join(
+									Arr.map([...GCP_READER_SCOPE_ROLES, GCP_READER_PROJECT_ROLE], roleName),
+									", ",
+								),
 								false,
 							),
 						],
@@ -250,7 +256,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 						consoleUrl: scopePage("iam-admin/iam", plan),
 						fields: [
 							field("Principal", reader.serviceAccountEmail),
-							field("Roles", GCP_READER_SCOPE_ROLES.map(roleName).join(", "), false),
+							field("Roles", Arr.join(Arr.map(GCP_READER_SCOPE_ROLES, roleName), ", "), false),
 						],
 						notes: [`Granted on project ${host} instead, Maple would read only that project.`],
 					},
@@ -294,52 +300,55 @@ export function gcpRemovalList(
 	const readerEmail = gcpServiceAccountEmail(names.serviceAccountId, host)
 	const listed = (enabled: boolean, applied: boolean | null) =>
 		(which === "all" || !enabled) && applied !== false
-	return [
-		...(listed(connector.logs_enabled, connector.applied_logs_enabled)
-			? [
-					{
-						what: `Log Router sink on the ${connector.scope_type}, then wait two minutes`,
-						name: names.sink,
-						consoleUrl: scopePage("logs/router", scope),
-					},
-					{
-						what: "Pub/Sub subscription",
-						name: names.subscription,
-						consoleUrl: hostPage("cloudpubsub/subscription/list", scope),
-					},
-					{
-						what: "Pub/Sub topic: type delete to confirm",
-						name: names.topic,
-						consoleUrl: hostPage("cloudpubsub/topic/list", scope),
-					},
-					{
-						what: "Push service account, if present",
-						name: gcpServiceAccountEmail(names.pushServiceAccountId, host),
-						consoleUrl: hostPage("iam-admin/serviceaccounts", scope),
-					},
-				]
-			: []),
-		...(listed(connector.metrics_enabled, connector.applied_metrics_enabled)
-			? [
-					{
-						what: `The read-only account's roles on the ${connector.scope_type}${connector.scope_type === "project" ? "" : ` and ${host}`}: Remove access`,
-						name: readerEmail,
-						consoleUrl: scopePage("iam-admin/iam", scope),
-					},
-					{
-						what: "Read-only service account",
-						name: readerEmail,
-						consoleUrl: hostPage("iam-admin/serviceaccounts", scope),
-					},
-				]
-			: []),
-	].map((item) => ({
-		...item,
-		confirmed:
-			item.name === readerEmail
-				? connector.applied_metrics_enabled === true
-				: connector.applied_logs_enabled === true,
-	}))
+	return Arr.map(
+		[
+			...(listed(connector.logs_enabled, connector.applied_logs_enabled)
+				? [
+						{
+							what: `Log Router sink on the ${connector.scope_type}, then wait two minutes`,
+							name: names.sink,
+							consoleUrl: scopePage("logs/router", scope),
+						},
+						{
+							what: "Pub/Sub subscription",
+							name: names.subscription,
+							consoleUrl: hostPage("cloudpubsub/subscription/list", scope),
+						},
+						{
+							what: "Pub/Sub topic: type delete to confirm",
+							name: names.topic,
+							consoleUrl: hostPage("cloudpubsub/topic/list", scope),
+						},
+						{
+							what: "Push service account, if present",
+							name: gcpServiceAccountEmail(names.pushServiceAccountId, host),
+							consoleUrl: hostPage("iam-admin/serviceaccounts", scope),
+						},
+					]
+				: []),
+			...(listed(connector.metrics_enabled, connector.applied_metrics_enabled)
+				? [
+						{
+							what: `The read-only account's roles on the ${connector.scope_type}${connector.scope_type === "project" ? "" : ` and ${host}`}: Remove access`,
+							name: readerEmail,
+							consoleUrl: scopePage("iam-admin/iam", scope),
+						},
+						{
+							what: "Read-only service account",
+							name: readerEmail,
+							consoleUrl: hostPage("iam-admin/serviceaccounts", scope),
+						},
+					]
+				: []),
+		],
+		(item) => ({
+			...item,
+			confirmed:
+				item.name === readerEmail
+					? connector.applied_metrics_enabled === true
+					: connector.applied_logs_enabled === true,
+		}),
+	)
 }
 
 /**
@@ -360,13 +369,13 @@ export function gcpAgentPrompt({
 	const host = plan.projectId
 	const file = flavour === "terraform" ? "maple.tf" : "maple.ts"
 	const removal = gcpRemovalList(connector)
-	const removing = removal.some((item) => item.confirmed)
+	const removing = Arr.some(removal, (item) => item.confirmed)
 	const takesOver = connector.applied_logs_enabled === true || connector.applied_metrics_enabled === true
 	const scopeRoles = gcpScopeRoles(plan.scopeType, connector)
 	const place =
 		flavour === "terraform"
 			? `Add the file below as ${file} in a root module of its own (its import blocks only work there), next to the configuration that manages ${host}. Reuse the google provider credentials this repo already uses, and drop the file's terraform block if the providers are declared already.`
-			: `Add the file below as ${file} and install what its header's bun add names.${plan.logs === null ? "" : ` Fill in PROJECT_NUMBER: gcloud projects describe ${host} --format='value(projectNumber)'.`} Switch the APIs on first: gcloud services enable ${plan.apis.join(" ")} --project=${host}`
+			: `Add the file below as ${file} and install what its header's bun add names.${plan.logs === null ? "" : ` Fill in PROJECT_NUMBER: gcloud projects describe ${host} --format='value(projectNumber)'.`} Switch the APIs on first: gcloud services enable ${Arr.join(plan.apis, " ")} --project=${host}`
 	const apply =
 		flavour === "terraform"
 			? "Run terraform plan and show me the plan. Apply only after I approve it."
@@ -384,11 +393,16 @@ export function gcpAgentPrompt({
 					`gcloud iam service-accounts get-iam-policy ${plan.reader.serviceAccountEmail} --project=${host} --format="value(bindings.members)"`,
 				]),
 	]
-	const finish = [
-		plan.logs === null ? null : "the first log reaches Maple within a few minutes",
-		plan.reader === null ? null : "Maple's first metrics read confirms read-only access within 5 minutes",
-		removing ? "to click I've removed them in Maple's Google Cloud dialog" : null,
-	].filter((part) => part !== null)
+	const finish = Arr.filter(
+		[
+			plan.logs === null ? null : "the first log reaches Maple within a few minutes",
+			plan.reader === null
+				? null
+				: "Maple's first metrics read confirms read-only access within 5 minutes",
+			removing ? "to click I've removed them in Maple's Google Cloud dialog" : null,
+		],
+		(part) => part !== null,
+	)
 	const steps = [
 		`${place} Keep every name and the endpoint URL exactly as given. If the repo already has a Maple log_filter, keep that one and ask me.${
 			takesOver
@@ -396,20 +410,31 @@ export function gcpAgentPrompt({
 				: ""
 		}${
 			removing
-				? ` Applying it removes what an earlier version of this file created and this one no longer has. Whatever the file didn't create (a setup by script or in the console) I delete by hand: ${removal.map((item) => `${item.what}: ${item.name}`).join("; ")}.`
+				? ` Applying it removes what an earlier version of this file created and this one no longer has. Whatever the file didn't create (a setup by script or in the console) I delete by hand: ${Arr.join(
+						Arr.map(removal, (item) => `${item.what}: ${item.name}`),
+						"; ",
+					)}.`
 				: ""
 		}`,
-		`${apply} The account that applies it needs Owner on ${host}${scopeRoles.length === 0 ? "" : ` and ${scopeRoles.join(" and ")} on the ${plan.scopeType} ${plan.scopeId}`}.`,
+		`${apply} The account that applies it needs Owner on ${host}${scopeRoles.length === 0 ? "" : ` and ${Arr.join(scopeRoles, " and ")} on the ${plan.scopeType} ${plan.scopeId}`}.`,
 		...(verify.length === 0
 			? []
-			: [`Verify with gcloud:\n${verify.map((command) => `   ${command}`).join("\n")}`]),
-		`Finish by telling me: ${finish.join("; ")}.`,
+			: [
+					`Verify with gcloud:\n${Arr.join(
+						Arr.map(verify, (command) => `   ${command}`),
+						"\n",
+					)}`,
+				]),
+		`Finish by telling me: ${Arr.join(finish, "; ")}.`,
 	]
 	return `Connect Google Cloud ${plan.scopeType} ${plan.scopeId} to Maple with this repo's ${flavour === "terraform" ? "Terraform" : "Alchemy"}.
 
-${steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}
+${Arr.join(
+	Arr.map(steps, (step, index) => `${index + 1}. ${step}`),
+	"\n",
+)}
 
 --- ${file} ---
-${config.trimEnd()}
+${Str.trimEnd(config)}
 `
 }

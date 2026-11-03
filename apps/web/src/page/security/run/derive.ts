@@ -6,7 +6,7 @@ import type {
 	SecurityAuditUnit,
 } from "@maple/domain/http"
 import type { Tone } from "@maple/ui/lib/tone"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { isLive } from "../kit/format"
 import { type EventFilter, eventLineOf, matchesEventFilter } from "../kit/outcome"
@@ -29,7 +29,7 @@ export const filteredEvents = (
 	events: ReadonlyArray<SecurityAuditEvent>,
 	filter: EventFilter,
 ): ReadonlyArray<SecurityAuditEvent> =>
-	filter === "all" ? events : events.filter((event) => matchesEventFilter(eventLineOf(event), filter))
+	filter === "all" ? events : Arr.filter(events, (event) => matchesEventFilter(eventLineOf(event), filter))
 
 /** Newest first; the id breaks a tie in the same millisecond, as the API pages them. */
 const byNewest = (a: SecurityAuditEvent, b: SecurityAuditEvent): number =>
@@ -40,8 +40,8 @@ export const mergeEvents = (
 	log: ReadonlyArray<SecurityAuditEvent>,
 	page: ReadonlyArray<SecurityAuditEvent>,
 ): ReadonlyArray<SecurityAuditEvent> => {
-	const ids = new Set(log.map((event) => event.id))
-	return [...log, ...page.filter((event) => !ids.has(event.id))].sort(byNewest)
+	const ids = new Set(Arr.map(log, (event) => event.id))
+	return [...log, ...Arr.filter(page, (event) => !ids.has(event.id))].sort(byNewest)
 }
 
 // UNITS
@@ -60,7 +60,7 @@ export const UNIT_LABEL = {
 export const UNIT_TONE = {
 	covered: "ok",
 	candidate: "warn",
-	in_progress: "done",
+	in_progress: "live",
 	planned: "neutral",
 	blocked: "crit",
 	deferred: "neutral",
@@ -86,21 +86,21 @@ const GAP_STATUSES: ReadonlyArray<string> = ["deferred", "blocked", "planned", "
 export const countOf = (run: SecurityAuditRunDetail, status: string): number => run.unitCounts[status] ?? 0
 
 export const gapCount = (run: SecurityAuditRunDetail): number =>
-	GAP_STATUSES.reduce((sum, status) => sum + countOf(run, status), 0)
+	Arr.reduce(GAP_STATUSES, 0, (sum, status) => sum + countOf(run, status))
 
 /** Ledger rows for the chip; gaps lead, then the order the engine planned them. */
 export const filteredUnits = (
 	units: ReadonlyArray<SecurityAuditUnit>,
 	filter: UnitFilter,
 ): ReadonlyArray<SecurityAuditUnit> =>
-	filter === "all" ? units : units.filter((unit) => unit.status === filter)
+	filter === "all" ? units : Arr.filter(units, (unit) => unit.status === filter)
 
 export const gapUnits = (units: ReadonlyArray<SecurityAuditUnit>): ReadonlyArray<SecurityAuditUnit> =>
-	units.filter((unit) => GAP_STATUSES.includes(unit.status))
+	Arr.filter(units, (unit) => GAP_STATUSES.includes(unit.status))
 
 /** Distinct subsystems the ledger planned: the areas of the repository it reached. */
 export const areasOf = (units: ReadonlyArray<SecurityAuditUnit>): number =>
-	new Set(units.flatMap((unit) => (unit.subsystem === null ? [] : [unit.subsystem]))).size
+	new Set(Arr.flatMap(units, (unit) => (unit.subsystem === null ? [] : [unit.subsystem]))).size
 
 // PHASES
 
@@ -110,31 +110,30 @@ export type Phase = Readonly<{ name: string; state: PhaseState; detail: string }
 
 /** How far the engine got, from its Phase events (any page): 0 recon to 4 report, 5 finished. */
 const reachedOf = (events: ReadonlyArray<SecurityAuditEvent>): Readonly<{ reached: number; wave: number }> =>
-	events
-		.filter((event) => event.kind === "Phase" && event.phase !== null)
-		.reduce(
-			(acc, event) => {
-				const phase = event.phase ?? ""
-				const waveMatch = /^wave-(\d+)$/u.exec(phase)
-				const step =
-					phase === "reconnaissance" || phase === "ledger-seeded"
-						? 0
-						: waveMatch !== null
-							? 1
-							: phase === "candidate-validation"
-								? 2
-								: phase === "record-verification"
-									? 3
-									: phase === "finished"
-										? 5
-										: -1
-				return {
-					reached: Math.max(acc.reached, step),
-					wave: waveMatch === null ? acc.wave : Math.max(acc.wave, Number(waveMatch[1])),
-				}
-			},
-			{ reached: 0, wave: 0 },
-		)
+	Arr.reduce(
+		Arr.filter(events, (event) => event.kind === "Phase" && event.phase !== null),
+		{ reached: 0, wave: 0 },
+		(acc, event) => {
+			const phase = event.phase ?? ""
+			const waveMatch = /^wave-(\d+)$/u.exec(phase)
+			const step =
+				phase === "reconnaissance" || phase === "ledger-seeded"
+					? 0
+					: waveMatch !== null
+						? 1
+						: phase === "candidate-validation"
+							? 2
+							: phase === "record-verification"
+								? 3
+								: phase === "finished"
+									? 5
+									: -1
+			return {
+				reached: Math.max(acc.reached, step),
+				wave: waveMatch === null ? acc.wave : Math.max(acc.wave, Number(waveMatch[1])),
+			}
+		},
+	)
 
 const phaseDetail = (events: ReadonlyArray<SecurityAuditEvent>, phase: string): string | null =>
 	events.find((event) => event.kind === "Phase" && event.phase === phase)?.detail ?? null
@@ -218,7 +217,7 @@ export const isDetailsOpen = (model: Model): boolean => model.isDetailsOpen ?? i
 export type Verdicts = Readonly<{ confirmed: number; needsValidation: number; rejected: number }>
 
 export const verdictsOf = (findings: ReadonlyArray<SecurityAuditFinding>): Verdicts => ({
-	confirmed: findings.filter((finding) => finding.verdict === "confirmed").length,
-	needsValidation: findings.filter((finding) => finding.verdict === "needs_validation").length,
-	rejected: findings.filter((finding) => finding.verdict === "rejected").length,
+	confirmed: Arr.filter(findings, (finding) => finding.verdict === "confirmed").length,
+	needsValidation: Arr.filter(findings, (finding) => finding.verdict === "needs_validation").length,
+	rejected: Arr.filter(findings, (finding) => finding.verdict === "rejected").length,
 })

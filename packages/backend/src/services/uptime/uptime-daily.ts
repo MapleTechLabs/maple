@@ -2,7 +2,7 @@ import * as Orm from "@maple-dev/effect-orm/database"
 import type { MapleDb } from "@maple/db/client"
 import type { OrgId, UptimeMonitorId } from "@maple/domain/primitives"
 import { utcDay } from "@maple/domain/status-page"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { msToSqlTimestamp } from "@maple/backend/platform/time"
 
 /** One monitor's checks on one UTC day, as a batch adds them to `uptime_monitor_daily`. */
@@ -36,8 +36,8 @@ export const countCheck = (
 	check: CheckToCount,
 ): ReadonlyArray<UptimeDailyCount> => {
 	const one = countOne(check)
-	return counts.some((count) => count.day === one.day)
-		? counts.map((count) =>
+	return Arr.some(counts, (count) => count.day === one.day)
+		? Arr.map(counts, (count) =>
 				count.day === one.day
 					? {
 							day: one.day,
@@ -62,7 +62,8 @@ export const upsertDailyCounts = (
 ) => {
 	if (rows.length === 0) return Effect.void
 	const values = Orm.sql.join(
-		rows.map(
+		Arr.map(
+			rows,
 			({ monitorId, orgId, count }) =>
 				Orm.sql`(${monitorId}::text, ${count.day}::text, ${orgId}::text, ${count.checks}::int4, ${count.failures}::int4, ${count.downChecks}::int4, ${msToSqlTimestamp(count.lastCheckAt)}::timestamptz)`,
 		),

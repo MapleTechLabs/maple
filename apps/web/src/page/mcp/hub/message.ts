@@ -1,14 +1,14 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Chart from "../../../charts/chart"
-import { ThemeColors } from "../../../charts/theme-colors"
-import { LoadFailure } from "../../../data/load-failure"
+import * as Chart from "@maple/views/charts/chart"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
-import * as Select from "../../../ui/select"
-import * as ToggleGroup from "../../../ui/toggle-group"
+import * as Select from "@maple/views/ui/select"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { McpMetric } from "../view-server"
-import { OverviewData, ServersData, ToolData } from "./model"
+import { OverviewData, ServersData, SessionData, SessionsData, ToolData } from "./model"
 
 export const RequestMode = Schema.Literals(["Load", "Refresh"])
 export type RequestMode = typeof RequestMode.Type
@@ -26,6 +26,8 @@ export const Message = defineMessageUnion({
 	CompletedFetchServers: result(ServersData),
 	CompletedFetchOverview: result(OverviewData),
 	CompletedFetchTool: result(ToolData),
+	CompletedFetchSessions: result(SessionsData),
+	CompletedFetchSession: result(SessionData),
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
@@ -36,6 +38,8 @@ export const Message = defineMessageUnion({
 	ClickedOpenServer: { service: Schema.String },
 	ClickedOpenTool: { tool: Schema.String },
 	ClickedOpenTrace: { traceId: Schema.String },
+	ClickedOpenSession: { sessionId: Schema.String },
+	ClickedOpenAgentSession: { sessionId: Schema.String },
 	ClickedInstrument: {},
 	ClickedMetric: { metric: McpMetric },
 	ChangedSearchInput: { value: Schema.String },

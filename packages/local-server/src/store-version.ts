@@ -9,10 +9,12 @@
 import { createHash, randomUUID } from "node:crypto"
 import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
-import { Effect, Schema, SchemaGetter } from "effect"
+import { Effect, Schema, SchemaGetter, Array as Arr, String as Str } from "effect"
 import { CHDB_VERSION } from "./version"
 import { Digest64, Fingerprint16, IsoOrUnknown } from "./identity-schema"
 import { durableRemove, durableRenameSync, durableWrite, durableWriteFileSync } from "./durable-files"
+import { decodeJsonSync, encodeJson, encodeJsonPretty } from "./json"
+import { errnoCode, syscallError } from "./store-errors"
 
 export const STORE_MARKER_FORMAT_VERSION = 2 as const
 
@@ -119,20 +121,14 @@ const pidFileNamesLiveProcess = (path: string): boolean =>
 	Effect.runSync(
 		Effect.try({
 			try: () => {
-				const pid = Number.parseInt(readFileSync(path, "utf8").trim(), 10)
+				const pid = Number.parseInt(Str.trim(readFileSync(path, "utf8")), 10)
 				if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return false
 				process.kill(pid, 0)
 				return true
 			},
 			// EPERM still means the PID exists; only a vanished file or ESRCH is "not live".
-			catch: (error) => error,
-		}).pipe(
-			Effect.catch((error) =>
-				Effect.succeed(
-					typeof error === "object" && error !== null && "code" in error && error.code === "EPERM",
-				),
-			),
-		),
+			catch: syscallError,
+		}).pipe(Effect.catch((error) => Effect.succeed(errnoCode(error.cause) === "EPERM"))),
 	)
 
 /**
@@ -162,7 +158,7 @@ export const adoptLegacySidecars = (dataDir: string): ReadonlyArray<string> => {
 // pass through `maple start` (schema, archive) see the same files it does.
 const adoptLegacySidecarsQuietly = (dataDir: string): void =>
 	Effect.runSync(
-		Effect.try({ try: () => adoptLegacySidecars(dataDir), catch: (error) => error }).pipe(Effect.ignore),
+		Effect.try({ try: () => adoptLegacySidecars(dataDir), catch: syscallError }).pipe(Effect.ignore),
 	)
 
 /**
@@ -181,7 +177,7 @@ export const newerStoreSchemaVersion = (dataDir: string, currentVersion: number)
 /** Modification time of a file in ms, or undefined when it is missing. */
 export const fileModifiedAtMs = (path: string): number | undefined =>
 	Effect.runSync(
-		Effect.try({ try: () => statSync(path).mtimeMs, catch: (error) => error }).pipe(
+		Effect.try({ try: () => statSync(path).mtimeMs, catch: syscallError }).pipe(
 			Effect.orElseSucceed(() => undefined),
 		),
 	)
@@ -242,7 +238,7 @@ const LenientProvenance = Schema.Unknown.pipe(
 		decode: SchemaGetter.transform((value) => (typeof value === "string" ? value : "unknown")),
 		encode: SchemaGetter.passthrough(),
 	}),
-	Schema.withDecodingDefaultKey(Effect.succeed(undefined)),
+	Schema.withDecodingDefaultKey(Effect.undefined),
 )
 
 const StoreMigrationStampSchema = Schema.Struct({
@@ -294,7 +290,7 @@ const StoreMarkerV1Schema = Schema.Struct({
 			decode: SchemaGetter.transform((value) => (typeof value === "string" ? value : "")),
 			encode: SchemaGetter.passthrough(),
 		}),
-		Schema.withDecodingDefaultKey(Effect.succeed(undefined)),
+		Schema.withDecodingDefaultKey(Effect.undefined),
 	),
 })
 
@@ -302,12 +298,12 @@ const decodeMarkerV1 = Schema.decodeUnknownSync(StoreMarkerV1Schema)
 const decodeMarkerV2 = Schema.decodeUnknownSync(StoreMarkerV2Schema)
 
 const parseMarker = (value: unknown): StoreMarker => {
-	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+	if (typeof value !== "object" || value === null || Arr.isArray(value)) {
 		throw new Error("marker must contain a non-empty chdb string")
 	}
 	const formatVersion = (value as { readonly formatVersion?: unknown }).formatVersion
 	if (formatVersion !== undefined && formatVersion !== 1 && formatVersion !== STORE_MARKER_FORMAT_VERSION) {
-		throw new Error(`unsupported marker format ${String(formatVersion)}`)
+		throw new Error(`unsupported marker format ${encodeJson(formatVersion)}`)
 	}
 	if (formatVersion === STORE_MARKER_FORMAT_VERSION) {
 		const marker = decodeMarkerV2(value)
@@ -324,7 +320,7 @@ export const readMarkerState = (dataDir: string): MarkerReadState => {
 	const path = storeMarkerPath(dataDir)
 	if (!existsSync(path)) return { kind: "missing" }
 	try {
-		return { kind: "valid", marker: parseMarker(JSON.parse(readFileSync(path, "utf8")) as unknown) }
+		return { kind: "valid", marker: parseMarker(decodeJsonSync(readFileSync(path, "utf8"))) }
 	} catch (error) {
 		return { kind: "malformed", message: error instanceof Error ? error.message : String(error) }
 	}
@@ -411,7 +407,7 @@ export const ensureStoreMarkerDurable = async (
 				? { lastMigration: options.lastMigration }
 				: undefined),
 		}
-		await durableWrite(storeMarkerPath(dataDir), `${JSON.stringify(updated, null, 2)}\n`)
+		await durableWrite(storeMarkerPath(dataDir), `${encodeJsonPretty(updated)}\n`)
 		return updated
 	}
 
@@ -425,7 +421,7 @@ export const ensureStoreMarkerDurable = async (
 		activation: options.activation,
 		lastMigration: options.lastMigration,
 	})
-	await durableWrite(storeMarkerPath(dataDir), `${JSON.stringify(created, null, 2)}\n`)
+	await durableWrite(storeMarkerPath(dataDir), `${encodeJsonPretty(created)}\n`)
 	return created
 }
 
@@ -458,16 +454,13 @@ export const writeStoreMarkerDurable = async (
  * fingerprint and the v2 full digest. This is intentionally not described as
  * a physical-schema hash: regex normalization cannot parse SQL literals. */
 export const normalizedSchemaSql = (schemaSql: string): string =>
-	schemaSql
-		.replace(/--[^\n]*/g, "")
-		.replace(/\s+/g, " ")
-		.trim()
+	Str.trim(Str.replace(/\s+/g, " ")(Str.replace(/--[^\n]*/g, "")(schemaSql)))
 
 export const schemaDigest = (schemaSql: string): string =>
 	createHash("sha256").update(normalizedSchemaSql(schemaSql)).digest("hex")
 
 /** Legacy bundle fingerprint retained for compatibility and diagnostics. */
-export const schemaFingerprint = (schemaSql: string): string => schemaDigest(schemaSql).slice(0, 16)
+export const schemaFingerprint = (schemaSql: string): string => Str.slice(0, 16)(schemaDigest(schemaSql))
 
 /** True when a populated store was bootstrapped from a different schema
  * identity. The caller must choose migration or explicit reset. */

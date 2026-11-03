@@ -9,14 +9,14 @@ import {
 import { AWS_METRIC_NAMESPACES, AwsConnectionId, AwsMetricNamespace } from "@maple/domain/primitives"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { displayError, isUnexpectedError } from "@maple/web-data/lib/error-messages"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { KeyedSchema } from "../../data/keyed"
-import { LoadFailure, toLoadFailure } from "../../data/load-failure"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
-import * as CopyButton from "../../ui/copy-button"
-import * as Dialog from "../../ui/dialog"
-import * as Field from "../../ui/field"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
 import { AwsRemovedStack, AwsSetupMethod } from "./aws-schema"
 import { Message } from "./message"
 
@@ -110,7 +110,7 @@ export const metricStreamOf = (selection: AwsSelection) =>
 export const isSelectionSaved = (connection: V2AwsConnection, selection: AwsSelection): boolean => {
 	const stream = connection.metric_stream
 	const same = (a: ReadonlyArray<string>, b: ReadonlyArray<string>) =>
-		a.length === b.length && a.every((value) => b.includes(value))
+		a.length === b.length && Arr.every(a, (value) => b.includes(value))
 	return (
 		stream !== null &&
 		same(stream.regions, selection.regions) &&
@@ -121,11 +121,11 @@ export const isSelectionSaved = (connection: V2AwsConnection, selection: AwsSele
 export const METRIC_SELECTION_HINT = "Pick at least one region and one service."
 
 /** Account ids are often pasted with the console's dashes: `1234-5678-9012`. */
-export const normalizeAccountId = (value: string) => value.replaceAll(/[\s-]/gu, "")
+export const normalizeAccountId = (value: string) => Str.replaceAll(/[\s-]/gu, "")(value)
 
 /** Connections whose stack Maple has not assumed yet: the card shows their setup and keeps checking. */
 export const pendingConnections = (status: V2AwsIntegration): ReadonlyArray<V2AwsConnection> =>
-	status.connections.filter((connection) => connection.verified_at === null)
+	Arr.filter(status.connections, (connection) => connection.verified_at === null)
 
 const messageOf = (error: unknown, fallback: string) => {
 	const presentation = displayError(error)
@@ -142,9 +142,7 @@ export const CreateAwsConnection = Command.define("CreateAwsConnection", {
 			return Message.SucceededAwsCreate({ connection })
 		}).pipe(
 			Effect.catch((error) =>
-				Effect.succeed(
-					Message.FailedAwsCreate({ error: messageOf(error, "Couldn't connect AWS.") }),
-				),
+				Effect.succeed(Message.FailedAwsCreate({ error: messageOf(error, "Couldn't connect AWS.") })),
 			),
 		),
 })

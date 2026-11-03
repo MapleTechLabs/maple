@@ -1,5 +1,5 @@
 // BOUNDARY: explicitly selected local modules execute trusted code; their exports are decoded here.
-import { Effect, MutableRef, Result, Schema } from "effect"
+import { Effect, MutableRef, Result, Schema, String as Str } from "effect"
 import { realpath, stat } from "node:fs/promises"
 import { extname, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -28,7 +28,7 @@ export const resolveProjectorModulePaths = (
 ): Effect.Effect<readonly string[], ProjectorModuleError> =>
 	Effect.forEach(paths, (path) =>
 		Effect.gen(function* () {
-			if (path.trim() === "" || /^[a-z][a-z0-9+.-]*:/i.test(path))
+			if (Str.trim(path) === "" || /^[a-z][a-z0-9+.-]*:/i.test(path))
 				return yield* error(path, "expected a local .mjs file path")
 			const absolute = resolve(path)
 			if (extname(absolute) !== ".mjs") return yield* error(path, "expected a bundled .mjs file")

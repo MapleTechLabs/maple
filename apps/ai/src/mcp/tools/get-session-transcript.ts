@@ -1,4 +1,4 @@
-import { DateTime, Effect, Schema, SchemaTransformation } from "effect"
+import { DateTime, Effect, Schema, SchemaTransformation, Array as Arr, String as Str } from "effect"
 import { GetSessionTranscriptOutput, SessionTranscriptEventType } from "@maple/domain/mcp-outputs"
 import { getSessionTranscript } from "@maple/query-engine/observability"
 import type { McpToolRegistrar } from "./types"
@@ -23,11 +23,11 @@ const EventTypeList = Schema.Union([
 			Schema.Array(Schema.String),
 			SchemaTransformation.transform<ReadonlyArray<string>, string>({
 				decode: (value) =>
-					value
-						.split(",")
-						.map((part) => part.trim().toLowerCase())
-						.filter((part) => part !== ""),
-				encode: (values) => values.join(","),
+					Arr.filter(
+						Arr.map(Str.split(",")(value), (part) => Str.toLowerCase(Str.trim(part))),
+						(part) => part !== "",
+					),
+				encode: (values) => Arr.join(values, ","),
 			}),
 		),
 		// The split parts are then held to the enum, so an unknown type is a parameter error.
@@ -39,16 +39,16 @@ const EventTypeList = Schema.Union([
 const describeFilters = (filters: TranscriptFilters): string => {
 	const parts: string[] = []
 	if (filters.onlyErrors) parts.push("errors only")
-	if (filters.eventTypes.length > 0) parts.push(`types=${filters.eventTypes.join("/")}`)
-	if (filters.aroundTraceId !== undefined) parts.push(`trace=${filters.aroundTraceId.slice(0, 12)}…`)
-	return parts.join(", ")
+	if (filters.eventTypes.length > 0) parts.push(`types=${Arr.join(filters.eventTypes, "/")}`)
+	if (filters.aroundTraceId !== undefined) parts.push(`trace=${Str.slice(0, 12)(filters.aroundTraceId)}…`)
+	return Arr.join(parts, ", ")
 }
 
 /** One transcript row as `time  TYPE detail (trace)`. */
 const formatLine = (ev: TranscriptEvent): string => {
 	// `HH:mm:ss.SSS` out of the ISO timestamp.
-	const time = ev.timestamp.slice(11, 23) || ev.timestamp
-	const trace = ev.traceId ? ` ⟶ ${ev.traceId.slice(0, 12)}…` : ""
+	const time = Str.slice(11, 23)(ev.timestamp) || ev.timestamp
+	const trace = ev.traceId ? ` ⟶ ${Str.slice(0, 12)(ev.traceId)}…` : ""
 	const detail = (() => {
 		switch (ev.type) {
 			case "navigation":
@@ -126,7 +126,7 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 
 			return {
 				sessionId: params.session_id,
-				events: events.map((e) => ({
+				events: Arr.map(events, (e) => ({
 					timestamp: DateTime.formatIso(e.timestamp),
 					type: e.type,
 					url: truncate(e.url, 256),
@@ -188,7 +188,10 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 							},
 						}
 					: undefined),
-				blocks: events.length === 0 ? [] : [doc.code("text", events.map(formatLine).join("\n"))],
+				blocks:
+					events.length === 0
+						? []
+						: [doc.code("text", Arr.join(Arr.map(events, formatLine), "\n"))],
 				...(pagination.nextOffset === undefined
 					? undefined
 					: {
@@ -211,7 +214,7 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 								),
 							},
 						}),
-				next: [...traces].map(([id, timestamp]) =>
+				next: Arr.map([...traces], ([id, timestamp]) =>
 					doc.next(
 						"inspect_trace",
 						{ trace_id: id, timestamp },

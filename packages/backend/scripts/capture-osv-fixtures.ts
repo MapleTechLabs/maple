@@ -1,6 +1,11 @@
 // Captures real OSV.dev answers for the dependency scanner's tests: one querybatch plus every
 // vulnerability it names, trimmed to the fields the scanner reads.
 // Run: bun packages/backend/scripts/capture-osv-fixtures.ts
+import { Schema, Array as Arr } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
+
 const OUT = new URL("../src/services/security/__fixtures__/osv.json", import.meta.url)
 
 const queries = [
@@ -18,14 +23,16 @@ interface BatchResult {
 
 const batch: { results: ReadonlyArray<BatchResult> } = await fetch("https://api.osv.dev/v1/querybatch", {
 	method: "POST",
-	body: JSON.stringify({ queries }),
+	body: encodeJson({ queries }),
 }).then((response) => response.json())
 
-const ids = [...new Set(batch.results.flatMap((result) => (result.vulns ?? []).map((vuln) => vuln.id)))]
+const ids = [
+	...new Set(Arr.flatMap(batch.results, (result) => Arr.map(result.vulns ?? [], (vuln) => vuln.id))),
+]
 const vulns = await Promise.all(
-	ids.map((id) => fetch(`https://api.osv.dev/v1/vulns/${id}`).then((response) => response.json())),
+	Arr.map(ids, (id) => fetch(`https://api.osv.dev/v1/vulns/${id}`).then((response) => response.json())),
 )
-const trimmed = vulns.map((vuln) => ({
+const trimmed = Arr.map(vulns, (vuln) => ({
 	id: vuln.id,
 	aliases: vuln.aliases,
 	summary: vuln.summary,
@@ -41,5 +48,5 @@ const trimmed = vulns.map((vuln) => ({
 		ranges: affected.ranges,
 	})),
 }))
-await Bun.write(OUT, `${JSON.stringify({ queries, batch, vulns: trimmed }, null, "\t")}\n`)
+await Bun.write(OUT, `${encodeJsonPretty({ queries, batch, vulns: trimmed })}\n`)
 console.log(`${queries.length} queries, ${ids.length} vulnerabilities -> ${OUT.pathname}`)

@@ -5,13 +5,14 @@ import { type GcpFleetService, gcpFleet } from "../../components/infra/gcp/tabs"
 import { gcpWorkloadCounts } from "../../components/integrations/gcp-usage"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { Keyed } from "../../data/keyed"
-import type { LoadFailure } from "../../data/load-failure"
+import type { Keyed } from "@maple/views/data/keyed"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
 import { GCP_ACCENT } from "./catalog"
 import type { LogVolume } from "./gcp-schema"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { Array as Arr } from "effect"
 
 // `GcpUsageBand`, its tiles, `Workloads` and `Resources`.
 
@@ -38,7 +39,7 @@ interface Inventory {
 
 export const inventoryOf = (model: Model): Loaded<Inventory> =>
 	loaded(model.gcpCard.inventory, (response) => ({
-		total: response.types.reduce((sum, { count }) => sum + count, 0),
+		total: Arr.reduce(response.types, 0, (sum, { count }) => sum + count),
 		types: response.types,
 		projects: response.projects.length,
 	}))
@@ -80,7 +81,10 @@ const LAST_ROW = "border-b-0"
 const FIRST_OF_THREE = "col-span-2 border-r-0 @md/page:col-span-1 @md/page:border-r"
 
 export const gcpTitles = (services: ReadonlyArray<{ readonly service: GcpInfraServiceId }>) =>
-	services.map(({ service }) => GCP_INFRA_SERVICES[service].title).join(", ")
+	Arr.join(
+		Arr.map(services, ({ service }) => GCP_INFRA_SERVICES[service].title),
+		", ",
+	)
 
 export const logTiles = (h: H, model: Model, alone: boolean): ReadonlyArray<Html> => {
 	const volume = volumeOf(model)
@@ -123,11 +127,11 @@ export const metricsTiles = (h: H, model: Model, alone: boolean): ReadonlyArray<
 			read: fleet,
 			className: alone ? FIRST_OF_THREE : LAST_ROW,
 			value: (services) =>
-				services.length > 0 && services.every(({ failed }) => failed)
+				services.length > 0 && Arr.every(services, ({ failed }) => failed)
 					? null
-					: services.reduce((sum, { workloads }) => sum + workloads.length, 0),
+					: Arr.reduce(services, 0, (sum, { workloads }) => sum + workloads.length),
 			caption: (services) => {
-				const unread = services.filter(({ failed }) => failed)
+				const unread = Arr.filter(services, ({ failed }) => failed)
 				if (unread.length > 0) return `${gcpTitles(unread)} could not be read`
 				const reporting = gcpWorkloadCounts(services).length
 				return reporting === 0

@@ -1,4 +1,4 @@
-import type { McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor } from "../lib/query-warehouse"
 import * as P from "../lib/params"
@@ -53,7 +53,17 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 				timestamp === undefined ? undefined : new Date(parseWarehouseDateTime(timestamp))
 
 			const result = yield* withTenantExecutor(inspectTrace(trace_id, { timestampHint })).pipe(
-				Effect.catchTags(warehouseToMcpHandlers("span_hierarchy")),
+				Effect.catchTags({
+					...warehouseToMcpHandlers("span_hierarchy"),
+					SchemaError: () =>
+						Effect.fail(
+							new McpInvalidInputError({
+								message:
+									"trace_id must be a non-empty trace ID with no surrounding whitespace",
+								parameter: "trace_id",
+							}),
+						),
+				}),
 			)
 
 			const output = buildTraceOverview({

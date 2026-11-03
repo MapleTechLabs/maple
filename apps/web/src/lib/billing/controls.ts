@@ -5,6 +5,7 @@ import {
 } from "@maple/domain/http"
 
 import type { FeatureSpend, SpendFeatureId, SpendModel } from "./spend"
+import { Array as Arr, String as Str } from "effect"
 
 export const spendLimitFor = (
 	customer: BillingCustomer | undefined,
@@ -43,7 +44,8 @@ export const uncappedFeatures = (
 	model: SpendModel,
 	customer: BillingCustomer | undefined,
 ): ReadonlyArray<FeatureSpend> =>
-	model.features.filter(
+	Arr.filter(
+		model.features,
 		(feature) =>
 			capApplies(feature) && spendLimitFor(customer, feature.featureId)?.overageLimit === undefined,
 	)
@@ -55,11 +57,11 @@ export const maximumInvoiceCents = (
 ): number | null => {
 	if (model === null || model.partial) return null
 	if (uncappedFeatures(model, customer).length > 0) return null
-	return model.features.reduce((maximum, feature) => {
+	return Arr.reduce(model.features, model.baseCents, (maximum, feature) => {
 		const limit = spendLimitFor(customer, feature.featureId)?.overageLimit
 		if (!capApplies(feature) || limit === undefined || feature.ratePerUnit === null) return maximum
 		return maximum + Math.round(limit * feature.ratePerUnit * 100)
-	}, model.baseCents)
+	})
 }
 
 export type CapInput = { readonly valid: true; readonly cap: number | null } | { readonly valid: false }
@@ -69,7 +71,7 @@ const DECIMAL = /^(\d+(\.\d*)?|\.\d+)$/
 
 /** A typed cap: empty removes the cap, zero or more sets it, anything else is invalid. */
 export const parseCapInput = (raw: string): CapInput => {
-	const trimmed = raw.trim()
+	const trimmed = Str.trim(raw)
 	if (trimmed === "") return { valid: true, cap: null }
 	return DECIMAL.test(trimmed) ? { valid: true, cap: Number(trimmed) } : { valid: false }
 }

@@ -25,7 +25,7 @@ import {
 	type RailwayConnectionRow,
 	type RailwayEnvironmentRow,
 } from "@maple/db/tables"
-import { Cause, Clock, Context, Duration, Effect, Layer, Redacted, Ref, Schema } from "effect"
+import { DateTime, Cause, Clock, Context, Duration, Effect, Layer, Redacted, Ref, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -76,9 +76,9 @@ const POLL_NOW_TIMEOUT = Duration.seconds(20)
 
 const decodeOrgId = Schema.decodeUnknownSync(OrgId)
 const decodeUserId = Schema.decodeUnknownSync(UserId)
-const decodeServices = Schema.decodeUnknownOption(
-	Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)),
-)
+const ServicesJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String))
+const decodeServices = Schema.decodeUnknownOption(ServicesJson)
+const encodeServices = Schema.encodeSync(ServicesJson)
 
 const SYSTEM_USER_ID = decodeUserId("system-railway-metrics")
 
@@ -269,7 +269,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 										projectName: environment.projectName,
 										environmentId: environment.environmentId,
 										environmentName: environment.environmentName,
-										servicesJson: JSON.stringify(environment.services),
+										servicesJson: encodeServices(environment.services),
 										enabled: true,
 										createdAt: now,
 										updatedAt: now,
@@ -281,7 +281,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 											projectId: environment.projectId,
 											projectName: environment.projectName,
 											environmentName: environment.environmentName,
-											servicesJson: JSON.stringify(environment.services),
+											servicesJson: encodeServices(environment.services),
 											enabled: true,
 											updatedAt: now,
 										}),
@@ -535,7 +535,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 			) {
 				yield* Effect.annotateCurrentSpan({
 					"maple.railway.environment_id": row.environmentId,
-					"maple.railway.window_start": new Date(window.startMs).toISOString(),
+					"maple.railway.window_start": DateTime.formatIso(DateTime.makeUnsafe(window.startMs)),
 				})
 				const results = yield* fetchEnvironmentMetrics(httpClient, token, {
 					environmentId: row.environmentId,

@@ -9,7 +9,16 @@
 // DateTime string into an unambiguous UTC value. Already-zoned strings (with a
 // `Z` or numeric offset) and non-matching shapes are passed through untouched.
 
-import { DateTime, Effect, Option, Schema, SchemaGetter, SchemaIssue } from "effect"
+import {
+	DateTime,
+	Effect,
+	Option,
+	Schema,
+	SchemaGetter,
+	SchemaIssue,
+	Array as Arr,
+	String as Str,
+} from "effect"
 
 const WAREHOUSE_DATETIME_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.(\d+))?$/
 
@@ -20,7 +29,7 @@ const WAREHOUSE_DATETIME_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(
  * timestamps) are returned trimmed but otherwise unchanged.
  */
 export function warehouseDateTimeToIso(value: string): string {
-	const trimmed = value.trim()
+	const trimmed = Str.trim(value)
 	const match = WAREHOUSE_DATETIME_PATTERN.exec(trimmed)
 	if (!match) {
 		return trimmed
@@ -31,7 +40,7 @@ export function warehouseDateTimeToIso(value: string): string {
 		return `${date}T${time}Z`
 	}
 
-	const milliseconds = `${fractional}000`.slice(0, 3)
+	const milliseconds = Str.slice(0, 3)(`${fractional}000`)
 	return `${date}T${time}.${milliseconds}Z`
 }
 
@@ -54,7 +63,7 @@ export function parseWarehouseDateTime(value: string): number {
  * `formatForTinybird`, and `toWarehouseDateTime` — all identical.
  */
 export function formatWarehouseDateTime(epochMs: number): string {
-	return new Date(epochMs).toISOString().replace("T", " ").slice(0, 19)
+	return Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 }
 
 /**
@@ -83,7 +92,7 @@ export function serviceHealthSnapshotHours(
 }
 
 export function formatWarehouseDateTimeMs(epochMs: number): string {
-	return new Date(epochMs).toISOString().replace("T", " ").replace(/Z$/, "")
+	return Str.replace(/Z$/, "")(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 }
 
 // Warehouse time as a schema
@@ -250,7 +259,7 @@ export function warehouseDateTime(epochMs: number): WarehouseDateTime {
  * impossible calendar dates. The replacement for `parseWarehouseDateTime`.
  */
 export const parseUtc = (value: string): Option.Option<DateTime.Utc> => {
-	const trimmed = value.trim()
+	const trimmed = Str.trim(value)
 	return TIME_INPUT_PATTERN.test(trimmed) && hasRealCalendarFields(trimmed)
 		? Option.map(DateTime.make(warehouseDateTimeToIso(trimmed)), DateTime.toUtc)
 		: Option.none()
@@ -258,25 +267,22 @@ export const parseUtc = (value: string): Option.Option<DateTime.Utc> => {
 
 /** Parses the warehouse wire shape (tz-less = UTC), or ISO with `Z`/offset. */
 const warehouseWireToUtc = SchemaGetter.transformEffect<DateTime.Utc, string>((value, options) =>
-	Option.match(parseUtc(value), {
-		onNone: () =>
-			Effect.fail(
+	Effect.fromOption(parseUtc(value)).pipe(
+		Effect.mapError(
+			() =>
 				new SchemaIssue.InvalidValue(
 					{ message: `\`${value}\` is not a warehouse DateTime` },
 					value,
 					options,
 				),
-			),
-		onSome: Effect.succeed,
-	}),
+		),
+	),
 )
 
 /** `DateTime.Utc` -> `YYYY-MM-DD hh:mm:ss[.SSS]`; second precision floors. */
 const utcToWarehouseWire = (fractionDigits: 0 | 3) =>
 	SchemaGetter.transform<string, DateTime.Utc>((value) =>
-		DateTime.formatIso(value)
-			.slice(0, fractionDigits === 0 ? 19 : 23)
-			.replace("T", " "),
+		Str.replace("T", " ")(Str.slice(0, fractionDigits === 0 ? 19 : 23)(DateTime.formatIso(value))),
 	)
 
 /**
@@ -395,7 +401,7 @@ export function zonedPartsToEpochMs(parts: ZonedDateParts, timeZone: string): nu
 	for (const probe of [asUtc - HALF_DAY_MS, asUtc, asUtc + HALF_DAY_MS]) {
 		offsets.add(timeZoneOffsetMs(timeZone, probe))
 	}
-	const candidates = [...offsets].map((offset) => asUtc - offset).sort((a, b) => a - b)
+	const candidates = Arr.map([...offsets], (offset) => asUtc - offset).sort((a, b) => a - b)
 	// Compare against the components AFTER `Date.UTC` rolled them over: a caller
 	// may pass `day: -6` to mean "six days before the 1st", and the wall clock
 	// read back from a candidate is always normalized.
@@ -513,7 +519,7 @@ function startOfDayDaysBack(epochMs: number, daysBack: number, timeZone: string 
  * one. Use `resolveRelativeRange` to build actual query bounds.
  */
 export function relativeRangeSeconds(shorthand: string): number | null {
-	const trimmed = shorthand.trim().toLowerCase()
+	const trimmed = Str.toLowerCase(Str.trim(shorthand))
 	if (trimmed === "today") return 86_400
 
 	const match = RELATIVE_RANGE_PATTERN.exec(trimmed)
@@ -539,7 +545,7 @@ export function resolveRelativeRange(
 	nowMs: number = Date.now(),
 	timeZone?: string,
 ): { startMs: number; endMs: number } | null {
-	const trimmed = shorthand.trim().toLowerCase()
+	const trimmed = Str.toLowerCase(Str.trim(shorthand))
 
 	if (trimmed === "today") {
 		return { startMs: startOfDay(nowMs, timeZone), endMs: nowMs }
@@ -683,7 +689,7 @@ export function snapRangeForCache(
  * the clock and must be snapped with the end like any rolling window.
  */
 export function isCalendarAlignedShorthand(shorthand: string): boolean {
-	const trimmed = shorthand.trim().toLowerCase()
+	const trimmed = Str.toLowerCase(Str.trim(shorthand))
 	return trimmed === "today" || /^\d+[dw]$/.test(trimmed)
 }
 
@@ -811,7 +817,7 @@ export function computeBucketSeconds(
 	const rangeSeconds = Math.max((endMs - startMs) / 1000, 1)
 	const raw = Math.max(Math.ceil(rangeSeconds / targetPoints), 1)
 
-	const ladder = AUTO_BUCKET_LADDER.filter((candidate) => candidate >= minBucketSeconds)
+	const ladder = Arr.filter(AUTO_BUCKET_LADDER, (candidate) => candidate >= minBucketSeconds)
 	const rungs = ladder.length > 0 ? ladder : [AUTO_BUCKET_LADDER[AUTO_BUCKET_LADDER.length - 1]]
 
 	let bucket: number = rungs.reduce<number>(
@@ -822,7 +828,7 @@ export function computeBucketSeconds(
 	// Never coarser than what keeps at least `minBuckets` buckets over the range.
 	const maxBucketForMin = Math.floor(rangeSeconds / minBuckets)
 	if (bucket > maxBucketForMin) {
-		const finer = rungs.filter((candidate) => candidate <= maxBucketForMin)
+		const finer = Arr.filter(rungs, (candidate) => candidate <= maxBucketForMin)
 		// `rungs[0]` rather than the raw ladder's floor: `minBuckets` must not be
 		// allowed to step below the caller's `minBucketSeconds`.
 		bucket = finer.length > 0 ? finer[finer.length - 1] : rungs[0]
@@ -981,7 +987,7 @@ export function computeBucketSecondsForWidth(
 	// Never coarser than what keeps at least `minBuckets` buckets over the range.
 	const maxBucketForMin = Math.floor(rangeSeconds / minBuckets)
 	if (bucket > maxBucketForMin) {
-		const finer = WIDTH_INTERVAL_LADDER.filter(([, seconds]) => seconds <= maxBucketForMin)
+		const finer = Arr.filter(WIDTH_INTERVAL_LADDER, ([, seconds]) => seconds <= maxBucketForMin)
 		bucket = finer.length > 0 ? finer[finer.length - 1][1] : WIDTH_INTERVAL_LADDER[0][1]
 	}
 
@@ -1109,7 +1115,8 @@ const ALERT_PICKABLE_INTERVALS = [1, 5, 10, 15, 30, 60] as const
 export const alertIntervalsFitting = (
 	elapsedMs: number,
 ): ReadonlyArray<(typeof ALERT_PICKABLE_INTERVALS)[number]> =>
-	ALERT_PICKABLE_INTERVALS.filter(
+	Arr.filter(
+		ALERT_PICKABLE_INTERVALS,
 		(interval) => elapsedMs <= alertQueryLimits(interval).timeSeconds * 1000 * 0.8,
 	)
 

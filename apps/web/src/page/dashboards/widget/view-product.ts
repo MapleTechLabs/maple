@@ -2,7 +2,6 @@ import { queryBadgeColor } from "@maple/query-engine/query-builder"
 import { FUNNEL_SESSION_DIMENSION_LABEL, QUERY_BUILDER_DATA_SOURCES } from "@maple/query-model"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import {
 	FUNNEL_KEY_BY_OPTIONS,
 	FUNNEL_SESSION_DIMENSIONS,
@@ -10,12 +9,13 @@ import {
 } from "../../../components/funnels/definition"
 import { parseProductEventsFilterClause } from "../../../lib/query-builder/funnel-filters"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { filterChip } from "../../../ui/filter-chip"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { input } from "../../../ui/input"
-import type { SelectOption } from "../../../ui/select-view"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { filterChip } from "@maple/views/ui/filter-chip"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { input } from "@maple/views/ui/input"
+import type { SelectOption } from "@maple/views/ui/select-view"
 import { whereEditor } from "../../kit/query-builder/where-editor"
 import { autocompleteFor, populationField } from "./where-fields"
 import { Message } from "./message"
@@ -29,6 +29,10 @@ import {
 	windowSelectId,
 } from "./product-selects"
 import { pageSelect } from "./view-select"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { queryPanelBar } from "../../kit/query-panel-bar"
+import { Array as Arr, String as Str } from "effect"
 
 // `QueryPanelShell` and `AddOnToggleBar`, and the rows the funnel and
 // paths panels share: the population filter, Count by, the window, the breakdown.
@@ -61,48 +65,39 @@ export const panelShell = (
 				model,
 				sourceId,
 				"product_events",
-				sources.map((value) => ({ value, label: SOURCE_LABEL[value] })),
+				Arr.map(sources, (value) => ({ value, label: SOURCE_LABEL[value] })),
 				{
 					size: "sm",
 					className: "w-36 border-none bg-transparent shadow-none px-1",
 					ariaLabel: "Query source",
 					toView: (parts) =>
-						h.div(
-							[h.Class("flex items-center gap-2 px-3 py-2 bg-surface-sunken")],
-							[
-								iconButton(
-									h,
-									{
-										size: "icon-xs",
-										label: isCollapsed ? "Expand query" : "Collapse query",
-										hasTooltip: false,
-										className: "text-muted-foreground hover:text-foreground active:text-foreground",
-										attributes: [h.OnClick(Message.ToggledProductPanel())],
-									},
-									[icon(h, isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
-								),
-								h.span(
-									[
-										h.Class(
-											cn(
-												badgeVariants({
-													variant: "outline",
-													className: cn(
-														"font-mono text-2xs text-white border-0 shrink-0",
-														queryBadgeColor(0),
-													),
-												}),
-											),
-										),
-										h.DataAttribute("slot", "badge"),
-									],
-									["A"],
-								),
-								...parts,
-								h.div([h.Class("flex-1")], []),
-								button(h, { variant: "ghost", size: "xs", isDisabled: true }, ["Remove"]),
-							],
-						),
+						queryPanelBar(h, [
+							iconButton(
+								h,
+								{
+									size: "icon-xs",
+									label: isCollapsed ? "Expand query" : "Collapse query",
+									hasTooltip: false,
+									className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
+									attributes: [h.OnClick(Message.ToggledProductPanel())],
+								},
+								[icon(h, isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
+							),
+							badge(
+								h,
+								{
+									variant: "outline",
+									className: cn(
+										"font-mono text-2xs text-white border-0 shrink-0",
+										queryBadgeColor(0),
+									),
+								},
+								["A"],
+							),
+							...parts,
+							h.div([h.Class("flex-1")], []),
+							button(h, { variant: "ghost", size: "xs", isDisabled: true }, ["Remove"]),
+						]),
 				},
 			),
 			...(isCollapsed ? [] : [h.div([h.Class("p-3 space-y-3")], children)]),
@@ -121,7 +116,7 @@ export const addOnBar = <K extends string>(
 ): Html =>
 	h.div(
 		[h.Class("flex flex-wrap items-center gap-1.5 pt-1 border-t border-dashed")],
-		items.map(({ key, label }) =>
+		Arr.map(items, ({ key, label }) =>
 			filterChip(h, { size: "xs", isPressed: active[key], onClick: onToggle(key) }, [label]),
 		),
 	)
@@ -144,24 +139,20 @@ export const populationFilter = (
 	return h.div(
 		[h.Class("space-y-1")],
 		[
-			h.div(
-				[h.Class("flex items-start gap-2")],
-				[
-					rowLabel(h, "Where", "w-16 shrink-0 pt-2 text-2xs text-muted-foreground"),
-					whereEditor(h, {
-						id: `widget-${scope}-population`,
-						value,
-						ariaLabel,
-						placeholder: 'country = "DE" AND utm.source = "twitter"',
-						rows: 1,
-						className: "flex-1",
-						textareaClassName: "min-h-[32px] resize-y text-xs",
-						onInput: (next) =>
-							product(ProductEdit.ChangedPopulationFilter({ scope, value: next })),
-						autocomplete: autocompleteFor(model, populationField(model, scope, value)),
-					}),
-				],
-			),
+			hstack(h, { gap: "2", align: "start" }, [
+				rowLabel(h, "Where", "w-16 shrink-0 pt-2 text-2xs text-muted-foreground"),
+				whereEditor(h, {
+					id: `widget-${scope}-population`,
+					value,
+					ariaLabel,
+					placeholder: 'country = "DE" AND utm.source = "twitter"',
+					rows: 1,
+					className: "flex-1",
+					textareaClassName: "min-h-[32px] resize-y text-xs",
+					onInput: (next) => product(ProductEdit.ChangedPopulationFilter({ scope, value: next })),
+					autocomplete: autocompleteFor(model, populationField(model, scope, value)),
+				}),
+			]),
 			h.p(
 				[h.Class("pl-18 text-2xs text-muted-foreground")],
 				[
@@ -174,8 +165,7 @@ export const populationFilter = (
 	)
 }
 
-const row = (h: H, children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class("flex items-center gap-2")], children)
+const row = (h: H, children: ReadonlyArray<Html>): Html => hstack(h, { gap: "2" }, children)
 
 /** Count by: the four keys, each with what it counts. */
 export const keyByRow = (h: H, model: Model, scope: StepScope, value: string): Html =>
@@ -184,7 +174,7 @@ export const keyByRow = (h: H, model: Model, scope: StepScope, value: string): H
 		model,
 		keyBySelectId(scope),
 		value,
-		FUNNEL_KEY_BY_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
+		Arr.map(FUNNEL_KEY_BY_OPTIONS, (option) => ({ value: option.value, label: option.label })),
 		{
 			size: "sm",
 			className: "w-56",
@@ -198,7 +188,7 @@ export const keyByRow = (h: H, model: Model, scope: StepScope, value: string): H
 						[h.Class("flex flex-col")],
 						[
 							h.span([], [option.label]),
-							h.span([h.Class("text-3xs text-muted-foreground")], [description]),
+							typography(h, { size: "3xs", tone: "muted" }, [description]),
 						],
 					),
 				]
@@ -216,8 +206,8 @@ export const windowRow = (
 	inputs: Readonly<{ label: string; ariaLabel: string; size?: "sm"; className: string; hint: string }>,
 ): Html => {
 	const options: ReadonlyArray<SelectOption> = [
-		...FUNNEL_WINDOW_OPTIONS.map((option) => ({ value: String(option.value), label: option.label })),
-		...(FUNNEL_WINDOW_OPTIONS.every((option) => option.value !== seconds)
+		...Arr.map(FUNNEL_WINDOW_OPTIONS, (option) => ({ value: String(option.value), label: option.label })),
+		...(Arr.every(FUNNEL_WINDOW_OPTIONS, (option) => option.value !== seconds)
 			? [{ value: String(seconds), label: `${seconds}s` }]
 			: []),
 	]
@@ -229,17 +219,17 @@ export const windowRow = (
 			row(h, [
 				rowLabel(h, inputs.label),
 				...parts,
-				h.span([h.Class("text-2xs text-muted-foreground")], [inputs.hint]),
+				typography(h, { size: "2xs", tone: "muted" }, [inputs.hint]),
 			]),
 	})
 }
 
 /** `BreakdownPicker`: none, a session dimension, or `attribute:<key>` typed by hand. */
 export const breakdownRow = (h: H, model: Model, breakdownBy: string | undefined): Html => {
-	const fromValue = breakdownBy !== undefined && breakdownBy.startsWith("attribute:")
+	const fromValue = breakdownBy !== undefined && Str.startsWith("attribute:")(breakdownBy)
 	const isAttribute = fromValue || (model.breakdownAttribute.isActive && breakdownBy === undefined)
 	const selected = isAttribute ? BREAKDOWN_ATTRIBUTE : (breakdownBy ?? BREAKDOWN_NONE)
-	const key = fromValue ? breakdownBy.slice("attribute:".length) : model.breakdownAttribute.key
+	const key = fromValue ? Str.slice("attribute:".length)(breakdownBy) : model.breakdownAttribute.key
 	return pageSelect(
 		h,
 		model,
@@ -247,7 +237,7 @@ export const breakdownRow = (h: H, model: Model, breakdownBy: string | undefined
 		selected,
 		[
 			{ value: BREAKDOWN_NONE, label: "None" },
-			...FUNNEL_SESSION_DIMENSIONS.map((dimension) => ({
+			...Arr.map(FUNNEL_SESSION_DIMENSIONS, (dimension) => ({
 				value: dimension,
 				label: FUNNEL_SESSION_DIMENSION_LABEL[dimension],
 			})),
@@ -260,30 +250,27 @@ export const breakdownRow = (h: H, model: Model, breakdownBy: string | undefined
 			toView: (parts) =>
 				row(h, [
 					rowLabel(h, "Breakdown"),
-					h.div(
-						[h.Class("flex items-center gap-1.5")],
-						[
-							...parts,
-							...(isAttribute
-								? [
-										input(h, {
-											id: "widget-funnel-breakdown-key",
-											size: "sm",
-											className: "w-40 font-mono text-xs",
-											attributes: [
-												h.Value(key),
-												h.Placeholder("attribute key, e.g. plan"),
-												h.AriaLabel("Breakdown attribute key"),
-												h.OnInput((value) =>
-													Message.ChangedBreakdownAttribute({ value }),
-												),
-											],
-										}),
-									]
-								: []),
-						],
-					),
-					h.span([h.Class("text-2xs text-muted-foreground")], ["one bar per group, top 6"]),
+					hstack(h, { gap: "1.5" }, [
+						...parts,
+						...(isAttribute
+							? [
+									input(h, {
+										id: "widget-funnel-breakdown-key",
+										size: "sm",
+										className: "w-40 font-mono text-xs",
+										attributes: [
+											h.Value(key),
+											h.Placeholder("attribute key, e.g. plan"),
+											h.AriaLabel("Breakdown attribute key"),
+											h.OnInput((value) =>
+												Message.ChangedBreakdownAttribute({ value }),
+											),
+										],
+									}),
+								]
+							: []),
+					]),
+					typography(h, { size: "2xs", tone: "muted" }, ["one bar per group, top 6"]),
 				]),
 		},
 	)
@@ -291,18 +278,15 @@ export const breakdownRow = (h: H, model: Model, breakdownBy: string | undefined
 
 /** Run preview under a panel, and the query letter it runs. */
 export const runRow = (h: H, error: string | null): Html =>
-	h.div(
-		[h.Class("flex items-center gap-3")],
-		[
-			button(
-				h,
-				{
-					size: "sm",
-					isDisabled: error !== null,
-					attributes: [h.OnClick(Message.ClickedRunPreview())],
-				},
-				["Run preview"],
-			),
-			h.span([h.Class("text-2xs text-muted-foreground ml-auto")], ["A"]),
-		],
-	)
+	hstack(h, { gap: "3" }, [
+		button(
+			h,
+			{
+				size: "sm",
+				isDisabled: error !== null,
+				attributes: [h.OnClick(Message.ClickedRunPreview())],
+			},
+			["Run preview"],
+		),
+		typography(h, { size: "2xs", tone: "muted", className: "ml-auto" }, ["A"]),
+	])

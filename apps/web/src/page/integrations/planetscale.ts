@@ -4,13 +4,13 @@ import {
 	V2PlanetScaleOrganizationList,
 	V2PlanetScaleSelectOrganizationRequest,
 } from "@maple/domain/http/v2"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { KeyedSchema } from "../../data/keyed"
-import { LoadFailure, toLoadFailure } from "../../data/load-failure"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
-import * as Dialog from "../../ui/dialog"
-import * as Field from "../../ui/field"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
 import { derivePlanetScaleSetup } from "../../components/integrations/planetscale-setup-steps"
 import { Message } from "./message"
 
@@ -73,10 +73,10 @@ export const isWatchExpired = (card: PlanetscaleCardModel, nowMs: number): boole
 
 /** Comma or newline separated globs, trimmed. */
 export const parsePatternList = (value: string): ReadonlyArray<string> =>
-	value
-		.split(/[\n,]/)
-		.map((pattern) => pattern.trim())
-		.filter((pattern) => pattern.length > 0)
+	Arr.filter(
+		Arr.map(Str.split(/[\n,]/)(value), (pattern) => Str.trim(pattern)),
+		(pattern) => pattern.length > 0,
+	)
 
 export const FetchOrganizations = Command.define("FetchPlanetscaleOrganizations", {
 	args: { key: Schema.String },

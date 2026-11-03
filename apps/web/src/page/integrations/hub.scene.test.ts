@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { LinearIntegrationStatus } from "@maple/domain/http"
 import { V2ChatConnectorList } from "@maple/domain/http/v2"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { all, expect as expectView, expectAll, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -19,9 +19,9 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const steps = (model: Model, messages: ReadonlyArray<Message>) =>
-	messages.reduce((current, message) => pageUpdate(current, message).model, model)
+	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message).model)
 
 const entered = (search: Model["search"] = {}) => init({ search }, context).model
 
@@ -294,17 +294,20 @@ describe("linear card", () => {
 		expect(cardStatusOf(unnamed.statuses, "linear", 0)?.label).toBe("Connected")
 	})
 
-	test("disconnect toasts and re-reads the Linear status", () => {
+	test("disconnect stays open while pending, then closes, toasts and re-reads the Linear status", () => {
 		const opened = pageUpdate(withLinear("connected"), Message.ClickedDisconnect()).model
 		const confirmed = pageUpdate(opened, Message.ConfirmedDisconnect())
 		expect(names(confirmed.commands)).toContain("DisconnectIntegration")
+		expect(confirmed.model.disconnect.dialog.isOpen).toBe(true)
+		expect(confirmed.model.disconnect.isPending).toBe(true)
 		const done = pageUpdate(
 			confirmed.model,
 			Message.CompletedDisconnect({ integration: "linear", failure: null }),
 		)
+		expect(done.model.disconnect.dialog.isOpen).toBe(false)
 		expect(done.outMessage).toEqual(
 			PageOutMessage.RequestedToast({ type: "success", title: "Linear disconnected", description: "" }),
 		)
-		expect(names(done.commands)).toEqual(["LoadIntegrationsLinearStatus"])
+		expect(names(done.commands)).toContain("LoadIntegrationsLinearStatus")
 	})
 })

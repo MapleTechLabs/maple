@@ -8,6 +8,7 @@ import {
 	type ServiceEdgeData,
 	type ServiceNodeData,
 } from "./service-map-utils"
+import { Array as Arr } from "effect"
 
 const node = (id: string, overrides: Partial<ServiceNodeData> = {}): Node<ServiceNodeData> => ({
 	id,
@@ -80,24 +81,24 @@ describe("applyDeclutter — traffic filter", () => {
 		const { nodes, edges } = graph()
 		// threshold = 5% of 100 = 5 cps → cold edge (0.5) hidden
 		const result = applyDeclutter(nodes, edges, state({ minTrafficPct: 5 }))
-		expect(result.edges.map((e) => e.id)).toEqual([edgeIdFor("hot-src", "hot-dst")])
+		expect(Arr.map(result.edges, (e) => e.id)).toEqual([edgeIdFor("hot-src", "hot-dst")])
 		expect(result.hiddenEdgeCount).toBe(1)
-		expect(result.nodes.map((n) => n.id)).not.toContain("cold-src")
-		expect(result.nodes.map((n) => n.id)).not.toContain("cold-dst")
+		expect(Arr.map(result.nodes, (n) => n.id)).not.toContain("cold-src")
+		expect(Arr.map(result.nodes, (n) => n.id)).not.toContain("cold-dst")
 		expect(result.hiddenNodeCount).toBe(2)
 	})
 
 	it("keeps true isolates (they never had edges)", () => {
 		const { nodes, edges } = graph()
 		const result = applyDeclutter(nodes, edges, state({ minTrafficPct: 5 }))
-		expect(result.nodes.map((n) => n.id)).toContain("isolate")
+		expect(Arr.map(result.nodes, (n) => n.id)).toContain("isolate")
 	})
 
 	it("never hides exempt nodes (current selection)", () => {
 		const { nodes, edges } = graph()
 		const result = applyDeclutter(nodes, edges, state({ minTrafficPct: 5 }), new Set(["cold-src"]))
-		expect(result.nodes.map((n) => n.id)).toContain("cold-src")
-		expect(result.nodes.map((n) => n.id)).not.toContain("cold-dst")
+		expect(Arr.map(result.nodes, (n) => n.id)).toContain("cold-src")
+		expect(Arr.map(result.nodes, (n) => n.id)).not.toContain("cold-dst")
 		expect(result.hiddenNodeCount).toBe(1)
 	})
 
@@ -120,11 +121,11 @@ describe("applyDeclutter — traffic filter", () => {
 			}),
 		)
 		const result = applyDeclutter(nodes, edges, state({ minTrafficPct: 5 }))
-		expect(result.edges.map((e) => e.id)).toContain(edgeIdFor("hot-dst", "cold-dst"))
+		expect(Arr.map(result.edges, (e) => e.id)).toContain(edgeIdFor("hot-dst", "cold-dst"))
 		// Its endpoint stays connected — kept edges never dangle.
-		expect(result.nodes.map((n) => n.id)).toContain("cold-dst")
+		expect(Arr.map(result.nodes, (n) => n.id)).toContain("cold-dst")
 		// The zero-traffic TRAFFIC edge is still filtered as before.
-		expect(result.edges.map((e) => e.id)).not.toContain(edgeIdFor("cold-src", "cold-dst"))
+		expect(Arr.map(result.edges, (e) => e.id)).not.toContain(edgeIdFor("cold-src", "cold-dst"))
 	})
 })
 
@@ -167,8 +168,8 @@ describe("applyDeclutter — focus", () => {
 			edges,
 			state({ focus: { serviceId: "b", hops: 1, mode: "hide" } }),
 		)
-		expect(result.nodes.map((n) => n.id).sort()).toEqual(["a", "b", "c"])
-		expect(result.edges.map((e) => e.id).sort()).toEqual(
+		expect(Arr.map(result.nodes, (n) => n.id).sort()).toEqual(["a", "b", "c"])
+		expect(Arr.map(result.edges, (e) => e.id).sort()).toEqual(
 			[edgeIdFor("a", "b"), edgeIdFor("b", "c")].sort(),
 		)
 	})
@@ -197,9 +198,9 @@ describe("applyDeclutter — focus", () => {
 			state({ minTrafficPct: 5, focus: { serviceId: "root", hops: 1, mode: "dim" } }),
 		)
 		// The quiet edge itself is filtered, but its nodes survive via the focus.
-		expect(result.edges.map((e) => e.id)).toEqual([edgeIdFor("hot-src", "hot-dst")])
-		expect(result.nodes.map((n) => n.id)).toContain("root")
-		expect(result.nodes.map((n) => n.id)).toContain("quiet")
+		expect(Arr.map(result.edges, (e) => e.id)).toEqual([edgeIdFor("hot-src", "hot-dst")])
+		expect(Arr.map(result.nodes, (n) => n.id)).toContain("root")
+		expect(Arr.map(result.nodes, (n) => n.id)).toContain("quiet")
 	})
 })
 
@@ -234,8 +235,8 @@ describe("applyDeclutter — namespace collapse", () => {
 		expect(agg!.data.errorRate).toBeCloseTo(0.08)
 		// (10*30 + 30*10) / 40 = 15
 		expect(agg!.data.avgLatencyMs).toBeCloseTo(15)
-		expect(result.nodes.map((n) => n.id)).not.toContain("checkout")
-		expect(result.nodes.map((n) => n.id)).not.toContain("ledger")
+		expect(Arr.map(result.nodes, (n) => n.id)).not.toContain("checkout")
+		expect(Arr.map(result.nodes, (n) => n.id)).not.toContain("ledger")
 	})
 
 	it("merges parallel remapped edges, drops intra-namespace ones, remaps db edges", () => {
@@ -252,13 +253,13 @@ describe("applyDeclutter — namespace collapse", () => {
 		expect(inbound!.data!.errorRate).toBeCloseTo(10 / 150)
 
 		// checkout→ledger is intra-namespace → gone
-		expect(result.edges.some((e) => e.data!.callCount === 999)).toBe(false)
+		expect(Arr.some(result.edges, (e) => e.data!.callCount === 999)).toBe(false)
 
 		// checkout→db remaps to agg→db
-		expect(result.edges.some((e) => e.id === edgeIdFor(agg, "db:postgresql:main"))).toBe(true)
+		expect(Arr.some(result.edges, (e) => e.id === edgeIdFor(agg, "db:postgresql:main"))).toBe(true)
 
 		// untouched edge survives as-is
-		expect(result.edges.some((e) => e.id === edgeIdFor("external", "gateway"))).toBe(true)
+		expect(Arr.some(result.edges, (e) => e.id === edgeIdFor("external", "gateway"))).toBe(true)
 	})
 
 	it("does not mutate the input graph", () => {
@@ -296,7 +297,7 @@ describe("applyDeclutter — namespace collapse", () => {
 			}),
 		)
 		expect(result.focusMissing).toBe(false)
-		const ids = result.nodes.map((n) => n.id).sort()
+		const ids = Arr.map(result.nodes, (n) => n.id).sort()
 		// aggregate + its direct neighbors (gateway, db)
 		expect(ids).toEqual(["db:postgresql:main", "gateway", nsAggregateId("payments")].sort())
 	})

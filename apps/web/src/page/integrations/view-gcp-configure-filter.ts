@@ -1,17 +1,21 @@
 import type { GcpLogRuntime } from "@maple/domain/primitives"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
 import { GCP_LOG_RUNTIMES, gcpLogFilterChoice } from "../../components/integrations/gcp-connector-state"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { type FieldState, field, fieldLabel } from "../../ui/field"
-import { icon } from "../../ui/icon"
+import { button } from "@maple/views/ui/button"
+import { collapsible } from "@maple/views/ui/collapsible"
+import { type FieldState, field, fieldLabel } from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
 import { DOCS, OTEL_DOCS } from "./gcp-configure-copy"
 import type { ConfigureModel } from "./gcp-configure-schema"
 import { Message } from "./message"
 import { externalLink } from "./view-gcp-configure-parts"
 import { filterModeSelect } from "./view-gcp-configure-filter-mode"
 import { runtimeFields } from "./view-gcp-configure-runtimes"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
+import { dividedList } from "@maple/views/ui/rule"
+import { Array as Arr } from "effect"
 
 // `LogFilter` and `GcpLogFilterField`: the filter the script gives the log sink.
 
@@ -20,9 +24,13 @@ type H = HtmlBuilder<Message>
 const PANEL_ID = "gcp-log-filter-panel"
 
 export const runtimeLabels = (runtimes: ReadonlyArray<GcpLogRuntime>): string =>
-	GCP_LOG_RUNTIMES.filter(({ value }) => runtimes.includes(value))
-		.map(({ label }) => label)
-		.join(", ")
+	Arr.join(
+		Arr.map(
+			Arr.filter(GCP_LOG_RUNTIMES, ({ value }) => runtimes.includes(value)),
+			({ label }) => label,
+		),
+		", ",
+	)
 
 /** The log filter's choice in a few words: the closed disclosure and the run summary. */
 export const filterShort = (choice: ReturnType<typeof gcpLogFilterChoice>): string =>
@@ -39,64 +47,28 @@ export const logFilter = (
 	options: Readonly<{ sinkExists: boolean; logRouter?: string }>,
 ): Html => {
 	const isOpen = configure.isFilterOpen
-	const state = h.DataAttribute(isOpen ? "open" : "closed", "")
-	return h.div(
-		[
-			h.Class("rounded-md border border-border-subtle bg-surface-sunken"),
-			state,
-			h.DataAttribute("slot", "collapsible"),
-		],
-		[
-			h.button(
-				[
-					...(isOpen ? [h.AriaControls(PANEL_ID)] : []),
-					h.AriaDisabled(false),
-					h.AriaExpanded(isOpen),
-					h.Class(
-						"group flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-					),
-					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
-					h.DataAttribute("slot", "collapsible-trigger"),
-					h.Tabindex(0),
-					h.Type("button"),
-					h.OnClick(Message.ClickedGcpLogFilter()),
-				],
-				[
-					h.span([h.Class("text-foreground")], ["Log filter"]),
-					h.span(
-						[h.Class("truncate text-muted-foreground")],
-						[filterShort(gcpLogFilterChoice(configure.filter, options.sinkExists))],
-					),
-					icon(h, "ChevronDownIcon", {
-						size: 12,
-						className:
-							"ml-auto shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-180",
-					}),
-				],
-			),
-			...(isOpen
-				? [
-						h.div(
-							[
-								h.Class(collapsiblePanelStyles),
-								state,
-								h.DataAttribute("slot", "collapsible-panel"),
-								h.Id(PANEL_ID),
-								h.Style({
-									"--collapsible-panel-height": "auto",
-									"--collapsible-panel-width": "auto",
-								}),
-							],
-							[
-								h.div(
-									[h.Class("border-t border-border-subtle p-3")],
-									[filterField(h, configure, options)],
-								),
-							],
-						),
-					]
-				: []),
-		],
+	return collapsible(
+		h,
+		{
+			isOpen,
+			onToggle: Message.ClickedGcpLogFilter(),
+			panelId: PANEL_ID,
+			triggerClassName:
+				"group flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+			trigger: [
+				h.span([h.Class("text-foreground")], ["Log filter"]),
+				typography(h, { tone: "muted", truncate: true }, [
+					filterShort(gcpLogFilterChoice(configure.filter, options.sinkExists)),
+				]),
+				icon(h, "ChevronDownIcon", {
+					size: 12,
+					className:
+						"ml-auto shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-180",
+				}),
+			],
+			attributes: [h.Class("rounded-md border border-border-subtle bg-surface-sunken")],
+		},
+		[h.div([h.Class("border-t border-border-subtle p-3")], [filterField(h, configure, options)])],
 	)
 }
 
@@ -126,7 +98,7 @@ export type FilterFieldOptions = Readonly<{
 	forwardId?: string
 }>
 
-const LABEL = "text-xs font-medium text-muted-foreground"
+const LABEL = typographyClass({ size: "xs", tone: "muted", weight: "medium" })
 
 /** `GcpLogFilterField`: whose application output comes along. */
 export const filterField = (
@@ -155,47 +127,39 @@ export const filterField = (
 					},
 					"Log filter",
 				)
-	const newFilter = h.div(
-		[h.Class("flex flex-col gap-2.5")],
-		[
-			h.dl(
-				[h.Class("divide-y rounded-md border")],
-				[
-					summaryRow(
-						h,
-						icon(h, "CheckIcon", { size: 14, className: "text-severity-info" }),
-						"Platform logs",
-						"Requests, audit, deploys, crashes, scaling",
-					),
-					summaryRow(
-						h,
-						// Off reads as off: a cross, not an ambiguous dash; ticked runtimes get a check.
-						choice.runtimes.length === 0
-							? icon(h, "XmarkIcon", { size: 14 })
-							: icon(h, "CheckIcon", { size: 14, className: "text-severity-info" }),
-						"Application output",
-						choice.runtimes.length === 0
-							? "Not collected: stdout and stderr stay in Google Cloud"
-							: `stdout and stderr, from ${runtimeLabels(choice.runtimes)} only`,
-					),
-				],
+	const newFilter = vstack(h, { gap: "2.5" }, [
+		dividedList(h, { as: "dl" }, [
+			summaryRow(
+				h,
+				icon(h, "CheckIcon", { size: 14, className: "text-severity-info" }),
+				"Platform logs",
+				"Requests, audit, deploys, crashes, scaling",
 			),
-			h.p(
-				[
-					h.Class(
-						"flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 font-prose text-xs/5 text-pretty text-muted-foreground",
-					),
-				],
-				[
-					"Send application logs with your OpenTelemetry setup, where they link to traces.",
-					externalLink(h, OTEL_DOCS, "Set up OpenTelemetry"),
-				],
+			summaryRow(
+				h,
+				// Off reads as off: a cross, not an ambiguous dash; ticked runtimes get a check.
+				choice.runtimes.length === 0
+					? icon(h, "XmarkIcon", { size: 14 })
+					: icon(h, "CheckIcon", { size: 14, className: "text-severity-info" }),
+				"Application output",
+				choice.runtimes.length === 0
+					? "Not collected: stdout and stderr stay in Google Cloud"
+					: `stdout and stderr, from ${runtimeLabels(choice.runtimes)} only`,
 			),
-			choice.forwardsOutput
-				? runtimeFields(h, choice.runtimes, options.forwardId)
-				: forwardOutputPrompt(h),
-		],
-	)
+		]),
+		h.p(
+			[
+				h.Class(
+					"flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 font-prose text-xs/5 text-pretty text-muted-foreground",
+				),
+			],
+			[
+				"Send application logs with your OpenTelemetry setup, where they link to traces.",
+				externalLink(h, OTEL_DOCS, "Set up OpenTelemetry"),
+			],
+		),
+		choice.forwardsOutput ? runtimeFields(h, choice.runtimes, options.forwardId) : forwardOutputPrompt(h),
+	])
 	return field(h, { className: "items-stretch gap-2.5", state }, [
 		h.div(
 			[h.Class("flex items-baseline justify-between gap-4 text-xs text-muted-foreground")],

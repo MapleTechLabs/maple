@@ -12,16 +12,18 @@ import {
 	usageMeter,
 } from "../../../lib/billing/spend"
 import { formatCount, formatUsage, formatUsageAgainst } from "../../../lib/billing/usage"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "../../../ui/input-group"
-import { segmentedBar } from "../../../ui/meter"
-import { panel } from "../../../ui/panel"
-import { skeleton } from "../../../ui/skeleton"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { button } from "@maple/views/ui/button"
+import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "@maple/views/ui/input-group"
+import { segmentedBar } from "@maple/views/ui/meter"
+import { panel } from "@maple/views/ui/panel"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { CAP_INPUT_ID, Message, type Model, SpendFeatureId } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -52,7 +54,7 @@ export const usageTableSkeleton = (h: H): Html =>
 	panel(
 		h,
 		{},
-		SPEND_FEATURES.map((featureId) =>
+		Arr.map(SPEND_FEATURES, (featureId) =>
 			h.div(
 				[h.Key(featureId), h.Class("flex items-center gap-4 border-b px-3 py-3 last:border-b-0")],
 				[
@@ -67,67 +69,61 @@ export const usageTableSkeleton = (h: H): Html =>
 
 const capEditor = (h: H, model: Model, feature: FeatureSpend): Html => {
 	const parsed = parseCapInput(model.capDraft)
-	return h.div(
-		[h.Class("flex flex-col gap-1.5")],
-		[
-			h.div(
-				[h.Class("flex items-center gap-1.5")],
-				[
-					inputGroup(h, { className: "w-28" }, [
-						inputGroupInput(h, {
-							id: CAP_INPUT_ID,
-							// Text, not number: a number input reports unparseable text as "", which reads as "no cap".
-							type: "text",
-							controlClassName: "font-mono tabular-nums",
-							attributes: [
-								h.AriaLabel(`${feature.label} paid overage cap`),
-								h.InputMode("decimal"),
-								h.Value(model.capDraft),
-								h.Placeholder("No cap"),
-								h.OnInput((value) => Message.ChangedCap({ value })),
-								h.OnKeyDown((key) => Message.PressedCapKey({ key })),
-							],
-						}),
-						inputGroupAddon(h, { align: "inline-end" }, [
-							inputGroupText(h, {}, [featureUnit(feature.featureId)]),
-						]),
-					]),
-					button(
-						h,
-						{
-							size: "sm",
-							isLoading: model.isSavingCap,
-							isDisabled: !parsed.valid,
-							attributes: [h.OnClick(Message.ClickedSaveCap())],
-						},
-						["Save"],
-					),
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "ghost",
-							isDisabled: model.isSavingCap,
-							attributes: [h.OnClick(Message.ClickedCancelCap())],
-						},
-						["Cancel"],
-					),
-				],
+	return vstack(h, { gap: "1.5" }, [
+		hstack(h, { gap: "1.5" }, [
+			inputGroup(h, { className: "w-28" }, [
+				inputGroupInput(h, {
+					id: CAP_INPUT_ID,
+					// Text, not number: a number input reports unparseable text as "", which reads as "no cap".
+					type: "text",
+					controlClassName: typographyClass({ mono: true, numeric: true }),
+					attributes: [
+						h.AriaLabel(`${feature.label} paid overage cap`),
+						h.InputMode("decimal"),
+						h.Value(model.capDraft),
+						h.Placeholder("No cap"),
+						h.OnInput((value) => Message.ChangedCap({ value })),
+						h.OnKeyDown((key) => Message.PressedCapKey({ key })),
+					],
+				}),
+				inputGroupAddon(h, { align: "inline-end" }, [
+					inputGroupText(h, {}, [featureUnit(feature.featureId)]),
+				]),
+			]),
+			button(
+				h,
+				{
+					size: "sm",
+					isLoading: model.isSavingCap,
+					isDisabled: !parsed.valid,
+					attributes: [h.OnClick(Message.ClickedSaveCap())],
+				},
+				["Save"],
 			),
-			h.p(
-				[h.Class(cn("text-2xs", parsed.valid ? "text-muted-foreground" : "text-destructive"))],
-				[
-					!parsed.valid
-						? "Enter zero or more, or leave empty for no cap."
-						: parsed.cap === null
-							? "Empty removes the cap."
-							: feature.included === null
-								? "Paid overage."
-								: `Paid overage. Stops at ${withUnit(feature.featureId, feature.included + parsed.cap)}`,
-				],
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "ghost",
+					isDisabled: model.isSavingCap,
+					attributes: [h.OnClick(Message.ClickedCancelCap())],
+				},
+				["Cancel"],
 			),
-		],
-	)
+		]),
+		h.p(
+			[h.Class(cn("text-2xs", parsed.valid ? "text-muted-foreground" : "text-destructive-foreground"))],
+			[
+				!parsed.valid
+					? "Enter zero or more, or leave empty for no cap."
+					: parsed.cap === null
+						? "Empty removes the cap."
+						: feature.included === null
+							? "Paid overage."
+							: `Paid overage. Stops at ${withUnit(feature.featureId, feature.included + parsed.cap)}`,
+			],
+		),
+	])
 }
 
 /** The cap cell at rest: the cap and where usage stops, or why a cap does not apply. */
@@ -142,25 +138,21 @@ const capSummary = (h: H, feature: FeatureSpend, cap: number | undefined): Html 
 	}
 	if (cap === undefined) return h.span([h.Class("text-muted-foreground")], ["Uncapped"])
 	const isReached = feature.overageUnits > 0 && feature.overageUnits >= cap
-	return h.div(
-		[h.Class("flex min-w-0 flex-col")],
-		[
-			h.span(
-				[h.Class("font-mono tabular-nums")],
-				[cap === 0 ? "No overage" : `+${withUnit(feature.featureId, cap)}`],
-			),
-			h.span(
-				[h.Class(cn("text-2xs", isReached ? "text-severity-error" : "text-muted-foreground"))],
-				[
-					isReached
-						? "Cap reached, new data rejected"
-						: feature.included === null
-							? "Paid overage"
-							: `Stops at ${withUnit(feature.featureId, feature.included + cap)}`,
-				],
-			),
-		],
-	)
+	return vstack(h, { shrink: true }, [
+		typography(h, { mono: true, numeric: true }, [
+			cap === 0 ? "No overage" : `+${withUnit(feature.featureId, cap)}`,
+		]),
+		h.span(
+			[h.Class(cn("text-2xs", isReached ? "text-severity-error" : "text-muted-foreground"))],
+			[
+				isReached
+					? "Cap reached, new data rejected"
+					: feature.included === null
+						? "Paid overage"
+						: `Stops at ${withUnit(feature.featureId, feature.included + cap)}`,
+			],
+		),
+	])
 }
 
 /** Bytes ingest rules dropped for a signal this cycle; never metered, so never billed. */
@@ -195,37 +187,31 @@ const featureRow = (
 		h,
 		[
 			tableCell(h, [
-				h.div(
-					[h.Class("flex min-w-0 items-center gap-2")],
-					[
-						h.span([
-							h.AriaHidden(true),
-							h.Class("size-2 shrink-0 rounded-full"),
-							h.Style({ background: color }),
-						]),
-						h.span([h.Class("truncate")], [feature.label]),
-					],
-				),
+				hstack(h, { gap: "2", shrink: true }, [
+					h.span([
+						h.AriaHidden(true),
+						h.Class("size-2 shrink-0 rounded-full"),
+						h.Style({ background: color }),
+					]),
+					h.span([h.Class("truncate")], [feature.label]),
+				]),
 			]),
 			tableCell(h, [
-				h.div(
-					[h.Class("flex min-w-0 flex-col gap-1.5")],
-					[
-						segmentedBar(h, {
-							className: "h-1 w-full rounded-none bg-muted",
-							total: 100,
-							segments: [
-								{ key: "included", value: meter.included, color },
-								{ key: "overage", value: meter.overage, className: "bg-primary" },
-							],
-						}),
-						h.span(
-							[h.Class("truncate font-mono text-2xs tabular-nums text-muted-foreground")],
-							[usageLine(feature)],
-						),
-						...droppedLine(h, model, feature.featureId),
-					],
-				),
+				vstack(h, { gap: "1.5", shrink: true }, [
+					segmentedBar(h, {
+						className: "h-1 w-full rounded-none bg-muted",
+						total: 100,
+						segments: [
+							{ key: "included", value: meter.included, color },
+							{ key: "overage", value: meter.overage, className: "bg-primary" },
+						],
+					}),
+					h.span(
+						[h.Class("truncate font-mono text-2xs tabular-nums text-muted-foreground")],
+						[usageLine(feature)],
+					),
+					...droppedLine(h, model, feature.featureId),
+				]),
 			]),
 			tableCell(
 				h,
@@ -236,7 +222,10 @@ const featureRow = (
 							h.span(
 								[
 									h.Class(
-										cn("font-mono tabular-nums", !hasOverage && "text-muted-foreground"),
+										cn(
+											typographyClass({ mono: true, numeric: true }),
+											!hasOverage && "text-muted-foreground",
+										),
 									),
 								],
 								[
@@ -245,10 +234,9 @@ const featureRow = (
 										: formatCurrency(feature.overageCents / 100, spend.currency),
 								],
 							),
-							h.span(
-								[h.Class("font-mono text-2xs tabular-nums text-muted-foreground")],
-								[rateCaption(feature)],
-							),
+							typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true }, [
+								rateCaption(feature),
+							]),
 						],
 					),
 				],
@@ -257,29 +245,26 @@ const featureRow = (
 			tableCell(h, [
 				isEditing
 					? capEditor(h, model, feature)
-					: h.div(
-							[h.Class("flex items-center justify-between gap-2")],
-							[
-								capSummary(h, feature, cap),
-								...(model.isAdmin && capApplies(feature) && featureId !== null
-									? [
-											button(
-												h,
-												{
-													size: "sm",
-													variant: "ghost",
-													isDisabled: model.isSavingCap,
-													attributes: [
-														h.AriaLabel(`Edit ${feature.label} cap`),
-														h.OnClick(Message.ClickedEditCap({ featureId })),
-													],
-												},
-												["Edit"],
-											),
-										]
-									: []),
-							],
-						),
+					: hstack(h, { gap: "2", justify: "between" }, [
+							capSummary(h, feature, cap),
+							...(model.isAdmin && capApplies(feature) && featureId !== null
+								? [
+										button(
+											h,
+											{
+												size: "sm",
+												variant: "ghost",
+												isDisabled: model.isSavingCap,
+												attributes: [
+													h.AriaLabel(`Edit ${feature.label} cap`),
+													h.OnClick(Message.ClickedEditCap({ featureId })),
+												],
+											},
+											["Edit"],
+										),
+									]
+								: []),
+						]),
 			]),
 		],
 		cn(isEditing && "bg-surface-sunken"),
@@ -301,7 +286,7 @@ export const usageTable = (h: H, model: Model, spend: SpendModel, customer: Bill
 			]),
 			tableBody(
 				h,
-				spend.features.map((feature) => featureRow(h, model, spend, customer, feature)),
+				Arr.map(spend.features, (feature) => featureRow(h, model, spend, customer, feature)),
 			),
 		]),
 	])

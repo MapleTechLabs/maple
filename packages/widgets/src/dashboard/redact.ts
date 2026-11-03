@@ -16,8 +16,12 @@
  * denylist would leak every future field by default, which is exactly the wrong
  * direction for a payload served without a session.
  */
+import { Schema, Array as Arr } from "effect"
+
 import { dataSourceEndpoint, dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "./access"
 import type { DashboardVariable } from "./shared/variables"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /**
  * The data source as a viewer sees it: enough to choose a renderer, nothing
@@ -99,7 +103,7 @@ const redactDataSource = (dataSource: unknown): RedactedDataSource => {
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 /**
  * The display config, with the one field that embeds a data source redacted.
@@ -146,7 +150,7 @@ const redactWidget = (widget: ShareWidgetInput): RedactedWidget => {
  */
 const referencedVariableNames = (widget: ShareWidgetInput): ReadonlySet<string> => {
 	const names = new Set<string>()
-	for (const match of JSON.stringify(widget ?? null).matchAll(/\$\{?([A-Za-z][A-Za-z0-9_]*)\}?/g)) {
+	for (const match of encodeJson(widget ?? null).matchAll(/\$\{?([A-Za-z][A-Za-z0-9_]*)\}?/g)) {
 		const name = match[1]
 		if (name !== undefined) names.add(name)
 	}
@@ -165,7 +169,7 @@ export const variablesForWidget = (
 	widget: ShareWidgetInput,
 ): ReadonlyArray<DashboardVariable> => {
 	const referenced = referencedVariableNames(widget)
-	return variables.filter((variable) => referenced.has(variable.name))
+	return Arr.filter(variables, (variable) => referenced.has(variable.name))
 }
 
 /**
@@ -224,7 +228,7 @@ export function redactForShare(
 		id: document.id,
 		name: document.name,
 		timeRange: document.timeRange,
-		widgets: document.widgets.map(redactWidget),
+		widgets: Arr.map(document.widgets, redactWidget),
 	}
 	if (document.description !== undefined) redacted = { ...redacted, description: document.description }
 	if (document.sections !== undefined) redacted = { ...redacted, sections: document.sections }

@@ -1,12 +1,13 @@
 /**
  * `bun run security:local <repo-dir> [options]`: one security-audit run of Cloudflare's skill over a
  * local clone, with the same engine, prompts and agents a deployed run uses. Source is read with
- * git at one commit; no target code is executed. The run directory has the skill's own layout, and
- * the upstream validators check it at the end.
+ * git at one commit. Target code runs only with `--executor`, in the execution sandbox that
+ * `bun run --cwd apps/sandbox executor:local <repo-dir>` serves. The run directory has the skill's
+ * own layout, and the upstream validators check it at the end.
  *
  * Options: --ref <commit> (HEAD) · --scope <path> (repeatable) · --profile quick|standard|deep (deep)
  * · --budget <invocations> · --out <dir> (~/security-audit-skill/<repo>/run-<N>) · --prior <run dir>
- * · --concurrency <n> (4) · --discovery-model <id> · --validation-model <id>
+ * · --concurrency <n> (4) · --discovery-model <id> · --validation-model <id> · --executor <url>
  */
 import { spawnSync } from "node:child_process"
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -26,12 +27,49 @@ import {
 	type PriorRun,
 	runAudit,
 } from "@maple/security-audit"
-import { ConfigProvider, Console, Effect, Layer, References, Schema } from "effect"
+import {
+	Clock,
+	ConfigProvider,
+	Console,
+	Effect,
+	Layer,
+	Option,
+	References,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { type ExecutorTransport, SandboxClientError } from "@maple/backend/sandbox/client"
+import { makeExecutor } from "@maple/backend/services/sandbox/ExecutorService"
+import {
+	EXECUTOR_DESTROY_PATH,
+	EXECUTOR_PREPARE_PATH,
+	EXECUTOR_RUN_PATH,
+	ExecutorDestroyRequest,
+	ExecutorDestroyResponse,
+	ExecutorPrepareRequest,
+	ExecutorPrepareResponse,
+	ExecutorRunRequest,
+	ExecutorRunResponse,
+} from "@maple/domain/executor"
+import { OrgId } from "@maple/domain/http"
+import { SandboxCheckout } from "@maple/domain/sandbox"
 import { makeAuditAgents } from "@/security-audit/agents"
+import {
+	type AuditExecutionApi,
+	AuditExecutionError,
+	EXECUTION_TOOL_GUIDANCE,
+	executionPolicy,
+} from "@/security-audit/execution"
 import { AUDIT_TOOL_GUIDANCE, SourceReadError, type SourceReaderApi } from "@/security-audit/source"
 import { layerLlm, loadLlmSettings, resolveSecurityAuditModel } from "@/platform/Llm"
 
 const MAX_OUTPUT_BYTES = 48 * 1024
+const decodeJson = Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 const SKILL_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../../packages/security-audit/skill")
 
 interface Args {
@@ -45,6 +83,8 @@ interface Args {
 	readonly concurrency: number
 	readonly discoveryModel: string | undefined
 	readonly validationModel: string | undefined
+	/** `executor:local`'s address; without it nothing executes. */
+	readonly executor: string | undefined
 }
 
 const parseArgs = (argv: ReadonlyArray<string>): Args => {
@@ -52,16 +92,16 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	const positional: Array<string> = []
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i] ?? ""
-		if (arg.startsWith("--")) {
+		if (Str.startsWith("--")(arg)) {
 			const value = argv[i + 1]
 			// Every option takes a value; a missing one, or another option in its place, is a usage error.
-			if (value === undefined || value.startsWith("--")) {
+			if (value === undefined || Str.startsWith("--")(value)) {
 				console.error(
 					`${arg} needs a value\n${"usage: bun run security:local <repo-dir> [--ref <commit>] [--scope <path>]... [--profile quick|standard|deep] [--budget <n>] [--concurrency <n>] [--out <dir>] [--prior <run dir>]"}`,
 				)
 				process.exit(2)
 			}
-			flags.set(arg.slice(2), [...(flags.get(arg.slice(2)) ?? []), value])
+			flags.set(Str.slice(2)(arg), [...(flags.get(Str.slice(2)(arg)) ?? []), value])
 			i++
 		} else positional.push(arg)
 	}
@@ -69,7 +109,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		if (raw === undefined) return undefined
 		const value = Number(raw)
 		if (Number.isSafeInteger(value) && value > 0) return value
-		console.error(`--${name} must be a positive integer, got ${JSON.stringify(raw)}`)
+		console.error(`--${name} must be a positive integer, got ${encodeJson(raw)}`)
 		return process.exit(2)
 	}
 	const one = (name: string) => flags.get(name)?.at(-1)
@@ -86,7 +126,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	return {
 		repoDir: resolve(positional[0]),
 		ref: one("ref") ?? "HEAD",
-		scope: (flags.get("scope") ?? []).map((path) => path.replace(/\/+$/, "")),
+		scope: Arr.map(flags.get("scope") ?? [], (path) => Str.replace(/\/+$/, "")(path)),
 		profile,
 		budget: positiveInt("budget", one("budget")) ?? null,
 		out: one("out"),
@@ -94,6 +134,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		concurrency: positiveInt("concurrency", one("concurrency")) ?? 4,
 		discoveryModel: one("discovery-model"),
 		validationModel: one("validation-model"),
+		executor: one("executor"),
 	}
 }
 
@@ -111,9 +152,9 @@ const bounded = (text: string) => {
 
 const safePath = (path: string | undefined) =>
 	path === undefined || path === "" || path === "."
-		? Effect.succeed(undefined)
-		: isSafeRelativePath(path.replace(/\/+$/, ""))
-			? Effect.succeed(path.replace(/\/+$/, ""))
+		? Effect.undefined
+		: isSafeRelativePath(Str.replace(/\/+$/, "")(path))
+			? Effect.succeed(Str.replace(/\/+$/, "")(path))
 			: Effect.fail(new SourceReadError({ message: `not a safe repository-relative path: ${path}` }))
 
 /** git over the clone, at the run's commit only. */
@@ -124,14 +165,14 @@ const localSource = (dir: string, sha: string): SourceReaderApi => ({
 			if (result.status !== 0)
 				return Effect.fail(
 					new SourceReadError({
-						message: `cannot read ${path}: ${result.stderr.trim().slice(0, 200)}`,
+						message: `cannot read ${path}: ${Str.slice(0, 200)(Str.trim(result.stderr))}`,
 					}),
 				)
-			const lines = result.stdout.split("\n")
-			const body = lines
-				.slice(start - 1, end)
-				.map((line, i) => `${start + i}\t${line}`)
-				.join("\n")
+			const lines = Str.split("\n")(result.stdout)
+			const body = Arr.join(
+				Arr.map(lines.slice(start - 1, end), (line, i) => `${start + i}\t${line}`),
+				"\n",
+			)
 			return Effect.succeed(bounded(`${path} (${lines.length} lines)\n${body}`))
 		}),
 	grep: (pattern, path) =>
@@ -150,52 +191,47 @@ const localSource = (dir: string, sha: string): SourceReaderApi => ({
 			])
 			if (result.status > 1)
 				return Effect.fail(
-					new SourceReadError({ message: `grep failed: ${result.stderr.trim().slice(0, 200)}` }),
+					new SourceReadError({
+						message: `grep failed: ${Str.slice(0, 200)(Str.trim(result.stderr))}`,
+					}),
 				)
-			return Effect.succeed(bounded(result.stdout.replaceAll(`${sha}:`, "")))
+			return Effect.succeed(bounded(Str.replaceAll(`${sha}:`, "")(result.stdout)))
 		}),
 	listFiles: (path) =>
-		Effect.flatMap(safePath(path), (safe) =>
-			Effect.succeed(
-				bounded(
-					git(dir, [
-						"ls-tree",
-						"-r",
-						"--name-only",
-						sha,
-						"--",
-						...(safe === undefined ? [] : [safe]),
-					]).stdout,
-				),
+		Effect.map(safePath(path), (safe) =>
+			bounded(
+				git(dir, ["ls-tree", "-r", "--name-only", sha, "--", ...(safe === undefined ? [] : [safe])])
+					.stdout,
 			),
 		),
 	nearby: (path, basename) =>
 		Effect.succeed(
 			bounded(
-				git(dir, ["ls-tree", "-r", "--name-only", sha])
-					.stdout.split("\n")
-					.filter(
+				Arr.join(
+					Arr.filter(
+						Str.split("\n")(git(dir, ["ls-tree", "-r", "--name-only", sha]).stdout),
 						(file) =>
-							file.startsWith(`${path}/`) || file === basename || file.endsWith(`/${basename}`),
-					)
-					.join("\n"),
+							Str.startsWith(`${path}/`)(file) ||
+							file === basename ||
+							Str.endsWith(`/${basename}`)(file),
+					),
+					"\n",
+				),
 			),
 		),
 	log: (path) =>
-		Effect.flatMap(safePath(path), (safe) =>
-			Effect.succeed(
-				bounded(
-					git(dir, [
-						"log",
-						"--format=%h %ad %s",
-						"--date=short",
-						"-n",
-						"40",
-						sha,
-						"--",
-						...(safe === undefined ? [] : [safe]),
-					]).stdout,
-				),
+		Effect.map(safePath(path), (safe) =>
+			bounded(
+				git(dir, [
+					"log",
+					"--format=%h %ad %s",
+					"--date=short",
+					"-n",
+					"40",
+					sha,
+					"--",
+					...(safe === undefined ? [] : [safe]),
+				]).stdout,
 			),
 		),
 })
@@ -203,7 +239,7 @@ const localSource = (dir: string, sha: string): SourceReaderApi => ({
 const nextRunDir = (repo: string) => {
 	const root = join(homedir(), "security-audit-skill", repo)
 	const taken = existsSync(root)
-		? readdirSync(root).map((name) => Number(/^run-(\d+)$/.exec(name)?.[1] ?? 0))
+		? Arr.map(readdirSync(root), (name) => Number(/^run-(\d+)$/.exec(name)?.[1] ?? 0))
 		: []
 	return join(root, `run-${Math.max(0, ...taken) + 1}`)
 }
@@ -212,16 +248,16 @@ const PriorMetadata = Schema.Struct({ run_id: Schema.String, source_ref: Schema.
 
 const loadPrior = (dir: string): PriorRun => {
 	const metadata = Schema.decodeUnknownSync(PriorMetadata)(
-		JSON.parse(readFileSync(join(dir, "run-metadata.json"), "utf8")),
+		decodeJson(readFileSync(join(dir, "run-metadata.json"), "utf8")),
 	)
 	return {
 		runId: metadata.run_id,
 		sourceRef: metadata.source_ref,
 		ledger: Schema.decodeUnknownSync(Ledger)(
-			JSON.parse(readFileSync(join(dir, "coverage-ledger.json"), "utf8")),
+			decodeJson(readFileSync(join(dir, "coverage-ledger.json"), "utf8")),
 		),
 		findings: Schema.decodeUnknownSync(Findings)(
-			JSON.parse(readFileSync(join(dir, "findings.json"), "utf8")),
+			decodeJson(readFileSync(join(dir, "findings.json"), "utf8")),
 		),
 	}
 }
@@ -229,7 +265,7 @@ const loadPrior = (dir: string): PriorRun => {
 /** The skill's run directory, written as each shared file changes. */
 const fileStore = (out: string): AuditStoreApi => {
 	const write = (name: string, value: string) => Effect.sync(() => writeFileSync(join(out, name), value))
-	const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
+	const json = (value: unknown) => `${encodePrettyJson(value)}\n`
 	return {
 		saveMetadata: (metadata) => write("run-metadata.json", json(metadata)),
 		saveArchitecture: (_, md) => write("architecture.md", md),
@@ -238,7 +274,7 @@ const fileStore = (out: string): AuditStoreApi => {
 		saveFindings: (_, findings, estimates) =>
 			Effect.all([
 				write("findings.json", json(findings)),
-				write("estimated-severity.json", json(Object.fromEntries(estimates))),
+				write("estimated-severity.json", json(Rec.fromEntries(estimates))),
 			]).pipe(Effect.asVoid),
 		saveReports: (_, reports) =>
 			Effect.all([
@@ -250,16 +286,54 @@ const fileStore = (out: string): AuditStoreApi => {
 			Effect.sync(() => {
 				appendFileSync(
 					join(out, "events.jsonl"),
-					`${JSON.stringify({ at: new Date().toISOString(), ...event })}\n`,
+					`${encodeJson({ at: new Date().toISOString(), ...event })}\n`,
 				)
 				const line =
 					event._tag === "Agent"
-						? `${event.agentId.padEnd(18)} ${event.outcome}${event.usage === undefined ? "" : ` (${event.usage.inputTokens} in / ${event.usage.outputTokens} out${event.usage.costUsd === undefined ? "" : `, $${event.usage.costUsd.toFixed(3)}`})`}${event.message === undefined ? "" : `: ${event.message.slice(0, 160)}`}`
+						? `${Str.padEnd(18)(event.agentId)} ${event.outcome}${event.usage === undefined ? "" : ` (${event.usage.inputTokens} in / ${event.usage.outputTokens} out${event.usage.costUsd === undefined ? "" : `, $${event.usage.costUsd.toFixed(3)}`})`}${event.message === undefined ? "" : `: ${Str.slice(0, 160)(event.message)}`}`
 						: event._tag === "Phase"
 							? `== ${event.phase}: ${event.detail}`
 							: `-- ${event.message}`
 				return line
 			}).pipe(Effect.flatMap((line) => Console.log(line))),
+	}
+}
+
+/** The executor ignores the org; a local run still names one for the same calls a deployed run makes. */
+const LOCAL_ORG = Schema.decodeUnknownSync(OrgId)("org_local_security_audit")
+
+/** The executor wire over HTTP to `executor:local`, decoded with the same schemas as the binding. */
+const httpTransport = (base: string): ExecutorTransport => {
+	const send = <Body, A>(path: string, body: Body, answer: Schema.Decoder<A>) =>
+		HttpClient.execute(
+			HttpClientRequest.post(`${base}${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
+		).pipe(
+			Effect.flatMap((response) => response.json),
+			Effect.flatMap((json) => Schema.decodeUnknownEffect(answer)(json)),
+			Effect.mapBoth({
+				onSuccess: Option.some,
+				onFailure: (error) => new SandboxClientError({ message: `executor:local: ${String(error)}` }),
+			}),
+			// A CLI script: each call is its own entry point.
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide
+			Effect.provide(FetchHttpClient.layer),
+		)
+	return {
+		available: true,
+		prepare: (request) =>
+			send(
+				EXECUTOR_PREPARE_PATH,
+				Schema.encodeSync(ExecutorPrepareRequest)(request),
+				ExecutorPrepareResponse,
+			),
+		run: (request) =>
+			send(EXECUTOR_RUN_PATH, Schema.encodeSync(ExecutorRunRequest)(request), ExecutorRunResponse),
+		destroy: (request) =>
+			send(
+				EXECUTOR_DESTROY_PATH,
+				Schema.encodeSync(ExecutorDestroyRequest)(request),
+				ExecutorDestroyResponse,
+			),
 	}
 }
 
@@ -271,7 +345,7 @@ const main = async () => {
 		)
 		process.exit(1)
 	}
-	const sha = git(args.repoDir, ["rev-parse", "--verify", `${args.ref}^{commit}`]).stdout.trim()
+	const sha = Str.trim(git(args.repoDir, ["rev-parse", "--verify", `${args.ref}^{commit}`]).stdout)
 	if (sha === "") {
 		console.error(`cannot resolve ${args.ref} in ${args.repoDir}`)
 		process.exit(1)
@@ -289,7 +363,7 @@ const main = async () => {
 		diff === undefined
 			? []
 			: diff.status === 0
-				? diff.stdout.split("\n").filter(Boolean)
+				? Arr.filter(Str.split("\n")(diff.stdout), Boolean)
 				: [EVERYTHING_CHANGED],
 	)
 
@@ -304,9 +378,63 @@ const main = async () => {
 			discovery: resolveSecurityAuditModel(settings, "discovery", tags),
 			validation: resolveSecurityAuditModel(settings, "validation", tags),
 		}
-		yield* Console.log(`Auditing ${repo} at ${sha.slice(0, 12)} (${args.profile}) into ${out}`)
+		yield* Console.log(`Auditing ${repo} at ${Str.slice(0, 12)(sha)} (${args.profile}) into ${out}`)
 		yield* Console.log(`discovery: ${models.discovery.name}, validation: ${models.validation.name}`)
-		const agents = yield* makeAuditAgents(models, localSource(args.repoDir, sha)).pipe(
+		// Prepared before any agent, as a deployed run does; the stand-in gateway serves this clone.
+		const executor =
+			args.executor === undefined
+				? undefined
+				: makeExecutor({
+						transport: httpTransport(Str.replace(/\/+$/u, "")(args.executor)),
+						checkout: () =>
+							Effect.succeed(
+								new SandboxCheckout({
+									repository: repo,
+									sha,
+									remoteUrl: "local",
+									token: "local",
+								}),
+							),
+					})
+		const target = { repository: repo, sha }
+		// Every run its own executor: run directories share the name `run` across eval cases.
+		const executorRun = `${repo}-${Str.slice(0, 8)(sha)}-${yield* Clock.currentTimeMillis}`
+		// A failed prepare leaves the run source-only, as a deployed run does.
+		const installs =
+			executor === undefined
+				? undefined
+				: yield* executor.prepare(LOCAL_ORG, executorRun, target).pipe(
+						Effect.tapError((error) =>
+							Console.log(`executor not prepared, running source-only: ${error.message}`),
+						),
+						Effect.orElseSucceed(() => undefined),
+					)
+		if (installs !== undefined)
+			yield* Console.log(
+				`executor prepared: ${
+					Arr.join(
+						Arr.map(
+							installs,
+							(install) => `${install.dir} ${install.manager} ${install.outcome}`,
+						),
+						", ",
+					) || "no lockfile"
+				}`,
+			)
+		const execution: AuditExecutionApi | undefined =
+			executor === undefined || installs === undefined
+				? undefined
+				: {
+						run: (agentId, command) =>
+							executor
+								.run(LOCAL_ORG, executorRun, target, { ...command, agentId })
+								.pipe(
+									Effect.mapError(
+										(error) => new AuditExecutionError({ message: error.message }),
+									),
+								),
+					}
+		const agents = yield* makeAuditAgents(models, localSource(args.repoDir, sha), execution).pipe(
 			Effect.provide(layerLlm(settings)),
 		)
 		const input: AuditRunInput = {
@@ -315,27 +443,31 @@ const main = async () => {
 			target:
 				args.scope.length === 0
 					? `the repository ${repo} at commit ${sha}, read through your tools`
-					: `the repository ${repo} at commit ${sha}, read through your tools; this run is scoped to ${args.scope.join(", ")}, so map those paths and only what they depend on or are reached from`,
+					: `the repository ${repo} at commit ${sha}, read through your tools; this run is scoped to ${Arr.join(args.scope, ", ")}, so map those paths and only what they depend on or are reached from`,
 			sourceRef: sha,
 			profile: args.profile,
 			scopePaths: args.scope,
 			budget: args.budget,
-			execution: {
-				_tag: "Unavailable",
-				blocker:
-					"this runner has no OS-enforced sandbox (no network isolation, resource limits or scratch-only writes)",
-			},
-			toolGuidance: AUDIT_TOOL_GUIDANCE,
+			execution:
+				installs === undefined
+					? {
+							_tag: "Unavailable",
+							blocker:
+								"this run has no OS-enforced sandbox (start executor:local and pass --executor to execute)",
+						}
+					: executionPolicy(installs),
+			toolGuidance:
+				installs === undefined
+					? AUDIT_TOOL_GUIDANCE
+					: `${AUDIT_TOOL_GUIDANCE} ${EXECUTION_TOOL_GUIDANCE}`,
 			prior,
 			changedSincePrior,
 			concurrency: args.concurrency,
 		}
 		return yield* runAudit(input).pipe(
 			// The script composes the engine with its host here, at its entry point.
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
-			Effect.provide(
-				Layer.mergeAll(Layer.succeed(AuditAgents, agents), Layer.succeed(AuditStore, fileStore(out))),
-			),
+			Effect.provide([Layer.succeed(AuditAgents, agents), Layer.succeed(AuditStore, fileStore(out))]),
+			Effect.ensuring(executor === undefined ? Effect.void : executor.destroy(executorRun)),
 		)
 	})
 	const result = await Effect.runPromise(
@@ -353,7 +485,7 @@ const main = async () => {
 	for (const name of ["validate-findings.cjs", "validate-coverage-ledger.cjs"]) {
 		const file = name === "validate-findings.cjs" ? "findings.json" : "coverage-ledger.json"
 		const check = spawnSync("node", [join(SKILL_DIR, name), join(out, file)], { encoding: "utf8" })
-		console.log(`${name}: ${(check.stdout || check.stderr).trim()}`)
+		console.log(`${name}: ${Str.trim(check.stdout || check.stderr)}`)
 		// Output the skill's own validator rejects fails the run, not only its log.
 		if (check.status !== 0) process.exitCode = 1
 	}

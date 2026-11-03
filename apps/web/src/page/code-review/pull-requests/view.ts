@@ -1,14 +1,15 @@
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { errorState } from "../../../ui/error-state"
-import { listFooter } from "../../../ui/list-footer"
-import type * as Select from "../../../ui/select"
-import { type SelectEntry, view as selectView } from "../../../ui/select-view"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { listFooter } from "@maple/views/ui/list-footer"
+import type * as Select from "@maple/views/ui/select"
+import { type SelectEntry, view as selectView } from "@maple/views/ui/select-view"
 import type { PageViewInputs } from "../../contract"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { filtersView } from "../kit/filters-view"
-import { nothingInWindow } from "../../kit/nothing-in-window"
 import { codeReviewLayout } from "../kit/layout"
 import type { SheetMessage } from "../kit/review-sheet"
 import * as ReviewSheetView from "../kit/review-sheet-view"
@@ -17,15 +18,19 @@ import { searchBox } from "../kit/search"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET, MAX_ROWS, sortOf, STATUS_LABELS } from "./update"
 import { reviewTable } from "./view-table"
+import { vstack } from "@maple/views/ui/stack"
 
 // The code review pull requests page.
 
 type H = HtmlBuilder<Message>
 
-const STATUS_ENTRIES: ReadonlyArray<SelectEntry> = Object.entries(STATUS_LABELS).map(([value, label]) => ({
-	_tag: "Item",
-	item: { value, label },
-}))
+const STATUS_ENTRIES: ReadonlyArray<SelectEntry> = Arr.map(
+	Rec.toEntries(STATUS_LABELS),
+	([value, label]) => ({
+		_tag: "Item",
+		item: { value, label },
+	}),
+)
 
 const isFiltered = (model: Model) =>
 	model.search.repo !== undefined ||
@@ -45,13 +50,24 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 		onData: (response) => {
 			if (response.reviews.length === 0) {
 				const filtered = isFiltered(model)
-				return nothingInWindow(h, {
-					title: "No reviews in this window",
-					description: filtered
-						? "Nothing matches these filters."
-						: "Reviews appear here once a pull request is opened on a reviewed repository.",
-					onClear: filtered ? Message.ClickedClearFilters() : undefined,
-				})
+				if (filtered)
+					return filteredEmpty(h, {
+						noun: "reviews",
+						onClear: Message.ClickedClearFilters(),
+						className: emptyFrameClass("dashed"),
+					})
+				return empty(
+					h,
+					[
+						emptyHeader(h, [
+							emptyTitle(h, ["No reviews in this window"]),
+							emptyDescription(h, [
+								"Reviews appear here once a pull request is opened on a reviewed repository.",
+							]),
+						]),
+					],
+					emptyFrameClass("dashed"),
+				)
 			}
 			const footer =
 				response.nextCursor === null
@@ -64,17 +80,14 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 							isLoading: AsyncData.isRefreshing(model.reviews.data),
 							onLoadMore: Message.ClickedLoadMore(),
 						})
-			return h.div(
-				[h.Class("flex flex-col gap-3")],
-				[
-					reviewTable(h, response.reviews, sortOf(model.search), {
-						selected: model.search.review,
-						nowMs: model.frame.nowMs,
-						timeZone,
-					}),
-					...(footer === null ? [] : [footer]),
-				],
-			)
+			return vstack(h, { gap: "3" }, [
+				reviewTable(h, response.reviews, sortOf(model.search), {
+					selected: model.search.review,
+					nowMs: model.frame.nowMs,
+					timeZone,
+				}),
+				...(footer === null ? [] : [footer]),
+			])
 		},
 	})
 
@@ -96,7 +109,7 @@ const statusSelect = (h: H, model: Model): Html =>
 const authorsOf = (model: Model): ReadonlyArray<string> =>
 	Option.match(AsyncData.getData(model.authors.data), {
 		onNone: () => [],
-		onSome: (analytics) => analytics.authors.map((row) => row.author),
+		onSome: (analytics) => Arr.map(analytics.authors, (row) => row.author),
 	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {

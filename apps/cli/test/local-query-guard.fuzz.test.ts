@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { Chdb } from "@maple/local-server/chdb"
 import { __testables } from "@maple/local-server/serve"
 import { describeWithChdb } from "./libchdb-test-support"
+import { String as Str } from "effect"
 
 // Whatever SQL a page on local.maple.dev sends, an anonymous /local/query must
 // leave the store, the session settings, the filesystem and the network as it
@@ -154,8 +155,8 @@ const statement: fc.Arbitrary<string> = fc.letrec<{ stmt: string }>((tie) => ({
 			.tuple(tie("stmt"), fc.constantFrom(";", "; ", ";\n", " ;", "\n;\n", ";--\n"), tie("stmt"))
 			.map(([a, sep, b]) => a + sep + b),
 		tie("stmt").map((s) => `/* x */ ${s}`),
-		tie("stmt").map((s) => s.toLowerCase()),
-		tie("stmt").map((s) => s.replaceAll(" ", "\n\t")),
+		tie("stmt").map((s) => Str.toLowerCase(s)),
+		tie("stmt").map((s) => Str.replaceAll(" ", "\n\t")(s)),
 	),
 })).stmt
 

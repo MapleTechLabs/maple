@@ -2,8 +2,9 @@ import { formatPercent } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
+import { badge } from "@maple/views/ui/display"
 import type { SupabaseProjectRow } from "./model"
+import { Array as Arr, String as Str } from "effect"
 
 // One verdict per project, shared by the overview, the project page and the integration card.
 
@@ -21,19 +22,22 @@ export type Lifecycle =
 
 /** `COMING_UP` reads "Coming up". */
 const sentenceCase = (status: string): string => {
-	const sentence = status
-		.toLowerCase()
-		.split("_")
-		.filter((word) => word !== "")
-		.join(" ")
-	return sentence.charAt(0).toUpperCase() + sentence.slice(1)
+	const sentence = Arr.join(
+		Arr.filter(Str.split("_")(Str.toLowerCase(status)), (word) => word !== ""),
+		" ",
+	)
+	return Str.toUpperCase(sentence.charAt(0)) + Str.slice(1)(sentence)
 }
 
 export const lifecycleOf = (status: string): Lifecycle => {
 	if (status === "ACTIVE_HEALTHY") return { _tag: "Running" }
 	if (status === "INACTIVE" || status === "PAUSING") return { _tag: "Paused" }
 	if (status === "ACTIVE_UNHEALTHY") return { _tag: "Other", label: "Unhealthy", tone: "crit" }
-	return { _tag: "Other", label: sentenceCase(status), tone: status.endsWith("_FAILED") ? "crit" : "warn" }
+	return {
+		_tag: "Other",
+		label: sentenceCase(status),
+		tone: Str.endsWith("_FAILED")(status) ? "crit" : "warn",
+	}
 }
 
 export type ProjectHealth =
@@ -88,7 +92,7 @@ export const healthReason = (name: string, health: ProjectHealth): string | null
 		case "Paused":
 			return `${name} is paused`
 		case "Lifecycle":
-			return `${name} is ${health.label.toLowerCase()}`
+			return `${name} is ${Str.toLowerCase(health.label)}`
 	}
 }
 
@@ -128,7 +132,7 @@ export const collectingLabel = (project: {
 	readonly logsEnabled: boolean
 }): string => {
 	const parts = [...(project.metricsEnabled ? ["Metrics"] : []), ...(project.logsEnabled ? ["Logs"] : [])]
-	return parts.length === 0 ? "Off" : parts.join(" · ")
+	return parts.length === 0 ? "Off" : Arr.join(parts, " · ")
 }
 
 /** An OTLP severity number as the issue lists read it: 13 WARN, 17 ERROR, 21 FATAL. */
@@ -140,4 +144,4 @@ export const severityOf = (severityNumber: number): Readonly<{ label: string; to
 			: { label: "WARN", tone: "warn" }
 
 /** `postgres_logs` reads "postgres", `edge_logs` "edge". */
-export const logSourceLabel = (source: string): string => source.replace(/_logs$/, "")
+export const logSourceLabel = (source: string): string => Str.replace(/_logs$/, "")(source)

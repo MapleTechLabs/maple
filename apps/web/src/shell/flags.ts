@@ -1,8 +1,13 @@
 import { readLocalStorage } from "@maple/ui/lib/local-storage"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { readQuotaApproachingDismissed } from "./billing-banners"
 import { readDashboardFavorites } from "./favorites"
-import { INFRA_SURFACES_STORAGE_PREFIX, NAMESPACE_STORAGE_PREFIX, THEME_STORAGE_KEY } from "./command"
+import {
+	INFRA_SURFACES_STORAGE_PREFIX,
+	NAMESPACE_STORAGE_PREFIX,
+	ShellStorageError,
+	THEME_STORAGE_KEY,
+} from "./command"
 import { Theme } from "./message"
 import type { ShellFlags } from "./model"
 import { NavSurface } from "./nav"
@@ -27,18 +32,21 @@ const readPrefixed = <A>(
 	prefix: string,
 	decode: (raw: string) => Option.Option<A>,
 ): Effect.Effect<Record<string, A>> =>
-	Effect.try(() =>
-		Object.fromEntries(
-			Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
-				.filter((key): key is string => key !== null && key.startsWith(prefix))
-				.flatMap((key) =>
+	Effect.try({
+		try: () =>
+			Rec.fromEntries(
+				Arr.filter(
+					Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)),
+					(key): key is string => key !== null && Str.startsWith(prefix)(key),
+				).flatMap((key) =>
 					Option.match(Option.flatMap(readLocalStorage(key), decode), {
 						onNone: () => [],
 						onSome: (value) => [[key.slice(prefix.length), value] as const],
 					}),
 				),
-		),
-	).pipe(Effect.orElseSucceed(() => ({})))
+			),
+		catch: (cause) => new ShellStorageError({ message: `Could not read ${prefix} entries`, cause }),
+	}).pipe(Effect.orElseSucceed(() => ({})))
 
 /** Every org's pinned namespace, so the shell knows the active org's before the session resolves. */
 const readPinnedNamespaces = readPrefixed(NAMESPACE_STORAGE_PREFIX, (raw) =>

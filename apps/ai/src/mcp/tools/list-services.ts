@@ -4,7 +4,7 @@ import { formatPercent, formatDurationFromMs, formatNumber } from "../lib/format
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { ListServicesOutput } from "@maple/domain/mcp-outputs"
 import { listServices } from "@maple/query-engine/observability"
 import { parseWarehouseDateTime } from "@maple/query-engine"
@@ -47,22 +47,23 @@ export function registerListServicesTool(server: McpToolRegistrar) {
 				timeRange: { start: st, end: et },
 				total: services.length,
 				// Busiest first, so a truncated table still shows the services that carry the traffic.
-				services: [...services]
-					.sort((a, b) => b.throughput - a.throughput)
-					.map((s) => ({
+				services: Arr.map(
+					[...services].sort((a, b) => b.throughput - a.throughput),
+					(s) => ({
 						name: s.name,
 						throughput: s.throughput,
 						errorRate: s.errorRate,
 						p95Ms: s.p95Ms,
-					})),
+					}),
+				),
 				...(params.environment === undefined ? undefined : { environment: params.environment }),
 			}
 		}),
 		render: (output) => {
 			const minutes = windowMinutes(output.timeRange)
-			const unhealthy = output.services
-				.filter((s) => s.errorRate > 0)
-				.sort((a, b) => b.errorRate - a.errorRate || b.throughput - a.throughput)
+			const unhealthy = Arr.filter(output.services, (s) => s.errorRate > 0).sort(
+				(a, b) => b.errorRate - a.errorRate || b.throughput - a.throughput,
+			)
 			return {
 				title: "Services",
 				scope: [
@@ -87,7 +88,7 @@ export function registerListServicesTool(server: McpToolRegistrar) {
 								doc.text(`Total: ${output.total} service${output.total !== 1 ? "s" : ""}`),
 								doc.table(
 									["Service", "Requests", "Req/min", "Error Rate", "P95 Latency"],
-									output.services.map((s) => [
+									Arr.map(output.services, (s) => [
 										s.name,
 										formatNumber(s.throughput),
 										minutes > 0 ? formatRate(s.throughput / minutes) : "-",
@@ -97,26 +98,22 @@ export function registerListServicesTool(server: McpToolRegistrar) {
 								),
 							],
 				next: [
-					...(unhealthy.length > 0 ? unhealthy : output.services)
-						.slice(0, 3)
-						.map((s) =>
-							doc.next(
-								"diagnose_service",
-								{ service: s.name },
-								s.errorRate > 0
-									? `deep-dive into ${s.name} (${formatPercent(s.errorRate)} errors)`
-									: `deep-dive into ${s.name}, the busiest service`,
-							),
+					...Arr.map((unhealthy.length > 0 ? unhealthy : output.services).slice(0, 3), (s) =>
+						doc.next(
+							"diagnose_service",
+							{ service: s.name },
+							s.errorRate > 0
+								? `deep-dive into ${s.name} (${formatPercent(s.errorRate)} errors)`
+								: `deep-dive into ${s.name}, the busiest service`,
 						),
-					...output.services
-						.slice(0, 1)
-						.map((s) =>
-							doc.next(
-								"get_service_top_operations",
-								{ service: s.name },
-								`see top endpoints of ${s.name}, the busiest service`,
-							),
+					),
+					...Arr.map(output.services.slice(0, 1), (s) =>
+						doc.next(
+							"get_service_top_operations",
+							{ service: s.name },
+							`see top endpoints of ${s.name}, the busiest service`,
 						),
+					),
 				],
 			}
 		},

@@ -1,8 +1,8 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
-import { AlertValidationError } from "@maple/domain/http"
+import { AlertValidationError, WebhookAlertDestinationConfig } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, Duration, Effect, Exit } from "effect"
+import { Cause, Duration, Effect, Exit, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { projectAlertLifecycleEvent } from "@maple/alerting-core"
 import { AlertRuleUpsertRequest, OrgId, UserId } from "@maple/domain/http"
@@ -32,6 +32,10 @@ import {
 	makeUuidSequence,
 } from "./alerts-service-test-support"
 
+/** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
+const requestBodyText = (body: RequestInit["body"]): string =>
+	body instanceof Uint8Array ? new TextDecoder().decode(body) : typeof body === "string" ? body : ""
+
 const trackedDbs: TestDb[] = []
 
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -47,7 +51,7 @@ describe("interleaveAlertRulesByOrg", () => {
 			{ orgId: "c", id: "c1" },
 		]
 		assert.deepStrictEqual(
-			interleaveAlertRulesByOrg(rows).map((row) => row.id),
+			Arr.map(interleaveAlertRulesByOrg(rows), (row) => row.id),
 			["a1", "b1", "c1", "a2", "b2", "a3"],
 		)
 	})
@@ -89,14 +93,14 @@ describe("AlertsService", () => {
 					concurrency: "unbounded",
 				},
 			)
-			assert.strictEqual(exits.filter(Exit.isSuccess).length, 1)
-			assert.strictEqual(exits.filter(Exit.isFailure).length, 1)
+			assert.strictEqual(Arr.filter(exits, Exit.isSuccess).length, 1)
+			assert.strictEqual(Arr.filter(exits, Exit.isFailure).length, 1)
 			const error = getError(exits.find(Exit.isFailure)!)
 			assert.instanceOf(error, AlertValidationError)
 			assert.include((error as AlertValidationError).message, "at most 100 active alert rules")
 			const rules = yield* alerts.listRules(orgId)
 			assert.lengthOf(
-				rules.rules.filter((rule) => rule.enabled),
+				Arr.filter(rules.rules, (rule) => rule.enabled),
 				100,
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
@@ -122,7 +126,7 @@ describe("AlertsService", () => {
 		const requests: Array<{ url: string; headers: Headers }> = []
 		const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
 			requests.push({
-				url: String(input),
+				url: String(input instanceof Request ? input.url : input),
 				headers: new Headers(init?.headers),
 			})
 			return new Response("ok", { status: 200 })
@@ -190,7 +194,7 @@ describe("AlertsService", () => {
 		}
 		const requests: Array<string> = []
 		const fetchImpl = (async (input: RequestInfo | URL) => {
-			requests.push(String(input))
+			requests.push(String(input instanceof Request ? input.url : input))
 			return new Response("ok", { status: 200 })
 		}) as typeof fetch
 		const sql = (statement: string) => Effect.promise(() => executeSql(testDb, statement))
@@ -223,7 +227,7 @@ describe("AlertsService", () => {
 			const events = yield* alerts.listDeliveryEvents(orgId)
 			assert.strictEqual(incidents.incidents[0]?.status, "open")
 			assert.deepStrictEqual(
-				events.events.map((event) => [event.eventType, event.status]),
+				Arr.map(events.events, (event) => [event.eventType, event.status]),
 				[["trigger", "success"]],
 			)
 			assert.deepStrictEqual(requests, ["https://example.com/maple-alerts"])
@@ -265,7 +269,7 @@ describe("AlertsService", () => {
 		}
 		const requests: Array<string> = []
 		const fetchImpl = (async (input: RequestInfo | URL) => {
-			requests.push(String(input))
+			requests.push(String(input instanceof Request ? input.url : input))
 			return new Response("ok", { status: 200 })
 		}) as typeof fetch
 
@@ -844,7 +848,7 @@ describe("AlertsService", () => {
 			assert.lengthOf(incidents.incidents, 1)
 			assert.strictEqual(incidents.incidents[0]?.status, "resolved")
 			assert.deepStrictEqual(
-				events.events.map((event: { eventType: string }) => event.eventType),
+				Arr.map(events.events, (event: { eventType: string }) => event.eventType),
 				["resolve", "trigger"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
@@ -867,20 +871,30 @@ describe("AlertsService", () => {
 
 		const createTieredSetup = (alerts: AlertsServiceApi, orgId: OrgId, userId: UserId) =>
 			Effect.gen(function* () {
-				const warnHook = yield* alerts.createDestination(orgId, userId, adminRoles, {
-					type: "webhook",
-					name: "Team channel",
-					enabled: true,
-					url: "https://example.com/warn",
-					signingSecret: "warn-secret",
-				})
-				const pageHook = yield* alerts.createDestination(orgId, userId, adminRoles, {
-					type: "webhook",
-					name: "Pager",
-					enabled: true,
-					url: "https://example.com/page",
-					signingSecret: "page-secret",
-				})
+				const warnHook = yield* alerts.createDestination(
+					orgId,
+					userId,
+					adminRoles,
+					new WebhookAlertDestinationConfig({
+						type: "webhook",
+						name: "Team channel",
+						enabled: true,
+						url: "https://example.com/warn",
+						signingSecret: "warn-secret",
+					}),
+				)
+				const pageHook = yield* alerts.createDestination(
+					orgId,
+					userId,
+					adminRoles,
+					new WebhookAlertDestinationConfig({
+						type: "webhook",
+						name: "Pager",
+						enabled: true,
+						url: "https://example.com/page",
+						signingSecret: "page-secret",
+					}),
+				)
 				const rule = yield* alerts.createRule(
 					orgId,
 					userId,
@@ -923,7 +937,7 @@ describe("AlertsService", () => {
 			const requests: Array<{ url: string; eventType: string | null }> = []
 			const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
 				requests.push({
-					url: String(input),
+					url: String(input instanceof Request ? input.url : input),
 					eventType: new Headers(init?.headers).get("x-maple-event-type"),
 				})
 				return new Response("ok", { status: 200 })
@@ -944,7 +958,7 @@ describe("AlertsService", () => {
 
 				// Stored lowest tier first; the single-threshold fields mirror it.
 				assert.deepStrictEqual(
-					rule.thresholds.map((tier) => tier.severity),
+					Arr.map(rule.thresholds, (tier) => tier.severity),
 					["warning", "critical"],
 				)
 				assert.strictEqual(rule.severity, "critical")
@@ -972,11 +986,11 @@ describe("AlertsService", () => {
 					),
 				)
 				assert.deepStrictEqual(
-					issues.rows.map((issue) => issue.severity),
+					Arr.map(issues.rows, (issue) => issue.severity),
 					["critical"],
 				)
 				assert.sameMembers(
-					requests.slice(1).map((request) => `${request.eventType} ${request.url}`),
+					Arr.map(requests.slice(1), (request) => `${request.eventType} ${request.url}`),
 					["trigger https://example.com/warn", "trigger https://example.com/page"],
 				)
 
@@ -986,7 +1000,7 @@ describe("AlertsService", () => {
 				const resolved = (yield* alerts.listIncidents(orgId)).incidents[0]
 				assert.strictEqual(resolved?.status, "resolved")
 				assert.sameMembers(
-					requests.slice(3).map((request) => `${request.eventType} ${request.url}`),
+					Arr.map(requests.slice(3), (request) => `${request.eventType} ${request.url}`),
 					["resolve https://example.com/warn", "resolve https://example.com/page"],
 				)
 			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
@@ -994,7 +1008,9 @@ describe("AlertsService", () => {
 
 		const recordingFetch = (requests: Array<string>) =>
 			(async (input: RequestInfo | URL, init?: RequestInit) => {
-				requests.push(`${new Headers(init?.headers).get("x-maple-event-type")} ${String(input)}`)
+				requests.push(
+					`${new Headers(init?.headers).get("x-maple-event-type")} ${String(input instanceof Request ? input.url : input)}`,
+				)
 				return new Response("ok", { status: 200 })
 			}) as typeof fetch
 
@@ -1362,7 +1378,7 @@ describe("AlertsService", () => {
 				assert.isTrue(Exit.isFailure(exit))
 				const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
 				assert.instanceOf(error, AlertValidationError)
-				assert.includeMembers(error instanceof AlertValidationError ? [...error.details] : [], [
+				assert.includeMembers(Schema.is(AlertValidationError)(error) ? [...error.details] : [], [
 					"the critical threshold must be worse than the warning threshold",
 					"thresholds[0].recoveryValue must be on the healthy side of thresholds[0].value",
 				])
@@ -1433,10 +1449,10 @@ describe("AlertsService", () => {
 			const events = yield* alerts.listDeliveryEvents(orgId)
 
 			assert.lengthOf(incidents.incidents, 2)
-			assert.isTrue(incidents.incidents.every((incident) => incident.status === "resolved"))
+			assert.isTrue(Arr.every(incidents.incidents, (incident) => incident.status === "resolved"))
 			// Only the first flap emailed: one trigger + one resolve, nothing for flap 2.
 			assert.deepStrictEqual(
-				events.events.map((event: { eventType: string }) => event.eventType).sort(),
+				Arr.map(events.events, (event: { eventType: string }) => event.eventType).sort(),
 				["resolve", "trigger"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
@@ -1503,10 +1519,10 @@ describe("AlertsService", () => {
 
 			const incidents = yield* alerts.listIncidents(orgId)
 			assert.lengthOf(incidents.incidents, 2)
-			assert.isTrue(incidents.incidents.every((incident) => incident.status === "resolved"))
+			assert.isTrue(Arr.every(incidents.incidents, (incident) => incident.status === "resolved"))
 			const events = yield* alerts.listDeliveryEvents(orgId)
 			assert.deepStrictEqual(
-				events.events.map((event: { eventType: string }) => event.eventType).sort(),
+				Arr.map(events.events, (event: { eventType: string }) => event.eventType).sort(),
 				["resolve", "trigger"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
@@ -1567,7 +1583,8 @@ describe("AlertsService", () => {
 			}
 
 			const events = yield* alerts.listDeliveryEvents(orgId)
-			const renotifyFirstAttempts = events.events.filter(
+			const renotifyFirstAttempts = Arr.filter(
+				events.events,
 				(event: { eventType: string; attemptNumber: number }) =>
 					event.eventType === "renotify" && event.attemptNumber === 1,
 			)
@@ -1586,9 +1603,13 @@ describe("AlertsService", () => {
 			}
 			const eventsAfter = yield* alerts.listDeliveryEvents(orgId)
 			const renotifyChains = new Set(
-				eventsAfter.events
-					.filter((event: { eventType: string }) => event.eventType === "renotify")
-					.map((event: { deliveryKey: string }) => event.deliveryKey.split(":").at(-1)),
+				Arr.map(
+					Arr.filter(
+						eventsAfter.events,
+						(event: { eventType: string }) => event.eventType === "renotify",
+					),
+					(event: { deliveryKey: string }) => Str.split(":")(event.deliveryKey).at(-1),
+				),
 			)
 			assert.strictEqual(renotifyChains.size, 2)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: failingFetch })))
@@ -1763,7 +1784,7 @@ describe("AlertsService", () => {
 		const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
 			requests.push({
 				headers: new Headers(init?.headers),
-				body: String(init?.body ?? ""),
+				body: requestBodyText(init?.body),
 			})
 			return new Response("ok", { status: 200 })
 		}) as typeof fetch
@@ -2017,7 +2038,9 @@ describe("AlertsService", () => {
 
 				assert.strictEqual(requestCount, 0)
 				const events = yield* alerts.listDeliveryEvents(orgId)
-				assert.isTrue(events.events.every((event: { status: string }) => event.status === "failed"))
+				assert.isTrue(
+					Arr.every(events.events, (event: { status: string }) => event.status === "failed"),
+				)
 				const health = yield* readDestinationHealth(testDb, destination.id)
 				assert.strictEqual(health?.enabled, true)
 				assert.strictEqual(health?.consecutiveFailures, 0)
@@ -2309,7 +2332,7 @@ describe("AlertsService", () => {
 
 				yield* Effect.promise(() =>
 					insertDeliveryEventRow(testDb, {
-						id: `00000000-0000-4000-8000-${String(status).padStart(12, "0")}`,
+						id: `00000000-0000-4000-8000-${Str.padStart(12, "0")(String(status))}`,
 						orgId,
 						incidentId: null,
 						ruleId: rule.id,

@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto"
 import { INTERNAL_SERVICE_BEARER_PREFIX } from "@maple/domain/http"
+import { String as Str } from "effect"
 
 /**
  * Constant-time check of `Authorization: Bearer maple_svc_<token>` against the
@@ -8,10 +9,10 @@ import { INTERNAL_SERVICE_BEARER_PREFIX } from "@maple/domain/http"
  * throws on unequal buffer lengths.
  */
 export const isValidServiceBearer = (authorization: string, expected: string): boolean => {
-	const [scheme, token] = authorization.split(" ")
-	if (!scheme || !token || scheme.toLowerCase() !== "bearer") return false
-	if (!token.startsWith(INTERNAL_SERVICE_BEARER_PREFIX)) return false
-	const provided = Buffer.from(token.slice(INTERNAL_SERVICE_BEARER_PREFIX.length), "utf8")
+	const [scheme, token] = Str.split(" ")(authorization)
+	if (!scheme || !token || Str.toLowerCase(scheme) !== "bearer") return false
+	if (!Str.startsWith(INTERNAL_SERVICE_BEARER_PREFIX)(token)) return false
+	const provided = Buffer.from(Str.slice(INTERNAL_SERVICE_BEARER_PREFIX.length)(token), "utf8")
 	const wanted = Buffer.from(expected, "utf8")
 	return provided.length === wanted.length && timingSafeEqual(provided, wanted)
 }

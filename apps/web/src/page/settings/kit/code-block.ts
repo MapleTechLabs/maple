@@ -1,8 +1,9 @@
-import { highlightCode, type Lang, resolveLang } from "../../../lib/highlight"
+import { highlightCode, type Lang } from "@maple/views/lib/highlight"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as CopyButton from "../../../ui/copy-button"
-import { eyebrow } from "../../../ui/eyebrow"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { String as Str } from "effect"
 
 // `CodeBlock`: language eyebrow, copy button, highlighted markup. The parent owns the copy status.
 
@@ -21,7 +22,7 @@ export type CodeBlockOptions<M> = Readonly<{
 }>
 
 const escapeHtml = (text: string): string =>
-	text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+	Str.replaceAll(">", "&gt;")(Str.replaceAll("<", "&lt;")(Str.replaceAll("&", "&amp;")(text)))
 
 export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): Html =>
 	h.div(
@@ -64,7 +65,7 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): H
 											? escapeHtml(options.code)
 											: highlightCode(
 													options.code,
-													options.lang ?? resolveLang(options.language ?? ""),
+													options.lang ?? options.language ?? "",
 												),
 									),
 								],

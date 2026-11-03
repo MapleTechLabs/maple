@@ -26,7 +26,21 @@ import { envPorts } from "@maple/backend/platform/env-ports"
 import { CodeLoader } from "@maple/backend/platform/bindings"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
-import { Cause, Clock, Duration, Effect, Exit, Layer, ManagedRuntime, Match, Option, Redacted } from "effect"
+import {
+	Cause,
+	Clock,
+	Duration,
+	Effect,
+	Exit,
+	Layer,
+	ManagedRuntime,
+	Match,
+	Option,
+	Redacted,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
 import { ReturnedToolFailuresOkLive } from "../platform/genai-spans"
@@ -63,6 +77,15 @@ import { runChatTurn, type ChatRunOutcome } from "./run"
 import { toTenantContext, turnTenant } from "./turn-actor"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { trackAiCredits, trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
+
+/** A best-effort turn step (loading the code executor, disposing the runtime, flushing spans) rejected. */
+class TurnRuntimeStepError extends Schema.TaggedError<TurnRuntimeStepError>()(
+	"@maple/ai/chat/TurnRuntimeStepError",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
 
 /**
  * The engine's per-step bookkeeping, which is named and therefore traced.
@@ -323,7 +346,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			const reviews = yield* PrReviewService
 			const conversations = yield* PrReviewConversationService
 			// Shared by the kickoff's clone, every pass of the turn and its review_files children.
-			const toolExecutor = yield* withSandboxBreaker(yield* McpToolExecutor)
+			const mcpToolExecutor = yield* McpToolExecutor
+			const toolExecutor = yield* withSandboxBreaker(mcpToolExecutor)
 			const runTenant = yield* turnTenant(tenant, origin).pipe(
 				// The asker's linked Maple user may not read this org: nothing runs, and the message
 				// is the only thing that tells them why.
@@ -382,28 +406,40 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 					return
 				}
 			}
+			// Read before the run: the diff tools are pinned to it. An unreadable target reviews unpinned.
+			const target =
+				prReviewId === undefined
+					? Option.none()
+					: yield* reviews
+							.reviewTarget(tenant.orgId, prReviewId)
+							.pipe(
+								Effect.catch((error) =>
+									Effect.logInfo("Could not read the review's target").pipe(
+										Effect.annotateLogs({
+											sessionId: input.sessionId,
+											error: error.message,
+										}),
+										Effect.as(Option.none()),
+									),
+								),
+							)
 			// Clone the commit while the model reads the diff, rather than when its first source tool
 			// asks and waits on it. A child of the turn (no request Scope here, so `forkRequestScoped`
 			// parents it on this fiber): a clone still running when the turn ends carries on in the container.
-			if (prReviewId !== undefined) {
-				yield* reviews.reviewTarget(tenant.orgId, prReviewId).pipe(
-					Effect.flatMap(
-						Option.match({
-							onNone: () => Effect.void,
-							onSome: (target) =>
-								toolExecutor.prepareRepository(runTenant, {
-									repository: target.repository,
-									ref: target.headSha,
-								}),
-						}),
-					),
-					Effect.catch((error) =>
-						Effect.logInfo("Could not prepare the review's checkout").pipe(
-							Effect.annotateLogs({ sessionId: input.sessionId, error: error.message }),
+			if (Option.isSome(target)) {
+				yield* toolExecutor
+					.prepareRepository(runTenant, {
+						repository: target.value.repository,
+						ref: target.value.headSha,
+					})
+					.pipe(
+						Effect.catch((error) =>
+							Effect.logInfo("Could not prepare the review's checkout").pipe(
+								Effect.annotateLogs({ sessionId: input.sessionId, error: error.message }),
+							),
 						),
-					),
-					forkRequestScoped,
-				)
+						forkRequestScoped,
+					)
 			}
 			// An investigation picks its commit from telemetry mid-pass, so warm the repositories it
 			// could read instead: the deployed commit then clones from a filled mirror in seconds.
@@ -437,7 +473,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			// The session recorded the user's message before the run started, so the transcript's tail is
 			// this run's input rather than part of its history.
 			// Read once: it is a SQL scan plus a decode, and it is a read-only snapshot.
-			const spoken = history.filter((message) => message.text.trim() !== "")
+			const spoken = Arr.filter(history, (message) => Str.trim(message.text) !== "")
 			const latest = spoken.at(-1)
 			// Unbound (a stage without Dynamic Workers), the agents run without `run_code`. Imported only
 			// when bound: the adapter needs `cloudflare:workers`, which nothing outside workerd resolves.
@@ -446,16 +482,24 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			const codeExecutor =
 				agent.codeMode !== true || Option.isNone(codeLoader)
 					? undefined
-					: yield* Effect.tryPromise(
-							() => import("@yielded/agent-platform-cloudflare/cloudflare-code-mode"),
-						).pipe(
+					: yield* Effect.tryPromise({
+							try: () => import("@yielded/agent-platform-cloudflare/cloudflare-code-mode"),
+							catch: (cause) =>
+								new TurnRuntimeStepError({
+									message: "Failed to load the code executor",
+									cause,
+								}),
+						}).pipe(
 							Effect.map(({ dynamicWorkerCodeExecutorLayer }) =>
 								dynamicWorkerCodeExecutorLayer({ loader: codeLoader.value }),
 							),
 							Effect.catch((error) =>
 								Effect.logWarning(
 									"run_code unavailable: the code executor failed to load",
-								).pipe(Effect.annotateLogs({ cause: String(error) }), Effect.as(undefined)),
+								).pipe(
+									Effect.annotateLogs({ cause: String(error.cause) }),
+									Effect.as(undefined),
+								),
 							),
 						)
 			// A restarted turn reads from its kickoff: what came after it is the attempt that died.
@@ -558,6 +602,10 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 					...(turn.agent === undefined ? undefined : { agent: turn.agent }),
 					...(review === undefined ? undefined : { review }),
 					...(codeExecutor === undefined ? undefined : { codeExecutor }),
+					...Option.match(target, {
+						onNone: () => undefined,
+						onSome: ({ repository, number }) => ({ pullRequest: { repository, number } }),
+					}),
 					text: turn.text,
 					history: turn.history,
 					usage,
@@ -591,26 +639,24 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			// still gets its say. Interrupts stay interrupts.
 			const recoverAutonomousFailure = <R>(effect: Effect.Effect<ChatRunOutcome, unknown, R>) =>
 				effect.pipe(
-					Effect.catchCause((cause) =>
-						Cause.hasInterruptsOnly(cause)
-							? Effect.failCause(cause)
-							: Effect.sync(() => {
-									failure ??= reviewFailureReason(cause, { ownKey: Option.isSome(orgKey) })
-								}).pipe(
-									Effect.andThen(
-										Effect.logWarning("Autonomous pass failed; closing it out"),
-									),
-									Effect.annotateLogs({
-										sessionId: input.sessionId,
-										messageId: input.messageId,
-										cause: summarizeCause(cause),
-									}),
-									Effect.as<ChatRunOutcome>({
-										autonomous: true,
-										submitted: false,
-										compactions: 0,
-									}),
-								),
+					Effect.catchCauseIf(
+						(cause) => !Cause.hasInterruptsOnly(cause),
+						(cause) =>
+							Effect.sync(() => {
+								failure ??= reviewFailureReason(cause, { ownKey: Option.isSome(orgKey) })
+							}).pipe(
+								Effect.andThen(Effect.logWarning("Autonomous pass failed; closing it out")),
+								Effect.annotateLogs({
+									sessionId: input.sessionId,
+									messageId: input.messageId,
+									cause: summarizeCause(cause),
+								}),
+								Effect.as<ChatRunOutcome>({
+									autonomous: true,
+									submitted: false,
+									compactions: 0,
+								}),
+							),
 					),
 				)
 
@@ -629,6 +675,29 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			let submitted = first.submitted
 			// Exhausted rather than failed: the engine's final answer ended in prose, not a report.
 			if (!submitted && held?.reason === "max-steps") failure ??= "step_limit"
+			// A review stopped for failing tool calls is usually a bad start, not an impossible review: it
+			// starts over once from the kickoff, inside the same wall clock, without the failed calls.
+			if (!submitted && failure === "stuck" && prReviewId !== undefined && holdsTurn()) {
+				const remaining = passDeadline - (yield* Clock.currentTimeMillis)
+				if (remaining >= MIN_CONTINUE_MS) {
+					failure = undefined
+					held = undefined
+					const restarted = yield* recoverAutonomousFailure(
+						run({
+							text,
+							history: prior,
+							agent: {
+								...agent,
+								budget: { ...agent.budget, maxDuration: Duration.millis(remaining) },
+							},
+						}),
+					)
+					observability.compactions = (observability.compactions ?? 0) + restarted.compactions
+					submitted = restarted.submitted
+					yield* Effect.annotateCurrentSpan("maple.pr_review.restarted", submitted)
+					if (!submitted && ranOutOfSteps()) failure ??= "step_limit"
+				}
+			}
 			// A review that answered in prose with no limit hit was not stopped, it stopped itself. With
 			// time left it gets one more pass that may still read, inside the same wall clock.
 			if (!submitted && failure === undefined && prReviewId !== undefined && holdsTurn()) {
@@ -777,7 +846,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		// Resolved before the turn so the finalizer has nothing left to look up. A failed lookup
 		// meters nothing rather than a guess: the org's own customer may be the wrong card.
 		const customerId = yield* (yield* BillingCustomerResolver).customerFor(tenant.orgId).pipe(
-			Effect.map(Option.some),
+			Effect.asSome,
 			Effect.catchTag("@maple/http/errors/BillingAccountPersistenceError", (error) =>
 				Effect.logError("Billing org lookup failed; this turn's AI usage is not metered").pipe(
 					Effect.annotateLogs({
@@ -854,7 +923,16 @@ const releaseQuietly = (
 	runtime: { readonly dispose: () => Promise<void> },
 	flush: () => Promise<void>,
 ): Effect.Effect<void> =>
-	Effect.tryPromise(() => runtime.dispose()).pipe(
+	Effect.tryPromise({
+		try: () => runtime.dispose(),
+		catch: (cause) => new TurnRuntimeStepError({ message: "Failed to dispose the turn runtime", cause }),
+	}).pipe(
 		Effect.ignore,
-		Effect.andThen(Effect.tryPromise(flush).pipe(Effect.ignore)),
+		Effect.andThen(
+			Effect.tryPromise({
+				try: flush,
+				catch: (cause) =>
+					new TurnRuntimeStepError({ message: "Failed to flush the turn spans", cause }),
+			}).pipe(Effect.ignore),
+		),
 	)

@@ -1,5 +1,5 @@
 import { BillingAddress, BillingProfile, BillingTaxId } from "@maple/domain/http"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { describe, expect, it } from "vitest"
 import type { MemberActivity } from "@maple/backend/services/org/OrgMembersService"
@@ -56,20 +56,23 @@ describe("billingOf", () => {
 describe("emailDomainsOf", () => {
 	it("ranks company domains and only counts personal, test and Maple staff addresses", () => {
 		const domains = emailDomainsOf(
-			[
-				"a@Acme.io",
-				"b@acme.io",
-				"c@partner.dev",
-				"d@gmail.com",
-				"e@proton.me",
-				"f@example.com",
-				"g@box.test",
-				"h+clerk_test@acme.io",
-				"support@maple.dev",
-				"ops@eu.maple.dev",
-				"i@yahoo.com.br",
-				"j@users.noreply.github.com",
-			].map((email) => ({ email })),
+			Arr.map(
+				[
+					"a@Acme.io",
+					"b@acme.io",
+					"c@partner.dev",
+					"d@gmail.com",
+					"e@proton.me",
+					"f@example.com",
+					"g@box.test",
+					"h+clerk_test@acme.io",
+					"support@maple.dev",
+					"ops@eu.maple.dev",
+					"i@yahoo.com.br",
+					"j@users.noreply.github.com",
+				],
+				(email) => ({ email }),
+			),
 		)
 		expect(domains).toEqual({
 			company: [
@@ -83,10 +86,10 @@ describe("emailDomainsOf", () => {
 	})
 
 	it("shows the five domains with the most members", () => {
-		const emails = ["a", "b", "c", "d", "e", "f"].flatMap((name, index) =>
+		const emails = Arr.flatMap(["a", "b", "c", "d", "e", "f"], (name, index) =>
 			Array.from({ length: index + 1 }, (_, n) => ({ email: `u${n}@${name}.com` })),
 		)
-		expect(emailDomainsOf(emails).company.map((entry) => entry.domain)).toEqual([
+		expect(Arr.map(emailDomainsOf(emails).company, (entry) => entry.domain)).toEqual([
 			"f.com",
 			"e.com",
 			"d.com",
@@ -230,7 +233,7 @@ describe("homepageOf", () => {
 	})
 
 	it("falls back to og:description, caps text and names a redirect to another domain", () => {
-		const html = `<title>${"word ".repeat(100)}</title><meta property="og:description" content="Rockets">`
+		const html = `<title>${Str.repeat(100)("word ")}</title><meta property="og:description" content="Rockets">`
 		const homepage = homepageOf("acme.io", html, "acme-rockets.com")
 		expect(homepage.title).toHaveLength(200)
 		expect(homepage.description).toBe("Rockets")
@@ -242,12 +245,12 @@ describe("homepageOf", () => {
 describe("homepageOf on a hostile page", () => {
 	// Each of these took seconds with unbounded patterns; the default test timeout is the bound.
 	it.each([
-		["one huge meta tag", `<head><meta ${"a".repeat(200_000)}</head>`],
-		["unclosed meta tags", `<head>${"<meta a=".repeat(40_000)}</head>`],
-		["an unspaced title", `<title>${"a".repeat(200_000)}</title>`],
-		["an address-like title", `<title>${"a@b".repeat(70_000)}</title>`],
-		["unclosed entities", `<head><title>${"&a".repeat(100_000)}</title></head>`],
-		["a long unspaced description", `<meta name="description" content="${"a@b".repeat(600)}">`],
+		["one huge meta tag", `<head><meta ${Str.repeat(200_000)("a")}</head>`],
+		["unclosed meta tags", `<head>${Str.repeat(40_000)("<meta a=")}</head>`],
+		["an unspaced title", `<title>${Str.repeat(200_000)("a")}</title>`],
+		["an address-like title", `<title>${Str.repeat(70_000)("a@b")}</title>`],
+		["unclosed entities", `<head><title>${Str.repeat(100_000)("&a")}</title></head>`],
+		["a long unspaced description", `<meta name="description" content="${Str.repeat(600)("a@b")}">`],
 	])("reads %s without blowing up", (_, page) => {
 		const homepage = homepageOf("acme.io", page, "acme.io")
 		expect((homepage.title ?? "").length).toBeLessThanOrEqual(200)

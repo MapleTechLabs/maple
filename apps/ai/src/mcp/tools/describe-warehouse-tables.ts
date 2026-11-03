@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { DescribeWarehouseTablesOutput } from "@maple/domain/mcp-outputs"
 import {
 	describeWarehouseTable,
@@ -19,7 +19,8 @@ const renderTable = (info: NonNullable<Output["table"]>): ToolDoc => {
 	blocks.push(
 		doc.heading("Columns"),
 		doc.list(
-			info.columns.map(
+			Arr.map(
+				info.columns,
 				(c) =>
 					`\`${c.name}\`: ${c.type}${c.jsonPath === undefined ? "" : ` (jsonPath: \`${c.jsonPath}\`)`}`,
 			),
@@ -28,7 +29,7 @@ const renderTable = (info: NonNullable<Output["table"]>): ToolDoc => {
 	if (info.sortingKey !== undefined && info.sortingKey.length > 0) {
 		blocks.push(
 			doc.heading("Sorting key"),
-			doc.text(`\`(${info.sortingKey.join(", ")})\`: filter on these for fast queries.`),
+			doc.text(`\`(${Arr.join(info.sortingKey, ", ")})\`: filter on these for fast queries.`),
 		)
 	}
 	if (info.notes !== undefined && info.notes.length > 0) {
@@ -53,14 +54,17 @@ export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 			if (table !== undefined) {
 				const info = describeWarehouseTable(table)
 				if (info === null) {
-					const names = listWarehouseTables().map((t) => t.name)
+					const names = Arr.map(listWarehouseTables(), (t) => t.name)
 					const suggested = suggestWarehouseTables(table)
 					const hint =
 						suggested.length === 0
 							? ""
-							: ` Did you mean ${suggested.map((t) => `"${t}"`).join(" or ")}?`
+							: ` Did you mean ${Arr.join(
+									Arr.map(suggested, (t) => `"${t}"`),
+									" or ",
+								)}?`
 					return yield* new McpInvalidInputError({
-						message: `No table named "${table}".${hint} Available tables: ${names.join(", ")}.`,
+						message: `No table named "${table}".${hint} Available tables: ${Arr.join(names, ", ")}.`,
 						parameter: "table",
 					})
 				}
@@ -74,7 +78,7 @@ export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 					table: {
 						name: info.name,
 						...(info.description === undefined ? undefined : { description: info.description }),
-						columns: info.columns.map((c) => ({
+						columns: Arr.map(info.columns, (c) => ({
 							name: c.name,
 							type: c.type,
 							...(c.jsonPath === undefined ? undefined : { jsonPath: c.jsonPath }),
@@ -85,7 +89,7 @@ export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 				}
 			}
 			return {
-				tables: listWarehouseTables().map((t) => ({
+				tables: Arr.map(listWarehouseTables(), (t) => ({
 					name: t.name,
 					...(t.description === undefined ? undefined : { description: t.description }),
 					columnCount: t.columnCount,
@@ -101,7 +105,7 @@ export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 				blocks: [
 					doc.table(
 						["Table", "Time column", "Description", "Columns"],
-						tables.map((t) => [
+						Arr.map(tables, (t) => [
 							t.name,
 							t.timeColumn ?? "-",
 							t.description ?? "-",
@@ -109,11 +113,9 @@ export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 						]),
 					),
 				],
-				next: tables
-					.slice(0, 1)
-					.map((t) =>
-						doc.next(TOOL, { table: t.name }, "the full column list and notes for one table"),
-					),
+				next: Arr.map(tables.slice(0, 1), (t) =>
+					doc.next(TOOL, { table: t.name }, "the full column list and notes for one table"),
+				),
 			}
 		},
 	})

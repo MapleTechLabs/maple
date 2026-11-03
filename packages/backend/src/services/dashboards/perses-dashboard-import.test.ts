@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { OrgId, UserId } from "@maple/domain/http"
 import { DashboardPersistenceService } from "./DashboardPersistenceService"
 import { Env } from "@maple/backend/platform/Env"
@@ -111,8 +111,10 @@ describe("convertPersesDashboardToPortable", () => {
 			assert.strictEqual(widget.display.title, "Requests")
 			assert.strictEqual(widget.layout.x, 10)
 			assert.strictEqual(widget.layout.w, 2)
-			assert.isTrue(result.warnings.some((warning) => warning.includes("Clamped layout")))
-			assert.isTrue(result.warnings.some((warning) => warning.includes("variables are not imported")))
+			assert.isTrue(Arr.some(result.warnings, (warning) => Str.includes("Clamped layout")(warning)))
+			assert.isTrue(
+				Arr.some(result.warnings, (warning) => Str.includes("variables are not imported")(warning)),
+			)
 		}),
 	)
 
@@ -165,7 +167,9 @@ describe("convertPersesDashboardToPortable", () => {
 
 			assert.strictEqual(widget.visualization, "markdown")
 			assert.include(widget.display.markdown?.content ?? "", "PrometheusTimeSeriesQuery")
-			assert.isTrue(result.warnings.some((warning) => warning.includes("unsupported query plugin")))
+			assert.isTrue(
+				Arr.some(result.warnings, (warning) => Str.includes("unsupported query plugin")(warning)),
+			)
 		}),
 	)
 
@@ -221,7 +225,9 @@ describe("convertPersesDashboardToPortable", () => {
 			assert.strictEqual(widget.visualization, "markdown")
 			assert.include(widget.display.markdown?.content ?? "", "needs Maple org scoping")
 			assert.isTrue(
-				result.warnings.some((warning) => warning.includes("does not include $__orgFilter")),
+				Arr.some(result.warnings, (warning) =>
+					Str.includes("does not include $__orgFilter")(warning),
+				),
 			)
 		}),
 	)
@@ -280,7 +286,9 @@ describe("convertPersesDashboardToPortable", () => {
 			assert.strictEqual(widget.visualization, "table")
 			assert.strictEqual(params.displayType, "table")
 			assert.include(String(params.sql), "AND $__orgFilter ORDER BY")
-			assert.isTrue(result.warnings.some((warning) => warning.includes("explicit OrgId reference")))
+			assert.isTrue(
+				Arr.some(result.warnings, (warning) => Str.includes("explicit OrgId reference")(warning)),
+			)
 		}),
 	)
 
@@ -308,7 +316,7 @@ describe("convertPersesDashboardToPortable", () => {
 			assert.strictEqual(widget.visualization, "markdown")
 			assert.strictEqual(widget.display.markdown?.content, "Hello from Perses")
 			assert.deepStrictEqual(widget.layout, { x: 0, y: 0, w: 6, h: 5, minW: 3, minH: 3 })
-			assert.isTrue(result.warnings.some((warning) => warning.includes("no layouts")))
+			assert.isTrue(Arr.some(result.warnings, (warning) => Str.includes("no layouts")(warning)))
 		}),
 	)
 

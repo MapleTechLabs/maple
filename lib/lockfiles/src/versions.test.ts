@@ -2,6 +2,7 @@ import fc from "fast-check"
 import semver from "semver"
 import { describe, expect, it } from "vitest"
 import { compareCargoVersions, compareGoVersions, compareNpmVersions, compareVersions } from "./index.ts"
+import { Array as Arr, String as Str } from "effect"
 
 const numeric = fc.oneof(fc.integer({ min: 0, max: 3 }), fc.integer({ min: 0, max: 2 ** 40 })).map(String)
 const alnumId = fc.stringMatching(/^[0-9a-zA-Z-]{1,6}$/).filter((s) => !/^\d+$/.test(s))
@@ -17,7 +18,7 @@ const semverString = fc
 	})
 	.map(
 		({ core, pre, build }) =>
-			`${core.join(".")}${pre === undefined ? "" : `-${pre.join(".")}`}${build === undefined ? "" : `+${build.join(".")}`}`,
+			`${Arr.join(core, ".")}${pre === undefined ? "" : `-${Arr.join(pre, ".")}`}${build === undefined ? "" : `+${Arr.join(build, ".")}`}`,
 	)
 
 describe("compareNpmVersions", () => {
@@ -34,7 +35,7 @@ describe("compareNpmVersions", () => {
 		fc.assert(
 			fc.property(semverString, semverString, (a, b) => {
 				expect(compareNpmVersions(a, b)).toBe(-compareNpmVersions(b, a) || 0)
-				expect(compareNpmVersions(`${a.split("+")[0]}+zzz`, a)).toBe(0)
+				expect(compareNpmVersions(`${Str.split("+")(a)[0]}+zzz`, a)).toBe(0)
 			}),
 		)
 	})
@@ -105,8 +106,8 @@ const GO_TESTS: ReadonlyArray<readonly [string, string]> = [
 
 describe("compareGoVersions", () => {
 	it("orders Go's own semver test table", () => {
-		GO_TESTS.forEach(([a, canonA], i) =>
-			GO_TESTS.forEach(([b, canonB], j) => {
+		Arr.forEach(GO_TESTS, ([a, canonA], i) =>
+			Arr.forEach(GO_TESTS, ([b, canonB], j) => {
 				const expected = canonA === canonB ? 0 : i < j ? -1 : 1
 				expect({ a, b, cmp: compareGoVersions(a, b) }).toEqual({ a, b, cmp: expected })
 			}),

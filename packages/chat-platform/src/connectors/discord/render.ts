@@ -10,6 +10,7 @@
  */
 import { chatActionControlId, type ChatActionToken } from "../../action-token"
 import type { ChatAlertBlock, ChatBlock, ChatToolActivity } from "../../render/blocks"
+import { Array as Arr, String as Str } from "effect"
 
 /** https://discord.com/developers — Create/Edit Message JSON params, API v10. */
 export interface DiscordEmbed {
@@ -111,7 +112,7 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 				break
 			}
 			case "activity":
-				if (block.tools.length > 0) lines.push(block.tools.map(toolLabel).join(" · "))
+				if (block.tools.length > 0) lines.push(Arr.join(Arr.map(block.tools, toolLabel), " · "))
 				break
 			case "approval": {
 				const { outcome } = block
@@ -157,7 +158,7 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 		}
 	}
 
-	const content = lines.join("\n\n")
+	const content = Arr.join(lines, "\n\n")
 	return {
 		// The neutral cut works to an estimate of what a dialect costs, and a body over the limit is
 		// rejected whole — so the estimate is clamped here rather than trusted.
@@ -173,7 +174,7 @@ const embedCost = (embed: DiscordEmbed): number =>
 	(embed.title?.length ?? 0) +
 	(embed.description?.length ?? 0) +
 	(embed.footer?.text.length ?? 0) +
-	(embed.fields ?? []).reduce((total, field) => total + field.name.length + field.value.length, 0)
+	Arr.reduce(embed.fields ?? [], 0, (total, field) => total + field.name.length + field.value.length)
 
 /**
  * An alert as the embed it has always been on Discord: the title linking into Maple, the summary,
@@ -181,23 +182,30 @@ const embedCost = (embed: DiscordEmbed): number =>
  */
 const alertEmbed = (block: ChatAlertBlock): DiscordEmbed => {
 	const primary = block.links.find((link) => link.primary) ?? block.links[0]
-	const links = block.links.map((link) => `[${link.label}](${link.url})`).join(" · ")
-	const fields = [
-		...block.fields.map((field) => ({ name: field.label, value: field.value, inline: true })),
-		...(links === "" ? [] : [{ name: "Links", value: links, inline: false }]),
-	]
-		.slice(0, MAX_EMBED_FIELDS)
-		.map((field) => ({
+	const links = Arr.join(
+		Arr.map(block.links, (link) => `[${link.label}](${link.url})`),
+		" · ",
+	)
+	const fields = Arr.map(
+		[
+			...Arr.map(block.fields, (field) => ({ name: field.label, value: field.value, inline: true })),
+			...(links === "" ? [] : [{ name: "Links", value: links, inline: false }]),
+		].slice(0, MAX_EMBED_FIELDS),
+		(field) => ({
 			name: clamp(field.name, MAX_FIELD_NAME_CHARS),
 			value: clamp(field.value, MAX_FIELD_VALUE_CHARS),
 			inline: field.inline,
-		}))
+		}),
+	)
 	// A footer is plain text on Discord, so inline code would show its backticks.
-	const footer = block.footer.map((part) => part.replaceAll("`", "")).join("  ·  ")
+	const footer = Arr.join(
+		Arr.map(block.footer, (part) => Str.replaceAll("`", "")(part)),
+		"  ·  ",
+	)
 	return {
 		title: clamp(block.title, MAX_EMBED_TITLE_CHARS),
 		...(primary === undefined ? undefined : { url: primary.url }),
-		color: Number.parseInt(block.color.slice(1), 16),
+		color: Number.parseInt(Str.slice(1)(block.color), 16),
 		...(block.summary === ""
 			? undefined
 			: { description: clamp(block.summary, MAX_EMBED_DESCRIPTION_CHARS) }),
@@ -215,7 +223,7 @@ const alertEmbed = (block: ChatAlertBlock): DiscordEmbed => {
 export const EMPTY_CONTENT = "—"
 
 const clamp = (text: string, max: number): string =>
-	text.length <= max ? text : `${text.slice(0, max - 1)}…`
+	text.length <= max ? text : `${Str.slice(0, max - 1)(text)}…`
 
 const ENTITY_LABELS = {
 	trace: "Trace",
@@ -254,7 +262,7 @@ const approvalRow = (token: ChatActionToken, toolName: string): DiscordActionRow
 			{
 				type: 2,
 				style: 3,
-				label: `Run ${toolName}`.slice(0, MAX_BUTTON_LABEL_CHARS),
+				label: Str.slice(0, MAX_BUTTON_LABEL_CHARS)(`Run ${toolName}`),
 				custom_id: approve,
 			},
 			{ type: 2, style: 4, label: "Skip", custom_id: deny },

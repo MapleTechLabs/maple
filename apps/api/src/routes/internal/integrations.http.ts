@@ -21,6 +21,7 @@ import {
 	GithubSetTrackedBranchResponse,
 	GithubStartConnectResponse,
 	GithubSelectInstallationResponse,
+	InfraSurfaceLiteral,
 	IntegrationsForbiddenError,
 	IntegrationsUpstreamError,
 	LinearDisconnectResponse,
@@ -43,7 +44,7 @@ import {
 	VcsPullRequestsResponse,
 } from "@maple/domain/http"
 import { EdgeCacheService } from "@maple/cache"
-import { Effect, Option } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { graphqlQuery } from "@maple/backend/services/integrations/CloudflareApi"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
@@ -56,7 +57,12 @@ import {
 	topTrafficQuery,
 	type TopTrafficGroupDefinition,
 } from "@maple/backend/services/integrations/cloudflare-analytics/queries"
+import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
 import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
+import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
+import { makeQueryRunners } from "@maple/backend/queries/query-runner"
+import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
@@ -77,6 +83,8 @@ import {
 } from "@/routes/integrations-callback.http"
 import { isTrustedCallbackOrigin, resolveRequestOrigin } from "@/routes/v2/integrations.http"
 import { makeOAuthCompleter } from "@/routes/oauth-complete"
+import { Queries } from "@/routes/queries"
+import { settleInfraSurfaces } from "./infra-surfaces"
 
 /**
  * How long `cloudflarePrime` spends on the post-connect poll. Long enough for zone discovery plus
@@ -85,6 +93,8 @@ import { makeOAuthCompleter } from "@/routes/oauth-complete"
  * callback handler.
  */
 const CLOUDFLARE_PRIME_TIMEOUT = "20 seconds"
+
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
 const requireAdmin = (roles: ReadonlyArray<RoleName>) =>
 	requireAdminRole(
@@ -106,6 +116,12 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const supabaseLogs = yield* SupabaseLogsService
 		const supabaseInsights = yield* SupabaseInsightsService
 		const gcp = yield* GcpConnectorService
+		const planetscale = yield* PlanetScaleConnectionService
+		const aws = yield* AwsConnectionService
+		const { runQuery } = makeQueryRunners({
+			warehouse: yield* WarehouseQueryService,
+			queryEngine: yield* QueryEngineService,
+		})
 		const edgeCache = yield* EdgeCacheService
 		const env = yield* Env
 		const completeOAuth = yield* makeOAuthCompleter
@@ -114,7 +130,8 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		// client-settable header, so it must belong to the app's own host family.
 		const trustedCallbackUrl = (path: string) =>
 			Effect.gen(function* () {
-				const origin = resolveRequestOrigin(yield* HttpServerRequest.HttpServerRequest)
+				const request = yield* HttpServerRequest.HttpServerRequest
+				const origin = resolveRequestOrigin(request)
 				if (!isTrustedCallbackOrigin(origin, env)) {
 					return yield* new IntegrationsForbiddenError({
 						message: "Integrations cannot be connected from this host",
@@ -174,7 +191,36 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						return new LinearDisconnectResponse(yield* linear.disconnect(tenant.orgId))
+						const disconnected = yield* linear.disconnect(tenant.orgId)
+						return new LinearDisconnectResponse(disconnected)
+					}),
+				)
+				// The sidebar's boot read: one request instead of the probe plus six statuses.
+				.handle("infraSurfaces", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const connected = <E, R>(
+							status: Effect.Effect<{ readonly connected: boolean }, E, R>,
+						) => Effect.map(status, (value) => value.connected)
+						return yield* settleInfraSurfaces({
+							surfaces: Effect.map(runQuery(Queries.infraPresence, tenant, payload), (rows) =>
+								Arr.flatMap(rows, (row) =>
+									Schema.is(InfraSurfaceLiteral)(row.surface) ? [row.surface] : [],
+								),
+							),
+							cloudflare: connected(cloudflareAnalytics.getIntegrationStatus(tenant.orgId)),
+							railway: connected(railway.getStatus(tenant.orgId)),
+							planetscale: connected(planetscale.getStatus(tenant.orgId)),
+							// Google Cloud counts only with metrics on: the page reads metrics, not logs.
+							gcp: Effect.map(gcp.status(tenant.orgId), (status) =>
+								Arr.some(status.connectors, (connector) => connector.metricsEnabled),
+							),
+							supabase: connected(supabase.getStatus(tenant.orgId)),
+							aws: Effect.map(
+								aws.status(tenant.orgId),
+								(status) => status.connections.length > 0,
+							),
+						})
 					}),
 				)
 				.handle("cloudflareStatus", () =>
@@ -207,7 +253,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						const tenant = yield* CurrentTenant.Context
 						const rows = yield* cloudflareAnalytics.listHyperdriveConfigs(tenant.orgId)
 						return new CloudflareHyperdrivesResponse({
-							configs: rows.map((row) => ({
+							configs: Arr.map(rows, (row) => ({
 								id: row.configId,
 								name: row.name,
 								originHost: row.originHost,
@@ -223,11 +269,9 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						if (payload.endTime <= payload.startTime) {
-							return yield* Effect.fail(
-								new IntegrationsValidationError({
-									message: "endTime must be after startTime",
-								}),
-							)
+							return yield* new IntegrationsValidationError({
+								message: "endTime must be after startTime",
+							})
 						}
 						const limit = Math.min(Math.max(Math.floor(payload.limit ?? 15), 1), 50)
 						// Cloudflare applies these before ranking, which is the whole point: the live
@@ -240,7 +284,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							cacheStatuses: payload.cacheStatuses,
 						}
 						const filterVariables = topTrafficFilterVariables(filter)
-						const isFiltered = Object.keys(filterVariables).length > 0
+						const isFiltered = Rec.keys(filterVariables).length > 0
 						// Minute-align the window so repeated dashboard refreshes within the TTL share
 						// a cache entry instead of each minting a unique key. Floor the start but CEIL
 						// the end (with a one-minute floor on the width): flooring both would collapse
@@ -256,11 +300,9 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 								payload.zoneName,
 							)
 							if (zoneRow == null) {
-								return yield* Effect.fail(
-									new IntegrationsValidationError({
-										message: `Unknown Cloudflare zone: ${payload.zoneName}`,
-									}),
-								)
+								return yield* new IntegrationsValidationError({
+									message: `Unknown Cloudflare zone: ${payload.zoneName}`,
+								})
 							}
 							const zoneId = zoneRow.zoneId
 							const { accessToken } = yield* cloudflare.getValidAccessToken(
@@ -286,10 +328,15 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							if (result.errors.length > 0) {
 								return new CloudflareTopTrafficResponse({
 									rows: [],
-									unavailableReason: result.errors
-										.map((error) => error.message)
-										.join("; ")
-										.slice(0, 300),
+									unavailableReason: Str.slice(
+										0,
+										300,
+									)(
+										Arr.join(
+											Arr.map(result.errors, (error) => error.message),
+											"; ",
+										),
+									),
 								})
 							}
 							const decoded = yield* decodeTopTrafficResponse(result.data).pipe(
@@ -333,16 +380,16 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 								entry.errors5xx += abrCount(group.count, group.avg?.sampleInterval)
 								byKey.set(key, entry)
 							}
-							const rows = [...byKey.entries()]
-								.map(
-									([key, entry]) =>
-										new CloudflareTopTrafficRow({
-											key,
-											requests: entry.requests,
-											bytes: entry.bytes,
-											errors5xx: entry.errors5xx,
-										}),
-								)
+							const rows = Arr.map(
+								[...byKey.entries()],
+								([key, entry]) =>
+									new CloudflareTopTrafficRow({
+										key,
+										requests: entry.requests,
+										bytes: entry.bytes,
+										errors5xx: entry.errors5xx,
+									}),
+							)
 								.sort((a, b) => b.requests - a.requests)
 								.slice(0, limit)
 							return new CloudflareTopTrafficResponse({ rows, unavailableReason: null })
@@ -351,16 +398,19 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						// serve one user's drill-down as another's overview. Sorted so two equivalent
 						// selections share an entry.
 						const filterDigest = isFiltered
-							? JSON.stringify(
-									Object.fromEntries(
-										Object.entries(filterVariables)
-											.sort(([a], [b]) => a.localeCompare(b))
-											.map(([key, value]) => [
+							? yield* encodeJson(
+									Rec.fromEntries(
+										Arr.map(
+											Rec.toEntries(filterVariables).sort(([a], [b]) =>
+												Str.localeCompare(b)(a),
+											),
+											([key, value]) => [
 												key,
-												Array.isArray(value) ? [...value].sort() : value,
-											]),
+												typeof value === "string" ? value : [...value].sort(),
+											],
+										),
 									),
-								)
+								).pipe(Effect.orDie)
 							: ""
 						const cached = yield* edgeCache.getOrCompute(
 							{
@@ -398,9 +448,10 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							metadata: {
 								accountId: payload.accountId,
 								watchNewZones: payload.watchNewZones,
-								pausedZoneIds: payload.zones
-									.filter((zone) => !zone.watched)
-									.map((zone) => zone.zoneId),
+								pausedZoneIds: Arr.map(
+									Arr.filter(payload.zones, (zone) => !zone.watched),
+									(zone) => zone.zoneId,
+								),
 							},
 						})
 						return yield* cloudflareAnalytics.getIntegrationStatus(tenant.orgId)
@@ -462,7 +513,8 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						return new RailwayDisconnectResponse(yield* railway.disconnect(tenant.orgId))
+						const disconnected = yield* railway.disconnect(tenant.orgId)
+						return new RailwayDisconnectResponse(disconnected)
 					}),
 				)
 				// Any member may read the status; every change is an admin action, as for Railway.
@@ -518,13 +570,15 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						return new SupabaseDisconnectResponse(yield* supabase.disconnect(tenant.orgId))
+						const disconnected = yield* supabase.disconnect(tenant.orgId)
+						return new SupabaseDisconnectResponse(disconnected)
 					}),
 				)
 				.handle("gcpResources", ({ query }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						return new GcpResourcesResponse(yield* gcp.resources(tenant.orgId, query))
+						const resources = yield* gcp.resources(tenant.orgId, query)
+						return new GcpResourcesResponse(resources)
 					}),
 				)
 				.handle("githubStatus", () =>
@@ -560,12 +614,15 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						return new GithubSelectInstallationResponse(
-							yield* github.selectInstallation(payload.installationId, payload.state, {
+						const selected = yield* github.selectInstallation(
+							payload.installationId,
+							payload.state,
+							{
 								orgId: tenant.orgId,
 								userId: tenant.userId,
-							}),
+							},
 						)
+						return new GithubSelectInstallationResponse(selected)
 					}),
 				)
 				.handle("githubDisconnect", () =>
@@ -666,36 +723,34 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("vcsCommitDetails", ({ query }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const shas = query.shas
-							.split(",")
-							.map((sha) => sha.trim())
-							.filter((sha) => sha.length > 0)
-							.slice(0, VCS_COMMIT_DETAILS_MAX_SHAS)
+						const shas = Arr.filter(
+							Arr.map(Str.split(",")(query.shas), (sha) => Str.trim(sha)),
+							(sha) => sha.length > 0,
+						).slice(0, VCS_COMMIT_DETAILS_MAX_SHAS)
 						const details = yield* vcsCommits.resolveCommitDetails(tenant.orgId, shas)
 						return new VcsCommitDetailsResponse({
-							commits: details.map((detail) => new VcsCommitDetailResponse(detail)),
+							commits: Arr.map(details, (detail) => new VcsCommitDetailResponse(detail)),
 						})
 					}),
 				)
 				.handle("vcsCommitRanges", ({ query }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const ranges = query.ranges
-							.split(",")
-							.flatMap((pair) => {
-								const [base, head] = pair.trim().split("..")
-								return base && head ? [{ base, head }] : []
-							})
-							.slice(0, VCS_COMMIT_RANGES_MAX)
+						const ranges = Arr.flatMap(Str.split(",")(query.ranges), (pair) => {
+							const [base, head] = Str.split("..")(Str.trim(pair))
+							return base && head ? [{ base, head }] : []
+						}).slice(0, VCS_COMMIT_RANGES_MAX)
 						const results = yield* vcsCommits.resolveCommitRanges(tenant.orgId, ranges, {
 							limit: query.limit ?? 20,
 						})
 						return new VcsCommitRangesResponse({
-							ranges: results.map(
+							ranges: Arr.map(
+								results,
 								(range) =>
 									new VcsCommitRangeResponse({
 										...range,
-										commits: range.commits.map(
+										commits: Arr.map(
+											range.commits,
 											(detail) => new VcsCommitDetailResponse(detail),
 										),
 									}),

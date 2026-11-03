@@ -4,10 +4,10 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { LoadFailure } from "../../../../data/load-failure"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
-import * as Tooltip from "../../../../ui/tooltip"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { timeControls } from "../../../kit/time-controls"
@@ -16,9 +16,9 @@ import { integrationNotConnected } from "../../kit/empty-states"
 import { RAILWAY_ACCENT } from "../../../integrations/catalog"
 import { integrationConnectCta } from "../../kit/integration-empty"
 import { AppRoute, hrefOf } from "../../../../route"
-import { filteredEmpty } from "../../../kit/signal-empty-state"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { avgPeakContent } from "../../../infra/kit/avg-peak"
-import { pageHeroParts, countLabel, searchToolbar } from "../../../infra/kit/page-parts"
+import { countLabel, searchToolbar } from "../../../infra/kit/page-parts"
 import { formatAbsolute } from "../../../kit/relative-time"
 import type { RailwayServiceRow, RailwayStatus } from "../model"
 import { filterServices, formatVcpu, hasConfiguredLimits, unsyncedEnvironments } from "./derive"
@@ -27,6 +27,7 @@ import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { railwayFleetBand, railwayFleetBandLoading } from "./view-band"
 import { type Clock, railwayTable, railwayTableLoading, triggerIds } from "./view-table"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `RailwayPage`.
 
@@ -41,7 +42,7 @@ const tooltipContent = (
 	clock: Clock,
 	triggerId: string,
 ): ReadonlyArray<Html | string> =>
-	services.flatMap((row): ReadonlyArray<Html | string> => {
+	Arr.flatMap(services, (row): ReadonlyArray<Html | string> => {
 		const ids = triggerIds(row)
 		if (triggerId === ids.memory)
 			return [
@@ -93,7 +94,7 @@ export const servicesList = (
 	if (services.length === 0) {
 		return integrationNotConnected(h, {
 			icon: icon(h, "RailwayIcon", { size: 16 }),
-			title: syncing ? "Pulling your Railway metrics" : "No Railway metrics in this time range",
+			title: syncing ? "Pulling your Railway metrics" : "No Railway metrics in this window",
 			description: syncing
 				? "Some environments haven't finished their first sync. This page updates on its own as they land."
 				: "Services that ran in this window show up here. Try a wider time range, or check the connection for errors.",
@@ -110,7 +111,7 @@ export const servicesList = (
 		view: Tooltip.view,
 		toParentMessage: (message) => Message.GotRowTooltipMessage({ message }),
 		viewInputs: {
-			triggerIds: filtered.flatMap((row) => Object.values(triggerIds(row))),
+			triggerIds: Arr.flatMap(filtered, (row) => Rec.values(triggerIds(row))),
 			toContent: (triggerId) => tooltipContent(h, filtered, clock, triggerId),
 			toView: ({ trigger, portal }) =>
 				h.div(
@@ -203,16 +204,13 @@ const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePicker
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
-	const hero = pageHeroParts(h, {
-		title: "Railway",
-		description:
-			"CPU, memory, network and disk for every Railway service, polled from Railway's metrics API.",
-	})
 	return dashboardPage(
 		h,
 		{
 			gap: "lg",
-			titleContent: hero.title,
+			title: "Railway",
+			description:
+				"CPU, memory, network and disk for every Railway service, polled from Railway's metrics API.",
 			actions: timeControls(h, {
 				search: model.search,
 				defaultPreset: DEFAULT_PRESET,
@@ -236,6 +234,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					}),
 			}),
 		},
-		[hero.body, statusView(h, model, clock)],
+		[statusView(h, model, clock)],
 	)
 })

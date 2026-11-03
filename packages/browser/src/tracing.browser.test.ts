@@ -1,14 +1,16 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 import {
+	context,
 	diag,
 	DiagLogLevel,
 	INVALID_SPAN_CONTEXT,
+	propagation,
 	type Span as ApiSpan,
 	trace,
 	type Tracer,
 	type TracerProvider,
 } from "@opentelemetry/api"
-import type { ReadableSpan, Span } from "@opentelemetry/sdk-trace-base"
+import type { ReadableSpan, Span } from "@opentelemetry/sdk-trace"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 // Capture what the batch processor actually hands to the exporter, so the
@@ -185,6 +187,36 @@ describe("setupTracing unload flush", () => {
 		document.dispatchEvent(new Event("visibilitychange"))
 		await Promise.resolve()
 		expect(exported).toHaveLength(0)
+	})
+
+	it("registers W3C trace context and baggage propagation for the app's own requests", () => {
+		shutdown = setupTracing(CONFIG)
+		const span = trace.getTracer("test").startSpan("request")
+		const active = propagation.setBaggage(
+			trace.setSpan(context.active(), span),
+			propagation.createBaggage({ tenant: { value: "acme" } }),
+		)
+		const headers: Record<string, string> = {}
+		propagation.inject(active, headers)
+		span.end()
+
+		expect(headers.traceparent).toMatch(new RegExp(`^00-${span.spanContext().traceId}-[0-9a-f]{16}-01$`))
+		expect(headers.baggage).toBe("tenant=acme")
+	})
+
+	it("parents a span started inside an active span through the context manager", async () => {
+		shutdown = setupTracing(CONFIG)
+		const tracer = trace.getTracer("test")
+		tracer.startActiveSpan("parent", (parent) => {
+			tracer.startSpan("child").end()
+			parent.end()
+		})
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(2))
+
+		const parent = exported.find((span) => span.name === "parent")
+		const child = exported.find((span) => span.name === "child")
+		expect(child?.parentSpanContext?.spanId).toBe(parent?.spanContext().spanId)
 	})
 
 	it("exports spans again after init → shutdown → init, without a manual trace.disable", async () => {

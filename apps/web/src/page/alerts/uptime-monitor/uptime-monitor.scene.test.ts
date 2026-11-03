@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { UptimeMonitorPublicId } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 import {
 	displayValue,
 	expect as expectView,
@@ -14,9 +14,9 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import * as Chart from "../../../charts/chart"
-import { MountChart } from "../../../charts/chart-mounts"
-import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import { MountChart } from "@maple/views/charts/chart-mounts"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { destinationRow, incidentRow, NOW, ORG } from "../shared/test-rows"
 import type { UptimeMonitor } from "../shared/uptime-derive"
@@ -32,7 +32,7 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const publicId = Schema.encodeSync(UptimeMonitorPublicId)
 const incidentAlert = selector('[data-slot="alert"]')
 const breakdown = role("region", { name: "Response time breakdown" })
@@ -44,12 +44,19 @@ const opened = (monitor: UptimeMonitor, extra: ReadonlyArray<Message> = []): Mod
 		{ _tag: "AlertsUptimeMonitor", monitorId: publicId(monitor.id), search: {} },
 		context,
 	).model
-	return [
-		Message.ReadClock({ nowMs: NOW }),
-		Message.CompletedFetchSession({ orgId: ORG, isAdmin: true }),
-		Message.CompletedFetchMonitor({ key: entered.monitor.key ?? "", result: Result.succeed(monitor) }),
-		...extra,
-	].reduce((model, message) => pageUpdate(model, message).model, entered)
+	return Arr.reduce(
+		[
+			Message.ReadClock({ nowMs: NOW }),
+			Message.CompletedFetchSession({ orgId: ORG, isAdmin: true }),
+			Message.CompletedFetchMonitor({
+				key: entered.monitor.key ?? "",
+				result: Result.succeed(monitor),
+			}),
+			...extra,
+		],
+		entered,
+		(model, message) => pageUpdate(model, message).model,
+	)
 }
 
 describe("uptime monitor page", () => {
@@ -204,7 +211,7 @@ describe("uptime monitor page", () => {
 				result: Result.succeed({
 					window: "1h",
 					points: [],
-					samples: [sample(30, true, "a".repeat(32)), sample(10, false, "b".repeat(32))],
+					samples: [sample(30, true, Str.repeat(32)("a")), sample(10, false, Str.repeat(32)("b"))],
 					samplesTruncated: false,
 					samplesFailed: false,
 					windowStartMs: NOW - 3_600_000,
@@ -224,8 +231,8 @@ describe("uptime monitor page", () => {
 			given(withStats),
 			themeResolved(),
 			expectView(role("img", { name: "2 checks over the last hour, 1 failed" })).toExist(),
-			expectView(selector(`a[href="${traceHref("a".repeat(32))}"]`)).toExist(),
-			expectView(selector(`a[href="${traceHref("b".repeat(32))}"]`)).toExist(),
+			expectView(selector(`a[href="${traceHref(Str.repeat(32)("a"))}"]`)).toExist(),
+			expectView(selector(`a[href="${traceHref(Str.repeat(32)("b"))}"]`)).toExist(),
 		)
 		// Hovering the failed check shows its card with what it returned.
 		scene(
@@ -245,7 +252,7 @@ describe("uptime monitor page", () => {
 			durationMs: 66,
 			ok: true,
 			statusCode: 200,
-			traceId: "c".repeat(32),
+			traceId: Str.repeat(32)("c"),
 			phases: { dnsMs: 1.2, connectMs: 9, tlsMs: 16, ttfbMs: 40, transferMs: 0 },
 		}
 		const loaded = pageUpdate(
@@ -277,7 +284,7 @@ describe("uptime monitor page", () => {
 			expectView(text("1.2 ms")).toExist(),
 			expectView(text("40 ms")).toExist(),
 			expectView(text("TTFB")).toExist(),
-			expectView(selector(`a[href="${traceHref("c".repeat(32))}"]`)).toExist(),
+			expectView(selector(`a[href="${traceHref(Str.repeat(32)("c"))}"]`)).toExist(),
 		)
 	})
 
@@ -321,7 +328,7 @@ describe("uptime monitor page", () => {
 			durationMs: 120,
 			ok: true,
 			statusCode: 200,
-			traceId: `${index}`.padStart(32, "a"),
+			traceId: Str.padStart(32, "a")(`${index}`),
 			phases: null,
 		}))
 		const timeout = {
@@ -329,7 +336,7 @@ describe("uptime monitor page", () => {
 			durationMs: 10_000,
 			ok: false,
 			statusCode: null,
-			traceId: "f".repeat(32),
+			traceId: Str.repeat(32)("f"),
 			phases: null,
 		}
 		const loaded = pageUpdate(
@@ -361,7 +368,7 @@ describe("uptime monitor page", () => {
 			// The axis follows the bulk of the checks, so one timeout does not flatten them.
 			expectView(text("200 ms")).toExist(),
 			expectView(text("Slower than 200 ms")).toExist(),
-			expectView(selector(`a[href="${traceHref("f".repeat(32))}"]`)).toExist(),
+			expectView(selector(`a[href="${traceHref(Str.repeat(32)("f"))}"]`)).toExist(),
 		)
 	})
 
@@ -406,28 +413,32 @@ describe("uptime monitor page", () => {
 
 	test("a chart runtime that fails to load says so instead of loading forever", () => {
 		const model = opened(httpMonitor())
-		const failed = [
-			Message.FailedLoadChartRuntime({ reason: "network" }),
-			Message.CompletedFetchStats({
-				key: model.stats.key ?? "",
-				result: Result.succeed({
-					window: "24h",
-					points: [],
-					samples: [],
-					samplesTruncated: false,
-					samplesFailed: false,
-					windowStartMs: NOW - 86_400_000,
-					windowEndMs: NOW,
-					checks: 4,
-					failures: 0,
-					p50Ms: 100,
-					p95Ms: 100,
-					p99Ms: 100,
-					phases: [],
-					phasesFailed: false,
+		const failed = Arr.reduce(
+			[
+				Message.FailedLoadChartRuntime({ reason: "network" }),
+				Message.CompletedFetchStats({
+					key: model.stats.key ?? "",
+					result: Result.succeed({
+						window: "24h",
+						points: [],
+						samples: [],
+						samplesTruncated: false,
+						samplesFailed: false,
+						windowStartMs: NOW - 86_400_000,
+						windowEndMs: NOW,
+						checks: 4,
+						failures: 0,
+						p50Ms: 100,
+						p95Ms: 100,
+						p99Ms: 100,
+						phases: [],
+						phasesFailed: false,
+					}),
 				}),
-			}),
-		].reduce((current, message) => pageUpdate(current, message).model, model)
+			],
+			model,
+			(current, message) => pageUpdate(current, message).model,
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(failed),
@@ -507,7 +518,7 @@ describe("uptime monitor page", () => {
 			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
 			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
 			expectView(selector('[data-chart-label="Response time breakdown by phase"]')).toExist(),
-			...["DNS", "Connect", "TLS", "TTFB", "Transfer"].map((label) =>
+			...Arr.map(["DNS", "Connect", "TLS", "TTFB", "Transfer"], (label) =>
 				expectView(text(label)).toExist(),
 			),
 		)

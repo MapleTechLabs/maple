@@ -130,6 +130,7 @@ const CodeReviewListSearchFields = {
 /** The Team scorecard's sort column; `person` is by login. */
 export const CodeReviewTeamSort = Schema.Literals([
 	"person",
+	"score",
 	"merged",
 	"mergeTime",
 	"fixRate",
@@ -732,7 +733,7 @@ export const InfraSupabaseProjectSearch = Schema.Struct({
 // Nested list routes
 
 // sessionTimeRangeSearchMiddleware()
-/** `/mcp-servers`, a server and its tool page share one search: the time range and the toolbar. */
+/** `/mcp-servers`, a server, its tool page and its sessions share one search: the time range and the toolbar. */
 export const McpServersSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 	client: Schema.optional(Schema.String),
@@ -969,6 +970,8 @@ export const SecurityRunsSearch = Schema.Struct({
 /** One repository's breakdown on the Dependencies tab; absent shows them all. */
 export const SecurityDependenciesSearch = Schema.Struct({
 	repo: Schema.optional(Schema.String),
+	/** The repositories or advisories table; absent shows the matrix, or a repository's upgrade plan. */
+	view: Schema.optional(Schema.Literals(["repositories", "advisories"])),
 })
 
 export type SecurityFindingsSearch = typeof SecurityFindingsSearch.Type

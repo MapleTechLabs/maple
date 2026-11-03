@@ -18,7 +18,7 @@
 // components cannot be windowed and a thousand-block session has to stay
 // scrollable.
 
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 import type { AiSessionSpan } from "@maple/domain/http"
 
@@ -296,20 +296,20 @@ export function prepareTranscript(input: PrepareInput): PreparedTranscript {
 		return category
 	}
 
-	const filtering = input.query.trim() !== ""
-	const turnRows = input.turns.map((turn) => buildTurn(turn, input, categoryOf))
+	const filtering = Str.trim(input.query) !== ""
+	const turnRows = Arr.map(input.turns, (turn) => buildTurn(turn, input, categoryOf))
 	// Structural chrome, like the lane markers: a filtered view no longer has the
 	// ordering the marker describes, so it is not built at all.
 	const concurrent = filtering ? new Map<string, TranscriptRow | undefined>() : markParallelTurns(turnRows)
 
 	// Capture coverage is a fact about the session, so it is counted over every
 	// turn before the first row is emitted.
-	const llmSpans = turnRows.flatMap((entry) => entry.llmSpans)
-	const capturedCalls = llmSpans.filter(hasCapturedContent).length
+	const llmSpans = Arr.flatMap(turnRows, (entry) => entry.llmSpans)
+	const capturedCalls = Arr.filter(llmSpans, hasCapturedContent).length
 	const bannerUp = llmSpans.length > 0 && capturedCalls / llmSpans.length < CAPTURE_BANNER_THRESHOLD
 	// A session of pure HTTP/DB work has no transcript at all; only one that DOES
 	// have agent work keeps placeholders for the turns without it.
-	const anyAiActivity = turnRows.some((entry) => entry.aiSpanCount > 0)
+	const anyAiActivity = Arr.some(turnRows, (entry) => entry.aiSpanCount > 0)
 
 	return { turnRows, concurrent, filtering, bannerUp, capturedCalls, anyAiActivity }
 }
@@ -347,7 +347,7 @@ export function assembleTranscript(
 		if (
 			!bannerUp &&
 			entry.llmSpans.length > 0 &&
-			entry.llmSpans.every((span) => !hasCapturedContent(span))
+			Arr.every(entry.llmSpans, (span) => !hasCapturedContent(span))
 		) {
 			body.push({
 				kind: "note",
@@ -362,7 +362,7 @@ export function assembleTranscript(
 			body.push(
 				...(indent === 0
 					? entry.rows
-					: entry.rows.map((row) => ({ ...row, depth: row.depth + indent }))),
+					: Arr.map(entry.rows, (row) => ({ ...row, depth: row.depth + indent }))),
 			)
 		}
 	}
@@ -423,9 +423,9 @@ function buildTurn(
 	// Non-AI spans are the app's own HTTP/DB work sharing the agent's traces and
 	// have no place in a conversation; a duplicate span id would render its
 	// block twice.
-	const spans = dedupeById(turn.spans).filter((span) => span.isAiSpan)
-	const llmSpans = spans.filter(isLlmCall)
-	const toolSpans = spans.filter((span) => categoryOf(span) === "tool")
+	const spans = Arr.filter(dedupeById(turn.spans), (span) => span.isAiSpan)
+	const llmSpans = Arr.filter(spans, isLlmCall)
+	const toolSpans = Arr.filter(spans, (span) => categoryOf(span) === "tool")
 
 	const header: Extract<TranscriptRow, { kind: "turn" }> = {
 		kind: "turn",
@@ -437,7 +437,10 @@ function buildTurn(
 		toolCalls: toolSpans.length,
 		aiSpanCount: spans.length,
 		toolNames: distinct(
-			toolSpans.map((span) => span.genAi.toolName).filter((name): name is string => name !== undefined),
+			Arr.filter(
+				Arr.map(toolSpans, (span) => span.genAi.toolName),
+				(name): name is string => name !== undefined,
+			),
 		),
 		usage: countTurnUsage(turn, input.turns),
 	}
@@ -463,7 +466,10 @@ function buildTurn(
 		// `tool_call` part describes the same call, and rendering both would
 		// count one invocation twice.
 		coveredCallIds: new Set(
-			toolSpans.map((span) => span.genAi.toolCallId).filter((id): id is string => id !== undefined),
+			Arr.filter(
+				Arr.map(toolSpans, (span) => span.genAi.toolCallId),
+				(id): id is string => id !== undefined,
+			),
 		),
 		unclaimedToolNames: countIdlessToolSpans(toolSpans),
 		systemCounts: countSystemInstructions(llmSpans, messagesOf),
@@ -596,8 +602,8 @@ interface SpanForest {
  * would print after that agent's whole tool subtree.
  */
 function buildForest(spans: readonly AiSessionSpan[], all: readonly AiSessionSpan[] = spans): SpanForest {
-	const present = new Set(spans.map((span) => span.spanId))
-	const byId = new Map(all.map((span) => [span.spanId, span]))
+	const present = new Set(Arr.map(spans, (span) => span.spanId))
+	const byId = new Map(Arr.map(all, (span) => [span.spanId, span]))
 	const aiParentOf = (span: AiSessionSpan): string | undefined => {
 		const seen = new Set<string>([span.spanId])
 		let parentId = span.parentSpanId
@@ -861,7 +867,7 @@ function markParallelLanes(
 				endMs: cluster.endMs,
 				overlapStartMs: cluster.overlapStartMs,
 				overlapEndMs: cluster.overlapEndMs,
-				lanes: cluster.members.map((lane) => lane.ref),
+				lanes: Arr.map(cluster.members, (lane) => lane.ref),
 			},
 		})
 	}
@@ -925,20 +931,21 @@ function clusterByOverlap<T extends Interval>(items: readonly T[]): readonly Ove
 		}
 	}
 
-	return groups
-		.filter((group) => group.length > 1)
-		.map((members) => {
-			const sharedStart = Math.max(...members.map((item) => item.startMs))
-			const sharedEnd = Math.min(...members.map((item) => item.endMs))
+	return Arr.map(
+		Arr.filter(groups, (group) => group.length > 1),
+		(members) => {
+			const sharedStart = Math.max(...Arr.map(members, (item) => item.startMs))
+			const sharedEnd = Math.min(...Arr.map(members, (item) => item.endMs))
 			const shared = sharedStart < sharedEnd
 			return {
 				members,
 				startMs: members[0].startMs,
-				endMs: Math.max(...members.map((item) => item.endMs)),
+				endMs: Math.max(...Arr.map(members, (item) => item.endMs)),
 				overlapStartMs: shared ? sharedStart : undefined,
 				overlapEndMs: shared ? sharedEnd : undefined,
 			}
-		})
+		},
+	)
 }
 
 /**
@@ -956,9 +963,9 @@ function clusterByOverlap<T extends Interval>(items: readonly T[]): readonly Ove
  * with a real turn would announce a concurrency the reader cannot see.
  */
 function markParallelTurns(entries: readonly TurnRows[]): ReadonlyMap<string, TranscriptRow | undefined> {
-	const items = entries
-		.filter((entry) => entry.aiSpanCount > 0)
-		.map((entry, order) => ({
+	const items = Arr.map(
+		Arr.filter(entries, (entry) => entry.aiSpanCount > 0),
+		(entry, order) => ({
 			entry,
 			// Where this turn sits on the PAGE. Turns are ordered by their anchor and
 			// a turn's `startMs` is the minimum over its spans, so the two can
@@ -967,7 +974,8 @@ function markParallelTurns(entries: readonly TurnRows[]): ReadonlyMap<string, Tr
 			startMs: entry.turn.startMs,
 			endMs: entry.turn.endMs,
 			ref: { key: entry.turn.id, turn: entry.turn } satisfies TranscriptTurnRef,
-		}))
+		}),
+	)
 
 	// Membership is the key; only the cluster's first member carries its marker.
 	const marked = new Map<string, TranscriptRow | undefined>()
@@ -982,7 +990,7 @@ function markParallelTurns(entries: readonly TurnRows[]): ReadonlyMap<string, Tr
 			endMs: cluster.endMs,
 			overlapStartMs: cluster.overlapStartMs,
 			overlapEndMs: cluster.overlapEndMs,
-			turns: cluster.members.map((item) => item.ref),
+			turns: Arr.map(cluster.members, (item) => item.ref),
 		})
 	}
 	return marked
@@ -1055,7 +1063,7 @@ function systemRows(
 ): readonly TranscriptRow[] {
 	const rows: TranscriptRow[] = []
 	for (const message of messages) {
-		if (message.role.toLowerCase() !== "system") continue
+		if (Str.toLowerCase(message.role) !== "system") continue
 		const text = textOf(message.parts)
 		if (text === "" || scope.context.emittedSystem.has(text)) continue
 		scope.context.emittedSystem.add(text)
@@ -1080,7 +1088,7 @@ function countSystemInstructions(
 	const counts = new Map<string, number>()
 	for (const span of llmSpans) {
 		for (const message of messagesOf(span)) {
-			if (message.role.toLowerCase() !== "system") continue
+			if (Str.toLowerCase(message.role) !== "system") continue
 			const text = textOf(message.parts)
 			if (text === "") continue
 			counts.set(text, (counts.get(text) ?? 0) + 1)
@@ -1115,7 +1123,7 @@ function userRows(
 	scope: LaneScope,
 ): readonly TranscriptRow[] {
 	if (scope.context.userEmitted) return []
-	const history = messages.filter((message) => message.origin === "input")
+	const history = Arr.filter(messages, (message) => message.origin === "input")
 	if (history.length === 0) return []
 
 	// The newest user message that says something: a framework's status block
@@ -1123,8 +1131,8 @@ function userRows(
 	let index = -1
 	let text = ""
 	for (let i = history.length - 1; i >= 0; i--) {
-		if (history[i].role.toLowerCase() !== "user") continue
-		text = withoutInjectedBlocks(textOf(history[i].parts)).trim()
+		if (Str.toLowerCase(history[i].role) !== "user") continue
+		text = Str.trim(withoutInjectedBlocks(textOf(history[i].parts)))
 		if (text !== "") {
 			index = i
 			break
@@ -1161,7 +1169,7 @@ function outputRows(
 	promptAllowed: boolean,
 ): readonly TranscriptRow[] {
 	const rows: TranscriptRow[] = []
-	const output = messages.filter((message) => message.origin === "output")
+	const output = Arr.filter(messages, (message) => message.origin === "output")
 	const failed = spanFailed(span)
 	const afterFailure = scope.context.lastCallFailed
 	scope.context.lastCallFailed = failed
@@ -1179,7 +1187,7 @@ function outputRows(
 				continue
 			}
 			if (part.kind === "text") {
-				const text = part.text.trim()
+				const text = Str.trim(part.text)
 				if (text !== "")
 					rows.push({
 						...base,
@@ -1214,7 +1222,7 @@ function outputRows(
 		}
 	}
 
-	if (rows.some((row) => row.kind === "assistant")) return rows
+	if (Arr.some(rows, (row) => row.kind === "assistant")) return rows
 
 	// Nothing said. Which of the silences it is decides what the row is.
 	if (failed) {
@@ -1296,10 +1304,10 @@ function coveredBySpan(part: Extract<SpanMessagePart, { kind: "tool_call" }>, co
  *  turn's user row has already claimed the first history, so this is the text
  *  of a later, differently-captured call. */
 function capturedPromptText(messages: readonly SpanMessage[]): string | undefined {
-	const input = messages.filter((message) => message.origin === "input")
+	const input = Arr.filter(messages, (message) => message.origin === "input")
 	for (let i = input.length - 1; i >= 0; i--) {
-		if (input[i].role.toLowerCase() !== "user") continue
-		const text = withoutInjectedBlocks(textOf(input[i].parts)).trim()
+		if (Str.toLowerCase(input[i].role) !== "user") continue
+		const text = Str.trim(withoutInjectedBlocks(textOf(input[i].parts)))
 		if (text !== "") return text
 	}
 	return undefined
@@ -1396,7 +1404,7 @@ export function payload(text: string | undefined): TranscriptPayload | undefined
 	const envelope = truncationEnvelope(text)
 	const body = envelope ?? text
 	const marked = TRUNCATION_MARKER.test(body)
-	const shown = marked ? body.replace(TRUNCATION_MARKER, "") : body
+	const shown = marked ? Str.replace(TRUNCATION_MARKER, "")(body) : body
 	const { byteLength, lineCount } = measure(shown)
 
 	return { text: shown, byteLength, lineCount, truncatedByEmitter: envelope !== undefined || marked }
@@ -1418,14 +1426,14 @@ const decodeJsonObject = Schema.decodeUnknownOption(
 )
 
 function truncationEnvelope(text: string): string | undefined {
-	if (!text.startsWith("{") || !text.includes('"truncated"')) return undefined
+	if (!Str.startsWith("{")(text) || !Str.includes('"truncated"')(text)) return undefined
 	// `Schema.Record` admits only JSON objects, so malformed text, an array and a
 	// scalar all decode to `None` — none of them is an envelope.
 	const decoded = decodeJsonObject(text)
 	if (Option.isNone(decoded)) return undefined
 	const parsed = decoded.value
 	if (parsed.truncated !== true) return undefined
-	if (Object.keys(parsed).some((key) => !ENVELOPE_KEYS.has(key))) return undefined
+	if (Arr.some(Rec.keys(parsed), (key) => !ENVELOPE_KEYS.has(key))) return undefined
 	// A prefix-less envelope is still an envelope: the emitter recorded that it
 	// cut the payload and kept none of it. The empty text is what there is.
 	const prefix = parsed.prefix ?? parsed.value ?? parsed.content
@@ -1465,14 +1473,15 @@ function measure(text: string): { byteLength: number; lineCount: number } {
  * their indentation would point at lanes that are no longer on the page.
  */
 function filterRows(rows: readonly TranscriptRow[], query: string): readonly TranscriptRow[] {
-	const needle = query.trim().toLowerCase()
+	const needle = Str.toLowerCase(Str.trim(query))
 	if (needle === "") return rows
-	return rows
-		.filter((row) => {
+	return Arr.map(
+		Arr.filter(rows, (row) => {
 			const haystack = rowText(row)
-			return haystack !== undefined && haystack.toLowerCase().includes(needle)
-		})
-		.map((row) => (row.depth === 0 ? row : { ...row, depth: 0 }))
+			return haystack !== undefined && Str.includes(needle)(Str.toLowerCase(haystack))
+		}),
+		(row) => (row.depth === 0 ? row : { ...row, depth: 0 }),
+	)
 }
 
 function rowText(row: TranscriptRow): string | undefined {
@@ -1537,15 +1546,17 @@ function structureLabel(span: AiSessionSpan, category: AiSpanCategory): string {
 }
 
 function textOf(parts: readonly SpanMessagePart[]): string {
-	return parts
-		.map((part) => (part.kind === "text" ? part.text : ""))
-		.join("\n")
-		.trim()
+	return Str.trim(
+		Arr.join(
+			Arr.map(parts, (part) => (part.kind === "text" ? part.text : "")),
+			"\n",
+		),
+	)
 }
 
 function dedupeById(spans: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
 	const seen = new Set<string>()
-	return spans.filter((span) => (seen.has(span.spanId) ? false : (seen.add(span.spanId), true)))
+	return Arr.filter(spans, (span) => (seen.has(span.spanId) ? false : (seen.add(span.spanId), true)))
 }
 
 function distinct(values: readonly string[]): readonly string[] {

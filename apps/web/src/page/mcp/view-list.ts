@@ -1,14 +1,14 @@
-import { formatErrorRate } from "@maple/ui/lib/format"
-import { errorRate, formatDurationNs, formatToolCount } from "@maple/web-data/lib/tool-analytics"
+import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
+import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { icon } from "../../ui/icon"
-import { serviceDot } from "../../ui/values"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import { serviceDot } from "@maple/views/ui/values"
 import {
 	errorTone,
 	shareCell,
 	th,
-	toolRowClass,
+	toolTableRow,
 	toolTable,
 	toolTableBody,
 	toolTableFooter,
@@ -25,6 +25,10 @@ import {
 	sectionTitle,
 	volumeSpark,
 } from "./view-kit"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // `/mcp`: every service that answers MCP requests, one row each.
 
@@ -43,51 +47,47 @@ const serverRow = <M>(
 	options: ListBodyOptions<M>,
 ): Html => {
 	const rate = errorRate(row)
-	return h.button(
-		[h.Type("button"), h.Class(toolRowClass(false)), h.OnClick(options.onOpenServer(row.service))],
-		[
-			h.span(
-				[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2")],
-				[
-					serviceDot(h, { serviceName: row.service }),
-					h.span(
-						[h.Class("block min-w-0 truncate font-mono text-xs text-foreground")],
-						[row.service],
-					),
-				],
-			),
-			h.span(
-				[
-					h.Class(
-						"hidden w-24 shrink-0 font-mono text-2xs text-muted-foreground @min-[900px]/panel:block",
-					),
-				],
-				[row.protocolVersion],
-			),
-			volumeSpark(h, options.spark, `mcp-server-spark-${row.service}`, row.spark),
-			numberCell(h, formatToolCount(row.calls), "w-20 text-foreground"),
-			shareCell(h, { ratio: rate, max: maxRate, label: formatErrorRate(rate), tone: errorTone(rate) }),
-			numberCell(h, formatDurationNs(row.p95), "w-20 text-foreground-soft"),
-			numberCell(h, String(row.tools), "hidden w-14 text-muted-foreground @min-[640px]/panel:block"),
-			h.span(
-				[
-					h.Class(
-						"hidden w-40 shrink-0 items-center gap-1.5 pl-4 font-mono text-xs @min-[800px]/panel:flex",
-					),
-				],
-				[
-					clientIcon(h, row.topClient, 12),
-					row.topClient,
-					h.span([h.Class("text-foreground-subtle")], [`${Math.round(row.topClientShare * 100)}%`]),
-				],
-			),
-			lastSeenCell(h, row.lastCallMs, options.nowMs, options.timeZone),
-			h.span(
-				[h.Class("flex w-3.5 shrink-0 items-center justify-end text-foreground-subtle")],
-				[icon(h, "ChevronRightIcon", { size: 14 })],
-			),
-		],
-	)
+	return toolTableRow(h, { onClick: options.onOpenServer(row.service) }, [
+		hstack(h, { gap: "2", shrink: true, grow: true, as: "span", className: "w-0" }, [
+			serviceDot(h, { serviceName: row.service }),
+			h.span([h.Class("block min-w-0 truncate font-mono text-xs text-foreground")], [row.service]),
+		]),
+		h.span(
+			[
+				h.Class(
+					"hidden w-24 shrink-0 font-mono text-2xs text-muted-foreground @min-[900px]/panel:block",
+				),
+			],
+			[row.protocolVersion],
+		),
+		volumeSpark(h, options.spark, `mcp-server-spark-${row.service}`, row.spark),
+		numberCell(h, formatNumber(row.calls), "w-20 text-foreground"),
+		shareCell(h, { ratio: rate, max: maxRate, label: formatErrorRate(rate), tone: errorTone(rate) }),
+		numberCell(h, formatDurationNs(row.p95), "w-20 text-foreground-soft"),
+		numberCell(h, String(row.tools), "hidden w-14 text-muted-foreground @min-[640px]/panel:block"),
+		h.span(
+			[
+				h.Class(
+					"hidden w-40 shrink-0 items-center gap-1.5 pl-4 font-mono text-xs @min-[800px]/panel:flex",
+				),
+			],
+			[
+				clientIcon(h, row.topClient, 12),
+				row.topClient,
+				h.span([h.Class("text-foreground-subtle")], [`${Math.round(row.topClientShare * 100)}%`]),
+			],
+		),
+		lastSeenCell(h, row.lastCallMs, options.nowMs, options.timeZone),
+		hstack(
+			h,
+			{
+				justify: "end",
+				as: "span",
+				className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }),
+			},
+			[icon(h, "ChevronRightIcon", { size: 14 })],
+		),
+	])
 }
 
 /** The quiet strip under the table: any server that follows the conventions joins the list. */
@@ -142,16 +142,16 @@ export const listBody = <M>(
 	rows: ReadonlyArray<McpServerRow>,
 	options: ListBodyOptions<M>,
 ): Html => {
-	const maxRate = Math.max(...rows.map(errorRate), 0.0001)
-	const calls = rows.reduce((sum, row) => sum + row.calls, 0)
-	const errors = rows.reduce((sum, row) => sum + row.errors, 0)
+	const maxRate = Math.max(...Arr.map(rows, errorRate), 0.0001)
+	const calls = Arr.reduce(rows, 0, (sum, row) => sum + row.calls)
+	const errors = Arr.reduce(rows, 0, (sum, row) => sum + row.errors)
 	return h.section(
 		[h.AriaLabel("Servers"), h.Class("@container/panel min-w-0 border-t border-border px-6 pt-5 pb-6")],
 		[
 			sectionTitle(h, "Servers", String(rows.length)),
 			toolTable(h, [
 				toolTableHead(h, [
-					th(h, { label: "Server", width: "w-0 flex-1 min-w-0" }),
+					th(h, { label: "Server", width: columnClass({ min: "0" }) }),
 					th(h, {
 						label: "Protocol",
 						width: "w-24 shrink-0",
@@ -163,7 +163,10 @@ export const listBody = <M>(
 						hidden: "hidden @min-[720px]/panel:flex",
 					}),
 					th(h, { label: "Tool calls", width: "w-20 shrink-0", align: "right" }),
-					th(h, { label: "Failed", width: "w-36 shrink-0 pl-6" }),
+					th(h, {
+						label: "Failed",
+						width: columnClass({ width: "36", shrink: false, inset: "6" }),
+					}),
 					th(h, { label: "P95", width: "w-20 shrink-0", align: "right" }),
 					th(h, {
 						label: "Tools",
@@ -186,13 +189,13 @@ export const listBody = <M>(
 				]),
 				toolTableBody(
 					h,
-					rows.map((row) => serverRow(h, row, maxRate, options)),
+					Arr.map(rows, (row) => serverRow(h, row, maxRate, options)),
 				),
 			]),
 			toolTableFooter(
 				h,
 				`${rows.length} MCP ${rows.length === 1 ? "server" : "servers"}`,
-				`· ${formatToolCount(calls)} tool calls · ${errors} failed`,
+				`· ${formatNumber(calls)} tool calls · ${formatNumber(errors)} failed`,
 			),
 			addServerStrip(h, options.onInstrument),
 		],

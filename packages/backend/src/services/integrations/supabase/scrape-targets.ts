@@ -12,7 +12,7 @@ import {
 } from "@maple/db/tables"
 import { ScrapeTargetId, type SupabaseConnectionId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec } from "effect"
 
 /** Supabase allows 10 metrics requests a minute per project; one a minute leaves headroom. */
 export const SUPABASE_SCRAPE_INTERVAL_SECONDS = 60
@@ -67,8 +67,8 @@ type DesiredTarget = ReturnType<typeof desiredTarget>
 
 const sameLabels = (stored: ScrapeTargetRow["labelsJson"], desired: DesiredTarget["labelsJson"]) =>
 	stored !== null &&
-	Object.keys(stored).length === Object.keys(desired).length &&
-	Object.entries(desired).every(([key, value]) => stored[key] === value)
+	Rec.keys(stored).length === Rec.keys(desired).length &&
+	Arr.every(Rec.toEntries(desired), ([key, value]) => stored[key] === value)
 
 /** Whether a stored target already matches what its project wants. */
 const isCurrent = (target: ScrapeTargetRow, desired: DesiredTarget) =>
@@ -122,7 +122,7 @@ export const reconcileSupabaseScrapeTargets = Effect.fnUntraced(function* (
 			.select()
 			.where(($) => [$.orgId.eq(connection.orgId), $.managedBy.eq(managedBy)]),
 	)
-	const targetsById = new Map(targets.map((target) => [target.id, target]))
+	const targetsById = new Map(Arr.map(targets, (target) => [target.id, target]))
 
 	const setProjectTarget = (project: SupabaseProjectRow, scrapeTargetId: ScrapeTargetId | null) =>
 		db.run(
@@ -184,15 +184,15 @@ export const reconcileSupabaseScrapeTargets = Effect.fnUntraced(function* (
 
 	const changes = yield* Effect.forEach(projects, reconcileProject)
 	const referenced = new Set(
-		projects.flatMap((project) => (project.scrapeTargetId === null ? [] : [project.scrapeTargetId])),
+		Arr.flatMap(projects, (project) => (project.scrapeTargetId === null ? [] : [project.scrapeTargetId])),
 	)
-	const orphans = targets.filter((target) => !referenced.has(target.id))
+	const orphans = Arr.filter(targets, (target) => !referenced.has(target.id))
 	yield* Effect.forEach(orphans, (target) => deleteTarget(target.id), { discard: true })
 
 	return {
-		created: changes.filter((change) => change === "created").length,
-		updated: changes.filter((change) => change === "updated").length,
-		deleted: changes.filter((change) => change === "deleted").length + orphans.length,
+		created: Arr.filter(changes, (change) => change === "created").length,
+		updated: Arr.filter(changes, (change) => change === "updated").length,
+		deleted: Arr.filter(changes, (change) => change === "deleted").length + orphans.length,
 	} satisfies ScrapeTargetReconcileSummary
 })
 

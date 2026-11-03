@@ -10,8 +10,8 @@ import {
 	type V2StatusPageIncidentUpdateParams,
 	type V2StatusPageUpdateParams,
 } from "@maple/domain/http/v2"
-import { Effect, Option, Schema } from "effect"
-import { toLoadFailure } from "../../../data/load-failure"
+import { Effect, Option, Schema, Array as Arr } from "effect"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
 import { listMonitors } from "../../alerts/shared/uptime-commands"
@@ -79,11 +79,11 @@ export const listPageSummaries = Effect.gen(function* () {
 		],
 		{ concurrency: "unbounded" },
 	)
-	return pages.map((page, index) =>
+	return Arr.map(pages, (page, index) =>
 		summarizePage({
 			page,
 			components: components[index] ?? [],
-			incidents: incidents.filter((incident) => incident.page_id === page.id),
+			incidents: Arr.filter(incidents, (incident) => incident.page_id === page.id),
 			monitors,
 		}),
 	)

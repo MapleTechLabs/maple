@@ -17,7 +17,7 @@ import { PGlite } from "@electric-sql/pglite"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as Migrate from "@maple-dev/effect-orm/migrate"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Console, Effect, Redacted, Schema } from "effect"
+import { Console, Effect, Redacted, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { runMigrations } from "../src/migrate"
 import { withBranchConnection } from "./planetscale-connection"
@@ -33,14 +33,15 @@ const Column = Schema.Struct({
 const Constraint = Schema.Struct({ table: Schema.String, name: Schema.String, def: Schema.String })
 const Index = Schema.Struct({ table: Schema.String, name: Schema.String, def: Schema.String })
 
-const LEDGER = new Set<string>(Object.values(Migrate.LEDGER_TABLES))
+const LEDGER = new Set<string>(Rec.values(Migrate.LEDGER_TABLES))
 
 /** Tables a migrator keeps its ledger in (effect-orm's, alchemy's `__alchemy_migrations`), not schema. */
-const isLedger = (table: string) => LEDGER.has(table) || table.startsWith("__")
+const isLedger = (table: string) => LEDGER.has(table) || Str.startsWith("__")(table)
 
 /** Every object of `public`, one line each, keyed so the two sides line up. */
 const catalog = Effect.gen(function* () {
-	const orm = Orm.fromSqlClient(yield* SqlClient.SqlClient, { dialect: PG.postgresDialect })
+	const sql = yield* SqlClient.SqlClient
+	const orm = Orm.fromSqlClient(sql, { dialect: PG.postgresDialect })
 	const columns = yield* orm.query(
 		Orm.sql`SELECT table_name AS "table", column_name AS "column", udt_name AS "type", is_nullable AS nullable,
 			column_default AS "default", identity_generation AS identity
@@ -59,18 +60,21 @@ const catalog = Effect.gen(function* () {
 		Index,
 	)
 	return new Map<string, string>([
-		...columns
-			.filter((c) => !isLedger(c.table))
-			.map((c): [string, string] => [
+		...Arr.map(
+			Arr.filter(columns, (c) => !isLedger(c.table)),
+			(c): [string, string] => [
 				`column ${c.table}.${c.column}`,
 				`${c.type} ${c.nullable === "YES" ? "null" : "not null"} default=${c.default} identity=${c.identity}`,
-			]),
-		...constraints
-			.filter((c) => !isLedger(c.table))
-			.map((c): [string, string] => [`constraint ${c.table}.${c.name}`, c.def]),
-		...indexes
-			.filter((i) => !isLedger(i.table))
-			.map((i): [string, string] => [`index ${i.table}.${i.name}`, i.def]),
+			],
+		),
+		...Arr.map(
+			Arr.filter(constraints, (c) => !isLedger(c.table)),
+			(c): [string, string] => [`constraint ${c.table}.${c.name}`, c.def],
+		),
+		...Arr.map(
+			Arr.filter(indexes, (i) => !isLedger(i.table)),
+			(i): [string, string] => [`index ${i.table}.${i.name}`, i.def],
+		),
 	])
 })
 
@@ -96,7 +100,7 @@ const check = (url: string) =>
 			Effect.provide(PgClient.layer({ url: Redacted.make(url), maxConnections: 1, prepare: false })),
 		)
 		const keys = [...new Set([...want.keys(), ...have.keys()])].sort()
-		const differences = keys.flatMap((key) => {
+		const differences = Arr.flatMap(keys, (key) => {
 			const expected = want.get(key)
 			const actual = have.get(key)
 			if (expected === actual) return []
@@ -112,7 +116,7 @@ const check = (url: string) =>
 	}).pipe(Effect.orDie)
 
 const main = async (): Promise<void> => {
-	const branch = process.argv.slice(2).find((arg) => !arg.startsWith("--")) ?? "main"
+	const branch = process.argv.slice(2).find((arg) => !Str.startsWith("--")(arg)) ?? "main"
 	const databaseUrl = process.env.DATABASE_URL
 	const run = (url: string) =>
 		Effect.runPromise(check(url)).then((differences) => {

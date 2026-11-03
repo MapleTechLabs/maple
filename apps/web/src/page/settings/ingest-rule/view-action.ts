@@ -1,16 +1,19 @@
 import { IngestRuleDetector, IngestRuleRedactMethod, IngestRuleScope } from "@maple/domain/ingest-rules"
 import type { Html } from "foldkit/html"
-import * as Checkbox from "../../../ui/checkbox"
-import { input } from "../../../ui/input"
-import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "../../../ui/input-group"
-import { label } from "../../../ui/label"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { textarea } from "../../../ui/textarea"
+import * as Checkbox from "@maple/views/ui/checkbox"
+import { input } from "@maple/views/ui/input"
+import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "@maple/views/ui/input-group"
+import { label } from "@maple/views/ui/label"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { textarea } from "@maple/views/ui/textarea"
 import type { ActionType } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { DETECTOR_LABELS } from "./summary"
 import { clause, type H } from "./view-form"
+import { typography } from "@maple/views/ui/typography"
+import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The "then ..." half of the sentence: drop with a keep share, or redact.
 
@@ -30,8 +33,12 @@ const METHOD_LABELS = {
 const fieldLabel = (h: H, id: string, text: string): Html => label(h, { attributes: [h.For(id)] }, [text])
 
 const checkboxRow = (h: H, id: string, isChecked: boolean, text: string, onToggle: Message): Html =>
-	h.label(
-		[h.Key(id), h.Id(Checkbox.labelId(id)), h.Class("flex items-center gap-2 text-sm")],
+	label(
+		h,
+		{
+			className: "flex items-center gap-2 text-sm font-normal",
+			attributes: [h.Key(id), h.Id(Checkbox.labelId(id))],
+		},
 		[
 			...Checkbox.view(h, {
 				model: { isChecked },
@@ -59,10 +66,9 @@ const dropControls = (h: H, model: Model): ReadonlyArray<Html> => [
 				}),
 				inputGroupAddon(h, { align: "inline-end" }, [inputGroupText(h, {}, ["%"])]),
 			]),
-			h.p(
-				[h.Class("text-muted-foreground text-xs")],
-				["0 drops every match. Sampling follows the trace id, so traces stay whole."],
-			),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				"0 drops every match. Sampling follows the trace id, so traces stay whole.",
+			]),
 		],
 	),
 ]
@@ -70,31 +76,27 @@ const dropControls = (h: H, model: Model): ReadonlyArray<Html> => [
 const redactControls = (h: H, model: Model): ReadonlyArray<Html> => {
 	const draft = model.draft
 	return [
-		h.div(
-			[h.Class("flex flex-col gap-1.5")],
-			[
-				fieldLabel(h, "ingest-rule-keys", "Keys"),
-				input(h, {
-					id: "ingest-rule-keys",
-					attributes: [
-						h.Value(draft.keys),
-						h.Placeholder("*password*, http.request.header.authorization"),
-						h.OnInput((value) => Message.ChangedText({ part: "keys", value })),
-					],
-				}),
-				h.p(
-					[h.Class("text-muted-foreground text-xs")],
-					["Comma-separated. The whole value is replaced. * matches any characters."],
-				),
-			],
-		),
+		vstack(h, { gap: "1.5" }, [
+			fieldLabel(h, "ingest-rule-keys", "Keys"),
+			input(h, {
+				id: "ingest-rule-keys",
+				attributes: [
+					h.Value(draft.keys),
+					h.Placeholder("*password*, http.request.header.authorization"),
+					h.OnInput((value) => Message.ChangedText({ part: "keys", value })),
+				],
+			}),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				"Comma-separated. The whole value is replaced. * matches any characters.",
+			]),
+		]),
 		h.fieldset(
-			[h.Class("flex flex-col gap-2")],
+			[h.Class(vstackClass({ gap: "2" }))],
 			[
 				h.legend([h.Class("mb-1 text-sm font-medium")], ["Detect"]),
 				h.div(
 					[h.Class("grid gap-2 sm:grid-cols-2")],
-					IngestRuleDetector.literals.map((detector) =>
+					Arr.map(IngestRuleDetector.literals, (detector) =>
 						checkboxRow(
 							h,
 							`ingest-rule-detector-${detector}`,
@@ -106,33 +108,29 @@ const redactControls = (h: H, model: Model): ReadonlyArray<Html> => {
 				),
 			],
 		),
-		h.div(
-			[h.Class("flex flex-col gap-1.5")],
-			[
-				fieldLabel(h, "ingest-rule-patterns", "Custom patterns"),
-				textarea(h, {
-					id: "ingest-rule-patterns",
-					size: "sm",
-					controlClassName: "font-mono",
-					attributes: [
-						h.Value(draft.patterns),
-						h.Placeholder("ORD-[0-9]+"),
-						h.OnInput((value) => Message.ChangedText({ part: "patterns", value })),
-					],
-				}),
-				h.p(
-					[h.Class("text-muted-foreground text-xs")],
-					["One regex per line. Only the matched text is replaced."],
-				),
-			],
-		),
+		vstack(h, { gap: "1.5" }, [
+			fieldLabel(h, "ingest-rule-patterns", "Custom patterns"),
+			textarea(h, {
+				id: "ingest-rule-patterns",
+				size: "sm",
+				controlClassName: "font-mono",
+				attributes: [
+					h.Value(draft.patterns),
+					h.Placeholder("ORD-[0-9]+"),
+					h.OnInput((value) => Message.ChangedText({ part: "patterns", value })),
+				],
+			}),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				"One regex per line. Only the matched text is replaced.",
+			]),
+		]),
 		h.fieldset(
-			[h.Class("flex flex-col gap-2")],
+			[h.Class(vstackClass({ gap: "2" }))],
 			[
 				h.legend([h.Class("mb-1 text-sm font-medium")], ["Look in"]),
 				h.div(
 					[h.Class("grid gap-2 sm:grid-cols-2")],
-					IngestRuleScope.literals.map((scope) =>
+					Arr.map(IngestRuleScope.literals, (scope) =>
 						checkboxRow(
 							h,
 							`ingest-rule-scope-${scope}`,
@@ -144,32 +142,26 @@ const redactControls = (h: H, model: Model): ReadonlyArray<Html> => {
 				),
 			],
 		),
-		h.div(
-			[h.Class("flex flex-col gap-1.5")],
-			[
-				h.span([h.Class("text-sm font-medium")], ["Replace with"]),
-				segmentedSelect<IngestRuleRedactMethod, Message>(h, {
-					size: "sm",
-					ariaLabel: "Redaction method",
-					value: draft.method,
-					onChange: (method) => Message.PickedMethod({ method }),
-					options: IngestRuleRedactMethod.literals.map((method) => ({
-						value: method,
-						label: METHOD_LABELS[method],
-					})),
-				}),
-				h.p(
-					[h.Class("text-muted-foreground text-xs")],
-					[
-						draft.method === "mask"
-							? "Key matches become [REDACTED]; detector matches become [REDACTED:email] and the like."
-							: draft.method === "hash"
-								? "Writes hash:<hex16>, a keyed hash that is the same for the same value."
-								: "Deletes attributes matched by key. Detector and pattern matches are masked.",
-					],
-				),
-			],
-		),
+		vstack(h, { gap: "1.5" }, [
+			typography(h, { size: "sm", weight: "medium" }, ["Replace with"]),
+			segmentedSelect<IngestRuleRedactMethod, Message>(h, {
+				size: "sm",
+				ariaLabel: "Redaction method",
+				value: draft.method,
+				onChange: (method) => Message.PickedMethod({ method }),
+				options: Arr.map(IngestRuleRedactMethod.literals, (method) => ({
+					value: method,
+					label: METHOD_LABELS[method],
+				})),
+			}),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				draft.method === "mask"
+					? "Key matches become [REDACTED]; detector matches become [REDACTED:email] and the like."
+					: draft.method === "hash"
+						? "Writes hash:<hex16>, a keyed hash that is the same for the same value."
+						: "Deletes attributes matched by key. Detector and pattern matches are masked.",
+			]),
+		]),
 	]
 }
 

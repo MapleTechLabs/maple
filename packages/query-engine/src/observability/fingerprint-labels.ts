@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { TimeRange } from "./types"
@@ -20,17 +20,20 @@ export interface OccurrenceSpanFacts {
  * Used in place of "Unknown Error", which hid that 22k events were bot 404s.
  */
 export const spanErrorLabel = (span: OccurrenceSpanFacts): string => {
-	const method = span.httpMethod.trim()
-	const status = span.httpStatus.trim()
-	const name = span.spanName.trim()
+	const method = Str.trim(span.httpMethod)
+	const status = Str.trim(span.httpStatus)
+	const name = Str.trim(span.spanName)
 	// Server span names usually lead with the method already ("GET /api/org").
 	const target =
-		span.httpRoute.trim() ||
-		(method !== "" && name.toUpperCase().startsWith(`${method.toUpperCase()} `)
-			? name.slice(method.length + 1)
+		Str.trim(span.httpRoute) ||
+		(method !== "" && Str.startsWith(`${Str.toUpperCase(method)} `)(Str.toUpperCase(name))
+			? Str.slice(method.length + 1)(name)
 			: name)
 	if (method === "" && status === "") return name === "" ? "" : `${name} (no exception)`
-	return [method, status, target].filter((part) => part !== "").join(" ")
+	return Arr.join(
+		Arr.filter([method, status, target], (part) => part !== ""),
+		" ",
+	)
 }
 
 /**
@@ -55,19 +58,19 @@ export const labelExceptionlessFingerprints = Effect.fn("Observability.labelExce
 			),
 			{ profile: "list", context: "errorFingerprintOccurrences" },
 		)
-		const withSpan = occurrences.filter((o) => o.spanId !== "" && o.traceId !== "")
+		const withSpan = Arr.filter(occurrences, (o) => o.spanId !== "" && o.traceId !== "")
 		if (withSpan.length === 0) return labels
 		const spans = yield* executor.compiledQuery(
 			CH.compile(
 				CH.errorOccurrenceSpansQuery({
-					traceIds: withSpan.map((o) => o.traceId),
-					spanIds: withSpan.map((o) => o.spanId),
+					traceIds: Arr.map(withSpan, (o) => o.traceId),
+					spanIds: Arr.map(withSpan, (o) => o.spanId),
 				}),
 				params,
 			),
 			{ profile: "list", context: "errorOccurrenceSpans" },
 		)
-		const bySpan = new Map(spans.map((span) => [span.spanId, span]))
+		const bySpan = new Map(Arr.map(spans, (span) => [span.spanId, span]))
 		for (const occurrence of withSpan) {
 			const span = bySpan.get(occurrence.spanId)
 			const label = span === undefined ? "" : spanErrorLabel(span)

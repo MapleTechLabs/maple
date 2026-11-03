@@ -3,20 +3,25 @@ import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../../ui/button"
-import { icon, type IconName } from "../../../../ui/icon"
-import { item, itemContent, itemMedia, itemTitle } from "../../../../ui/item"
-import { keyValue, keyValueList } from "../../../../ui/key-value"
+import { button } from "@maple/views/ui/button"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { item, itemContent, itemMedia, itemTitle } from "@maple/views/ui/item"
+import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { toolLabel } from "./tool-metadata"
 import { inputRecord } from "./tool-output"
 import { dashboardSummary } from "./view-approval"
+import { typography } from "@maple/views/ui/typography"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 // `ApprovalCard` and `TaskCard`: a proposal waiting on the user, and
 // a sub-agent run as a line.
 
-const stringify = (input: unknown): string => JSON.stringify(input, null, 2) ?? String(input)
+const stringify = (input: unknown): string =>
+	Option.getOrElse(encodePrettyJsonOption(input), () => String(input))
 
 type Formatted =
 	| { readonly kind: "scalar"; readonly text: string }
@@ -28,13 +33,12 @@ export const asUtcInstant = (iso: string): string => (/(Z|[+-]\d{2}:?\d{2})$/.te
 
 /** An argument key for display: `RuleId`, `rule_id` and `ruleId` all read "Rule id". */
 const argumentLabel = (key: string): string => {
-	const words = key
-		.replace(/([a-z\d])([A-Z])/g, "$1 $2")
-		.split(/[-_\s]+/)
-		.filter(Boolean)
-		.map((word) => word.toLowerCase())
-	const sentence = words.join(" ")
-	return sentence.charAt(0).toUpperCase() + sentence.slice(1)
+	const words = Arr.map(
+		Arr.filter(Str.split(/[-_\s]+/)(Str.replace(/([a-z\d])([A-Z])/g, "$1 $2")(key)), Boolean),
+		(word) => Str.toLowerCase(word),
+	)
+	const sentence = Arr.join(words, " ")
+	return Str.toUpperCase(sentence.charAt(0)) + Str.slice(1)(sentence)
 }
 
 const formatValue = (value: unknown, timeZone: string): Formatted => {
@@ -49,7 +53,7 @@ const formatValue = (value: unknown, timeZone: string): Formatted => {
 				withYear: true,
 			}),
 		}
-	const text = typeof value === "string" ? value : JSON.stringify(value)
+	const text = typeof value === "string" ? value : encodeJson(value)
 	return text.length > 200 ? { kind: "blob", chars: text.length } : { kind: "scalar", text }
 }
 
@@ -61,24 +65,26 @@ const approvalSummary = <M>(h: HtmlBuilder<M>, input: unknown, timeZone: string)
 	Option.match(inputRecord(input), {
 		onNone: () => h.pre([h.Class(RAW_CLASS)], [stringify(input)]),
 		onSome: (record) => {
-			const entries = Object.entries(record).filter(
+			const entries = Arr.filter(
+				Rec.toEntries(record),
 				([, value]) => value !== undefined && value !== null && value !== "",
 			)
 			if (entries.length === 0)
-				return h.div([h.Class("text-xs text-muted-foreground")], ["No input fields"])
+				return typography(h, { size: "xs", tone: "muted", as: "div" }, ["No input fields"])
 			return keyValueList(
 				h,
 				{ layout: "grid", className: "gap-x-2 gap-y-1" },
-				entries.map(([key, value]) => {
+				Arr.map(entries, ([key, value]) => {
 					const formatted = formatValue(value, timeZone)
 					const label = argumentLabel(key)
 					return keyValue(h, { label, labelContent: h.span([h.Class("font-prose")], [label]) }, [
 						formatted.kind === "scalar"
 							? h.span([h.Class("font-medium")], [formatted.text])
-							: h.span(
-									[h.Class("text-muted-foreground italic")],
-									["JSON · ", String(formatted.chars), " chars"],
-								),
+							: typography(h, { tone: "muted", className: "italic" }, [
+									"JSON · ",
+									String(formatted.chars),
+									" chars",
+								]),
 					])
 				}),
 			)
@@ -87,10 +93,12 @@ const approvalSummary = <M>(h: HtmlBuilder<M>, input: unknown, timeZone: string)
 
 /** "Update Alert Rule" reads "Update alert rule"; acronyms like "SQL" keep their case. */
 const sentenceCase = (label: string): string =>
-	label
-		.split(" ")
-		.map((word, index) => (index > 0 && /^[A-Z][a-z]+$/.test(word) ? word.toLowerCase() : word))
-		.join(" ")
+	Arr.join(
+		Arr.map(Str.split(" ")(label), (word, index) =>
+			index > 0 && /^[A-Z][a-z]+$/.test(word) ? Str.toLowerCase(word) : word,
+		),
+		" ",
+	)
 
 export type ApprovalCardOptions<M> = Readonly<{
 	toolName: string
@@ -131,7 +139,8 @@ export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<
 						{
 							variant: "link",
 							size: "xs",
-							className: "mt-3 text-muted-foreground hover:text-foreground active:text-foreground",
+							className:
+								"mt-3 text-muted-foreground hover:text-foreground active:text-foreground",
 							attributes: [h.OnClick(options.onToggleRaw)],
 						},
 						[
@@ -201,6 +210,6 @@ const AGENTS = new Map<string, AgentPresentation>([
 /** `agentPresentation`: a sub-agent's label and look. */
 export const agentPresentation = (agent: string): AgentPresentation =>
 	AGENTS.get(agent) ??
-	(agent.startsWith("hypothesis-")
+	(Str.startsWith("hypothesis-")(agent)
 		? { label: "Hypothesis", activity: "Testing", icon: "CompassIcon" }
 		: { label: humanize(agent), activity: "Working", icon: "FaceRobotIcon" })

@@ -1,6 +1,6 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
 import { truncate } from "../lib/format"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListIntegrationsOutput } from "@maple/domain/mcp-outputs"
 import { INTEGRATION_PROVIDERS, type IntegrationInventory } from "@maple/domain/integration-inventory"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -28,7 +28,7 @@ const nextFor = (integration: Output["integrations"][number]): ReadonlyArray<Nex
 		case "github":
 			return [
 				doc.next("list_source_repositories", {}, "the repositories source tools can read"),
-				...(integration.feeds.some((feed) => feed.startsWith("GitHub Actions"))
+				...(Arr.some(integration.feeds, (feed) => Str.startsWith("GitHub Actions")(feed))
 					? [doc.next("ci_runs", {}, "recent workflow runs, failures and durations")]
 					: []),
 			]
@@ -78,7 +78,7 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 			"revoked grants, failing or stale pollers, repositories that do not sync, scrape targets that error. Each " +
 			"provider lists its resources (repositories, zones, Workers, Logpush jobs, Hyperdrive configs, Railway " +
 			"environments, databases, scrape targets) worst first. Answers 'what is connected' and 'why is my Cloudflare / " +
-			"Railway / PlanetScale data missing'. Read from Maple's own state, so it never calls the providers.",
+			"Railway / PlanetScale data missing'. Read from Maple's own state, so it never calls the providers. Which sender stopped sending: list_sources.",
 		parameters: Schema.Struct({
 			provider: P.optionalOneOf(
 				INTEGRATION_PROVIDERS,
@@ -102,15 +102,19 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				"maple.integrations.connected": inventory.integrations.length,
-				"maple.integrations.unhealthy": inventory.integrations.filter((i) => i.status !== "healthy")
-					.length,
+				"maple.integrations.unhealthy": Arr.filter(
+					inventory.integrations,
+					(i) => i.status !== "healthy",
+				).length,
 			})
-			return toStructured(inventory, provider, yield* Clock.currentTimeMillis)
+			const now = yield* Clock.currentTimeMillis
+			return toStructured(inventory, provider, now)
 		}),
 		render: (output) => {
 			const filter = output.providerFilter
 			if (output.integrations.length === 0) {
-				const available = output.available.filter(
+				const available = Arr.filter(
+					output.available,
 					(a) => filter === undefined || a.provider === filter,
 				)
 				return {
@@ -126,17 +130,17 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 								: filter === "chat"
 									? "Connect it in Settings → Integrations. Each feeds:"
 									: "Connect it in Sources. Each feeds:",
-							...available.map((a) => `${a.provider}: ${a.feeds.join("; ")}`),
+							...Arr.map(available, (a) => `${a.provider}: ${Arr.join(a.feeds, "; ")}`),
 						],
 					},
 					blocks: [],
 				}
 			}
-			const unhealthy = output.integrations.filter((i) => i.status !== "healthy")
+			const unhealthy = Arr.filter(output.integrations, (i) => i.status !== "healthy")
 			const resourceTable = (integration: Output["integrations"][number]) =>
 				doc.table(
 					["Kind", "Name", "Status", "Last success", "Error / note"],
-					integration.resources.map((r) => [
+					Arr.map(integration.resources, (r) => [
 						r.kind,
 						r.name,
 						r.status,
@@ -149,7 +153,7 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 					? [
 							doc.table(
 								["Provider", "Status", "Account", "Unhealthy", "Problem"],
-								output.integrations.map((i) => [
+								Arr.map(output.integrations, (i) => [
 									i.provider,
 									i.status,
 									i.account ?? "",
@@ -157,8 +161,8 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 									truncate(i.problem ?? "", 200),
 								]),
 							),
-							...unhealthy.flatMap((i) =>
-								i.resources.some((r) => r.status !== "healthy")
+							...Arr.flatMap(unhealthy, (i) =>
+								Arr.some(i.resources, (r) => r.status !== "healthy")
 									? [doc.heading(`${i.provider}: worst resources`), resourceTable(i)]
 									: [],
 							),
@@ -166,25 +170,28 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 								? []
 								: [
 										doc.text(
-											`Not connected: ${output.available.map((a) => a.provider).join(", ")}.`,
+											`Not connected: ${Arr.join(
+												Arr.map(output.available, (a) => a.provider),
+												", ",
+											)}.`,
 										),
 									]),
 							doc.text(
 								"Only resources with a problem are listed. `list_integrations provider=<name>` lists every resource of one provider, with the tools that read its data.",
 							),
 						]
-					: output.integrations.flatMap((i) => [
+					: Arr.flatMap(output.integrations, (i) => [
 							doc.fields([
 								["Status", i.status],
 								["Account", i.account ?? undefined],
 								["Connected", i.connectedAt ?? undefined],
 								["Problem", i.problem ?? undefined],
-								["Feeds", i.feeds.join("; ")],
+								["Feeds", Arr.join(i.feeds, "; ")],
 							]),
 							...(i.resources.length === 0 ? [] : [resourceTable(i)]),
 						])
-			const shown = output.integrations.reduce((n, i) => n + i.resources.length, 0)
-			const total = output.integrations.reduce((n, i) => n + i.resourceCount, 0)
+			const shown = Arr.reduce(output.integrations, 0, (n, i) => n + i.resources.length)
+			const total = Arr.reduce(output.integrations, 0, (n, i) => n + i.resourceCount)
 			return {
 				title: filter === undefined ? "Integrations" : `Integration: ${filter}`,
 				blocks,
@@ -205,16 +212,16 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 											),
 										]
 									: []),
-								...unhealthy
-									.filter((i) => i.resources.length >= OVERVIEW_RESOURCES)
-									.map((i) =>
+								...Arr.map(
+									Arr.filter(unhealthy, (i) => i.resources.length >= OVERVIEW_RESOURCES),
+									(i) =>
 										doc.next(
 											TOOL,
 											{ provider: i.provider },
 											`every ${i.provider} resource`,
 										),
-									),
-								...(output.integrations.some((i) => PLATFORM_PROVIDERS.has(i.provider))
+								),
+								...(Arr.some(output.integrations, (i) => PLATFORM_PROVIDERS.has(i.provider))
 									? [
 											doc.next(
 												"list_infra",
@@ -224,7 +231,7 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 										]
 									: []),
 							]
-						: output.integrations.flatMap(nextFor),
+						: Arr.flatMap(output.integrations, nextFor),
 			}
 		},
 	})
@@ -238,9 +245,9 @@ const toStructured = (
 	const cap = provider === undefined ? OVERVIEW_RESOURCES : PROVIDER_RESOURCES
 	return {
 		generatedAt: new Date(now).toISOString(),
-		integrations: inventory.integrations
-			.filter((i) => provider === undefined || i.provider === provider)
-			.map((i) => ({
+		integrations: Arr.map(
+			Arr.filter(inventory.integrations, (i) => provider === undefined || i.provider === provider),
+			(i) => ({
 				provider: i.provider,
 				status: i.status,
 				account: i.account,
@@ -248,21 +255,25 @@ const toStructured = (
 				problem: i.problem,
 				feeds: i.feeds,
 				// The overview only needs the resources that explain a problem.
-				resources: i.resources
-					.filter((r) => provider !== undefined || r.status !== "healthy")
-					.slice(0, cap)
-					.map((r) => ({
+				resources: Arr.map(
+					Arr.filter(i.resources, (r) => provider !== undefined || r.status !== "healthy").slice(
+						0,
+						cap,
+					),
+					(r) => ({
 						kind: r.kind,
 						name: r.name,
 						status: r.status,
 						lastSuccessAt: iso(r.lastSuccessAt),
 						lastError: r.lastError,
 						note: r.note,
-					})),
+					}),
+				),
 				resourceCount: i.resources.length,
-				unhealthyCount: i.resources.filter((r) => r.status !== "healthy").length,
-			})),
-		available: inventory.available.map((a) => ({ provider: a.provider, feeds: a.feeds })),
+				unhealthyCount: Arr.filter(i.resources, (r) => r.status !== "healthy").length,
+			}),
+		),
+		available: Arr.map(inventory.available, (a) => ({ provider: a.provider, feeds: a.feeds })),
 		...(provider === undefined ? undefined : { providerFilter: provider }),
 	}
 }

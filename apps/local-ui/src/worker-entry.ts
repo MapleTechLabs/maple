@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec } from "effect"
 /**
  * The deployed local-mode dashboard's Worker entry, as a plain module. Static
  * assets come off the ASSETS binding; unknown routes fall back to the shell so
@@ -15,18 +16,21 @@ interface AssetsBinding {
  * `'wasm-unsafe-eval'` lets the code highlighter compile its WebAssembly lexer;
  * it does not enable JavaScript `eval`.
  */
-const CONTENT_SECURITY_POLICY = [
-	"default-src 'self'",
-	"script-src 'self' 'wasm-unsafe-eval'",
-	"style-src 'self' 'unsafe-inline'",
-	"img-src 'self' data:",
-	"font-src 'self' data:",
-	"connect-src 'self' http://127.0.0.1:* http://localhost:*",
-	"object-src 'none'",
-	"base-uri 'none'",
-	"form-action 'none'",
-	"frame-ancestors 'none'",
-].join("; ")
+const CONTENT_SECURITY_POLICY = Arr.join(
+	[
+		"default-src 'self'",
+		"script-src 'self' 'wasm-unsafe-eval'",
+		"style-src 'self' 'unsafe-inline'",
+		"img-src 'self' data:",
+		"font-src 'self' data:",
+		"connect-src 'self' http://127.0.0.1:* http://localhost:*",
+		"object-src 'none'",
+		"base-uri 'none'",
+		"form-action 'none'",
+		"frame-ancestors 'none'",
+	],
+	"; ",
+)
 
 const SECURITY_HEADERS = {
 	"content-security-policy": CONTENT_SECURITY_POLICY,
@@ -41,7 +45,7 @@ const SECURITY_HEADERS = {
 const withSecurityHeaders = (response: Response): Response => {
 	// Asset responses can be immutable; copy before setting headers.
 	const secured = new Response(response.body, response)
-	for (const [name, value] of Object.entries(SECURITY_HEADERS)) secured.headers.set(name, value)
+	for (const [name, value] of Rec.toEntries(SECURITY_HEADERS)) secured.headers.set(name, value)
 	return secured
 }
 

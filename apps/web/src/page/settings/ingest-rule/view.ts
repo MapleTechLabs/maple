@@ -1,14 +1,14 @@
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
-import { failureMessage } from "../../../data/load-failure"
-import { alert, alertDescription, alertTitle } from "../../../ui/alert"
-import { button, linkButton } from "../../../ui/button"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { input } from "../../../ui/input"
-import { label } from "../../../ui/label"
-import { skeleton } from "../../../ui/skeleton"
-import { switchControl } from "../../../ui/switch"
+import { failureMessage } from "@maple/views/data/load-failure"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { button, linkButton } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { input } from "@maple/views/ui/input"
+import { label } from "@maple/views/ui/label"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { switchControl } from "@maple/views/ui/switch"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { draftProblems } from "./form"
@@ -18,6 +18,9 @@ import type { Model } from "./model"
 import { actionClause } from "./view-action"
 import { conditionsClause, type H, signalsClause } from "./view-form"
 import { previewPanel } from "./view-preview"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `/settings/ingestion/rules/new` and `/:id`: the sentence form, its preview and the action bar.
 
@@ -39,26 +42,28 @@ const nameRow = (h: H, model: Model): Html =>
 					}),
 				],
 			),
-			h.label(
-				[h.Class("flex h-9 items-center gap-2 text-sm")],
-				[
-					...switchControl(h, {
-						id: "ingest-rule-enabled",
-						inputId: "ingest-rule-enabled-input",
-						isChecked: model.draft.enabled,
-						ariaLabel: "Enabled",
-						onToggle: Message.ToggledEnabled(),
-					}),
-					"Enabled",
-				],
-			),
+			label(h, { className: "flex h-9 items-center gap-2 text-sm font-normal" }, [
+				...switchControl(h, {
+					id: "ingest-rule-enabled",
+					inputId: "ingest-rule-enabled-input",
+					isChecked: model.draft.enabled,
+					ariaLabel: "Enabled",
+					onToggle: Message.ToggledEnabled(),
+				}),
+				"Enabled",
+			]),
 		],
 	)
 
 const problemsList = (h: H, problems: ReadonlyArray<string>): Html =>
 	problems.length === 0
-		? h.span(
-				[h.Class("text-severity-info flex items-center gap-1.5 text-xs")],
+		? hstack(
+				h,
+				{
+					gap: "1.5",
+					as: "span",
+					className: typographyClass({ size: "xs", className: "text-severity-info" }),
+				},
 				[icon(h, "CheckIcon", { size: 14 }), "Ready to save"],
 			)
 		: h.div(
@@ -74,7 +79,7 @@ const problemsList = (h: H, problems: ReadonlyArray<string>): Html =>
 							h.span([], ["Fix before saving:"]),
 							h.ul(
 								[h.AriaLabel("Fix before saving")],
-								problems.map((problem) =>
+								Arr.map(problems, (problem) =>
 									h.li([h.Key(problem), h.Class("text-foreground")], [problem]),
 								),
 							),
@@ -97,27 +102,21 @@ const actionBar = (h: H, model: Model): Html => {
 							alertDescription(h, [failureMessage(model.saveFailure)]),
 						]),
 					]),
-			h.div(
-				[h.Class("flex items-center justify-between gap-4")],
-				[
-					problemsList(h, problems),
-					h.div(
-						[h.Class("flex shrink-0 items-center gap-2")],
-						[
-							linkButton(h, { variant: "outline", href: ingestionHref() }, ["Cancel"]),
-							button(
-								h,
-								{
-									isDisabled: problems.length > 0 || !model.isAdmin,
-									isLoading: model.isSaving,
-									attributes: [h.OnClick(Message.ClickedSave())],
-								},
-								[model.editingId === null ? "Create rule" : "Save changes"],
-							),
-						],
+			hstack(h, { gap: "4", justify: "between" }, [
+				problemsList(h, problems),
+				hstack(h, { gap: "2", className: "shrink-0" }, [
+					linkButton(h, { variant: "outline", href: ingestionHref() }, ["Cancel"]),
+					button(
+						h,
+						{
+							isDisabled: problems.length > 0 || !model.isAdmin,
+							isLoading: model.isSaving,
+							attributes: [h.OnClick(Message.ClickedSave())],
+						},
+						[model.editingId === null ? "Create rule" : "Save changes"],
 					),
-				],
-			),
+				]),
+			]),
 		],
 	)
 }

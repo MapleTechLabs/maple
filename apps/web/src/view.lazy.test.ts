@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
 import { Lazy } from "foldkit/test"
 import { fromString } from "foldkit/url"
@@ -15,9 +15,10 @@ import { pages } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import { urlToAppRoute } from "./route"
 import * as Shell from "./shell"
-import * as Toast from "./ui/toast"
+import * as Toast from "@maple/views/ui/toast"
 import { settle } from "./update"
 import { view } from "./view"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const NOW = Date.parse("2026-10-01T12:00:00Z")
@@ -76,14 +77,14 @@ const SAMPLE_PATHS = [
 	"/dashboards/templates",
 	"/dashboards/00000000-0000-4000-8000-000000000003/widgets/w1",
 	"/code-review",
-	"/security",
-	"/security/findings",
-	"/security/runs",
+	"/security/code",
+	"/security/code/findings",
+	"/security/code/runs",
 	"/security/exposure",
 	"/security/runtimes",
 	"/security/dependencies",
-	"/security/runs/run_1",
-	"/security/findings/00000000-0000-4000-8000-000000000005/fp_1",
+	"/security/code/runs/run_1",
+	"/security/code/findings/00000000-0000-4000-8000-000000000005/fp_1",
 	"/agent-sessions",
 	"/agent-sessions/tools",
 	"/agent-sessions/tools/run_sql",
@@ -121,6 +122,7 @@ const entered = (path: string): Model =>
 		toasts: Toast.init("toasts"),
 		toastActions: {},
 		toastRootActions: {},
+		tooltip: TooltipHost.init("tooltip"),
 		page: null,
 		pageInstances: 0,
 		parkedPages: [],
@@ -135,14 +137,19 @@ const entered = (path: string): Model =>
 
 const body = (model: Model, h: HtmlBuilder<Message>) => view(model, h).body
 
-const ENTERED = SAMPLE_PATHS.map((path) => ({ path, model: entered(path) }))
+const ENTERED = Arr.map(SAMPLE_PATHS, (path) => ({ path, model: entered(path) }))
 
 describe("root view lazy page slot", () => {
 	test("every registered page has a sample URL", () => {
 		const reached = new Set(
-			ENTERED.flatMap(({ model }) => (model.page === null ? [] : [model.page._tag])),
+			Arr.flatMap(ENTERED, ({ model }) => (model.page === null ? [] : [model.page._tag])),
 		)
-		expect(pages.map((page) => page.id).filter((id) => !reached.has(id))).toEqual([])
+		expect(
+			Arr.filter(
+				Arr.map(pages, (page) => page.id),
+				(id) => !reached.has(id),
+			),
+		).toEqual([])
 	})
 
 	test.each(ENTERED)("$path re-renders the root without rebuilding the page", ({ model }) => {

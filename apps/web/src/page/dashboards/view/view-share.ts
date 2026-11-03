@@ -2,16 +2,21 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { confirmDialog } from "../../../ui/confirm-dialog"
-import { copyableField } from "../../../ui/copyable-field"
-import * as DialogView from "../../../ui/dialog-view"
-import { icon, type IconName } from "../../../ui/icon"
-import * as RadioGroup from "../../../ui/radio-group"
+import { button } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import { copyableField } from "@maple/views/ui/copyable-field"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { label } from "@maple/views/ui/label"
+import * as RadioGroup from "@maple/views/ui/radio-group"
 import { SHAREABLE_WIDGET_KINDS, unsupportedShareWidgets } from "../kit/share-support"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { type Access, boardShareOf, ShareMessage, shareUrl } from "./share"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { spaced } from "@maple/views/ui/spaced"
+import { Array as Arr } from "effect"
 
 // `ShareDashboardDialog` and `ShareLinkRow`: the share dialog and one link's row.
 
@@ -64,38 +69,35 @@ export const shareLinkRow = (
 	url: string,
 	replaceWarning: string,
 ): ReadonlyArray<Html> => [
-	h.div(
-		[h.Class("flex items-center gap-2")],
-		[
-			h.div(
-				[h.Class("min-w-0 flex-1")],
-				[
-					copyableField(h, {
-						id: "dashboard-share-link",
-						value: url,
-						copyLabel: "Share link",
-						copy: model.sharing.linkCopy,
-						toCopyMessage: (message) => wrap(ShareMessage.GotLinkCopyMessage({ message })),
-					}),
-				],
-			),
-			button(
-				h,
-				{
-					size: "sm",
-					variant: "outline",
-					attributes: [h.OnClick(wrap(ShareMessage.ClickedReplace()))],
-				},
-				[icon(h, "ArrowRotateClockwiseIcon"), "Replace"],
-			),
-		],
-	),
+	hstack(h, { gap: "2" }, [
+		h.div(
+			[h.Class("min-w-0 flex-1")],
+			[
+				copyableField(h, {
+					id: "dashboard-share-link",
+					value: url,
+					copyLabel: "Share link",
+					copy: model.sharing.linkCopy,
+					toCopyMessage: (message) => wrap(ShareMessage.GotLinkCopyMessage({ message })),
+				}),
+			],
+		),
+		button(
+			h,
+			{
+				size: "sm",
+				variant: "outline",
+				attributes: [h.OnClick(wrap(ShareMessage.ClickedReplace()))],
+			},
+			[icon(h, "ArrowRotateClockwiseIcon"), "Replace"],
+		),
+	]),
 	confirmDialog(h, {
 		slotId: "dashboard-share-replace",
 		model: model.sharing.replaceDialog,
 		toParentMessage: (message) => wrap(ShareMessage.GotReplaceDialogMessage({ message })),
 		title: "Replace this link?",
-		description: `${replaceWarning} This can't be undone.`,
+		description: `${replaceWarning} This cannot be undone.`,
 		confirmLabel: "Replace link",
 		isNested: true,
 		onConfirm: wrap(ShareMessage.ConfirmedReplace()),
@@ -107,27 +109,25 @@ const accessOption = (
 	config: RadioGroup.RadioGroupViewConfig<Message>,
 	option: (typeof ACCESS)[number],
 ): Html =>
-	h.label(
-		[
-			h.For(`share-${option.value}`),
-			h.Id(`share-${option.value}-label`),
-			h.Class(
-				"group flex cursor-pointer items-start gap-3 px-3.5 py-3 hover:bg-surface-sunken active:bg-surface-sunken has-[[data-checked]]:bg-accent/64",
-			),
-		],
+	label(
+		h,
+		{
+			className:
+				"group flex cursor-pointer items-start gap-3 px-3.5 py-3 font-normal hover:bg-surface-sunken active:bg-surface-sunken has-[[data-checked]]:bg-surface-strong",
+			attributes: [h.For(`share-${option.value}`), h.Id(`share-${option.value}-label`)],
+		},
 		[
 			icon(h, option.icon, {
 				size: 16,
 				className:
 					"mt-0.5 shrink-0 text-muted-foreground transition-colors group-has-[[data-checked]]:text-primary",
 			}),
-			h.div(
-				[h.Class("min-w-0 flex-1 space-y-0.5")],
-				[
-					h.div([h.Class("font-medium text-sm leading-5")], [option.title]),
-					h.p([h.Class("text-muted-foreground text-xs leading-relaxed")], [option.body]),
-				],
-			),
+			spaced(h, { space: "0.5", fill: true }, [
+				h.div([h.Class("font-medium text-sm leading-5")], [option.title]),
+				typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
+					option.body,
+				]),
+			]),
 			...RadioGroup.radio(h, config, option.value, "mt-0.5 shrink-0"),
 		],
 	)
@@ -139,7 +139,7 @@ const panelContent = (h: H, model: Model): ReadonlyArray<Html> => {
 	const config: RadioGroup.RadioGroupViewConfig<Message> = {
 		model: RadioGroup.init(model.sharing.pendingAccess ?? serverAccess),
 		toParentMessage: (message) => wrap(ShareMessage.GotAccessMessage({ message })),
-		items: ACCESS.map((option) => ({
+		items: Arr.map(ACCESS, (option) => ({
 			value: option.value,
 			id: `share-${option.value}-radio`,
 			inputId: `share-${option.value}`,
@@ -150,7 +150,7 @@ const panelContent = (h: H, model: Model): ReadonlyArray<Html> => {
 		RadioGroup.radioGroup(
 			h,
 			{ className: "gap-0 divide-y divide-border overflow-hidden rounded-md border" },
-			ACCESS.map((option) => accessOption(h, config, option)),
+			Arr.map(ACCESS, (option) => accessOption(h, config, option)),
 		),
 		...(boardShare === undefined
 			? []
@@ -167,7 +167,10 @@ const panelContent = (h: H, model: Model): ReadonlyArray<Html> => {
 							? "1 widget won't render for viewers"
 							: `${unsupported.length} widgets won't render for viewers`,
 						": ",
-						unsupported.map((widget) => widget.title).join(", "),
+						Arr.join(
+							Arr.map(unsupported, (widget) => widget.title),
+							", ",
+						),
 						". Shared views support",
 						" ",
 						SHAREABLE_WIDGET_KINDS,

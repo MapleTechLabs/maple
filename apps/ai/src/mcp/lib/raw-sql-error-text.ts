@@ -1,4 +1,5 @@
 import { listWarehouseTables } from "@maple/backend/services/warehouse/warehouse-catalog"
+import { Array as Arr, String as Str } from "effect"
 
 const DB = "[A-Za-z_]\\w*"
 
@@ -16,18 +17,46 @@ const BARE_WRAPPER = new RegExp(INNER, "g")
 export const rawSqlErrorText = (message: string): string => {
 	const denied = message.match(/Not enough permissions for datasource '([^']+)'/)
 	if (denied !== null) return `\`${denied[1]}\` cannot be read from run_sql.`
-	const tables = listWarehouseTables()
-		.map((t) => t.name)
-		.join("|")
-	return message
-		.replace(ALIASED_WRAPPER, (_whole, table: string, alias: string) =>
-			alias === table ? table : `${table} AS ${alias}`,
-		)
-		.replace(BARE_WRAPPER, "$1")
-		.replace(new RegExp(`\\b${DB}\\.(${tables})\\b`, "g"), "$1")
-		.replace(/(scope )SELECT \* FROM \(\s*/g, "$1")
-		.replace(/\s*\) AS maple_raw_sql_limited\s+LIMIT \d+(?:\s+SETTINGS [\w=, ]+)?(?:\s+FORMAT \w+)?/g, "")
-		.replace(/\((\w+)\.OrgId = 'org_\w+'\)/g, "$__orgFilter($1)")
-		.replace(/\(OrgId = 'org_\w+'\)/g, "$__orgFilter")
-		.replace(/'org_[A-Za-z0-9]+'/g, "'<your org>'")
+	const tables = Arr.join(
+		Arr.map(listWarehouseTables(), (t) => t.name),
+		"|",
+	)
+	return Str.replace(
+		/'org_[A-Za-z0-9]+'/g,
+		"'<your org>'",
+	)(
+		Str.replace(
+			/\(OrgId = 'org_\w+'\)/g,
+			"$__orgFilter",
+		)(
+			Str.replace(
+				/\((\w+)\.OrgId = 'org_\w+'\)/g,
+				"$__orgFilter($1)",
+			)(
+				Str.replace(
+					/\s*\) AS maple_raw_sql_limited\s+LIMIT \d+(?:\s+SETTINGS [\w=, ]+)?(?:\s+FORMAT \w+)?/g,
+					"",
+				)(
+					Str.replace(
+						/(scope )SELECT \* FROM \(\s*/g,
+						"$1",
+					)(
+						Str.replace(
+							new RegExp(`\\b${DB}\\.(${tables})\\b`, "g"),
+							"$1",
+						)(
+							Str.replace(
+								BARE_WRAPPER,
+								"$1",
+							)(
+								message.replace(ALIASED_WRAPPER, (_whole, table: string, alias: string) =>
+									alias === table ? table : `${table} AS ${alias}`,
+								),
+							),
+						),
+					),
+				),
+			),
+		),
+	)
 }

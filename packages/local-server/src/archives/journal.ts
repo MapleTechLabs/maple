@@ -12,10 +12,11 @@ import {
 	validateArchiveId,
 	validateRangeDate,
 } from "./paths"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { NonEmptyString, NonNegativeSafeInt, Sha256Lower } from "./schemas"
 import { parseArchiveActivePointer } from "./manifest"
 import { archiveSignal } from "./signals"
+import { decodeJsonSync } from "../json"
 
 // Crash-recovery journal for archive generation. Each entry records the last
 // fsync-complete boundary before the next destructive step, so it may trail the
@@ -57,8 +58,8 @@ export const ARCHIVE_OPERATION_PHASES = [
 ] as const
 export type ArchiveOperationPhase = (typeof ARCHIVE_OPERATION_PHASES)[number]
 
-export const PHASE_ORDER: Readonly<Record<ArchiveOperationPhase, number>> = Object.fromEntries(
-	ARCHIVE_OPERATION_PHASES.map((phase, index) => [phase, index]),
+export const PHASE_ORDER: Readonly<Record<ArchiveOperationPhase, number>> = Rec.fromEntries(
+	Arr.map(ARCHIVE_OPERATION_PHASES, (phase, index) => [phase, index]),
 ) as Readonly<Record<ArchiveOperationPhase, number>>
 
 export const phaseAtLeast = (a: ArchiveOperationPhase, b: ArchiveOperationPhase): boolean =>
@@ -356,10 +357,10 @@ const parseGcIntent = (
 	const keepRaw = decodeCount(raw.keep, "keep")
 	const completedTargetsRaw = decodeCount(raw.completedTargets, "completedTargets")
 	const targetsRaw = raw.targets
-	if (!Array.isArray(targetsRaw)) {
+	if (!Arr.isArray(targetsRaw)) {
 		throw new Error("archive operation gc intent targets is not an array")
 	}
-	const targets: GcTarget[] = targetsRaw.map((t, i) => parseGcTarget(t, i))
+	const targets: GcTarget[] = Arr.map(targetsRaw, (t, i) => parseGcTarget(t, i))
 	if (completedTargetsRaw > targets.length) {
 		throw new Error(
 			`archive operation gc intent completedTargets ${completedTargetsRaw} exceeds targets ${targets.length}`,
@@ -539,7 +540,7 @@ const readIntent = (
 	const path = intentPath(archiveDir, operationId)
 	assertNoSymlinkSync(archiveDir, path, "archive operation intent")
 	assertRealFileSync(path, "archive operation intent")
-	const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown
+	const parsed = decodeJsonSync(readFileSync(path, "utf8"))
 	return parseArchiveOperationIntent(archiveDir, parsed, expectedDataDir, expectedScratchRoot)
 }
 
@@ -720,10 +721,10 @@ export const listActiveOperationIds = (archiveDir: string): string[] => {
 			throw new Error(`unrecognized active operation debris: ${join(root, entry.name)}`)
 		}
 		const prefix = "archive-"
-		if (!entry.name.startsWith(prefix)) {
+		if (!Str.startsWith(prefix)(entry.name)) {
 			throw new Error(`unrecognized active operation entry: ${join(root, entry.name)}`)
 		}
-		ids.push(validateArchiveId(entry.name.slice(prefix.length), "operation"))
+		ids.push(validateArchiveId(Str.slice(prefix.length)(entry.name), "operation"))
 	}
 	return ids
 }
@@ -852,7 +853,7 @@ export const inspectActiveOperation = (
 	try {
 		assertNoSymlinkSync(archiveDir, path, "archive operation intent")
 		assertRealFileSync(path, "archive operation intent")
-		raw = JSON.parse(readFileSync(path, "utf8")) as unknown
+		raw = decodeJsonSync(readFileSync(path, "utf8"))
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error)
 		return { kind: "fail-closed", reason: `active operation intent is unreadable/unsafe: ${reason}` }
@@ -948,7 +949,7 @@ export const readActiveGenerationId = (
 	if (!existsSync(pointerPath)) return null
 	assertNoSymlinkSync(archiveDir, pointerPath, "archive active pointer")
 	assertRealFileSync(pointerPath, "archive active pointer")
-	const parsed = JSON.parse(readFileSync(pointerPath, "utf8")) as unknown
+	const parsed = decodeJsonSync(readFileSync(pointerPath, "utf8"))
 	const pointer = parseArchiveActivePointer(parsed, signal, rangeDate)
 	return pointer.generationId
 }

@@ -3,7 +3,7 @@
 // fills that table, so without it every complete hour drops off the map.
 
 import * as CH from "@maple/query-engine/ch"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Duration, Effect, Schema, Array as Arr, String as Str } from "effect"
 import type { Chdb } from "./chdb"
 import { decodeJsonEachRow } from "./chdb-rows"
 import { LOCAL_ORG_ID } from "@maple/query-engine/local"
@@ -49,29 +49,28 @@ export interface LocalServiceMapRollupTick {
 	readonly admitted: boolean
 }
 
-const EDGE_COLUMNS = [
-	"OrgId",
-	"Hour",
-	"SourceService",
-	"TargetService",
-	"DeploymentEnv",
-	"CallCount",
-	"ErrorCount",
-	"DurationSumMs",
-	"MaxDurationMs",
-	"SampledSpanCount",
-	"UnsampledSpanCount",
-	"SampleRateSum",
-].join(", ")
+const EDGE_COLUMNS = Arr.join(
+	[
+		"OrgId",
+		"Hour",
+		"SourceService",
+		"TargetService",
+		"DeploymentEnv",
+		"CallCount",
+		"ErrorCount",
+		"DurationSumMs",
+		"MaxDurationMs",
+		"SampledSpanCount",
+		"UnsampledSpanCount",
+		"SampleRateSum",
+	],
+	", ",
+)
 
-const RESOLUTION_COLUMNS = [
-	"OrgId",
-	"Hour",
-	"SourceService",
-	"ParentServerAddress",
-	"ResolvedTargetService",
-	"DeploymentEnv",
-].join(", ")
+const RESOLUTION_COLUMNS = Arr.join(
+	["OrgId", "Hour", "SourceService", "ParentServerAddress", "ResolvedTargetService", "DeploymentEnv"],
+	", ",
+)
 
 const describe = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
 
@@ -84,8 +83,10 @@ const selectBody = <A, E>(
 	label: string,
 ): Effect.Effect<string, LocalServiceMapRollupError> =>
 	compiled.pipe(
-		Effect.mapError(fail(`compile ${label}`)),
-		Effect.map((query) => query.sql.replace(/\s+FORMAT\s+\w+\s*$/, "")),
+		Effect.mapBoth({
+			onFailure: fail(`compile ${label}`),
+			onSuccess: (query) => Str.replace(/\s+FORMAT\s+\w+\s*$/, "")(query.sql),
+		}),
 	)
 
 const runQuery = (db: LocalServiceMapRollupDeps["db"], sql: string, label: string) =>
@@ -104,7 +105,7 @@ const decodeRows = <A>(decode: (text: string) => A, text: string, label: string)
 
 const hourFloor = (ms: number): number => Math.floor(ms / HOUR_MS) * HOUR_MS
 
-const utcDate = (hourMs: number): string => new Date(hourMs).toISOString().slice(0, 10)
+const utcDate = (hourMs: number): string => Str.slice(0, 10)(new Date(hourMs).toISOString())
 
 /** Start of the first hour with traces since `sinceMs`, read from the hourly usage rollup. */
 const firstTraceHourMs = (db: LocalServiceMapRollupDeps["db"], sinceMs: number, nowMs: number) =>
@@ -116,13 +117,11 @@ const firstTraceHourMs = (db: LocalServiceMapRollupDeps["db"], sinceMs: number, 
 			),
 			"signal presence",
 		)
-		const rows = yield* decodeRows(
-			decodePresenceRows,
-			yield* runQuery(db, sql, "signal presence"),
-			"presence",
-		)
+		const presenceText = yield* runQuery(db, sql, "signal presence")
+		const rows = yield* decodeRows(decodePresenceRows, presenceText, "presence")
 		const firstSeen = rows.find((row) => row.signal === "traces")?.firstSeen
-		const parsed = firstSeen === undefined ? Number.NaN : Date.parse(`${firstSeen.replace(" ", "T")}Z`)
+		const parsed =
+			firstSeen === undefined ? Number.NaN : Date.parse(`${Str.replace(" ", "T")(firstSeen)}Z`)
 		return Number.isFinite(parsed) && parsed >= sinceMs ? hourFloor(parsed) : undefined
 	})
 
@@ -136,7 +135,8 @@ const sealedHours = (db: LocalServiceMapRollupDeps["db"], oldestHourMs: number, 
 			"existing hours",
 		)
 		const text = yield* runQuery(db, sql, "existing hours")
-		return CH.serviceMapHourSet(yield* decodeRows(decodeHourRows, text, "existing hours"))
+		const hourRows = yield* decodeRows(decodeHourRows, text, "existing hours")
+		return CH.serviceMapHourSet(hourRows)
 	})
 
 /** The INSERTs that seal one hour from raw spans: resolutions, then edges (the seal). */
@@ -193,14 +193,15 @@ export const runLocalServiceMapRollupTick = (
 		const chunkStart = Math.max(catchUp.floorMs, catchUp.cursorMs - MAX_HOURS_PER_TICK * HOUR_MS)
 		const oldest = Math.min(steadyOldest, chunkStart)
 		const sealed = yield* sealedHours(deps.db, oldest, currentHourMs)
-		const missing = CH.serviceMapRollupMissingHours(
-			CH.serviceMapRollupCandidateHours(oldest, currentHourMs),
-			sealed,
-		).filter((hourMs) => !deps.isRetiredDay(utcDate(hourMs)))
-		const steady = missing.filter((hourMs) => hourMs >= steadyOldest).reverse()
-		const pending = missing
-			.filter((hourMs) => hourMs >= chunkStart && hourMs < catchUp.cursorMs)
-			.reverse()
+		const missing = Arr.filter(
+			CH.serviceMapRollupMissingHours(CH.serviceMapRollupCandidateHours(oldest, currentHourMs), sealed),
+			(hourMs) => !deps.isRetiredDay(utcDate(hourMs)),
+		)
+		const steady = Arr.filter(missing, (hourMs) => hourMs >= steadyOldest).reverse()
+		const pending = Arr.filter(
+			missing,
+			(hourMs) => hourMs >= chunkStart && hourMs < catchUp.cursorMs,
+		).reverse()
 		const work = [...steady, ...pending].slice(0, MAX_HOURS_PER_TICK)
 
 		let hoursRolledUp = 0
@@ -228,11 +229,8 @@ export const localServiceMapRollupLoop = (deps: LocalServiceMapRollupDeps): Effe
 		const state: LocalServiceMapRollupState = { catchUp: undefined }
 		yield* Effect.sleep(ROLLUP_INITIAL_DELAY)
 		while (true) {
-			const tick = yield* runLocalServiceMapRollupTick(
-				deps,
-				state,
-				yield* Clock.currentTimeMillis,
-			).pipe(
+			const nowMs = yield* Clock.currentTimeMillis
+			const tick = yield* runLocalServiceMapRollupTick(deps, state, nowMs).pipe(
 				Effect.tap((result) =>
 					result.hoursRolledUp > 0
 						? Effect.logDebug(`service map rollup sealed ${result.hoursRolledUp} hour(s)`)

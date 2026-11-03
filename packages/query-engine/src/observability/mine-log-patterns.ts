@@ -1,8 +1,9 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import type { ListLogsOutput } from "@maple/domain/tinybird"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { MineLogPatternsInput, LogPattern } from "./types"
 import { TemplateMiner, TemplateMinerConfig } from "../drain"
+import { rowText } from "../row-text"
 
 const DEFAULT_SAMPLE_SIZE = 10_000
 const DEFAULT_LIMIT = 50
@@ -49,7 +50,7 @@ export const clusterLogPatterns = (
 	>()
 
 	for (const row of rows) {
-		const body = String(row.body ?? "")
+		const body = rowText(row.body)
 		if (body.length === 0) continue
 
 		const mined = miner.addLogMessage(body)
@@ -57,13 +58,13 @@ export const clusterLogPatterns = (
 		if (existing) {
 			existing.count += 1
 			existing.template = mined.templateMined
-			incrementCount(existing.severityCounts, String(row.severityText ?? "UNKNOWN"))
-			incrementCount(existing.serviceCounts, String(row.serviceName ?? "unknown"))
+			incrementCount(existing.severityCounts, rowText(row.severityText, "UNKNOWN"))
+			incrementCount(existing.serviceCounts, rowText(row.serviceName, "unknown"))
 		} else {
 			const severityCounts = new Map<string, number>()
-			incrementCount(severityCounts, String(row.severityText ?? "UNKNOWN"))
+			incrementCount(severityCounts, rowText(row.severityText, "UNKNOWN"))
 			const serviceCounts = new Map<string, number>()
-			incrementCount(serviceCounts, String(row.serviceName ?? "unknown"))
+			incrementCount(serviceCounts, rowText(row.serviceName, "unknown"))
 			clusters.set(mined.clusterId, {
 				template: mined.templateMined,
 				count: 1,
@@ -74,14 +75,13 @@ export const clusterLogPatterns = (
 		}
 	}
 
-	const patterns: LogPattern[] = Array.from(clusters.values())
-		.map((c) => ({
-			template: c.template,
-			count: c.count,
-			sample: c.sample,
-			severityCounts: mapToObject(c.severityCounts),
-			serviceCounts: mapToObject(c.serviceCounts),
-		}))
+	const patterns: LogPattern[] = Arr.map(Array.from(clusters.values()), (c) => ({
+		template: c.template,
+		count: c.count,
+		sample: c.sample,
+		severityCounts: mapToObject(c.severityCounts),
+		serviceCounts: mapToObject(c.serviceCounts),
+	}))
 		.sort((a, b) => b.count - a.count)
 		.slice(0, limit)
 

@@ -1,13 +1,13 @@
 import { PrReviewRepositoryConfig } from "@maple/domain/http"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { field, fieldDescription, fieldLabel } from "../../../ui/field"
-import { inlineCode } from "../../../ui/inline-code"
-import type * as Select from "../../../ui/select"
-import { type SelectEntry, view as selectView } from "../../../ui/select-view"
-import { settingRow } from "../../../ui/setting-row"
-import * as Switch from "../../../ui/switch"
+import { button } from "@maple/views/ui/button"
+import { field, fieldDescription, fieldLabel } from "@maple/views/ui/field"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import type * as Select from "@maple/views/ui/select"
+import { type SelectEntry, view as selectView } from "@maple/views/ui/select-view"
+import { settingRow } from "@maple/views/ui/setting-row"
+import * as Switch from "@maple/views/ui/switch"
 import { Message, type Model, type SelectField, type SwitchField } from "./form"
 import {
 	AUTOMATIC_LIMIT_MAX,
@@ -22,6 +22,8 @@ import {
 } from "./state"
 import { idsOf, lenses, numberField, textareaField, valueState } from "./view-fields"
 import { RULES_COPY } from "./copy"
+import { typography } from "@maple/views/ui/typography"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `ReviewRulesForm`'s layout, selects, toggles and footer.
 
@@ -30,7 +32,7 @@ type H = HtmlBuilder<Message>
 export type ViewInputs = Readonly<{ isAdmin: boolean }>
 
 const entries = (items: ReadonlyArray<readonly [string, string]>): ReadonlyArray<SelectEntry> =>
-	items.map(([value, label]) => ({ _tag: "Item", item: { value, label } }))
+	Arr.map(items, ([value, label]) => ({ _tag: "Item", item: { value, label } }))
 
 const selectField = (
 	h: H,
@@ -139,9 +141,13 @@ const footer = (h: H, model: Model, isAdmin: boolean): ReadonlyArray<Html> => {
 	const isDirty = !sameState(model.state, model.saved)
 	return [
 		...(model.error !== null
-			? [h.p([h.Class("text-xs text-severity-error"), h.Role("alert")], [model.error])]
+			? [
+					typography(h, { size: "xs", tone: "error", as: "p", attributes: [h.Role("alert")] }, [
+						model.error,
+					]),
+				]
 			: problem !== null && isDirty
-				? [h.p([h.Class("text-xs text-muted-foreground")], [problem])]
+				? [typography(h, { size: "xs", tone: "muted", as: "p" }, [problem])]
 				: []),
 		h.div(
 			[h.Class("flex items-center justify-end gap-3 border-t pt-4")],
@@ -230,7 +236,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 						slug: "severity",
 						label: RULES_COPY.severity.label,
 						className: "w-full",
-						items: [...inheritOption(inheritedSeverity), ...Object.entries(SEVERITY_LABELS)],
+						items: [...inheritOption(inheritedSeverity), ...Rec.toEntries(SEVERITY_LABELS)],
 						description: RULES_COPY.severity.description,
 					}),
 					selectField(h, model, {
@@ -238,7 +244,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 						slug: "feedback",
 						label: RULES_COPY.feedback.label,
 						className: "w-full",
-						items: [...inheritOption(inheritedFeedback), ...Object.entries(FEEDBACK_LABELS)],
+						items: [...inheritOption(inheritedFeedback), ...Rec.toEntries(FEEDBACK_LABELS)],
 						description: RULES_COPY.feedback.description,
 					}),
 					numberField(h, model, {

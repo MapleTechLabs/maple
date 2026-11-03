@@ -4,7 +4,7 @@ import { hasSelectedPlan, type PlanAccess, resolvePlanAccess } from "../../lib/b
 import { hasMultipleRegions, regionAppUrl } from "../../lib/region"
 import { writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { ClerkOrganization } from "../../platform/clerk"
 import { AppRoute, hrefOf, type Redirect } from "../../route"
@@ -45,24 +45,34 @@ export const planOf = (slot: CustomerSlot): boolean | null =>
 /** `selectedPlanKnownAtomFor(orgId)`: `maple.billing.selected-plan.<orgId>`. */
 export const SELECTED_PLAN_KEY_PREFIX = "maple.billing.selected-plan."
 
+/** localStorage threw while listing the remembered flags. */
+export class SelectedPlanReadError extends Schema.TaggedError<SelectedPlanReadError>()(
+	"@maple/web/onboarding/SelectedPlanReadError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
 /** Every org's remembered flag (Atom.kvs writes JSON), read once before the first render. */
-export const readKnownToRenderApp: Effect.Effect<Record<string, boolean>> = Effect.try(() =>
-	Object.fromEntries(
-		Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
-			.filter((key): key is string => key !== null && key.startsWith(SELECTED_PLAN_KEY_PREFIX))
-			.map(
+export const readKnownToRenderApp: Effect.Effect<Record<string, boolean>> = Effect.try({
+	try: () =>
+		Rec.fromEntries(
+			Arr.map(
+				Arr.filter(
+					Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)),
+					(key): key is string => key !== null && Str.startsWith(SELECTED_PLAN_KEY_PREFIX)(key),
+				),
 				(key) =>
 					[
-						key.slice(SELECTED_PLAN_KEY_PREFIX.length),
+						Str.slice(SELECTED_PLAN_KEY_PREFIX.length)(key),
 						localStorage.getItem(key) === "true",
 					] as const,
 			),
-	),
-).pipe(Effect.orElseSucceed(() => ({})))
+		),
+	catch: (cause) => new SelectedPlanReadError({ message: "localStorage is not readable", cause }),
+}).pipe(Effect.orElseSucceed(() => ({})))
 
 /** Writes the per-org "may render the app" memory once the plan settles. */
 export const saveSelectedPlanKnown = (orgId: string, mayRenderApp: boolean): Effect.Effect<void> =>
-	Effect.sync(() => writeLocalStorage(`${SELECTED_PLAN_KEY_PREFIX}${orgId}`, JSON.stringify(mayRenderApp)))
+	Effect.sync(() => writeLocalStorage(`${SELECTED_PLAN_KEY_PREFIX}${orgId}`, String(mayRenderApp)))
 
 // GATE
 
@@ -109,7 +119,7 @@ export const leaveTargetOf = (
 	appUrlOf: (region: MapleRegion) => string | undefined = regionAppUrl,
 ): string | null => {
 	const url = appUrlOf(region)
-	const hasOrgHere = memberships.some((org) => org.isServedHere || org.isRegionOpen)
+	const hasOrgHere = Arr.some(memberships, (org) => org.isServedHere || org.isRegionOpen)
 	return url === undefined || hasOrgHere ? null : `${url}${href}`
 }
 
@@ -123,11 +133,11 @@ export const needsRegion = (organization: Option.Option<ClerkOrganization>): boo
 /** The signed-in, org-holding branch of `ClerkReverseRedirects`, plus `/quick-start`'s bail-out. */
 export const planGate = ({ route, organization, customer, isKnownToRenderApp }: GateInput): Gate => {
 	if (isOrgIndependent(route)) return app
-	const quickStart = hrefOf(AppRoute.QuickStart({ search: { redirect_url: hrefOf(route) } }))
+	const quickStart = () => hrefOf(AppRoute.QuickStart({ search: { redirect_url: hrefOf(route) } }))
 	if (Option.exists(organization, (org) => !org.isServedHere)) {
 		// A new org with no region yet has not picked one: onboarding asks.
 		const isOpen = Option.exists(organization, (org) => org.isRegionOpen)
-		if (isOpen) return route._tag !== "QuickStart" ? redirectTo(quickStart) : app
+		if (isOpen) return route._tag !== "QuickStart" ? redirectTo(quickStart()) : app
 		return Option.match(wrongRegionOf(organization), {
 			onNone: () => app,
 			onSome: (region) => ({ ...app, wrongRegion: region }),
@@ -138,7 +148,7 @@ export const planGate = ({ route, organization, customer, isKnownToRenderApp }: 
 	if (route._tag === "QuickStart") return app
 	if (access === "unknown") return app
 	if (access === "loading") return isAllowedWithoutPlan(route) || isKnownToRenderApp ? app : splash
-	if (access !== "app" && !isAllowedWithoutPlan(route)) return redirectTo(quickStart)
+	if (access !== "app" && !isAllowedWithoutPlan(route)) return redirectTo(quickStart())
 	if (route._tag === "SelectPlan" && hasSelectedPlan(customerOf(customer)))
 		return redirectTo(validateInternalRedirect(route.search.redirect_url) ?? "/")
 	return app

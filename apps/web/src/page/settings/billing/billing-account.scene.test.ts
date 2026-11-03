@@ -1,16 +1,16 @@
 import { BillingAccount, BillingAccountUsageResponse, BillingCustomer } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
 import { AsyncData } from "foldkit"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { view as billingView } from "./view"
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const NOW = 10 * 86_400_000
 const customer = Schema.decodeUnknownSync(BillingCustomer)({
@@ -42,7 +42,7 @@ const payer = account({
 
 const step = (model: Model, message: Message) => update(model, message, customer, NOW).step
 const run = (model: Model, ...messages: ReadonlyArray<Message>) =>
-	messages.reduce((current, message) => step(current, message).model, model)
+	Arr.reduce(messages, model, (current, message) => step(current, message).model)
 
 const view = withViewInputs(billingView, {
 	customer: AsyncData.Success({ data: customer }),

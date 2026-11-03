@@ -1,19 +1,20 @@
 import type { GithubRepoSummary } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { alert, alertDescription, alertTitle } from "../../../ui/alert"
-import { linkButton } from "../../../ui/button"
-import * as Checkbox from "../../../ui/checkbox"
-import * as Field from "../../../ui/field"
-import { formDialog } from "../../../ui/form-dialog"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { inputGroup, inputGroupAddon, inputGroupInput } from "../../../ui/input-group"
-import * as RadioGroup from "../../../ui/radio-group"
-import * as SelectView from "../../../ui/select-view"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { linkButton } from "@maple/views/ui/button"
+import * as Checkbox from "@maple/views/ui/checkbox"
+import * as Field from "@maple/views/ui/field"
+import { formDialog } from "@maple/views/ui/form-dialog"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { inputGroup, inputGroupAddon, inputGroupInput } from "@maple/views/ui/input-group"
+import { label } from "@maple/views/ui/label"
+import * as RadioGroup from "@maple/views/ui/radio-group"
+import * as SelectView from "@maple/views/ui/select-view"
 import {
 	DIALOG_ID,
 	errorsOf,
@@ -25,6 +26,9 @@ import {
 } from "./add-target"
 import { formatUsd } from "./format"
 import { modelPicker } from "./model-picker"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { grid, gridClass } from "@maple/views/ui/grid"
 
 // The Add audit target form inside the shared FormDialog.
 
@@ -90,7 +94,7 @@ const repositoryField = (
 	repositories: ReadonlyArray<GithubRepoSummary>,
 	error?: string,
 ): Html => {
-	const entries: ReadonlyArray<SelectView.SelectEntry> = repositories.map((repo) => ({
+	const entries: ReadonlyArray<SelectView.SelectEntry> = Arr.map(repositories, (repo) => ({
 		_tag: "Item",
 		item: { value: repo.fullName, label: repo.fullName },
 	}))
@@ -160,64 +164,57 @@ const profileField = (h: H, model: Model): Html => {
 	const config: RadioGroup.RadioGroupViewConfig<Message> = {
 		model: model.profile,
 		toParentMessage: (message) => Message.GotProfileMessage({ message }),
-		items: PROFILES.map((profile) => ({
+		items: Arr.map(PROFILES, (profile) => ({
 			value: profile.value,
 			id: `${DIALOG_ID}-profile-${profile.value}`,
 			inputId: `${DIALOG_ID}-profile-${profile.value}-input`,
 		})),
 	}
-	return h.div(
-		[h.Class("flex flex-col gap-2")],
-		[
-			h.span([h.Id(`${DIALOG_ID}-profile-label`), h.Class("text-sm font-medium")], ["Profile"]),
-			RadioGroup.radioGroup(
-				h,
-				{ label: "Profile", className: "grid grid-cols-2 gap-2" },
-				PROFILES.map((profile) => {
-					const isChecked = Option.contains(model.profile.maybeValue, profile.value)
-					return h.label(
-						[
+	return vstack(h, { gap: "2" }, [
+		typography(h, { size: "sm", weight: "medium", attributes: [h.Id(`${DIALOG_ID}-profile-label`)] }, [
+			"Profile",
+		]),
+		RadioGroup.radioGroup(
+			h,
+			{ label: "Profile", className: gridClass({ cols: 2, gap: "2" }) },
+			Arr.map(PROFILES, (profile) => {
+				const isChecked = Option.contains(model.profile.maybeValue, profile.value)
+				return label(
+					h,
+					{
+						// A card: the kit label's centring and medium weight stay off.
+						className: cn(
+							"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 font-normal transition-colors",
+							isChecked
+								? "border-border-strong bg-surface-strong"
+								: "hover:bg-surface-sunken active:bg-surface-sunken",
+						),
+						attributes: [
 							h.Key(profile.value),
 							h.Id(RadioGroup.labelId(`${DIALOG_ID}-profile-${profile.value}-input`)),
-							h.Class(
-								cn(
-									"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 transition-colors",
-									isChecked ? "border-border-strong bg-accent/50" : "hover:bg-accent/30 active:bg-accent/30",
-								),
-							),
 						],
-						[
-							...RadioGroup.radio(h, config, profile.value, "mt-0.5"),
-							h.span(
-								[h.Class("flex min-w-0 flex-col gap-1")],
-								[
-									h.span(
-										[h.Class("text-sm font-medium")],
-										[
-											profile.label,
-											...(profile.hint === null
-												? []
-												: [
-														h.span(
-															[
-																h.Class(
-																	"ml-1.5 text-xs font-normal text-muted-foreground",
-																),
-															],
-															[profile.hint],
-														),
-													]),
-										],
-									),
-									h.span([h.Class("text-xs text-muted-foreground")], [profile.description]),
-								],
-							),
-						],
-					)
-				}),
-			),
-		],
-	)
+					},
+					[
+						...RadioGroup.radio(h, config, profile.value, "mt-0.5"),
+						vstack(h, { gap: "1", shrink: true, as: "span" }, [
+							typography(h, { size: "sm", weight: "medium" }, [
+								profile.label,
+								...(profile.hint === null
+									? []
+									: [
+											h.span(
+												[h.Class("ml-1.5 text-xs font-normal text-muted-foreground")],
+												[profile.hint],
+											),
+										]),
+							]),
+							typography(h, { size: "xs", tone: "muted" }, [profile.description]),
+						]),
+					],
+				)
+			}),
+		),
+	])
 }
 
 const scopeChip = (h: H, path: string): Html =>
@@ -236,7 +233,8 @@ const scopeChip = (h: H, path: string): Html =>
 				{
 					label: `Remove ${path}`,
 					size: "icon-2xs",
-					className: "text-muted-foreground hover:text-foreground active:text-foreground pointer-coarse:after:hidden",
+					className:
+						"text-muted-foreground hover:text-foreground active:text-foreground pointer-coarse:after:hidden",
 					attributes: [h.OnClick(Message.RemovedScopePath({ path }))],
 				},
 				[icon(h, "XmarkIcon", { size: 12 })],
@@ -262,9 +260,10 @@ const scopeField = (h: H, model: Model, error?: string): Html =>
 					...(model.scopePaths.length === 0
 						? []
 						: [
-								h.div(
-									[h.Class("flex flex-wrap gap-1.5")],
-									model.scopePaths.map((path) => scopeChip(h, path)),
+								hstack(
+									h,
+									{ gap: "1.5", align: "stretch", wrap: true },
+									Arr.map(model.scopePaths, (path) => scopeChip(h, path)),
 								),
 							]),
 					Field.input(h, {
@@ -297,56 +296,54 @@ const modelsField = (h: H, model: Model, error?: string): Html => {
 		settings !== null &&
 		model.discovery.value === settings.discoveryModel &&
 		model.validation.value === settings.validationModel
-	return h.div(
-		[h.Class("flex flex-col gap-2")],
-		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-3")],
-				[
-					h.span([h.Class("text-sm font-medium")], ["Models"]),
-					...(isOrgDefault
-						? [h.span([h.Class("text-xs text-muted-foreground")], ["Using the org's defaults"])]
-						: []),
-				],
-			),
-			h.div(
-				[h.Class("grid grid-cols-2 gap-2")],
-				[
-					modelPicker(h, {
-						stage: "discovery",
-						model: model.discovery,
-						idPrefix: DIALOG_ID,
-						wrap: (message) => Message.GotDiscoveryMessage({ message }),
-					}),
-					modelPicker(h, {
-						stage: "validation",
-						model: model.validation,
-						idPrefix: DIALOG_ID,
-						wrap: (message) => Message.GotValidationMessage({ message }),
-					}),
-				],
-			),
-			...(error === undefined
-				? []
-				: [h.p([h.Role("alert"), h.Class("text-xs text-destructive")], [error])]),
-			...(settings === null
-				? []
-				: [
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							[
-								`${formatUsd(Math.max(0, settings.monthlySpendLimitUsd - settings.spentUsd))} left of the org's ${formatUsd(settings.monthlySpendLimitUsd)} monthly limit. A run that reaches it stops and lists what it did not cover.`,
-							],
-						),
+	return vstack(h, { gap: "2" }, [
+		hstack(h, { gap: "3", align: "baseline", justify: "between" }, [
+			typography(h, { size: "sm", weight: "medium" }, ["Models"]),
+			...(isOrgDefault
+				? [typography(h, { size: "xs", tone: "muted" }, ["Using the org's defaults"])]
+				: []),
+		]),
+		grid(h, { cols: 2, gap: "2" }, [
+			modelPicker(h, {
+				stage: "discovery",
+				model: model.discovery,
+				idPrefix: DIALOG_ID,
+				wrap: (message) => Message.GotDiscoveryMessage({ message }),
+			}),
+			modelPicker(h, {
+				stage: "validation",
+				model: model.validation,
+				idPrefix: DIALOG_ID,
+				wrap: (message) => Message.GotValidationMessage({ message }),
+			}),
+		]),
+		...(error === undefined
+			? []
+			: [
+					typography(
+						h,
+						{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
+						[error],
+					),
+				]),
+		...(settings === null
+			? []
+			: [
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						`${formatUsd(Math.max(0, settings.monthlySpendLimitUsd - settings.spentUsd))} left of the org's ${formatUsd(settings.monthlySpendLimitUsd)} monthly limit. A run that reaches it stops and lists what it did not cover.`,
 					]),
-		],
-	)
+				]),
+	])
 }
 
 const startNowToggle = (h: H, model: Model): Html => {
 	const inputId = `${DIALOG_ID}-start-now`
-	return h.label(
-		[h.Id(Checkbox.labelId(inputId)), h.Class("flex items-center gap-2 text-sm")],
+	return label(
+		h,
+		{
+			className: "flex items-center gap-2 text-sm font-normal",
+			attributes: [h.Id(Checkbox.labelId(inputId))],
+		},
 		[
 			...Checkbox.view(h, {
 				model: { isChecked: model.startNow },
@@ -404,7 +401,7 @@ const addTargetDialog = (
 		isPending: model.isPending,
 		isSubmitDisabled: !hasRepositories,
 		footerStart: hasRepositories ? startNowToggle(h, model) : undefined,
-		panelClassName: "flex flex-col gap-5",
+		panelClassName: vstackClass({ gap: "5" }),
 		fields: hasRepositories
 			? [
 					...failureAlert(h, model),

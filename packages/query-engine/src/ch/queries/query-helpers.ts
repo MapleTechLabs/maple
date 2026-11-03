@@ -22,6 +22,7 @@ import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition, httpDisplaySpanName } from "../../traces-shared"
 import type { AttributeIndexMode } from "../../capabilities"
 import * as T from "@maple-dev/effect-orm/clickhouse"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * A timeseries row's bucket. `wholeRange` keys every row at `startTime`, so the
@@ -131,7 +132,7 @@ export function buildProjectedMapExpr(
 	mapName: "SpanAttributes" | "ResourceAttributes" | "LogAttributes",
 ): CH.Expr<Record<string, string>> {
 	if (requestedKeys.length === 0) return CH.mapLiteral()
-	const pairs: Array<[string, CH.Expr<string>]> = requestedKeys.map((key) => {
+	const pairs: Array<[string, CH.Expr<string>]> = Arr.map(requestedKeys, (key) => {
 		const valueExpr: CH.Expr<string> = CH.mapGet(CH.dynamicColumn<Record<string, string>>(mapName), key)
 		return [key, valueExpr]
 	})
@@ -274,11 +275,11 @@ export const soleValue = <A>(values: readonly A[]): A | undefined =>
  * on `logs_aggregates_hourly`, which `upper(SeverityText)` would not.
  */
 export function severitySpellings(level: string): readonly string[] {
-	const trimmed = level.trim()
+	const trimmed = Str.trim(level)
 	if (trimmed === "") return []
-	const upper = trimmed.toUpperCase()
-	const lower = trimmed.toLowerCase()
-	const title = upper.charAt(0) + lower.slice(1)
+	const upper = Str.toUpperCase(trimmed)
+	const lower = Str.toLowerCase(trimmed)
+	const title = upper.charAt(0) + Str.slice(1)(lower)
 	return [...new Set([upper, title, lower])]
 }
 

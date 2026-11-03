@@ -1,13 +1,16 @@
-import * as CopyButton from "@maple/web/ui/copy-button"
-import * as FilterSections from "@maple/web/ui/filters/filter-sections"
-import * as Tooltip from "@maple/web/ui/tooltip"
-import * as ToggleGroup from "@maple/web/ui/toggle-group"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import * as LogsStream from "@maple/views/ui/logs/logs-stream"
+import { LogsViewPreferences } from "@maple/views/ui/logs/viewer"
+import * as Popover from "@maple/views/ui/popover"
+import * as Tooltip from "@maple/views/ui/tooltip"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
-import { LoadFailure } from "../../data/local-query"
-import { Message as LogSheetMessage } from "../kit/log-sheet/message"
-import { ChipRef, FacetOption, LocalLog, LogPages, LogPatterns, LogPattern, Viewport } from "./model"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as LogSheet from "@maple/views/logs/log-sheet"
+import { FacetOption, LocalLog, LogPages, LogPatterns, LogPattern } from "./model"
 
 export const FacetParam = Schema.Literals(["severity", "service"])
 export type FacetParam = typeof FacetParam.Type
@@ -29,7 +32,7 @@ export const Message = defineMessageUnion({
 	SucceededFetchSeverities: { key: Schema.String, options: Schema.Array(FacetOption), fetchedAtMs: Schema.Number },
 	FailedFetchSeverities: { key: Schema.String, failure: LoadFailure },
 	FoundCachedSeverities: { key: Schema.String, cached: CachedOf(Schema.Array(FacetOption)) },
-	ChangedViewport: { viewport: Viewport },
+	GotStreamMessage: { message: LogsStream.Message },
 	ClickedRefresh: {},
 	ClickedOpenFilters: {},
 	CompletedReadRefreshClock: { nowMs: Schema.Number },
@@ -43,21 +46,21 @@ export const Message = defineMessageUnion({
 	ClickedWidenRange: {},
 	GotModeToggleMessage: { message: ToggleGroup.Message },
 	ClickedPattern: { pattern: LogPattern },
-	ClickedLog: { log: LocalLog },
-	ClickedChip: { text: Schema.String },
-	EnteredChip: { chip: ChipRef },
-	FocusedChip: { chip: ChipRef },
-	LeftChip: { chip: ChipRef },
-	BlurredChip: { chip: ChipRef },
-	PressedChipEscape: { chip: ChipRef },
-	EnteredChipCard: {},
-	LeftChipCard: {},
-	ElapsedChipDelay: { generation: Schema.Number },
-	PlacedChipCard: {},
-	ClickedChipJson: {},
-	GotChipJsonTooltipMessage: { message: Tooltip.Message },
-	CompletedCopyChip: {},
-	GotLogSheetMessage: { message: LogSheetMessage },
+	/** An attribute filter's chip was removed. */
+	RemovedAttributeFilter: {
+		source: Schema.Literals(["log", "resource"]),
+		key: Schema.String,
+		value: Schema.String,
+		negated: Schema.Boolean,
+	},
+	ToggledColumn: { key: Schema.String },
+	ClickedWrap: {},
+	ClickedDensity: {},
+	CompletedReadPreferences: { preferences: LogsViewPreferences },
+	CompletedSavePreferences: {},
+	GotToolbarTooltipMessage: { message: Tooltip.Message },
+	GotColumnsPopoverMessage: { message: Popover.Message },
+	GotLogSheetMessage: { message: LogSheet.Message },
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
 })

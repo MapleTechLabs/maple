@@ -4,7 +4,7 @@
  * score evaluates explicit grades, never location overlap.
  */
 import { createHash } from "node:crypto"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { PR_REVIEW_SYSTEM_PROMPT } from "@/chat/prompts"
 import { PR_REVIEW_BUDGET } from "@/chat/budgets"
 import { PR_REVIEW_WORKER_PROMPT } from "@/chat/review-fanout"
@@ -24,6 +24,10 @@ const REPOSITORY = "MapleTechLabs/maple"
 const LINE_TOLERANCE = 3
 const FIX_SUBJECT = /^(fix|hotfix)(\([^)]*\))?!?:/i
 const SQUASH_PR = /\(#(\d+)\)\s*$/
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodeTabbedJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
+// Files this script wrote itself, read back with their declared shape trusted.
+const decodeTrustedJson = Schema.decodeSync(Schema.fromJsonString(Schema.Any))
 
 interface Location {
 	readonly path: string
@@ -54,7 +58,7 @@ interface Finding {
 
 const git = (args: ReadonlyArray<string>): string => {
 	const proc = spawnSync("git", args, { cwd: REPO_ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
-	if (proc.status !== 0) throw new Error(`git ${args.join(" ")}: ${proc.stderr}`)
+	if (proc.status !== 0) throw new Error(`git ${Arr.join(args, " ")}: ${proc.stderr}`)
 	return proc.stdout
 }
 
@@ -62,18 +66,18 @@ const flags = (argv: ReadonlyArray<string>): Map<string, string> => {
 	const out = new Map<string, string>()
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i] ?? ""
-		if (!arg.startsWith("--")) continue
+		if (!Str.startsWith("--")(arg)) continue
 		if (arg === "--allow-exec" || arg === "--dry-run") {
-			out.set(arg.slice(2), "true")
+			out.set(Str.slice(2)(arg), "true")
 			continue
 		}
 		const value = argv[i + 1]
 		// A flag without an operand is an error, never a reason to swallow the next flag.
-		if (value === undefined || value.startsWith("--")) {
+		if (value === undefined || Str.startsWith("--")(value)) {
 			console.error(`${arg} needs a value`)
 			process.exit(2)
 		}
-		out.set(arg.slice(2), value)
+		out.set(Str.slice(2)(arg), value)
 		i++
 	}
 	return out
@@ -98,17 +102,17 @@ const changedOldRanges = (sha: string): Array<Location> => {
 	// `--- ` is a file header only between `diff --git` and the first hunk: inside a hunk it is a
 	// deleted line that began `-- ` (a SQL comment), which once became the path `ilder:errors:...`.
 	let inHeader = false
-	for (const line of git(["diff", "-U0", "--no-color", "--no-renames", `${sha}^`, sha]).split("\n")) {
-		if (line.startsWith("diff --git ")) {
+	for (const line of Str.split("\n")(git(["diff", "-U0", "--no-color", "--no-renames", `${sha}^`, sha]))) {
+		if (Str.startsWith("diff --git ")(line)) {
 			inHeader = true
 			path = undefined
 			continue
 		}
-		if (inHeader && line.startsWith("--- ")) {
-			path = line === "--- /dev/null" ? undefined : line.slice("--- a/".length)
+		if (inHeader && Str.startsWith("--- ")(line)) {
+			path = line === "--- /dev/null" ? undefined : Str.slice("--- a/".length)(line)
 			continue
 		}
-		if (line.startsWith("@@")) inHeader = false
+		if (Str.startsWith("@@")(line)) inHeader = false
 		const hunk = /^@@ -(\d+)(?:,(\d+))? \+/.exec(line)
 		if (hunk === null || path === undefined) continue
 		const start = Number(hunk[1])
@@ -118,7 +122,7 @@ const changedOldRanges = (sha: string): Array<Location> => {
 		if (count === 0 && start === 0) continue
 		const kind = classifyChangedFile(path)
 		// A snapshot or a dependency patch changes with the bug's fix but never contained the bug.
-		if (path.includes("__sql_baseline__") || path.endsWith(".patch")) continue
+		if (Str.includes("__sql_baseline__")(path) || Str.endsWith(".patch")(path)) continue
 		if (kind === "source" || kind === "infra" || kind === "config")
 			ranges.push({ path, lines: count === 0 ? [start, start] : [start, start + count - 1] })
 	}
@@ -137,22 +141,22 @@ const blameRange = (sha: string, range: Location) => {
 	// not the whole mine.
 	if (blame.status !== 0) {
 		console.error(
-			`skipped ${range.path}:${range.lines.join("-")} in ${sha.slice(0, 10)}: ${blame.stderr.trim()}`,
+			`skipped ${range.path}:${range.lines.join("-")} in ${Str.slice(0, 10)(sha)}: ${Str.trim(blame.stderr)}`,
 		)
 		return out
 	}
 	const porcelain = blame.stdout
 	const filenames = new Map<string, string>()
 	let current: { commit: string; line: number } | undefined
-	for (const line of porcelain.split("\n")) {
+	for (const line of Str.split("\n")(porcelain)) {
 		const header = /^([0-9a-f]{40}) (\d+) \d+/.exec(line)
 		if (header !== null) {
 			current = { commit: header[1] ?? "", line: Number(header[2]) }
 			continue
 		}
-		if (line.startsWith("filename ") && current !== undefined)
-			filenames.set(current.commit, line.slice(9))
-		if (line.startsWith("\t") && current !== undefined)
+		if (Str.startsWith("filename ")(line) && current !== undefined)
+			filenames.set(current.commit, Str.slice(9)(line))
+		if (Str.startsWith("\t")(line) && current !== undefined)
 			out.push({ ...current, path: filenames.get(current.commit) ?? range.path })
 	}
 	return out
@@ -162,7 +166,7 @@ const blameRange = (sha: string, range: Location) => {
 const mergeLines = (lines: ReadonlyArray<{ path: string; line: number }>): Array<Location> => {
 	const byPath = new Map<string, Array<number>>()
 	for (const { path, line } of lines) byPath.set(path, [...(byPath.get(path) ?? []), line])
-	return [...byPath.entries()].flatMap(([path, numbers]) => {
+	return Arr.flatMap([...byPath.entries()], ([path, numbers]) => {
 		const sorted = [...new Set(numbers)].sort((a, b) => a - b)
 		const merged: Array<Location> = []
 		for (const n of sorted) {
@@ -186,17 +190,17 @@ const mine = (argv: ReadonlyArray<string>) => {
 	const subjectOf = (sha: string) => {
 		const known = subjects.get(sha)
 		if (known !== undefined) return known
-		const subject = git(["show", "-s", "--format=%s", sha]).trim()
+		const subject = Str.trim(git(["show", "-s", "--format=%s", sha]))
 		subjects.set(sha, subject)
 		return subject
 	}
 	const candidates: Array<EvalCase> = []
 	const log = git(["log", "--first-parent", ref, `--since=${since}`, "--format=%H%x09%s"])
-	for (const entry of log.split("\n")) {
+	for (const entry of Str.split("\n")(log)) {
 		if (candidates.length >= limit) break
-		const [sha = "", subject = ""] = entry.split("\t")
+		const [sha, subject = ""] = Str.split("\t")(entry)
 		if (!FIX_SUBJECT.test(subject)) continue
-		const blamed = changedOldRanges(sha).flatMap((range) => blameRange(sha, range))
+		const blamed = Arr.flatMap(changedOldRanges(sha), (range) => blameRange(sha, range))
 		const byPr = new Map<
 			number,
 			{ readonly commit: string; readonly lines: Array<{ path: string; line: number }> }
@@ -215,23 +219,24 @@ const mine = (argv: ReadonlyArray<string>) => {
 		const top = [...byPr.entries()].sort((a, b) => b[1].lines.length - a[1].lines.length)[0]
 		if (top === undefined) continue
 		const [number, { commit, lines }] = top
-		const files = git(["diff", "--name-only", `${commit}^`, commit])
-			.split("\n")
-			.filter((file) => file !== "").length
+		const files = Arr.filter(
+			Str.split("\n")(git(["diff", "--name-only", `${commit}^`, commit])),
+			(file) => file !== "",
+		).length
 		if (files < minFiles) continue
 		candidates.push({
-			id: `pr${number}-fix${sha.slice(0, 7)}`,
+			id: `pr${number}-fix${Str.slice(0, 7)(sha)}`,
 			number,
 			bug: "",
 			fix: { sha, subject },
 			locations: mergeLines(lines),
 			// The squash that shipped the bug, replayed as the review saw it.
-			range: `${git(["rev-parse", `${commit}^`]).trim()}..${commit}`,
+			range: `${Str.trim(git(["rev-parse", `${commit}^`]))}..${commit}`,
 			expected: "present",
 		})
-		console.error(`#${number} (${files} files) <- ${sha.slice(0, 10)} ${subject}`)
+		console.error(`#${number} (${files} files) <- ${Str.slice(0, 10)(sha)} ${subject}`)
 	}
-	console.log(JSON.stringify({ cases: candidates }, null, "\t"))
+	console.log(encodeTabbedJson({ cases: candidates }))
 }
 
 // Running
@@ -245,15 +250,16 @@ const hash = (text: string) => createHash("sha256").update(text).digest("hex")
 
 const runEval = async (argv: ReadonlyArray<string>) => {
 	const opts = flags(argv)
-	const corpus: { cases: ReadonlyArray<EvalCase> } = JSON.parse(readFileSync(CORPUS, "utf8"))
+	const corpus: { cases: ReadonlyArray<EvalCase> } = decodeTrustedJson(readFileSync(CORPUS, "utf8"))
 	const wanted = opts.get("cases")?.split(",")
-	const cases = corpus.cases.filter(
+	const cases = Arr.filter(
+		corpus.cases,
 		(c) =>
 			c.enabled !== false &&
 			(wanted === undefined || wanted.includes(c.id)) &&
 			(!opts.has("split") || c.split === opts.get("split")),
 	)
-	if (cases.length === 0 || wanted?.some((id) => !cases.some((c) => c.id === id))) {
+	if (cases.length === 0 || wanted?.some((id) => !Arr.some(cases, (c) => c.id === id))) {
 		console.error("No matching cases, or unknown/disabled case IDs.")
 		process.exit(2)
 	}
@@ -270,7 +276,7 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 				.map((p) => (p === "committed" ? undefined : p)) ?? [undefined])
 	const repeats = positiveInt(opts.get("repeats"), 1, "repeats")
 	const concurrency = positiveInt(opts.get("concurrency"), 1, "concurrency")
-	const codeModes = (opts.get("code-mode") ?? "off").split(",").map((mode) => {
+	const codeModes = Arr.map(Str.split(",")(opts.get("code-mode") ?? "off"), (mode) => {
 		if (mode !== "off" && mode !== "on" && mode !== "only") {
 			console.error(`--code-mode takes a list of off, on and only; got ${mode}`)
 			process.exit(2)
@@ -283,9 +289,9 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 			console.error(`${c.id} needs an immutable base..head range`)
 			process.exit(2)
 		}
-		for (const sha of c.range.split("..")) git(["cat-file", "-e", `${sha}^{commit}`])
-		const [base, head] = c.range.split("..")
-		if (git(["merge-base", base!, head!]).trim() !== base) {
+		for (const sha of Str.split("..")(c.range)) git(["cat-file", "-e", `${sha}^{commit}`])
+		const [base, head] = Str.split("..")(c.range)
+		if (Str.trim(git(["merge-base", base!, head!])) !== base) {
 			console.error(`${c.id}: pinned base must be an ancestor of head`)
 			process.exit(2)
 		}
@@ -293,50 +299,46 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 	const promptTexts = prompts.map((p) =>
 		p === undefined ? PR_REVIEW_SYSTEM_PROMPT : readFileSync(resolve(p), "utf8"),
 	)
-	const groups = [...new Set(cases.map((c) => c.range))]
+	const groups = [...new Set(Arr.map(cases, (c) => c.range))]
 	console.log(
 		`${cases.length} labels, ${groups.length} unique replays × ${models.length} models × ${prompts.length} prompts × ${codeModes.length} code modes × ${repeats} repeats`,
 	)
 	if (opts.has("dry-run")) return
-	const out = join(SCRIPT_DIR, ".pr-review-evals", new Date().toISOString().replace(/[:.]/g, "-"))
+	const out = join(SCRIPT_DIR, ".pr-review-evals", Str.replace(/[:.]/g, "-")(new Date().toISOString()))
 	mkdirSync(out, { recursive: true })
-	writeFileSync(join(out, "corpus.json"), JSON.stringify({ cases }, null, "\t"))
+	writeFileSync(join(out, "corpus.json"), encodeTabbedJson({ cases }))
 	writeFileSync(join(out, "worker-prompt.txt"), PR_REVIEW_WORKER_PROMPT)
 	writeFileSync(
 		join(out, "manifest.json"),
-		JSON.stringify(
-			{
-				revision: git(["rev-parse", "HEAD"]).trim(),
-				dirty: git(["status", "--porcelain"]),
-				models,
-				prompts,
-				codeModes,
-				repeats,
-				historical: true,
-				budget: PR_REVIEW_BUDGET,
-				workerPromptHash: hash(PR_REVIEW_WORKER_PROMPT),
-				promptHashes: promptTexts.map(hash),
-				corpusHash: hash(JSON.stringify(cases)),
-			},
-			null,
-			"\t",
-		),
+		encodeTabbedJson({
+			revision: Str.trim(git(["rev-parse", "HEAD"])),
+			dirty: git(["status", "--porcelain"]),
+			models,
+			prompts,
+			codeModes,
+			repeats,
+			historical: true,
+			budget: PR_REVIEW_BUDGET,
+			workerPromptHash: hash(PR_REVIEW_WORKER_PROMPT),
+			promptHashes: Arr.map(promptTexts, hash),
+			corpusHash: hash(encodeJson(cases)),
+		}),
 	)
 	const results: Array<Record<string, unknown>> = []
 	const grades: Array<Grade & { runId: string }> = []
 	// Rotate variants between repetitions to reduce provider/cache/order bias.
-	const variants = models.flatMap((model) =>
-		prompts.flatMap((_, prompt) => codeModes.map((codeMode) => ({ model, prompt, codeMode }))),
+	const variants = Arr.flatMap(models, (model) =>
+		Arr.flatMap(prompts, (_, prompt) => Arr.map(codeModes, (codeMode) => ({ model, prompt, codeMode }))),
 	)
 	const jobs = Array.from({ length: repeats }, (_, repeat) =>
-		groups.flatMap((range) =>
-			variants.map((_, v) => {
+		Arr.flatMap(groups, (range) =>
+			Arr.map(variants, (_, v) => {
 				const variant = variants[(v + repeat) % variants.length]!
 				return {
 					repeat,
 					range,
 					variant,
-					labels: cases.filter((c) => c.range === range),
+					labels: Arr.filter(cases, (c) => c.range === range),
 					runId: `r${repeat}-g${groups.indexOf(range)}-v${variants.indexOf(variant)}`,
 				}
 			}),
@@ -370,7 +372,7 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 					? ["--code-only"]
 					: []),
 		])
-		const report = JSON.parse(readFileSync(join(dir, "report.json"), "utf8"))
+		const report = decodeTrustedJson(readFileSync(join(dir, "report.json"), "utf8"))
 		const findings: ReadonlyArray<Finding> = report?.report?.findings ?? []
 		results.push({
 			order,
@@ -380,7 +382,7 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 			prompt: variant.prompt,
 			codeMode: variant.codeMode,
 			submitted: report?.report !== undefined,
-			cases: labels.map((c) => c.id),
+			cases: Arr.map(labels, (c) => c.id),
 			run: dir,
 			findings,
 			calls: report?.tools?.length,
@@ -393,10 +395,12 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 			endReason: report?.endReason,
 			offDiff: report?.offDiff,
 			// Location overlap is navigation only, never a quality score.
-			nearby: Object.fromEntries(
-				labels.map((c) => [
+			nearby: Rec.fromEntries(
+				Arr.map(labels, (c) => [
 					c.id,
-					findings.flatMap((f, i) => (c.locations.some((l) => overlaps(f, l)) ? [i] : [])),
+					Arr.flatMap(findings, (f, i) =>
+						Arr.some(c.locations, (l) => overlaps(f, l)) ? [i] : [],
+					),
 				]),
 			),
 		})
@@ -406,7 +410,7 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 					runId,
 					caseId: c.id,
 					status: "pending",
-					findings: findings.map((_, index) => ({
+					findings: Arr.map(findings, (_, index) => ({
 						index,
 						verdict: "ungraded",
 						rationale: "",
@@ -417,8 +421,8 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 	// After every replay, including failures, in job order whatever finished first.
 	const checkpoint = () => {
 		results.sort((a, b) => Number(a.order) - Number(b.order))
-		writeFileSync(join(out, "results.json"), JSON.stringify(results, null, "\t"))
-		writeFileSync(join(out, "grades.json"), JSON.stringify(grades, null, "\t"))
+		writeFileSync(join(out, "results.json"), encodeTabbedJson(results))
+		writeFileSync(join(out, "grades.json"), encodeTabbedJson(grades))
 	}
 	// Each review runs a parent and up to four children against one provider; past about three at
 	// once, rate limits fail reviews outright. Their streamed output interleaves on stdout.
@@ -438,7 +442,7 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 				prompt: job.variant.prompt,
 				codeMode: job.variant.codeMode,
 				submitted: false,
-				cases: job.labels.map((c) => c.id),
+				cases: Arr.map(job.labels, (c) => c.id),
 				findings: [],
 				error: String(error),
 			})
@@ -448,7 +452,7 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 	}
 	await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, worker))
 	console.log(`\nArtifacts: ${out}\nGrade findings in grades.json, then run review:eval score --dir ${out}`)
-	if (results.some((r) => r.submitted !== true)) process.exitCode = 1
+	if (Arr.some(results, (r) => r.submitted !== true)) process.exitCode = 1
 }
 
 const score = (argv: ReadonlyArray<string>) => {
@@ -458,29 +462,31 @@ const score = (argv: ReadonlyArray<string>) => {
 		process.exit(2)
 	}
 	const dir = resolve(opts.get("dir")!)
-	const cases: { cases: ReadonlyArray<EvalCase> } = JSON.parse(
+	const cases: { cases: ReadonlyArray<EvalCase> } = decodeTrustedJson(
 		readFileSync(join(dir, "corpus.json"), "utf8"),
 	)
 	const grades = Schema.decodeUnknownSync(
-		Schema.Array(Schema.Struct({ ...Grade.fields, runId: Schema.String })),
-	)(JSON.parse(readFileSync(join(dir, "grades.json"), "utf8")))
+		Schema.fromJsonString(Schema.Array(Schema.Struct({ ...Grade.fields, runId: Schema.String }))),
+	)(readFileSync(join(dir, "grades.json"), "utf8"))
 	const results = Schema.decodeUnknownSync(
-		Schema.Array(
-			Schema.Struct({
-				runId: Schema.String,
-				submitted: Schema.Boolean,
-				cases: Schema.Array(Schema.String),
-				findings: Schema.Array(Schema.Unknown),
-				model: Schema.String,
-				prompt: Schema.Int,
-				codeMode: Schema.optionalKey(Schema.Literals(["off", "on", "only"])),
-			}),
+		Schema.fromJsonString(
+			Schema.Array(
+				Schema.Struct({
+					runId: Schema.String,
+					submitted: Schema.Boolean,
+					cases: Schema.Array(Schema.String),
+					findings: Schema.Array(Schema.Unknown),
+					model: Schema.String,
+					prompt: Schema.Int,
+					codeMode: Schema.optionalKey(Schema.Literals(["off", "on", "only"])),
+				}),
+			),
 		),
-	)(JSON.parse(readFileSync(join(dir, "results.json"), "utf8")))
-	const rows = results.flatMap((run) =>
-		run.cases.map((caseId) => {
+	)(readFileSync(join(dir, "results.json"), "utf8"))
+	const rows = Arr.flatMap(results, (run) =>
+		Arr.map(run.cases, (caseId) => {
 			const c = cases.cases.find((c) => c.id === caseId)!
-			const matching = grades.filter((g) => g.runId === run.runId && g.caseId === caseId)
+			const matching = Arr.filter(grades, (g) => g.runId === run.runId && g.caseId === caseId)
 			const scored =
 				matching.length === 1
 					? scoreGrade(matching[0]!, run.findings.length, c.expected ?? "present")
@@ -497,20 +503,20 @@ const score = (argv: ReadonlyArray<string>) => {
 			}
 		}),
 	)
-	writeFileSync(join(dir, "scores.json"), JSON.stringify(rows, null, "\t"))
+	writeFileSync(join(dir, "scores.json"), encodeTabbedJson(rows))
 	console.table(rows)
 	const label = (r: (typeof rows)[number]) => `${r.model} / prompt ${r.prompt} / run_code ${r.codeMode}`
-	const variants = [...new Set(rows.map(label))]
-	const summary = variants.map((variant) => {
-		const selected = rows.filter((r) => label(r) === variant)
-		const graded = selected.filter((r) => r.status === "graded")
-		const positives = graded.filter((r) => r.expected === "present")
-		const controls = graded.filter((r) => r.expected === "absent")
+	const variants = [...new Set(Arr.map(rows, label))]
+	const summary = Arr.map(variants, (variant) => {
+		const selected = Arr.filter(rows, (r) => label(r) === variant)
+		const graded = Arr.filter(selected, (r) => r.status === "graded")
+		const positives = Arr.filter(graded, (r) => r.expected === "present")
+		const controls = Arr.filter(graded, (r) => r.expected === "absent")
 		return {
 			variant,
 			graded: graded.length,
-			pending: selected.filter((r) => r.status === "ungraded").length,
-			failed: selected.filter((r) => r.status === "failed").length,
+			pending: Arr.filter(selected, (r) => r.status === "ungraded").length,
+			failed: Arr.filter(selected, (r) => r.status === "failed").length,
 			targetRecall: positives.length
 				? positives.filter((r) => r.passed).length / positives.length
 				: null,
@@ -519,7 +525,7 @@ const score = (argv: ReadonlyArray<string>) => {
 				: null,
 		}
 	})
-	writeFileSync(join(dir, "summary.json"), JSON.stringify(summary, null, "\t"))
+	writeFileSync(join(dir, "summary.json"), encodeTabbedJson(summary))
 	console.table(summary)
 	console.log(
 		"Pending grades are not misses or clean reviews. Shared replays appear once per target; do not sum their findings/tokens twice.",

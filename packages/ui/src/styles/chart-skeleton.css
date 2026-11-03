@@ -1,4 +1,4 @@
-/* Chart loading ghosts for `chartSkeleton` (apps/web/src/ui/chart-skeleton.ts).
+/* Chart loading ghosts for `chartSkeleton` (packages/views/src/ui/chart-skeleton.ts).
    Shared because the dashboard and Maple Local both render it; import after tailwindcss. */
 /* One motion for every ghost: the shapes hold still and a soft band of light
    passes left to right, then rests. It fades in after a beat so a fast query

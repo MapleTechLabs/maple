@@ -1,27 +1,27 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
-import * as Checkbox from "../../../ui/checkbox"
-import * as Combobox from "../../../ui/combobox"
-import * as Field from "../../../ui/field"
-import { icon } from "../../../ui/icon"
-import { input } from "../../../ui/input"
+import * as Checkbox from "@maple/views/ui/checkbox"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Field from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
+import { input } from "@maple/views/ui/input"
 import {
 	inputGroup,
 	inputGroupAddon,
 	inputGroupButton,
 	inputGroupInput,
 	inputGroupText,
-} from "../../../ui/input-group"
-import { label } from "../../../ui/label"
-import { nativeOptGroup, nativeOption, nativeSelect } from "../../../ui/native-select"
-import * as OtpField from "../../../ui/otp-field"
-import * as RadioGroup from "../../../ui/radio-group"
-import * as Select from "../../../ui/select"
-import * as Switch from "../../../ui/switch"
-import { textarea } from "../../../ui/textarea"
+} from "@maple/views/ui/input-group"
+import { label } from "@maple/views/ui/label"
+import { nativeOptGroup, nativeOption, nativeSelect } from "@maple/views/ui/native-select"
+import * as OtpField from "@maple/views/ui/otp-field"
+import * as RadioGroup from "@maple/views/ui/radio-group"
+import * as Select from "@maple/views/ui/select"
+import * as Switch from "@maple/views/ui/switch"
+import { textarea } from "@maple/views/ui/textarea"
 import { defineLab } from "../../define"
 import { kitPage, kitRow, kitSection } from "../../kit/kit-layout"
 import {
@@ -85,8 +85,10 @@ type Model = typeof Model.Type
 const init = (): Update.Return<Model, Message> => ({
 	model: {
 		fields: { dashboard: Field.init("Checkout latency"), webhook: Field.init("hooks.example") },
-		checkboxes: Object.fromEntries(CHECKBOXES.map(({ key }) => [key, Checkbox.init(key === "checked")])),
-		switches: Object.fromEntries(SWITCHES.map(({ key }) => [key, Switch.init(key === "on")])),
+		checkboxes: Rec.fromEntries(
+			Arr.map(CHECKBOXES, ({ key }) => [key, Checkbox.init(key === "checked")]),
+		),
+		switches: Rec.fromEntries(Arr.map(SWITCHES, ({ key }) => [key, Switch.init(key === "on")])),
 		radioGroup: RadioGroup.init("p95"),
 		select: initKitSelect("kit-forms-select"),
 		combobox: initKitCombobox("kit-forms-combobox"),
@@ -199,7 +201,7 @@ const inputs = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 	kitRow(
 		h,
 		"sizes",
-		INPUT_SIZES.map((size, index) =>
+		Arr.map(INPUT_SIZES, (size, index) =>
 			input(h, {
 				id: `base-ui-_r_${index}_`,
 				size,
@@ -336,7 +338,7 @@ const checkboxes = (model: Model, h: HtmlBuilder<Message>): Html =>
 	kitRow(
 		h,
 		"checkbox",
-		CHECKBOXES.flatMap(({ key, id, inputId, text }) => {
+		Arr.flatMap(CHECKBOXES, ({ key, id, inputId, text }) => {
 			const checkbox = model.checkboxes[key]
 			if (checkbox === undefined) return []
 			const control = Checkbox.view(h, {
@@ -361,7 +363,7 @@ const radios = (model: Model, h: HtmlBuilder<Message>): Html => {
 		RadioGroup.radioGroup(
 			h,
 			{ label: "Percentile", className: "flex flex-row gap-4" },
-			RADIOS.map((item) =>
+			Arr.map(RADIOS, (item) =>
 				choiceLabel(h, item.inputId, RadioGroup.radio(h, config, item.value), item.value),
 			),
 		),
@@ -372,7 +374,7 @@ const switches = (model: Model, h: HtmlBuilder<Message>): Html =>
 	kitRow(
 		h,
 		"switch",
-		SWITCHES.flatMap(({ key, id, inputId, text }) => {
+		Arr.flatMap(SWITCHES, ({ key, id, inputId, text }) => {
 			const switchModel = model.switches[key]
 			if (switchModel === undefined) return []
 			const control = Switch.view(h, {

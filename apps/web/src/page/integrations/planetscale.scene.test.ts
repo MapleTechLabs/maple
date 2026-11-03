@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../contract"
@@ -14,7 +14,7 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const pending = Schema.decodeUnknownSync(V2PlanetScaleIntegration)({
 	object: "planetscale_integration",

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import fc from "fast-check"
 import insertMappings from "../src/schema/local-inserts.json"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { encodeLogs, encodeMetrics, encodeTraces, OtlpFieldError } from "../src/otlp/encode"
 import { checkOtlpJson } from "../src/otlp/json"
 import {
@@ -28,9 +28,9 @@ const columns = (datasource: string): Map<string, string> => {
 	let depth = 0
 	let token = ""
 	const flush = () => {
-		const trimmed = token.trim()
+		const trimmed = Str.trim(token)
 		const space = trimmed.indexOf(" ")
-		if (space > 0) result.set(trimmed.slice(0, space), trimmed.slice(space + 1).trim())
+		if (space > 0) result.set(Str.slice(0, space)(trimmed), Str.trim(Str.slice(space + 1)(trimmed)))
 		token = ""
 	}
 	for (const ch of inputSchema) {
@@ -49,19 +49,19 @@ const isInteger = (value: unknown) =>
 
 /** Does a JSON value fit a ClickHouse column type, as JSONEachRow would read it? */
 const fits = (type: string, value: unknown): boolean => {
-	const inner = (prefix: string) => type.slice(prefix.length, -1)
-	if (type.startsWith("Nullable(")) return value === null || fits(inner("Nullable("), value)
-	if (type.startsWith("LowCardinality(")) return fits(inner("LowCardinality("), value)
-	if (type.startsWith("Array("))
-		return Array.isArray(value) && value.every((item) => fits(inner("Array("), item))
-	if (type.startsWith("Map("))
+	const inner = (prefix: string) => Str.slice(prefix.length, -1)(type)
+	if (Str.startsWith("Nullable(")(type)) return value === null || fits(inner("Nullable("), value)
+	if (Str.startsWith("LowCardinality(")(type)) return fits(inner("LowCardinality("), value)
+	if (Str.startsWith("Array(")(type))
+		return Arr.isArray(value) && Arr.every(value, (item) => fits(inner("Array("), item))
+	if (Str.startsWith("Map(")(type))
 		return (
 			typeof value === "object" &&
 			value !== null &&
-			!Array.isArray(value) &&
-			Object.values(value).every((item) => typeof item === "string")
+			!Arr.isArray(value) &&
+			Arr.every(Rec.values(value), (item) => typeof item === "string")
 		)
-	if (type === "String" || type.startsWith("DateTime64")) return typeof value === "string"
+	if (type === "String" || Str.startsWith("DateTime64")(type)) return typeof value === "string"
 	if (/^U?Int\d+$/.test(type)) return isInteger(value)
 	if (type === "Float64") return typeof value === "number" || typeof value === "string"
 	if (type === "Bool") return typeof value === "boolean" || value === 0 || value === 1
@@ -79,16 +79,16 @@ const assertRowsFit = (encode: () => ReturnType<typeof encodeTraces>) => {
 		batches = encode()
 	} catch (error) {
 		// The one acceptable failure: a 400 that names the field.
-		expect(error instanceof OtlpFieldError ? "OtlpFieldError" : String(error)).toBe("OtlpFieldError")
+		expect(Schema.is(OtlpFieldError)(error) ? "OtlpFieldError" : String(error)).toBe("OtlpFieldError")
 		return
 	}
 	for (const batch of batches) {
 		const schema = columns(batch.datasource)
-		const lines = batch.ndjson.split("\n")
+		const lines = Str.split("\n")(batch.ndjson)
 		expect(lines).toHaveLength(batch.rowCount)
 		for (const line of lines) {
 			const row = decodeRow(line)
-			for (const [name, value] of Object.entries(row)) {
+			for (const [name, value] of Rec.toEntries(row)) {
 				const type = schema.get(name)
 				expect({ column: name, type, fits: type !== undefined && fits(type, value) }).toEqual({
 					column: name,
@@ -122,8 +122,8 @@ const wrongType = fc.oneof(
 		"1e400",
 		"0x10",
 		" 1",
-		"9".repeat(30),
-		"-9".repeat(12),
+		Str.repeat(30)("9"),
+		Str.repeat(12)("-9"),
 		"1.5",
 		"==",
 	),
@@ -481,10 +481,13 @@ const mangled = otlpBodies(true)
 const paths = (root: unknown): ReadonlyArray<ReadonlyArray<string | number>> => {
 	const out: Array<ReadonlyArray<string | number>> = [[]]
 	const walk = (value: unknown, at: ReadonlyArray<string | number>) => {
-		if (Array.isArray(value)) value.forEach((item, i) => (out.push([...at, i]), walk(item, [...at, i])))
+		if (Arr.isArray(value))
+			Arr.forEach(value, (item, i) => (out.push([...at, i]), walk(item, [...at, i])))
 		else if (typeof value === "object" && value !== null)
-			for (const [key, item] of Object.entries(value))
-				(out.push([...at, key]), walk(item, [...at, key]))
+			for (const [key, item] of Rec.toEntries(value)) {
+				out.push([...at, key])
+				walk(item, [...at, key])
+			}
 	}
 	walk(root, [])
 	return out
@@ -495,11 +498,11 @@ const paths = (root: unknown): ReadonlyArray<ReadonlyArray<string | number>> => 
 const replaceAt = (root: unknown, path: ReadonlyArray<string | number>, replacement: unknown): unknown => {
 	if (path.length === 0) return replacement
 	const [head, ...rest] = path
-	if (Array.isArray(root))
-		return root.map((item, i) => (i === head ? replaceAt(item, rest, replacement) : item))
-	const entries = typeof root === "object" && root !== null ? Object.entries(root) : []
-	return Object.fromEntries(
-		entries.map(([key, item]) => [key, key === head ? replaceAt(item, rest, replacement) : item]),
+	if (Arr.isArray(root))
+		return Arr.map(root, (item, i) => (i === head ? replaceAt(item, rest, replacement) : item))
+	const entries = typeof root === "object" && root !== null ? Rec.toEntries(root) : []
+	return Rec.fromEntries(
+		Arr.map(entries, ([key, item]) => [key, key === head ? replaceAt(item, rest, replacement) : item]),
 	)
 }
 

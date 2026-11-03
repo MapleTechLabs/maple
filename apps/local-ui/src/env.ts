@@ -6,7 +6,7 @@ import {
 } from "./lib/constants"
 import { DEFAULT_RANGE, isRangeKey } from "./lib/time"
 import { readLocalStorage } from "@maple/ui/lib/local-storage"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, String as Str } from "effect"
 import type { TimeFormat } from "./page/kit/local-time"
 
 /**
@@ -37,7 +37,7 @@ export const readRememberedRange: Effect.Effect<string> = Effect.sync(() =>
 
 /** The shared provider persists the collapsed state in this cookie but leaves reading it to the app. */
 export const readSidebarOpen: Effect.Effect<boolean> = Effect.sync(
-	() => !document.cookie.split("; ").includes("sidebar_state=false"),
+	() => !Str.split("; ")(document.cookie).includes("sidebar_state=false"),
 )
 
 export const Theme = Schema.Literals(["light", "dark"])

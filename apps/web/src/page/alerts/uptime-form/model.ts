@@ -2,10 +2,10 @@ import { UptimeMonitorId } from "@maple/domain"
 import { V2UptimeMonitor, V2UptimeMonitorTestResult } from "@maple/domain/http/v2"
 import { AlertDestinationRowSchema } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
-import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { AlertsUptimeNewSearch } from "../../../route/search"
-import * as Menu from "../../../ui/menu"
+import * as Menu from "@maple/views/ui/menu"
 import { Form } from "./form"
 
 // `/alerts/uptime/new`: create an uptime monitor, or edit one (`?monitorId=`).

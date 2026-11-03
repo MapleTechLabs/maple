@@ -1,4 +1,4 @@
-import { encodeLogAttributeFilter } from "../../../lib/logs/log-attribute-filters"
+import { encodeLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
 import { AppRoute, hrefOf } from "../../../route"
 
 // Links out of the Supabase pages.

@@ -4,7 +4,7 @@ import { clerkAppearance, clerkLocalization } from "../lib/clerk-appearance"
 import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
 import { purgeForeignClerkCookies } from "../lib/services/common/clerk-cookie-guard"
 import type { ClerkGlobal } from "./clerk"
-import { clerkJsUrl } from "./clerk-js-url"
+import { clerkJsUrl } from "@maple/domain/clerk-js-url"
 
 export class ClerkLoadError extends Schema.TaggedError<ClerkLoadError>()("@maple/web/ClerkLoadError", {
 	message: Schema.String,
@@ -39,11 +39,10 @@ const injectClerkJs = Effect.callback<void, ClerkLoadError>((resume) => {
 })
 
 const currentClerk = Effect.suspend(() =>
-	Option.match(Option.fromNullishOr(window.Clerk), {
-		onNone: () =>
-			Effect.fail(new ClerkLoadError({ message: "window.Clerk is missing", cause: undefined })),
-		onSome: Effect.succeed,
-	}),
+	Effect.fromOption(
+		Option.fromNullishOr(window.Clerk),
+		() => new ClerkLoadError({ message: "window.Clerk is missing", cause: undefined }),
+	),
 )
 
 const CLERK_LOAD_TIMEOUT = Duration.seconds(20)

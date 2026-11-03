@@ -1,21 +1,27 @@
 import type { AnomalyIncidentDocument, ErrorIssueDocument } from "@maple/domain/http"
-import { cn } from "@maple/ui/lib/utils"
-import * as A from "@maple/ui/styles/ui/autocomplete"
-import { commandEmptyStyles, commandItemStyles, commandListStyles } from "@maple/ui/styles/ui/command"
 import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Combobox from "../../../ui/combobox"
-import { textLink } from "../../../ui/text-link"
-import { commandHiddenInput, commandInput } from "../../../ui/command"
-import { view as dialogView } from "../../../ui/dialog-view"
-import { scrollArea } from "../../../ui/scroll-area"
-import { spinner } from "../../../ui/spinner"
+import * as Combobox from "@maple/views/ui/combobox"
+import { textLink } from "@maple/views/ui/text-link"
+import {
+	commandEmpty,
+	commandGroup,
+	commandHiddenInput,
+	commandInput,
+	commandListbox,
+	commandOption,
+} from "@maple/views/ui/command"
+import { view as dialogView } from "@maple/views/ui/dialog-view"
+import { scrollArea } from "@maple/views/ui/scroll-area"
+import { spinner } from "@maple/views/ui/spinner"
 import { relativeTime } from "../../kit/relative-time"
 import { workflowRingIcon } from "../../errors/kit/workflow"
 import { shortIssueId } from "../kit/row"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr, String as Str } from "effect"
 
 // `AnomalyLinkIssueDialog`: a command
 // dialog over the service's issues, filtered here (`filter={null}`), the linked one left out.
@@ -25,48 +31,57 @@ type H = HtmlBuilder<Message>
 const toCombobox = (message: Combobox.Message) => Message.GotLinkComboboxMessage({ message })
 
 const filteredOf = (model: Model, incident: AnomalyIncidentDocument): ReadonlyArray<ErrorIssueDocument> => {
-	const issues = AsyncData.getOrElse(model.linkIssues.data, () => []).map(errorIssueFromV2)
-	const q = model.linkCombobox.inputValue.trim().toLowerCase()
+	const issues = Arr.map(
+		AsyncData.getOrElse(model.linkIssues.data, () => []),
+		errorIssueFromV2,
+	)
+	const q = Str.toLowerCase(Str.trim(model.linkCombobox.inputValue))
 	const matches =
 		q.length === 0
 			? issues
-			: issues.filter(
+			: Arr.filter(
+					issues,
 					(issue) =>
-						issue.exceptionType.toLowerCase().includes(q) ||
-						issue.exceptionMessage.toLowerCase().includes(q) ||
-						issue.serviceName.toLowerCase().includes(q) ||
-						shortIssueId(issue.id).toLowerCase().includes(q),
+						Str.includes(q)(Str.toLowerCase(issue.exceptionType)) ||
+						Str.includes(q)(Str.toLowerCase(issue.exceptionMessage)) ||
+						Str.includes(q)(Str.toLowerCase(issue.serviceName)) ||
+						Str.includes(q)(Str.toLowerCase(shortIssueId(issue.id))),
 				)
-	return matches.filter((issue) => issue.id !== incident.errorIssueId)
+	return Arr.filter(matches, (issue) => issue.id !== incident.errorIssueId)
 }
 
 const item = (h: H, model: Model, issue: ErrorIssueDocument, index: number, timeZone: string): Html =>
-	h.div(
-		[
-			h.Key(issue.id),
-			h.Class(cn(A.autocompleteItemStyles, commandItemStyles)),
-			...(model.linkCombobox.highlighted === index ? [h.DataAttribute("highlighted", "")] : []),
-			h.DataAttribute("slot", "command-item"),
-			h.Id(Combobox.itemId(model.linkCombobox.id, index)),
-			h.Role("option"),
-			h.OnMouseMove(toCombobox(Combobox.Message.HighlightedItem({ index }))),
-			h.OnClick(Message.SelectedLinkIssue({ issueId: issue.id })),
-		],
+	commandOption(
+		h,
+		{
+			attributes: [
+				h.Key(issue.id),
+				...(model.linkCombobox.highlighted === index ? [h.DataAttribute("highlighted", "")] : []),
+				h.Id(Combobox.itemId(model.linkCombobox.id, index)),
+				h.OnMouseMove(toCombobox(Combobox.Message.HighlightedItem({ index }))),
+				h.OnClick(Message.SelectedLinkIssue({ issueId: issue.id })),
+			],
+		},
 		[
 			h.span(
 				[h.Class("flex min-w-0 flex-1 items-center gap-2")],
 				[
 					workflowRingIcon(h, issue.workflowState, 14),
-					h.span([h.Class("truncate text-foreground")], [issue.exceptionType || "Unknown error"]),
+					typography(h, { tone: "foreground", truncate: true }, [
+						issue.exceptionType || "Unknown error",
+					]),
 					...(issue.exceptionMessage
-						? [h.span([h.Class("truncate text-muted-foreground")], [issue.exceptionMessage])]
+						? [typography(h, { tone: "muted", truncate: true }, [issue.exceptionMessage])]
 						: []),
 				],
 			),
 			h.span(
 				[h.Class("ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground")],
 				[
-					h.code([h.Class("font-mono tabular-nums")], [shortIssueId(issue.id)]),
+					h.code(
+						[h.Class(typographyClass({ mono: true, numeric: true }))],
+						[shortIssueId(issue.id)],
+					),
 					relativeTime(h, {
 						value: issue.lastSeenAt,
 						nowMs: model.nowMs,
@@ -96,44 +111,20 @@ const listBody = (
 	const filtered = filteredOf(model, incident)
 	if (filtered.length === 0)
 		return [
-			h.div(
-				[
-					h.AriaAtomic(true),
-					h.AriaLive("polite"),
-					h.Class(cn(A.autocompleteEmptyStyles, commandEmptyStyles)),
-					h.DataAttribute("slot", "command-empty"),
-					h.Role("status"),
-				],
-				[
-					query.length > 0
-						? `No issues matching “${query}”.`
-						: model.linkAllServices
-							? "No issues found."
-							: `No issues for ${incident.serviceName}.`,
-				],
-			),
+			commandEmpty(h, {}, [
+				query.length > 0
+					? `No issues matching “${query}”`
+					: model.linkAllServices
+						? "No issues found"
+						: `No issues for ${incident.serviceName}`,
+			]),
 		]
 	const labelId = `${model.linkCombobox.id}-group-0`
 	return [
-		h.div(
-			[
-				h.AriaLabelledBy(labelId),
-				h.Class(cn(A.autocompleteGroupStyles)),
-				h.DataAttribute("slot", "command-group"),
-				h.Role("group"),
-			],
-			[
-				h.div(
-					[
-						h.AriaHidden(true),
-						h.Class(cn(A.autocompleteGroupLabelStyles)),
-						h.DataAttribute("slot", "command-group-label"),
-						h.Id(labelId),
-					],
-					[model.linkAllServices ? "All services" : incident.serviceName],
-				),
-				...filtered.map((issue, index) => item(h, model, issue, index, timeZone)),
-			],
+		commandGroup(
+			h,
+			{ labelId, label: model.linkAllServices ? "All services" : incident.serviceName },
+			Arr.map(filtered, (issue, index) => item(h, model, issue, index, timeZone)),
 		),
 	]
 }
@@ -166,7 +157,7 @@ export const linkIssueDialog = (
 									groups: [
 										{
 											label: "",
-											items: filteredOf(model, incident).map((issue) => ({
+											items: Arr.map(filteredOf(model, incident), (issue) => ({
 												title: String(issue.id),
 											})),
 										},
@@ -182,15 +173,14 @@ export const linkIssueDialog = (
 									scrollbarGutter: true,
 								},
 								[
-									h.div(
-										[
-											h.Class(cn(A.autocompleteListStyles, commandListStyles)),
-											h.DataAttribute("empty", ""),
-											h.DataAttribute("slot", "command-list"),
-											h.Id(Combobox.listId(model.linkCombobox.id)),
-											h.Role("listbox"),
-											h.Tabindex(-1),
-										],
+									commandListbox(
+										h,
+										{
+											attributes: [
+												h.DataAttribute("empty", ""),
+												h.Id(Combobox.listId(model.linkCombobox.id)),
+											],
+										},
 										listBody(h, model, incident, timeZone),
 									),
 								],
@@ -202,14 +192,11 @@ export const linkIssueDialog = (
 									),
 								],
 								[
-									h.span(
-										[h.Class("text-xs text-muted-foreground")],
-										[
-											model.linkAllServices
-												? "Showing issues across all services"
-												: `Scoped to ${incident.serviceName}`,
-										],
-									),
+									typography(h, { size: "xs", tone: "muted" }, [
+										model.linkAllServices
+											? "Showing issues across all services"
+											: `Scoped to ${incident.serviceName}`,
+									]),
 									textLink(
 										h,
 										{ className: "text-xs", onClick: Message.ToggledLinkScope() },

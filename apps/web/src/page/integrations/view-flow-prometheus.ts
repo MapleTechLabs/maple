@@ -1,9 +1,10 @@
 import type { V2ScrapeTarget } from "@maple/domain/http/v2"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { heading } from "@maple/views/ui/heading"
 import { diagnoseScrapeError } from "../../lib/scrape-error-diagnosis"
-import { button } from "../../ui/button"
-import { inlineCode } from "../../ui/inline-code"
+import { button } from "@maple/views/ui/button"
+import { inlineCode } from "@maple/views/ui/inline-code"
 import {
 	type CheckRow,
 	flowColumns,
@@ -32,6 +33,9 @@ import type { Model } from "./model"
 import { hostnameOf } from "./prometheus"
 import { isFormValid, parsedInterval } from "./update-prometheus"
 import { authField, credentialFields, textField } from "./view-prometheus-form"
+import { typography } from "@maple/views/ui/typography"
+import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // Prometheus and WarpStream in the connect flow: save and probe an endpoint, name it, then watch
 // the first scheduled scrape land.
@@ -139,7 +143,7 @@ const warpstreamGuide = (h: H): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-2 rounded-md bg-surface-sunken p-4")],
 		[
-			h.h3([h.Class("text-sm font-medium")], ["Where to find it in WarpStream"]),
+			heading(h, { level: 3, variant: "subsection" }, ["Where to find it in WarpStream"]),
 			h.ul(
 				[h.Class("flex list-disc flex-col gap-1.5 pl-4 text-xs text-muted-foreground")],
 				[
@@ -222,30 +226,20 @@ const failedRow = (
 			...(diagnosis === null || diagnosis.fixes.length === 0
 				? []
 				: [
-						h.div(
-							[h.Class("flex flex-col gap-1.5")],
-							[
-								h.span([h.Class("text-xs font-medium")], ["How to fix it"]),
-								h.ul(
-									[
-										h.Class(
-											"flex list-disc flex-col gap-1 pl-4 text-xs text-muted-foreground",
-										),
-									],
-									diagnosis.fixes.map((fix) => h.li([], [fix])),
-								),
-							],
-						),
+						vstack(h, { gap: "1.5" }, [
+							typography(h, { size: "xs", weight: "medium" }, ["How to fix it"]),
+							h.ul(
+								[h.Class("flex list-disc flex-col gap-1 pl-4 text-xs text-muted-foreground")],
+								Arr.map(diagnosis.fixes, (fix) => h.li([], [fix])),
+							),
+						]),
 					]),
 			...(integration === "prometheus"
 				? []
 				: [
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							[
-								"Agents only reachable inside your VPC? Run an OpenTelemetry Collector next to them and send to Maple instead.",
-							],
-						),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Agents only reachable inside your VPC? Run an OpenTelemetry Collector next to them and send to Maple instead.",
+						]),
 					]),
 			...(target === null
 				? []
@@ -274,10 +268,10 @@ const connectStep = (h: H, model: Model, integration: ScrapeIntegration): Html =
 		h,
 		[
 			stepCard(h, { icon: "LinkIcon", title: copy.title, note: "Credentials encrypted at rest" }, [
-				h.p([h.Class("text-xs text-muted-foreground")], [copy.intro]),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [copy.intro]),
 				...(integration === "warpstream" ? [warpstreamGuide(h)] : []),
 				h.form(
-					[h.Class("flex flex-col gap-4"), h.OnSubmit(Message.SubmittedTargetForm())],
+					[h.Class(vstackClass({ gap: "4" })), h.OnSubmit(Message.SubmittedTargetForm())],
 					[
 						textField(h, model, {
 							field: "url",
@@ -297,7 +291,7 @@ const connectStep = (h: H, model: Model, integration: ScrapeIntegration): Html =
 								size: "sm",
 								className: "w-fit",
 								isLoading: card.isSaving,
-								isDisabled: card.isSaving || card.form.url.value.trim() === "",
+								isDisabled: card.isSaving || Str.trim(card.form.url.value) === "",
 							},
 							[target === null ? "Save and probe" : "Save and probe again"],
 						),
@@ -315,17 +309,16 @@ const chooseStep = (h: H, model: Model, integration: ScrapeIntegration): Html =>
 	const card = model.prometheusCard
 	const target = flowTarget(model)
 	const saved = target !== null && isChoiceSaved(model, target)
-	const service = card.form.serviceName.value.trim() || card.form.name.value.trim()
+	const service = Str.trim(card.form.serviceName.value) || Str.trim(card.form.name.value)
 	return flowColumns(
 		h,
 		[
 			stepCard(h, { icon: "TagIcon", title: "Name this target" }, [
-				h.p(
-					[h.Class("text-xs text-muted-foreground")],
-					["How it shows up in Sources and on every metric it sends."],
-				),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					"How it shows up in Sources and on every metric it sends.",
+				]),
 				h.form(
-					[h.Class("flex flex-col gap-4"), h.OnSubmit(Message.SubmittedTargetForm())],
+					[h.Class(vstackClass({ gap: "4" })), h.OnSubmit(Message.SubmittedTargetForm())],
 					[
 						h.div(
 							[h.Class("grid grid-cols-1 gap-4 @2xl/page:grid-cols-3")],
@@ -340,7 +333,7 @@ const chooseStep = (h: H, model: Model, integration: ScrapeIntegration): Html =>
 									field: "serviceName",
 									id: "scrape-service-name",
 									label: "Service name",
-									placeholder: card.form.name.value.trim() || "my-api-server",
+									placeholder: Str.trim(card.form.name.value) || "my-api-server",
 								}),
 								textField(h, model, {
 									field: "interval",
@@ -356,14 +349,11 @@ const chooseStep = (h: H, model: Model, integration: ScrapeIntegration): Html =>
 								}),
 							],
 						),
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							[
-								"Metrics appear under service.name ",
-								inlineCode(h, {}, [service === "" ? "the target name" : service]),
-								". Interval is 5 to 300 seconds.",
-							],
-						),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Metrics appear under service.name ",
+							inlineCode(h, {}, [service === "" ? "the target name" : service]),
+							". Interval is 5 to 300 seconds.",
+						]),
 						button(
 							h,
 							{
@@ -421,14 +411,17 @@ const liveRows = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string):
 				? {
 						state: "done",
 						title: "First data: metrics",
-						detail: [
-							latest.samples_scraped === null
-								? "Last scrape stored"
-								: `Last scrape read ${formatNumber(latest.samples_scraped)} samples`,
-							latest.duration_seconds === null
-								? ""
-								: ` in ${formatDuration(latest.duration_seconds * 1000)}`,
-						].join(""),
+						detail: Arr.join(
+							[
+								latest.samples_scraped === null
+									? "Last scrape stored"
+									: `Last scrape read ${formatNumber(latest.samples_scraped)} samples`,
+								latest.duration_seconds === null
+									? ""
+									: ` in ${formatDuration(latest.duration_seconds * 1000)}`,
+							],
+							"",
+						),
 						meta: relativeTime(h, { value: latest.timestamp, nowMs: model.nowMs, timeZone }),
 					}
 				: {

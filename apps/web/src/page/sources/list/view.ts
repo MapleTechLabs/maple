@@ -1,32 +1,36 @@
 import type { V2Source } from "@maple/domain/http/v2"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { linkButton } from "../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { skeleton } from "../../../ui/skeleton"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { linkButton } from "@maple/views/ui/button"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { listToolbar, toolbarStat } from "../../kit/list-toolbar"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { platformMeta, platformTile } from "../kit/platforms"
 import { PULL_SOURCE_PLATFORMS, type PullSourcePlatform, type SourceId } from "@maple/domain/primitives"
 import { AppRoute, hrefOf } from "../../../route"
-import * as ToggleGroup from "../../../ui/toggle-group"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { integrationPlatformOf, orderSources, sourceHref, viaLabel } from "../kit/shared"
 import { needsAttention, sourceStatusBadge } from "../kit/status"
 import { signalCounts, type VolumeTotals, volumeSize } from "../kit/volume"
 import { countChipItem } from "../../integrations/kit/count-chip"
 import { Message } from "./message"
 import type { Model, SourceKind } from "./model"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
 // The whole row opens on click; the name is the real link for keyboards and screen readers.
-const NAME_LINK_CLASS = "truncate text-sm font-medium outline-none hover:underline active:underline focus-visible:underline"
+const NAME_LINK_CLASS =
+	"truncate text-sm font-medium outline-none hover:underline active:underline focus-visible:underline"
 
 /** `outline` keeps one filled CTA on the page when the empty state shows its own. */
 const connectButton = (h: H, variant?: "outline"): Html =>
@@ -39,7 +43,7 @@ const connectButton = (h: H, variant?: "outline"): Html =>
 	])
 
 const hasNoAddedSources = (rows: ReadonlyArray<V2Source>): boolean =>
-	rows.every((source) => source.is_default)
+	Arr.every(rows, (source) => source.is_default)
 
 /** Mirrors `body`: the empty state renders once the list loaded with no added sources. */
 const showsEmptyState = (model: Model): boolean =>
@@ -61,7 +65,7 @@ const usageBySource = (model: Model): UsageBySource =>
 		? new Map()
 		: Option.match(AsyncData.getData(model.usage.data), {
 				onNone: () => null,
-				onSome: (summary) => new Map(summary.data.map((entry) => [entry.source_id, entry])),
+				onSome: (summary) => new Map(Arr.map(summary.data, (entry) => [entry.source_id, entry])),
 			})
 
 const NO_VOLUME: VolumeTotals = { spans: 0, logs: 0, metrics: 0, bytes: 0 }
@@ -70,13 +74,10 @@ const volumeCell = (h: H, source: V2Source, usage: UsageBySource, isUnavailable:
 	if (isUnavailable) return "-"
 	if (usage === null) return skeleton(h, "h-4 w-16")
 	const totals = usage.get(source.id) ?? NO_VOLUME
-	return h.div(
-		[h.Class("flex min-w-0 flex-col gap-0.5")],
-		[
-			h.span([h.Class("text-foreground tabular-nums")], [volumeSize(totals)]),
-			h.span([h.Class("text-muted-foreground truncate text-xs")], [signalCounts(totals)]),
-		],
-	)
+	return vstack(h, { gap: "0.5", shrink: true }, [
+		typography(h, { tone: "foreground", numeric: true }, [volumeSize(totals)]),
+		typography(h, { size: "xs", tone: "muted", truncate: true }, [signalCounts(totals)]),
+	])
 }
 
 const sourceRow = (
@@ -91,34 +92,25 @@ const sourceRow = (
 		h,
 		[
 			tableCell(h, [
-				h.div(
-					[h.Class("flex min-w-0 items-center gap-3")],
-					[
-						platformTile(h, source.platform, "sm"),
-						h.div(
-							[h.Class("flex min-w-0 flex-col gap-0.5")],
+				hstack(h, { gap: "3", shrink: true }, [
+					platformTile(h, source.platform, "sm"),
+					vstack(h, { gap: "0.5", shrink: true }, [
+						h.a(
 							[
-								h.a(
-									[
-										h.Href(href),
-										h.Class(NAME_LINK_CLASS),
-										h.OnClick(Message.ClickedSource({ url: href }), {
-											defaultAction: "Prevent",
-											propagation: "Stop",
-										}),
-									],
-									[source.name],
-								),
-								h.span(
-									[h.Class("text-muted-foreground truncate text-xs")],
-									[
-										`${platformMeta(source.platform).label}${source.is_default ? " · Default" : ""}`,
-									],
-								),
+								h.Href(href),
+								h.Class(NAME_LINK_CLASS),
+								h.OnClick(Message.ClickedSource({ url: href }), {
+									defaultAction: "Prevent",
+									propagation: "Stop",
+								}),
 							],
+							[source.name],
 						),
-					],
-				),
+						typography(h, { size: "xs", tone: "muted", truncate: true }, [
+							`${platformMeta(source.platform).label}${source.is_default ? " · Default" : ""}`,
+						]),
+					]),
+				]),
 			]),
 			tableCell(h, [sourceStatusBadge(h, source, { nowMs, showTime: false })]),
 			tableCell(
@@ -180,13 +172,17 @@ const kindFilter = (h: H, model: Model, sources: ReadonlyArray<V2Source>): Html 
 		className: "gap-1.5",
 		items: [
 			kindChip(h, "all", sources.length),
-			kindChip(h, "push", sources.filter((source) => kindOf(source) === "push").length),
-			kindChip(h, "integration", sources.filter((source) => kindOf(source) === "integration").length),
+			kindChip(h, "push", Arr.filter(sources, (source) => kindOf(source) === "push").length),
+			kindChip(
+				h,
+				"integration",
+				Arr.filter(sources, (source) => kindOf(source) === "integration").length,
+			),
 		],
 	})
 
 const attentionFilter = (h: H, model: Model, sources: ReadonlyArray<V2Source>): Html | null => {
-	const count = sources.filter(needsAttention).length
+	const count = Arr.filter(sources, needsAttention).length
 	return count === 0 && model.attentionFilter.values.length === 0
 		? null
 		: ToggleGroup.view(h, {
@@ -202,14 +198,17 @@ const attentionFilter = (h: H, model: Model, sources: ReadonlyArray<V2Source>): 
 
 /** Integrations nothing comes from yet: the on-ramp to pulling data in without an SDK. */
 const availableStrip = (h: H, sources: ReadonlyArray<V2Source>): Html | null => {
-	const present = new Set(sources.map((source) => source.platform))
-	const missing = PULL_SOURCE_PLATFORMS.filter((platform: PullSourcePlatform) => !present.has(platform))
+	const present = new Set(Arr.map(sources, (source) => source.platform))
+	const missing = Arr.filter(
+		PULL_SOURCE_PLATFORMS,
+		(platform: PullSourcePlatform) => !present.has(platform),
+	)
 	if (missing.length === 0) return null
 	return h.div(
 		[h.Class("flex flex-wrap items-center gap-2 rounded-md border border-dashed p-4")],
 		[
 			h.span([h.Class("text-muted-foreground mr-auto text-xs")], ["Pull more data in without an SDK"]),
-			...missing.map((platform) =>
+			...Arr.map(missing, (platform) =>
 				linkButton(
 					h,
 					{
@@ -232,7 +231,7 @@ const orgTotal = (
 	isUnavailable: boolean,
 ): Html | null => {
 	if (usage === null || isUnavailable) return null
-	const totals = sources.reduce((sum, source) => {
+	const totals = Arr.reduce(sources, NO_VOLUME, (sum, source) => {
 		const entry = usage.get(source.id) ?? NO_VOLUME
 		return {
 			spans: sum.spans + entry.spans,
@@ -240,7 +239,7 @@ const orgTotal = (
 			metrics: sum.metrics + entry.metrics,
 			bytes: sum.bytes + entry.bytes,
 		}
-	}, NO_VOLUME)
+	})
 	return toolbarStat(h, {
 		value: volumeSize(totals),
 		label: "stored in the last 24h",
@@ -250,50 +249,49 @@ const orgTotal = (
 
 const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: number): Html => {
 	const sources = orderSources(rows)
-	const added = sources.filter((source) => !source.is_default)
+	const added = Arr.filter(sources, (source) => !source.is_default)
 	const kind = model.kindFilter.values[0] ?? "all"
-	const ofKind = kind === "all" ? sources : sources.filter((source) => kindOf(source) === kind)
-	const shown = model.attentionFilter.values.includes("attention") ? ofKind.filter(needsAttention) : ofKind
+	const ofKind = kind === "all" ? sources : Arr.filter(sources, (source) => kindOf(source) === kind)
+	const shown = model.attentionFilter.values.includes("attention")
+		? Arr.filter(ofKind, needsAttention)
+		: ofKind
 	const attention = attentionFilter(h, model, sources)
 	const strip = availableStrip(h, sources)
 	const usage = usageBySource(model)
 	const isUnavailable = AsyncData.isFailure(model.usage.data)
 	const total = orgTotal(h, sources, usage, isUnavailable)
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
-		[
-			listToolbar(h, {
-				className: "pb-0",
-				leading: h.div(
-					[h.Class("flex flex-wrap items-center gap-3")],
-					[kindFilter(h, model, sources), ...(attention === null ? [] : [attention])],
-				),
-				trailing: total === null ? [] : [total],
-			}),
-			table(h, { variant: "card", className: "table-fixed" }, [
-				tableHeader(h, [
-					tableRow(h, [
-						tableHead(h, ["Source"]),
-						tableHead(h, ["Status"], "w-36 sm:w-48 lg:w-72"),
-						tableHead(h, ["Last data"], "hidden w-28 sm:table-cell"),
-						tableHead(h, ["Last 24h"], "hidden w-40 md:table-cell"),
-						tableHead(h, ["Via"], "hidden w-44 sm:table-cell"),
-						tableHead(h, [], "w-10"),
-					]),
-				]),
-				tableBody(
-					h,
-					shown.map((source) => sourceRow(h, source, nowMs, usage, isUnavailable)),
-				),
+	return vstack(h, { gap: "4" }, [
+		listToolbar(h, {
+			className: "pb-0",
+			leading: hstack(h, { gap: "3", wrap: true }, [
+				kindFilter(h, model, sources),
+				...(attention === null ? [] : [attention]),
 			]),
-			...(added.length === 0
-				? [emptyState(h)]
-				: shown.length === 0
-					? [emptyMessage(h, {}, ["No sources match these filters."])]
-					: []),
-			...(strip === null ? [] : [strip]),
-		],
-	)
+			trailing: total === null ? [] : [total],
+		}),
+		table(h, { variant: "card", className: "table-fixed" }, [
+			tableHeader(h, [
+				tableRow(h, [
+					tableHead(h, ["Source"]),
+					tableHead(h, ["Status"], "w-36 sm:w-48 lg:w-72"),
+					tableHead(h, ["Last data"], "hidden w-28 sm:table-cell"),
+					tableHead(h, ["Last 24h"], "hidden w-40 md:table-cell"),
+					tableHead(h, ["Via"], "hidden w-44 sm:table-cell"),
+					tableHead(h, [], "w-10"),
+				]),
+			]),
+			tableBody(
+				h,
+				Arr.map(shown, (source) => sourceRow(h, source, nowMs, usage, isUnavailable)),
+			),
+		]),
+		...(added.length === 0
+			? [emptyState(h)]
+			: shown.length === 0
+				? [filteredEmpty(h, { noun: "sources", description: "", className: "py-10 md:py-12" })]
+				: []),
+		...(strip === null ? [] : [strip]),
+	])
 }
 
 const failed = (h: H, failure: Parameters<typeof errorState>[1]["failure"]): Html =>

@@ -1,26 +1,27 @@
-import { cn } from "@maple/ui/lib/utils"
-import * as A from "@maple/ui/styles/ui/autocomplete"
-import * as CommandStyles from "@maple/ui/styles/ui/command"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Combobox from "../../ui/combobox"
+import * as Combobox from "@maple/views/ui/combobox"
 import {
 	type CommandGroup,
+	commandEmpty,
 	commandFooter,
 	commandHiddenInput,
 	commandInput,
 	commandList,
-} from "../../ui/command"
-import type * as Dialog from "../../ui/dialog"
-import { view as dialogView } from "../../ui/dialog-view"
-import { kbd } from "../../ui/display"
-import { icon } from "../../ui/icon"
-import { manifestGlyph } from "../../ui/manifest-glyph"
-import { serviceDot } from "../../ui/values"
+	MeasureCommandList,
+} from "@maple/views/ui/command"
+import type * as Dialog from "@maple/views/ui/dialog"
+import { view as dialogView } from "@maple/views/ui/dialog-view"
+import { kbd } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { manifestGlyph } from "@maple/views/ui/manifest-glyph"
+import { serviceDot } from "@maple/views/ui/values"
 import { type Glyph, groupEntries, type PaletteEntry } from "./entries"
-import { MeasurePaletteList } from "./command"
 import { Message, type Model } from "./model"
 import { type Context, shownEntries } from "./update"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 /**
  * Layout-free wrapper: group labels take the sidebar's uppercase tracked style, and a short scroll
@@ -47,9 +48,9 @@ const glyph = <M>(h: HtmlBuilder<M>, value: Glyph): Html => {
 }
 
 const groupsOf = <M>(h: HtmlBuilder<M>, entries: ReadonlyArray<PaletteEntry>): ReadonlyArray<CommandGroup> =>
-	groupEntries(entries).map((section) => ({
+	Arr.map(groupEntries(entries), (section) => ({
 		label: section.group,
-		items: section.entries.map((entry) => ({
+		items: Arr.map(section.entries, (entry) => ({
 			title: entry.title,
 			value: entry.id,
 			leading: glyph(h, entry.glyph),
@@ -59,23 +60,14 @@ const groupsOf = <M>(h: HtmlBuilder<M>, entries: ReadonlyArray<PaletteEntry>): R
 	}))
 
 const hint = <M>(h: HtmlBuilder<M>, key: string, text: string): Html =>
-	h.span(
-		[h.Class("flex items-center gap-1.5 text-muted-foreground")],
-		[kbd(h, "text-muted-foreground", [key]), text],
-	)
+	hstack(h, { gap: "1.5", as: "span", className: typographyClass({ tone: "muted" }) }, [
+		kbd(h, "text-muted-foreground", [key]),
+		text,
+	])
 
 /** `CommandEmpty`: `No results for “{query}”.`, the query its own text run. */
 const empty = <M>(h: HtmlBuilder<M>, query: string): Html =>
-	h.div(
-		[
-			h.AriaAtomic(true),
-			h.AriaLive("polite"),
-			h.Class(cn(A.autocompleteEmptyStyles, CommandStyles.commandEmptyStyles)),
-			h.DataAttribute("slot", "command-empty"),
-			h.Role("status"),
-		],
-		["No results for “", query, "”."],
-	)
+	commandEmpty(h, {}, ["No results for “", query, "”."])
 
 const PLACEHOLDER = "Search pages, dashboards, actions…"
 
@@ -113,11 +105,15 @@ export const paletteView = <M>(
 					[
 						commandList(h, model.list, groups, toList, {
 							isUnfiltered: true,
-							itemClassName: "flex items-center gap-2",
+							itemClassName: hstackClass({ gap: "2" }),
 							onClickItem: (id) => toMessage(Message.ClickedEntry({ id })),
 							empty: shown.isSearch ? empty(h, model.list.inputValue) : undefined,
 							viewportAttributes: [
-								h.OnMount(Mount.mapMessage(MeasurePaletteList(), toMessage)),
+								h.OnMount(
+									Mount.mapMessage(MeasureCommandList(), () =>
+										toMessage(Message.CompletedMeasureList()),
+									),
+								),
 							],
 							hasMeasuredScrollbar: true,
 						}),

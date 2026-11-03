@@ -10,19 +10,20 @@ import {
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type * as Chart from "../../../charts/chart"
-import type { ThemeColors } from "../../../charts/theme-colors"
-import { emptyMessage } from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { panel, panelBody, panelHeader } from "../../../ui/panel"
-import { searchInput } from "../../../ui/search-input"
-import { skeleton } from "../../../ui/skeleton"
-import { statFigure } from "../../../ui/stat-figure"
-import { statusDot } from "../../../ui/status-dot"
-import { table, tableBody, tableHeader, tableRow } from "../../../ui/table"
+import type * as Chart from "@maple/views/charts/chart"
+import type { ThemeColors } from "@maple/views/charts/theme-colors"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { panel, panelBody, panelHeader } from "@maple/views/ui/panel"
+import { searchInput } from "@maple/views/ui/search-input"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { statFigure } from "@maple/views/ui/stat-figure"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { table, tableBody, tableHeader, tableRow } from "@maple/views/ui/table"
 import { docsLink } from "../../kit/signal-empty-state"
 import { statRail, statRailLoading } from "../../kit/stat-rail"
 import { windowSeconds } from "./derive"
@@ -30,7 +31,6 @@ import {
 	apiKpis,
 	ENDPOINT_FILTER_LABELS,
 	ENDPOINT_FILTERS,
-	type EndpointFilter,
 	isServerError,
 	kpiSparks,
 	matchesFilter,
@@ -54,6 +54,9 @@ import { COLUMN, COLUMN_COUNT, groupRows, groupsOf, type RowContext } from "./vi
 import { type ChartContext, SPARK_TOKENS, sparkline, STATUS_COLORS, statusChart } from "./view-api-charts"
 import { markersOverlay } from "./view-markers"
 import { headLabel, rangeNote, sortColumnHead, tableSkeletonHead, tableTitle } from "./view-table-cells"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
 
 // `ServiceApiTab`: the KPI strip, the responses chart beside the non-2xx breakdown, and the
 // endpoint table with its filters. The endpoint drawer is the page's (`endpoint-peek`).
@@ -88,13 +91,10 @@ const kpiTile = (h: H, tile: Tile, theme: ThemeColors | null): Html =>
 	h.div(
 		[h.Key(tile.label), h.Class("flex min-w-0 flex-col px-5 py-4 last:col-span-2 md:last:col-span-1")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-1.5")],
-				[
-					...(tile.dot === undefined ? [] : [statusDot(h, { tone: tile.dot })]),
-					h.span([h.Class("truncate text-2xs font-medium text-muted-foreground")], [tile.label]),
-				],
-			),
+			hstack(h, { gap: "1.5" }, [
+				...(tile.dot === undefined ? [] : [statusDot(h, { tone: tile.dot })]),
+				typography(h, { size: "2xs", tone: "muted", weight: "medium", truncate: true }, [tile.label]),
+			]),
 			statFigure(h, {
 				value: tile.value,
 				unit: tile.unit,
@@ -125,8 +125,8 @@ const kpiTile = (h: H, tile: Tile, theme: ThemeColors | null): Html =>
 /** "mostly 402 (98%)": the code most of a class's responses carried; blank while it loads. */
 const leadingCode = (summaries: ReadonlyArray<StatusCodeSummary> | null, isServer: boolean): string => {
 	if (summaries === null) return ""
-	const codes = summaries.filter((summary) => isServerError(summary.code) === isServer)
-	const total = codes.reduce((sum, summary) => sum + summary.count, 0)
+	const codes = Arr.filter(summaries, (summary) => isServerError(summary.code) === isServer)
+	const total = Arr.reduce(codes, 0, (sum, summary) => sum + summary.count)
 	const [top] = codes
 	if (top === undefined || total === 0) return "none"
 	const share = top.count / total
@@ -137,7 +137,9 @@ const leadingCode = (summaries: ReadonlyArray<StatusCodeSummary> | null, isServe
 /** "3.0 MB/s" as value and unit, so the unit sits small beside the figure like "req/s". */
 const splitUnit = (text: string): Readonly<{ value: string; unit?: string }> => {
 	const space = text.indexOf(" ")
-	return space < 0 ? { value: text } : { value: text.slice(0, space), unit: text.slice(space + 1) }
+	return space < 0
+		? { value: text }
+		: { value: Str.slice(0, space)(text), unit: Str.slice(space + 1)(text) }
 }
 
 /** "+12%" / "−8%"; under half a percent either way reads as unchanged. */
@@ -210,7 +212,7 @@ const kpiStrip = (
 	return statRail(
 		h,
 		{ columns: 5, className: "w-full overflow-hidden" },
-		tiles.map((tile) => kpiTile(h, tile, theme)),
+		Arr.map(tiles, (tile) => kpiTile(h, tile, theme)),
 	)
 }
 
@@ -219,7 +221,7 @@ const kpiSkeleton = (h: H): Html => statRailLoading(h, 5, 5, "w-full overflow-hi
 // RESPONSES CHART
 
 const legendItem = (h: H, swatch: Html, label: string): Html =>
-	h.div([h.Key(label), h.Class("flex items-center gap-1.5")], [swatch, h.span([], [label])])
+	hstack(h, { gap: "1.5", attributes: [h.Key(label)] }, [swatch, h.span([], [label])])
 
 const swatch = (h: H, color: string) => h.span([h.Class("size-2 rounded-xs"), h.Style({ background: color })])
 
@@ -236,7 +238,7 @@ const responsesChart = (
 		onSome: (data) =>
 			commitMarkers(
 				data.releases,
-				overview.buckets.map((bucket) => bucket.bucket),
+				Arr.map(overview.buckets, (bucket) => bucket.bucket),
 				model.commits,
 			),
 	})
@@ -253,7 +255,7 @@ const responsesChart = (
 	return panel(h, { className: "min-w-0 flex-1" }, [
 		panelHeader(h, {
 			title: "Responses by status",
-			scope: h.span([h.Class("text-2xs text-foreground-subtle")], ["req/s, all endpoints"]),
+			scope: typography(h, { size: "2xs", tone: "subtle" }, ["req/s, all endpoints"]),
 			divided: false,
 			action: h.div(
 				[h.Class("flex items-center gap-4 text-2xs text-muted-foreground")],
@@ -319,51 +321,42 @@ const responsesChart = (
 const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 	const isServer = isServerError(summary.code)
 	const [errorType] = summary.errorTypes
-	return h.div(
-		[h.Key(summary.code), h.Class("flex flex-col gap-1")],
-		[
-			h.div(
-				[h.Class("flex items-baseline gap-2 text-2xs tabular-nums")],
-				[
-					h.span(
-						[
-							h.Class(
-								cn(
-									"rounded-sm bg-muted px-1 font-medium",
-									TONE_TEXT[isServer ? "crit" : "warn"],
-								),
-							),
-						],
-						[summary.code],
-					),
-					h.span([h.Class("truncate text-foreground")], [reasonPhrase(summary.code)]),
-					h.span([h.Class("ml-auto text-foreground")], [formatNumber(Math.round(summary.count))]),
-					h.span(
-						[h.Class("w-11 text-right text-muted-foreground")],
-						[formatErrorRate(summary.share)],
-					),
-				],
-			),
-			h.div(
-				[h.Class("h-1 w-full rounded-full bg-muted")],
-				[
-					h.div([
-						h.Class(cn("h-1 rounded-full", TONE_FILL[isServer ? "crit" : "warn"])),
-						h.Style({ width: `${Math.max(summary.share * 100, 1)}%` }),
-					]),
-				],
-			),
-			h.span(
-				[h.Class("block w-full truncate text-3xs text-muted-foreground")],
-				[
-					...(errorType === undefined
-						? []
-						: [h.span([h.Class("text-foreground-soft")], [errorType.name]), " · "]),
-					routeList(summary.routes),
-				],
-			),
-		],
-	)
+	return vstack(h, { gap: "1", attributes: [h.Key(summary.code)] }, [
+		h.div(
+			[h.Class("flex items-baseline gap-2 text-2xs tabular-nums")],
+			[
+				h.span(
+					[
+						h.Class(
+							cn("rounded-sm bg-muted px-1 font-medium", TONE_TEXT[isServer ? "crit" : "warn"]),
+						),
+					],
+					[summary.code],
+				),
+				typography(h, { tone: "foreground", truncate: true }, [reasonPhrase(summary.code)]),
+				h.span([h.Class("ml-auto text-foreground")], [formatNumber(Math.round(summary.count))]),
+				h.span([h.Class("w-11 text-right text-muted-foreground")], [formatErrorRate(summary.share)]),
+			],
+		),
+		h.div(
+			[h.Class("h-1 w-full rounded-full bg-muted")],
+			[
+				h.div([
+					h.Class(cn("h-1 rounded-full", TONE_FILL[isServer ? "crit" : "warn"])),
+					h.Style({ width: `${Math.max(summary.share * 100, 1)}%` }),
+				]),
+			],
+		),
+		h.span(
+			[h.Class("block w-full truncate text-3xs text-muted-foreground")],
+			[
+				...(errorType === undefined
+					? []
+					: [h.span([h.Class("text-foreground-soft")], [errorType.name]), " · "]),
+				routeList(summary.routes),
+			],
+		),
+	])
 }
 
 const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null): Html => {
@@ -388,17 +381,19 @@ const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null
 			h,
 			[
 				summaries === null
-					? h.div(
-							[h.Class("flex flex-col gap-3"), h.AriaBusy(true)],
-							[0, 1, 2, 3].map((index) =>
+					? vstack(
+							h,
+							{ gap: "3", attributes: [h.AriaBusy(true)] },
+							Arr.map([0, 1, 2, 3], (index) =>
 								h.div([h.Key(String(index))], [skeleton(h, "h-9 w-full")]),
 							),
 						)
 					: summaries.length === 0
-						? emptyMessage(h, {}, ["Every response in this window was below 400."])
-						: h.div(
-								[h.Class("flex flex-col gap-3")],
-								summaries.slice(0, 4).map((summary) => codeRow(h, summary)),
+						? emptyMessage(h, {}, ["Every response in this window was below 400"])
+						: vstack(
+								h,
+								{ gap: "3" },
+								Arr.map(summaries.slice(0, 4), (summary) => codeRow(h, summary)),
 							),
 			],
 			"p-4",
@@ -408,70 +403,49 @@ const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null
 
 // TABLE
 
-const filterChip = (h: H, filter: EndpointFilter, active: EndpointFilter): Html =>
-	h.button(
-		[
-			h.Key(filter),
-			h.Type("button"),
-			h.AriaPressed(filter === active ? "true" : "false"),
-			h.Class(
-				cn(
-					"rounded-sm px-2 py-1 transition-colors",
-					filter === active
-						? "bg-accent text-foreground"
-						: "text-muted-foreground hover:text-foreground active:text-foreground",
-				),
-			),
-			h.OnClick(Message.ClickedEndpointFilter({ filter })),
-		],
-		[ENDPOINT_FILTER_LABELS[filter]],
-	)
-
 const toolbar = (h: H, model: Model, count: number): Html =>
 	tableTitle(h, {
 		title: "Endpoints",
 		count,
-		action: h.div(
-			[h.Class("flex flex-wrap items-center gap-3")],
-			[
-				...(AsyncData.isFailure(model.endpointSeries.data)
-					? [
-							h.span(
-								[h.Class("text-2xs text-severity-error")],
-								["Trends failed to load; Reload to retry."],
-							),
-						]
-					: []),
-				h.div(
-					[
-						h.Class("flex items-center gap-1 text-2xs"),
-						h.Role("group"),
-						h.AriaLabel("Filter endpoints"),
-					],
-					ENDPOINT_FILTERS.map((filter) => filterChip(h, filter, model.endpointFilter)),
-				),
-				searchInput(h, {
-					id: "service-endpoint-search",
-					value: model.endpointQuery,
-					placeholder: "Filter routes…",
-					ariaLabel: "Filter routes",
-					onInput: (value) => Message.ChangedEndpointQuery({ value }),
-					onClear: Message.ChangedEndpointQuery({ value: "" }),
-					className: "w-60",
-				}),
-			],
-		),
+		action: hstack(h, { gap: "3", wrap: true }, [
+			...(AsyncData.isFailure(model.endpointSeries.data)
+				? [
+						h.span(
+							[h.Class("text-2xs text-severity-error")],
+							["Trends failed to load; Reload to retry."],
+						),
+					]
+				: []),
+			segmentedSelect(h, {
+				options: Arr.map(ENDPOINT_FILTERS, (filter) => ({
+					value: filter,
+					label: ENDPOINT_FILTER_LABELS[filter],
+				})),
+				value: model.endpointFilter,
+				onChange: (filter) => Message.ClickedEndpointFilter({ filter }),
+				size: "xs",
+				ariaLabel: "Filter endpoints",
+			}),
+			searchInput(h, {
+				id: "service-endpoint-search",
+				value: model.endpointQuery,
+				placeholder: "Filter routes…",
+				ariaLabel: "Filter routes",
+				onInput: (value) => Message.ChangedEndpointQuery({ value }),
+				onClear: Message.ChangedEndpointQuery({ value: "" }),
+				className: "w-60",
+			}),
+		]),
 	})
 
 /** Request rate per bucket by span name on one axis; a bucket an endpoint was quiet in reads 0. */
 const sparksBySpanName = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number, window: WindowMs) => {
 	const axis = bucketAxis(buckets, bucketSeconds, window)
-	const bySpanName = buckets.reduce(
-		(acc, bucket) => acc.set(bucket.spanName, [...(acc.get(bucket.spanName) ?? []), bucket]),
-		new Map<string, ReadonlyArray<ApiBucket>>(),
+	const bySpanName = Arr.reduce(buckets, new Map<string, ReadonlyArray<ApiBucket>>(), (acc, bucket) =>
+		acc.set(bucket.spanName, [...(acc.get(bucket.spanName) ?? []), bucket]),
 	)
 	return new Map(
-		[...bySpanName].map(([spanName, rows]) => [
+		Arr.map([...bySpanName], ([spanName, rows]) => [
 			spanName,
 			onAxis(axis, rows, (bucket) => bucket.estimatedSpanCount / Math.max(1, bucketSeconds)),
 		]),
@@ -487,7 +461,7 @@ const endpointsTable = (
 ): Html => {
 	const sort = model.sorts.endpoints
 	const seconds = model.window === null ? 0 : windowSeconds(model.window)
-	const visible = endpoints.filter((endpoint) =>
+	const visible = Arr.filter(endpoints, (endpoint) =>
 		matchesFilter(endpoint, model.endpointFilter, model.endpointQuery),
 	)
 	const groups = groupsOf(visible, sort)
@@ -501,7 +475,7 @@ const endpointsTable = (
 		theme,
 		selected: model.search.endpoint,
 		slowest: slowestEndpoint(visible),
-		isOneMethod: new Set(visible.map((endpoint) => endpoint.method)).size === 1,
+		isOneMethod: new Set(Arr.map(visible, (endpoint) => endpoint.method)).size === 1,
 	}
 	const column = (sortKey: string, label: string, className: string, align?: "left", title?: string) =>
 		sortColumnHead(h, {
@@ -514,7 +488,7 @@ const endpointsTable = (
 			title,
 		})
 	// A sampled endpoint's rate is scaled up from its traced spans; the header says so.
-	const isEstimated = visible.some((endpoint) => endpoint.estimatedSpanCount > endpoint.spanCount)
+	const isEstimated = Arr.some(visible, (endpoint) => endpoint.estimatedSpanCount > endpoint.spanCount)
 	return panel(h, { className: "w-full" }, [
 		toolbar(h, model, visible.length),
 		table(h, {}, [
@@ -562,13 +536,13 @@ const endpointsTable = (
 											h.Attribute("colspan", String(COLUMN_COUNT)),
 											h.Class("py-8 text-center text-xs text-muted-foreground"),
 										],
-										["No endpoint matches this filter."],
+										["No endpoint matches this filter"],
 									),
 								],
 								"hover:bg-transparent active:bg-transparent",
 							),
 						]
-					: groups.flatMap((group) =>
+					: Arr.flatMap(groups, (group) =>
 							groupRows(h, group, context, model.expandedEndpointGroups.includes(group.kind)),
 						),
 			),
@@ -579,41 +553,40 @@ const endpointsTable = (
 // STATES
 
 const loadingState = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			kpiSkeleton(h),
+	vstack(h, { gap: "3" }, [
+		kpiSkeleton(h),
+		h.div(
+			[h.Class("flex flex-col gap-3 lg:flex-row")],
+			[
+				skeleton(h, "h-[282px] flex-1 rounded-md"),
+				skeleton(h, "h-[282px] w-full rounded-md lg:w-[400px]"),
+			],
+		),
+		panel(h, {}, [
+			...tableSkeletonHead(h, "Endpoints"),
 			h.div(
-				[h.Class("flex flex-col gap-3 lg:flex-row")],
-				[
-					skeleton(h, "h-[282px] flex-1 rounded-md"),
-					skeleton(h, "h-[282px] w-full rounded-md lg:w-[400px]"),
-				],
-			),
-			panel(h, {}, [
-				...tableSkeletonHead(h, "Endpoints"),
-				h.div(
-					[h.AriaBusy(true), h.Class("flex flex-col")],
-					Array.from({ length: 8 }, (_, index) =>
-						h.div(
-							[
-								h.Key(String(index)),
-								h.Class("flex h-11 items-center gap-3 border-b px-4 last:border-b-0"),
-							],
-							[
-								skeleton(h, "h-2.5 w-9"),
-								skeleton(h, "h-2.5 w-40"),
-								h.span([h.Class("flex-1")]),
-								skeleton(h, "h-2.5 w-24"),
-								skeleton(h, "h-2.5 w-24"),
-								skeleton(h, "h-2.5 w-12"),
-							],
-						),
+				[h.AriaBusy(true), h.Class("flex flex-col")],
+				Array.from({ length: 8 }, (_, index) =>
+					hstack(
+						h,
+						{
+							gap: "3",
+							className: stripClass("skeletonRow"),
+							attributes: [h.Key(String(index))],
+						},
+						[
+							skeleton(h, "h-2.5 w-9"),
+							skeleton(h, "h-2.5 w-40"),
+							h.span([h.Class("flex-1")]),
+							skeleton(h, "h-2.5 w-24"),
+							skeleton(h, "h-2.5 w-24"),
+							skeleton(h, "h-2.5 w-12"),
+						],
 					),
 				),
-			]),
-		],
-	)
+			),
+		]),
+	])
 
 /** `ApiEmptyState`: names the two conditions an endpoint needs. */
 const emptyState = (h: H, serviceName: string): Html => {
@@ -643,12 +616,9 @@ const emptyState = (h: H, serviceName: string): Html => {
 const notes = (h: H, count: number, seconds: number): ReadonlyArray<Html> => [
 	...(isTruncated(count)
 		? [
-				h.p(
-					[h.Class("text-xs text-muted-foreground")],
-					[
-						`Showing the ${ENDPOINTS_LIMIT} busiest endpoints. This service has more. Narrow the time range or environment to see the rest.`,
-					],
-				),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					`Showing the ${ENDPOINTS_LIMIT} busiest endpoints. This service has more. Narrow the time range or environment to see the rest.`,
+				]),
 			]
 		: []),
 	...(seconds > TRACE_DETAIL_LIMIT_SECONDS ? [rangeNote(h, "Endpoint")] : []),
@@ -676,13 +646,17 @@ const loaded = (
 		: null
 	return h.div(
 		[
-			h.Class(cn("flex flex-col gap-3", refreshingClass(isWaiting))),
+			h.Class(cn(vstackClass({ gap: "3" }), refreshingClass(isWaiting))),
 			...(isWaiting ? [h.AriaBusy(true)] : []),
 		],
 		[
 			...notes(h, endpoints.length, seconds),
 			overviewFailure !== null
-				? errorState(h, { failure: overviewFailure, title: "Couldn't load API overview" })
+				? errorState(h, {
+						failure: overviewFailure,
+						title: "Couldn't load API overview",
+						onRetry: Message.ClickedRetry({ target: "ApiOverview" }),
+					})
 				: Option.match(overview, {
 						onNone: () => kpiSkeleton(h),
 						onSome: (data) => kpiStrip(h, data, summaries, seconds, inputs, theme),
@@ -711,6 +685,7 @@ const loaded = (
 									errorState(h, {
 										failure: breakdownFailure,
 										title: "Couldn't load status codes",
+										onRetry: Message.ClickedRetry({ target: "StatusBreakdown" }),
 									}),
 								],
 							)
@@ -722,13 +697,17 @@ const loaded = (
 	)
 }
 
+const retryEndpoints = Message.ClickedRetry({ target: "Endpoints" })
+
 /** The API tab: skeleton, error, the empty explanation, or the strip, charts and table. */
 export const apiTab = (h: H, model: Model, inputs: ApiTabInputs, theme: ThemeColors | null): Html =>
 	AsyncData.match(model.endpoints.data, {
 		onIdle: () => loadingState(h),
 		onLoading: () => loadingState(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load endpoints" }),
-		onStale: ({ error }) => errorState(h, { failure: error, title: "Couldn't load endpoints" }),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Couldn't load endpoints", onRetry: retryEndpoints }),
+		onStale: ({ error }) =>
+			errorState(h, { failure: error, title: "Couldn't load endpoints", onRetry: retryEndpoints }),
 		onRefreshing: (endpoints) => loaded(h, model, endpoints, true, inputs, theme),
 		onSuccess: (endpoints) => loaded(h, model, endpoints, false, inputs, theme),
 	})

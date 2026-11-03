@@ -1,9 +1,9 @@
 import { Schema } from "effect"
 import { DashboardsSearch } from "../../../route/search"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import * as TagEditor from "../kit/tag-editor"
-import * as Menu from "../../../ui/menu"
-import * as Combobox from "../../../ui/combobox"
+import * as Menu from "@maple/views/ui/menu"
+import * as Combobox from "@maple/views/ui/combobox"
 
 // The dashboards list.
 
@@ -66,6 +66,8 @@ export const Model = Schema.Struct({
 	rowMenu: Menu.Model,
 	pendingDelete: Schema.NullOr(ListDashboard),
 	deleteDialog: Dialog.Model,
+	/** The delete is in flight: the dialog stays open, its confirm pending, until it answers. */
+	isDeleting: Schema.Boolean,
 	pendingTags: Schema.NullOr(ListDashboard),
 	tagEditor: TagEditor.Model,
 	/** `TagFilterMenu`: the multi-select tag combobox; its selection is the URL's `tags`. */

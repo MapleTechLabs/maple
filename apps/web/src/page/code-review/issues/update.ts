@@ -1,12 +1,12 @@
 import { PrReviewCategory, PrReviewFindingStatus, PrReviewSeverity } from "@maple/domain/http"
 import { Command } from "foldkit"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import type { CodeReviewIssuesSearch } from "../../../route/search"
-import * as Select from "../../../ui/select"
-import * as Tooltip from "../../../ui/tooltip"
+import * as Select from "@maple/views/ui/select"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { epochWindow } from "../kit/api"
 import { ALL, type FrameOut, type FrameReturn } from "../kit/frame"
@@ -31,11 +31,13 @@ import {
 	type Model,
 	WaitSearchDebounce,
 } from "./model"
+import type { PresetValue } from "../../kit/time-controls"
+import { Array as Arr } from "effect"
 
 export type Search = typeof CodeReviewIssuesSearch.Type
 type Return = PageReturn<Model, Message>
 
-export const DEFAULT_PRESET = "30d"
+export const DEFAULT_PRESET: PresetValue = "1mo"
 export const PAGE = 50
 export const MAX_ROWS = 200
 const FRAME_ID = "code-review-issues"
@@ -43,7 +45,7 @@ const FRAME_ID = "code-review-issues"
 const searchHref = (search: Search) => hrefOf(AppRoute.CodeReviewIssues({ search }))
 
 const navigate = (model: Model, patch: Partial<Search>): Return => {
-	const isFilter = Object.keys(patch).some((key) => key !== "review")
+	const isFilter = Arr.some(Object.keys(patch), (key) => key !== "review")
 	return {
 		model: isFilter ? { ...model, limit: PAGE } : model,
 		outMessage: PageOutMessage.RequestedNavigation({

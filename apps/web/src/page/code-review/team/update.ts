@@ -1,6 +1,7 @@
 import { Command } from "foldkit"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as HoverCard from "@maple/views/ui/hover-card"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import type { CodeReviewTeamSearch } from "../../../route/search"
@@ -17,14 +18,17 @@ import {
 } from "../kit/frame-update"
 import { cachedStep, remember } from "../kit/page-steps"
 import type { Retained } from "../kit/retained"
+import { DEFAULT_SORT, sortOf } from "./derive"
 import { FetchTeam, Message, type Model } from "./model"
+import type { PresetValue } from "../../kit/time-controls"
 
 export type Search = typeof CodeReviewTeamSearch.Type
 type Return = PageReturn<Model, Message>
 
 /** A month: enough merged pull requests per person for a median to mean something. */
-export const DEFAULT_PRESET = "30d"
+export const DEFAULT_PRESET: PresetValue = "1mo"
 const FRAME_ID = "code-review-team"
+export const ACTIVITY_CARD_ID = "code-review-team-activity"
 
 const searchHref = (search: Search) => hrefOf(AppRoute.CodeReviewTeam({ search }))
 
@@ -37,7 +41,7 @@ const navigate = (model: Model, patch: Partial<Search>): Return => ({
 })
 
 const request = (model: Model, context: PageContext, window: TimeWindow, mode: Keyed.RequestMode): Return => {
-	const query = { ...epochWindow(window), repositoryId: model.search.repo }
+	const query = { ...epochWindow(window), repositoryId: model.search.repo, timeZone: context.timeZone }
 	const step = cachedStep(
 		model.teamCache,
 		model.frame.nowMs,
@@ -84,6 +88,7 @@ export const init = (
 		frame: frame.frame,
 		team: Keyed.idle(),
 		teamCache: carried.retained.team,
+		activityCard: HoverCard.init(ACTIVITY_CARD_ID, { openDelayMs: 80, side: "top", sideOffset: 6 }),
 	}
 	return liftFrame(model, frame, context)
 }
@@ -126,9 +131,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.frame.window === null ? { model } : request(model, context, model.frame.window, "Refresh"),
 		ClickedClearFilters: () => navigate(model, { repo: undefined }),
 		// A second click on the sorted column goes back to by person.
-		ClickedSort: ({ sort }) =>
-			navigate(model, { sort: sort === "person" || sort === model.search.sort ? undefined : sort }),
-		SelectedView: ({ view }) => navigate(model, { ranked: view === "ranked" ? true : undefined }),
+		ClickedSort: ({ sort }) => {
+			const next = sort === sortOf(model.search) ? "person" : sort
+			return navigate(model, { sort: next === DEFAULT_SORT ? undefined : next })
+		},
+		SelectedView: ({ view }) => navigate(model, { ranked: view === "ranked" ? undefined : false }),
+		GotActivityCardMessage: ({ message: inner }) => {
+			const next = HoverCard.update(model.activityCard, inner)
+			return {
+				model: { ...model, activityCard: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotActivityCardMessage({ message }),
+				),
+			}
+		},
 	})
 
 /** What this tab hands the next one. */

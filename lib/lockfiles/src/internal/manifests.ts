@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { decodeJson } from "./decode.ts"
 
 const Deps = Schema.optionalKey(Schema.Record(Schema.String, Schema.String))
@@ -24,7 +24,7 @@ export interface ManifestDeps {
 }
 
 const addRanges = (target: Map<string, Set<string>>, deps: Readonly<Record<string, string>> | undefined) =>
-	Object.entries(deps ?? {}).forEach(([name, range]) => {
+	Arr.forEach(Rec.toEntries(deps ?? {}), ([name, range]) => {
 		const ranges = target.get(name) ?? new Set<string>()
 		ranges.add(range)
 		target.set(name, ranges)
@@ -34,8 +34,9 @@ const addRanges = (target: Map<string, Set<string>>, deps: Readonly<Record<strin
 export const readPackageJsons = Effect.fn("lockfiles.readPackageJsons")(function* (
 	manifests: ReadonlyMap<string, string> | undefined,
 ) {
-	const entries = [...(manifests ?? new Map<string, string>())].filter(
-		([path]) => path === "package.json" || path.endsWith("/package.json"),
+	const entries = Arr.filter(
+		[...(manifests ?? new Map<string, string>())],
+		([path]) => path === "package.json" || Str.endsWith("/package.json")(path),
 	)
 	const decoded = yield* Effect.forEach(entries, ([path, content]) =>
 		decodeJson(PackageJson, path, content).pipe(Effect.result),
@@ -43,7 +44,7 @@ export const readPackageJsons = Effect.fn("lockfiles.readPackageJsons")(function
 	const direct = new Map<string, Set<string>>()
 	const dev = new Map<string, Set<string>>()
 	const local = new Set<string>()
-	const warnings = decoded.flatMap((result) => {
+	const warnings = Arr.flatMap(decoded, (result) => {
 		if (result._tag === "Failure")
 			return [`skipped manifest ${result.failure.path}: ${result.failure.message}`]
 		const manifest = result.success

@@ -35,7 +35,7 @@ import type {
 } from "@maple/domain/http/v2"
 import type { DashboardShare, DashboardShareMode, ShareWidgetDataOutcome } from "@maple/domain/http"
 import type { DashboardId } from "@maple/domain/primitives"
-import { Clock, Effect, Option, Ref, Schema } from "effect"
+import { Clock, DateTime, Effect, Option, Ref, Schema, Array as Arr } from "effect"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
 import { dataSourceRawSql } from "@maple/widgets/dashboard"
 import { getTemplateById, listTemplateMetadata } from "@maple/backend/dashboard-templates"
@@ -67,8 +67,8 @@ type DashboardWidgets = DashboardDocument["widgets"]
 
 /** Every stored raw SQL text on these widgets, tiles and sparklines alike. */
 const rawSqlTexts = (widgets: DashboardWidgets): ReadonlyArray<string> =>
-	widgets.flatMap((widget) =>
-		[widget.dataSource, widget.display?.sparkline?.dataSource].flatMap((dataSource) => {
+	Arr.flatMap(widgets, (widget) =>
+		Arr.flatMap([widget.dataSource, widget.display?.sparkline?.dataSource], (dataSource) => {
 			const rawSql = dataSourceRawSql(dataSource)
 			return rawSql === null ? [] : [rawSql.sql]
 		}),
@@ -85,7 +85,7 @@ const requireRawSqlScopes = (
 ) => {
 	if (canReadTelemetry(scopes)) return Effect.void
 	const existing = new Set(rawSqlTexts(before))
-	return rawSqlTexts(after).every((sql) => existing.has(sql))
+	return Arr.every(rawSqlTexts(after), (sql) => existing.has(sql))
 		? Effect.void
 		: Effect.fail(
 				V2InsufficientScope.make(
@@ -187,7 +187,7 @@ const toInternalTimeRange = (
 const toInternalWidgets = (
 	widgets: NonNullable<V2DashboardCreateParams["widgets"]>,
 ): DashboardDocument["widgets"] =>
-	widgets.map((widget) => {
+	Arr.map(widgets, (widget) => {
 		const { timeRange, ...rest } = widget
 		return timeRange ? { ...rest, timeRange: toInternalTimeRange(timeRange) } : rest
 	})
@@ -433,7 +433,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 						const tenant = yield* CurrentTenant.Context
 						const response = yield* persistence.list(tenant.orgId)
 
-						const page = yield* paginateArray(response.dashboards.map(toV2Dashboard), query)
+						const page = yield* paginateArray(Arr.map(response.dashboards, toV2Dashboard), query)
 						return { object: "list" as const, ...page }
 					}),
 				)
@@ -453,15 +453,13 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 						const nowMs = yield* Clock.currentTimeMillis
 						const window = resolveTimeRangeWindow(payload.time_range, { nowMs })
 						if (window === null) {
-							return yield* Effect.fail(
-								V2TimeRangeInvalid.make("time_range could not be resolved.", {
-									param: "time_range",
-								}),
-							)
+							return yield* V2TimeRangeInvalid.make("time_range could not be resolved.", {
+								param: "time_range",
+							})
 						}
 						const { results, variables } = yield* widgetData
 							.resolveBatch(tenant.orgId, document, {
-								requests: payload.requests.map((request) => ({
+								requests: Arr.map(payload.requests, (request) => ({
 									widgetId: request.widget_id,
 									source: request.source ?? "primary",
 									...(request.max_data_points === undefined
@@ -490,7 +488,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 
 						return {
 							object: "dashboard_widget_data" as const,
-							results: results.map(toV2WidgetDataOutcome),
+							results: Arr.map(results, toV2WidgetDataOutcome),
 							variables,
 						}
 					}),
@@ -512,9 +510,8 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 				.handle("update", ({ params, payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const updatedAt = asIsoDateTime(
-							new Date(yield* Clock.currentTimeMillis).toISOString(),
-						)
+						const now = yield* Clock.currentTimeMillis
+						const updatedAt = asIsoDateTime(DateTime.formatIso(DateTime.makeUnsafe(now)))
 						// Capture the pre-state the mutate callback already reads, for the diff.
 						const previous = yield* Ref.make(Option.none<DashboardDocument>())
 						const dashboard = yield* persistence.mutate(
@@ -531,7 +528,8 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 								)
 							},
 						)
-						const changes = Option.match(yield* Ref.get(previous), {
+						const previousDashboard = yield* Ref.get(previous)
+						const changes = Option.match(previousDashboard, {
 							onNone: () => undefined,
 							onSome: (before) =>
 								dashboardAuditDiff(payload, toV2Dashboard(before), toV2Dashboard(dashboard)),
@@ -588,11 +586,9 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 						const before =
 							query.cursor === undefined ? undefined : decodeVersionCursor(query.cursor)
 						if (query.cursor !== undefined && before === null) {
-							return yield* Effect.fail(
-								V2ParameterInvalid.make("Invalid dashboard version cursor", {
-									param: "cursor",
-								}),
-							)
+							return yield* V2ParameterInvalid.make("Invalid dashboard version cursor", {
+								param: "cursor",
+							})
 						}
 						const tenant = yield* CurrentTenant.Context
 						const response = yield* persistence.listVersions(tenant.orgId, params.id, {
@@ -600,7 +596,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 							...(before !== undefined && before !== null ? { before } : undefined),
 						})
 
-						const data = response.versions.map(toV2Version)
+						const data = Arr.map(response.versions, toV2Version)
 						return {
 							object: "list" as const,
 							data,
@@ -663,7 +659,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 				.handle("listTemplates", ({ query }) =>
 					Effect.map(
 						paginateArray(
-							listTemplateMetadata().map((template) =>
+							Arr.map(listTemplateMetadata(), (template) =>
 								toV2Template(new DashboardTemplateMetadata(template)),
 							),
 							query,
@@ -679,12 +675,10 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 					Effect.gen(function* () {
 						const template = getTemplateById(params.template_id)
 						if (!template)
-							return yield* Effect.fail(
-								new DashboardTemplateNotFoundError({
-									templateId: params.template_id,
-									message: "No such dashboard template.",
-								}),
-							)
+							return yield* new DashboardTemplateNotFoundError({
+								templateId: params.template_id,
+								message: "No such dashboard template.",
+							})
 
 						const built = yield* Effect.try({
 							try: () => template.build(payload.parameters ?? {}),
@@ -708,23 +702,23 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 					Effect.gen(function* () {
 						const template = getTemplateById(params.template_id)
 						if (!template)
-							return yield* Effect.fail(
-								new DashboardTemplateNotFoundError({
-									templateId: params.template_id,
-									message: "No such dashboard template.",
-								}),
-							)
+							return yield* new DashboardTemplateNotFoundError({
+								templateId: params.template_id,
+								message: "No such dashboard template.",
+							})
 
 						const provided: TemplateParameterValues = payload.parameters ?? {}
-						const missing = template.parameters
-							.filter((parameter) => parameter.required && !provided[parameter.key])
-							.map((parameter) => parameter.key)
+						const missing = Arr.map(
+							Arr.filter(
+								template.parameters,
+								(parameter) => parameter.required && !provided[parameter.key],
+							),
+							(parameter) => parameter.key,
+						)
 						if (missing.length > 0) {
-							return yield* Effect.fail(
-								V2ParameterMissing.make(
-									`Missing required template parameters: ${missing.join(", ")}`,
-									{ param: "parameters" },
-								),
+							return yield* V2ParameterMissing.make(
+								`Missing required template parameters: ${Arr.join(missing, ", ")}`,
+								{ param: "parameters" },
 							)
 						}
 
@@ -764,7 +758,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 						yield* persistence.get(tenant.orgId, params.id)
 						const live = yield* shares.listForDashboard(tenant.orgId, params.id)
 
-						return live.map(toV2DashboardShare)
+						return Arr.map(live, toV2DashboardShare)
 					}),
 				)
 				.handle("retrieveShare", ({ params }) => retrieveShare(params.id, null))
@@ -783,13 +777,11 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 						// Minting a link for a widget that does not exist would produce a
 						// token that resolves to a permanently blank tile, so the widget is
 						// checked here rather than at first view.
-						if (!context.dashboard.widgets.some((w) => w.id === params.widget_id)) {
-							return yield* Effect.fail(
-								new ShareWidgetNotFoundError({
-									message: "That widget is not on this dashboard.",
-									widgetId: params.widget_id,
-								}),
-							)
+						if (!Arr.some(context.dashboard.widgets, (w) => w.id === params.widget_id)) {
+							return yield* new ShareWidgetNotFoundError({
+								message: "That widget is not on this dashboard.",
+								widgetId: params.widget_id,
+							})
 						}
 
 						return yield* upsertShareIn(context, payload.mode)

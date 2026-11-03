@@ -6,7 +6,7 @@
 // Steps are verified from what the org actually did (telemetry arrived, an installation is
 // active, a rule exists), never from a self-reported flag: the reward has a price.
 
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { HttpTaggedError } from "./http/error-policy"
 
 /** How long after org creation the reward stays claimable. */
@@ -108,15 +108,19 @@ export const evaluateOnboardingChecklist = (
 	nowMs: number,
 ): OnboardingChecklistEvaluation => {
 	// A step nobody on this instance could complete is not shown at all.
-	const steps = ONBOARDING_CHECKLIST_STEP_IDS.filter(
-		(id) => id !== "join_slack_channel" || inputs.supportChannelAvailable,
-	).map((id) => ({
-		id,
-		completed: stepCompleted(id, inputs),
-		optional: ONBOARDING_OPTIONAL_STEP_IDS.has(id),
-	}))
-	const required = steps.filter((step) => !step.optional)
-	const completedCount = required.filter((step) => step.completed).length
+	const steps = Arr.map(
+		Arr.filter(
+			ONBOARDING_CHECKLIST_STEP_IDS,
+			(id) => id !== "join_slack_channel" || inputs.supportChannelAvailable,
+		),
+		(id) => ({
+			id,
+			completed: stepCompleted(id, inputs),
+			optional: ONBOARDING_OPTIONAL_STEP_IDS.has(id),
+		}),
+	)
+	const required = Arr.filter(steps, (step) => !step.optional)
+	const completedCount = Arr.filter(required, (step) => step.completed).length
 	const totalCount = required.length
 	const deadlineAtMs =
 		inputs.orgCreatedAtMs === null ? null : inputs.orgCreatedAtMs + ONBOARDING_REWARD_WINDOW_MS

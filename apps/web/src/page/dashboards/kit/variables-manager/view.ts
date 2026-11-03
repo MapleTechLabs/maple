@@ -1,16 +1,17 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../../ui/button"
-import { formDialog } from "../../../../ui/form-dialog"
-import { icon, type IconName } from "../../../../ui/icon"
-import { iconButton } from "../../../../ui/icon-button"
-import { inlineCode } from "../../../../ui/inline-code"
-import { item, itemActions, itemContent, itemDescription, itemTitle } from "../../../../ui/item"
+import { button } from "@maple/views/ui/button"
+import { formDialog } from "@maple/views/ui/form-dialog"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { item, itemActions, itemContent, itemDescription, itemTitle } from "@maple/views/ui/item"
 import { draftError, sourceSummary, TYPE_LABELS } from "./derive"
 import { Message, type Model, type Variable } from "./model"
 import { hasErrors } from "./update"
 import { variableForm } from "./view-form"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -140,7 +141,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ slotId: strin
 		onSubmit: Message.SubmittedForm(),
 		fields: [
 			...(model.startedEmpty ? [intro(h)] : []),
-			...model.drafts.map((draft, index) => row(h, model, draft, index)),
+			...Arr.map(model.drafts, (draft, index) => row(h, model, draft, index)),
 			button(
 				h,
 				{

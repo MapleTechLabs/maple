@@ -1,7 +1,7 @@
-import { Option, Result } from "effect"
+import { Option, Result, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
-import * as Keyed from "../../../../data/keyed"
-import { requestKey } from "../../../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
@@ -45,7 +45,7 @@ const connectedStatus = (model: Model): SupabaseStatus | null =>
 	})
 
 const insightRefs = (status: SupabaseStatus): ReadonlyArray<string> =>
-	status.projects.slice(0, FLEET_INSIGHTS_LIMIT).map((project) => project.ref)
+	Arr.map(status.projects.slice(0, FLEET_INSIGHTS_LIMIT), (project) => project.ref)
 
 /**
  * Metrics and log issues follow the window alone, so they load beside the status; advisors fan out

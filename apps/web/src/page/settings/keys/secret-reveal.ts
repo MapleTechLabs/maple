@@ -1,6 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type * as CopyButton from "../../../ui/copy-button"
-import { copyableField } from "../../../ui/copyable-field"
+import type * as CopyButton from "@maple/views/ui/copy-button"
+import { copyableField } from "@maple/views/ui/copyable-field"
+import { typography } from "@maple/views/ui/typography"
 
 // `ApiKeySecretReveal`.
 
@@ -25,9 +26,8 @@ export const secretReveal = <M>(h: HtmlBuilder<M>, options: SecretRevealOptions<
 				toCopyMessage: options.toCopyMessage,
 				masked: { isVisible: options.isVisible, onToggle: options.onToggle },
 			}),
-			h.p(
-				[h.Class("text-muted-foreground text-xs")],
-				["Store this key in a secure location. It will not be shown again."],
-			),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				"Store this key in a secure location. It will not be shown again.",
+			]),
 		],
 	)

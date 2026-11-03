@@ -2,6 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { TimeSearch } from "../../kit/time-controls"
 import { linkTabStrip } from "../../kit/underline-tabs"
+import { Array as Arr } from "effect"
 
 // `HostsViewTabs` and `KubernetesViewTabs`, on the kit's `linkTabStrip`.
 
@@ -23,7 +24,7 @@ export const viewTabStrip = <M>(
 	linkTabStrip(
 		h,
 		label,
-		tabs.map((tab) => ({
+		Arr.map(tabs, (tab) => ({
 			key: tab.id,
 			href: tab.href,
 			label: tab.title,

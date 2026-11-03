@@ -9,23 +9,23 @@ import {
 	formatAlertTime,
 	groupDeliveryEventsByDay,
 } from "@maple/web-data/alerts/form-utils"
-import { tableCellStyles } from "@maple/ui/styles/ui/table"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button, linkButton } from "../../../ui/button"
-import { badge, separator } from "../../../ui/display"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import * as Menu from "../../../ui/menu"
-import type { MenuEntry } from "../../../ui/menu-view"
-import { rowActionsMenu } from "../../../ui/row-actions-menu"
-import { skeleton } from "../../../ui/skeleton"
-import { statusDot } from "../../../ui/status-dot"
-import { switchControl } from "../../../ui/switch"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { docsLink, emptyActions } from "../../kit/signal-empty-state"
+import { button, linkButton } from "@maple/views/ui/button"
+import { badge, separator } from "@maple/views/ui/display"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import * as Menu from "@maple/views/ui/menu"
+import type { MenuEntry } from "@maple/views/ui/menu-view"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { switchControl } from "@maple/views/ui/switch"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import { docsLink } from "../../kit/signal-empty-state"
+import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { destinationProvider, providerLogo } from "../shared/providers"
 import { createHref } from "../shared/links"
 import { Message } from "./message"
@@ -33,12 +33,17 @@ import type { Model } from "./model"
 import { destinationMenuId } from "./update"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { stripClass } from "@maple/views/ui/rule"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { borderedBox } from "@maple/views/ui/bordered-box"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { Array as Arr } from "effect"
 
 // `AlertsRoutingTab` and `DestinationRow`: the hub's Routing tab.
 
 export const HEALTH_WINDOW = 20
-export const DESTINATION_ROW_GRID =
-	"grid grid-cols-[minmax(0,1fr)_110px_140px_110px_auto] items-center gap-4"
+export const DESTINATION_ROW_GRID = "grid grid-cols-[minmax(0,1fr)_110px_140px_110px_auto] items-center gap-4"
 
 type H = HtmlBuilder<Message>
 
@@ -61,15 +66,12 @@ export const routingTab = (h: H, model: Model, inputs: RoutingInputs): Html => {
 						[],
 						[
 							sectionHeading(h, { title: "Destinations" }),
-							h.p(
-								[h.Class("text-muted-foreground text-sm")],
-								[
-									"Where rules send incidents. Health is read from each destination's last",
-									" ",
-									String(HEALTH_WINDOW),
-									" delivery attempts.",
-								],
-							),
+							typography(h, { size: "sm", tone: "muted", as: "p" }, [
+								"Where rules send incidents. Health is read from each destination's last",
+								" ",
+								String(HEALTH_WINDOW),
+								" delivery attempts.",
+							]),
 						],
 					),
 					destinationsSection(h, model, inputs, events),
@@ -83,12 +85,9 @@ export const routingTab = (h: H, model: Model, inputs: RoutingInputs): Html => {
 						[],
 						[
 							sectionHeading(h, { title: "Delivery log" }),
-							h.p(
-								[h.Class("text-muted-foreground text-sm")],
-								[
-									"Every queued, retried, and completed notification attempt across alert destinations.",
-								],
-							),
+							typography(h, { size: "sm", tone: "muted", as: "p" }, [
+								"Every queued, retried, and completed notification attempt across alert destinations.",
+							]),
 						],
 					),
 					deliveryLog(h, model, inputs),
@@ -121,10 +120,11 @@ const destinationsSection = (
 				emptyActions(h, [
 					...(model.isAdmin
 						? [
-								button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedNewDestination())] }, [
-									icon(h, "PlusIcon"),
-									"Add destination",
-								]),
+								button(
+									h,
+									{ size: "sm", attributes: [h.OnClick(Message.ClickedNewDestination())] },
+									[icon(h, "PlusIcon"), "Add destination"],
+								),
 							]
 						: []),
 					docsLink(h, "destinations"),
@@ -132,37 +132,42 @@ const destinationsSection = (
 			],
 			"py-12",
 		)
-	return h.div(
-		[h.Class("overflow-x-auto rounded-md border")],
-		[
-			h.div(
-				[h.Class("min-w-[760px]")],
-				[
-					h.div(
-						[h.Class(cn(DESTINATION_ROW_GRID, "border-b px-4 py-2 text-xs text-muted-foreground"))],
-						[
-							h.span([], ["Destination"]),
-							h.span([], ["Type"]),
-							h.span([], ["Last ", String(HEALTH_WINDOW), " attempts"]),
-							h.span([h.Class("text-right")], ["Last delivered"]),
-							h.span([], []),
-						],
-					),
-					h.ul(
-						[h.Class("divide-y")],
-						inputs.destinations.map((destination) =>
-							destinationRow(h, model, inputs, {
-								destination,
-								recent: events
-									.filter((event) => event.destinationId === destination.id)
-									.slice(0, HEALTH_WINDOW),
-							}),
+	return borderedBox(h, { overflow: "x-auto" }, [
+		h.div(
+			[h.Class("min-w-[760px]")],
+			[
+				h.div(
+					[
+						h.Class(
+							cn(
+								DESTINATION_ROW_GRID,
+								typographyClass({ size: "xs", tone: "muted", className: stripClass("head") }),
+							),
 						),
+					],
+					[
+						h.span([], ["Destination"]),
+						h.span([], ["Type"]),
+						h.span([], ["Last ", String(HEALTH_WINDOW), " attempts"]),
+						h.span([h.Class("text-right")], ["Last delivered"]),
+						h.span([], []),
+					],
+				),
+				h.ul(
+					[h.Class("divide-y")],
+					Arr.map(inputs.destinations, (destination) =>
+						destinationRow(h, model, inputs, {
+							destination,
+							recent: Arr.filter(
+								events,
+								(event) => event.destinationId === destination.id,
+							).slice(0, HEALTH_WINDOW),
+						}),
 					),
-				],
-			),
-		],
-	)
+				),
+			],
+		),
+	])
 }
 
 const healthTone = (
@@ -171,7 +176,7 @@ const healthTone = (
 ): Tone => {
 	if (!destination.enabled) return destination.disabledAt != null ? "crit" : "neutral"
 	if (recent[0]?.status === "failed") return "crit"
-	if (recent.some((event) => event.status === "failed")) return "warn"
+	if (Arr.some(recent, (event) => event.status === "failed")) return "warn"
 	return recent.length > 0 ? "ok" : "neutral"
 }
 
@@ -185,7 +190,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 	const { destination, recent } = row
 	const provider = destinationProvider(destination.type, destination.chatConnector ?? undefined)
 	const lastSuccess = recent.find((event) => event.status === "success")
-	const failed = recent.filter((event) => event.status === "failed").length
+	const failed = Arr.filter(recent, (event) => event.status === "failed").length
 	const problem =
 		!destination.enabled && destination.disabledReason
 			? `Maple stopped delivering here after repeated failures: ${destination.disabledReason}`
@@ -210,7 +215,14 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 				[h.Class(DESTINATION_ROW_GRID)],
 				[
 					h.div(
-						[h.Class(cn("flex min-w-0 items-center gap-3", !destination.enabled && "opacity-60"))],
+						[
+							h.Class(
+								cn(
+									hstackClass({ gap: "3", shrink: true }),
+									!destination.enabled && "opacity-60",
+								),
+							),
+						],
 						[
 							statusDot(h, { tone: healthTone(destination, recent), size: "lg" }),
 							providerLogo(h, {
@@ -218,30 +230,35 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 								chatConnector: destination.chatConnector ?? undefined,
 								size: 28,
 								isBare: true,
-								className: "flex shrink-0 items-center",
+								className: hstackClass({ className: "shrink-0" }),
 								isLogoBroken: model.brokenLogos.includes(destination.type),
 								onLogoError: Message.FailedLoadProviderLogo({ type: destination.type }),
 							}),
 							h.div(
 								[h.Class("min-w-0")],
 								[
-									h.p([h.Class("truncate text-sm font-medium")], [destination.name]),
-									h.p(
-										[h.Class("truncate font-mono text-xs text-muted-foreground")],
+									typography(h, { size: "sm", weight: "medium", truncate: true, as: "p" }, [
+										destination.name,
+									]),
+									typography(
+										h,
+										{ size: "xs", tone: "muted", mono: true, truncate: true, as: "p" },
 										[destination.summary],
 									),
 								],
 							),
 						],
 					),
-					h.span([h.Class("text-xs text-muted-foreground")], [provider.label]),
+					typography(h, { size: "xs", tone: "muted" }, [provider.label]),
 					deliveryStrip(h, recent, failed),
 					h.span(
 						[h.Class("text-right text-xs text-muted-foreground tabular-nums")],
 						[
 							!destination.enabled
 								? h.span(
-										destination.disabledAt != null ? [h.Class("text-severity-error")] : [],
+										destination.disabledAt != null
+											? [h.Class("text-severity-error")]
+											: [],
 										[destination.disabledAt != null ? "auto-disabled" : "disabled"],
 									)
 								: lastSuccess !== undefined
@@ -255,43 +272,43 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 									: "never",
 						],
 					),
-					h.div(
-						[h.Class("flex items-center justify-end gap-2")],
-						[
-							...switchControl(h, {
-								id: `destination-switch-${destination.id}`,
-								inputId: `destination-switch-input-${destination.id}`,
-								isChecked: destination.enabled,
+					hstack(h, { gap: "2", justify: "end" }, [
+						...switchControl(h, {
+							id: `destination-switch-${destination.id}`,
+							inputId: `destination-switch-input-${destination.id}`,
+							isChecked: destination.enabled,
+							isDisabled: !model.isAdmin,
+							ariaLabel: destination.enabled ? "Disable destination" : "Enable destination",
+							onToggle: Message.ClickedToggleDestination({ destinationId: destination.id }),
+						}),
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
 								isDisabled: !model.isAdmin,
-								ariaLabel: destination.enabled ? "Disable destination" : "Enable destination",
-								onToggle: Message.ClickedToggleDestination({ destinationId: destination.id }),
-							}),
-							button(
-								h,
-								{
-									size: "sm",
-									variant: "outline",
-									isDisabled: !model.isAdmin,
-									isLoading: model.testingDestinationIds.includes(destination.id),
-									attributes: [
-										h.OnClick(Message.ClickedTestDestination({ destinationId: destination.id })),
-									],
-								},
-								[icon(h, "CheckIcon"), "Test"],
-							),
-							...(model.isAdmin
-								? [
-										rowActionsMenu(h, {
-											slotId: menuId,
-											model: model.menus[menuId] ?? Menu.init(menuId),
-											entries,
-											label: `Actions for ${destination.name}`,
-											toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
-										}),
-									]
-								: []),
-						],
-					),
+								isLoading: model.testingDestinationIds.includes(destination.id),
+								attributes: [
+									h.OnClick(
+										Message.ClickedTestDestination({ destinationId: destination.id }),
+									),
+								],
+							},
+							[icon(h, "CheckIcon"), "Test"],
+						),
+						...(model.isAdmin
+							? [
+									rowActionsMenu(h, {
+										slotId: menuId,
+										model: model.menus[menuId] ?? Menu.init(menuId),
+										entries,
+										label: `Actions for ${destination.name}`,
+										toParentMessage: (message) =>
+											Message.GotRowMenuMessage({ menuId, message }),
+									}),
+								]
+							: []),
+					]),
 				],
 			),
 			...(problem
@@ -308,24 +325,38 @@ const ATTEMPT_CLASS = new Map<AlertDeliveryEventDocument["status"], string>([
 	["processing", "bg-foreground-faint"],
 ])
 
-// TODO(tooltip): the strip's hover tooltip ("Last N attempts delivered") is not drawn yet.
-const deliveryStrip = (h: H, recent: ReadonlyArray<AlertDeliveryEventDocument>, failed: number): Html =>
-	recent.length === 0
-		? h.span([h.Class("text-xs text-muted-foreground")], ["No deliveries yet"])
-		: h.span(
-				[
-					h.Class("flex h-3.5 cursor-default items-stretch gap-px"),
-					h.DataAttribute("slot", "tooltip-trigger"),
-					h.AriaLabel(
-						failed === 0
-							? `Last ${recent.length} attempts delivered`
-							: `${failed} of the last ${recent.length} attempts failed`,
-					),
-				],
-				[...recent].reverse().map((event) =>
-					h.span([h.Key(event.id), h.Class(cn("w-1 rounded-2xs", ATTEMPT_CLASS.get(event.status)))]),
-				),
-			)
+const deliveryStrip = (h: H, recent: ReadonlyArray<AlertDeliveryEventDocument>, failed: number): Html => {
+	if (recent.length === 0) return typography(h, { size: "xs", tone: "muted" }, ["No deliveries yet"])
+	const pending = Arr.filter(
+		recent,
+		(event) => event.status === "queued" || event.status === "processing",
+	).length
+	const total = recent.length
+	// One attempt reads as itself, not "1 of the last 1 attempts".
+	const summary =
+		total === 1
+			? failed > 0
+				? "The last attempt failed"
+				: pending > 0
+					? "The last attempt is pending"
+					: "The last attempt was delivered"
+			: failed > 0
+				? `${failed} of the last ${total} attempts failed`
+				: pending > 0
+					? `${total - pending} of the last ${total} attempts delivered, ${pending} pending`
+					: `Last ${total} attempts delivered`
+	return h.span(
+		[
+			h.Class("flex h-3.5 cursor-default items-stretch gap-px"),
+			h.DataAttribute("slot", "tooltip-trigger"),
+			h.AriaLabel(summary),
+			...tooltipTrigger(h, summary),
+		],
+		Arr.map([...recent].reverse(), (event) =>
+			h.span([h.Key(event.id), h.Class(cn("w-1 rounded-2xs", ATTEMPT_CLASS.get(event.status)))]),
+		),
+	)
+}
 
 // DELIVERY LOG
 
@@ -358,11 +389,17 @@ const logTable = (
 				emptyHeader(h, [
 					emptyMedia(h, { variant: "icon" }, [icon(h, "TruckIcon", { size: 18 })]),
 					emptyTitle(h, ["No notifications sent yet"]),
-					emptyDescription(h, ["Once rules start triggering, delivery attempts will show up here."]),
+					emptyDescription(h, [
+						"Once rules start triggering, delivery attempts will show up here.",
+					]),
 				]),
 				emptyActions(h, [
 					...(model.isAdmin
-						? [linkButton(h, { variant: "outline", size: "sm", href: createHref({}) }, ["Create an alert rule"])]
+						? [
+								linkButton(h, { variant: "outline", size: "sm", href: createHref({}) }, [
+									"Create an alert rule",
+								]),
+							]
 						: []),
 					docsLink(h, "destinations"),
 				]),
@@ -382,26 +419,32 @@ const logTable = (
 		]),
 		tableBody(
 			h,
-			groups.flatMap((group) => [
+			Arr.flatMap(groups, (group) => [
 				tableRow(h, [
-					h.td(
+					tableCell(
+						h,
 						[
-							h.Attribute("class", cn(tableCellStyles, "bg-surface-sunken py-1.5")),
-							h.Attribute("colspan", "5"),
-							h.DataAttribute("slot", "table-cell"),
-						],
-						[
-							eyebrow(h, { className: "flex items-center gap-2" }, [
+							eyebrow(h, { className: hstackClass({ gap: "2" }) }, [
 								group.label,
 								h.span(
-									[h.Class("tracking-normal normal-case text-foreground-subtle tabular-nums")],
-									[String(group.events.length), " ", pluralize(group.events.length, "attempt")],
+									[
+										h.Class(
+											"tracking-normal normal-case text-foreground-subtle tabular-nums",
+										),
+									],
+									[
+										String(group.events.length),
+										" ",
+										pluralize(group.events.length, "attempt"),
+									],
 								),
 							]),
 						],
+						"bg-surface-sunken py-1.5",
+						[h.Attribute("colspan", "5")],
 					),
 				]),
-				...group.events.map((event) => logRow(h, model, inputs, event)),
+				...Arr.map(group.events, (event) => logRow(h, model, inputs, event)),
 			]),
 		),
 	])
@@ -412,23 +455,20 @@ const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryE
 	const status = deliveryStatusMeta[event.status]
 	return tableRow(h, [
 		tableCell(h, [
-			h.span(
-				[h.Class("flex items-center gap-1.5")],
-				[
-					badge(h, { variant: status.variant, size: "sm" }, [status.label]),
-					...(event.attemptNumber > 1
-						? [
-								h.span(
-									[
-										h.Class("text-severity-warn tabular-nums text-2xs"),
-										h.Title(`Attempt ${event.attemptNumber}`),
-									],
-									["↻", String(event.attemptNumber)],
-								),
-							]
-						: []),
-				],
-			),
+			hstack(h, { gap: "1.5", as: "span" }, [
+				badge(h, { variant: status.variant, size: "sm" }, [status.label]),
+				...(event.attemptNumber > 1
+					? [
+							h.span(
+								[
+									h.Class("text-severity-warn tabular-nums text-2xs"),
+									h.Title(`Attempt ${event.attemptNumber}`),
+								],
+								["↻", String(event.attemptNumber)],
+							),
+						]
+					: []),
+			]),
 		]),
 		tableCell(h, [
 			h.span(
@@ -437,20 +477,17 @@ const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryE
 			),
 		]),
 		tableCell(h, [
-			h.span(
-				[h.Class("flex items-center gap-2")],
-				[
-					providerLogo(h, {
-						type: event.destinationType,
-						size: 32,
-						isBare: true,
-						className: "flex shrink-0 items-center",
-						isLogoBroken: model.brokenLogos.includes(event.destinationType),
-						onLogoError: Message.FailedLoadProviderLogo({ type: event.destinationType }),
-					}),
-					h.span([h.Class("truncate font-medium")], [event.destinationName]),
-				],
-			),
+			hstack(h, { gap: "2", as: "span" }, [
+				providerLogo(h, {
+					type: event.destinationType,
+					size: 32,
+					isBare: true,
+					className: hstackClass({ className: "shrink-0" }),
+					isLogoBroken: model.brokenLogos.includes(event.destinationType),
+					onLogoError: Message.FailedLoadProviderLogo({ type: event.destinationType }),
+				}),
+				typography(h, { weight: "medium", truncate: true }, [event.destinationName]),
+			]),
 		]),
 		tableCell(
 			h,
@@ -461,24 +498,33 @@ const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryE
 							[
 								event.errorMessage ?? "Delivery failed",
 								...(event.responseCode != null
-									? [h.span([h.Class("text-muted-foreground")], [" · ", String(event.responseCode)])]
+									? [
+											h.span(
+												[h.Class("text-muted-foreground")],
+												[" · ", String(event.responseCode)],
+											),
+										]
 									: []),
 							],
 						),
 					]
 				: event.providerReference
-					? [h.span([h.Class("block truncate text-xs text-muted-foreground")], [event.providerReference])]
+					? [
+							h.span(
+								[h.Class("block truncate text-xs text-muted-foreground")],
+								[event.providerReference],
+							),
+						]
 					: [],
 			"max-w-0",
 		),
-		// TODO(tooltip): the full date-time tooltip on the time cell is not drawn yet; it is the title.
 		tableCell(
 			h,
 			[
 				h.span(
 					[
 						h.Class("cursor-default text-muted-foreground tabular-nums"),
-						h.Title(formatAlertDateTime(event.scheduledAt, inputs.timeZone)),
+						...tooltipTrigger(h, formatAlertDateTime(event.scheduledAt, inputs.timeZone)),
 					],
 					[formatAlertTime(event.scheduledAt, inputs.timeZone)],
 				),

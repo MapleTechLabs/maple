@@ -1,9 +1,12 @@
+import { Schema, Array as Arr, String as Str } from "effect"
 import { connectedIds, type SpatialView } from "../../../components/service-map/three/spatial-layout"
 import type { Topology3D } from "../../../components/service-map/three/types"
 import * as THREE from "three"
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import type { Vec3 } from "./kit"
 import type { Layout } from "./world"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The camera rig. The camera and HTML labels share
 // one projection; labels are the `[data-scene-label]` elements under the scene root.
@@ -36,9 +39,10 @@ const FRAME_MARGIN = 2.5
 const LABEL_ATTRIBUTE = "data-scene-label"
 
 const boundsOf = (layout: Layout["layout"]) => {
-	const points = layout.districts.flatMap((district) =>
-		[-1, 1].flatMap((x) =>
-			[-1, 1].map(
+	const points = Arr.flatMap(layout.districts, (district) =>
+		Arr.flatMap([-1, 1], (x) =>
+			Arr.map(
+				[-1, 1],
 				(z) =>
 					new THREE.Vector3(
 						district.position[0] + x * (district.width / 2 + FRAME_MARGIN),
@@ -55,13 +59,13 @@ const boundsOf = (layout: Layout["layout"]) => {
 /** What CameraRig memoizes per input: rebuilt when the topology, layout or links change. */
 const derive = (input: RigInput) => ({
 	input,
-	linksById: new Map(input.layout.links.map((link) => [link.id, link])),
-	nodesById: new Map(input.topology.nodes.map((node) => [node.id, node])),
-	labelRevision: JSON.stringify([
-		input.topology.nodes.map((node) => [node.id, node.label, node.throughput, node.dimmed]),
-		input.layout.links.map((link) => [link.id, link.edge.callsPerSecond]),
+	linksById: new Map(Arr.map(input.layout.links, (link) => [link.id, link])),
+	nodesById: new Map(Arr.map(input.topology.nodes, (node) => [node.id, node])),
+	labelRevision: encodeJson([
+		Arr.map(input.topology.nodes, (node) => [node.id, node.label, node.throughput, node.dimmed]),
+		Arr.map(input.layout.links, (link) => [link.id, link.edge.callsPerSecond]),
 	]),
-	layoutKey: JSON.stringify([...input.layout.layout.positions]),
+	layoutKey: encodeJson([...input.layout.layout.positions]),
 	bounds: boundsOf(input.layout.layout),
 })
 
@@ -128,7 +132,7 @@ export const cameraRig = (
 		state.lastCommand = command.serial
 		orbit.update()
 		camera.updateMatrixWorld()
-		const labels = [...labelsRoot.querySelectorAll(`[${LABEL_ATTRIBUTE}]`)].flatMap((element) =>
+		const labels = Arr.flatMap([...labelsRoot.querySelectorAll(`[${LABEL_ATTRIBUTE}]`)], (element) =>
 			element instanceof HTMLElement
 				? [[element.getAttribute(LABEL_ATTRIBUTE) ?? "", element] as const]
 				: [],
@@ -179,14 +183,15 @@ const projectLabels = ({
 	height: number
 }) => {
 	const related = connectedIds(topology, selectedId)
-	const occupied = labels
-		.filter(([id]) => id.startsWith("overlay:"))
-		.map(([, element]) => ({
+	const occupied = Arr.map(
+		Arr.filter(labels, ([id]) => Str.startsWith("overlay:")(id)),
+		([, element]) => ({
 			x: element.offsetLeft + element.offsetWidth / 2,
 			y: element.offsetTop + element.offsetHeight / 2,
 			width: element.offsetWidth,
 			height: element.offsetHeight,
-		}))
+		}),
+	)
 	const priority = (id: string) =>
 		id === selectedId
 			? 4
@@ -196,18 +201,19 @@ const projectLabels = ({
 					? nodesById.get(id)?.dimmed
 						? 1
 						: 2
-					: id.startsWith("district:")
+					: Str.startsWith("district:")(id)
 						? 1.5
 						: linksById.has(id)
 							? 0.5
 							: 0
-	const entries = labels
-		.toSorted(
+	const entries = Arr.map(
+		labels.toSorted(
 			([a], [b]) =>
 				priority(b) - priority(a) ||
 				(nodesById.get(b)?.throughput ?? 0) - (nodesById.get(a)?.throughput ?? 0),
-		)
-		.map(([id, element]) => ({ id, element, width: element.offsetWidth, height: element.offsetHeight }))
+		),
+		([id, element]) => ({ id, element, width: element.offsetWidth, height: element.offsetHeight }),
+	)
 	for (const { id, element, width, height } of entries) {
 		const position = layout.positions.get(id)
 		const link = linksById.get(id)
@@ -232,7 +238,8 @@ const projectLabels = ({
 			x > sizeWidth - 20 ||
 			y < 20 ||
 			y > sizeHeight - 25 ||
-			occupied.some(
+			Arr.some(
+				occupied,
 				(other) =>
 					Math.abs(other.x - x) < (other.width + width) / 2 + 6 &&
 					Math.abs(other.y - (y + height / 2)) < (other.height + height) / 2 + 4,

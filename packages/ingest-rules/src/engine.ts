@@ -11,7 +11,7 @@ import {
 	type IngestRuleSignal,
 	type IngestRuleSpec,
 } from "@maple/domain/ingest-rules"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { DETECTORS, findAll, type Span } from "./detectors"
 import { hmacSha256, sha256, toHex, utf8 } from "./sha256"
 
@@ -93,7 +93,7 @@ const compileCondition = (condition: IngestRuleCondition): CompiledCondition => 
 export const compileRules = (specs: ReadonlyArray<IngestRuleSpec>, salt: string): CompiledRules => {
 	const rules: Array<CompiledRule> = []
 	const invalid: Array<InvalidRule> = []
-	specs.forEach((spec, index) => {
+	Arr.forEach(specs, (spec, index) => {
 		const problems = ingestRuleProblems(spec)
 		if (problems.length > 0) {
 			invalid.push({ index, problems })
@@ -104,11 +104,11 @@ export const compileRules = (specs: ReadonlyArray<IngestRuleSpec>, salt: string)
 			index,
 			spec,
 			signals: new Set(spec.signals),
-			conditions: spec.conditions.map(compileCondition),
-			keys: action._tag === "redact" ? action.keys.map((key) => key.toLowerCase()) : [],
+			conditions: Arr.map(spec.conditions, compileCondition),
+			keys: action._tag === "redact" ? Arr.map(action.keys, (key) => Str.toLowerCase(key)) : [],
 			patterns:
 				action._tag === "redact"
-					? action.patterns.flatMap((pattern) => Option.toArray(compileIngestRegex(pattern)))
+					? Arr.flatMap(action.patterns, (pattern) => Option.toArray(compileIngestRegex(pattern)))
 					: [],
 		})
 	})
@@ -117,7 +117,7 @@ export const compileRules = (specs: ReadonlyArray<IngestRuleSpec>, salt: string)
 
 // CONDITIONS
 
-export const isAttrList = (value: AttrValue): value is ReadonlyArray<AttrValue> => Array.isArray(value)
+export const isAttrList = (value: AttrValue): value is ReadonlyArray<AttrValue> => Arr.isArray(value)
 const isMap = (value: AttrValue): value is AttrMap =>
 	typeof value === "object" && !isAttrList(value) && !(value instanceof Uint8Array)
 
@@ -127,18 +127,18 @@ export const formatDouble = (value: number): string => {
 	if (!Number.isFinite(value)) return value > 0 ? "inf" : "-inf"
 	if (Object.is(value, -0)) return "-0"
 	const text = String(Math.abs(value))
-	if (!text.includes("e")) return String(value)
+	if (!Str.includes("e")(text)) return String(value)
 	// Shortest round-trip digits, then shifted: `1e+21` is "1000000000000000000000", `1.5e-7` "0.00000015".
-	const [mantissa = "", exponentText = "0"] = text.split("e")
-	const digits = mantissa.replace(".", "")
+	const [mantissa, exponentText = "0"] = Str.split("e")(text)
+	const digits = Str.replace(".", "")(mantissa)
 	const point =
 		(mantissa.indexOf(".") === -1 ? mantissa.length : mantissa.indexOf(".")) + Number(exponentText)
 	const unsigned =
 		point >= digits.length
-			? digits + "0".repeat(point - digits.length)
+			? digits + Str.repeat(point - digits.length)("0")
 			: point <= 0
-				? `0.${"0".repeat(-point)}${digits}`
-				: `${digits.slice(0, point)}.${digits.slice(point)}`
+				? `0.${Str.repeat(-point)("0")}${digits}`
+				: `${Str.slice(0, point)(digits)}.${Str.slice(point)(digits)}`
 	return value < 0 ? `-${unsigned}` : unsigned
 }
 
@@ -162,12 +162,12 @@ const SEVERITY_PREFIXES: ReadonlyArray<readonly [string, number]> = [
 	["emerg", 21],
 ]
 
-const SEVERITY_BY_NAME: ReadonlyMap<string, number> = new Map(Object.entries(SEVERITY_LEVELS))
+const SEVERITY_BY_NAME: ReadonlyMap<string, number> = new Map(Rec.toEntries(SEVERITY_LEVELS))
 
 const severityOf = (record: RuleRecord): number | null => {
 	if (record.severityNumber !== undefined && record.severityNumber > 0) return record.severityNumber
-	const text = (record.severityText ?? "").toLowerCase()
-	return SEVERITY_PREFIXES.find(([prefix]) => text.startsWith(prefix))?.[1] ?? null
+	const text = Str.toLowerCase(record.severityText ?? "")
+	return SEVERITY_PREFIXES.find(([prefix]) => Str.startsWith(prefix)(text))?.[1] ?? null
 }
 
 /** Own keys only: an attribute named `constructor` is not inherited from `Object.prototype`. */
@@ -226,11 +226,11 @@ const conditionMatches = (record: RuleRecord, compiled: CompiledCondition): bool
 		case "not_in":
 			return !compiled.values.has(value)
 		case "prefix":
-			return value.startsWith(operand)
+			return Str.startsWith(operand)(value)
 		case "contains":
-			return value.includes(operand)
+			return Str.includes(operand)(value)
 		case "regex":
-			return compiled.regex !== null && compiled.regex.test(value.slice(0, scanCut(value)))
+			return compiled.regex !== null && compiled.regex.test(Str.slice(0, scanCut(value))(value))
 		default:
 			return false
 	}
@@ -238,7 +238,7 @@ const conditionMatches = (record: RuleRecord, compiled: CompiledCondition): bool
 
 const ruleMatches = (rule: CompiledRule, record: RuleRecord): boolean =>
 	rule.signals.has(record.signal) &&
-	rule.conditions.every((condition) => conditionMatches(record, condition))
+	Arr.every(rule.conditions, (condition) => conditionMatches(record, condition))
 
 /**
  * Where the scan stops: the end of the longest prefix within `scanBytes` UTF-8 bytes that does
@@ -275,7 +275,7 @@ export const keepBySample = (
 	if (keepPercent >= 100) return true
 	if (keepPercent <= 0) return false
 	if (traceId === undefined || traceId.length === 0) return random() * 100 < keepPercent
-	const digest = sha256(utf8(traceId.toLowerCase()))
+	const digest = sha256(utf8(Str.toLowerCase(traceId)))
 	const head = new DataView(digest.buffer).getBigUint64(0)
 	return head % 100n < BigInt(keepPercent)
 }
@@ -284,7 +284,7 @@ export const keepBySample = (
 
 /** Case-insensitive glob where `*` matches any run of characters; `pattern` is lower-cased. */
 export const globMatches = (pattern: string, key: string): boolean => {
-	const text = key.toLowerCase()
+	const text = Str.toLowerCase(key)
 	let p = 0
 	let t = 0
 	let star = -1
@@ -319,7 +319,7 @@ interface RedactContext {
 }
 
 const hashText = (salt: Uint8Array, text: string) =>
-	`hash:${toHex(hmacSha256(salt, utf8(text))).slice(0, 16)}`
+	`hash:${Str.slice(0, 16)(toHex(hmacSha256(salt, utf8(text))))}`
 
 const replaceSpans = (
 	text: string,
@@ -328,7 +328,9 @@ const replaceSpans = (
 ): string =>
 	spans.reduceRight(
 		(acc, span) =>
-			acc.slice(0, span.start) + replace(acc.slice(span.start, span.end)) + acc.slice(span.end),
+			Str.slice(0, span.start)(acc) +
+			replace(Str.slice(span.start, span.end)(acc)) +
+			Str.slice(span.end)(acc),
 		text,
 	)
 
@@ -336,28 +338,36 @@ const scanString = (text: string, ctx: RedactContext): string => {
 	const replacement = (label: string | null) => (matched: string) =>
 		ctx.method === "hash" ? hashText(ctx.salt, matched) : label === null ? MASK : `[REDACTED:${label}]`
 	const cut = scanCut(text)
-	const tail = text.slice(cut)
-	const afterDetectors = ctx.detectors.reduce(
-		(head, detector) => {
+	const tail = Str.slice(cut)(text)
+	const detectorPass = (head: string): { head: string; found: number } =>
+		Arr.reduce(ctx.detectors, { head, found: 0 }, (acc, detector) => {
 			const { regex, accept } = DETECTORS[detector]
-			const spans = findAll(regex, head, accept)
-			ctx.count += spans.length
-			return replaceSpans(head, spans, replacement(detector))
-		},
-		text.slice(0, cut),
-	)
-	const afterPatterns = ctx.rule.patterns.reduce((head, regex) => {
+			const spans = findAll(regex, acc.head, accept)
+			return {
+				head: replaceSpans(acc.head, spans, replacement(detector)),
+				found: acc.found + spans.length,
+			}
+		})
+	// A mask is a fresh boundary, so it can complete a match an earlier pass rejected: masking repeats
+	// until a pass finds nothing. Masks never match a detector; a hash can, so hashing runs once.
+	const detectorsToFixpoint = (head: string): string => {
+		const pass = detectorPass(head)
+		ctx.count += pass.found
+		return pass.found > 0 && ctx.method !== "hash" ? detectorsToFixpoint(pass.head) : pass.head
+	}
+	const afterDetectors = detectorsToFixpoint(Str.slice(0, cut)(text))
+	const afterPatterns = Arr.reduce(ctx.rule.patterns, afterDetectors, (head, regex) => {
 		const spans = findAll(regex, head, () => true)
 		ctx.count += spans.length
 		return replaceSpans(head, spans, replacement(null))
-	}, afterDetectors)
+	})
 	return afterPatterns + tail
 }
 
 const scanValue = (value: AttrValue, ctx: RedactContext): AttrValue => {
 	if (typeof value === "string")
 		return ctx.detectors.length + ctx.rule.patterns.length === 0 ? value : scanString(value, ctx)
-	if (isAttrList(value)) return value.map((item) => scanValue(item, ctx))
+	if (isAttrList(value)) return Arr.map(value, (item) => scanValue(item, ctx))
 	if (isMap(value)) return redactMap(value, ctx, false)
 	return value
 }
@@ -372,10 +382,10 @@ const keyReplacement = (value: AttrValue, ctx: RedactContext): AttrValue | typeo
 // `Object.fromEntries` keeps a `__proto__` key as data; assigning it onto `{}` would not.
 // Protected keys only route and bill at the top level; inside a kvlist they are customer data.
 const redactMap = (map: AttrMap, ctx: RedactContext, topLevel = true): AttrMap =>
-	Object.fromEntries(
-		Object.entries(map).flatMap(([key, value]) => {
+	Rec.fromEntries(
+		Arr.flatMap(Rec.toEntries(map), ([key, value]) => {
 			if (topLevel && isProtectedKey(key)) return [[key, value]]
-			const next = ctx.rule.keys.some((pattern) => globMatches(pattern, key))
+			const next = Arr.some(ctx.rule.keys, (pattern) => globMatches(pattern, key))
 				? keyReplacement(value, ctx)
 				: scanValue(value, ctx)
 			return next === REMOVED ? [] : [[key, next]]
@@ -421,8 +431,8 @@ export const applyRules = (
 	record: RuleRecord,
 	random: () => number = Math.random,
 ): RuleOutcome => {
-	const matching = compiled.rules.filter((rule) => ruleMatches(rule, record))
-	const matched = matching.map((rule) => rule.index)
+	const matching = Arr.filter(compiled.rules, (rule) => ruleMatches(rule, record))
+	const matched = Arr.map(matching, (rule) => rule.index)
 	// One draw per record, shared by every drop rule, as the gateway does for records without a trace id.
 	const draw: RecordDraw = {}
 	const once = () => (draw.value ??= random())
@@ -433,13 +443,15 @@ export const applyRules = (
 	)
 	if (dropper !== undefined) return { _tag: "dropped", ruleIndex: dropper.index, matched }
 	const redactions = new Map<number, number>()
-	const redacted = matching
-		.filter((rule) => rule.spec.action._tag === "redact")
-		.reduce((current, rule) => {
+	const redacted = Arr.reduce(
+		Arr.filter(matching, (rule) => rule.spec.action._tag === "redact"),
+		record,
+		(current, rule) => {
 			const { record: next, count } = redactRecord(current, rule, compiled.salt)
 			if (count > 0) redactions.set(rule.index, count)
 			return next
-		}, record)
+		},
+	)
 	return { _tag: "kept", record: redacted, matched, redactions }
 }
 
@@ -452,9 +464,10 @@ export const redactWithMatched = (
 	matched: ReadonlyArray<number>,
 	attributes: AttrMap,
 ): AttrMap =>
-	compiled.rules
-		.filter((rule) => matched.includes(rule.index) && scopeHas(rule, "attributes"))
-		.reduce((current, rule) => {
+	Arr.reduce(
+		Arr.filter(compiled.rules, (rule) => matched.includes(rule.index) && scopeHas(rule, "attributes")),
+		attributes,
+		(current, rule) => {
 			const action = rule.spec.action
 			if (action._tag !== "redact") return current
 			const ctx: RedactContext = {
@@ -465,4 +478,5 @@ export const redactWithMatched = (
 				count: 0,
 			}
 			return redactMap(current, ctx)
-		}, attributes)
+		},
+	)

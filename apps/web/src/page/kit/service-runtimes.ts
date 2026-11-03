@@ -2,10 +2,11 @@ import { ServiceRuntimeRow } from "@maple/domain/http"
 import { SERVICE_RUNTIME_KINDS } from "@maple/domain/service-runtimes"
 import { gcpWorkloadSearch } from "../../components/infra/gcp/tabs"
 import { AppRoute, hrefOf } from "../../route"
-import type { IconName } from "../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 import { resourceSearch } from "../infra-integrations/aws/derive"
 import { SOURCE_ICON } from "../infra/overview/source-mark"
 import type { TimeSearch } from "./time-controls"
+import { Array as Arr } from "effect"
 
 // Where a service runs, as links to the infra pages: its platform resources
 // (`ServiceRuntimesResponse`) and its Kubernetes workloads. The service page's "Runs on" card and
@@ -25,7 +26,7 @@ export interface RuntimeLink {
 	readonly href: string
 }
 
-const present = (values: ReadonlyArray<string>) => values.filter((value) => value !== "")
+const present = (values: ReadonlyArray<string>) => Arr.filter(values, (value) => value !== "")
 
 const runtimeHref = (runtime: ServiceRuntime, time: TimeSearch): string => {
 	switch (runtime.kind) {
@@ -37,7 +38,11 @@ const runtimeHref = (runtime: ServiceRuntime, time: TimeSearch): string => {
 					name: runtime.serviceName,
 					search: {
 						...time,
-						...gcpWorkloadSearch(runtime.kind, [runtime.serviceName, runtime.account, runtime.region]),
+						...gcpWorkloadSearch(runtime.kind, [
+							runtime.serviceName,
+							runtime.account,
+							runtime.region,
+						]),
 					},
 				}),
 			)
@@ -84,14 +89,17 @@ const runtimeLocation = (runtime: ServiceRuntime): ReadonlyArray<string> => {
 export const runtimeLink = (runtime: ServiceRuntime, time: TimeSearch): RuntimeLink => {
 	const kind = SERVICE_RUNTIME_KINDS[runtime.kind]
 	return {
-		key: [
-			runtime.kind,
-			runtime.serviceName,
-			runtime.account,
-			runtime.region,
-			runtime.cluster,
-			runtime.railwayEnvironmentId,
-		].join("|"),
+		key: Arr.join(
+			[
+				runtime.kind,
+				runtime.serviceName,
+				runtime.account,
+				runtime.region,
+				runtime.cluster,
+				runtime.railwayEnvironmentId,
+			],
+			"|",
+		),
 		icon: SOURCE_ICON[kind.provider],
 		label: kind.label,
 		name: runtime.serviceName,

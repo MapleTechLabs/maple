@@ -1,15 +1,16 @@
 import { ALERT_TEMPLATE_VARIABLES } from "@maple/domain/http"
 import { comparatorSupportsTiers } from "@maple/web-data/alerts/form-utils"
-import { Struct } from "effect"
+import { Struct, Array as Arr } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { card } from "../../../ui/card"
-import { badge } from "../../../ui/display"
-import { field, fieldLabel, input } from "../../../ui/field"
-import { icon } from "../../../ui/icon"
-import { inlineCode } from "../../../ui/inline-code"
-import { statusDot } from "../../../ui/status-dot"
-import { textarea } from "../../../ui/textarea"
+import { button } from "@maple/views/ui/button"
+import { card } from "@maple/views/ui/card"
+import { badge } from "@maple/views/ui/display"
+import { field, fieldLabel, input } from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { pressable } from "@maple/views/ui/pressable"
+import { textarea } from "@maple/views/ui/textarea"
 import { stableSlice } from "../../kit/stable-slice"
 import { destinationsOf } from "./derive-rows"
 import type { RuleForm } from "./form"
@@ -17,6 +18,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { fieldStateOf, idsOf } from "./view-fields"
 import { destinationList, type NotifyView } from "./view-notify"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `NotificationsSection`: who gets notified, per tier,
 // and the optional message template.
@@ -32,10 +35,13 @@ type NotificationsForm = Pick<
 >
 
 const TITLE_PLACEHOLDER = "{{ event.emoji }} {{ rule.name }} — {{ event.label }}"
-const BODY_PLACEHOLDER = [
-	"{{ signal.label }} is *{{ value }}* ({{ comparator.label }} {{ threshold }}) over the last {{ window }}.",
-	"*Severity:* {{ severity }} · *Group:* {{ group }}",
-].join("\n")
+const BODY_PLACEHOLDER = Arr.join(
+	[
+		"{{ signal.label }} is *{{ value }}* ({{ comparator.label }} {{ threshold }}) over the last {{ window }}.",
+		"*Severity:* {{ severity }} · *Group:* {{ group }}",
+	],
+	"\n",
+)
 
 const tierHeading = (h: H, severity: "warning" | "critical", text: string): Html =>
 	h.p(
@@ -60,23 +66,19 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 	return h.div(
 		[h.Class("mt-3")],
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.OnClick(Message.ToggledMessageTemplate()),
-					h.Class(
+			pressable(
+				h,
+				{
+					onClick: Message.ToggledMessageTemplate(),
+					className:
 						"flex w-full items-center justify-between gap-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground active:text-foreground",
-					),
-					h.AriaExpanded(isOpen),
-				],
+					attributes: [h.AriaExpanded(isOpen)],
+				},
 				[
-					h.span(
-						[h.Class("flex items-center gap-1.5")],
-						[
-							icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", { size: 12 }),
-							"Message template",
-						],
-					),
+					hstack(h, { gap: "1.5", as: "span" }, [
+						icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", { size: 12 }),
+						"Message template",
+					]),
 					...(hasTemplate && !isOpen
 						? [
 								badge(
@@ -93,14 +95,11 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 						h.div(
 							[h.Class("mt-3 space-y-3")],
 							[
-								h.p(
-									[h.Class("text-muted-foreground text-xs")],
-									[
-										"Customize the Slack / Discord / PagerDuty message. Leave blank to use Maple's default format. Supports ",
-										inlineCode(h, {}, ["{{ variable }}"]),
-										" substitution.",
-									],
-								),
+								typography(h, { size: "xs", tone: "muted", as: "p" }, [
+									"Customize the Slack / Discord / PagerDuty message. Leave blank to use Maple's default format. Supports ",
+									inlineCode(h, {}, ["{{ variable }}"]),
+									" substitution.",
+								]),
 								field(h, { className: "items-stretch gap-1.5", state: titleState }, [
 									fieldLabel(h, { ids: titleIds, state: titleState }, "Title"),
 									input(h, {
@@ -119,7 +118,7 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 									fieldLabel(h, { ids: bodyIds, state: bodyState }, "Body (Markdown)"),
 									textarea(h, {
 										id: "notification-body",
-										className: "font-mono text-xs",
+										className: typographyClass({ size: "xs", mono: true }),
 										defaultValue: form.notificationBody,
 										attributes: [
 											h.AriaLabelledBy(bodyIds.label),
@@ -143,7 +142,8 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 const notifications = (h: H, model: NotificationsView, form: NotificationsForm): Html => {
 	const destinations = destinationsOf(model)
 	const escalation = comparatorSupportsTiers(form.comparator) ? form.escalation : null
-	const isAnySelected = destinations.some(
+	const isAnySelected = Arr.some(
+		destinations,
 		(d) => form.destinationIds.includes(d.id) || (escalation?.destinationIds.includes(d.id) ?? false),
 	)
 	return card(
@@ -220,10 +220,11 @@ const variables = (h: H): Html =>
 	h.div(
 		[h.Class("space-y-1.5")],
 		[
-			h.span([h.Class("text-muted-foreground text-xs")], ["Insert a variable:"]),
-			h.div(
-				[h.Class("flex flex-wrap gap-1")],
-				ALERT_TEMPLATE_VARIABLES.map((variable) =>
+			typography(h, { size: "xs", tone: "muted" }, ["Insert a variable:"]),
+			hstack(
+				h,
+				{ gap: "1", align: "stretch", wrap: true },
+				Arr.map(ALERT_TEMPLATE_VARIABLES, (variable) =>
 					button(
 						h,
 						{

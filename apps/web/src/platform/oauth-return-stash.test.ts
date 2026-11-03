@@ -3,7 +3,7 @@ import {
 	GithubInstallationSelection,
 	type OAuthCompleteRequest,
 } from "@maple/domain/http"
-import { Effect, Option } from "effect"
+import { Effect, Option, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { completeOAuthReturnWith } from "../page/integrations/oauth-return"
 import { captureOAuthReturn, peekOAuthReturn, type ReturnStorage } from "./oauth-return-stash"
@@ -62,7 +62,7 @@ describe("an OAuth return captured at boot", () => {
 		// `/integrations?integration=cloudflare` is replaced by `/sources/new?...`, which drops the
 		// fragment; the Sources step embeds the integrations module, which finishes the return.
 		const { posted, outcome } = finish(storage, BOOT_AT + 500)
-		expect(posted.map((request) => [request.flow, request.query])).toEqual([
+		expect(Arr.map(posted, (request) => [request.flow, request.query])).toEqual([
 			["cloudflare", "code=c-1&state=s-1"],
 		])
 		expect(outcome?.provider).toBe("cloudflare")

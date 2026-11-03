@@ -2,6 +2,7 @@ import { lstat, mkdir } from "node:fs/promises"
 import { existsSync, lstatSync } from "node:fs"
 import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import { randomUUID } from "node:crypto"
+import { String as Str } from "effect"
 
 // Archive path model and path-safety primitives.
 //
@@ -22,7 +23,7 @@ const RANGE_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 export const validateArchiveId = (value: string, kind: string): string => {
 	if (!ID.test(value)) throw new Error(`invalid ${kind} ID: ${value}`)
-	return value.toLowerCase()
+	return Str.toLowerCase(value)
 }
 
 export const validateRangeDate = (value: string): string => {
@@ -123,7 +124,7 @@ export const assertContained = (root: string, candidate: string, label: string):
 	const absoluteRoot = resolve(root)
 	const absoluteCandidate = resolve(candidate)
 	const rel = relative(absoluteRoot, absoluteCandidate)
-	if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+	if (rel === "" || rel === ".." || Str.startsWith(`..${sep}`)(rel) || isAbsolute(rel)) {
 		throw new Error(`${label} escapes configured archive root`)
 	}
 	return absoluteCandidate
@@ -146,7 +147,7 @@ export const assertNoSymlink = async (root: string, candidate: string, label: st
 	}
 	const rel = relative(absoluteRoot, absoluteCandidate)
 	let current = absoluteRoot
-	for (const part of rel.split(sep)) {
+	for (const part of Str.split(sep)(rel)) {
 		current = join(current, part)
 		try {
 			if ((await lstat(current)).isSymbolicLink()) {
@@ -177,7 +178,7 @@ export const assertNoSymlinkSync = (root: string, candidate: string, label: stri
 	}
 	const rel = relative(absoluteRoot, absoluteCandidate)
 	let current = absoluteRoot
-	for (const part of rel.split(sep)) {
+	for (const part of Str.split(sep)(rel)) {
 		current = join(current, part)
 		try {
 			if (lstatSync(current).isSymbolicLink()) {
@@ -271,7 +272,7 @@ export const ensurePrivateDirectory = async (path: string, root: string): Promis
 			return
 		}
 	}
-	if (rel.startsWith("..")) throw new Error(`archive path escapes root: ${path}`)
+	if (Str.startsWith("..")(rel)) throw new Error(`archive path escapes root: ${path}`)
 	// Ensure the root exists first (handles fresh-root creation).
 	try {
 		const rootInfo = await lstat(absoluteRoot)
@@ -284,7 +285,7 @@ export const ensurePrivateDirectory = async (path: string, root: string): Promis
 	// Walk from the root down, checking each existing component is a real dir and
 	// creating missing ones. This refuses to cross a symlink at any depth.
 	let current = absoluteRoot
-	for (const part of rel.split(sep)) {
+	for (const part of Str.split(sep)(rel)) {
 		if (part === "") continue
 		current = join(current, part)
 		let info
@@ -317,7 +318,7 @@ export const assertArchiveRootSeparate = (archiveDir: string, dataDir: string): 
 	const archive = resolve(archiveDir)
 	const data = resolve(dataDir)
 	const rel = relative(data, archive)
-	if (archive === data || rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`))) {
+	if (archive === data || rel === "" || (rel !== ".." && !Str.startsWith(`..${sep}`)(rel))) {
 		throw new Error(
 			`archive root must not be the live data directory or one of its descendants: ${archiveDir}`,
 		)

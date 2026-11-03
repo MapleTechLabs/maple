@@ -1,4 +1,4 @@
-import { Array as Arr, Option, Order, Schema } from "effect"
+import { Array as Arr, Option, Order, Schema, String as Str } from "effect"
 import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "../query-engine"
 import {
 	AlertDeliveryEventId,
@@ -273,7 +273,7 @@ export const alertThresholdLegacyFields = (thresholds: AlertThresholds) => {
 		severity: Arr.lastNonEmpty(sorted).severity,
 		threshold: primary.value,
 		thresholdUpper: primary.upper,
-		destinationIds: Arr.dedupe(sorted.flatMap((tier) => tier.destinationIds)),
+		destinationIds: Arr.dedupe(Arr.flatMap(sorted, (tier) => tier.destinationIds)),
 	}
 }
 
@@ -364,7 +364,7 @@ const SPACE_MESSAGES_PATH = /^\/v1\/spaces\/([A-Za-z0-9_-]+)\/messages$/
  * `key` and `token` query parameters are the credential; the path names the space.
  */
 export const parseGoogleChatWebhookUrl = (raw: string): Option.Option<{ readonly spaceId: string }> =>
-	Option.liftThrowable(() => new URL(raw.trim()))().pipe(
+	Option.liftThrowable(() => new URL(Str.trim(raw)))().pipe(
 		Option.flatMap((url) => {
 			const space = SPACE_MESSAGES_PATH.exec(url.pathname)
 			return url.protocol === "https:" &&
@@ -844,8 +844,10 @@ export class AlertRulePreviewResponse extends Schema.Class<AlertRulePreviewRespo
 	wouldFire: Schema.Array(AlertRulePreviewFiringSpan),
 	/** Raw SQL rules only: how long one check takes against each interval's limit. */
 	queryTiming: Schema.optionalKey(AlertQueryTiming),
-	/** Raw SQL rules only: the range was too heavy to chart, so `series` is empty. */
-	seriesFailure: Schema.optionalKey(Schema.Literals(["query_too_slow", "query_too_much_memory"])),
+	/** Raw SQL rules only: the range was too heavy to chart, or the SQL has no time bucket, so `series` is empty. */
+	seriesFailure: Schema.optionalKey(
+		Schema.Literals(["query_too_slow", "query_too_much_memory", "not_time_grouped"]),
+	),
 }) {}
 
 export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("AlertIncidentDocument")({

@@ -51,7 +51,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import * as Predicate from "effect/Predicate"
 import * as PgClient from "@effect/sql-pg/PgClient"
-import { Effect, ManagedRuntime, Redacted } from "effect"
+import { Effect, ManagedRuntime, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
 import { fail, resolveDatabase, runPscale, withBranchConnection } from "./planetscale-connection"
@@ -100,25 +100,19 @@ interface Check {
 
 type JsonObject = Record<string, unknown>
 
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+
 const parseObject = (raw: string, what: string): JsonObject => {
-	try {
-		const value: unknown = JSON.parse(raw)
-		if (!Predicate.isObject(value)) throw new TypeError("not an object")
-		return value
-	} catch {
-		return fail(`Could not parse ${what} as a JSON object`)
-	}
+	const value = Option.getOrUndefined(decodeJson(raw))
+	return Predicate.isObject(value) ? value : fail(`Could not parse ${what} as a JSON object`)
 }
 
 const parseObjectArray = (raw: string, what: string): ReadonlyArray<JsonObject> => {
-	try {
-		const value: unknown = JSON.parse(raw)
-		if (!Array.isArray(value) || !value.every(Predicate.isObject))
-			throw new TypeError("not an object array")
-		return value
-	} catch {
-		return fail(`Could not parse ${what} as a JSON object array`)
-	}
+	const value = Option.getOrUndefined(decodeJson(raw))
+	return Arr.isArray(value) && Arr.every(value, Predicate.isObject)
+		? value
+		: fail(`Could not parse ${what} as a JSON object array`)
 }
 
 const str = (o: JsonObject, key: string): string | null => {
@@ -138,7 +132,7 @@ const magnitude = (n: number): string => (n <= 0 ? "0" : `≥ ${10 ** Math.floor
  * may delete is one it named itself, and never the branch it restored from.
  */
 const assertThrowaway = (branch: string, source: string): void => {
-	if (!branch.startsWith(BRANCH_PREFIX) || branch === source || branch === "main") {
+	if (!Str.startsWith(BRANCH_PREFIX)(branch) || branch === source || branch === "main") {
 		fail(`Refusing to touch branch "${branch}": not a ${BRANCH_PREFIX}* branch`)
 	}
 }
@@ -175,18 +169,16 @@ const describeBranch = (database: string, branch: string): BranchInfo => {
 const listBackups = (database: string, branch: string): ReadonlyArray<Backup> => {
 	const list = runPscale(["backup", "list", database, branch, "--format", "json"], { secret: true })
 	if (list.exitCode !== 0) fail(`Could not list backups of ${database}/${branch}`)
-	return parseObjectArray(list.stdout, "backup list")
-		.map((b): Backup => ({
-			id: str(b, "id") ?? "",
-			name: str(b, "name") ?? "",
-			state: str(b, "state") ?? "unknown",
-			size: typeof b.size === "number" ? b.size : 0,
-			created_at: str(b, "created_at") ?? "",
-			started_at: str(b, "started_at"),
-			completed_at: str(b, "completed_at"),
-			expires_at: str(b, "expires_at"),
-		}))
-		.sort((a, b) => ms(b.created_at) - ms(a.created_at))
+	return Arr.map(parseObjectArray(list.stdout, "backup list"), (b): Backup => ({
+		id: str(b, "id") ?? "",
+		name: str(b, "name") ?? "",
+		state: str(b, "state") ?? "unknown",
+		size: typeof b.size === "number" ? b.size : 0,
+		created_at: str(b, "created_at") ?? "",
+		started_at: str(b, "started_at"),
+		completed_at: str(b, "completed_at"),
+		expires_at: str(b, "expires_at"),
+	})).sort((a, b) => ms(b.created_at) - ms(a.created_at))
 }
 
 /**
@@ -197,16 +189,16 @@ const listBackups = (database: string, branch: string): ReadonlyArray<Backup> =>
  */
 const summarizeSchedule = (backups: ReadonlyArray<Backup>) => {
 	const median = (xs: number[]): number | null => {
-		const s = xs.filter(Number.isFinite).sort((a, b) => a - b)
+		const s = Arr.filter(xs, Number.isFinite).sort((a, b) => a - b)
 		return s.length === 0 ? null : (s[Math.floor(s.length / 2)] ?? null)
 	}
-	const gaps = backups
-		.slice(0, -1)
-		.map((b, i) => hours(ms(b.created_at), ms(backups[i + 1]?.created_at ?? null)))
-	const retention = backups.map((b) => hours(ms(b.expires_at), ms(b.created_at)))
+	const gaps = Arr.map(backups.slice(0, -1), (b, i) =>
+		hours(ms(b.created_at), ms(backups[i + 1]?.created_at ?? null)),
+	)
+	const retention = Arr.map(backups, (b) => hours(ms(b.expires_at), ms(b.created_at)))
 	return {
 		backups_listed: backups.length,
-		successful: backups.filter((b) => b.state === "success").length,
+		successful: Arr.filter(backups, (b) => b.state === "success").length,
 		observed_cadence_hours: median(gaps),
 		observed_retention_hours: median(retention),
 	}
@@ -443,7 +435,7 @@ interface Report {
 const renderMarkdown = (r: Report): string => {
 	const icon = (ok: boolean) => (ok ? "✅" : "❌")
 	const lines = [
-		`# Backup restore drill — ${r.status.toUpperCase()}`,
+		`# Backup restore drill — ${Str.toUpperCase(r.status)}`,
 		"",
 		`Generated ${r.generated_at} for PlanetScale database \`${r.database}\` branch \`${r.source_branch.name ?? "?"}\` ` +
 			`(${r.source_branch.cluster ?? "?"}, ${r.source_branch.region ?? "?"}, ${r.source_branch.replicas ?? "?"} replicas).`,
@@ -456,7 +448,8 @@ const renderMarkdown = (r: Report): string => {
 		"",
 		"| Backup | State | Size (MB) | Completed | Expires |",
 		"| --- | --- | --- | --- | --- |",
-		...r.backup_configuration.backups.map(
+		...Arr.map(
+			r.backup_configuration.backups,
 			(b) =>
 				`| ${b.id} | ${b.state} | ${(b.size / 1_000_000).toFixed(1)} | ${b.completed_at ?? "—"} | ${b.expires_at ?? "—"} |`,
 		),
@@ -470,18 +463,18 @@ const renderMarkdown = (r: Report): string => {
 		"",
 		"| Check | Result | Detail |",
 		"| --- | --- | --- |",
-		...r.verification.checks.map((c) => `| ${c.name} | ${icon(c.pass)} | ${c.detail} |`),
+		...Arr.map(r.verification.checks, (c) => `| ${c.name} | ${icon(c.pass)} | ${c.detail} |`),
 		"",
 		`Public tables: ${r.verification.public_tables} · migrations applied: ${r.verification.migrations.applied}`,
 		"",
 	]
-	return lines.join("\n")
+	return Arr.join(lines, "\n")
 }
 
 const writeReport = (dir: string, report: Report): string => {
 	mkdirSync(dir, { recursive: true })
 	const json = resolve(dir, "restore-test-report.json")
-	writeFileSync(json, `${JSON.stringify(report, null, 2)}\n`)
+	writeFileSync(json, `${encodeJsonPretty(report)}\n`)
 	writeFileSync(resolve(dir, "restore-test-report.md"), renderMarkdown(report))
 	return json
 }
@@ -507,7 +500,7 @@ const main = async (): Promise<void> => {
 		`✓ Newest successful backup: ${latest.id} (${latest.name}, completed ${latest.completed_at})\n`,
 	)
 
-	const stamp = startedAt.toISOString().replace(/[-:]/g, "").slice(0, 13).replace("T", "-")
+	const stamp = Str.replace("T", "-")(Str.slice(0, 13)(Str.replace(/[-:]/g, "")(startedAt.toISOString())))
 	const branch = `${BRANCH_PREFIX}${stamp}`
 	assertThrowaway(branch, sourceBranch)
 
@@ -570,7 +563,7 @@ const main = async (): Promise<void> => {
 		}
 	}
 
-	const status: Report["status"] = verification.checks.every((c) => c.pass) ? "pass" : "fail"
+	const status: Report["status"] = Arr.every(verification.checks, (c) => c.pass) ? "pass" : "fail"
 	const report: Report = {
 		version: 1,
 		status,
@@ -609,7 +602,7 @@ const main = async (): Promise<void> => {
 				},
 			]
 	const finalChecks = [...verification.checks, ...cleanup]
-	const finalStatus: Report["status"] = finalChecks.every((c) => c.pass) ? "pass" : "fail"
+	const finalStatus: Report["status"] = Arr.every(finalChecks, (c) => c.pass) ? "pass" : "fail"
 	const finalReport: Report = {
 		...report,
 		status: finalStatus,

@@ -251,11 +251,9 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		) {
 			const row = yield* loadConnection(orgId)
 			if (!row) {
-				return yield* Effect.fail(
-					new IntegrationsNotConnectedError({
-						message: `${providerLabel} is not connected for this organization`,
-					}),
-				)
+				return yield* new IntegrationsNotConnectedError({
+					message: `${providerLabel} is not connected for this organization`,
+				})
 			}
 			return row satisfies OAuthConnectionRow
 		})
@@ -428,9 +426,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 					credentials.headers,
 				)
 				if (status < 200 || status >= 300) {
-					return yield* Effect.fail(
-						toUpstreamError(`Token exchange failed: ${text || status}`, status),
-					)
+					return yield* toUpstreamError(`Token exchange failed: ${text || status}`, status)
 				}
 				return yield* parseTokenPayload(text)
 			},
@@ -454,35 +450,29 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 				credentials.headers,
 			)
 			if (status === config.deadRefreshTokenStatus) {
-				return yield* Effect.fail(
-					new IntegrationsRevokedError({
-						message: `${providerLabel} connection is no longer authorized; reconnect required`,
-					}),
-				)
+				return yield* new IntegrationsRevokedError({
+					message: `${providerLabel} connection is no longer authorized; reconnect required`,
+				})
 			}
 			if (status === 400 || status === 401) {
 				const errorCode = oauthErrorCodeOf(text)
 				// Only a decoded `invalid_grant` means revoked: a None (bodyless or
 				// undecodable 400/401) stays a transient upstream failure below.
 				if (Option.contains(errorCode, "invalid_grant")) {
-					return yield* Effect.fail(
-						new IntegrationsRevokedError({
-							message: `${providerLabel} connection is no longer authorized; reconnect required`,
-						}),
-					)
+					return yield* new IntegrationsRevokedError({
+						message: `${providerLabel} connection is no longer authorized; reconnect required`,
+					})
 				}
-				return yield* Effect.fail(
-					toUpstreamError(
-						`Token refresh failed with ${status}${Option.match(errorCode, {
-							onNone: () => "",
-							onSome: (code) => ` (${code})`,
-						})}`,
-						status,
-					),
+				return yield* toUpstreamError(
+					`Token refresh failed with ${status}${Option.match(errorCode, {
+						onNone: () => "",
+						onSome: (code) => ` (${code})`,
+					})}`,
+					status,
 				)
 			}
 			if (status < 200 || status >= 300) {
-				return yield* Effect.fail(toUpstreamError(`Token refresh failed with ${status}`, status))
+				return yield* toUpstreamError(`Token refresh failed with ${status}`, status)
 			}
 			return yield* parseTokenPayload(text)
 		})
@@ -544,11 +534,9 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			Effect.gen(function* () {
 				if (!row.refreshTokenCiphertext || !row.refreshTokenIv || !row.refreshTokenTag) {
 					yield* markConnectionRevoked(orgId)
-					return yield* Effect.fail(
-						new IntegrationsRevokedError({
-							message: `${providerLabel} access token expired and no refresh token is stored — reconnect required`,
-						}),
-					)
+					return yield* new IntegrationsRevokedError({
+						message: `${providerLabel} access token expired and no refresh token is stored — reconnect required`,
+					})
 				}
 
 				const refreshToken = yield* decryptValue({
@@ -570,13 +558,14 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 						Effect.gen(function* () {
 							const latest = yield* requireConnection(orgId)
 							const advanced = latest.updatedAt > row.updatedAt
-							if (advanced && rowIsValid(latest, yield* Clock.currentTimeMillis)) {
-								return yield* accessTokenFromRow(latest)
+							if (advanced) {
+								const now = yield* Clock.currentTimeMillis
+								if (rowIsValid(latest, now)) return yield* accessTokenFromRow(latest)
 							}
 							// Only while the row is still the one we read: a racing isolate may persist
 							// fresh tokens between our re-read and this stamp.
 							yield* markConnectionRevoked(orgId, row.updatedAt)
-							return yield* Effect.fail(error)
+							return yield* error
 						}),
 					),
 				)
@@ -587,7 +576,8 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 				Effect.gen(function* () {
 					// Double-checked: another local fiber may have refreshed while we waited.
 					const row = yield* requireConnection(orgId)
-					if (rowIsValid(row, yield* Clock.currentTimeMillis)) {
+					const now = yield* Clock.currentTimeMillis
+					if (rowIsValid(row, now)) {
 						return yield* accessTokenFromRow(row)
 					}
 					return yield* refreshRow(config, orgId, row)

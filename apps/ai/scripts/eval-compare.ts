@@ -8,6 +8,7 @@
  */
 import { readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
+import { Schema, Array as Arr } from "effect"
 import { comparePaired } from "../src/evals/stats"
 import type { RunSummary } from "../src/evals/runner"
 
@@ -17,7 +18,11 @@ if (first === undefined || second === undefined) {
 	process.exit(2)
 }
 
-const load = (dir: string): RunSummary => JSON.parse(readFileSync(join(resolve(dir), "summary.json"), "utf8"))
+// summary.json is written by runSuite, so its shape is trusted rather than re-validated.
+const decodeSummary = Schema.decodeSync(Schema.fromJsonString(Schema.Any))
+
+const load = (dir: string): RunSummary =>
+	decodeSummary(readFileSync(join(resolve(dir), "summary.json"), "utf8"))
 
 const a = load(first)
 const b = load(second)
@@ -37,8 +42,8 @@ console.log(
 			? "B is better."
 			: "No significant difference at this sample size.",
 )
-console.log(`\nA better on: ${result.aBetter.join(", ") || "none"}`)
-console.log(`B better on: ${result.bBetter.join(", ") || "none"}`)
+console.log(`\nA better on: ${Arr.join(result.aBetter, ", ") || "none"}`)
+console.log(`B better on: ${Arr.join(result.bBetter, ", ") || "none"}`)
 
 const perTrial = (summary: RunSummary) =>
 	`${summary.cost.meanToolCalls.toFixed(1)} calls, ` +

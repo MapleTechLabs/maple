@@ -1,6 +1,6 @@
 // BOUNDARY: This module reads a model-authored ```chart fence and narrows it
 // before it becomes a plot.
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { ChartUnit } from "@maple/widgets/chart/static-chart"
 
 /**
@@ -101,7 +101,7 @@ const KNOWN_UNITS = new Set([
 /** A model-written unit, resolved to one `formatValueByUnit` knows, or `"number"`. */
 export function normalizeUnit(unit: string | undefined): string {
 	if (!unit) return "number"
-	const lower = unit.trim().toLowerCase()
+	const lower = Str.toLowerCase(Str.trim(unit))
 	if (KNOWN_UNITS.has(lower)) return lower
 	return UNIT_ALIASES.get(lower) ?? "number"
 }
@@ -187,11 +187,11 @@ export function splitChartFences(text: string): ReadonlyArray<ChartFencePart> {
 	let body: Array<string> = []
 
 	const flushProse = () => {
-		parts.push({ kind: "text", value: prose.join("\n") })
+		parts.push({ kind: "text", value: Arr.join(prose, "\n") })
 		prose = []
 	}
 
-	for (const line of text.split("\n")) {
+	for (const line of Str.split("\n")(text)) {
 		const fence = FENCE_OPEN.exec(line)
 		const ticks = fence?.[1]?.length ?? 0
 		const info = fence?.[2] ?? ""
@@ -212,7 +212,7 @@ export function splitChartFences(text: string): ReadonlyArray<ChartFencePart> {
 		// A closing fence is at least as long as the one that opened it and
 		// carries no info string of its own.
 		if (ticks >= open.ticks && info === "") {
-			if (open.isChart) parts.push({ kind: "chart", value: body.join("\n"), closed: true })
+			if (open.isChart) parts.push({ kind: "chart", value: Arr.join(body, "\n"), closed: true })
 			else prose.push(line)
 			open = undefined
 			continue
@@ -221,7 +221,7 @@ export function splitChartFences(text: string): ReadonlyArray<ChartFencePart> {
 		else prose.push(line)
 	}
 
-	if (open?.isChart === true) parts.push({ kind: "chart", value: body.join("\n"), closed: false })
+	if (open?.isChart === true) parts.push({ kind: "chart", value: Arr.join(body, "\n"), closed: false })
 	else flushProse()
 	return parts
 }
@@ -235,7 +235,7 @@ export function splitChartFences(text: string): ReadonlyArray<ChartFencePart> {
  */
 export function hasOpenFence(text: string): boolean {
 	let open: number | undefined
-	for (const line of text.split("\n")) {
+	for (const line of Str.split("\n")(text)) {
 		const fence = FENCE_OPEN.exec(line)
 		const ticks = fence?.[1]?.length ?? 0
 		if (open === undefined) {
@@ -250,7 +250,7 @@ export function hasOpenFence(text: string): boolean {
 
 /** Every ```chart fence in a reply, in the order they appear in it. */
 export function chartFences(text: string): ReadonlyArray<string> {
-	return splitChartFences(text).flatMap((part) => (part.kind === "chart" ? [part.value] : []))
+	return Arr.flatMap(splitChartFences(text), (part) => (part.kind === "chart" ? [part.value] : []))
 }
 
 /**
@@ -269,8 +269,9 @@ export function parseChartSpec(source: string): ChartSpec | null {
 	if (Option.isNone(decoded)) return null
 	const spec = decoded.value
 	if (spec.type === "ranked") return spec.data.length === 0 ? null : spec
-	const data = spec.data.filter(
-		(point) => !Number.isNaN(Date.parse(point.bucket)) && Object.keys(point.series).length > 0,
+	const data = Arr.filter(
+		spec.data,
+		(point) => !Number.isNaN(Date.parse(point.bucket)) && Rec.keys(point.series).length > 0,
 	)
 	return data.length === 0 ? null : { ...spec, data }
 }
@@ -279,12 +280,12 @@ export function parseChartSpec(source: string): ChartSpec | null {
 export function timeseriesRows(
 	data: ReadonlyArray<{ readonly bucket: string; readonly series: Readonly<Record<string, number>> }>,
 ): Array<Record<string, unknown>> {
-	return data.map((point) => ({ bucket: point.bucket, ...point.series }))
+	return Arr.map(data, (point) => ({ bucket: point.bucket, ...point.series }))
 }
 
 /** Ranked points, copied into the plain rows the breakdown charts read. */
 export function rankedRows(
 	data: ReadonlyArray<{ readonly name: string; readonly value: number }>,
 ): Array<Record<string, unknown>> {
-	return data.map((point) => ({ name: point.name, value: point.value }))
+	return Arr.map(data, (point) => ({ name: point.name, value: point.value }))
 }

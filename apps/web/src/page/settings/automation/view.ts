@@ -1,25 +1,28 @@
 import type { AlertDestinationDocument, IssueSeverity } from "@maple/domain/http"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { button, linkButton } from "../../../ui/button"
-import { emptyMessage } from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { field, fieldLabel, type FieldState } from "../../../ui/field"
-import { listRow } from "../../../ui/list-row"
-import { nativeOption, nativeSelect } from "../../../ui/native-select"
-import { panel } from "../../../ui/panel"
-import { multiSegmentedSelect } from "../../../ui/segmented-select"
-import * as SelectView from "../../../ui/select-view"
-import { settingRow } from "../../../ui/setting-row"
-import { skeleton, skeletonList, skeletonSlowNote } from "../../../ui/skeleton"
-import { switchControl } from "../../../ui/switch"
+import { badge } from "@maple/views/ui/display"
+import { button, linkButton } from "@maple/views/ui/button"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { field, fieldLabel, type FieldState } from "@maple/views/ui/field"
+import { listRow } from "@maple/views/ui/list-row"
+import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
+import { panel } from "@maple/views/ui/panel"
+import { multiSegmentedSelect } from "@maple/views/ui/segmented-select"
+import * as SelectView from "@maple/views/ui/select-view"
+import { settingRow } from "@maple/views/ui/setting-row"
+import { skeleton, skeletonBlock, skeletonList, skeletonSlowNote } from "@maple/views/ui/skeleton"
+import { switchControl } from "@maple/views/ui/switch"
 import { providerLogo, providerOf } from "../../alerts/shared/providers"
 import { SEVERITY_LABEL, SEVERITY_ORDER, severityBadge, severityDot } from "../../errors/kit/severity"
 import { relativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
 import { adminOnlyNote, settingsSection, settingsSections } from "../kit/section"
 import { Message, type Model, type PolicyDraft } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string; isKnownMember: boolean }>
@@ -39,7 +42,7 @@ const CONFIDENCE_ITEMS = [
 ] as const
 
 const destinationOptions = (h: H, model: Model, destinations: ReadonlyArray<AlertDestinationDocument>) =>
-	destinations.map((destination) => ({
+	Arr.map(destinations, (destination) => ({
 		value: destination.id,
 		ariaLabel: destination.id,
 		icon: providerLogo(h, {
@@ -49,13 +52,10 @@ const destinationOptions = (h: H, model: Model, destinations: ReadonlyArray<Aler
 			isLogoBroken: model.brokenLogos.includes(destination.type),
 			onLogoError: Message.FailedLoadProviderLogo({ type: destination.type }),
 		}),
-		label: h.span(
-			[h.Class("flex items-center gap-2")],
-			[
-				h.span([h.Class("font-medium")], [destination.name]),
-				h.span([h.Class("text-muted-foreground text-xs")], [providerOf(destination.type).label]),
-			],
-		),
+		label: hstack(h, { gap: "2", as: "span" }, [
+			h.span([h.Class("font-medium")], [destination.name]),
+			typography(h, { size: "xs", tone: "muted" }, [providerOf(destination.type).label]),
+		]),
 	}))
 
 const severityRule = (
@@ -70,38 +70,32 @@ const severityRule = (
 	return h.div(
 		[h.Key(severity), h.Class("space-y-2 border-t border-border-subtle pt-3")],
 		[
-			h.div(
-				[h.Class("flex items-center justify-between gap-3")],
-				[
-					severityBadge(h, severity),
-					h.div(
-						[h.Class("flex items-center gap-2")],
-						[
-							h.span([h.Class("text-muted-foreground text-2xs")], ["Min. AI confidence"]),
-							select === undefined
-								? h.empty
-								: h.submodel({
-										slotId: `escalation-confidence-${severity}`,
-										model: { ...select, value: draft[severity].minConfidence },
-										view: SelectView.view,
-										toParentMessage: (message) =>
-											Message.GotConfidenceSelectMessage({ severity, message }),
-										viewInputs: {
-											entries: CONFIDENCE_ITEMS.map((item): SelectView.SelectEntry => ({
-												_tag: "Item",
-												item,
-											})),
-											size: "sm",
-											className: "w-24",
-											// `<SelectValue />` without a renderer prints the raw value.
-											renderValue: (value) => [value],
-											toView: (parts) => h.div([h.Class("contents")], parts),
-										},
-									}),
-						],
-					),
-				],
-			),
+			hstack(h, { gap: "3", justify: "between" }, [
+				severityBadge(h, severity),
+				hstack(h, { gap: "2" }, [
+					typography(h, { size: "2xs", tone: "muted" }, ["Min. AI confidence"]),
+					select === undefined
+						? h.empty
+						: h.submodel({
+								slotId: `escalation-confidence-${severity}`,
+								model: { ...select, value: draft[severity].minConfidence },
+								view: SelectView.view,
+								toParentMessage: (message) =>
+									Message.GotConfidenceSelectMessage({ severity, message }),
+								viewInputs: {
+									entries: Arr.map(CONFIDENCE_ITEMS, (item): SelectView.SelectEntry => ({
+										_tag: "Item",
+										item,
+									})),
+									size: "sm",
+									className: "w-24",
+									// `<SelectValue />` without a renderer prints the raw value.
+									renderValue: (value) => [value],
+									toView: (parts) => h.div([h.Class("contents")], parts),
+								},
+							}),
+				]),
+			]),
 			multiSegmentedSelect(h, {
 				options: destinationOptions(h, model, destinations),
 				value: draft[severity].destinationIds,
@@ -115,7 +109,7 @@ const severityRule = (
 }
 
 const policySkeleton = (h: H): Html =>
-	h.div([h.Class("space-y-2")], [skeleton(h, "h-40 w-full rounded-md"), skeletonSlowNote(h)])
+	h.div([h.Class("space-y-2")], [skeletonBlock(h, { height: "40" }), skeletonSlowNote(h)])
 
 const destinationsBlock = (h: H, model: Model, draft: PolicyDraft): Html => {
 	const destinations = model.destinations
@@ -125,26 +119,20 @@ const destinationsBlock = (h: H, model: Model, draft: PolicyDraft): Html => {
 		return h.div(
 			[h.Class("space-y-3")],
 			[
-				h.p(
-					[h.Class("text-muted-foreground text-sm")],
-					[
-						"Escalation sends triaged issues to a destination. Add a Slack, email or webhook destination first.",
-					],
-				),
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-x-4 gap-y-2")],
-					[
-						linkButton(h, { size: "sm", variant: "outline", href: "/alerts?tab=routing" }, [
-							"Add a destination",
-						]),
-						docsLink(h, "destinations"),
-					],
-				),
+				typography(h, { size: "sm", tone: "muted", as: "p" }, [
+					"Escalation sends triaged issues to a destination. Add a Slack, email or webhook destination first.",
+				]),
+				hstack(h, { wrap: true, className: "gap-x-4 gap-y-2" }, [
+					linkButton(h, { size: "sm", variant: "outline", href: "/alerts?tab=routing" }, [
+						"Add a destination",
+					]),
+					docsLink(h, "destinations"),
+				]),
 			],
 		)
 	return h.div(
 		[h.Class("space-y-4")],
-		SEVERITY_ORDER.map((severity) => severityRule(h, model, draft, severity, destinations)),
+		Arr.map(SEVERITY_ORDER, (severity) => severityRule(h, model, draft, severity, destinations)),
 	)
 }
 
@@ -251,21 +239,17 @@ const simulatorField = (h: H, name: string, label: string, control: Html): Html 
 const decisionText = (h: H, model: Model): ReadonlyArray<Html | string> => {
 	if (model.draft === null)
 		return [
-			h.span(
-				[h.Class("font-prose text-sm text-muted-foreground")],
-				[
-					AsyncData.isFailure(model.policy)
-						? "The simulator needs the escalation policy, which didn't load."
-						: "The simulator is available once the escalation policy loads.",
-				],
-			),
+			typography(h, { size: "sm", tone: "muted", className: "font-prose" }, [
+				AsyncData.isFailure(model.policy)
+					? "The simulator needs the escalation policy, which didn't load."
+					: "The simulator is available once the escalation policy loads.",
+			]),
 		]
 	if (model.isDirty)
 		return [
-			h.span(
-				[h.Class("font-prose text-sm text-muted-foreground")],
-				["Save the policy above to simulate it. The simulator evaluates the saved policy."],
-			),
+			typography(h, { size: "sm", tone: "muted", className: "font-prose" }, [
+				"Save the policy above to simulate it. The simulator evaluates the saved policy.",
+			]),
 		]
 	const evaluated =
 		model.evaluated !== null && model.evaluated.revision === model.revision
@@ -273,26 +257,24 @@ const decisionText = (h: H, model: Model): ReadonlyArray<Html | string> => {
 			: null
 	if (evaluated === null)
 		return [
-			h.span(
-				[h.Class("font-prose text-sm text-muted-foreground")],
-				["Preview the worker's decision under the saved policy without sending a notification."],
-			),
+			typography(h, { size: "sm", tone: "muted", className: "font-prose" }, [
+				"Preview the worker's decision under the saved policy without sending a notification.",
+			]),
 		]
 	const destinations = model.destinations ?? []
 	return [
 		badge(h, { variant: "outline", className: "capitalize" }, [evaluated.outcome]),
-		h.span(
-			[h.Class("text-sm text-muted-foreground")],
-			[
-				evaluated.outcome === "route"
-					? evaluated.destinationIds
-							.map(
-								(id) => destinations.find((destination) => destination.id === id)?.name ?? id,
-							)
-							.join(", ")
-					: (evaluated.skipReason?.replaceAll("_", " ") ?? ""),
-			],
-		),
+		typography(h, { size: "sm", tone: "muted" }, [
+			evaluated.outcome === "route"
+				? Arr.join(
+						Arr.map(
+							evaluated.destinationIds,
+							(id) => destinations.find((destination) => destination.id === id)?.name ?? id,
+						),
+						", ",
+					)
+				: (evaluated.skipReason?.replaceAll("_", " ") ?? ""),
+		]),
 	]
 }
 
@@ -309,7 +291,7 @@ const simulator = (h: H, model: Model): Html => {
 					view: SelectView.view,
 					toParentMessage: (message) => Message.GotSeveritySelectMessage({ message }),
 					viewInputs: {
-						entries: SEVERITY_ORDER.map((severity): SelectView.SelectEntry => ({
+						entries: Arr.map(SEVERITY_ORDER, (severity): SelectView.SelectEntry => ({
 							_tag: "Item",
 							item: { value: severity, label: SEVERITY_LABEL[severity] },
 						})),
@@ -319,22 +301,16 @@ const simulator = (h: H, model: Model): Html => {
 						renderValue: (value) => {
 							const severity = SEVERITY_ORDER.find((entry) => entry === value) ?? null
 							return [
-								h.span(
-									[h.Class("flex items-center gap-2")],
-									[
-										severityDot(h, severity),
-										severity === null ? "Not set" : SEVERITY_LABEL[severity],
-									],
-								),
+								hstack(h, { gap: "2", as: "span" }, [
+									severityDot(h, severity),
+									severity === null ? "Not set" : SEVERITY_LABEL[severity],
+								]),
 							]
 						},
 						renderItem: (option) => {
 							const severity = SEVERITY_ORDER.find((entry) => entry === option.value) ?? null
 							return [
-								h.span(
-									[h.Class("flex items-center gap-2")],
-									[severityDot(h, severity), option.label],
-								),
+								hstack(h, { gap: "2", as: "span" }, [severityDot(h, severity), option.label]),
 							]
 						},
 						toView: (parts) =>
@@ -426,10 +402,10 @@ const recentDeliveries = (h: H, model: Model, inputs: Inputs): Html =>
 					}),
 				onData: (response) =>
 					response.attempts.length === 0
-						? emptyMessage(h, {}, ["No escalation attempts have been recorded."])
+						? emptyMessage(h, {}, ["No escalation attempts have been recorded"])
 						: h.div(
 								[],
-								response.attempts.map((attempt) =>
+								Arr.map(response.attempts, (attempt) =>
 									listRow(h, {
 										divided: true,
 										leading: h.span(
@@ -439,25 +415,24 @@ const recentDeliveries = (h: H, model: Model, inputs: Inputs): Html =>
 												h.span([h.Class("capitalize")], [attempt.status]),
 											],
 										),
-										title: h.span(
-											[h.Class("font-normal text-muted-foreground")],
-											[
-												attempt.deliveries.length > 0
-													? attempt.deliveries
-															.map(
-																(delivery) =>
-																	`${delivery.destinationName ?? delivery.destinationId}: ${delivery.status}`,
-															)
-															.join(", ")
-													: (attempt.skipReason?.replaceAll("_", " ") ??
-														"Awaiting delivery"),
-											],
-										),
+										title: typography(h, { tone: "muted", weight: "normal" }, [
+											attempt.deliveries.length > 0
+												? Arr.join(
+														Arr.map(
+															attempt.deliveries,
+															(delivery) =>
+																`${delivery.destinationName ?? delivery.destinationId}: ${delivery.status}`,
+														),
+														", ",
+													)
+												: (attempt.skipReason?.replaceAll("_", " ") ??
+													"Awaiting delivery"),
+										]),
 										trailing: relativeTime(h, {
 											value: attempt.createdAt,
 											nowMs: inputs.nowMs,
 											timeZone: inputs.timeZone,
-											className: "text-xs text-muted-foreground",
+											className: typographyClass({ size: "xs", tone: "muted" }),
 										}),
 									}),
 								),

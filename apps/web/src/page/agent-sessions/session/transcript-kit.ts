@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as CopyButton from "../../../ui/copy-button"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { type ClampedRendering, type ClampLines, clampedText } from "./clamped-text"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -78,9 +79,17 @@ export const payloadCopyButton = (
 		variant?: "outline" | "ghost"
 		size?: "sm" | "icon-xs"
 	}>,
-): Html =>
-	CopyButton.view(h, {
-		model: model.payloadCopy.key === options.key ? model.payloadCopy.copy : CopyButton.init(),
+): Html => {
+	const copy = model.payloadCopy.key === options.key ? model.payloadCopy.copy : CopyButton.init()
+	// `copyTooltipText`: the tooltip follows the copy status.
+	const tooltip =
+		copy.status === "copied"
+			? "Copied"
+			: copy.status === "error"
+				? "Couldn't copy"
+				: `Copy ${options.label}`
+	return CopyButton.view(h, {
+		model: copy,
 		toParentMessage: (message) => Message.GotPayloadCopyMessage({ key: options.key, message }),
 		value: options.value,
 		label: options.label,
@@ -89,7 +98,10 @@ export const payloadCopyButton = (
 		iconSize: options.iconSize,
 		variant: options.variant,
 		size: options.size,
-		// TODO(tooltip): the copy's tooltip is drawn as its trigger.
 		slot: options.hasTooltip === false ? undefined : "tooltip-trigger",
-		attributes: options.hasTooltip === false ? [] : [h.DataAttribute("base-ui-tooltip-trigger", "")],
+		attributes:
+			options.hasTooltip === false
+				? []
+				: [h.DataAttribute("base-ui-tooltip-trigger", ""), ...tooltipTrigger(h, tooltip)],
 	})
+}

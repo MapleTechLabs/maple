@@ -7,6 +7,7 @@ import {
 import type { Edge3D, Node3D } from "./types"
 import { computeTiers } from "./graph"
 import type { Vec3 } from "./types"
+import { Array as Arr, String as Str } from "effect"
 
 export interface SpatialTopology {
 	nodes: ReadonlyArray<Pick<Node3D, "id" | "namespace">>
@@ -31,30 +32,26 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 	const districts: District[] = []
 	if (view === "atlas") {
 		const tiers = computeTiers(topology.nodes, topology.edges)
-		const namespaces = [...new Set(topology.nodes.map((node) => node.namespace))]
-		const groups = namespaces
-			.map((namespace) => {
-				const nodes = topology.nodes
-					.filter((node) => node.namespace === namespace)
-					.toSorted(
-						(a, b) => (tiers.get(a.id) ?? 0) - (tiers.get(b.id) ?? 0) || a.id.localeCompare(b.id),
-					)
-				const columns = Math.max(1, Math.ceil(Math.sqrt(nodes.length)))
-				return {
-					namespace,
-					nodes,
-					columns,
-					width: columns * 4.2 + 0.7,
-					depth: Math.ceil(nodes.length / columns) * 4.2 + 1.1,
-					tier: Math.min(...nodes.map((node) => tiers.get(node.id) ?? 0)),
-				}
-			})
-			.sort(
-				(a, b) =>
-					b.width * b.depth - a.width * a.depth ||
-					a.tier - b.tier ||
-					a.namespace.localeCompare(b.namespace),
+		const namespaces = [...new Set(Arr.map(topology.nodes, (node) => node.namespace))]
+		const groups = Arr.map(namespaces, (namespace) => {
+			const nodes = Arr.filter(topology.nodes, (node) => node.namespace === namespace).toSorted(
+				(a, b) => (tiers.get(a.id) ?? 0) - (tiers.get(b.id) ?? 0) || Str.localeCompare(b.id)(a.id),
 			)
+			const columns = Math.max(1, Math.ceil(Math.sqrt(nodes.length)))
+			return {
+				namespace,
+				nodes,
+				columns,
+				width: columns * 4.2 + 0.7,
+				depth: Math.ceil(nodes.length / columns) * 4.2 + 1.1,
+				tier: Math.min(...Arr.map(nodes, (node) => tiers.get(node.id) ?? 0)),
+			}
+		}).sort(
+			(a, b) =>
+				b.width * b.depth - a.width * a.depth ||
+				a.tier - b.tier ||
+				Str.localeCompare(b.namespace)(a.namespace),
+		)
 		const gap = 2.8
 		// Balance namespace stacks across columns so a large team doesn't leave
 		// an entire empty row beside the smaller database / service groups.
@@ -70,14 +67,14 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 			column.width = Math.max(column.width, group.width)
 			column.depth += group.depth + gap
 		}
-		const totalDepth = Math.max(0, ...columns.map((column) => column.depth - gap))
+		const totalDepth = Math.max(0, ...Arr.map(columns, (column) => column.depth - gap))
 		let x = 0
 		for (const column of columns) {
 			let z = (totalDepth - (column.depth - gap)) / 2
 			for (const group of column.groups) {
 				const cx = x + column.width / 2,
 					cz = z + group.depth / 2
-				group.nodes.forEach((node, index) =>
+				Arr.forEach(group.nodes, (node, index) =>
 					positions.set(node.id, [
 						cx + ((index % group.columns) - (group.columns - 1) / 2) * 4.2,
 						0,
@@ -102,13 +99,13 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 		const tiers = computeTiers(topology.nodes, topology.edges)
 		const count = Math.max(0, ...tiers.values()) + 1
 		for (let tier = 0; tier < count; tier++) {
-			const group = topology.nodes
-				.filter((node) => tiers.get(node.id) === tier)
-				.toSorted((a, b) => a.namespace.localeCompare(b.namespace) || a.id.localeCompare(b.id))
+			const group = Arr.filter(topology.nodes, (node) => tiers.get(node.id) === tier).toSorted(
+				(a, b) => Str.localeCompare(b.namespace)(a.namespace) || Str.localeCompare(b.id)(a.id),
+			)
 			if (!group.length) continue
 			const x = (tier - (count - 1) / 2) * 5.2
 			const y = (count - 1 - tier) * 0.75
-			group.forEach((node, index) =>
+			Arr.forEach(group, (node, index) =>
 				positions.set(node.id, [x, y, (index - (group.length - 1) / 2) * 4.3]),
 			)
 			districts.push({
@@ -122,12 +119,12 @@ export function spatialLayout(topology: SpatialTopology, view: SpatialView): Spa
 	}
 	if (districts.length > 0) {
 		const cx =
-			(Math.min(...districts.map((d) => d.position[0] - d.width / 2)) +
-				Math.max(...districts.map((d) => d.position[0] + d.width / 2))) /
+			(Math.min(...Arr.map(districts, (d) => d.position[0] - d.width / 2)) +
+				Math.max(...Arr.map(districts, (d) => d.position[0] + d.width / 2))) /
 			2
 		const cz =
-			(Math.min(...districts.map((d) => d.position[2] - d.depth / 2)) +
-				Math.max(...districts.map((d) => d.position[2] + d.depth / 2))) /
+			(Math.min(...Arr.map(districts, (d) => d.position[2] - d.depth / 2)) +
+				Math.max(...Arr.map(districts, (d) => d.position[2] + d.depth / 2))) /
 			2
 		for (const [id, position] of positions)
 			positions.set(id, [position[0] - cx, position[1], position[2] - cz])

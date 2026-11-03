@@ -1,3 +1,4 @@
+import { Schema, Array as Arr, String as Str } from "effect"
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { LOCAL_CONTROL_SCHEMA_HISTORY } from "../packages/local-server/src/local-schema-history"
@@ -13,6 +14,8 @@ import {
 import { LOCAL_SCHEMA_SNAPSHOTS } from "../apps/cli/src/server/schema-snapshots"
 import { resolveMigrationChain } from "../apps/cli/src/server/local-store-migrations"
 import { schemaDigest, schemaFingerprint } from "../packages/local-server/src/store-version"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const fail = (message: string): never => {
 	console.error(message)
@@ -47,15 +50,18 @@ for (let index = 1; index < LOCAL_SCHEMA_HISTORY.length; index += 1) {
 // digest out of a failure string and hand-assembling the literal was its own
 // source of typos.
 const historyEntrySource = (identity: typeof CURRENT_LOCAL_SCHEMA): string =>
-	[
-		"\tObject.freeze({",
-		`\t\tversion: ${identity.version},`,
-		`\t\tfingerprint: "${identity.fingerprint}",`,
-		`\t\tdigest: "${identity.digest}",`,
-		`\t\tmanifestDigest: "${identity.manifestDigest}",`,
-		`\t\tprojectRevision: "${identity.projectRevision}",`,
-		"\t}),",
-	].join("\n")
+	Arr.join(
+		[
+			"\tObject.freeze({",
+			`\t\tversion: ${identity.version},`,
+			`\t\tfingerprint: "${identity.fingerprint}",`,
+			`\t\tdigest: "${identity.digest}",`,
+			`\t\tmanifestDigest: "${identity.manifestDigest}",`,
+			`\t\tprojectRevision: "${identity.projectRevision}",`,
+			"\t}),",
+		],
+		"\n",
+	)
 
 const latest = LOCAL_SCHEMA_HISTORY[LOCAL_SCHEMA_HISTORY.length - 1]!
 if (!sameIdentity(latest, CURRENT_LOCAL_SCHEMA)) {
@@ -75,7 +81,7 @@ if (!sameIdentity(latest, CURRENT_LOCAL_SCHEMA)) {
 
 // A loop is only a gate while it has something to iterate. The history carries
 // one entry per schema version plus v0, which has no DDL of its own.
-const snapshotCount = LOCAL_SCHEMA_SNAPSHOTS.filter(Boolean).length
+const snapshotCount = Arr.filter(LOCAL_SCHEMA_SNAPSHOTS, Boolean).length
 if (snapshotCount !== LOCAL_SCHEMA_HISTORY.length - 1) {
 	fail(
 		`local schema snapshots (${snapshotCount}) do not cover every versioned history entry (${LOCAL_SCHEMA_HISTORY.length - 1})`,
@@ -100,7 +106,7 @@ for (const snapshot of LOCAL_SCHEMA_SNAPSHOTS) {
 	}
 }
 
-const names = LOCAL_SCHEMA_MANIFEST.objects.map((object) => object.name)
+const names = Arr.map(LOCAL_SCHEMA_MANIFEST.objects, (object) => object.name)
 if (new Set(names).size !== names.length)
 	fail("local structural schema manifest contains duplicate object names")
 
@@ -171,24 +177,21 @@ if (baseRefExists) {
 			/LOCAL_CONTROL_SCHEMA_HISTORY = Object\.freeze\(\[([\s\S]*?)\] as const\)/.exec(
 				baseSource,
 			)?.[1] ?? ""
-		if (baseSource.includes("LOCAL_CONTROL_SCHEMA_HISTORY") && controlSection.trim() === "")
+		if (Str.includes("LOCAL_CONTROL_SCHEMA_HISTORY")(baseSource) && Str.trim(controlSection) === "")
 			fail("could not parse the base branch control schema history")
 		const baseControl = Array.from(
 			controlSection.matchAll(/version:\s*(\d+),\s*digest:\s*"([0-9a-f]{64})"/g),
 			(match) => ({ version: Number(match[1]), digest: match[2] }),
 		)
-		if (
-			JSON.stringify(LOCAL_CONTROL_SCHEMA_HISTORY.slice(0, baseControl.length)) !==
-			JSON.stringify(baseControl)
-		)
+		if (encodeJson(LOCAL_CONTROL_SCHEMA_HISTORY.slice(0, baseControl.length)) !== encodeJson(baseControl))
 			fail("control schema history is not append-only")
 		const baseHistory = parseHistorySource(baseSource)
-		if (baseSource.includes("LOCAL_SCHEMA_HISTORY") && baseHistory.length === 0)
+		if (Str.includes("LOCAL_SCHEMA_HISTORY")(baseSource) && baseHistory.length === 0)
 			fail("could not parse the base branch's local schema identity history")
-		const currentHistory = LOCAL_SCHEMA_HISTORY.map((entry) => ({ ...entry }))
+		const currentHistory = Arr.map(LOCAL_SCHEMA_HISTORY, (entry) => ({ ...entry }))
 		if (
 			baseHistory.length > currentHistory.length ||
-			JSON.stringify(currentHistory.slice(0, baseHistory.length)) !== JSON.stringify(baseHistory)
+			encodeJson(currentHistory.slice(0, baseHistory.length)) !== encodeJson(baseHistory)
 		)
 			fail(
 				"local schema identity history is not append-only; existing base identities must remain unchanged",
@@ -211,7 +214,7 @@ const controlSql = readFileSync("packages/local-server/src/schema/control-schema
 const controlDigest = (sql: string) => createHash("sha256").update(sql).digest("hex")
 if (controlTip?.version !== LOCAL_CONTROL_SCHEMA_VERSION || controlTip.digest !== controlDigest(controlSql))
 	fail("control schema changed without a versioned identity; run local-schema:bump --control")
-if (!controlSql.includes(`PRAGMA user_version = ${LOCAL_CONTROL_SCHEMA_VERSION};`))
+if (!Str.includes(`PRAGMA user_version = ${LOCAL_CONTROL_SCHEMA_VERSION};`)(controlSql))
 	fail("control DDL pragma does not match its version identity")
 for (const [index, entry] of LOCAL_CONTROL_SCHEMA_HISTORY.entries()) {
 	if (entry.version !== index + 1) fail("control schema history versions must be sequential from 1")

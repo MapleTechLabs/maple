@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import type { GithubInstallationSelection } from "@maple/domain/http"
-import type * as Keyed from "../../data/keyed"
+import type * as Keyed from "@maple/views/data/keyed"
 import { PageOutMessage, type PageContext, type PageReturn } from "../contract"
 import { integrationOfSearch } from "./catalog"
 import { ConnectProvider, type ConnectModel, PROVIDERS } from "./connect"

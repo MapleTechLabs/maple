@@ -1,10 +1,10 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { describe, expect, test } from "vitest"
-import * as RadioGroup from "../../../ui/radio-group"
+import * as RadioGroup from "@maple/views/ui/radio-group"
 import { type PageContext } from "../../contract"
 import { FetchShares } from "./command"
 import { WriteShare } from "./command-share"
@@ -19,7 +19,7 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const share = (message: ShareMessage) => Message.GotShareMessage({ message })
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const document = Schema.decodeUnknownSync(DashboardDocument)({
 	id: "dash_share",
@@ -31,33 +31,65 @@ const document = Schema.decodeUnknownSync(DashboardDocument)({
 	schemaVersion: 3,
 })
 
-const withShares = (rows: ReadonlyArray<{ widgetId: string | null; mode: "public" | "org"; token: string }>): Model =>
-	[
-		Message.CompletedReadClock({ nowMs: 0 }),
-		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
-		share(ShareMessage.CompletedFetchShares({ seq: 1, result: Result.succeed(rows) })),
-	].reduce((model, message) => pageUpdate(model, message).model, init({ dashboardId: "dash_share", search: {} }, context).model)
+const withShares = (
+	rows: ReadonlyArray<{ widgetId: string | null; mode: "public" | "org"; token: string }>,
+): Model =>
+	Arr.reduce(
+		[
+			Message.CompletedReadClock({ nowMs: 0 }),
+			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
+			share(ShareMessage.CompletedFetchShares({ seq: 1, result: Result.succeed(rows) })),
+		],
+		init({ dashboardId: "dash_share", search: {} }, context).model,
+		(model, message) => pageUpdate(model, message).model,
+	)
 
 describe("dashboard sharing", () => {
 	test("a picked access writes once and holds the pick until the list confirms it", () => {
 		const opened = openShare(withShares([])).model
-		const picked = pageUpdate(opened, share(ShareMessage.GotAccessMessage({ message: RadioGroup.Message.SelectedRadio({ value: "public" }) })))
+		const picked = pageUpdate(
+			opened,
+			share(
+				ShareMessage.GotAccessMessage({
+					message: RadioGroup.Message.SelectedRadio({ value: "public" }),
+				}),
+			),
+		)
 		expect(names(picked.commands)).toEqual([WriteShare.name])
 		expect(picked.model.sharing.pendingAccess).toBe("public")
-		const again = pageUpdate(picked.model, share(ShareMessage.GotAccessMessage({ message: RadioGroup.Message.SelectedRadio({ value: "org" }) })))
+		const again = pageUpdate(
+			picked.model,
+			share(
+				ShareMessage.GotAccessMessage({
+					message: RadioGroup.Message.SelectedRadio({ value: "org" }),
+				}),
+			),
+		)
 		expect(names(again.commands)).toEqual([])
 		const written = pageUpdate(picked.model, share(ShareMessage.CompletedWrite({ error: null })))
 		expect(names(written.commands)).toEqual([FetchShares.name])
 		const listed = pageUpdate(
 			written.model,
-			share(ShareMessage.CompletedFetchShares({ seq: 2, result: Result.succeed([{ widgetId: null, mode: "public", token: "t" }]) })),
+			share(
+				ShareMessage.CompletedFetchShares({
+					seq: 2,
+					result: Result.succeed([{ widgetId: null, mode: "public", token: "t" }]),
+				}),
+			),
 		)
 		expect(listed.model.sharing.pendingAccess).toBeNull()
 	})
 
 	test("a failed write drops the pick and shows the error", () => {
 		const opened = openShare(withShares([])).model
-		const picked = pageUpdate(opened, share(ShareMessage.GotAccessMessage({ message: RadioGroup.Message.SelectedRadio({ value: "org" }) })))
+		const picked = pageUpdate(
+			opened,
+			share(
+				ShareMessage.GotAccessMessage({
+					message: RadioGroup.Message.SelectedRadio({ value: "org" }),
+				}),
+			),
+		)
 		const failed = pageUpdate(picked.model, share(ShareMessage.CompletedWrite({ error: "Nope" })))
 		expect(failed.model.sharing.pendingAccess).toBeNull()
 		expect(failed.model.sharing.error).toBe("Nope")
@@ -79,9 +111,18 @@ describe("dashboard sharing", () => {
 		const made = pageUpdate(orgOnly, share(ShareMessage.ClickedMakePublic())).model
 		const boardDone = pageUpdate(made, share(ShareMessage.CompletedWrite({ error: null }))).model
 		const minted = pageUpdate(boardDone, share(ShareMessage.CompletedWrite({ error: null }))).model
-		const rows = [{ widgetId: null, mode: "public" as const, token: "t" }, { widgetId: "w1", mode: "public" as const, token: "c" }]
-		const latest = pageUpdate(minted, share(ShareMessage.CompletedFetchShares({ seq: 3, result: Result.succeed(rows) }))).model
-		const stale = pageUpdate(latest, share(ShareMessage.CompletedFetchShares({ seq: 2, result: Result.succeed(rows.slice(0, 1)) }))).model
+		const rows = [
+			{ widgetId: null, mode: "public" as const, token: "t" },
+			{ widgetId: "w1", mode: "public" as const, token: "c" },
+		]
+		const latest = pageUpdate(
+			minted,
+			share(ShareMessage.CompletedFetchShares({ seq: 3, result: Result.succeed(rows) })),
+		).model
+		const stale = pageUpdate(
+			latest,
+			share(ShareMessage.CompletedFetchShares({ seq: 2, result: Result.succeed(rows.slice(0, 1)) })),
+		).model
 		expect(AsyncData.getOrElse(stale.sharing.shares, () => [])).toHaveLength(2)
 	})
 

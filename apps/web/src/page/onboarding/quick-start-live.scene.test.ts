@@ -1,9 +1,9 @@
-import { Result } from "effect"
+import { Result, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { expect as expectView, given, role, scene, text } from "foldkit/scene"
 import { describe, test } from "vitest"
-import type { SignalPresence } from "../kit/signal-presence"
+import type { SignalPresence } from "@maple/views/data/signal-presence"
 import { init, Message, type Model, update as updateWith } from "./quick-start"
 import { DEFAULT_QUICK_START_STATE, type QuickStartState } from "./quick-start-state"
 import { liveStep } from "./quick-start-view"
@@ -21,7 +21,7 @@ const state: QuickStartState = {
 /** The live screen with what the connect step last read: signal presence and provider statuses. */
 const atLive = (present: ReadonlyArray<string>, connected: Readonly<Record<string, boolean>>): Model => {
 	const model = init("maple-onboarding-v6-org_1", false, false, "/", "org_1").model
-	const presences = Object.fromEntries(present.map((signal) => [signal, PRESENT]))
+	const presences = Rec.fromEntries(Arr.map(present, (signal) => [signal, PRESENT]))
 	return {
 		...model,
 		state,

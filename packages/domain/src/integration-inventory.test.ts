@@ -4,6 +4,7 @@ import {
 	type IntegrationInventoryInputs,
 	withSourceHealth,
 } from "./integration-inventory"
+import { Array as Arr, String as Str } from "effect"
 
 const NOW = Date.UTC(2026, 9, 15, 12, 0, 0)
 const MINUTE = 60_000
@@ -51,7 +52,7 @@ describe("buildIntegrationInventory", () => {
 	it("lists every provider as available when nothing is connected", () => {
 		const inventory = build({})
 		expect(inventory.integrations).toEqual([])
-		expect(inventory.available.map((a) => a.provider)).toEqual([
+		expect(Arr.map(inventory.available, (a) => a.provider)).toEqual([
 			"github",
 			"cloudflare",
 			"railway",
@@ -260,7 +261,7 @@ describe("buildIntegrationInventory", () => {
 			},
 			"github",
 		)
-		expect(github?.feeds.some((feed) => feed.includes("GitHub Actions"))).toBe(false)
+		expect(github?.feeds.some((feed) => Str.includes("GitHub Actions")(feed))).toBe(false)
 		expect(github?.status).toBe("failing")
 		expect(github?.resources[0]).toMatchObject({
 			lastError: "Not Found",

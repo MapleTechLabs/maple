@@ -7,7 +7,7 @@ import {
 import { ChooseOrganizationRegionRequest } from "@maple/domain/http"
 import { MapleRegion } from "@maple/domain/organization-regions"
 import { currentRegion, regionAppUrl } from "../../lib/region"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
@@ -15,7 +15,7 @@ import { load, replaceUrl } from "foldkit/navigation"
 import { trackProduct } from "../../data/analytics"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { clerkTry, currentClerkOrganization } from "../../platform/clerk"
-import { startDitherField } from "../../ui/dither-field"
+import { startDitherField } from "@maple/views/ui/dither-field"
 import type { Resources } from "../../platform/resources"
 import * as PricingCards from "./pricing-cards"
 import { type PageContext, PageOutMessage } from "../contract"
@@ -342,7 +342,8 @@ const entered = (previous: Model, result: UpdateReturn, hasPlan: boolean): Updat
 
 /** How many signals the last presence read found arriving. */
 const presentCount = (connect: Connect): number =>
-	Object.values(AsyncData.getOrElse(connect.presence, () => ({}))).filter(
+	Arr.filter(
+		Rec.values(AsyncData.getOrElse(connect.presence, () => ({}))),
 		(presence) => presence.status === "present",
 	).length
 

@@ -6,7 +6,7 @@
 import { internalTokenFor, selfFetcher } from "@maple/backend/platform/self-binding"
 import { isValidInternalBearer } from "@maple/backend/services/auth/internal-auth"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Option, Schema, Stream } from "effect"
+import { Effect, Option, Schema, Stream, String as Str } from "effect"
 import { HttpClient, type HttpClientError, HttpClientRequest } from "effect/http"
 import { isLaneOf, type TickLane } from "./schedule.ts"
 
@@ -38,9 +38,9 @@ const MAX_FAILURE_BODY_CHARS = 300
 const thrownMessage = (error: HttpClientError.HttpClientError): string =>
 	error.cause instanceof Error
 		? error.cause.message
-		: error.cause === undefined
-			? error.message
-			: String(error.cause)
+		: typeof error.cause === "string"
+			? error.cause
+			: error.message
 
 /** The tick did not run in the placed handler, so the caller runs it inline. */
 export class TickDispatchUnavailable extends Schema.TaggedError<TickDispatchUnavailable>()(
@@ -127,9 +127,7 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 		Stream.takeUntil((head) => head.length >= MAX_FAILURE_BODY_CHARS),
 		Stream.runLast,
 		Effect.map((head) =>
-			Option.getOrElse(head, () => "")
-				.trim()
-				.slice(0, MAX_FAILURE_BODY_CHARS),
+			Str.slice(0, MAX_FAILURE_BODY_CHARS)(Str.trim(Option.getOrElse(head, () => ""))),
 		),
 		Effect.orElseSucceed(() => ""),
 	)
@@ -160,7 +158,8 @@ export const authorizeTickRequest = Effect.fnUntraced(function* (
 	if (request.method !== "POST" || url.pathname !== TICK_PATH) {
 		return yield* new TickRequestRefused({ message: "Not the tick route", status: 404 })
 	}
-	const authorized = Option.match(yield* internalTokenFor(env), {
+	const internalToken = yield* internalTokenFor(env)
+	const authorized = Option.match(internalToken, {
 		onNone: () => false,
 		onSome: (expected) =>
 			isValidInternalBearer(request.headers.get("authorization") ?? undefined, expected),

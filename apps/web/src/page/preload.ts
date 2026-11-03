@@ -1,7 +1,7 @@
-import { Option, Predicate, Schema, Stream } from "effect"
+import { Option, Predicate, Schema, Stream, Array as Arr, Record as Rec } from "effect"
 import type { Command } from "foldkit"
 import { Dom } from "foldkit"
-import { baseKey } from "../data/keyed"
+import { baseKey } from "@maple/views/data/keyed"
 import type { Resources } from "../platform/resources"
 import type { PageMessage } from "./registry"
 
@@ -38,7 +38,7 @@ export const keyOfCommand = (command: PageCommand): Option.Option<string> =>
 	Option.map(Option.filter(Option.fromNullishOr(command.args?.["key"]), Predicate.isString), baseKey)
 
 const without = <A>(record: Readonly<Record<string, A>>, key: string): Record<string, A> =>
-	Object.fromEntries(Object.entries(record).filter(([entryKey]) => entryKey !== key))
+	Rec.fromEntries(Arr.filter(Rec.toEntries(record), ([entryKey]) => entryKey !== key))
 
 // INTENT
 
@@ -56,10 +56,8 @@ export const intended = (model: Model, href: string): Option.Option<{ model: Mod
 			})
 
 /** `cancelPreload` on mouse leave or blur. */
-export const ended = (model: Model, href: string): Model => ({
-	...model,
-	intents: without(model.intents, href),
-})
+export const ended = (model: Model, href: string): Model =>
+	model.intents[href] === undefined ? model : { ...model, intents: without(model.intents, href) }
 
 /** The delay elapsed: `Some` when the link is still intended (the timer was not cancelled). */
 export const elapsed = (model: Model, href: string, version: number): Option.Option<Model> =>
@@ -69,7 +67,7 @@ export const elapsed = (model: Model, href: string, version: number): Option.Opt
 
 /** The keys a page step's Commands request (S6: `args.key`). */
 export const keysOf = (commands: ReadonlyArray<PageCommand>): ReadonlyArray<string> =>
-	commands.flatMap((command) => Option.toArray(keyOfCommand(command)))
+	Arr.flatMap(commands, (command) => Option.toArray(keyOfCommand(command)))
 
 /** A `Keyed` slot's key: `{ key: string, data: AsyncData }`. */
 const slotKeyOf = (value: { readonly [x: PropertyKey]: unknown }): Option.Option<string> => {
@@ -82,12 +80,12 @@ const slotKeyOf = (value: { readonly [x: PropertyKey]: unknown }): Option.Option
 
 /** The keys a page Model's `Keyed` slots stand on (their `data` is not walked: rows hold no slots). */
 export const liveKeysOf = (value: unknown): ReadonlyArray<string> =>
-	Array.isArray(value)
-		? value.flatMap(liveKeysOf)
+	Arr.isArray(value)
+		? Arr.flatMap(value, liveKeysOf)
 		: Predicate.isReadonlyObject(value)
 			? Option.match(slotKeyOf(value), {
 					onSome: (key) => [key],
-					onNone: () => Object.values(value).flatMap(liveKeysOf),
+					onNone: () => Arr.flatMap(Rec.values(value), liveKeysOf),
 				})
 			: []
 
@@ -106,19 +104,28 @@ export const held = (
 ) => {
 	const keys = keysOf(commands)
 	const isSameHolder = holder === model.holder
-	const added = keys.filter((key) => !model.heldKeys.includes(key))
+	const added = Arr.filter(keys, (key) => !model.heldKeys.includes(key))
 	const isPruning = isSameHolder && added.length > 0
 	const stillLive = (live: ReadonlyArray<string>) =>
-		model.heldKeys.filter((key) => live.includes(key) || keys.includes(key))
+		Arr.filter(model.heldKeys, (key) => live.includes(key) || keys.includes(key))
 	const kept = !isSameHolder ? [] : isPruning ? stillLive(liveKeys()) : model.heldKeys
-	const heldKeys = [...kept, ...keys.filter((key) => !kept.includes(key))]
-	const released = isSameHolder && !isPruning ? [] : model.heldKeys.filter((key) => !heldKeys.includes(key))
-	return { model: { ...model, holder, heldKeys }, released, isNewHolder: !isSameHolder }
+	const heldKeys = [...kept, ...Arr.filter(keys, (key) => !kept.includes(key))]
+	const released =
+		isSameHolder && !isPruning ? [] : Arr.filter(model.heldKeys, (key) => !heldKeys.includes(key))
+	const isUnchanged =
+		isSameHolder &&
+		heldKeys.length === model.heldKeys.length &&
+		Arr.every(heldKeys, (key, index) => key === model.heldKeys[index])
+	return {
+		model: isUnchanged ? model : { ...model, holder, heldKeys },
+		released,
+		isNewHolder: !isSameHolder,
+	}
 }
 
 /** The hold elapsed: the preloaded keys the open page does not hold are released. */
 export const expired = (model: Model, keys: ReadonlyArray<string>): ReadonlyArray<string> =>
-	keys.filter((key) => !model.heldKeys.includes(key))
+	Arr.filter(keys, (key) => !model.heldKeys.includes(key))
 
 // LINK INTENT
 

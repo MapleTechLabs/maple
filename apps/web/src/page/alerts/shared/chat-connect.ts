@@ -1,6 +1,6 @@
 import type { V2ChatConnector } from "@maple/domain/http/v2"
 import { ChatConnectorId, type ChatWorkspaceId } from "@maple/domain/primitives"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 
 // Chat workspace connect: link a chat workspace in a
@@ -54,7 +54,7 @@ export const start = (model: Model, connector: V2ChatConnector): Model => {
 			attempt,
 			connector: connector.id,
 			name: connector.name,
-			knownIds: connector.workspaces.map((workspace) => workspace.id),
+			knownIds: Arr.map(connector.workspaces, (workspace) => workspace.id),
 			phase: "popup",
 			isStarting: true,
 		},
@@ -86,7 +86,11 @@ export const update = (model: Model, message: Message): Step =>
 		FailedStart: ({ attempt, description }) =>
 			Option.isNone(current(model, attempt))
 				? settled(model)
-				: settled({ ...model, active: null }, false, Option.some({ title: "Couldn't start the install", description })),
+				: settled(
+						{ ...model, active: null },
+						false,
+						Option.some({ title: "Couldn't start the install", description }),
+					),
 		BlockedPopup: ({ attempt }) =>
 			Option.match(current(model, attempt), {
 				onNone: () => settled(model),
@@ -105,7 +109,8 @@ export const update = (model: Model, message: Message): Step =>
 		ClosedPopup: ({ attempt }) =>
 			Option.match(current(model, attempt), {
 				onNone: () => settled(model),
-				onSome: (active) => settled(patch(model, active, { phase: "grace", isStarting: false }), true),
+				onSome: (active) =>
+					settled(patch(model, active, { phase: "grace", isStarting: false }), true),
 			}),
 		EndedGrace: ({ attempt }) =>
 			Option.isNone(current(model, attempt)) ? settled(model) : settled({ ...model, active: null }),
@@ -114,7 +119,10 @@ export const update = (model: Model, message: Message): Step =>
 export type LinkedWorkspace = Readonly<{ connector: ChatConnectorId; id: ChatWorkspaceId; name: string }>
 
 /** The connectors answered: a workspace the attempt did not know about is the new link. */
-export const linkedOf = (model: Model, connectors: ReadonlyArray<V2ChatConnector>): Option.Option<LinkedWorkspace> =>
+export const linkedOf = (
+	model: Model,
+	connectors: ReadonlyArray<V2ChatConnector>,
+): Option.Option<LinkedWorkspace> =>
 	Option.flatMap(Option.fromNullishOr(model.active), (active) =>
 		Option.map(
 			Option.fromNullishOr(

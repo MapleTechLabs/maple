@@ -5,10 +5,10 @@ import { cn } from "@maple/ui/lib/utils"
 import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
-import { alert, alertAction, alertDescription, alertTitle } from "../../../ui/alert"
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { AppRoute, hrefOf } from "../../../route"
-import { button, linkButton } from "../../../ui/button"
-import { icon } from "../../../ui/icon"
+import { button, linkButton } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { detailTitle } from "../../kit/detail-header"
 import {
@@ -26,10 +26,13 @@ import {
 } from "../kit/format"
 import { leadsLine, type StopAction, stopNoteOf } from "../kit/outcome"
 import { iconTile, metaItem, placeholder, runStatusBadge } from "../kit/parts"
-import { meter } from "../../../ui/meter"
+import { meter } from "@maple/views/ui/meter"
 import { countOf, gapCount, type Phase, type PhaseState, type Verdicts } from "./derive"
 import { Message, type Model } from "./model"
-import { statusDot } from "../../../ui/status-dot"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The run's title block, its stop banner, the phase strip and the four totals.
 
@@ -49,13 +52,10 @@ export const runTitle = (
 	return detailTitle(h, {
 		kind: ["Audit run", RUN_KIND_LABEL[run.kind]],
 		title: [
-			h.span(
-				[h.Class("flex min-w-0 items-center gap-2.5")],
-				[
-					iconTile(h, "GithubIcon"),
-					h.span([h.Class("truncate")], [target?.repository ?? "Audit run"]),
-				],
-			),
+			hstack(h, { gap: "2.5", shrink: true, as: "span" }, [
+				iconTile(h, "GithubIcon"),
+				h.span([h.Class("truncate")], [target?.repository ?? "Audit run"]),
+			]),
 		],
 		titleText: target?.repository ?? "Audit run",
 		adornment: runStatusBadge(h, run),
@@ -67,7 +67,7 @@ export const runTitle = (
 						`${target?.branch ?? "branch"} @ ${refLabel(run.sourceRef)}`,
 					]),
 					metaItem(h, run.scopePaths.length === 0 ? null : "FolderIcon", [
-						h.span([h.Title(run.scopePaths.join("\n"))], [scopeLabel(run.scopePaths)]),
+						h.span([h.Title(Arr.join(run.scopePaths, "\n"))], [scopeLabel(run.scopePaths)]),
 					]),
 					metaItem(h, null, [PROFILE_LABEL[run.profile]]),
 					...(run.discoveryModel === null
@@ -96,51 +96,48 @@ export const runTitle = (
 }
 
 export const runActions = (h: H, model: Model, run: SecurityAuditRunDetail): Html =>
-	h.div(
-		[h.Class("flex items-center gap-2")],
-		[
-			...(run.reports === null
-				? []
+	hstack(h, { gap: "2" }, [
+		...(run.reports === null
+			? []
+			: [
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							attributes: [h.OnClick(Message.ClickedReport({ report: "report" }))],
+						},
+						[icon(h, "FileIcon"), "Report"],
+					),
+				]),
+		...(!model.isAdmin
+			? []
+			: isLive(run)
+				? [
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "destructive-outline",
+								isDisabled: model.busy !== null,
+								attributes: [h.OnClick(Message.ClickedCancel())],
+							},
+							["Cancel run"],
+						),
+					]
 				: [
 						button(
 							h,
 							{
 								size: "sm",
-								variant: "outline",
-								attributes: [h.OnClick(Message.ClickedReport({ report: "report" }))],
+								isLoading: model.busy === "start",
+								isDisabled: model.busy !== null,
+								attributes: [h.OnClick(Message.ClickedStartRun())],
 							},
-							[icon(h, "FileIcon"), "Report"],
+							[icon(h, "MediaPlayIcon"), "Start run"],
 						),
 					]),
-			...(!model.isAdmin
-				? []
-				: isLive(run)
-					? [
-							button(
-								h,
-								{
-									size: "sm",
-									variant: "destructive-outline",
-									isDisabled: model.busy !== null,
-									attributes: [h.OnClick(Message.ClickedCancel())],
-								},
-								["Cancel run"],
-							),
-						]
-					: [
-							button(
-								h,
-								{
-									size: "sm",
-									isLoading: model.busy === "start",
-									isDisabled: model.busy !== null,
-									attributes: [h.OnClick(Message.ClickedStartRun())],
-								},
-								[icon(h, "MediaPlayIcon"), "Start run"],
-							),
-						]),
-		],
-	)
+	])
 
 const startRunButton = (h: H, model: Model): Html =>
 	button(
@@ -160,7 +157,7 @@ const stopAction = (h: H, model: Model, action: StopAction): ReadonlyArray<Html>
 	const control =
 		action === "start"
 			? startRunButton(h, model)
-			: linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.Security()) }, [
+			: linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.SecurityCode()) }, [
 					action === "limit" ? "Raise the limit" : "Spend & models",
 				])
 	return [alertAction(h, [control])]
@@ -249,7 +246,7 @@ export const phaseStrip = (h: H, phases: ReadonlyArray<Phase>): Html =>
 			// Phases wrap onto more rows as the column narrows; each row fills its width.
 			h.Class("flex flex-wrap gap-px overflow-hidden rounded-md border bg-border"),
 		],
-		phases.map((phase) =>
+		Arr.map(phases, (phase) =>
 			h.li(
 				[
 					h.Key(phase.name),
@@ -289,7 +286,7 @@ export const phaseStrip = (h: H, phases: ReadonlyArray<Phase>): Html =>
 							]),
 						],
 					),
-					h.span([h.Class("text-xs text-muted-foreground")], [phase.detail]),
+					typography(h, { size: "xs", tone: "muted" }, [phase.detail]),
 				],
 			),
 		),
@@ -318,10 +315,13 @@ export const runStats = (
 					? undefined
 					: live
 						? `${leadsLine(verdicts.confirmed, verdicts.needsValidation)} · ${waiting} ${waiting === 1 ? "candidate" : "candidates"} waiting`
-						: [
-								leadsLine(verdicts.confirmed, verdicts.needsValidation),
-								...(verdicts.rejected === 0 ? [] : [`${verdicts.rejected} disproved`]),
-							].join(" · "),
+						: Arr.join(
+								[
+									leadsLine(verdicts.confirmed, verdicts.needsValidation),
+									...(verdicts.rejected === 0 ? [] : [`${verdicts.rejected} disproved`]),
+								],
+								" · ",
+							),
 		}),
 		statRailItem(h, {
 			eyebrow: "Coverage",
@@ -333,15 +333,14 @@ export const runStats = (
 					? live
 						? "mapping the code"
 						: "no units were planned"
-					: h.span(
-							[h.Class("flex flex-col gap-1.5")],
-							[
-								meter(h, {
-									value: closed,
-									max: run.unitTotal,
-									tone: gaps > 0 && !live ? "warn" : undefined,
-									label: `${closed} of ${run.unitTotal} units closed`,
-								}),
+					: vstack(h, { gap: "1.5", as: "span" }, [
+							meter(h, {
+								value: closed,
+								max: run.unitTotal,
+								tone: gaps > 0 && !live ? "warn" : undefined,
+								label: `${closed} of ${run.unitTotal} units closed`,
+							}),
+							Arr.join(
 								[
 									...(areas === null || areas === 0
 										? []
@@ -349,9 +348,10 @@ export const runStats = (
 									gaps === 0
 										? "no gaps"
 										: `${gaps} ${live ? "still open" : gaps === 1 ? "gap" : "gaps"}`,
-								].join(" · "),
-							],
-						),
+								],
+								" · ",
+							),
+						]),
 		}),
 		statRailItem(h, {
 			eyebrow: live ? "Cost so far" : "Cost",

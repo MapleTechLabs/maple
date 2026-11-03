@@ -5,6 +5,7 @@
  * `FetchHttpClient.Fetch`; tests steer it by mutating `state` between steps.
  */
 import { createHash, randomUUID } from "node:crypto"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 export const FAKE_CLIENT_ID = "6f1c1d1e-0b7a-4d8e-9a51-3c2b1a0f9e88"
 export const FAKE_CLIENT_SECRET = "sba_fake_client_secret"
@@ -16,7 +17,7 @@ export const fakeProject = (ref: string, overrides: Record<string, unknown> = {}
 	ref,
 	organization_id: FAKE_ORG.id,
 	organization_slug: FAKE_ORG.slug,
-	name: `project-${ref.slice(0, 4)}`,
+	name: `project-${Str.slice(0, 4)(ref)}`,
 	region: "us-east-1",
 	created_at: "2026-10-21T15:51:59.0158Z",
 	status: "ACTIVE_HEALTHY",
@@ -39,8 +40,8 @@ export interface FakeLogRow {
 
 /** `2026-10-21T17:48:12.0596` and `2026-10-21 17:48:12.059000` alike, as comparable text. */
 const comparableTime = (value: string) => {
-	const [seconds = "", fraction = ""] = value.replace("T", " ").split(".")
-	return `${seconds}.${fraction.padEnd(6, "0")}`
+	const [seconds, fraction = ""] = Str.split(".")(Str.replace("T", " ")(value))
+	return `${seconds}.${Str.padEnd(6, "0")(fraction)}`
 }
 
 /** Serves the SQL Maple sends: `timestamp >= '..' and timestamp < '..' order by timestamp, id limit N`. */
@@ -48,16 +49,16 @@ const runLogsQuery = (rows: ReadonlyArray<FakeLogRow>, sql: string) => {
 	const from = /timestamp >= '([^']+)'/.exec(sql)?.[1]
 	const to = /timestamp < '([^']+)'/.exec(sql)?.[1]
 	const limit = Number(/limit (\d+)/.exec(sql)?.[1] ?? "100")
-	return rows
-		.filter(
-			(row) =>
-				(from === undefined || comparableTime(row.timestamp) >= comparableTime(from)) &&
-				(to === undefined || comparableTime(row.timestamp) < comparableTime(to)),
-		)
+	return Arr.filter(
+		rows,
+		(row) =>
+			(from === undefined || comparableTime(row.timestamp) >= comparableTime(from)) &&
+			(to === undefined || comparableTime(row.timestamp) < comparableTime(to)),
+	)
 		.toSorted(
 			(a, b) =>
-				comparableTime(a.timestamp).localeCompare(comparableTime(b.timestamp)) ||
-				a.id.localeCompare(b.id),
+				Str.localeCompare(comparableTime(b.timestamp))(comparableTime(a.timestamp)) ||
+				Str.localeCompare(b.id)(a.id),
 		)
 		.slice(0, limit)
 }
@@ -136,8 +137,24 @@ export interface FakeSupabaseState {
 	readonly calls: Array<FakeCall>
 }
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const decodeDrainCreate = Schema.decodeUnknownSync(
+	Schema.fromJsonString(
+		Schema.Struct({
+			data: Schema.Struct({
+				attributes: Schema.Struct({
+					name: Schema.String,
+					description: Schema.optionalKey(Schema.String),
+					backend_type: Schema.String,
+					config: Schema.Record(Schema.String, Schema.Unknown),
+				}),
+			}),
+		}),
+	),
+)
+
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
-	new Response(JSON.stringify(body), {
+	new Response(encodeJson(body), {
 		status,
 		headers: { "content-type": "application/json", ...headers },
 	})
@@ -201,7 +218,7 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 	}
 
 	const authorized = (request: Request) =>
-		state.validAccessTokens.has((request.headers.get("authorization") ?? "").replace(/^Bearer /, ""))
+		state.validAccessTokens.has(Str.replace(/^Bearer /, "")(request.headers.get("authorization") ?? ""))
 
 	const handle = (request: Request, body: string): Response => {
 		const url = new URL(request.url)
@@ -260,12 +277,12 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 		const drains = state.drains.get(ref) ?? []
 		if (id === undefined && method === "GET") {
 			if (state.drainListStatus !== null) return json({ message: "Failed" }, state.drainListStatus)
-			return json({ data: drains.map((drain) => ({ type: "log_drain", ...drain })) })
+			return json({ data: Arr.map(drains, (drain) => ({ type: "log_drain", ...drain })) })
 		}
 		if (id === undefined && method === "POST") {
 			if (state.drainCreateStatus === 402) return json(PAYMENT_REQUIRED_BODY, 402)
 			if (state.drainCreateStatus !== null) return json({ message: "Failed" }, state.drainCreateStatus)
-			const parsed: { data: { attributes: FakeLogDrain["attributes"] } } = JSON.parse(body)
+			const parsed = decodeDrainCreate(body)
 			const drain: FakeLogDrain = { id: randomUUID(), attributes: parsed.data.attributes }
 			state.drains.set(ref, [...drains, drain])
 			if (state.drainCreateFailsAfterStore) return json({ message: "Bad gateway" }, 502)
@@ -273,10 +290,10 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 		}
 		if (id !== undefined && method === "DELETE") {
 			if (state.drainDeleteStatus !== null) return json({ message: "Failed" }, state.drainDeleteStatus)
-			if (!drains.some((drain) => drain.id === id)) return json({ message: "Not found" }, 404)
+			if (!Arr.some(drains, (drain) => drain.id === id)) return json({ message: "Not found" }, 404)
 			state.drains.set(
 				ref,
-				drains.filter((drain) => drain.id !== id),
+				Arr.filter(drains, (drain) => drain.id !== id),
 			)
 			return new Response(null, { status: 204 })
 		}
@@ -289,7 +306,7 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 		const body = await request.text()
 		const response = handle(request, body)
 		const created =
-			request.method === "POST" && new URL(request.url).pathname.endsWith("/analytics/log-drains")
+			request.method === "POST" && Str.endsWith("/analytics/log-drains")(new URL(request.url).pathname)
 		if (created && state.afterDrainCreate !== null) await state.afterDrainCreate()
 		return response
 	}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { ChatBlock } from "./blocks"
 import { cutMarkdown, splitBlocks } from "./split"
+import { Array as Arr, String as Str } from "effect"
 
 const prose = (markdown: string): ChatBlock => ({ kind: "prose", markdown })
 
@@ -13,8 +14,8 @@ describe("splitBlocks", () => {
 	})
 
 	it("starts a message rather than filling the tail of one with half a paragraph", () => {
-		const groups = splitBlocks([prose("a".repeat(30)), prose("b".repeat(30))], 40)
-		expect(groups).toEqual([[prose("a".repeat(30))], [prose("b".repeat(30))]])
+		const groups = splitBlocks([prose(Str.repeat(30)("a")), prose(Str.repeat(30)("b"))], 40)
+		expect(groups).toEqual([[prose(Str.repeat(30)("a"))], [prose(Str.repeat(30)("b"))]])
 	})
 
 	it("carries a turn with nothing in it, so an emptied message still has a group", () => {
@@ -22,9 +23,11 @@ describe("splitBlocks", () => {
 	})
 
 	it("holds every group to the budget", () => {
-		const groups = splitBlocks([prose("word ".repeat(200).trim()), notice], 200)
+		const groups = splitBlocks([prose(Str.trim(Str.repeat(200)("word "))), notice], 200)
 		for (const group of groups) {
-			const spent = group.reduce(
+			const spent = Arr.reduce(
+				group,
+				0,
 				(total, block) =>
 					total +
 					(block.kind === "prose"
@@ -32,7 +35,6 @@ describe("splitBlocks", () => {
 						: block.kind === "notice"
 							? block.text.length
 							: 0),
-				0,
 			)
 			expect(spent).toBeLessThanOrEqual(200)
 		}
@@ -45,13 +47,13 @@ describe("cutMarkdown", () => {
 	})
 
 	it("closes a fence it has to cut through, and reopens it", () => {
-		const fenced = ["```ts", "const a = 1", "const b = 2", "const c = 3", "```"].join("\n")
+		const fenced = Arr.join(["```ts", "const a = 1", "const b = 2", "const c = 3", "```"], "\n")
 		const chunks = cutMarkdown(fenced, 30)
 
 		expect(chunks.length).toBeGreaterThan(1)
 		// Unclosed fences render the rest of a message as code on every platform that has them.
 		for (const chunk of chunks) expect(countFences(chunk) % 2).toBe(0)
-		expect(chunks[1].startsWith("```ts")).toBe(true)
+		expect(Str.startsWith("```ts")(chunks[1])).toBe(true)
 	})
 
 	/**
@@ -61,18 +63,21 @@ describe("cutMarkdown", () => {
 	 */
 	it.each([
 		// A fence whose payload shares the opener's line: the opener is longer than a whole message.
-		["fenced payload on the opening line", `\`\`\`json ${"z".repeat(400)}`, 100],
-		["a fence longer than several messages", ["```", "a".repeat(300), "```"].join("\n"), 40],
-		["one line longer than a message", "x".repeat(500), 64],
+		["fenced payload on the opening line", `\`\`\`json ${Str.repeat(400)("z")}`, 100],
+		["a fence longer than several messages", Arr.join(["```", Str.repeat(300)("a"), "```"], "\n"), 40],
+		["one line longer than a message", Str.repeat(500)("x"), 64],
 		[
 			"prose around a long fence",
-			[
-				"intro",
-				"```ts",
-				...Array.from({ length: 30 }, (_, i) => `const v${i} = ${i}`),
-				"```",
-				"outro",
-			].join("\n"),
+			Arr.join(
+				[
+					"intro",
+					"```ts",
+					...Array.from({ length: 30 }, (_, i) => `const v${i} = ${i}`),
+					"```",
+					"outro",
+				],
+				"\n",
+			),
 			80,
 		],
 	])("keeps every chunk inside the budget: %s", (_name, markdown, maxChars) => {
@@ -85,11 +90,11 @@ describe("cutMarkdown", () => {
 	})
 
 	it("cuts a line that is longer than a whole message", () => {
-		const chunks = cutMarkdown("x".repeat(250), 100)
-		expect(chunks.map((chunk) => chunk.length)).toEqual([100, 100, 50])
-		expect(chunks.join("")).toBe("x".repeat(250))
+		const chunks = cutMarkdown(Str.repeat(250)("x"), 100)
+		expect(Arr.map(chunks, (chunk) => chunk.length)).toEqual([100, 100, 50])
+		expect(Arr.join(chunks, "")).toBe(Str.repeat(250)("x"))
 	})
 })
 
 const countFences = (text: string): number =>
-	text.split("\n").filter((line) => line.trimStart().startsWith("```")).length
+	Arr.filter(Str.split("\n")(text), (line) => Str.startsWith("```")(Str.trimStart(line))).length

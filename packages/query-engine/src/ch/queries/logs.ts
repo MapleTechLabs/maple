@@ -26,6 +26,7 @@ import {
 	timeseriesBucket,
 	wholeRangeEnd,
 } from "./query-helpers"
+import { Array as Arr, String as Str } from "effect"
 
 // Shared options
 
@@ -60,10 +61,10 @@ interface LogsQueryOpts {
 
 function logAttributeConditions(opts: LogsQueryOpts): CH.Condition[] {
 	return [
-		...(opts.attributeFilters ?? []).map((filter) =>
+		...Arr.map(opts.attributeFilters ?? [], (filter) =>
 			buildAttrFilterCondition(filter, "LogAttributes", opts.attributeIndexMode),
 		),
-		...(opts.resourceAttributeFilters ?? []).map((filter) =>
+		...Arr.map(opts.resourceAttributeFilters ?? [], (filter) =>
 			buildAttrFilterCondition(filter, "ResourceAttributes", opts.attributeIndexMode),
 		),
 	]
@@ -91,13 +92,13 @@ function logBodySearchCondition(body: CH.Expr<string>, opts: LogsQueryOpts): CH.
 		// Keep headroom below ClickHouse's 64-token limit (HyperDX uses 50).
 		const batches: CH.Condition[] = []
 		for (let offset = 0; offset < tokens.length; offset += 50) {
-			batches.push(CH.hasAllTokens(normalizedBody, tokens.slice(offset, offset + 50).join(" ")))
+			batches.push(CH.hasAllTokens(normalizedBody, Arr.join(tokens.slice(offset, offset + 50), " ")))
 		}
 		return CH.and(...batches, exact)
 	}
 
 	// One flat AND: a chained `.and()` per word passes ClickHouse's max_parser_depth on a pasted stack trace.
-	return CH.and(...tokens.map((token) => CH.hasToken(normalizedBody, token)), exact)
+	return CH.and(...Arr.map(tokens, (token) => CH.hasToken(normalizedBody, token)), exact)
 }
 
 /**
@@ -108,11 +109,12 @@ function logBodySearchCondition(body: CH.Expr<string>, opts: LogsQueryOpts): CH.
  * ClickHouse `lower()` folds ASCII only, while JS maps e.g. the Kelvin sign to `k`.
  */
 const interiorSearchTokens = (search: string): ReadonlyArray<string> =>
-	search
-		.split(/[\t\n\r !"#$&'()*+,\-./:;<=>?@[\]^`{|}~]+/)
-		.slice(1, -1)
-		.filter((token) => /^[A-Za-z0-9]+$/.test(token))
-		.map((token) => token.toLowerCase())
+	Arr.map(
+		Arr.filter(Str.split(/[\t\n\r !"#$&'()*+,\-./:;<=>?@[\]^`{|}~]+/)(search).slice(1, -1), (token) =>
+			/^[A-Za-z0-9]+$/.test(token),
+		),
+		(token) => Str.toLowerCase(token),
+	)
 
 /** Stable identity for log records that do not carry a native OTel record ID. */
 const logRecordIdentity = ($: ColumnAccessor<typeof Logs.columns>): CH.Expr<string> => {

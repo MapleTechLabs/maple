@@ -1,6 +1,6 @@
 import { afterEach, assert, beforeEach, describe, it } from "@effect/vitest"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
-import { ConfigProvider, Duration, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Duration, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { CreateScrapeTargetRequest, OrgId, UserId } from "@maple/domain/http"
@@ -129,7 +129,7 @@ const createPlanetScaleTargetRow = (
 		return row
 	})
 
-const BRANCHES_SD_PAYLOAD = ["main", "stg", "pr-12", "pr-13"].map((branch) => ({
+const BRANCHES_SD_PAYLOAD = Arr.map(["main", "stg", "pr-12", "pr-13"], (branch) => ({
 	targets: [`${branch}.metrics.psdb.cloud:443`],
 	labels: {
 		__metrics_path__: "/metrics",
@@ -162,7 +162,7 @@ describe("PlanetScaleDiscoveryService", () => {
 
 			// The 169.254.* target is dropped by the SSRF guard.
 			assert.deepStrictEqual(
-				entries.map((entry) => entry.subTargetKey),
+				Arr.map(entries, (entry) => entry.subTargetKey),
 				["branch-1", "branch-2"],
 			)
 			assert.strictEqual(entries[0]?.url, "https://branch-1.metrics.psdb.cloud:443/metrics")
@@ -228,11 +228,11 @@ describe("PlanetScaleDiscoveryService", () => {
 			)
 
 			assert.deepStrictEqual(
-				entries.map((entry) => entry.subTargetKey),
+				Arr.map(entries, (entry) => entry.subTargetKey),
 				["metrics.psdb.cloud:443/metrics/db-a", "metrics.psdb.cloud:443/metrics/db-b"],
 			)
 			assert.deepStrictEqual(
-				entries.map((entry) => entry.url),
+				Arr.map(entries, (entry) => entry.url),
 				[
 					"https://metrics.psdb.cloud:443/metrics/db-a",
 					"https://metrics.psdb.cloud:443/metrics/db-b",
@@ -334,7 +334,7 @@ describe("PlanetScaleDiscoveryService", () => {
 			)
 
 			assert.deepStrictEqual(
-				stale.map((entry) => entry.subTargetKey),
+				Arr.map(stale, (entry) => entry.subTargetKey),
 				["branch-1", "branch-2"],
 			)
 			const lastError = yield* discovery.lastError(row.id)
@@ -455,7 +455,7 @@ describe("PlanetScaleDiscoveryService", () => {
 			)
 
 			assert.deepStrictEqual(
-				entries.map((entry) => entry.subTargetKey),
+				Arr.map(entries, (entry) => entry.subTargetKey),
 				["branch-id-main", "branch-id-stg"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -476,7 +476,7 @@ describe("PlanetScaleDiscoveryService", () => {
 			)
 
 			assert.deepStrictEqual(
-				entries.map((entry) => entry.subTargetKey),
+				Arr.map(entries, (entry) => entry.subTargetKey),
 				["branch-id-main", "branch-id-stg"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -493,7 +493,7 @@ describe("PlanetScaleDiscoveryService", () => {
 				init?.headers ?? (input instanceof Request ? input.headers : undefined),
 			)
 			recorded.push({ url, authorization: headers.get("authorization") })
-			if (url.includes("/oauth/token")) {
+			if (Str.includes("/oauth/token")(url)) {
 				return Response.json({
 					access_token: "ps-access-token",
 					refresh_token: "ps-refresh-token",
@@ -501,7 +501,7 @@ describe("PlanetScaleDiscoveryService", () => {
 					expires_in: 3600,
 				})
 			}
-			if (url.includes("/v1/user")) {
+			if (Str.includes("/v1/user")(url)) {
 				return Response.json({ id: "psuser_1" })
 			}
 			if (/\/v1\/organizations\?/.test(url)) {
@@ -537,10 +537,10 @@ describe("PlanetScaleDiscoveryService", () => {
 
 			const entries = yield* discovery.discover(row)
 
-			const sdCall = recorded.find((call) => call.url.includes("/my-org/metrics"))
+			const sdCall = recorded.find((call) => Str.includes("/my-org/metrics")(call.url))
 			assert.strictEqual(sdCall?.authorization, "Bearer ps-access-token")
 			assert.deepStrictEqual(
-				entries.map((entry) => entry.subTargetKey),
+				Arr.map(entries, (entry) => entry.subTargetKey),
 				["branch-1", "branch-2"],
 			)
 		}).pipe(Effect.provideService(FetchHttpClient.Fetch, stub), Effect.provide(makeLayer(testDb, stub)))
@@ -553,7 +553,7 @@ describe("PlanetScaleDiscoveryService", () => {
 			const url =
 				typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
 			recorded.push(url)
-			if (url.includes("/oauth/token")) {
+			if (Str.includes("/oauth/token")(url)) {
 				return Response.json({
 					access_token: "ps-access-token",
 					refresh_token: "ps-refresh-token",
@@ -561,7 +561,7 @@ describe("PlanetScaleDiscoveryService", () => {
 					expires_in: 3600,
 				})
 			}
-			if (url.includes("/v1/user")) return Response.json({ id: "psuser_1" })
+			if (Str.includes("/v1/user")(url)) return Response.json({ id: "psuser_1" })
 			if (/\/v1\/organizations\?/.test(url)) {
 				return Response.json({ data: [{ id: "psorg_1", name: "my-org" }] })
 			}
@@ -597,15 +597,15 @@ describe("PlanetScaleDiscoveryService", () => {
 			assert.strictEqual((yield* discovery.discover(row)).length, 2)
 			const grant = yield* oauth.grantStatus(asOrgId("org_1"))
 			yield* oauth.markRevoked(asOrgId("org_1"), grant.updatedAt ?? 0)
-			const isSdCall = (url: string) => url.includes("/my-org/metrics")
+			const isSdCall = (url: string) => Str.includes("/my-org/metrics")(url)
 			recorded.length = 0
 			assert.deepStrictEqual(yield* discovery.discover(row), [])
-			assert.isFalse(recorded.some(isSdCall))
+			assert.isFalse(Arr.some(recorded, isSdCall))
 
 			yield* connect
 			const entries = yield* discovery.discover(row)
 			assert.deepStrictEqual(
-				entries.map((entry) => entry.subTargetKey),
+				Arr.map(entries, (entry) => entry.subTargetKey),
 				["branch-1", "branch-2"],
 			)
 		}).pipe(Effect.provideService(FetchHttpClient.Fetch, stub), Effect.provide(makeLayer(testDb, stub)))

@@ -1,14 +1,14 @@
 import type { V2Source } from "@maple/domain/http/v2"
-import { Option, Result } from "effect"
+import { Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import * as Chart from "../../../charts/chart"
-import { LoadChartRuntime } from "../../../charts/chart-runtime"
-import * as Keyed from "../../../data/keyed"
-import type { LoadFailure } from "../../../data/load-failure"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Keyed from "@maple/views/data/keyed"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../../route"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Dialog from "../../../ui/dialog"
-import * as Menu from "../../../ui/menu"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { copyToast } from "../../kit/clipboard"
 import { sourcesListKey, sourceUsageKey } from "../kit/data"
@@ -89,6 +89,17 @@ const settingsOf = (source: V2Source): SettingsForm => ({
 	rules: Rules.init(source),
 	isSaving: false,
 })
+
+/** The form differs from the source it was built from: the save bar shows. */
+export const isSettingsDirty = (form: SettingsForm): boolean => {
+	const base = form.rules.existing
+	if (base === null) return false
+	return (
+		form.name !== base.name ||
+		form.description !== (base.description ?? "") ||
+		(hasToken(base) && Rules.isRulesDirty(form.rules))
+	)
+}
 
 /** The open tab's state, built as its component mounts; Settings rebuilds when `updated_at` moves. */
 const withTabState = (model: Model): Model =>
@@ -272,10 +283,10 @@ const save = (model: Model): Return => {
 	const form = model.settings
 	if (Option.isNone(source) || form === null || form.isSaving) return { model }
 	const outcome = Rules.rulesOutcome(form.rules)
-	const name = form.name.trim()
+	const name = Str.trim(form.name)
 	const isToken = hasToken(source.value)
 	if (name.length === 0 || (isToken && !outcome.valid)) return { model }
-	const description = form.description.trim()
+	const description = Str.trim(form.description)
 	const basics = { name, description: description.length > 0 ? description : null }
 	return {
 		model: withSettings(model, (current) => ({ ...current, isSaving: true })),
@@ -559,9 +570,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: withSettings(model, (form) => ({ ...form, description: value })),
 		}),
 		SubmittedSettings: () => save(model),
+		ClickedDiscardSettings: () =>
+			model.settings === null || model.settings.isSaving
+				? { model }
+				: Option.match(sourceOf(model), {
+						onNone: () => ({ model }),
+						onSome: (source) => ({ model: { ...model, settings: settingsOf(source) } }),
+					}),
 		CompletedSave: ({ result }) =>
 			settled(
-				withSettings(model, (form) => ({ ...form, isSaving: false })),
+				// Rebuilt from the saved source, so the form is clean before the list reload lands.
+				Result.match(result, {
+					onFailure: () => withSettings(model, (form) => ({ ...form, isSaving: false })),
+					onSuccess: (saved) =>
+						model.settings === null ? model : { ...model, settings: settingsOf(saved) },
+				}),
 				context,
 				result,
 				{

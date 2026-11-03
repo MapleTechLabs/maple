@@ -9,18 +9,18 @@ import {
 	auditLogSearchFrom,
 	parseAuditLogSearch,
 } from "../../../components/settings/audit-log-filters"
-import { Clock, Effect, Option, Result, Schema } from "effect"
+import { Clock, Effect, Option, Result, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { clerkTry, currentClerkOrganization } from "../../../platform/clerk"
 import { memberDisplayName } from "../kit/members"
 import { AppRoute, hrefOf } from "../../../route"
 import type { SettingsSearch as SettingsSearchSchema } from "../../../route/search"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Popover from "../../../ui/popover"
-import * as Select from "../../../ui/select"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Popover from "@maple/views/ui/popover"
+import * as Select from "@maple/views/ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { Message, type Model, PageRequest } from "./model"
 
@@ -46,7 +46,9 @@ export const baseRequestOf = (filters: AuditLogFilters): PageRequest => {
 }
 
 const presetMsOf = (range: AuditDateRange): number | null =>
-	range.kind === "preset" ? (AUDIT_RANGE_PRESETS.find((preset) => preset.value === range.preset)?.ms ?? null) : null
+	range.kind === "preset"
+		? (AUDIT_RANGE_PRESETS.find((preset) => preset.value === range.preset)?.ms ?? null)
+		: null
 
 const sameRequest = (a: PageRequest, b: PageRequest) =>
 	a.cursor === b.cursor &&
@@ -59,7 +61,11 @@ const sameRequest = (a: PageRequest, b: PageRequest) =>
 
 /** `auditLogPageAtom`: one page, newest first; a preset window resolves against the clock now. */
 const FetchAuditPage = Command.define("FetchAuditLogPage", {
-	args: { request: PageRequest, presetMs: Schema.NullOr(Schema.Number), resolvedSince: Schema.NullOr(Schema.String) },
+	args: {
+		request: PageRequest,
+		presetMs: Schema.NullOr(Schema.Number),
+		resolvedSince: Schema.NullOr(Schema.String),
+	},
 	messages: [Message.CompletedFetchPage],
 	execute: ({ request, presetMs, resolvedSince }) => {
 		// A later page or a retry reuses the window its list started with.
@@ -98,7 +104,7 @@ const FetchAuditMembers = Command.define("FetchAuditLogMembers", {
 	execute: currentClerkOrganization.pipe(
 		Effect.flatMap((organization) => clerkTry("", () => organization.getMemberships({ pageSize: 100 }))),
 		Effect.map((page) =>
-			page.data.flatMap((membership) => {
+			Arr.flatMap(page.data, (membership) => {
 				const userId = membership.publicUserData?.userId
 				return userId === undefined || userId === null
 					? []
@@ -111,10 +117,24 @@ const FetchAuditMembers = Command.define("FetchAuditLogMembers", {
 })
 
 /** `resolvedSince`: `null` starts the list's window afresh; a later page or a retry passes its own. */
-const fetch = (model: Model, request: PageRequest, search: SettingsSearch, resolvedSince: string | null = null): Return => ({
+const fetch = (
+	model: Model,
+	request: PageRequest,
+	search: SettingsSearch,
+	resolvedSince: string | null = null,
+): Return => ({
 	// A cursor-less request starts a list; a later page keeps the filters it continues.
-	model: { ...model, request, base: request.cursor === undefined ? request : model.base, isWaiting: true, isQuiet: false, failure: null },
-	commands: [FetchAuditPage({ request, presetMs: presetMsOf(parseAuditLogSearch(search).range), resolvedSince })],
+	model: {
+		...model,
+		request,
+		base: request.cursor === undefined ? request : model.base,
+		isWaiting: true,
+		isQuiet: false,
+		failure: null,
+	},
+	commands: [
+		FetchAuditPage({ request, presetMs: presetMsOf(parseAuditLogSearch(search).range), resolvedSince }),
+	],
 })
 
 export const init = (search: SettingsSearch): Return => {
@@ -138,20 +158,21 @@ export const init = (search: SettingsSearch): Return => {
 		search,
 	)
 	// Self-hosted runs without Clerk: there is no member directory to list.
-	return { ...started, commands: [...(started.commands ?? []), ...(isClerkAuthEnabled ? [FetchAuditMembers()] : [])] }
+	return {
+		...started,
+		commands: [...(started.commands ?? []), ...(isClerkAuthEnabled ? [FetchAuditMembers()] : [])],
+	}
 }
 
 /** A filter change (toolbar, shared link, back/forward) restarts the list. */
 export const searchChanged = (model: Model, search: SettingsSearch): Return => {
 	const base = baseRequestOf(parseAuditLogSearch(search))
-	return sameRequest(base, model.base)
-		? { model }
-		: fetch({ ...model, pinnedUntil: null }, base, search)
+	return sameRequest(base, model.base) ? { model } : fetch({ ...model, pinnedUntil: null }, base, search)
 }
 
 const dedupeById = (existing: ReadonlyArray<V2AuditLogEntry>, next: ReadonlyArray<V2AuditLogEntry>) => {
-	const seen = new Set(existing.map((entry) => entry.id))
-	return [...existing, ...next.filter((entry) => !seen.has(entry.id))]
+	const seen = new Set(Arr.map(existing, (entry) => entry.id))
+	return [...existing, ...Arr.filter(next, (entry) => !seen.has(entry.id))]
 }
 
 /** `setFilters`: the new filters replace the URL's audit params (`navigate({ replace: true })`). */
@@ -164,7 +185,7 @@ const navigateFilters = (model: Model, search: SettingsSearch, filters: AuditLog
 })
 
 const toggled = (values: ReadonlyArray<string>, value: string) =>
-	values.includes(value) ? values.filter((entry) => entry !== value) : [...values, value]
+	values.includes(value) ? Arr.filter(values, (entry) => entry !== value) : [...values, value]
 
 /** Back on the tab: its first page reads again behind the list, quietly, as nobody asked for it. */
 export const revisit = (model: Model, search: SettingsSearch): Return => {
@@ -173,7 +194,15 @@ export const revisit = (model: Model, search: SettingsSearch): Return => {
 	// The same first page still in flight answers it: a second read could land out of order.
 	if (model.isWaiting && sameRequest(request, model.request)) return { model }
 	return {
-		model: { ...model, request, base: request, pinnedUntil: null, isWaiting: true, isQuiet: model.view !== null, failure: null },
+		model: {
+			...model,
+			request,
+			base: request,
+			pinnedUntil: null,
+			isWaiting: true,
+			isQuiet: model.view !== null,
+			failure: null,
+		},
 		commands: [FetchAuditPage({ request, presetMs: presetMsOf(filters.range), resolvedSince: null })],
 	}
 }
@@ -193,13 +222,18 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 						isQuiet: false,
 						failure: null,
 						view: {
-							entries: request.cursor === undefined ? page.data : dedupeById(model.view?.entries ?? [], page.data),
+							entries:
+								request.cursor === undefined
+									? page.data
+									: dedupeById(model.view?.entries ?? [], page.data),
 							hasMore: page.has_more,
 							nextCursor: page.next_cursor,
 						},
 					},
 				}),
-				onFailure: (failure) => ({ model: { ...model, resolvedSince, isWaiting: false, isQuiet: false, failure } }),
+				onFailure: (failure) => ({
+					model: { ...model, resolvedSince, isWaiting: false, isQuiet: false, failure },
+				}),
 			})
 		},
 		ClickedRefresh: () => fetch({ ...model, pinnedUntil: null }, baseRequestOf(filters), search),
@@ -210,7 +244,11 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 			const pinnedUntil = model.pinnedUntil ?? view.entries[0]?.occurred_at ?? null
 			return fetch(
 				{ ...model, pinnedUntil },
-				{ ...baseRequestOf(filters), cursor: view.nextCursor, ...(pinnedUntil !== null && { until: pinnedUntil }) },
+				{
+					...baseRequestOf(filters),
+					cursor: view.nextCursor,
+					...(pinnedUntil !== null && { until: pinnedUntil }),
+				},
 				search,
 				model.resolvedSince,
 			)
@@ -220,37 +258,52 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 			const step = CopyButton.update(model.copies[key] ?? CopyButton.init(), child)
 			return {
 				model: { ...model, copies: { ...model.copies, [key]: step.model } },
-				commands: Command.mapMessages(step.commands, (inner) => Message.GotCopyMessage({ key, message: inner })),
+				commands: Command.mapMessages(step.commands, (inner) =>
+					Message.GotCopyMessage({ key, message: inner }),
+				),
 			}
 		},
 		ClickedActorType: ({ value }) =>
-			navigateFilters(model, search, { ...filters, actorType: Option.getOrUndefined(asActorType(value)) }),
+			navigateFilters(model, search, {
+				...filters,
+				actorType: Option.getOrUndefined(asActorType(value)),
+			}),
 		ClickedOutcome: ({ value }) =>
 			navigateFilters(model, search, { ...filters, outcome: Option.getOrUndefined(asOutcome(value)) }),
 		GotPersonSelectMessage: ({ message: child }) => {
 			const step = Select.update(model.personSelect, child)
 			const lifted: Return = {
 				model: { ...model, personSelect: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotPersonSelectMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands ?? [], (inner) =>
+					Message.GotPersonSelectMessage({ message: inner }),
+				),
 			}
 			if (step.outMessage === undefined) return lifted
 			const actorId = step.outMessage.value === ANYONE ? undefined : step.outMessage.value
-			return { ...lifted, outMessage: navigateFilters(lifted.model, search, { ...filters, actorId }).outMessage }
+			return {
+				...lifted,
+				outMessage: navigateFilters(lifted.model, search, { ...filters, actorId }).outMessage,
+			}
 		},
 		GotDateRangeMessage: ({ message: child }) => {
 			const step = Popover.update(model.dateRange, child)
 			return {
 				model: { ...model, dateRange: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotDateRangeMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands ?? [], (inner) =>
+					Message.GotDateRangeMessage({ message: inner }),
+				),
 			}
 		},
 		ClickedRangePreset: ({ value }) => {
 			const preset = AUDIT_RANGE_PRESETS.find((option) => option.value === value)
 			const closed = Popover.close(model.dateRange)
-			const range: AuditDateRange = preset === undefined ? { kind: "all" } : { kind: "preset", preset: preset.value }
+			const range: AuditDateRange =
+				preset === undefined ? { kind: "all" } : { kind: "preset", preset: preset.value }
 			return {
 				...navigateFilters({ ...model, dateRange: closed.model }, search, { ...filters, range }),
-				commands: Command.mapMessages(closed.commands ?? [], (inner) => Message.GotDateRangeMessage({ message: inner })),
+				commands: Command.mapMessages(closed.commands ?? [], (inner) =>
+					Message.GotDateRangeMessage({ message: inner }),
+				),
 			}
 		},
 		ClickedClearFilters: () => navigateFilters(model, search, { range: { kind: "all" } }),

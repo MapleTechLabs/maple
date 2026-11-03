@@ -52,7 +52,17 @@ import {
 } from "@maple/security-audit/schema"
 import { ExecutionProfile } from "@maple/security-audit/ecosystems"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Schema,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
@@ -302,9 +312,10 @@ export type UnitSummaryFields = typeof UnitSummaryFields.Type
  * attempts. Absent keys are stripped, which is what the optional fields expect. A constant: no input.
  */
 const UNIT_SUMMARY_EXPR = PG.rawExpr(
-	`jsonb_strip_nulls(jsonb_build_object(${Object.keys(UnitSummaryFields.fields)
-		.map((key) => `'${key}', "unit"->'${key}'`)
-		.join(", ")}))`,
+	`jsonb_strip_nulls(jsonb_build_object(${Arr.join(
+		Arr.map(Rec.keys(UnitSummaryFields.fields), (key) => `'${key}', "unit"->'${key}'`),
+		", ",
+	)}))`,
 	PG.jsonb(),
 )
 
@@ -374,7 +385,7 @@ type RawRunRow = Omit<SecurityAuditRunRow, "metadata" | "reports" | "executionPr
 /** Runs with `metadata` and `reports` read leniently: an old shape becomes null, not a failure. */
 const lenientRuns = (rows: ReadonlyArray<RawRunRow>) =>
 	Effect.gen(function* () {
-		const decoded = rows.map((row) => {
+		const decoded = Arr.map(rows, (row) => {
 			const metadata = lenient({
 				isNull: row.metadata === null,
 				decoded: decodeRunMetadata(row.metadata),
@@ -394,8 +405,8 @@ const lenientRuns = (rows: ReadonlyArray<RawRunRow>) =>
 				stale: metadata.stale || reports.stale || executionProfile.stale,
 			}
 		})
-		yield* warnStale("run metadata or reports", decoded.filter((d) => d.stale).length, rows.length)
-		return decoded.map((d): SecurityAuditRunRow => d.row)
+		yield* warnStale("run metadata or reports", Arr.filter(decoded, (d) => d.stale).length, rows.length)
+		return Arr.map(decoded, (d): SecurityAuditRunRow => d.row)
 	})
 
 const selectRuns = () =>
@@ -416,7 +427,7 @@ const keepDecodable = <Raw, A>(
 	what: string,
 ) =>
 	Effect.gen(function* () {
-		const decoded = Arr.getSomes(rows.map(decode))
+		const decoded = Arr.getSomes(Arr.map(rows, decode))
 		const skipped = rows.length - decoded.length
 		if (skipped > 0) {
 			yield* Effect.logWarning(`Skipped stored ${what} that no longer decode`).pipe(
@@ -434,10 +445,12 @@ const firstOrFail = <A>(rows: ReadonlyArray<A>, message: string) =>
 
 const toStoreError = makePersistenceErrorMapper(AuditStoreError, "Security audit store operation failed")
 
+const quoteJson = Schema.encodeSync(Schema.fromJsonString(Schema.String))
+
 const decodeRunId = (raw: string) =>
 	Schema.decodeUnknownEffect(SecurityAuditRunId)(raw).pipe(
 		Effect.mapError(
-			() => new AuditStoreError({ message: `Invalid security audit run id: ${JSON.stringify(raw)}` }),
+			() => new AuditStoreError({ message: `Invalid security audit run id: ${quoteJson(raw)}` }),
 		),
 	)
 
@@ -445,7 +458,10 @@ const decodeRunId = (raw: string) =>
 const sha256Hex = (text: string) =>
 	Effect.promise(() => crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))).pipe(
 		Effect.map((digest) =>
-			Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""),
+			Arr.join(
+				Array.from(new Uint8Array(digest), (byte) => Str.padStart(2, "0")(byte.toString(16))),
+				"",
+			),
 		),
 	)
 
@@ -582,7 +598,7 @@ const lockOpenRun = (db: MapleDb, orgId: OrgId, runId: SecurityAuditRunId, write
 			Effect.flatMap((rows) => {
 				const row = rows[0]
 				if (row === undefined) return Effect.fail(runNotFound(runId))
-				if (row.finishedAt === null) return Effect.succeed(Option.some(row))
+				if (row.finishedAt === null) return Effect.succeedSome(row)
 				return Effect.logInfo("Skipped a write to a finished security audit run").pipe(
 					Effect.annotateLogs({ runId, write }),
 					Effect.as(Option.none<typeof row>()),

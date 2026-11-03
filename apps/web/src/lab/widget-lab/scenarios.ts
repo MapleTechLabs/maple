@@ -2,6 +2,7 @@ import type { WidgetDisplayConfigSchema } from "@maple/domain/http"
 import { funnelDropoffSampleData, pathsSampleData } from "@maple/ui/components/charts/_shared/sample-data"
 import { HEATMAP_COLOR_SCALES } from "@maple/domain/http"
 import { CHART_GALLERY, sampleDataOf } from "../../page/dashboards/kit/chart-registry"
+import { Array as Arr, String as Str } from "effect"
 
 // Copied from apps/web/src/lab/widget-lab/scenarios.ts; the registry is `CHART_GALLERY` here.
 
@@ -35,7 +36,7 @@ const loadingState: WidgetDataState = { status: "loading" }
 
 const emptyState: WidgetDataState = {
 	status: "error",
-	message: "No query data found in selected time range",
+	message: "No data in this window",
 }
 
 const runtimeErrorState: WidgetDataState = {
@@ -293,8 +294,8 @@ export const gaugeScenarios: WidgetScenario[] = [
 // timeseries shapes (the full stat-widget sparkline needs a live data source).
 
 const makeSeries = (values: number[]): Record<string, unknown>[] =>
-	values.map((value, index) => ({
-		bucket: `2026-05-13T${String(index).padStart(2, "0")}:00:00Z`,
+	Arr.map(values, (value, index) => ({
+		bucket: `2026-05-13T${Str.padStart(2, "0")(String(index))}:00:00Z`,
 		value,
 	}))
 
@@ -378,7 +379,7 @@ const latencyThresholds = [
 ]
 
 export const chartScenarios: ChartScenario[] = [
-	...CHART_GALLERY.map((entry): ChartScenario => ({
+	...Arr.map(CHART_GALLERY, (entry): ChartScenario => ({
 		label: entry.name,
 		chartId: entry.id,
 		chartName: entry.name,
@@ -498,7 +499,7 @@ function makePieSlices(count: number, namePrefix = "service"): { name: string; v
 	}))
 }
 
-const longNameSeries: Record<string, unknown>[] = makeManySeries(3, 12).map((row, i) => {
+const longNameSeries: Record<string, unknown>[] = Arr.map(makeManySeries(3, 12), (row, i) => {
 	const base = new Date("2026-01-01T00:00:00Z").getTime()
 	return {
 		bucket: new Date(base + i * 3_600_000).toISOString(),
@@ -830,7 +831,7 @@ const serviceRows = [
 	{ service: "notification-service", p99: 76, throughput: 1502, errorRate: 0.7 },
 ]
 
-const wideRows = Array.from({ length: 6 }).map((_, i) => ({
+const wideRows = Arr.map(Array.from({ length: 6 }), (_, i) => ({
 	service: `svc-${i + 1}`,
 	region: ["us-east-1", "us-west-2", "eu-west-1", "ap-south-1"][i % 4],
 	version: `v1.${i}.${i + 2}`,
@@ -1569,7 +1570,7 @@ const longTail = [
 	{ name: "10k+", value: 3 },
 ]
 
-const narrowBuckets = Array.from({ length: 30 }).map((_, i) => ({
+const narrowBuckets = Arr.map(Array.from({ length: 30 }), (_, i) => ({
 	name: `${i * 10}-${(i + 1) * 10}`,
 	value: Math.round(Math.exp(-((i - 14) ** 2) / 30) * 240 + Math.random() * 8),
 }))
@@ -1643,15 +1644,15 @@ export const histogramScenarios: WidgetScenario[] = [
 const hours = ["00", "03", "06", "09", "12", "15", "18", "21"]
 const buckets = ["0-50ms", "50-100ms", "100-200ms", "200-500ms", "500ms+"]
 
-const denseHeatmap = hours.flatMap((h, hi) =>
-	buckets.map((b, bi) => ({
+const denseHeatmap = Arr.flatMap(hours, (h, hi) =>
+	Arr.map(buckets, (b, bi) => ({
 		x: `${h}:00`,
 		y: b,
 		value: Math.round(20 + Math.sin(hi / 2) * 40 + (buckets.length - bi) * 8 + Math.random() * 5),
 	})),
 )
 
-const sparseHeatmap = denseHeatmap.filter((_, i) => i % 3 === 0)
+const sparseHeatmap = Arr.filter(denseHeatmap, (_, i) => i % 3 === 0)
 
 export const heatmapScenarios: WidgetScenario[] = [
 	{
@@ -1661,7 +1662,7 @@ export const heatmapScenarios: WidgetScenario[] = [
 		dataState: ready(denseHeatmap),
 		display: { title: "Latency × hour" },
 	},
-	...HEATMAP_COLOR_SCALES.map((scale): WidgetScenario => ({
+	...Arr.map(HEATMAP_COLOR_SCALES, (scale): WidgetScenario => ({
 		label: `Dense: ${scale}`,
 		dataState: ready(denseHeatmap),
 		display: { title: `Latency × hour (${scale})`, heatmap: { colorScale: scale } },
@@ -1684,12 +1685,14 @@ export const heatmapScenarios: WidgetScenario[] = [
 		// the last two colliding.
 		label: "24 time rows (y-label stride)",
 		dataState: ready(
-			Array.from({ length: 24 }, (_, hi) => hi).flatMap((hi) =>
-				["Errors", "OK"].map((x, xi) => ({
-					x,
-					y: `2026-01-01T${String(hi).padStart(2, "0")}:30:00Z`,
-					value: xi === 0 ? (hi % 7 === 0 ? 12 : 0) : 90 + Math.round(Math.sin(hi / 3) * 30),
-				})),
+			Arr.flatMap(
+				Array.from({ length: 24 }, (_, hi) => hi),
+				(hi) =>
+					Arr.map(["Errors", "OK"], (x, xi) => ({
+						x,
+						y: `2026-01-01T${Str.padStart(2, "0")(String(hi))}:30:00Z`,
+						value: xi === 0 ? (hi % 7 === 0 ? 12 : 0) : 90 + Math.round(Math.sin(hi / 3) * 30),
+					})),
 			),
 		),
 		display: { title: "Errors vs OK over time", heatmap: { colorScale: "blues" } },
@@ -1700,26 +1703,28 @@ export const heatmapScenarios: WidgetScenario[] = [
 		// gap. Exercises axis pruning + the hidden-count footnote.
 		label: "Long tail + dead rows/cols",
 		dataState: ready(
-			[
-				"admin-api",
-				"artifact-scan",
-				"kafka-consumers",
-				"mail-dispatch",
-				"query-gateway",
-				"webhook-fanout",
-			].flatMap((service, si) =>
-				hours.map((h, hi) => ({
-					x: service,
-					y: `${h}:00`,
-					// artifact-scan / mail-dispatch / webhook-fanout are silent, and
-					// the 09:00 bucket is empty for everyone.
-					value:
-						si === 1 || si === 3 || si === 5 || h === "09"
-							? 0
-							: si === 0 || si === 4
-								? 18000 + hi * 900
-								: 40 + hi * 12,
-				})),
+			Arr.flatMap(
+				[
+					"admin-api",
+					"artifact-scan",
+					"kafka-consumers",
+					"mail-dispatch",
+					"query-gateway",
+					"webhook-fanout",
+				],
+				(service, si) =>
+					Arr.map(hours, (h, hi) => ({
+						x: service,
+						y: `${h}:00`,
+						// artifact-scan / mail-dispatch / webhook-fanout are silent, and
+						// the 09:00 bucket is empty for everyone.
+						value:
+							si === 1 || si === 3 || si === 5 || h === "09"
+								? 0
+								: si === 0 || si === 4
+									? 18000 + hi * 900
+									: 40 + hi * 12,
+					})),
 			),
 		),
 		display: { title: "Spans by service", heatmap: { scaleType: "log" } },
@@ -1753,23 +1758,26 @@ export const markdownScenarios: WidgetScenario[] = [
 		display: {
 			title: "Runbook",
 			markdown: {
-				content: [
-					"# Incident response",
-					"",
-					"Follow these steps **in order**:",
-					"",
-					"1. Check the [status page](https://status.example.com)",
-					"2. Look at recent deploys",
-					"3. Inspect `error_rate` by service",
-					"",
-					"## Common causes",
-					"",
-					"- Database connection pool exhaustion",
-					"- Upstream provider 5xx",
-					"- *Cache stampede* after a deploy",
-					"",
-					"> If unsure, page the on-call engineer.",
-				].join("\n"),
+				content: Arr.join(
+					[
+						"# Incident response",
+						"",
+						"Follow these steps **in order**:",
+						"",
+						"1. Check the [status page](https://status.example.com)",
+						"2. Look at recent deploys",
+						"3. Inspect `error_rate` by service",
+						"",
+						"## Common causes",
+						"",
+						"- Database connection pool exhaustion",
+						"- Upstream provider 5xx",
+						"- *Cache stampede* after a deploy",
+						"",
+						"> If unsure, page the on-call engineer.",
+					],
+					"\n",
+				),
 			},
 		},
 	},

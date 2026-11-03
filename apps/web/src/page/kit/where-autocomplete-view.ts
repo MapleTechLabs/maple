@@ -1,8 +1,8 @@
 import type { WhereClauseAutocompleteSuggestion } from "../../lib/query-builder/where-clause-autocomplete"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../ui/eyebrow"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 import { type AnchorRect, listboxStyle } from "./where-autocomplete"
 
 // `WhereClauseEditor`'s suggestion list and key handling, generic over the owner's Message.
@@ -23,11 +23,13 @@ export const suggestionListbox = <M>(
 		[
 			h.Role("listbox"),
 			h.AriaLabel("Where clause suggestions"),
-			h.Class("fixed z-[60] overflow-auto rounded-md border bg-popover text-popover-foreground shadow-popup"),
+			h.Class(
+				"fixed z-[60] overflow-auto rounded-md border bg-popover text-popover-foreground shadow-popup",
+			),
 			...(inputs.anchor === null ? [] : [h.Style(listboxStyle(inputs.anchor))]),
 			inputs.keepFocus,
 		],
-		inputs.suggestions.map((suggestion, index) =>
+		Arr.map(inputs.suggestions, (suggestion, index) =>
 			h.button(
 				[
 					h.Key(suggestion.id),
@@ -37,13 +39,18 @@ export const suggestionListbox = <M>(
 					h.Class(
 						cn(
 							"flex w-full items-center justify-between gap-2 px-2 py-1 text-left text-xs",
-							index === inputs.activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/60 active:bg-accent/60",
+							index === inputs.activeIndex
+								? "bg-accent text-accent-foreground"
+								: "hover:bg-surface-sunken active:bg-surface-sunken",
 						),
 					),
 					h.OnClick(inputs.onApply(index)),
 				],
 				[
-					h.span([h.Class("min-w-0 truncate font-mono"), h.Title(suggestion.label)], [suggestion.label]),
+					h.span(
+						[h.Class("min-w-0 truncate font-mono"), h.Title(suggestion.label)],
+						[suggestion.label],
+					),
 					eyebrow(h, { className: "shrink-0" }, [suggestion.kind]),
 				],
 			),
@@ -55,10 +62,7 @@ export const suggestionListbox = <M>(
  * handler carries no list state: `update` reads the open list and its active row.
  */
 export const whereKeyHandler =
-	<M>(
-		isOpen: boolean,
-		messages: Readonly<{ enter: M; move: (step: number) => M; tab: M; dismiss: M }>,
-	) =>
+	<M>(isOpen: boolean, messages: Readonly<{ enter: M; move: (step: number) => M; tab: M; dismiss: M }>) =>
 	(key: string): Option.Option<M> => {
 		if (key === "Enter") return Option.some(messages.enter)
 		if (!isOpen) return Option.none()

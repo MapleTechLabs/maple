@@ -26,6 +26,7 @@ import { containerRuntimeExpr, deploymentEnvExpr } from "@maple/domain/tinybird/
 import { avgIfOrZero, facetAttrExpr, maxIfOrZero, type FacetOutput } from "./query-helpers"
 import { finiteOrZero } from "./format"
 import { metricDeltaExpr } from "./metrics"
+import { Array as Arr } from "effect"
 
 const HOSTMETRIC_NAMES = [
 	"system.cpu.utilization",
@@ -691,7 +692,7 @@ const podFilterConditions = (
 	CH.when(opts.search, (v: string) =>
 		CH.positionCaseInsensitive($.ResourceAttributes.get("k8s.pod.name"), CH.lit(v)).gt(0),
 	),
-	...POD_FACETS.flatMap(({ include, exclude, attr }) => {
+	...Arr.flatMap(POD_FACETS, ({ include, exclude, attr }) => {
 		const expr = attr === null ? deploymentEnvExpr($.ResourceAttributes) : $.ResourceAttributes.get(attr)
 		const included = opts[include]
 		const excluded = opts[exclude]
@@ -742,7 +743,7 @@ export function listPodsQuery(opts: ListPodsOpts = {}) {
 	const sortDir = opts.sortDir ?? (sortBy === "podName" ? "asc" : "desc")
 	const orderBy: Array<[string, SortDirection]> = [
 		[sortBy, sortDir],
-		...POD_SORT_TIEBREAK.filter(([key]) => key !== sortBy),
+		...Arr.filter(POD_SORT_TIEBREAK, ([key]) => key !== sortBy),
 	]
 
 	const grouped = from(MetricsGauge)
@@ -1728,7 +1729,9 @@ export function infraPresenceQuery(): CHUnionQuery<InfraPresenceOutput> {
 			$.ResourceAttributes.get("k8s.node.name").neq(""),
 		),
 		presenceBranch("k8sWorkloads", POD_FACET_PROBE_METRIC, ($) =>
-			WORKLOAD_OWNER_KEYS.map((key) => $.ResourceAttributes.get(key).neq("")).reduce((a, b) => a.or(b)),
+			Arr.map(WORKLOAD_OWNER_KEYS, (key) => $.ResourceAttributes.get(key).neq("")).reduce((a, b) =>
+				a.or(b),
+			),
 		),
 	).format("JSON")
 }

@@ -1,8 +1,8 @@
 import * as Markdown from "@foldkit/markdown"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { iconButton } from "../../ui/icon-button"
+import { iconButton } from "@maple/views/ui/icon-button"
 
 // Lightweight markdown over Streamdown:
 // laid out with Streamdown's element classes. The parser loads on first use, never at startup.
@@ -95,7 +95,7 @@ const codeBlock = <M>(
 	language: string,
 	actions: CodeActions<M> | undefined,
 ): Html => {
-	const code = value.replace(/\n+$/, "")
+	const code = Str.replace(/\n+$/, "")(value)
 	const isCopied = actions?.copiedCode === code
 	return h.div(
 		[
@@ -168,7 +168,7 @@ const codeBlock = <M>(
 						[
 							h.code(
 								[h.Class("[counter-increment:line_0] [counter-reset:line]")],
-								code.split("\n").map((line) =>
+								Arr.map(Str.split("\n")(code), (line) =>
 									h.span(
 										[h.Class(LINE_CLASS)],
 										[
@@ -208,7 +208,7 @@ const markdownLink = <M>(h: HtmlBuilder<M>, url: string, content: ReadonlyArray<
 		content,
 	)
 
-const imageLabel = (url: string, alt: string): string => (alt.trim() === "" ? url : alt)
+const imageLabel = (url: string, alt: string): string => (Str.trim(alt) === "" ? url : alt)
 
 // Model output and transcripts are untrusted: an image is a link the reader opens, never a fetch.
 const markdownImage = <M>(h: HtmlBuilder<M>, url: string, alt: string): Html =>
@@ -222,7 +222,9 @@ const viewsFor = <M>(
 	const views: Markdown.Views = {
 		...Markdown.defaultViews,
 		InlineCode: ({ value }) =>
-			h.code(streamdown("inline-code", "rounded-sm bg-muted px-1.5 py-0.5 font-mono text-sm")(h), [value]),
+			h.code(streamdown("inline-code", "rounded-sm bg-muted px-1.5 py-0.5 font-mono text-sm")(h), [
+				value,
+			]),
 		Strong: (_strong, content) => h.span(streamdown("strong", "font-semibold")(h), content),
 		// Link text is re-rendered with images as plain labels, at any nesting depth
 		// (`[**![a](u)**](d)`), so a linked image never puts an anchor inside an anchor.
@@ -344,9 +346,9 @@ export const messageResponse = <M>(
 	h.div(
 		[h.Class(cn(ROOT_CLASS, className))],
 		document === null
-			? text
-					.split(/\n{2,}/)
-					.filter((part) => part.trim() !== "")
-					.map((part) => h.p([], [part]))
+			? Arr.map(
+					Arr.filter(Str.split(/\n{2,}/)(text), (part) => Str.trim(part) !== ""),
+					(part) => h.p([], [part]),
+				)
 			: Markdown.viewBlocks(document, { views: viewsFor(h, actions, overrides) }),
 	)

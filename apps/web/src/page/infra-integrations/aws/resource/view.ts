@@ -12,15 +12,15 @@ import type { Tone } from "@maple/ui/lib/tone"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
-import { ResolveThemeColors } from "../../../../charts/theme-colors"
+import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
-import { linkButton } from "../../../../ui/button"
-import { chartError, chartLoading } from "../../../../ui/chart-state"
-import { badge } from "../../../../ui/display"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
-import { panel, panelHeader } from "../../../../ui/panel"
+import { linkButton } from "@maple/views/ui/button"
+import { chartError, chartLoading } from "@maple/views/ui/chart-state"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { panel, panelHeader } from "@maple/views/ui/panel"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
@@ -35,6 +35,8 @@ import { type BucketRow, bucketRows, CHARTS, type Figure, figureOf } from "./cha
 import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // `/infra/aws/$kind/$name`: one resource's CloudWatch metrics, and the service it runs as.
 
@@ -151,8 +153,8 @@ const tilesOf = (
 
 /** The resource's health from the same rules as its list row. */
 const judgementOf = (kind: AwsInfraKindId, rows: ReadonlyArray<BucketRow>): Judgement => {
-	const readings = Object.fromEntries(
-		AWS_INFRA_KINDS[kind].metrics.flatMap((metric) => {
+	const readings = Rec.fromEntries(
+		Arr.flatMap(AWS_INFRA_KINDS[kind].metrics, (metric) => {
 			const figure = figureOf(kind, rows, metric.key)
 			return figure === null ? [] : [[metric.key, { value: figure.value, peak: figure.peak }] as const]
 		}),
@@ -185,7 +187,7 @@ const consoleHref = (
 		// A load balancer opens by its ARN, which its name and account make; without one, a search.
 		case "loadBalancers":
 			return account === undefined
-				? `${base}/ec2/home?${q}#LoadBalancers:search=${encodeURIComponent(name.split("/")[1] ?? name)}`
+				? `${base}/ec2/home?${q}#LoadBalancers:search=${encodeURIComponent(Str.split("/")(name)[1] ?? name)}`
 				: `${base}/ec2/home?${q}#LoadBalancer:loadBalancerArn=${encodeURIComponent(`arn:aws:elasticloadbalancing:${region}:${account}:loadbalancer/${name}`)}`
 		case "rds":
 			return `${base}/rds/home?${q}#database:id=${id}`
@@ -268,7 +270,7 @@ const body = (
 	if (rows.length === 0)
 		return integrationNotConnected(h, {
 			icon: icon(h, "AwsIcon", { size: 16 }),
-			title: "No metrics in this time range",
+			title: "No metrics in this window",
 			description: `CloudWatch sent nothing for this ${AWS_INFRA_KINDS[kind].noun} in the window. Widen the time range, or check that its region is streamed.`,
 			integration: "aws",
 			actionLabel: "Check the connection",
@@ -284,7 +286,7 @@ const body = (
 			statRail(
 				h,
 				{ columns: tiles.length === 2 ? 2 : tiles.length === 3 ? 3 : 4 },
-				tiles.map((tile) =>
+				Arr.map(tiles, (tile) =>
 					statRailItem(h, {
 						eyebrow: tile.eyebrow,
 						value: tile.value,
@@ -378,12 +380,15 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			judgement === null
 				? []
 				: [badge(h, { variant: BADGE[judgement.health] }, [judgement.reason ?? "Healthy"])],
-		description: [
-			kind === null ? "Unknown resource" : AWS_INFRA_KINDS[kind].label,
-			...(cluster === "" ? [] : [`${cluster} cluster`]),
-			...(region === "" ? [] : [region]),
-			...(model.search.account === undefined ? [] : [model.search.account]),
-		].join(" · "),
+		description: Arr.join(
+			[
+				kind === null ? "Unknown resource" : AWS_INFRA_KINDS[kind].label,
+				...(cluster === "" ? [] : [`${cluster} cluster`]),
+				...(region === "" ? [] : [region]),
+				...(model.search.account === undefined ? [] : [model.search.account]),
+			],
+			" · ",
+		),
 	})
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],
@@ -393,22 +398,19 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				{
 					gap: "md",
 					titleContent: hero.title,
-					actions: h.div(
-						[h.Class("flex flex-wrap items-center gap-2")],
-						[
-							...heroActions,
-							pageTime(h, {
-								search: model.search,
-								defaultPreset: DEFAULT_PRESET,
-								window: model.window,
-								picker: model.timePicker,
-								toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-								onReset: Message.ClickedResetTimeRange(),
-								onReload: Message.ClickedReload(),
-								isReloading: model.isReloading,
-							}),
-						],
-					),
+					actions: hstack(h, { gap: "2", wrap: true }, [
+						...heroActions,
+						pageTime(h, {
+							search: model.search,
+							defaultPreset: DEFAULT_PRESET,
+							window: model.window,
+							picker: model.timePicker,
+							toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+							onReset: Message.ClickedResetTimeRange(),
+							onReload: Message.ClickedReload(),
+							isReloading: model.isReloading,
+						}),
+					]),
 				},
 				[
 					hero.body,

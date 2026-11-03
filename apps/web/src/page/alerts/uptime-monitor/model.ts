@@ -2,12 +2,12 @@ import { UptimeMonitorId } from "@maple/domain"
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { AlertDestinationRowSchema, AlertIncidentRowSchema } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
-import * as Chart from "../../../charts/chart"
-import { ChartRuntime } from "../../../charts/chart-runtime"
-import { ThemeColors } from "../../../charts/theme-colors"
-import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
-import * as CopyButton from "../../../ui/copy-button"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as CopyButton from "@maple/views/ui/copy-button"
 
 // `/alerts/uptime/$monitorId`: one monitor, its recent checks and setup.
 

@@ -1,6 +1,6 @@
 /**
  * Cross-island auth signal. Clerk is only mounted by the NavBar island; other
- * islands (e.g. HeroCta) learn about the signed-in state through this event
+ * islands and the hero CTA script learn about the signed-in state through this event
  * plus the window flag for late mounters.
  */
 export const SIGNED_IN_EVENT = "maple:signed-in"

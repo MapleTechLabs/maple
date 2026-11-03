@@ -7,13 +7,13 @@ import {
 	getServiceMapCloudflare,
 	getServiceMapPlanetScale,
 } from "@maple/web-data/warehouse/service-map"
-import { Clock, Duration, Effect, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { loadServicesFacets } from "../../data/services-facets-probe"
-import { toLoadFailure } from "../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../data/time-range"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
-import { Snapshot, ViewPrefs } from "../../service-map/map/state"
+import { Snapshot, ViewPrefs } from "@maple/views/service-map/map/state"
 import { loadSignalPresences } from "../kit/signal-presence"
 import { Message, RequestMode } from "./message"
 import {
@@ -91,14 +91,12 @@ export const SaveStored = Command.define("SaveServiceMapStored", {
 	args: { orgId: Schema.String, stored: StoredSchema },
 	messages: [Message.CompletedSaveStored],
 	execute: ({ orgId, stored }) =>
-		Effect.sync(() => {
-			writeLocalStorage(prefsKey(orgId), Schema.encodeSync(PrefsJson)(stored.prefs))
-			writeLocalStorage(
-				layoutKey(orgId),
-				Schema.encodeSync(LayoutJson)({ snapshots: stored.snapshots }),
-			)
-			return Message.CompletedSaveStored()
-		}),
+		Effect.gen(function* () {
+			const prefs = yield* Schema.encodeEffect(PrefsJson)(stored.prefs)
+			const layout = yield* Schema.encodeEffect(LayoutJson)({ snapshots: stored.snapshots })
+			writeLocalStorage(prefsKey(orgId), prefs)
+			writeLocalStorage(layoutKey(orgId), layout)
+		}).pipe(Effect.ignore, Effect.as(Message.CompletedSaveStored())),
 })
 
 // FETCHES (each carries its request key back so `update` drops a superseded answer, S6)
@@ -117,8 +115,10 @@ export const FetchFacets = Command.define("FetchServiceMapFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window, refresh }) =>
 		loadServicesFacets(window, { key, refresh }).pipe(
-			Effect.map(({ data }) => data.environments.map((environment) => environment.name)),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: ({ data }) => Arr.map(data.environments, (environment) => environment.name),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
 		),
@@ -129,8 +129,7 @@ export const FetchBundle = Command.define("FetchServiceMapBundle", {
 	messages: [Message.CompletedFetchBundle],
 	execute: ({ key, input }) =>
 		getServiceMapBundle({ data: input }).pipe(
-			Effect.map((bundle) => new MapBundle(bundle)),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (bundle) => new MapBundle(bundle), onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchBundle({ key, result })),
 		),
@@ -141,8 +140,7 @@ export const FetchCloudflare = Command.define("FetchServiceMapCloudflare", {
 	messages: [Message.CompletedFetchCloudflare],
 	execute: ({ key, window }) =>
 		getServiceMapCloudflare({ data: window }).pipe(
-			Effect.map((stats) => new CloudflareStats(stats)),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (stats) => new CloudflareStats(stats), onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchCloudflare({ key, result })),
 		),
@@ -153,8 +151,7 @@ export const FetchPlanetScaleStats = Command.define("FetchServiceMapPlanetScale"
 	messages: [Message.CompletedFetchPlanetScaleStats],
 	execute: ({ key, window }) =>
 		getServiceMapPlanetScale({ data: window }).pipe(
-			Effect.map((stats) => new PlanetScaleStats(stats)),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (stats) => new PlanetScaleStats(stats), onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchPlanetScaleStats({ key, result })),
 		),
@@ -168,11 +165,11 @@ export const FetchPlanetScaleInventory = Command.define("FetchPlanetScaleInvento
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const response = yield* client.planetscaleIntegration.databases()
-			return response.databases.map((db) => ({
+			return Arr.map(response.databases, (db) => ({
 				name: db.name,
 				kind: db.kind,
 				branchCount: db.branches.length,
-				branches: db.branches.map((branch) => ({
+				branches: Arr.map(db.branches, (branch) => ({
 					name: branch.name,
 					production: branch.production,
 					ready: branch.ready,
@@ -193,7 +190,7 @@ export const FetchHyperdrives = Command.define("FetchCloudflareHyperdrives", {
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			const response = yield* client.integrations.cloudflareHyperdrives()
-			return response.configs.map((config) => ({
+			return Arr.map(response.configs, (config) => ({
 				id: config.id,
 				name: config.name,
 				originHost: config.originHost,
@@ -226,8 +223,7 @@ export const FetchDbSummary = Command.define("FetchServiceDbQuerySummary", {
 	messages: [Message.CompletedFetchDbSummary],
 	execute: ({ key, input }) =>
 		getServiceDbQuerySummary({ data: input }).pipe(
-			Effect.map((summary) => new DbSummary(summary)),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (summary) => new DbSummary(summary), onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchDbSummary({ key, result })),
 		),
@@ -245,8 +241,7 @@ export const FetchBranchStats = Command.define("FetchPlanetScaleBranchStats", {
 	messages: [Message.CompletedFetchBranchStats],
 	execute: ({ key, input }) =>
 		getPlanetScaleBranchStats({ data: input }).pipe(
-			Effect.map((stats) => new BranchStats(stats)),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (stats) => new BranchStats(stats), onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchBranchStats({ key, result })),
 		),

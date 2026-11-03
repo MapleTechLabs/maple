@@ -1,5 +1,5 @@
 import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 
 /**
  * The tool catalog, loaded on the first call that needs it rather than with this module.
@@ -15,7 +15,7 @@ const toolDescriptors = ({
 	mapleToolCatalogFor,
 	toOutputSchema,
 }: typeof import("./tools/registry")): ReadonlyArray<McpToolDescriptor> =>
-	mapleToolCatalogFor("mcp").map((definition) => ({
+	Arr.map(mapleToolCatalogFor("mcp"), (definition) => ({
 		name: definition.name,
 		// Current spec reads the top-level `title`; Claude's directory and older clients read `annotations.title`.
 		title: definition.title,

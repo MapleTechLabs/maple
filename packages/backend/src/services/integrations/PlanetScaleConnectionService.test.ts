@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { CreateScrapeTargetRequest, OrgId, PlanetScaleMetricsTokenRequest, UserId } from "@maple/domain/http"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -106,7 +106,7 @@ const stubPlanetScaleApi = (options?: {
 			init?.headers ?? (typeof input === "object" && "headers" in input ? input.headers : undefined),
 		)
 		options?.calls?.push({ url: requestUrl, authorization: headers.get("authorization") })
-		if (requestUrl.includes("/oauth/token")) {
+		if (Str.includes("/oauth/token")(requestUrl)) {
 			return new Response(
 				JSON.stringify({
 					access_token: "ps-access-token",
@@ -117,33 +117,33 @@ const stubPlanetScaleApi = (options?: {
 				{ status: 200, headers: { "content-type": "application/json" } },
 			)
 		}
-		const denied = Object.entries(options?.deny ?? {}).find(([needle]) => requestUrl.includes(needle))
+		const denied = Rec.toEntries(options?.deny ?? {}).find(([needle]) => Str.includes(needle)(requestUrl))
 		if (denied) {
 			return new Response("{}", { status: denied[1], headers: { "content-type": "application/json" } })
 		}
 		if (new URL(requestUrl).hostname !== "api.planetscale.com" && options?.denyDataPlaneBearer) {
 			const authorization = headers.get("authorization") ?? ""
-			return authorization.startsWith("token ")
+			return Str.startsWith("token ")(authorization)
 				? new Response("up 1\n", { status: 200 })
 				: new Response("forbidden", { status: 403 })
 		}
 		if (
 			options?.sdGroups &&
 			new URL(requestUrl).hostname === "api.planetscale.com" &&
-			requestUrl.includes("/metrics")
+			Str.includes("/metrics")(requestUrl)
 		) {
 			return new Response(JSON.stringify(options.sdGroups), {
 				status: 200,
 				headers: { "content-type": "application/json" },
 			})
 		}
-		if (options?.denyBearerMetrics && requestUrl.includes("/metrics")) {
+		if (options?.denyBearerMetrics && Str.includes("/metrics")(requestUrl)) {
 			const authorization = headers.get("authorization") ?? ""
-			if (!authorization.startsWith("token tok_good:")) {
+			if (!Str.startsWith("token tok_good:")(authorization)) {
 				return new Response("{}", { status: 403, headers: { "content-type": "application/json" } })
 			}
 		}
-		if (requestUrl.includes("/v1/user")) {
+		if (Str.includes("/v1/user")(requestUrl)) {
 			return new Response(JSON.stringify({ id: "psuser_1", email: "dev@acme.test" }), {
 				status: 200,
 				headers: { "content-type": "application/json" },
@@ -212,9 +212,9 @@ describe("PlanetScaleConnectionService", () => {
 			assert.strictEqual(status.metricsAuth, "api")
 
 			// The probes hit the management API with the OAuth Bearer header.
-			const probeCalls = calls.filter((call) => call.url.includes("/v1/organizations/acme"))
+			const probeCalls = Arr.filter(calls, (call) => Str.includes("/v1/organizations/acme")(call.url))
 			assert.isAbove(probeCalls.length, 0)
-			assert.isTrue(probeCalls.every((call) => call.authorization === "Bearer ps-access-token"))
+			assert.isTrue(Arr.every(probeCalls, (call) => call.authorization === "Bearer ps-access-token"))
 
 			// The managed target row carries the ownership marker and grant-resolved
 			// auth — no stored credentials.
@@ -252,7 +252,7 @@ describe("PlanetScaleConnectionService", () => {
 			])
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -280,7 +280,7 @@ describe("PlanetScaleConnectionService", () => {
 			assert.isTrue(after.pendingOrgSelection)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -305,7 +305,7 @@ describe("PlanetScaleConnectionService", () => {
 			assert.isTrue(status.pendingOrgSelection)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -347,9 +347,10 @@ describe("PlanetScaleConnectionService", () => {
 				assert.isTrue(enabled.scrapeTarget!.enabled)
 				// The validation probe used the service-token scheme, not the bearer.
 				assert.isTrue(
-					calls.some(
+					Arr.some(
+						calls,
 						(call) =>
-							call.url.includes("/v1/organizations/acme/metrics") &&
+							Str.includes("/v1/organizations/acme/metrics")(call.url) &&
 							call.authorization === "token tok_good:s3cret",
 					),
 				)
@@ -369,7 +370,7 @@ describe("PlanetScaleConnectionService", () => {
 				assert.isTrue(row?.enabled)
 			}).pipe(
 				Effect.provideService(FetchHttpClient.Fetch, stub),
-				Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+				Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 			)
 		},
 	)
@@ -402,7 +403,7 @@ describe("PlanetScaleConnectionService", () => {
 			}
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -428,7 +429,7 @@ describe("PlanetScaleConnectionService", () => {
 			assert.include(error.message, "HTTP 503")
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -482,7 +483,7 @@ describe("PlanetScaleConnectionService", () => {
 				])
 			}).pipe(
 				Effect.provideService(FetchHttpClient.Fetch, stub),
-				Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+				Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 			)
 		},
 	)
@@ -520,7 +521,7 @@ describe("PlanetScaleConnectionService", () => {
 			assert.strictEqual(targets.targets[0]?.id, rebound.scrapeTarget?.id)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -549,11 +550,11 @@ describe("PlanetScaleConnectionService", () => {
 			const rebound = yield* service.finalizeOrgSelection(orgId, { organization: "beta" })
 			const targets = yield* scrapeTargetsService.list(orgId)
 			assert.strictEqual(targets.targets.length, 2)
-			assert.isTrue(targets.targets.some((target) => target.id === first.scrapeTarget!.id))
-			assert.isTrue(targets.targets.some((target) => target.id === rebound.scrapeTarget!.id))
+			assert.isTrue(Arr.some(targets.targets, (target) => target.id === first.scrapeTarget!.id))
+			assert.isTrue(Arr.some(targets.targets, (target) => target.id === rebound.scrapeTarget!.id))
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -585,7 +586,7 @@ describe("PlanetScaleConnectionService", () => {
 			assert.strictEqual(targets.targets.length, 0)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -613,7 +614,7 @@ describe("PlanetScaleConnectionService", () => {
 			assert.deepStrictEqual(yield* integrationSources(testDb), [])
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -640,7 +641,7 @@ describe("PlanetScaleConnectionService", () => {
 			assert.isFalse(status.pendingOrgSelection)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
@@ -672,7 +673,7 @@ describe("PlanetScaleConnectionService", () => {
 				assert.match(after.path ?? "", /^\/api\/integrations\/planetscale\/webhook\//)
 			}).pipe(
 				Effect.provideService(FetchHttpClient.Fetch, stub),
-				Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+				Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 			)
 		},
 	)

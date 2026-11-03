@@ -1,4 +1,5 @@
 import type { SpanNode } from "../../lib/types"
+import { Array as Arr, String as Str } from "effect"
 
 export type ColorByField =
 	| { kind: "preset"; key: "service" | "spanKind" | "statusCode" }
@@ -35,8 +36,8 @@ export function colorByFieldId(colorBy: ColorByField): string {
 }
 
 export function colorByFromId(id: string): ColorByField | null {
-	const [kind, ...rest] = id.split(":")
-	const key = rest.join(":")
+	const [kind, ...rest] = Str.split(":")(id)
+	const key = Arr.join(rest, ":")
 	if (!key) return null
 	if (kind === "preset" && (key === "service" || key === "spanKind" || key === "statusCode")) {
 		return { kind: "preset", key }

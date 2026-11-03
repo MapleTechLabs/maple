@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { encodeChatActionToken } from "../../action-token"
 import { EMPTY_CONTENT, renderHazelLive, renderHazelMessage } from "./render"
+import { String as Str } from "effect"
 
 describe("hazel render", () => {
 	it("writes prose as markdown and never lets it mention anybody", () => {
@@ -39,7 +40,7 @@ describe("hazel render", () => {
 				kind: "approval",
 				toolName: "restart_service",
 				summary: "",
-				token: encodeChatActionToken("c".repeat(120)),
+				token: encodeChatActionToken(Str.repeat(120)("c")),
 				outcome: null,
 			},
 		])

@@ -1,8 +1,8 @@
-import { Array as Arr, Context, Duration, Effect, Layer, Metric, Queue, Ref, Schema } from "effect"
+import { Array as Arr, Context, Duration, Effect, Layer, Metric, Queue, Ref, Result, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { ScraperEnv } from "./Env"
 import { bufferedUptimeSpans } from "./Metrics"
-import { isTransientStatus, TRANSIENT_RETRY } from "./retry"
+import { executeAttempt, isTransientStatus, TRANSIENT_RETRY } from "./retry"
 import { encodeTraceExport, type UptimeCheckSpan } from "./UptimeSpans"
 
 /** Oldest spans drop first while ingest is unreachable; a check result never waits on export. */
@@ -13,6 +13,7 @@ export const SPAN_FLUSH_BATCH = 2_000
 export const SPAN_FLUSH_INTERVAL = Duration.seconds(5)
 const REQUEST_TIMEOUT = Duration.seconds(30)
 const FINAL_FLUSH_TIMEOUT = Duration.seconds(5)
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 const ORG_CONCURRENCY = 8
 
 export class UptimeSpanExportError extends Schema.TaggedError<UptimeSpanExportError>()(
@@ -49,24 +50,30 @@ export class UptimeSpanExporter extends Context.Service<UptimeSpanExporter, Upti
 
 			const post = (ingestKey: string, checks: ReadonlyArray<UptimeCheckSpan>) =>
 				Effect.gen(function* () {
-					const request = HttpClientRequest.post(`${env.MAPLE_INGEST_URL}/v1/traces`, {
-						headers: { authorization: `Bearer ${ingestKey}` },
-					}).pipe(
-						HttpClientRequest.bodyText(
-							JSON.stringify(encodeTraceExport(checks)),
-							"application/json",
+					const body = yield* encodeJson(encodeTraceExport(checks)).pipe(
+						Effect.mapError(
+							(error) =>
+								new UptimeSpanExportError({
+									message: `uptime spans not encodable: ${error.message}`,
+									status: null,
+								}),
 						),
 					)
-					const response = yield* client.execute(request).pipe(
-						Effect.annotateSpans("peer.service", "ingest"),
-						Effect.timeout(REQUEST_TIMEOUT),
-						Effect.withSpan("UptimeSpanExporter.post", {
-							kind: "client",
-							attributes: {
-								"peer.service": "ingest",
-								"maple.uptime.span_count": checks.length,
-							},
-						}),
+					const request = HttpClientRequest.post(`${env.MAPLE_INGEST_URL}/v1/traces`, {
+						headers: { authorization: `Bearer ${ingestKey}` },
+					}).pipe(HttpClientRequest.bodyText(body, "application/json"))
+					// Drained either way, so the connection goes back to the pool.
+					const { status, text } = yield* executeAttempt(
+						client,
+						request,
+						{ peerService: "ingest", timeout: REQUEST_TIMEOUT },
+						(response) =>
+							response.text.pipe(
+								Effect.timeout(REQUEST_TIMEOUT),
+								Effect.orElseSucceed(() => ""),
+								Effect.map((text) => ({ status: response.status, text })),
+							),
+					).pipe(
 						Effect.mapError(
 							(error) =>
 								new UptimeSpanExportError({
@@ -75,24 +82,27 @@ export class UptimeSpanExporter extends Context.Service<UptimeSpanExporter, Upti
 								}),
 						),
 					)
-					// Drained either way, so the connection goes back to the pool.
-					if (response.status >= 200 && response.status < 300) {
-						yield* response.text.pipe(Effect.timeout(REQUEST_TIMEOUT), Effect.ignore)
-						return
-					}
-					const text = yield* response.text.pipe(
-						Effect.timeout(REQUEST_TIMEOUT),
-						Effect.orElseSucceed(() => ""),
-					)
+					if (status >= 200 && status < 300) return
 					return yield* new UptimeSpanExportError({
-						message: `ingest gateway returned HTTP ${response.status}: ${text.slice(0, 200)}`,
-						status: response.status,
+						message: `ingest gateway returned HTTP ${status}: ${text.slice(0, 200)}`,
+						status,
 					})
 				}).pipe(
 					Effect.retry({
 						schedule: TRANSIENT_RETRY,
 						while: (error) => isTransientStatus(error.status),
 					}),
+					// Around the retry, so only a dropped batch errors it. A 402 (org over its limit) is
+					// expected: it leaves the span as a value and is re-raised outside, so the span stays Ok.
+					Effect.map((): Result.Result<void, UptimeSpanExportError> => Result.succeed(undefined)),
+					Effect.catchIf(
+						(error) => error.status === 402,
+						(error) => Effect.succeed(Result.fail(error)),
+					),
+					Effect.withSpan("UptimeSpanExporter.post", {
+						attributes: { "peer.service": "ingest", "maple.uptime.span_count": checks.length },
+					}),
+					Effect.flatMap(Effect.fromResult),
 					// Spans are best effort: a 402 (org over its limit) or an outage drops them, logged.
 					Effect.catch((error) =>
 						Effect.logWarning("Dropped uptime check spans").pipe(

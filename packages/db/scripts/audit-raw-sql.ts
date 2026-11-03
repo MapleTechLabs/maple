@@ -14,11 +14,13 @@
  */
 import { rawSqlIssue, type RawSqlIssue } from "@maple/domain/raw-sql"
 import * as PgClient from "@effect/sql-pg/PgClient"
-import { Effect, ManagedRuntime, Redacted } from "effect"
+import { Effect, ManagedRuntime, Redacted, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
 import { dataSourceRawSql } from "@maple/widgets/dashboard"
 import { withBranchConnection } from "./planetscale-connection"
+
+const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 export interface Finding {
 	readonly source: "alert_rule" | "dashboard_widget"
@@ -55,7 +57,7 @@ export interface FoundRawSql {
 export const rawSqlWidgets = (payload: unknown): Array<FoundRawSql> => {
 	const found: Array<FoundRawSql> = []
 	const walk = (node: unknown, widgetId: string): void => {
-		if (Array.isArray(node)) {
+		if (Arr.isArray(node)) {
 			for (const child of node) walk(child, widgetId)
 			return
 		}
@@ -71,7 +73,7 @@ export const rawSqlWidgets = (payload: unknown): Array<FoundRawSql> => {
 			})
 			return
 		}
-		for (const value of Object.values(record)) walk(value, id)
+		for (const value of Rec.values(record)) walk(value, id)
 	}
 	walk(payload, "<unknown>")
 	return found
@@ -143,9 +145,7 @@ const audit = async (databaseUrl: string, asJson: boolean): Promise<number> => {
 		const sourceFormLine = `raw-SQL widgets by source form: ${sourceFormCounts.kind} kind:"raw_sql", ${sourceFormCounts.route} route:"raw_sql_chart"`
 
 		if (asJson) {
-			console.log(
-				JSON.stringify({ findings, total: findings.length, sourceForms: sourceFormCounts }, null, 2),
-			)
+			console.log(encodeJsonPretty({ findings, total: findings.length, sourceForms: sourceFormCounts }))
 		} else if (findings.length === 0) {
 			console.log(
 				`No stored raw SQL would be rejected (${rules.length} alert rules, ${dashboards.length} dashboards scanned).`,
@@ -161,7 +161,7 @@ const audit = async (databaseUrl: string, asJson: boolean): Promise<number> => {
 				console.log(`    org:   ${finding.orgId}`)
 				console.log(`    name:  ${finding.label}`)
 				console.log(`    why:   ${finding.issue.message}`)
-				console.log(`    sql:   ${finding.sql.replace(/\s+/g, " ").slice(0, 160)}`)
+				console.log(`    sql:   ${Str.slice(0, 160)(Str.replace(/\s+/g, " ")(finding.sql))}`)
 				console.log("")
 			}
 			const byCode = new Map<string, number>()
@@ -186,7 +186,7 @@ const audit = async (databaseUrl: string, asJson: boolean): Promise<number> => {
  */
 const main = async (): Promise<void> => {
 	const asJson = process.argv.includes("--json")
-	const branch = process.argv.slice(2).find((arg) => !arg.startsWith("--")) ?? "main"
+	const branch = process.argv.slice(2).find((arg) => !Str.startsWith("--")(arg)) ?? "main"
 	const databaseUrl = process.env.DATABASE_URL
 
 	let rejected = 0

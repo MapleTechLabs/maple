@@ -1,22 +1,25 @@
 import { rawSqlIssue } from "@maple/domain/raw-sql"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { fieldErrorStyles } from "@maple/ui/styles/ui/field"
-import { tokenizeSql } from "../../../lib/sql-highlight"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import * as Tooltip from "../../../ui/tooltip"
-import { button } from "../../../ui/button"
-import { field, fieldLabel, type FieldState } from "../../../ui/field"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { inlineCode } from "../../../ui/inline-code"
-import { input } from "../../../ui/input"
+import * as Tooltip from "@maple/views/ui/tooltip"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { field, fieldErrorText, fieldLabel, type FieldState } from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { input } from "@maple/views/ui/input"
+import { sqlEditor } from "@maple/views/ui/sql-editor"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { type RawSqlState, rawSqlErrorOf } from "./raw-sql"
 import { SQL_TEXTAREA_ID } from "./sql-step"
 import { widgetOf } from "./update"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { queryPanelBar } from "../../kit/query-panel-bar"
+import { Array as Arr } from "effect"
 
 // `RawSqlEditorPanel` under the editor's Raw SQL
 // tab: the highlighted SQL, the macro and variable chips, the bucket, Run preview.
@@ -38,83 +41,46 @@ const CHIP = "h-auto rounded-sm px-2 py-0.5 font-mono text-2xs sm:h-auto sm:text
 
 const header = (h: H, rawSql: RawSqlState): Html => {
 	const issue = rawSqlIssue(rawSql.draft.sql)
-	return h.div(
-		[h.Class("flex items-center gap-2 px-3 py-2 bg-surface-sunken")],
-		[
-			iconButton(
-				h,
-				{
-					size: "icon-xs",
-					label: rawSql.isCollapsed ? "Expand SQL" : "Collapse SQL",
-					hasTooltip: false,
-					className: "text-muted-foreground hover:text-foreground active:text-foreground",
-					attributes: [h.OnClick(Message.ToggledSqlCollapsed())],
-				},
-				[icon(h, rawSql.isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
-			),
-			h.span(
-				[
-					h.Class(
-						badgeVariants({
-							variant: "outline",
-							className: "font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80",
-						}),
+	return queryPanelBar(h, [
+		iconButton(
+			h,
+			{
+				size: "icon-xs",
+				label: rawSql.isCollapsed ? "Expand SQL" : "Collapse SQL",
+				hasTooltip: false,
+				className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
+				attributes: [h.OnClick(Message.ToggledSqlCollapsed())],
+			},
+			[icon(h, rawSql.isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
+		),
+		badge(
+			h,
+			{
+				variant: "outline",
+				className: "font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80",
+			},
+			["sql"],
+		),
+		typography(h, { size: "2xs", tone: "muted" }, ["ClickHouse"]),
+		h.div([h.Class("flex-1")], []),
+		...(issue !== null && !rawSql.isCollapsed
+			? [
+					h.span(
+						[h.Class(cn("text-2xs", TONE_TEXT.crit)), h.Title(issue.message)],
+						[issue.code === "MissingOrgFilter" ? "Missing $__orgFilter" : issue.message],
 					),
-					h.DataAttribute("slot", "badge"),
-				],
-				["sql"],
-			),
-			h.span([h.Class("text-2xs text-muted-foreground")], ["ClickHouse"]),
-			h.div([h.Class("flex-1")], []),
-			...(issue !== null && !rawSql.isCollapsed
-				? [
-						h.span(
-							[h.Class(cn("text-2xs", TONE_TEXT.crit)), h.Title(issue.message)],
-							[issue.code === "MissingOrgFilter" ? "Missing $__orgFilter" : issue.message],
-						),
-					]
-				: []),
-		],
-	)
+				]
+			: []),
+	])
 }
 
 const editor = (h: H, sql: string): Html =>
-	h.div(
-		[h.Class("relative w-full text-xs font-mono leading-5")],
-		[
-			h.pre(
-				[
-					h.AriaHidden(true),
-					h.Class(
-						"pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words rounded-sm border border-transparent px-2 py-1.5 leading-5",
-					),
-				],
-				[
-					h.code(
-						[h.Class("font-mono")],
-						[
-							...tokenizeSql(sql).map((token) =>
-								h.span(token.className === undefined ? [] : [h.Class(token.className)], [
-									token.text,
-								]),
-							),
-							"\n",
-						],
-					),
-				],
-			),
-			h.textarea([
-				h.Id(SQL_TEXTAREA_ID),
-				h.AriaLabel("SQL query"),
-				h.Value(sql),
-				h.OnInput((value) => Message.ChangedSql({ value })),
-				h.Spellcheck(false),
-				h.Class(
-					"relative w-full bg-transparent text-transparent caret-foreground border border-border rounded-sm px-2 py-1.5 min-h-[200px] resize-y outline-none focus:ring-1 focus:ring-foreground/20 leading-5",
-				),
-			]),
-		],
-	)
+	sqlEditor(h, {
+		id: SQL_TEXTAREA_ID,
+		label: "SQL query",
+		value: sql,
+		onInput: (value) => Message.ChangedSql({ value }),
+	})
 
 const chip = (h: H, token: string, className: string, trigger: ReadonlyArray<ChildAttribute>): Html =>
 	button(
@@ -153,7 +119,7 @@ const chipRow = (
 ): Html =>
 	h.div(
 		[h.Class("flex flex-wrap gap-1.5 flex-1 pt-2")],
-		chips.map(([token], index) =>
+		Arr.map(chips, ([token], index) =>
 			chip(
 				h,
 				token,
@@ -170,7 +136,8 @@ const footer = (h: H, model: Model, rawSql: RawSqlState): Html => {
 	const variables = model.document?.variables ?? []
 	const chips = [
 		...MACRO_HINTS,
-		...variables.map(
+		...Arr.map(
+			variables,
 			(variable) =>
 				[
 					`$${variable.name}`,
@@ -185,7 +152,7 @@ const footer = (h: H, model: Model, rawSql: RawSqlState): Html => {
 		view: Tooltip.view,
 		toParentMessage: (message) => Message.GotSqlChipTooltipMessage({ message }),
 		viewInputs: {
-			triggerIds: chips.map((_, index) => chipTriggerId(index)),
+			triggerIds: Arr.map(chips, (_, index) => chipTriggerId(index)),
 			className: "max-w-xs",
 			toContent: (triggerId) => [chipDescription(chips, triggerId)],
 			toView: ({ trigger, portal }) =>
@@ -225,7 +192,7 @@ const footerRow = (h: H, rawSql: RawSqlState, chips: Html): Html => {
 						h.OnInput((value) => Message.ChangedSqlBucket({ value })),
 					],
 				}),
-				h.span([h.Class("text-2xs text-muted-foreground")], ["s"]),
+				typography(h, { size: "2xs", tone: "muted" }, ["s"]),
 			]),
 		],
 	)
@@ -236,17 +203,7 @@ export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyA
 	const error = rawSqlErrorOf(rawSql.draft)
 	const issue = rawSqlIssue(rawSql.draft.sql)
 	return [
-		...(error === null
-			? []
-			: [
-					h.div(
-						[
-							h.Class(cn(fieldErrorStyles, "font-medium")),
-							h.DataAttribute("slot", "field-error"),
-						],
-						[error],
-					),
-				]),
+		...(error === null ? [] : [fieldErrorText(h, { className: "font-medium" }, error)]),
 		h.div(
 			[h.Class("space-y-3")],
 			[
@@ -264,24 +221,21 @@ export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyA
 								]),
 					],
 				),
-				h.div(
-					[h.Class("flex items-center gap-3")],
-					[
-						button(
-							h,
-							{
-								size: "sm",
-								isDisabled: issue !== null,
-								attributes: [h.OnClick(Message.ClickedRunPreview())],
-							},
-							["Run preview"],
-						),
-						h.span(
-							[h.Class("text-2xs text-muted-foreground ml-auto")],
-							["Targets ", inlineCode(h, {}, [widgetOf(model)?.visualization ?? ""])],
-						),
-					],
-				),
+				hstack(h, { gap: "3" }, [
+					button(
+						h,
+						{
+							size: "sm",
+							isDisabled: issue !== null,
+							attributes: [h.OnClick(Message.ClickedRunPreview())],
+						},
+						["Run preview"],
+					),
+					typography(h, { size: "2xs", tone: "muted", className: "ml-auto" }, [
+						"Targets ",
+						inlineCode(h, {}, [widgetOf(model)?.visualization ?? ""]),
+					]),
+				]),
 			],
 		),
 	]

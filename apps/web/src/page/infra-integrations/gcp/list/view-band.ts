@@ -9,7 +9,8 @@ import {
 import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
-import { statusDot } from "../../../../ui/status-dot"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { Array as Arr } from "effect"
 
 // The band specs and `GcpHealthDot`.
 
@@ -146,26 +147,26 @@ export const gcpBand = <R, S extends string, M>(
 	}>,
 ): Html => {
 	const { rows, rules, spec } = options
-	const healths = rows.map((row) => rowHealth(rules, row))
-	const count = (health: S | "ok") => healths.filter((candidate) => candidate === health).length
+	const healths = Arr.map(rows, (row) => rowHealth(rules, row))
+	const count = (health: S | "ok") => Arr.filter(healths, (candidate) => candidate === health).length
 	return fleetBand(h, {
 		total: rows.length,
 		noun: spec.noun,
 		caption: spec.caption,
 		segments: [
 			{ key: "healthy", count: count("ok"), className: TONE_FILL.ok },
-			...rules.worst.toReversed().map((scope) => ({
+			...Arr.map(rules.worst.toReversed(), (scope) => ({
 				key: spec.cells[scope].segment,
 				count: count(scope),
 				className: TONE_FILL[spec.cells[scope].tone],
 			})),
 		],
-		cells: rules.scopes.map((scope) => ({
+		cells: Arr.map(rules.scopes, (scope) => ({
 			scope,
 			label: spec.cells[scope].label,
 			hint: spec.cells[scope].hint,
 			tone: spec.cells[scope].tone,
-			value: rows.filter((row) => rules.inScope(row, scope)).length,
+			value: Arr.filter(rows, (row) => rules.inScope(row, scope)).length,
 		})),
 		activeScope: options.activeScope,
 		onScopeChange: options.onScopeChange,

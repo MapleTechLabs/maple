@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { ServiceName } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import {
 	click,
@@ -14,8 +14,8 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
-import { toLoadFailure } from "../../../data/load-failure"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import {
 	FetchCommit,
@@ -29,8 +29,8 @@ import {
 	FetchRuntimes,
 	FetchWorkloads,
 } from "./command"
-import { LinkedCursorMessage, MountLinkedCursor } from "../../../charts/linked-cursor"
-import * as Dialog from "../../../ui/dialog"
+import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import * as Dialog from "@maple/views/ui/dialog"
 import * as PeekMessage from "./endpoint-peek/message"
 import { Message } from "./message"
 import type { Model, OverviewData } from "./model"
@@ -46,7 +46,7 @@ const SHA = "f8f3f66ef8f3f66ef8f3f66ef8f3f66ef8f3f66e"
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const route = (search: Model["search"] = {}) => ({ serviceName: "payment-svc", search })
 
@@ -85,16 +85,18 @@ describe("service detail", () => {
 		expect(names(init(route(), context).commands)).toContain("ResolveServiceDetailClock")
 		const start = init(route(), context).model
 		const resolved = pageUpdate(start, Message.CompletedResolveClock({ nowMs: NOW, mode: "Load" }))
-		expect(names(resolved.commands)).toEqual(expect.arrayContaining([
-			FetchOverview.name,
-			FetchOperations.name,
-			FetchIssues.name,
-			FetchUsage.name,
-			FetchWorkloads.name,
-			FetchRuntimes.name,
-			FetchDependencies.name,
-			FetchUptimeMonitors.name,
-		]))
+		expect(names(resolved.commands)).toEqual(
+			expect.arrayContaining([
+				FetchOverview.name,
+				FetchOperations.name,
+				FetchIssues.name,
+				FetchUsage.name,
+				FetchWorkloads.name,
+				FetchRuntimes.name,
+				FetchDependencies.name,
+				FetchUptimeMonitors.name,
+			]),
+		)
 		expect(resolved.model.window).toEqual({
 			startTime: "2026-10-01 00:00:00",
 			endTime: "2026-10-01 12:00:00",
@@ -205,9 +207,11 @@ describe("service detail", () => {
 		const opened = pageUpdate(entered(), Message.ClickedOperation({ spanName: "GET /charges" }))
 		expect(opened.outMessage?._tag).toBe("RequestedNavigation")
 		const url = opened.outMessage?._tag === "RequestedNavigation" ? opened.outMessage.url : ""
-		expect(url.startsWith("/traces?")).toBe(true)
-		expect(new URLSearchParams(url.slice("/traces?".length)).get("spanNames")).toBe('["GET /charges"]')
-		expect(new URLSearchParams(url.slice("/traces?".length)).get("rootOnly")).toBe("false")
+		expect(Str.startsWith("/traces?")(url)).toBe(true)
+		expect(new URLSearchParams(Str.slice("/traces?".length)(url)).get("spanNames")).toBe(
+			'["GET /charges"]',
+		)
+		expect(new URLSearchParams(Str.slice("/traces?".length)(url)).get("rootOnly")).toBe("false")
 	})
 
 	test("a sort header click sorts by that column, a second click flips it", () => {
@@ -303,6 +307,33 @@ describe("service detail view", () => {
 			click(role("button", { name: "Errors" })),
 			expectView(role("columnheader", { name: "Errors" })).toHaveAttr("aria-sort", "descending"),
 		)
+	})
+
+	test("Try again on a failed Operations or Dependencies tab asks for that read again", () => {
+		const operations = entered({ tab: "operations" })
+		const failedOperations = pageUpdate(
+			operations,
+			Message.CompletedFetchOperations({
+				key: operations.operations.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		).model
+		const retriedOperations = pageUpdate(failedOperations, Message.ClickedRetry({ target: "Operations" }))
+		expect(names(retriedOperations.commands)).toEqual([FetchOperations.name])
+
+		const dependencies = entered({ tab: "dependencies" })
+		const failedDependencies = pageUpdate(
+			dependencies,
+			Message.CompletedFetchDependencies({
+				key: dependencies.dependencies.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		).model
+		const retriedDependencies = pageUpdate(
+			failedDependencies,
+			Message.ClickedRetry({ target: "Dependencies" }),
+		)
+		expect(names(retriedDependencies.commands)).toEqual([FetchDependencies.name])
 	})
 
 	test("the Dependencies tab shows a skeleton, not an empty table, until its read answers", () => {
@@ -451,11 +482,17 @@ describe("where the service runs", () => {
 		const model = entered()
 		const answered = pageUpdate(
 			model,
-			Message.CompletedFetchRuntimes({ key: model.runtimes.key ?? "", result: Result.succeed(runtimes) }),
+			Message.CompletedFetchRuntimes({
+				key: model.runtimes.key ?? "",
+				result: Result.succeed(runtimes),
+			}),
 		).model
 		return pageUpdate(
 			answered,
-			Message.CompletedFetchWorkloads({ key: answered.workloads.key ?? "", result: Result.succeed([]) }),
+			Message.CompletedFetchWorkloads({
+				key: answered.workloads.key ?? "",
+				result: Result.succeed([]),
+			}),
 		).model
 	}
 	const RUN_HREF = "/infra/gcp/cloudRun/payment-svc?project=acme-prod&region=europe-west1"
@@ -480,7 +517,10 @@ describe("where the service runs", () => {
 			{ update: pageUpdate, view },
 			given(withRuntimes([CLOUD_RUN])),
 			...settled,
-			expectView(role("link", { name: "Runs on Cloud Run service payment-svc" })).toHaveAttr("href", RUN_HREF),
+			expectView(role("link", { name: "Runs on Cloud Run service payment-svc" })).toHaveAttr(
+				"href",
+				RUN_HREF,
+			),
 		)
 	})
 
@@ -521,7 +561,9 @@ describe("the API tab's endpoint drawer", () => {
 	test("a peeked endpoint opens the drawer and warms it and both neighbours", () => {
 		const loaded = loadedApi({ endpoint: "GET /b" })
 		expect(loaded.model.endpointPeek.dialog.isOpen).toBe(true)
-		expect(names(loaded.commands).filter((name) => name === "FetchServiceEndpointDetail")).toHaveLength(3)
+		expect(
+			Arr.filter(names(loaded.commands), (name) => name === "FetchServiceEndpointDetail"),
+		).toHaveLength(3)
 	})
 
 	test("an endpoint no row matches keeps the drawer closed", () => {
@@ -655,7 +697,7 @@ describe("the API tab's endpoint drawer", () => {
 			themeResolved(),
 			expectView(text("/a")).toExist(),
 			click(role("button", { name: "Rejecting > 5%" })),
-			expectView(text("No endpoint matches this filter.")).toExist(),
+			expectView(text("No endpoint matches this filter")).toExist(),
 		)
 	})
 })

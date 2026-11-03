@@ -7,6 +7,7 @@
  */
 import type { OrgId } from "@maple/domain/http"
 import { DAY_MS } from "./snapshot"
+import { String as Str } from "effect"
 
 export interface CancellationEvidenceInput {
 	readonly orgId: OrgId
@@ -43,12 +44,21 @@ export const daysBeforeCancel = (atMs: number, ms: number): number => Math.trunc
  * patterns run, so a huge input never costs more than a short one.
  */
 export const redactText = (value: string, max: number): string => {
-	const trimmed = value.trim()
+	const trimmed = Str.trim(value)
 	// The cut can split an address or key: the word it cut into is dropped, never half-scrubbed.
-	const cut = trimmed.length > max * 2 ? trimmed.slice(0, max * 2).replace(/\S*$/, "") : trimmed
-	return cut
-		.replaceAll(/[^\s@<>"']+@[^\s@<>"']+\.[a-z]{2,}/gi, "[email]")
-		.replaceAll(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, "[url]")
-		.replaceAll(/[A-Za-z0-9_-]{24,}/g, "[token]")
-		.slice(0, max)
+	const cut = trimmed.length > max * 2 ? Str.replace(/\S*$/, "")(Str.slice(0, max * 2)(trimmed)) : trimmed
+	return Str.slice(
+		0,
+		max,
+	)(
+		Str.replaceAll(
+			/[A-Za-z0-9_-]{24,}/g,
+			"[token]",
+		)(
+			Str.replaceAll(
+				/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi,
+				"[url]",
+			)(Str.replaceAll(/[^\s@<>"']+@[^\s@<>"']+\.[a-z]{2,}/gi, "[email]")(cut)),
+		),
+	)
 }

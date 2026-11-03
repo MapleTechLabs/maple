@@ -11,7 +11,7 @@
  * rather than crashing the transcript. The *values* are still whatever the model wrote: a trace
  * id that decodes here may well name no trace.
  */
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 
 export const InlineTraceData = Schema.Struct({
 	id: Schema.String,
@@ -155,20 +155,20 @@ export function parseAnnotations(text: string): AnnotationSegment[] {
 			// Still streaming: the JSON body has not arrived yet. Hold the partial
 			// opener back rather than flashing raw markup — the next token re-parses
 			// the whole message anyway.
-			pushText(text.slice(lastIndex, matchStart))
+			pushText(Str.slice(lastIndex, matchStart)(text))
 			return finish(segments, text)
 		}
 
 		let end = jsonEnd
 		while (text[end] === ">") end++
-		const segment = decodeSegment(match[1], text.slice(jsonStart, jsonEnd))
+		const segment = decodeSegment(match[1], Str.slice(jsonStart, jsonEnd)(text))
 
 		if (segment === null) {
 			// A payload that does not match its card stays visible as text, so a bad
 			// shape is debuggable instead of silently missing.
-			pushText(text.slice(lastIndex, end))
+			pushText(Str.slice(lastIndex, end)(text))
 		} else {
-			pushText(text.slice(lastIndex, matchStart))
+			pushText(Str.slice(lastIndex, matchStart)(text))
 			segments.push(segment)
 			// Swallow one trailing newline so a card on its own line leaves no empty
 			// paragraph behind it.
@@ -180,7 +180,7 @@ export function parseAnnotations(text: string): AnnotationSegment[] {
 		match = OPENER_RE.exec(text)
 	}
 
-	pushText(text.slice(lastIndex))
+	pushText(Str.slice(lastIndex)(text))
 	return finish(segments, text)
 }
 

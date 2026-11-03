@@ -1,14 +1,15 @@
-import * as Dialog from "@maple/web/ui/dialog"
-import * as Popover from "@maple/web/ui/popover"
-import * as Tabs from "@maple/web/ui/tabs"
-import * as Toast from "@maple/web/ui/toast"
-import * as CopyButton from "@maple/web/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Popover from "@maple/views/ui/popover"
+import * as Tabs from "@maple/views/ui/tabs"
+import * as Toast from "@maple/views/ui/toast"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import { Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { UrlRequest } from "foldkit/navigation"
 import { Url } from "foldkit/url"
-import { LoadFailure } from "./data/local-query"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { PresenceResult } from "./data/signal-presence"
 import { Theme } from "./env"
 import { PageMessage } from "./page/registry"
@@ -38,6 +39,7 @@ export const Message = defineMessageUnion({
 	ReusedSignalPresence: {},
 	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
 	GotToastMessage: { message: Toast.Message },
+	GotTooltipMessage: { message: TooltipHost.Message },
 	GotPageMessage: { message: PageMessage },
 	/** A request the open page superseded or left behind was stopped. */
 	CompletedCancelPageFetch: { outcome: Command.Interruptible.Outcome },

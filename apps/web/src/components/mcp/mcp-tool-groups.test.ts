@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { McpToolCatalogEntry } from "@maple/domain/http"
 import { groupMcpTools, mcpToolGroupOf } from "./mcp-tool-groups"
+import { Array as Arr } from "effect"
 
 const tool = (name: string, readOnly = true, description = ""): McpToolCatalogEntry => ({
 	name,
@@ -41,12 +42,12 @@ describe("groupMcpTools", () => {
 
 	it("returns groups in display order with reads before writes", () => {
 		const groups = groupMcpTools(catalog)
-		expect(groups.map((group) => group.label)).toEqual(["Alerts", "Dashboards", "Logs"])
-		expect(groups[0]?.tools.map((t) => t.name)).toEqual(["list_alert_rules", "delete_alert_rule"])
+		expect(Arr.map(groups, (group) => group.label)).toEqual(["Alerts", "Dashboards", "Logs"])
+		expect(Arr.map(groups[0]?.tools, (t) => t.name)).toEqual(["list_alert_rules", "delete_alert_rule"])
 	})
 
 	it("filters on name, title and description, dropping empty groups", () => {
-		expect(groupMcpTools(catalog, "SEVERITY").map((group) => group.id)).toEqual(["logs"])
+		expect(Arr.map(groupMcpTools(catalog, "SEVERITY"), (group) => group.id)).toEqual(["logs"])
 		expect(groupMcpTools(catalog, "nothing matches")).toEqual([])
 	})
 })

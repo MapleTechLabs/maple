@@ -1,12 +1,12 @@
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../../ui/button"
-import { chipsView } from "../../../../ui/combobox-view"
-import { errorState } from "../../../../ui/error-state"
-import { field, fieldDescription, fieldLabel, type FieldState } from "../../../../ui/field"
-import { icon } from "../../../../ui/icon"
-import { nativeOption, nativeSelect } from "../../../../ui/native-select"
-import { panel } from "../../../../ui/panel"
+import { button } from "@maple/views/ui/button"
+import { chipsView } from "@maple/views/ui/combobox-view"
+import { errorState } from "@maple/views/ui/error-state"
+import { field, fieldDescription, fieldLabel, type FieldState } from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
+import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
+import { panel } from "@maple/views/ui/panel"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
 import { saveBar } from "../../kit/save-bar"
 import { settingsSection, settingsSections } from "../../kit/section"
@@ -23,6 +23,8 @@ import {
 	isOpsEnabled,
 	isWebEnabled,
 } from "./update"
+import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -71,7 +73,7 @@ const scheduleField = (h: H, model: Model): Html => {
 							h.OnChange((value) => Message.ChangedSchedule({ field: "dayOfWeek", value })),
 						],
 					},
-					DIGEST_DAYS.map((day) => nativeOption(String(day.value), day.label)),
+					Arr.map(DIGEST_DAYS, (day) => nativeOption(String(day.value), day.label)),
 				),
 				h.span([], ["at"]),
 				nativeSelect(
@@ -85,7 +87,7 @@ const scheduleField = (h: H, model: Model): Html => {
 							h.OnChange((value) => Message.ChangedSchedule({ field: "sendHour", value })),
 						],
 					},
-					DIGEST_HOURS.map((hour) => nativeOption(String(hour.value), hour.label)),
+					Arr.map(DIGEST_HOURS, (hour) => nativeOption(String(hour.value), hour.label)),
 				),
 				nativeSelect(
 					h,
@@ -98,7 +100,7 @@ const scheduleField = (h: H, model: Model): Html => {
 							h.OnChange((value) => Message.ChangedSchedule({ field: "timezone", value })),
 						],
 					},
-					zones.map((zone) => nativeOption(zone, zone)),
+					Arr.map(zones, (zone) => nativeOption(zone, zone)),
 				),
 			],
 		),
@@ -107,12 +109,9 @@ const scheduleField = (h: H, model: Model): Html => {
 			{ ids, state: IDLE },
 			"Sent in your time zone. Both digests follow this schedule.",
 		),
-		h.p(
-			[h.Class("text-xs text-muted-foreground")],
-			[
-				"Changes apply from the next send, so moving the day right after a digest went out skips to next week.",
-			],
-		),
+		typography(h, { size: "xs", tone: "muted", as: "p" }, [
+			"Changes apply from the next send, so moving the day right after a digest went out skips to next week.",
+		]),
 	])
 }
 
@@ -146,7 +145,7 @@ const scopeField = (
 				ariaLabelledBy: ids.label,
 				ariaDescribedBy: ids.description,
 				placeholder: values.length === 0 ? `All ${options.plural}` : `Add ${options.noun}...`,
-				emptyText: `No ${options.plural} detected.`,
+				emptyText: `No ${options.plural} detected`,
 				toView: (parts) => h.div([h.Class("sm:max-w-xs")], parts),
 			},
 		}),
@@ -263,10 +262,9 @@ export const view = Submodel.defineView<Model, Message, Readonly<Record<never, n
 						],
 						onData: () => preferences(h, model),
 					}),
-					h.p(
-						[h.Class("text-xs text-muted-foreground")],
-						["Unsubscribe links in each email turn the matching digest off."],
-					),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						"Unsubscribe links in each email turn the matching digest off.",
+					]),
 				],
 			),
 		])

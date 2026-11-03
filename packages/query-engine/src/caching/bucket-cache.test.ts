@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Schema, Array as Arr } from "effect"
 import { OrgId } from "@maple/domain"
 import type { TimeseriesPoint } from "@maple/domain/query-engine"
 import {
@@ -122,8 +122,8 @@ describe("coalesceMissingRanges", () => {
 
 		const coalesced = coalesceMissingRanges(missing)
 		expect(coalesced).toHaveLength(2)
-		expect(coalesced.filter((r) => r.cachable)).toHaveLength(1)
-		expect(coalesced.filter((r) => !r.cachable)).toHaveLength(1)
+		expect(Arr.filter(coalesced, (r) => r.cachable)).toHaveLength(1)
+		expect(Arr.filter(coalesced, (r) => !r.cachable)).toHaveLength(1)
 	})
 
 	it("keeps every cachable range strictly below the flux boundary", () => {
@@ -140,9 +140,11 @@ describe("coalesceMissingRanges", () => {
 		const buckets = [bucket(MIN, 2 * MIN), bucket(4 * MIN, 5 * MIN), bucket(7 * MIN, 8 * MIN)]
 		const missing = findMissingRanges(buckets, 0, 10 * MIN, MIN, FAR_FUTURE_FLUX)
 		const coalesced = coalesceMissingRanges(missing)
-		const uncovered = missing.filter(
+		const uncovered = Arr.filter(
+			missing,
 			(gap) =>
-				!coalesced.some(
+				!Arr.some(
+					coalesced,
 					(span) =>
 						span.cachable === gap.cachable &&
 						span.range.startMs <= gap.range.startMs &&
@@ -165,7 +167,7 @@ describe("pointsToBuckets", () => {
 			point("1970-01-01T00:03:00.000Z", { v: 4 }),
 		]
 		const buckets = pointsToBuckets(points, bucketMs, flux)
-		expect(buckets.map((b) => b.startMs)).toEqual([0, MIN])
+		expect(Arr.map(buckets, (b) => b.startMs)).toEqual([0, MIN])
 		expect(buckets[0]!.points).toHaveLength(1)
 		expect(buckets[1]!.points).toHaveLength(1)
 	})
@@ -186,7 +188,7 @@ describe("mergeAndDeduplicateBuckets", () => {
 		const existing = [bucket(0, MIN, [point("1970-01-01T00:00:00.000Z")])]
 		const fresh = [bucket(MIN, 2 * MIN, [point("1970-01-01T00:01:00.000Z")])]
 		const merged = mergeAndDeduplicateBuckets(existing, fresh)
-		expect(merged.map((b) => b.startMs)).toEqual([0, MIN])
+		expect(Arr.map(merged, (b) => b.startMs)).toEqual([0, MIN])
 	})
 
 	it("prefers fresh bucket when startMs collides", () => {
@@ -687,7 +689,7 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 			// cold under sustained timeouts.
 			assert.strictEqual(writes.length, 1)
 			assert.deepStrictEqual(
-				writes[0]!.buckets.map((b) => b.startMs),
+				Arr.map(writes[0]!.buckets, (b) => b.startMs),
 				[0, MIN],
 			)
 		}).pipe(Effect.provide(makeBucketTestLive(backend, makeConfig(), 10)), Effect.timeout(200))

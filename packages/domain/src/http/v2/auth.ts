@@ -1,5 +1,5 @@
 import { HttpApiMiddleware, HttpApiSecurity, OpenApi } from "effect/http-api"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { ApiKeyLookupPersistenceError, type ApiKeyKind } from "../api-keys"
 import { AuthorizationUnavailableError, Context, UnauthorizedError } from "../current-tenant"
 import {
@@ -120,7 +120,7 @@ const READ_ONLY_POST_PATTERNS: ReadonlyArray<RegExp> = [
 ]
 
 const isReadOnlyPost = (path: string): boolean =>
-	READ_ONLY_POST_PATHS.has(path) || READ_ONLY_POST_PATTERNS.some((pattern) => pattern.test(path))
+	READ_ONLY_POST_PATHS.has(path) || Arr.some(READ_ONLY_POST_PATTERNS, (pattern) => pattern.test(path))
 
 /**
  * Mechanical scope derivation: the resource family is the first path segment
@@ -162,7 +162,7 @@ export const isScopeExemptRoute = (method: string, routePath: string, kind: ApiK
 	// A loop, not a regex: the route path is request-derived, and `/\/+$/` backtracks on long runs of `/`.
 	let end = routePath.length
 	while (end > 1 && routePath[end - 1] === "/") end--
-	return SCOPE_EXEMPT_ROUTES.has(`${method} ${routePath.slice(0, end)}`)
+	return SCOPE_EXEMPT_ROUTES.has(`${method} ${Str.slice(0, end)(routePath)}`)
 }
 
 /**
@@ -205,4 +205,4 @@ export const INVESTIGATION_READ_FAMILIES = [
 export const missingReadScopes = (
 	scopes: ReadonlyArray<string> | null | undefined,
 	families: ReadonlyArray<string>,
-): ReadonlyArray<string> => families.filter((family) => !scopeAllows(scopes, { family, access: "read" }))
+): ReadonlyArray<string> => Arr.filter(families, (family) => !scopeAllows(scopes, { family, access: "read" }))

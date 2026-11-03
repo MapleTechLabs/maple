@@ -2,31 +2,37 @@ import { mergeExactThroughput } from "@maple/web-data/warehouse/custom-charts"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { Option, Struct } from "effect"
+import { Option, Struct, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData as FoldkitAsyncData, Mount } from "foldkit"
 import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../charts/chart"
-import { chartSkeleton, type ChartSkeletonVariant } from "../../ui/chart-skeleton"
-import { chartEmpty } from "../../ui/chart-state"
-import * as FixedMetricChart from "../../charts/fixed-metric-chart"
-import type { FixedMetricChartInputs } from "../../charts/fixed-metric-chart"
-import { LINKED_CURSOR_STYLE, linkedCursorOverlay, MountLinkedCursor } from "../../charts/linked-cursor"
+import * as Chart from "@maple/views/charts/chart"
+import { chartSkeleton, type ChartSkeletonVariant } from "@maple/views/ui/chart-skeleton"
+import { chartEmpty } from "@maple/views/ui/chart-state"
+import * as FixedMetricChart from "@maple/views/charts/fixed-metric-chart"
+import type { FixedMetricChartInputs } from "@maple/views/charts/fixed-metric-chart"
+import {
+	LINKED_CURSOR_STYLE,
+	linkedCursorOverlay,
+	MountLinkedCursor,
+} from "@maple/views/charts/linked-cursor"
 import {
 	fixedMetricModel,
 	type FixedMetricSeries,
 	LATENCY_SERIES,
 	throughputLegend,
 	throughputPlot,
-} from "../../charts/fixed-metric-series"
-import { ChartSpec, type FixedMetricRow } from "../../charts/chart-spec"
-import { resolveColor, type ThemeColors } from "../../charts/theme-colors"
-import { FAILURE_KEY_SEPARATOR, failureKey, type LoadFailure } from "../../data/load-failure"
-import { errorState, type FailureKind, failureKind } from "../../ui/error-state"
-import { presenceOf } from "../kit/signal-presence"
+} from "@maple/views/charts/fixed-metric-series"
+import { ChartSpec, type FixedMetricRow } from "@maple/views/charts/chart-spec"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
+import { FAILURE_KEY_SEPARATOR, failureKey, type LoadFailure } from "@maple/views/data/load-failure"
+import { errorState, type FailureKind, failureKind } from "@maple/views/ui/error-state"
+import { presenceOf } from "@maple/views/data/signal-presence"
 import { stableSlice } from "../kit/stable-slice"
 import { Message, type RetryTarget } from "./message"
 import type { Model, OverviewPoint } from "./model"
 import { widgetShell } from "./view-widget"
+import { typography } from "@maple/views/ui/typography"
+import { chartFrameClass } from "@maple/views/ui/chart-frame"
 
 type MetricsData = Pick<Model, "overviewSeries" | "logSeries" | "refinement" | "presence">
 type CardId = "throughput" | "error-rate" | "latency" | "log-volume"
@@ -57,7 +63,7 @@ export const overviewPoints = (model: MetricsData, useRefinement: boolean): Read
 	const exact = useRefinement ? FoldkitAsyncData.getOrElse(model.refinement.data, () => []) : []
 	return base.length === 0
 		? base
-		: mergeExactThroughput(base, new Map(exact.map((point) => [point.bucket, point.throughput])))
+		: mergeExactThroughput(base, new Map(Arr.map(exact, (point) => [point.bucket, point.throughput])))
 }
 
 type Spec = FixedMetricChartInputs["spec"]
@@ -144,7 +150,9 @@ const throughputChips = (rows: ReadonlyArray<FixedMetricRow>, perSecond: boolean
 	)
 
 const latencyColors = (context: GridContext) =>
-	Object.fromEntries(LATENCY_SERIES.map((entry) => [entry.key, resolveColor(context.colors, entry.token)]))
+	Rec.fromEntries(
+		Arr.map(LATENCY_SERIES, (entry) => [entry.key, resolveColor(context.colors, entry.token)]),
+	)
 
 const LOADING: CardBody = { _tag: "Loading" }
 
@@ -185,7 +193,7 @@ const gridItem = (
 		)
 		return {
 			id,
-			title: "Log Volume",
+			title: "Log volume",
 			skeleton: "area",
 			legend: body._tag === "Chart" ? throughputChips(rows, false, context) : [],
 			body,
@@ -225,7 +233,7 @@ const gridItem = (
 				: Option.none()
 			return {
 				id,
-				title: "Request Volume",
+				title: "Request volume",
 				skeleton: "area",
 				legend: body._tag === "Chart" ? throughputChips(rows, true, context) : [],
 				body,
@@ -235,21 +243,22 @@ const gridItem = (
 							onNone: () => [
 								"Total",
 								" ",
-								h.span(
-									[h.Class("font-medium text-foreground tabular-nums")],
-									[formatNumber(points.reduce((sum, point) => sum + point.throughput, 0))],
-								),
+								typography(h, { tone: "foreground", weight: "medium", numeric: true }, [
+									formatNumber(
+										Arr.reduce(points, 0, (sum, point) => sum + point.throughput),
+									),
+								]),
 							],
 							onSome: (error) => [error],
 						}),
 			}
 		}
 		case "error-rate": {
-			const total = points.reduce((sum, point) => sum + point.throughput, 0)
-			const errors = points.reduce((sum, point) => sum + point.throughput * point.errorRate, 0)
+			const total = Arr.reduce(points, 0, (sum, point) => sum + point.throughput)
+			const errors = Arr.reduce(points, 0, (sum, point) => sum + point.throughput * point.errorRate)
 			return {
 				id,
-				title: "Error Rate",
+				title: "Error rate",
 				skeleton: "area",
 				legend: [],
 				body: overviewBody(
@@ -281,7 +290,7 @@ const gridItem = (
 				body,
 				legend:
 					body._tag === "Chart"
-						? LATENCY_SERIES.map((entry) => ({
+						? Arr.map(LATENCY_SERIES, (entry) => ({
 								key: entry.key,
 								label: entry.label,
 								color: resolveColor(context.colors, entry.token),
@@ -312,7 +321,7 @@ const cardContent = (
 			const { failure: cardFailure, retry } = item.body
 			// The page strip already names this failure and retries it: the card keeps its frame and a
 			// one-line caption in the strip's failure class, centred in the plot area. No axis, no data.
-			if (pageFailureKeys.split(FAILURE_KEY_SEPARATOR).includes(failureKey(cardFailure)))
+			if (Str.split(FAILURE_KEY_SEPARATOR)(pageFailureKeys).includes(failureKey(cardFailure)))
 				return h.div(
 					[h.Class("flex h-full flex-col px-4 pb-4")],
 					[
@@ -355,7 +364,7 @@ const cardContent = (
 							chartId: item.id,
 							ariaLabel,
 							spec,
-							className: "h-full w-full aspect-auto",
+							className: chartFrameClass("fill"),
 						},
 						toParentMessage: (message: Chart.Message) =>
 							Message.GotChartMessage({ chartId: item.id, message }),
@@ -407,7 +416,7 @@ export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, context: Grid
 			h.Style(LINKED_CURSOR_STYLE),
 			h.OnMount(Mount.mapMessage(MountLinkedCursor(), () => Message.CompletedMountLinkedCursor())),
 		],
-		CARD_IDS.map((id) =>
+		Arr.map(CARD_IDS, (id) =>
 			cardSlot(id, metricCard, [h, id, data, gridContext, model.charts[id] ?? EMPTY_CHART]),
 		),
 	)

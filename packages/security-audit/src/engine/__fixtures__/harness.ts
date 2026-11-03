@@ -2,7 +2,7 @@
  * Scripted agents and an in-memory store for engine tests. Each scenario answers by role and by the
  * coverage ids a hunter prompt carries, the way a real agent sees only its own prompt.
  */
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import type { Candidate, HunterResult, SeedUnit } from "../../results"
 import type { CoverageUnit, EstimatedSeverity, Finding, Severity } from "../../schema"
 import { coverageId } from "../../validators"
@@ -143,10 +143,10 @@ export const hunterAnswer = (
 	ids: ReadonlyArray<string>,
 	candidate: Candidate = keysCandidate,
 ): HunterResult => {
-	const owned = ids.filter((id) => invocation.prompt.includes(`"coverage_id": "${id}"`))
+	const owned = Arr.filter(ids, (id) => Str.includes(`"coverage_id": "${id}"`)(invocation.prompt))
 	const keys = idOf(KEYS)
 	return {
-		units: owned.map((id) => ({
+		units: Arr.map(owned, (id) => ({
 			coverage_id: id,
 			disposition: id === keys ? "candidate" : "covered",
 			reviewed_paths: ["src/services/keys.ts"],
@@ -171,7 +171,7 @@ export const hunterAnswer = (
 
 export const emptyCritic = { missing_units: [], reassign_ids: [], resolved_prior_leads: [], stop: true }
 
-export const json = (value: unknown) => JSON.stringify(value)
+export const json = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 export interface Recorded {
 	readonly invocations: Array<AgentInvocation>
@@ -246,12 +246,8 @@ export const runScripted = (
 		saveReports: (_, reports) => Effect.sync(() => void (recorded.reports = reports)),
 		recordEvent: (_, event) => Effect.sync(() => void recorded.events.push(event)),
 	})
-	// The test is the entry point that composes the engine with its host.
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
-	return Effect.runPromise(runAudit(input).pipe(Effect.provide(Layer.mergeAll(agents, store)))).then(
-		(result) => ({
-			result,
-			recorded,
-		}),
-	)
+	return Effect.runPromise(runAudit(input).pipe(Effect.provide([agents, store]))).then((result) => ({
+		result,
+		recorded,
+	}))
 }

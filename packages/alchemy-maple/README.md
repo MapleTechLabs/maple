@@ -235,11 +235,13 @@ machine); ingest and queries never leave it.
   `maple` CLI ships with), verifies its sha256, and caches it in `~/.maple/cache/libchdb`
   (~330 MB, shared by every project). Set `MAPLE_LIBCHDB` to use a library you already have; a
   different chDB release is refused before the store is touched.
-- **Unclean shutdowns.** Ending `alchemy dev` any way it can be ended (Ctrl-C, a closed terminal,
-  even `kill -9` of `alchemy dev` itself) closes the store first. Only the sidecar process dying
-  outright (out of memory, `kill -9` on the sidecar, power loss) leaves it unclean, and
-  reopening such a store can crash chDB, so it is refused. Set `onDirtyStore: "wipe"` on `Local`
-  to discard its data and start fresh; that change restarts the server and is safe to leave set.
+- **Unclean shutdowns.** Maple Local closes its store on exits observed by the JavaScript
+  runtime, including another handler calling `process.exit()` before Alchemy finishes teardown.
+  A death the runtime cannot observe (SIGKILL of the sidecar itself, an OOM kill, or power loss)
+  can still leave it unclean. Reopening such a store can crash chDB, so it is refused. A sharing
+  session logs a dirty-store takeover refusal and recovery instructions once, then stops trying
+  to take over. Set `onDirtyStore: "wipe"` on `Local` to discard its data and start fresh; that
+  change restarts the server and is safe to leave set.
 - **Requirements.** Bun (the sidecar uses Bun's FFI), on macOS or Linux, x64 or arm64.
   Periodic checkpoints are a `maple start` feature; this store keeps none.
 

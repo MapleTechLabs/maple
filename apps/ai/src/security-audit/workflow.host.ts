@@ -12,6 +12,7 @@ import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-so
 import { SandboxClient } from "@maple/backend/sandbox/client"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { CloudflareRepoSandboxLive } from "@maple/backend/services/sandbox/CloudflareRepoSandbox"
+import { ExecutorService } from "@maple/backend/services/sandbox/ExecutorService"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { SecurityAuditCredits } from "@maple/backend/services/security-audit/SecurityAuditCredits"
@@ -26,17 +27,17 @@ import { runSecurityAuditWorkflow } from "./workflow.run"
 const auditTelemetry = eventTelemetry({ serviceName: "maple-security-audit", flushEvery: "30 seconds" })
 
 /**
- * The run's services over the host Worker's env: database, store, credits, the org's OpenRouter key
- * and the repository sandbox.
+ * The run's services over the host Worker's env: database, store, credits, the org's OpenRouter key,
+ * the repository sandbox and the execution sandbox.
  */
 const runServices = (env: Record<string, unknown>) => {
 	const base = Layer.mergeAll(DatabasePgLive, Env.layer, EdgeCacheServiceLive, FetchHttpClient.layer).pipe(
 		Layer.provideMerge(Layer.mergeAll(layerMapleDbConnection(env), envPorts(env))),
 	)
-	const sandbox = RepoSandboxService.layer.pipe(
-		Layer.provide(CloudflareRepoSandboxLive),
-		Layer.provide(Layer.mergeAll(VcsSourceService.layer, SandboxClient.layer)),
-	)
+	const sandbox = Layer.merge(
+		RepoSandboxService.layer.pipe(Layer.provide(CloudflareRepoSandboxLive)),
+		ExecutorService.layer,
+	).pipe(Layer.provide(Layer.mergeAll(VcsSourceService.layer, SandboxClient.layer)))
 	return Layer.mergeAll(
 		SecurityAuditStore.layer,
 		SecurityAuditCredits.layer,
@@ -49,6 +50,5 @@ const runServices = (env: Record<string, unknown>) => {
 export const runHostedAudit = (payload: SecurityAuditWorkflowPayload, env: Record<string, unknown>) =>
 	withPgConnectionScope(runSecurityAuditWorkflow(payload)).pipe(
 		// The Workflow run is the entry point these layers belong to.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(Layer.mergeAll(runServices(env), auditTelemetry)),
+		Effect.provide([runServices(env), auditTelemetry]),
 	)

@@ -3,14 +3,14 @@ import { cn } from "@maple/ui/lib/utils"
 import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ResolveThemeColors } from "../../../charts/theme-colors"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
-import { icon } from "../../../ui/icon"
-import { pageTitle } from "../../../ui/page-layout"
-import * as Select from "../../../ui/select"
-import * as SelectView from "../../../ui/select-view"
-import { serviceDot } from "../../../ui/values"
+import { linkButton } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import { pageTitle } from "@maple/views/ui/page-layout"
+import * as Select from "@maple/views/ui/select"
+import * as SelectView from "@maple/views/ui/select-view"
+import { serviceDot } from "@maple/views/ui/values"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { presetLabel, timeControls } from "../../kit/time-controls"
@@ -34,6 +34,8 @@ import { dependenciesTab } from "./view-dependencies"
 import { operationsTab } from "./view-operations"
 import { runsOnLinks } from "./view-footprint"
 import { overviewTab, THEME_TOKENS } from "./view-overview"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // TODO(unnamed-service): `UnnamedServiceHint` beside an unnamed service's title is not ported.
 
@@ -50,22 +52,26 @@ const environmentItems = (model: Model): ReadonlyArray<SelectView.SelectEntry> =
 	)
 	const current = environmentsOf(model.search)?.[0]
 	const options = [...new Set([...loaded, ...(current === undefined ? [] : [current])])].toSorted((a, b) =>
-		a.localeCompare(b),
+		Str.localeCompare(b)(a),
 	)
 	return [
 		{ _tag: "Item", item: { value: ALL_ENVIRONMENTS, label: "All environments" } },
-		...options.map((env): SelectView.SelectEntry => ({ _tag: "Item", item: { value: env, label: env } })),
+		...Arr.map(options, (env): SelectView.SelectEntry => ({
+			_tag: "Item",
+			item: { value: env, label: env },
+		})),
 	]
 }
 
 const createAlert = (h: H, model: Model): Html =>
-	h.a(
-		[
-			h.AriaLabel("Create alert"),
-			h.Class(buttonVariants({ variant: "outline", size: "sm" })),
-			h.DataAttribute("slot", "button"),
-			h.Href(hrefOf(AppRoute.AlertsCreate({ search: { serviceName: model.serviceName } }))),
-		],
+	linkButton(
+		h,
+		{
+			variant: "outline",
+			size: "sm",
+			href: hrefOf(AppRoute.AlertsCreate({ search: { serviceName: model.serviceName } })),
+			attributes: [h.AriaLabel("Create alert")],
+		},
 		[icon(h, "BellIcon"), h.span([h.Class("hidden sm:inline")], ["Create alert"])],
 	)
 
@@ -75,14 +81,22 @@ const runsOn = (h: H, model: Model): Html => {
 	const first = links[0]
 	if (first === undefined) return null
 	const more = links.length - 1
-	return h.a(
-		[
-			h.AriaLabel(`Runs on ${first.label} ${first.name}`),
-			h.Title(links.map((link) => `${link.label}: ${link.name}`).join("\n")),
-			h.Class(buttonVariants({ variant: "outline", size: "sm" })),
-			h.DataAttribute("slot", "button"),
-			h.Href(first.href),
-		],
+	return linkButton(
+		h,
+		{
+			variant: "outline",
+			size: "sm",
+			href: first.href,
+			attributes: [
+				h.AriaLabel(`Runs on ${first.label} ${first.name}`),
+				h.Title(
+					Arr.join(
+						Arr.map(links, (link) => `${link.label}: ${link.name}`),
+						"\n",
+					),
+				),
+			],
+		},
 		[
 			icon(h, first.icon),
 			h.span([h.Class("hidden sm:inline")], [first.label]),
@@ -130,10 +144,12 @@ const headerActions = (h: H, model: Model): Html => {
 			ariaLabel: "Environment",
 			className: "w-full sm:w-auto",
 			toView: (parts) =>
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
-					[...parts, runsOn(h, model), createAlert(h, model), controls],
-				),
+				hstack(h, { gap: "2", wrap: true }, [
+					...parts,
+					runsOn(h, model),
+					createAlert(h, model),
+					controls,
+				]),
 		},
 	})
 }
@@ -155,7 +171,7 @@ const tabs = (h: H, model: Model): Html => {
 	return underlineTabStrip(
 		h,
 		{ label: "Service sections", navigation: true },
-		SERVICE_TABS.map((tab) => {
+		Arr.map(SERVICE_TABS, (tab) => {
 			const isCurrent = tab.value === active
 			const isLinkActive = tab.value === "overview" || model.search.tab === tab.value
 			return h.a(
@@ -211,15 +227,15 @@ const scopeLabel = (model: Model): string => {
 	const environment = environmentsOf(model.search)?.join(", ") ?? "all environments"
 	const preset =
 		model.search.timePreset ?? (model.search.startTime === undefined ? DEFAULT_PRESET : undefined)
-	const range = preset === undefined ? "custom range" : presetLabel(preset).toLowerCase()
-	return [model.serviceName, environment, range].join(" · ")
+	const range = preset === undefined ? "custom range" : Str.toLowerCase(presetLabel(preset))
+	return Arr.join([model.serviceName, environment, range], " · ")
 }
 
 /** The peeked endpoint's buckets: the tab's sparkline read, or the drawer's own for the rest. */
 const peekSeries = (model: Model, spanName: string) =>
 	seriesSpanNames(model).includes(spanName)
 		? AsyncData.map(model.endpointSeries.data, (buckets) =>
-				buckets.filter((bucket) => bucket.spanName === spanName),
+				Arr.filter(buckets, (bucket) => bucket.spanName === spanName),
 			)
 		: (model.endpointPeek.series[spanName]?.data ?? AsyncData.Idle())
 

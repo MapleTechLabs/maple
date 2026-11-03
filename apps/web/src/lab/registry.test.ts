@@ -2,19 +2,20 @@ import { describe, expect, it } from "vitest"
 
 import { labEntryPaths } from "./boot"
 import { LAB_ENTRIES, LAB_ROOT, isLabPath, isSessionlessLabPath } from "./registry"
+import { Array as Arr } from "effect"
 
 // `index` is `/lab` itself; `data-probe` is the S6 spike, not listed.
 const UNLISTED = new Set([`${LAB_ROOT}/index`, `${LAB_ROOT}/data-probe`])
-const entryPaths = labEntryPaths().filter((path) => !UNLISTED.has(path))
+const entryPaths = Arr.filter(labEntryPaths(), (path) => !UNLISTED.has(path))
 
 describe("lab registry", () => {
 	it("lists exactly the lab entry modules", () => {
-		const registered = LAB_ENTRIES.map((entry) => entry.path).sort()
+		const registered = Arr.map(LAB_ENTRIES, (entry) => entry.path).sort()
 		expect(registered).toEqual([...entryPaths].sort())
 	})
 
 	it("has unique paths", () => {
-		const paths = LAB_ENTRIES.map((entry) => entry.path)
+		const paths = Arr.map(LAB_ENTRIES, (entry) => entry.path)
 		expect(new Set(paths).size).toBe(paths.length)
 	})
 

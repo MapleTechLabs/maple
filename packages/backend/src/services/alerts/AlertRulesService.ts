@@ -51,7 +51,7 @@ const decodeErrorKindOption = Schema.decodeUnknownOption(AlertEvaluationErrorKin
 const adminRoles = [decodeRoleNameSync("root"), decodeRoleNameSync("org:admin")]
 const MAX_ACTIVE_ALERT_RULES_PER_ORG = 100
 
-const isAdmin = (roles: ReadonlyArray<RoleName>) => roles.some((role) => adminRoles.includes(role))
+const isAdmin = (roles: ReadonlyArray<RoleName>) => Arr.some(roles, (role) => adminRoles.includes(role))
 
 export interface AlertRulesServiceApi {
 	readonly listRules: (
@@ -108,12 +108,10 @@ export const makeAlertRulePersistence = (options: {
 		roles: ReadonlyArray<RoleName>,
 	) {
 		if (isAdmin(roles)) return
-		return yield* Effect.fail(
-			new AlertForbiddenError({
-				message: "Only org admins can manage alerts",
-				...(roles.length > 0 ? { roles: [...roles] } : undefined),
-			}),
-		)
+		return yield* new AlertForbiddenError({
+			message: "Only org admins can manage alerts",
+			...(roles.length > 0 ? { roles: [...roles] } : undefined),
+		})
 	})
 
 	const findRuleRow = Effect.fn("AlertRulesService.findRuleRow")(function* (
@@ -136,12 +134,10 @@ export const makeAlertRulePersistence = (options: {
 	) {
 		const row = yield* findRuleRow(orgId, ruleId)
 		if (row !== undefined) return row
-		return yield* Effect.fail(
-			new AlertRuleNotFoundError({
-				message: "Alert rule not found",
-				ruleId,
-			}),
-		)
+		return yield* new AlertRuleNotFoundError({
+			message: "Alert rule not found",
+			ruleId,
+		})
 	})
 
 	const requireDestinationIds = Effect.fn("AlertRulesService.requireDestinationIds")(function* (
@@ -160,12 +156,10 @@ export const makeAlertRulePersistence = (options: {
 		const missing = Arr.filter(destinationIds, (id) => !HashSet.has(existingIds, id))
 		const missingDestinationId = missing[0]
 		if (missingDestinationId !== undefined) {
-			return yield* Effect.fail(
-				new AlertRuleDestinationNotFoundError({
-					message: "Alert rule references an unknown destination",
-					destinationId: missingDestinationId,
-				}),
-			)
+			return yield* new AlertRuleDestinationNotFoundError({
+				message: "Alert rule references an unknown destination",
+				destinationId: missingDestinationId,
+			})
 		}
 	})
 
@@ -178,6 +172,17 @@ export const makeAlertRulePersistence = (options: {
 		const normalized = yield* normalizeRule(orgId, request)
 		const ruleId = existingId ?? normalized.id
 		const timestamp = yield* runtime.now
+		const groupByJson =
+			normalized.groupBy != null
+				? yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(normalized.groupBy).pipe(
+						Effect.mapError(
+							() =>
+								new AlertPersistenceError({
+									message: "Alert rule group-by could not be encoded",
+								}),
+						),
+					)
+				: null
 		const ruleFields = {
 			name: normalized.name,
 			notes: normalizeOptionalString(request.notes),
@@ -189,7 +194,7 @@ export const makeAlertRulePersistence = (options: {
 				normalized.excludeServiceNames.length > 0 ? normalized.excludeServiceNames : null,
 			environmentsJson: normalized.environments.length > 0 ? normalized.environments : null,
 			tagsJson: normalized.tags.length > 0 ? normalized.tags : null,
-			groupBy: normalized.groupBy != null ? JSON.stringify(normalized.groupBy) : null,
+			groupBy: groupByJson,
 			signalType: normalized.signalType,
 			comparator: normalized.comparator,
 			threshold: normalized.threshold,
@@ -230,17 +235,15 @@ export const makeAlertRulePersistence = (options: {
 								.select("id")
 								.where(($) => [$.orgId.eq(orgId), $.id.in_(...normalized.destinationIds)]),
 						)
-						const existingIds = new Set(destinationRows.map((destination) => destination.id))
+						const existingIds = new Set(Arr.map(destinationRows, (destination) => destination.id))
 						const missingDestinationId = normalized.destinationIds.find(
 							(id) => !existingIds.has(id),
 						)
 						if (missingDestinationId !== undefined) {
-							return yield* Effect.fail(
-								new AlertRuleDestinationNotFoundError({
-									message: "Alert rule references an unknown destination",
-									destinationId: missingDestinationId,
-								}),
-							)
+							return yield* new AlertRuleDestinationNotFoundError({
+								message: "Alert rule references an unknown destination",
+								destinationId: missingDestinationId,
+							})
 						}
 					}
 					if (normalized.enabled) {
@@ -255,12 +258,10 @@ export const makeAlertRulePersistence = (options: {
 								]),
 						)
 						const alreadyActive =
-							existingId != null && activeRows.some((row) => row.id === existingId)
+							existingId != null && Arr.some(activeRows, (row) => row.id === existingId)
 						if (!alreadyActive && activeRows.length >= MAX_ACTIVE_ALERT_RULES_PER_ORG) {
-							return yield* Effect.fail(
-								makeAlertValidationError(
-									`Organizations may have at most ${MAX_ACTIVE_ALERT_RULES_PER_ORG} active alert rules`,
-								),
+							return yield* makeAlertValidationError(
+								`Organizations may have at most ${MAX_ACTIVE_ALERT_RULES_PER_ORG} active alert rules`,
 							)
 						}
 					}
@@ -348,11 +349,9 @@ export const makeAlertRulePersistence = (options: {
 		const { ruleId, txid } = yield* writeRuleRow(orgId, userId, existingId, request)
 		const row = yield* findRuleRow(orgId, ruleId)
 		if (row === undefined) {
-			return yield* Effect.fail(
-				new AlertPersistenceError({
-					message: "Alert rule row was not readable after it was saved",
-				}),
-			)
+			return yield* new AlertPersistenceError({
+				message: "Alert rule row was not readable after it was saved",
+			})
 		}
 		const document = yield* rowToRuleDocument(row)
 		return txid === undefined ? document : new AlertRuleDocument({ ...document, txid })
@@ -415,9 +414,7 @@ export const makeAlertRulePersistence = (options: {
 		const row = yield* requireRuleRow(orgId, ruleId)
 		// Hidden from the generic rule APIs: a monitor's rule is deleted with its monitor.
 		if (row.signalType === "uptime") {
-			return yield* Effect.fail(
-				new AlertRuleNotFoundError({ message: UPTIME_RULE_MANAGED_MESSAGE, ruleId }),
-			)
+			return yield* new AlertRuleNotFoundError({ message: UPTIME_RULE_MANAGED_MESSAGE, ruleId })
 		}
 		const deleted = yield* dbExecute((db) => db.transaction(deleteRuleRows(db, orgId, ruleId)))
 		const txid = readTxid(deleted)

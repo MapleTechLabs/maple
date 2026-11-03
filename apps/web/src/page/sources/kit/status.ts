@@ -2,7 +2,8 @@ import type { V2Source } from "@maple/domain/http/v2"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { statusDot } from "../../../ui/status-dot"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { Array as Arr } from "effect"
 
 // `SourceStatusBadge`.
 
@@ -58,14 +59,21 @@ export type StatusBadgeOptions = Readonly<{
 	className?: string
 }>
 
-export const sourceStatusBadge = <M>(h: HtmlBuilder<M>, source: V2Source, options: StatusBadgeOptions): Html => {
+export const sourceStatusBadge = <M>(
+	h: HtmlBuilder<M>,
+	source: V2Source,
+	options: StatusBadgeOptions,
+): Html => {
 	const { status, last_data_at: lastDataAt } = source.health
 	const time =
 		(options.showTime ?? true) && status === "healthy" && lastDataAt !== null
 			? formatRelativeTime(lastDataAt, options.nowMs)
 			: null
 	const rollup = rollupLabel(source)
-	const full = [LABEL[status], time, rollup].filter((part) => part !== null).join(" · ")
+	const full = Arr.join(
+		Arr.filter([LABEL[status], time, rollup], (part) => part !== null),
+		" · ",
+	)
 	return h.span(
 		[h.Class(cn("inline-flex max-w-full min-w-0 items-center gap-2 text-sm", options.className))],
 		[
@@ -75,7 +83,9 @@ export const sourceStatusBadge = <M>(h: HtmlBuilder<M>, source: V2Source, option
 				[
 					LABEL[status],
 					...(time === null ? [] : [h.span([h.Class("text-muted-foreground")], [" ", "· ", time])]),
-					...(rollup === null ? [] : [h.span([h.Class("text-muted-foreground")], [" ", "· ", rollup])]),
+					...(rollup === null
+						? []
+						: [h.span([h.Class("text-muted-foreground")], [" ", "· ", rollup])]),
 				],
 			),
 		],

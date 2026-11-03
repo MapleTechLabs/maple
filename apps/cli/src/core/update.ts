@@ -13,7 +13,7 @@
 // rename swaps the directory entry, so the running process keeps its old inode
 // while new invocations pick up the new binary. Keep the triple/URL logic here
 // in sync with install.sh.
-import { Clock, Duration, Effect, Option, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Option, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { PlatformError } from "effect/PlatformError"
 import { HttpClient, HttpClientRequest } from "effect/http"
@@ -57,7 +57,7 @@ const ReleasesResponse = Schema.Array(
 
 /** Drop a leading "v" so release tags ("v0.6.0") compare against MAPLE_VERSION
  *  ("0.6.0", already stripped in version.ts). */
-export const stripV = (v: string): string => v.replace(/^v/, "")
+export const stripV = (v: string): string => Str.replace(/^v/, "")(v)
 
 /** Map a Node platform/arch pair to a release target triple, or null when no
  *  bundle is published for it. Mirrors scripts/install.sh's case statement. */
@@ -81,13 +81,10 @@ export const targetTripleFor = (platform: string, arch: string): string | null =
 export const isNewer = (current: string, latest: string): boolean => {
 	if (current === "dev") return false
 	const parse = (v: string): number[] =>
-		stripV(v)
-			.split(/[.\-+]/)
-			.slice(0, 3)
-			.map((n) => Number.parseInt(n, 10))
+		Arr.map(Str.split(/[.\-+]/)(stripV(v)).slice(0, 3), (n) => Number.parseInt(n, 10))
 	const c = parse(current)
 	const l = parse(latest)
-	if (c.some(Number.isNaN) || l.some(Number.isNaN)) return false
+	if (Arr.some(c, Number.isNaN) || Arr.some(l, Number.isNaN)) return false
 	for (let i = 0; i < 3; i++) {
 		const cv = c[i] ?? 0
 		const lv = l[i] ?? 0
@@ -143,10 +140,9 @@ const fetchReleasesPage = (page: number) =>
 		const text = yield* response.text.pipe(
 			Effect.mapError((error) => toUpdateError("could not read GitHub release response", error)),
 		)
-		return yield* Effect.try({
-			try: () => Schema.decodeUnknownSync(Schema.fromJsonString(ReleasesResponse))(text),
-			catch: (error) => toUpdateError("could not decode GitHub release response", error),
-		})
+		return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ReleasesResponse))(text).pipe(
+			Effect.mapError((error) => toUpdateError("could not decode GitHub release response", error)),
+		)
 	})
 
 const findCliRelease = (page: number): Effect.Effect<string, UpdateError, HttpClient.HttpClient> =>
@@ -324,7 +320,7 @@ const extractTar = (
 		)
 		if (code !== 0) {
 			return yield* new UpdateError({
-				message: `could not extract bundle: tar exited ${code}: ${stderr.trim()}`,
+				message: `could not extract bundle: tar exited ${code}: ${Str.trim(stderr)}`,
 			})
 		}
 	}).pipe(
@@ -420,7 +416,7 @@ export const performUpdate = (
 		const progress = opts.progress ?? silentProgress
 		const target = yield* resolveTarget
 		const tagRaw = opts.tag ?? (yield* fetchLatestTag(10_000))
-		const tag = tagRaw.startsWith("v") ? tagRaw : `v${tagRaw}`
+		const tag = Str.startsWith("v")(tagRaw) ? tagRaw : `v${tagRaw}`
 		const installDir = yield* Effect.try({
 			try: () => resolveInstallDir(),
 			catch: (e) => new UpdateError({ message: `could not resolve install directory: ${String(e)}` }),
@@ -441,7 +437,7 @@ export const performUpdate = (
 			const entries = yield* fs.readDirectory(installDir)
 			const cutoff = (yield* Clock.currentTimeMillis) - 60 * 60 * 1000
 			for (const entry of entries) {
-				if (!entry.startsWith(".maple-update-tmp")) continue
+				if (!Str.startsWith(".maple-update-tmp")(entry)) continue
 				const path = join(installDir, entry)
 				const info = yield* fs.stat(path)
 				if (Option.exists(info.mtime, (mtime) => mtime.getTime() < cutoff)) {
@@ -538,7 +534,7 @@ export const shouldRunNotify = (argv: ReadonlyArray<string>): boolean => {
 	if (process.stderr.isTTY !== true) return false
 	const args = argv.slice(2)
 	if (args[0] === "update") return false
-	if (args.some((a) => NOTIFY_SKIP_FLAGS.has(a))) return false
+	if (Arr.some(args, (a) => NOTIFY_SKIP_FLAGS.has(a))) return false
 	return true
 }
 
@@ -565,7 +561,7 @@ export const maybeNotifyUpdate: Effect.Effect<void, never, MapleConfig | HttpCli
 
 		if (shouldCheck(Option.getOrUndefined(config.lastUpdateCheck), now)) {
 			const fetched = yield* fetchLatestTag(1500).pipe(
-				Effect.map((tag) => Option.some(tag)),
+				Effect.asSome,
 				Effect.orElseSucceed(() => Option.none<string>()),
 			)
 			if (Option.isSome(fetched)) {

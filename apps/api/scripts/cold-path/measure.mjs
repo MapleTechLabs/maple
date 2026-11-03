@@ -1,3 +1,4 @@
+/* oxlint-disable effecttsgo/global-json -- measurement harness: importing effect here would skew the heap and CPU it measures */
 // Fresh-process desktop V8 proxy. CPU includes runtime/GC work, not remote I/O.
 // Run from repo root with Bun: bun apps/api/scripts/cold-path/measure.mjs <bundle> <output.json> [runs]
 import { spawnSync } from "node:child_process"

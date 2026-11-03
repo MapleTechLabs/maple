@@ -365,7 +365,7 @@ describe("two bugs are two issues", () => {
 
 describe("an HTTP status is part of the bug", () => {
 	/** Each 4xx and 500 is its own failure; every other 5xx is one outage class. */
-	const statusClass = (status: number) => (status < 500 || status === 500 ? String(status) : "5xx")
+	const statusClass = (status: number) => (status <= 500 ? String(status) : "5xx")
 	const STATUS_FORMS = [
 		(status: number, word: string) => `StatusCode error (${status} GET /api/${word})`,
 		(status: number, word: string) => `StatusCode: Bad response (${status} POST /api/${word})`,

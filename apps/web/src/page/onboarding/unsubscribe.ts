@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -7,7 +7,7 @@ import { modifyFields } from "foldkit/struct"
 import { MapleApiClient } from "../../platform/api-clients"
 import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
-import { button, linkButton } from "../../ui/button"
+import { button, linkButton } from "@maple/views/ui/button"
 import { authDescription, authLayout, authTitle } from "./auth-layout"
 
 // `/unsubscribe`: the digest email's footer link. Public: the signed token is the credential, and
@@ -36,7 +36,7 @@ export const init = (token: string | undefined): Model => ({
 export const keyOf = (token: string | undefined): string => `Unsubscribe:${token ?? ""}`
 
 const labelForToken = (token: string): string => {
-	const kind = token.split(".")[0]
+	const kind = Str.split(".")(token)[0]
 	if (kind === "digest") return "the weekly digest"
 	if (kind === "web-analytics") return "the weekly web analytics email"
 	return "these emails"
@@ -66,7 +66,8 @@ export const Unsubscribe = Command.define("Unsubscribe", {
 			Effect.catch((error) =>
 				Effect.succeed(
 					Message.FailedUnsubscribe({
-						isInvalidToken: error._tag === "@maple/http/errors/DigestUnsubscribeTokenInvalidError",
+						isInvalidToken:
+							error._tag === "@maple/http/errors/DigestUnsubscribeTokenInvalidError",
 					}),
 				),
 			),
@@ -91,7 +92,7 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 					State.Failed({
 						message: isInvalidToken
 							? "This unsubscribe link is invalid. Use the link from the email itself."
-							: "Something went wrong. Please try again.",
+							: "Couldn't unsubscribe this address. Try again.",
 					}),
 			}),
 		}),
@@ -104,13 +105,18 @@ type H = HtmlBuilder<Message>
 const confirm = (h: H, token: string, state: State): ReadonlyArray<Html> => [
 	authTitle(h, ["Unsubscribe"]),
 	authDescription(h, ["Stop receiving ", labelForToken(token), " from Maple?"]),
-	...(state._tag === "Failed" ? [h.p([h.Class("mt-3 text-sm text-destructive")], [state.message])] : []),
+	...(state._tag === "Failed"
+		? [h.p([h.Class("mt-3 text-sm text-destructive-foreground")], [state.message])]
+		: []),
 	h.div(
 		[h.Class("mt-4")],
 		[
 			button(
 				h,
-				{ isLoading: state._tag === "Pending", attributes: [h.OnClick(Message.ClickedUnsubscribe())] },
+				{
+					isLoading: state._tag === "Pending",
+					attributes: [h.OnClick(Message.ClickedUnsubscribe())],
+				},
 				["Unsubscribe"],
 			),
 		],
@@ -129,7 +135,10 @@ const done = (h: H, token: string): ReadonlyArray<Html> => [
 		[
 			linkButton(
 				h,
-				{ variant: "outline", href: hrefOf(AppRoute.Account({ search: { tab: "email-preferences" } })) },
+				{
+					variant: "outline",
+					href: hrefOf(AppRoute.Account({ search: { tab: "email-preferences" } })),
+				},
 				["Notification settings"],
 			),
 		],
@@ -143,7 +152,9 @@ export const view = (h: H, model: Model): Html =>
 		model.token === null
 			? [
 					authTitle(h, ["Invalid unsubscribe link"]),
-					authDescription(h, ["This link is incomplete. Use the unsubscribe link from the email itself."]),
+					authDescription(h, [
+						"This link is incomplete. Use the unsubscribe link from the email itself.",
+					]),
 				]
 			: model.state._tag === "Done"
 				? done(h, model.token)

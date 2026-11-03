@@ -6,11 +6,12 @@ import {
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
-import * as Chart from "../../../charts/chart"
-import { ChartRuntime } from "../../../charts/chart-runtime"
-import { ThemeColors } from "../../../charts/theme-colors"
-import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import { CheckSummary } from "../shared/check-summary"
 import { PreviewSlot } from "../shared/preview"
 
 // `/alerts/incidents/$incidentId`.
@@ -25,6 +26,8 @@ export const Model = Schema.Struct({
 	rules: Rows(AlertRuleRowSchema),
 	states: Rows(AlertRuleStateRowSchema),
 	preview: PreviewSlot,
+	/** What the evaluator recorded over the range: the chart's line when the query cannot be replayed. */
+	checks: KeyedSchema(CheckSummary, LoadFailure),
 	deliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
 	investigation: KeyedSchema(Schema.NullOr(V2Investigation), LoadFailure),
 	/** `useAsyncAction`: the create request is running, so repeat clicks cannot start duplicates. */

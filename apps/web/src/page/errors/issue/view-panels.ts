@@ -1,20 +1,22 @@
 import type { ErrorIssueDocument, ErrorIssuePullRequestDocument } from "@maple/domain/http"
 import { AlertRuleId } from "@maple/domain/primitives"
-import { Option, Schema } from "effect"
-import type { V2Investigation } from "@maple/domain/http/v2"
+import { Option, Schema, Array as Arr } from "effect"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button, linkButton } from "../../../ui/button"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { item, itemContent, itemDescription, itemMedia } from "../../../ui/item"
-import { panel, panelHeader } from "../../../ui/panel"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { item, itemContent, itemDescription, itemMedia } from "@maple/views/ui/item"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { textLinkClass } from "@maple/views/ui/text-link"
 import { docsLink } from "../../kit/signal-empty-state"
 import { Message } from "./message"
 import { sectionHeading } from "../../kit/section-heading"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // `IssuePullRequestsPanel`, the attach nudge, `LinkedInvestigationPanel`, `IssueIncidentsTable`.
 
@@ -42,28 +44,27 @@ const pullRequestRow = (h: H, pr: ErrorIssuePullRequestDocument, isBusy: boolean
 			icon(h, "GithubIcon", { className: "size-4" }),
 		]),
 		itemContent(h, [
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					h.a(
-						[
-							h.Href(pr.url),
-							h.Target("_blank"),
-							h.Rel("noreferrer"),
-							h.Class("truncate text-sm font-medium text-foreground hover:underline active:underline"),
-						],
-						[pr.repoFullName, "#", String(pr.number)],
-					),
-					badge(
-						h,
-						{
-							variant: "outline",
-							className: cn("shrink-0 capitalize", PULL_REQUEST_STATE_TONE[pr.state]),
-						},
-						[pr.state],
-					),
-				],
-			),
+			hstack(h, { gap: "2", wrap: true }, [
+				h.a(
+					[
+						h.Href(pr.url),
+						h.Target("_blank"),
+						h.Rel("noreferrer"),
+						h.Class(
+							"truncate text-sm font-medium text-foreground hover:underline active:underline",
+						),
+					],
+					[pr.repoFullName, "#", String(pr.number)],
+				),
+				badge(
+					h,
+					{
+						variant: "outline",
+						className: cn("shrink-0 capitalize", PULL_REQUEST_STATE_TONE[pr.state]),
+					},
+					[pr.state],
+				),
+			]),
 			...(pr.title ? [itemDescription(h, [pr.title], "line-clamp-1")] : []),
 			...(hint ? [itemDescription(h, [hint], "text-foreground-subtle")] : []),
 		]),
@@ -106,30 +107,24 @@ export const pullRequestsPanel = (
 			? h.div(
 					[h.Class("space-y-2 px-4 py-3")],
 					[
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							[
-								"Attach the pull request that fixes this. When it merges, Maple watches for the error to come back and closes this issue if it doesn't.",
-							],
-						),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Attach the pull request that fixes this. When it merges, Maple watches for the error to come back and closes this issue if it doesn't.",
+						]),
 						docsLink(h, "github", "GitHub integration docs"),
 					],
 				)
 			: h.ul(
 					[h.Class("divide-y")],
-					pullRequests.map((pr) => pullRequestRow(h, pr, isBusy)),
+					Arr.map(pullRequests, (pr) => pullRequestRow(h, pr, isBusy)),
 				),
 	])
 
 /** The awaiting-fix nudge: work is under way and nothing tells Maple which fix to watch. */
 export const attachNudge = (h: H): Html =>
 	panel(h, { className: "px-4 py-3" }, [
-		h.p(
-			[h.Class("text-xs text-muted-foreground")],
-			[
-				"No pull request attached. Maple can only confirm this error stopped if it knows which fix to watch.",
-			],
-		),
+		typography(h, { size: "xs", tone: "muted", as: "p" }, [
+			"No pull request attached. Maple can only confirm this error stopped if it knows which fix to watch.",
+		]),
 		button(
 			h,
 			{
@@ -142,102 +137,19 @@ export const attachNudge = (h: H): Html =>
 		),
 	])
 
-export const linkedInvestigationPanel = (
-	h: H,
-	investigation: V2Investigation | null,
-	isStarting: boolean,
-): Html =>
-	investigation === null
-		? panel(
-				h,
-				{ className: "shrink-0 flex-row flex-wrap items-center justify-between gap-4 px-5 py-4" },
-				[
-					h.div(
-						[h.Class("min-w-0")],
-						[
-							h.p(
-								[h.Class("text-sm font-medium text-foreground")],
-								["No linked investigation"],
-							),
-							h.p(
-								[h.Class("mt-0.5 text-xs text-muted-foreground")],
-								["Start an evidence-backed autonomous pass for this issue."],
-							),
-						],
-					),
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isDisabled: isStarting,
-							attributes: [h.OnClick(Message.ClickedInvestigate())],
-						},
-						[icon(h, "PulseIcon"), "Start investigation"],
-					),
-				],
-			)
-		: panel(
-				h,
-				{
-					className:
-						"grid shrink-0 gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center",
-				},
-				[
-					h.div(
-						[h.Class("min-w-0")],
-						[
-							h.div(
-								[h.Class("flex flex-wrap items-center gap-2")],
-								[
-									h.p(
-										[h.Class("text-sm font-medium text-foreground")],
-										["Linked investigation"],
-									),
-									badge(h, { variant: "outline", className: "capitalize" }, [
-										investigation.status,
-									]),
-									...(investigation.confidence
-										? [
-												h.span(
-													[h.Class("text-xs capitalize text-muted-foreground")],
-													[`${investigation.confidence} confidence`],
-												),
-											]
-										: []),
-								],
-							),
-							h.p(
-								[h.Class("mt-1 truncate text-sm text-muted-foreground")],
-								[
-									investigation.report?.suspectedCause ??
-										(investigation.status === "investigating"
-											? "Gathering evidence…"
-											: (investigation.error ?? "No diagnosis submitted")),
-								],
-							),
-						],
-					),
-					linkButton(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							href: hrefOf(AppRoute.Investigation({ id: investigation.id, search: {} })),
-						},
-						["Open investigation"],
-					),
-				],
-			)
-
 /** `BodySection` over `SectionHeading`: a titled block of the page body. */
 export const bodySection = (
 	h: H,
 	options: Readonly<{ id: string; title: string; count?: string | undefined }>,
 	children: ReadonlyArray<Html>,
 ): Html =>
-	h.section(
-		[h.AriaLabelledBy(`${options.id}-heading`), h.Class("flex shrink-0 flex-col gap-3.5")],
+	vstack(
+		h,
+		{
+			as: "section",
+			className: "shrink-0 gap-3.5",
+			attributes: [h.AriaLabelledBy(`${options.id}-heading`)],
+		},
 		[
 			sectionHeading(h, { title: options.title, hint: options.count, id: `${options.id}-heading` }),
 			...children,
@@ -254,22 +166,19 @@ export const alertSourceCard = (h: H, issue: ErrorIssueDocument): Html => {
 	const groupKey = typeof sourceRef?.groupKey === "string" ? sourceRef.groupKey : null
 	return panel(h, { className: "shrink-0 gap-2 px-5 py-4" }, [
 		sectionHeading(h, { title: "Alert source" }),
-		h.p(
-			[h.Class("text-sm text-muted-foreground")],
-			[
-				"This issue is fed by alert rule incidents",
-				...(signalType ? [` (${signalType})`] : []),
-				...(groupKey && groupKey !== "__total__" ? [` for group "${groupKey}"`] : []),
-				".",
-			],
-		),
+		typography(h, { size: "sm", tone: "muted", as: "p" }, [
+			"This issue is fed by alert rule incidents",
+			...(signalType ? [` (${signalType})`] : []),
+			...(groupKey && groupKey !== "__total__" ? [` for group "${groupKey}"`] : []),
+			".",
+		]),
 		...(ruleId === null
 			? []
 			: [
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.AlertRule({ ruleId, search: {} }))),
-							h.Class("text-sm text-primary underline-offset-4 hover:underline active:underline"),
+							h.Class(textLinkClass("primary", false, "text-sm")),
 						],
 						["View alert rule →"],
 					),

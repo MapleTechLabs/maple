@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"
 import { UpdateDashboardWidgetOutput } from "@maple/domain/mcp-outputs"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import {
@@ -138,7 +138,7 @@ export function registerUpdateDashboardWidgetTool(server: McpToolRegistrar) {
 			const blockingWarnings = yield* collectBlockingBuilderWarnings(parsedWidget.dataSource)
 			if (blockingWarnings.length > 0) {
 				return yield* new McpInvalidInputError({
-					message: `This widget's query has clauses the engine can't honor, which would silently change what the chart shows (the widget was NOT updated):\n- ${blockingWarnings.join("\n- ")}\n\nFix and retry. Notes: span/resource attributes work automatically (e.g. \`query.context = "x"\`) but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys; prefix non-allowlisted groupBy keys with \`attr.\`.`,
+					message: `This widget's query has clauses the engine can't honor, which would silently change what the chart shows (the widget was NOT updated):\n- ${Arr.join(blockingWarnings, "\n- ")}\n\nFix and retry. Notes: span/resource attributes work automatically (e.g. \`query.context = "x"\`) but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys; prefix non-allowlisted groupBy keys with \`attr.\`.`,
 					parameter: "widget_json",
 				})
 			}
@@ -195,7 +195,7 @@ export function registerUpdateDashboardWidgetTool(server: McpToolRegistrar) {
 						["Widget ID", output.widgetId],
 						["Visualization", output.visualization],
 						["Total widgets", output.dashboard.widgetCount],
-						["Updated", output.dashboard.updatedAt.slice(0, 19)],
+						["Updated", Str.slice(0, 19)(output.dashboard.updatedAt)],
 					]),
 					...(output.repairedScalar
 						? [

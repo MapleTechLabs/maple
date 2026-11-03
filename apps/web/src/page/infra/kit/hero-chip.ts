@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
+import { badge, badgeClass } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { Array as Arr } from "effect"
 
 // `HeroChip`.
 
@@ -13,8 +13,8 @@ export const heroChip = <M>(
 	title?: string,
 ): Html => {
 	const children = typeof content === "string" ? [content] : content
-	const texts = children.filter((child): child is string => typeof child === "string")
-	const derived = texts.length === children.length ? texts.join("") : undefined
+	const texts = Arr.filter(children, (child): child is string => typeof child === "string")
+	const derived = texts.length === children.length ? Arr.join(texts, "") : undefined
 	const resolvedTitle = title ?? derived
 	return badge(
 		h,
@@ -37,7 +37,7 @@ const FIELD_CLASS = "min-w-0 gap-1 font-normal text-muted-foreground"
  */
 export const heroFieldChipClass = (isPicker: boolean): string =>
 	cn(
-		badgeVariants({ variant: isPicker ? "meta" : "muted", size: "xs", mono: true }),
+		badgeClass({ variant: isPicker ? "meta" : "muted", size: "xs", mono: true }),
 		FIELD_CLASS,
 		isPicker && "cursor-pointer hover:text-foreground active:text-foreground",
 	)
@@ -60,9 +60,7 @@ export const heroFieldChipParts = <M>(
 	const label = options.label === "" ? [] : [h.span([h.Class("shrink-0")], [options.label])]
 	return [
 		...(options.isValueFirst === true ? [value, ...label] : [...label, value]),
-		...(options.isPicker === true
-			? [icon(h, "ChevronDownIcon", { className: "size-3 shrink-0" })]
-			: []),
+		...(options.isPicker === true ? [icon(h, "ChevronDownIcon", { className: "size-3 shrink-0" })] : []),
 	]
 }
 

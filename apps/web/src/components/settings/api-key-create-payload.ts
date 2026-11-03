@@ -1,5 +1,6 @@
 import type { ApiKeyKind } from "@maple/domain/http"
 import type { V2ApiKeyCreateParams, V2Scope } from "@maple/domain/http/v2"
+import { String as Str } from "effect"
 
 export interface ApiKeyCreateOptions {
 	expiresInSeconds?: number
@@ -12,10 +13,10 @@ export const buildApiKeyCreatePayload = (
 	kind: ApiKeyKind | undefined,
 	options: ApiKeyCreateOptions = {},
 ): V2ApiKeyCreateParams => {
-	const trimmedDescription = description.trim()
+	const trimmedDescription = Str.trim(description)
 
 	return {
-		name: name.trim(),
+		name: Str.trim(name),
 		...(trimmedDescription.length > 0 ? { description: trimmedDescription } : undefined),
 		...(kind !== undefined ? { kind } : undefined),
 		...(options.expiresInSeconds !== undefined

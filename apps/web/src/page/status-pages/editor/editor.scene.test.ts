@@ -6,7 +6,7 @@ import {
 	type V2StatusPage,
 } from "@maple/domain/http/v2"
 import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import {
 	attr,
 	Command,
@@ -24,7 +24,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { statusPagesHref } from "../shared/commands"
 import { selectionOf } from "../shared/preview"
@@ -52,7 +52,7 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const PUBLIC_ID = Schema.encodeSync(StatusPagePublicId)(statusPage().id)
 
 type Fixture = Readonly<{
@@ -77,47 +77,55 @@ const loaded = (fixture: Fixture = {}): Model => {
 		},
 		context,
 	).model
-	return [
-		Message.ReadClock({ nowMs: Date.UTC(2026, 9, 1, 12) }),
-		Message.CompletedFetchSession({ orgId: ORG, isAdmin: fixture.isAdmin ?? true }),
-		Message.CompletedFetchPage({
-			key: entered.page.key ?? "",
-			result: Result.succeed(fixture.page ?? statusPage()),
-		}),
-		Message.CompletedFetchComponents({
-			key: entered.components.key ?? "",
-			result: fixture.componentsFail
-				? Result.fail(toLoadFailure(new Error("components unavailable")))
-				: Result.succeed(fixture.components ?? [component(1), component(2), component(3)]),
-		}),
-		Message.CompletedFetchIncidents({
-			key: entered.incidents.key ?? "",
-			result: Result.succeed(fixture.incidents ?? []),
-		}),
-		Message.CompletedFetchMonitors({
-			key: entered.monitors.key ?? "",
-			result: fixture.monitorsFail
-				? Result.fail(toLoadFailure(new Error("monitors unavailable")))
-				: Result.succeed([httpMonitor(), downMonitor()]),
-		}),
-		// Only the JSON tab reads the config.
-		...(entered.config.key === null
-			? []
-			: [
-					Message.CompletedFetchConfig({
-						key: entered.config.key,
-						result: fixture.configFail
-							? Result.fail(toLoadFailure(new Error("config unavailable")))
-							: Result.succeed(
-									fixture.config ??
-										statusPageConfig(
-											fixture.page ?? statusPage(),
-											fixture.components ?? [component(1), component(2), component(3)],
-										),
-								),
-					}),
-				]),
-	].reduce((model, message) => pageUpdate(model, message).model, entered)
+	return Arr.reduce(
+		[
+			Message.ReadClock({ nowMs: Date.UTC(2026, 9, 1, 12) }),
+			Message.CompletedFetchSession({ orgId: ORG, isAdmin: fixture.isAdmin ?? true }),
+			Message.CompletedFetchPage({
+				key: entered.page.key ?? "",
+				result: Result.succeed(fixture.page ?? statusPage()),
+			}),
+			Message.CompletedFetchComponents({
+				key: entered.components.key ?? "",
+				result: fixture.componentsFail
+					? Result.fail(toLoadFailure(new Error("components unavailable")))
+					: Result.succeed(fixture.components ?? [component(1), component(2), component(3)]),
+			}),
+			Message.CompletedFetchIncidents({
+				key: entered.incidents.key ?? "",
+				result: Result.succeed(fixture.incidents ?? []),
+			}),
+			Message.CompletedFetchMonitors({
+				key: entered.monitors.key ?? "",
+				result: fixture.monitorsFail
+					? Result.fail(toLoadFailure(new Error("monitors unavailable")))
+					: Result.succeed([httpMonitor(), downMonitor()]),
+			}),
+			// Only the JSON tab reads the config.
+			...(entered.config.key === null
+				? []
+				: [
+						Message.CompletedFetchConfig({
+							key: entered.config.key,
+							result: fixture.configFail
+								? Result.fail(toLoadFailure(new Error("config unavailable")))
+								: Result.succeed(
+										fixture.config ??
+											statusPageConfig(
+												fixture.page ?? statusPage(),
+												fixture.components ?? [
+													component(1),
+													component(2),
+													component(3),
+												],
+											),
+									),
+						}),
+					]),
+		],
+		entered,
+		(model, message) => pageUpdate(model, message).model,
+	)
 }
 
 describe("status page editor", () => {
@@ -386,7 +394,7 @@ describe("the page as the editor", () => {
 			loaded({ components: [component(1, { monitor_id: httpMonitor().id })] }),
 			Message.ClickedAddComponent(),
 		).model
-		expect(opened.addPicker.rows.map((row) => row.monitorId)).toEqual([monitor.id])
+		expect(Arr.map(opened.addPicker.rows, (row) => row.monitorId)).toEqual([monitor.id])
 		const picked = pageUpdate(
 			opened,
 			Message.GotAddPickerMessage({ message: PickerMessage.ToggledRow({ key: `m:${monitor.id}` }) }),
@@ -475,11 +483,15 @@ describe("the page as the editor", () => {
 
 describe("incidents in the panel", () => {
 	test("switching between incident and maintenance keeps what was typed", () => {
-		const typed = [
-			Message.ClickedNewIncident({ kind: "incident" }),
-			Message.ChangedIncidentField({ field: "title", value: "Database upgrade" }),
-			Message.ChangedIncidentField({ field: "body", value: "Planned work." }),
-		].reduce((model, message) => pageUpdate(model, message).model, loaded())
+		const typed = Arr.reduce(
+			[
+				Message.ClickedNewIncident({ kind: "incident" }),
+				Message.ChangedIncidentField({ field: "title", value: "Database upgrade" }),
+				Message.ChangedIncidentField({ field: "body", value: "Planned work." }),
+			],
+			loaded(),
+			(model, message) => pageUpdate(model, message).model,
+		)
 		const switched = pageUpdate(typed, Message.ChangedIncidentKind({ kind: "maintenance" })).model
 		expect(switched.incidentForm).toMatchObject({
 			kind: "maintenance",
@@ -559,13 +571,17 @@ describe("incidents in the panel", () => {
 
 	test("an incident saved as a draft names its components and is not published", () => {
 		const opened = pageUpdate(loaded(), Message.ClickedNewIncident({ kind: "incident" })).model
-		const filled = [
-			Message.ChangedIncidentField({ field: "title", value: "Slow checkout" }),
-			Message.ChangedIncidentField({ field: "impact", value: "critical" }),
-			Message.ToggledIncidentComponent({ componentId: componentId(2) }),
-			Message.ChangedIncidentField({ field: "body", value: "Checkout is slow." }),
-			Message.PickedIncidentPublished({ isPublished: false }),
-		].reduce((current, message) => pageUpdate(current, message).model, opened)
+		const filled = Arr.reduce(
+			[
+				Message.ChangedIncidentField({ field: "title", value: "Slow checkout" }),
+				Message.ChangedIncidentField({ field: "impact", value: "critical" }),
+				Message.ToggledIncidentComponent({ componentId: componentId(2) }),
+				Message.ChangedIncidentField({ field: "body", value: "Checkout is slow." }),
+				Message.PickedIncidentPublished({ isPublished: false }),
+			],
+			opened,
+			(current, message) => pageUpdate(current, message).model,
+		)
 		expect(pageUpdate(filled, Message.SubmittedIncident()).commands).toMatchObject([
 			{
 				name: "CreateStatusPageIncident",
@@ -587,12 +603,16 @@ describe("incidents in the panel", () => {
 	test("maintenance needs a window that ends after it starts, read in the viewer's zone", () => {
 		const zoned: PageContext = { ...context, timeZone: "Europe/Berlin" }
 		const opened = update(loaded(), Message.ClickedNewIncident({ kind: "maintenance" }), zoned).model
-		const filled = [
-			Message.ChangedIncidentField({ field: "title", value: "Database upgrade" }),
-			Message.ChangedIncidentField({ field: "body", value: "Brief read-only periods." }),
-			Message.ChangedIncidentField({ field: "scheduledStart", value: "2026-10-30T22:00" }),
-			Message.ChangedIncidentField({ field: "scheduledEnd", value: "2026-10-30T21:00" }),
-		].reduce((current, message) => update(current, message, zoned).model, opened)
+		const filled = Arr.reduce(
+			[
+				Message.ChangedIncidentField({ field: "title", value: "Database upgrade" }),
+				Message.ChangedIncidentField({ field: "body", value: "Brief read-only periods." }),
+				Message.ChangedIncidentField({ field: "scheduledStart", value: "2026-10-30T22:00" }),
+				Message.ChangedIncidentField({ field: "scheduledEnd", value: "2026-10-30T21:00" }),
+			],
+			opened,
+			(current, message) => update(current, message, zoned).model,
+		)
 		expect(update(filled, Message.SubmittedIncident(), zoned).commands ?? []).toEqual([])
 		const fixed = update(
 			filled,
@@ -791,13 +811,17 @@ describe("settings and appearance views", () => {
 	})
 
 	test("saving sends every field and settles once the page matches", () => {
-		const edited = [
-			Message.ChangedThemeColor({ field: "accent", value: "#1A2B3C" }),
-			Message.PickedThemePreset({ preset: "paper" }),
-			Message.ChangedSetting({ field: "autoIncidents", value: "publish" }),
-			Message.ToggledPoweredBy(),
-			Message.ChangedSetting({ field: "privacyUrl", value: " https://acme.example/privacy " }),
-		].reduce((model, message) => pageUpdate(model, message).model, loaded({ tab: "settings" }))
+		const edited = Arr.reduce(
+			[
+				Message.ChangedThemeColor({ field: "accent", value: "#1A2B3C" }),
+				Message.PickedThemePreset({ preset: "paper" }),
+				Message.ChangedSetting({ field: "autoIncidents", value: "publish" }),
+				Message.ToggledPoweredBy(),
+				Message.ChangedSetting({ field: "privacyUrl", value: " https://acme.example/privacy " }),
+			],
+			loaded({ tab: "settings" }),
+			(model, message) => pageUpdate(model, message).model,
+		)
 		const saving = pageUpdate(edited, Message.ClickedSaveSettings())
 		expect(saving.commands).toMatchObject([
 			{
@@ -951,12 +975,13 @@ describe("json view", () => {
 	const documentOf = (components: ReadonlyArray<number>) => ({
 		name: "Acme Status",
 		slug: "acme-status",
-		components: components.map((n) => ({ id: publicComponentId(n), name: `Component ${n}` })),
+		components: Arr.map(components, (n) => ({ id: publicComponentId(n), name: `Component ${n}` })),
 	})
 	const editing = (draft: string, fixture: Fixture = {}) =>
-		[Message.ClickedEditJson(), Message.ChangedJson({ value: draft })].reduce(
-			(model, message) => pageUpdate(model, message).model,
+		Arr.reduce(
+			[Message.ClickedEditJson(), Message.ChangedJson({ value: draft })],
 			loaded({ tab: "json", ...fixture }),
+			(model, message) => pageUpdate(model, message).model,
 		)
 
 	test("shows the page as its config document, with public ids", () => {
@@ -1127,9 +1152,10 @@ describe("json view", () => {
 			expectView(role("button", { name: "Apply" })).toBeDisabled(),
 		)
 		const dropped = JSON.stringify({ ...documentOf([1, 2, 3]) })
-		const editingConfig = [Message.ClickedEditJson(), Message.ChangedJson({ value: dropped })].reduce(
-			(current, message) => pageUpdate(current, message).model,
+		const editingConfig = Arr.reduce(
+			[Message.ClickedEditJson(), Message.ChangedJson({ value: dropped })],
 			model,
+			(current, message) => pageUpdate(current, message).model,
 		)
 		scene(
 			{ update: pageUpdate, view },
@@ -1214,7 +1240,7 @@ describe("json view", () => {
 			description: " Live status. ",
 			auto_incidents: "draft",
 			theme: { ...theme, accent: "#1A2B3C" },
-			components: documentOf([1, 2, 3]).components.map((c) => ({
+			components: Arr.map(documentOf([1, 2, 3]).components, (c) => ({
 				...c,
 				name: ` ${c.name}`,
 				group: " ",
@@ -1336,9 +1362,10 @@ describe("json view", () => {
 			}),
 		).model
 		// Cancel before the re-read lands, then start a fresh draft on v7.
-		const reopened = [Message.ClickedCancelJson(), Message.ClickedEditJson()].reduce(
-			(model, message) => pageUpdate(model, message).model,
+		const reopened = Arr.reduce(
+			[Message.ClickedCancelJson(), Message.ClickedEditJson()],
 			refused,
+			(model, message) => pageUpdate(model, message).model,
 		)
 		const reread = pageUpdate(
 			reopened,

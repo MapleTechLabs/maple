@@ -7,9 +7,10 @@
 import { type ChatTurnOrigin, prReviewSessionId } from "@maple/domain/chat-session"
 import { MAPLE_NATIVE_SESSION_ID_ATTR } from "@maple/domain/gen-ai"
 import { ChatConnectorId, ExternalUserId, OrgId, UserId } from "@maple/domain/primitives"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr } from "effect"
 import { assert, describe, it } from "vitest"
 import {
+	buildChatToolkit,
 	buildDiagnosisCompletion,
 	buildReviewCompletion,
 	makeRunUsage,
@@ -31,6 +32,9 @@ import {
 import type { ReviewCoverage } from "./review-coverage"
 import { makeChildFindings } from "./review-child-findings"
 import { makeReviewLedger } from "./review-ledger"
+import { PR_REVIEW_RULESET } from "./permissions"
+import type { McpToolExecutorApi } from "../mcp/dispatcher"
+import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 
 const orgId = Schema.decodeSync(OrgId)("org_test")
 const human = Schema.decodeSync(UserId)("user_test")
@@ -54,7 +58,7 @@ const MODEL_NAME = "@cf/test/model"
 
 const INVESTIGATION_SESSION = `${orgId}:inv-00000000-0000-0000-0000-000000000000`
 
-const submitDiagnosis: SubmitDiagnosis = () => Effect.succeed(undefined)
+const submitDiagnosis: SubmitDiagnosis = () => Effect.undefined
 
 const SESSION_ATTRIBUTES = { [MAPLE_NATIVE_SESSION_ID_ATTR]: "session-1" }
 
@@ -146,7 +150,7 @@ describe("buildDiagnosisCompletion", () => {
 
 describe("buildReviewCompletion", () => {
 	const REVIEW_SESSION = prReviewSessionId(orgId, "7f1d3c2e-9a4b-4c8d-8e2f-1a2b3c4d5e6f")
-	const submitReview: SubmitReview = () => Effect.succeed(undefined)
+	const submitReview: SubmitReview = () => Effect.undefined
 	const buildReview = (sessionId: string, origin: ChatTurnOrigin) =>
 		buildReviewCompletion(sessionId, tenantFor(human), origin, submitReview, makeRunUsage(), MODEL_NAME)
 
@@ -313,7 +317,11 @@ describe("buildReviewCompletion", () => {
 
 			assert.isTrue(Result.isSuccess(await call(CLEAN)))
 			assert.deepStrictEqual(
-				filed[0]!.report.findings.map((finding) => [finding.path, finding.line, finding.severity]),
+				Arr.map(filed[0]!.report.findings, (finding) => [
+					finding.path,
+					finding.line,
+					finding.severity,
+				]),
 				[["src/capture.ts", 213, "warn"]],
 			)
 			assert.equal(filed[0]!.report.verdict, "issues")
@@ -342,7 +350,7 @@ describe("buildReviewCompletion", () => {
 			assert.isTrue(Result.isFailure(await call()))
 			assert.isTrue(Result.isSuccess(await call()))
 			assert.deepStrictEqual(
-				filed[0]!.report.findings.map((finding) => [finding.path, finding.category]),
+				Arr.map(filed[0]!.report.findings, (finding) => [finding.path, finding.category]),
 				[["src/queue.ts", "correctness"]],
 			)
 		})
@@ -351,7 +359,7 @@ describe("buildReviewCompletion", () => {
 			const { filed, call } = submitWith(true)
 			assert.isTrue(Result.isSuccess(await call(CLEAN)))
 			assert.deepStrictEqual(
-				filed[0]!.report.findings.map((finding) => [finding.path, finding.line]),
+				Arr.map(filed[0]!.report.findings, (finding) => [finding.path, finding.line]),
 				[["src/capture.ts", 213]],
 			)
 		})
@@ -371,10 +379,13 @@ describe("buildReviewCompletion", () => {
 		it("counts a finding saved and repeated in the submission once", async () => {
 			const children = makeChildFindings()
 			children.observe(
-				[
-					"src/capture.ts:213 | warn | correctness | Queue acks early | Why | Fix | -",
-					"src/capture.ts:216 | warn | security | Secret in a log | Why | Fix | -",
-				].join("\n"),
+				Arr.join(
+					[
+						"src/capture.ts:213 | warn | correctness | Queue acks early | Why | Fix | -",
+						"src/capture.ts:216 | warn | security | Secret in a log | Why | Fix | -",
+					],
+					"\n",
+				),
 			)
 			const completion = buildReviewCompletion(
 				REVIEW_SESSION,
@@ -482,7 +493,13 @@ describe("record_finding", () => {
 	// An inline comment the author reads in ten seconds: the body says what breaks, the fix is below it.
 	it("refuses an essay-length finding with what to cut, then saves the rewrite", async () => {
 		const { ledger, save } = setup()
-		const essay = { ...RETRY, body: Array.from({ length: 70 }, (_, i) => `word${i}`).join(" ") }
+		const essay = {
+			...RETRY,
+			body: Arr.join(
+				Array.from({ length: 70 }, (_, i) => `word${i}`),
+				" ",
+			),
+		}
 		const refused = await save(essay)
 		assert.isTrue(Result.isFailure(refused))
 		const message = Result.isFailure(refused) ? refused.failure.message : ""
@@ -499,7 +516,10 @@ describe("record_finding", () => {
 			...RETRY,
 			line,
 			title: `finding ${line}`,
-			suggestion: Array.from({ length: 40 }, () => "fix").join(" "),
+			suggestion: Arr.join(
+				Array.from({ length: 40 }, () => "fix"),
+				" ",
+			),
 		})
 		const outcomes = []
 		for (const line of [1, 2, 3, 4, 5]) outcomes.push(Result.isSuccess(await save(essay(line))))
@@ -513,7 +533,15 @@ describe("record_finding", () => {
 		const result = await submit({
 			verdict: "issues",
 			summary: "Adds a retry to the order client.",
-			findings: [{ ...RETRY, body: Array.from({ length: 61 }, () => "w").join(" ") }],
+			findings: [
+				{
+					...RETRY,
+					body: Arr.join(
+						Array.from({ length: 61 }, () => "w"),
+						" ",
+					),
+				},
+			],
 		})
 		assert.isTrue(Result.isSuccess(result))
 		assert.lengthOf(filed[0]!.report.findings, 1)
@@ -524,7 +552,15 @@ describe("record_finding", () => {
 		const submission: PrReviewSubmission = {
 			verdict: "issues",
 			summary: "Adds a retry to the order client.",
-			findings: [{ ...RETRY, body: Array.from({ length: 61 }, () => "w").join(" ") }],
+			findings: [
+				{
+					...RETRY,
+					body: Arr.join(
+						Array.from({ length: 61 }, () => "w"),
+						" ",
+					),
+				},
+			],
 		}
 		const first = await submit(submission)
 		assert.isTrue(Result.isFailure(first))
@@ -549,7 +585,7 @@ describe("record_finding", () => {
 		assert.isTrue(Result.isSuccess(result))
 		const report = filed[0]!.report
 		assert.deepStrictEqual(
-			report.findings.map((finding) => finding.line),
+			Arr.map(report.findings, (finding) => finding.line),
 			[42, 90],
 		)
 		// A saved warn makes the review one with issues, whatever the submission called it.
@@ -600,5 +636,66 @@ describe("savedFindingsRequest", () => {
 		assert.equal(request.report.verdict, "issues")
 		assert.deepStrictEqual(request.report.unreviewed, ["src/b.ts"])
 		assert.lengthOf(request.report.findings, 1)
+	})
+})
+
+describe("buildChatToolkit", () => {
+	const recordingExecutor = () => {
+		const calls: Array<{ readonly name: string; readonly params: unknown }> = []
+		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
+			execute: (_tenant, name, params) => {
+				calls.push({ name, params })
+				return Effect.succeed({ content: [{ type: "text" as const, text: `${name} ran` }] })
+			},
+		}
+		return { executor, calls }
+	}
+	const PULL_REQUEST = { repository: "MapleTechLabs/maple", number: 2175 }
+
+	it("reads the session's pull request whatever repository or number the model passes", async () => {
+		const { executor, calls } = recordingExecutor()
+		const { handlers } = buildChatToolkit(
+			executor,
+			tenantFor(human),
+			PR_REVIEW_RULESET,
+			"chat",
+			undefined,
+			undefined,
+			undefined,
+			PULL_REQUEST,
+		)
+
+		await Effect.runPromise(handlers.pr_changed_files!({ description: "files" }, {} as never))
+		await Effect.runPromise(
+			handlers.pr_file_diff!(
+				{ repository: "MapleLabs/Maple", number: 1, paths: ["a.ts"] },
+				{} as never,
+			),
+		)
+
+		assert.deepEqual(calls, [
+			{ name: "pr_changed_files", params: { description: "files", ...PULL_REQUEST } },
+			{ name: "pr_file_diff", params: { ...PULL_REQUEST, paths: ["a.ts"] } },
+		])
+	})
+
+	it("leaves every other tool's arguments as the model sent them", async () => {
+		const { executor, calls } = recordingExecutor()
+		const { handlers } = buildChatToolkit(
+			executor,
+			tenantFor(human),
+			PR_REVIEW_RULESET,
+			"chat",
+			undefined,
+			undefined,
+			undefined,
+			PULL_REQUEST,
+		)
+		const read = { repository: "MapleTechLabs/other", ref: "main", path: "a.ts" }
+
+		await Effect.runPromise(handlers.sandbox_read_file!(read, {} as never))
+
+		assert.deepEqual(calls, [{ name: "sandbox_read_file", params: read }])
 	})
 })

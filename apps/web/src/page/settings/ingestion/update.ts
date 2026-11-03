@@ -1,12 +1,12 @@
 import type { RecommendationPublicId } from "@maple/domain/http/v2"
-import { Array, Option, Result } from "effect"
+import { Array, Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Dialog from "../../../ui/dialog"
-import * as Menu from "../../../ui/menu"
-import * as Tabs from "../../../ui/tabs"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
+import * as Tabs from "@maple/views/ui/tabs"
 import {
 	ApplyRecommendation,
 	DeleteMapping,
@@ -95,7 +95,7 @@ const ingestRulesFetches = () => [
 const refresh = <A, E>(data: AsyncData.AsyncData<A, E>) =>
 	Option.getOrElse(AsyncData.revalidate(data), () => data)
 
-const withoutPending = (ids: ReadonlyArray<string>, id: string) => ids.filter((entry) => entry !== id)
+const withoutPending = (ids: ReadonlyArray<string>, id: string) => Array.filter(ids, (entry) => entry !== id)
 
 const liftDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, deleteDialog: step.model },
@@ -160,7 +160,7 @@ const mappingById = (model: Model, id: string) =>
 	)
 
 const pickedRowAction = (model: Model, menuId: string, value: string): Return =>
-	Option.match(mappingById(model, menuId.replace(/^mapping-row-/, "")), {
+	Option.match(mappingById(model, Str.replace(/^mapping-row-/, "")(menuId)), {
 		onNone: () => ({ model }),
 		onSome: (mapping) =>
 			value === "delete"
@@ -255,7 +255,7 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 			model: {
 				...model,
 				revealedKeys: model.revealedKeys.includes(kind)
-					? model.revealedKeys.filter((entry) => entry !== kind)
+					? Array.filter(model.revealedKeys, (entry) => entry !== kind)
 					: [...model.revealedKeys, kind],
 			},
 		}),
@@ -295,7 +295,7 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 				}),
 				onFailure: (error) => ({
 					...closed,
-					outMessage: toast("error", "Unable to complete request", error.message),
+					outMessage: toast("error", "Couldn't regenerate the key", error.message),
 				}),
 			})
 		},

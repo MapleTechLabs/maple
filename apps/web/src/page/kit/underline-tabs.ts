@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon, type IconName } from "../../ui/icon"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { Array as Arr } from "effect"
 
 // `UnderlineTabStrip` and `underlineTabClass`: a row of tabs with an underlined active tab.
 
@@ -47,8 +48,8 @@ export type LinkTab<M = never> = Readonly<{
 	href: string
 	label: string
 	icon?: IconName
-	/** A tally after the label; `error` tints it for counts that need attention. */
-	count?: number | undefined
+	/** A tally after the label (a number, or one already formatted); `error` tints it. */
+	count?: number | string | undefined
 	countTone?: "muted" | "error"
 	/** Handles a plain click in place of the router; the href still serves new tabs. */
 	onClick?: M | undefined
@@ -69,7 +70,7 @@ export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: Readonly
 			divided: false,
 			className: "gap-0 border-b border-border",
 		},
-		tabs.map((tab) =>
+		Arr.map(tabs, (tab) =>
 			h.a(
 				[
 					h.Key(tab.key),

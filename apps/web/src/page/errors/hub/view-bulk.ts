@@ -1,21 +1,23 @@
 import { allowedTransitionsForAll, type WorkflowState } from "@maple/domain/http"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import type * as Menu from "../../../ui/menu"
-import * as MenuView from "../../../ui/menu-view"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import type * as Menu from "@maple/views/ui/menu"
+import * as MenuView from "@maple/views/ui/menu-view"
 import { SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../kit/severity"
 import { WORKFLOW_LABEL } from "../kit/workflow"
 import { signalsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The issues bulk bar: the selection's actions, pinned to the foot.
 
 type H = HtmlBuilder<Message>
 
-const DOT_ITEM = "flex items-center gap-2"
+const DOT_ITEM = hstackClass({ gap: "2" })
 
 const bulkMenu = (
 	h: H,
@@ -57,7 +59,7 @@ const severityEntries = (h: H): ReadonlyArray<MenuView.MenuEntry> => [
 		label: "Set severity",
 		entries: [
 			{ _tag: "Separator" },
-			...SEVERITY_ORDER.map((severity): MenuView.MenuEntry => ({
+			...Arr.map(SEVERITY_ORDER, (severity): MenuView.MenuEntry => ({
 				_tag: "Item",
 				value: severity,
 				label: SEVERITY_LABEL[severity],
@@ -78,7 +80,7 @@ const severityEntries = (h: H): ReadonlyArray<MenuView.MenuEntry> => [
 const moveEntries = (
 	selected: ReadonlyArray<{ readonly state: WorkflowState }>,
 ): ReadonlyArray<MenuView.MenuEntry> => {
-	const targets = allowedTransitionsForAll(selected.map((issue) => issue.state))
+	const targets = allowedTransitionsForAll(Arr.map(selected, (issue) => issue.state))
 	const first = selected[0]
 	return [
 		{
@@ -98,7 +100,7 @@ const moveEntries = (
 										: "No move applies to every selected issue",
 							},
 						]
-					: targets.map((state) => ({
+					: Arr.map(targets, (state) => ({
 							_tag: "Item" as const,
 							value: state,
 							label: WORKFLOW_LABEL[state],
@@ -109,9 +111,10 @@ const moveEntries = (
 }
 
 export const bulkBar = (h: H, model: Model): ReadonlyArray<Html> => {
-	const selected = signalsOf(model)
-		.filter((signal) => model.selectedIds.includes(signal.id))
-		.map((signal) => ({ id: signal.id, state: signal.issue.workflowState }))
+	const selected = Arr.map(
+		Arr.filter(signalsOf(model), (signal) => model.selectedIds.includes(signal.id)),
+		(signal) => ({ id: signal.id, state: signal.issue.workflowState }),
+	)
 	if (selected.length === 0) return []
 	return [
 		h.div(

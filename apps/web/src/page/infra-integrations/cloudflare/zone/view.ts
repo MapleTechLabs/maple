@@ -1,19 +1,20 @@
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
-import { ResolveThemeColors, type ThemeColors } from "../../../../charts/theme-colors"
+import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
+import { ResolveThemeColors, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
-import { linkButton } from "../../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../../ui/empty"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
-import { segmentedSelect } from "../../../../ui/segmented-select"
-import { skeleton } from "../../../../ui/skeleton"
-import { statusDot } from "../../../../ui/status-dot"
-import * as Tooltip from "../../../../ui/tooltip"
+import { linkButton } from "@maple/views/ui/button"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import { docsLink, emptyActions } from "../../../kit/signal-empty-state"
+import { docsLink } from "../../../kit/signal-empty-state"
+import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
@@ -47,6 +48,8 @@ import {
 	securitySection,
 } from "./view-sections"
 import { zoneSignals } from "./view-strips"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `ZoneDetailPage`.
 
@@ -80,10 +83,10 @@ const header = (h: H, model: Model, hasFilters: boolean): HeaderParts => {
 				: [heroChip(h, ["account ", account.name])]
 	const chips = filterChips(h, model, filters)
 	const hero = pageHeroParts(h, {
-		title: h.span(
-			[h.Class("flex items-center gap-3")],
-			[...(severity === null ? [] : [statusDot(h, { tone: severity, size: "lg" })]), model.zoneName],
-		),
+		title: hstack(h, { gap: "3", as: "span" }, [
+			...(severity === null ? [] : [statusDot(h, { tone: severity, size: "lg" })]),
+			model.zoneName,
+		]),
 		meta: [
 			heroChip(h, "zone"),
 			...accountChip,
@@ -98,7 +101,7 @@ const header = (h: H, model: Model, hasFilters: boolean): HeaderParts => {
 						size: "xs",
 						ariaLabel: "Zone view",
 						options: tabs,
-						value: tabs.some((t) => t.value === tab) ? tab : "traffic",
+						value: Arr.some(tabs, (t) => t.value === tab) ? tab : "traffic",
 						onChange: (next) => Message.ClickedTab({ tab: next }),
 					}),
 				]
@@ -112,7 +115,7 @@ const zoneEmpty = (h: H): Html =>
 		[
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "CloudflareBrandIcon", { size: 16 })]),
-				emptyTitle(h, ["No traffic for this zone in the selected window"]),
+				emptyTitle(h, ["No traffic for this zone in this window"]),
 				emptyDescription(h, [
 					"Widen the time range, clear the filters, or check the zone list for where traffic is landing.",
 				]),
@@ -236,7 +239,7 @@ export const zonePage = (h: H, model: Model, timeZone: string, options: ZonePage
 				view: Tooltip.view,
 				toParentMessage: (message: Tooltip.Message) => Message.GotTooltipMessage({ message }),
 				viewInputs: {
-					triggerIds: Object.values(SCOPE_IDS),
+					triggerIds: Rec.values(SCOPE_IDS),
 					toContent: (id) => tooltipContent(model, id),
 					// `ScopeChip`'s `TooltipContent className="max-w-[32ch]"`.
 					className: "max-w-[32ch]",
@@ -268,10 +271,7 @@ export const zonePage = (h: H, model: Model, timeZone: string, options: ZonePage
 								actions:
 									headerActions.length === 0
 										? undefined
-										: h.div(
-												[h.Class("flex flex-wrap items-center gap-2")],
-												headerActions,
-											),
+										: hstack(h, { gap: "2", wrap: true }, headerActions),
 								rightPanel: zoneRail(h, model, {
 									serviceName: serviceNameOf(model),
 									accountName: account?.name ?? null,

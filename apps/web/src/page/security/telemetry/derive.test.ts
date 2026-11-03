@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Arbitrary, Schema } from "effect"
+import { Arbitrary, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { criticalUpgrades, runtimeEntries, runtimeTotals } from "./derive"
 import type { Runtimes } from "./model"
 
@@ -61,7 +61,7 @@ const RELEASES: Runtimes["releases"] = {
 }
 
 const toRow = (seed: RowSeed): Row => {
-	const [runtimeName = "", runtimeVersion = ""] = seed.runtime.split(" ")
+	const [runtimeName, runtimeVersion = ""] = Str.split(" ")(seed.runtime)
 	return {
 		service: seed.service,
 		environment: seed.environment,
@@ -90,13 +90,13 @@ const deploymentKey = (row: Row) => JSON.stringify([row.service, row.environment
 
 // The query groups by the full combination, so a response never repeats one.
 const dedupe = (rows: ReadonlyArray<Row>): ReadonlyArray<Row> => [
-	...new Map(rows.map((row) => [comboKey(row), row] as const).reverse()).values(),
+	...new Map(Arr.map(rows, (row) => [comboKey(row), row] as const).reverse()).values(),
 ]
 
 const runtimesOf = (rows: ReadonlyArray<Row>, skipped: ReadonlyArray<string>): Runtimes => ({
 	runtimes: rows,
 	releases: RELEASES,
-	advisories: Object.fromEntries(Object.entries(ADVISORIES).filter(([key]) => !skipped.includes(key))),
+	advisories: Rec.fromEntries(Arr.filter(Rec.toEntries(ADVISORIES), ([key]) => !skipped.includes(key))),
 	advisoriesSkipped: skipped,
 })
 
@@ -107,7 +107,7 @@ const World = Arbitrary.map(
 			skipped: Schema.Array(Schema.Literals(ADVISORY_KEYS)),
 		}),
 	),
-	({ rows, skipped }) => runtimesOf(dedupe(rows.map(toRow)), [...new Set(skipped)]),
+	({ rows, skipped }) => runtimesOf(dedupe(Arr.map(rows, toRow)), [...new Set(skipped)]),
 )
 
 /** What the page tells the user to act on: the stat rail and the "upgrade now" list. */
@@ -115,20 +115,19 @@ const verdict = (runtimes: Runtimes) => {
 	const entries = runtimeEntries(runtimes)
 	return {
 		totals: runtimeTotals(entries),
-		upgrades: criticalUpgrades(entries)
-			.map((upgrade) => ({ key: upgrade.key, services: [...upgrade.services].sort() }))
-			.sort((a, b) => a.key.localeCompare(b.key)),
+		upgrades: Arr.map(criticalUpgrades(entries), (upgrade) => ({
+			key: upgrade.key,
+			services: [...upgrade.services].sort(),
+		})).sort((a, b) => Str.localeCompare(b.key)(a.key)),
 	}
 }
 
 const newestHourOf = (rows: ReadonlyArray<Row>) =>
-	rows.reduce(
-		(newest, row) =>
-			newest.set(
-				deploymentKey(row),
-				Math.max(newest.get(deploymentKey(row)) ?? 0, Date.parse(row.lastSeen)),
-			),
-		new Map<string, number>(),
+	Arr.reduce(rows, new Map<string, number>(), (newest, row) =>
+		newest.set(
+			deploymentKey(row),
+			Math.max(newest.get(deploymentKey(row)) ?? 0, Date.parse(row.lastSeen)),
+		),
 	)
 
 describe("runtime verdicts", () => {
@@ -155,10 +154,13 @@ describe("runtime verdicts", () => {
 		"the row order of the response changes nothing",
 		[World, Schema.Array(Schema.Finite)],
 		([runtimes, keys]) => {
-			const shuffled = runtimes.runtimes
-				.map((row, index) => ({ row, key: keys[index % Math.max(keys.length, 1)] ?? index }))
-				.sort((a, b) => a.key - b.key)
-				.map(({ row }) => row)
+			const shuffled = Arr.map(
+				Arr.map(runtimes.runtimes, (row, index) => ({
+					row,
+					key: keys[index % Math.max(keys.length, 1)] ?? index,
+				})).sort((a, b) => a.key - b.key),
+				({ row }) => row,
+			)
 			expect(verdict({ ...runtimes, runtimes: shuffled })).toEqual(verdict(runtimes))
 		},
 	)
@@ -168,11 +170,11 @@ describe("runtime verdicts", () => {
 		[World],
 		([runtimes]) => {
 			const entries = runtimeEntries(runtimes)
-			expect(entries.map((entry) => comboKey(entry.row)).sort()).toEqual(
-				runtimes.runtimes.map(comboKey).sort(),
+			expect(Arr.map(entries, (entry) => comboKey(entry.row)).sort()).toEqual(
+				Arr.map(runtimes.runtimes, comboKey).sort(),
 			)
 			const newest = newestHourOf(runtimes.runtimes)
-			entries.forEach((entry) => {
+			Arr.forEach(entries, (entry) => {
 				expect(entry.replaced).toBe(
 					Date.parse(entry.row.lastSeen) < newest.get(deploymentKey(entry.row))!,
 				)
@@ -180,16 +182,16 @@ describe("runtime verdicts", () => {
 			// History sits below everything current.
 			const firstReplaced = entries.findIndex((entry) => entry.replaced)
 			expect(
-				firstReplaced === -1 || entries.slice(firstReplaced).every((entry) => entry.replaced),
+				firstReplaced === -1 || Arr.every(entries.slice(firstReplaced), (entry) => entry.replaced),
 			).toBe(true)
 		},
 	)
 
 	it.prop("the stat rail and the upgrade list agree", [World], ([runtimes]) => {
 		const { totals, upgrades } = verdict(runtimes)
-		const upgradeServices = new Set(upgrades.flatMap((upgrade) => upgrade.services))
+		const upgradeServices = new Set(Arr.flatMap(upgrades, (upgrade) => upgrade.services))
 		expect(totals.urgent).toBe(upgradeServices.size)
-		expect(totals.services).toBe(new Set(runtimes.runtimes.map((row) => row.service)).size)
+		expect(totals.services).toBe(new Set(Arr.map(runtimes.runtimes, (row) => row.service)).size)
 		for (const count of [totals.urgent, totals.endOfLife, totals.behind, totals.noVersion])
 			expect(count).toBeLessThanOrEqual(totals.services)
 	})

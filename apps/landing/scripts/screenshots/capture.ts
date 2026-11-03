@@ -8,7 +8,18 @@
  * `bun run dev:signin`), renders at 2x, and writes webp via `cwebp`.
  */
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
-import { Console, DateTime, Effect, FileSystem, Layer, Option, Schema } from "effect"
+import {
+	Config,
+	Console,
+	DateTime,
+	Effect,
+	FileSystem,
+	Option,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { Command, Flag } from "effect/cli"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
@@ -64,11 +75,15 @@ const pw = <A>(message: string, run: () => Promise<A>, shot?: string) =>
 
 const ClerkUsers = Schema.Array(Schema.Struct({ id: Schema.String }))
 const ClerkTicket = Schema.Struct({ token: Schema.String })
+const encodeTicketRequest = Schema.encodeEffect(
+	Schema.fromJsonString(Schema.Struct({ user_id: Schema.String, expires_in_seconds: Schema.Number })),
+)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const mintTicket = Effect.fn("capture.mintTicket")(
 	function* (email: string) {
-		const secret = process.env.CLERK_SECRET_KEY ?? ""
-		if (!secret.startsWith("sk_test_")) {
+		const secret = yield* Config.String("CLERK_SECRET_KEY").pipe(Config.withDefault(""))
+		if (!Str.startsWith("sk_test_")(secret)) {
 			return yield* new CaptureError({
 				message: "CLERK_SECRET_KEY must be a development key (sk_test_…)",
 			})
@@ -85,13 +100,11 @@ const mintTicket = Effect.fn("capture.mintTicket")(
 			)
 		const user = users[0]
 		if (!user) return yield* new CaptureError({ message: `no Clerk user ${email}` })
+		const ticketRequest = yield* encodeTicketRequest({ user_id: user.id, expires_in_seconds: 600 })
 		const ticket = yield* client
 			.execute(
 				HttpClientRequest.post("https://api.clerk.com/v1/sign_in_tokens").pipe(
-					HttpClientRequest.bodyText(
-						JSON.stringify({ user_id: user.id, expires_in_seconds: 600 }),
-						"application/json",
-					),
+					HttpClientRequest.bodyText(ticketRequest, "application/json"),
 				),
 			)
 			.pipe(
@@ -116,10 +129,11 @@ const relabel = (page: Page, labels: ShotSet["relabel"]) =>
 			const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
 			for (let node = walker.nextNode(); node; node = walker.nextNode()) {
 				for (const [from, to] of pairs) {
-					if (node.nodeValue?.includes(from)) node.nodeValue = node.nodeValue.replaceAll(from, to)
+					if (node.nodeValue?.includes(from))
+						node.nodeValue = Str.replaceAll(from, to)(node.nodeValue)
 				}
 			}
-		}, Object.entries(labels)),
+		}, Rec.toEntries(labels)),
 	)
 
 /** Network quiet and no skeletons left: the page is showing data, not a loading state. */
@@ -140,13 +154,13 @@ const settle = (page: Page, shot: string) =>
 		shot,
 	)
 
-const warehouseTime = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ")
+const warehouseTime = (ms: number) => Str.replace("T", " ")(Str.slice(0, 19)(new Date(ms).toISOString()))
 
 const shotUrl = (base: string, shot: Shot, anchor: number) => {
 	const url = new URL(shot.route, base)
-	for (const [key, value] of Object.entries(shot.search ?? {})) {
+	for (const [key, value] of Rec.toEntries(shot.search ?? {})) {
 		// TanStack Router reads non-string search values as JSON.
-		url.searchParams.set(key, typeof value === "string" ? value : JSON.stringify(value))
+		url.searchParams.set(key, typeof value === "string" ? value : encodeJson(value))
 	}
 	// Dev-only plan-gate bypass: the demo org never went through billing onboarding.
 	url.searchParams.set("quota_preview", "1")
@@ -196,7 +210,7 @@ const capture = Effect.fn("capture.shot")(function* (
 			(cause) => new CaptureError({ message: `write ${out}: ${cause.message}`, shot: shot.id }),
 		),
 	)
-	yield* Console.log(`  ✓ ${shot.id}  ${out.replace(ROOT, "")}`)
+	yield* Console.log(`  ✓ ${shot.id}  ${Str.replace(ROOT, "")(out)}`)
 }, Effect.scoped)
 
 // ── command ─────────────────────────────────────────────────────────────────
@@ -232,8 +246,11 @@ const command = Command.make(
 		)
 		const anchor = DateTime.toEpochMillis(state.anchor)
 		const set: ShotSet = SETS[flags.set]
-		const wanted = Option.map(flags.only, (only) => new Set(only.split(",").map((id) => id.trim())))
-		const shots = set.shots.filter((shot) =>
+		const wanted = Option.map(
+			flags.only,
+			(only) => new Set(Arr.map(Str.split(",")(only), (id) => Str.trim(id))),
+		)
+		const shots = Arr.filter(set.shots, (shot) =>
 			Option.match(wanted, { onNone: () => true, onSome: (ids) => ids.has(shot.id) }),
 		)
 		if (shots.length === 0) return yield* new CaptureError({ message: "no shots match --only" })
@@ -264,7 +281,7 @@ const command = Command.make(
 		const signIn = yield* pw("open sign-in", () => context.newPage())
 		yield* pw("sign in", async () => {
 			await signIn.goto(`${flags.web}/sign-in?__clerk_ticket=${encodeURIComponent(ticket)}`)
-			await signIn.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 30_000 })
+			await signIn.waitForURL((url) => !Str.startsWith("/sign-in")(url.pathname), { timeout: 30_000 })
 			await signIn.close()
 		})
 
@@ -275,7 +292,6 @@ const command = Command.make(
 ).pipe(Command.withDescription("Capture landing screenshots from the seeded local stack"))
 
 Command.run(command, { version: "1.0.0" }).pipe(
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
-	Effect.provide(Layer.mergeAll(FetchHttpClient.layer, NodeServices.layer)),
+	Effect.provide([FetchHttpClient.layer, NodeServices.layer]),
 	NodeRuntime.runMain,
 )

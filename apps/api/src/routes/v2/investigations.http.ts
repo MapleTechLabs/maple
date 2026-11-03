@@ -26,7 +26,7 @@ import type {
 	V2InvestigationCreateSubject,
 	V2InvestigationSubject,
 } from "@maple/domain/http/v2"
-import { Effect, Match, Schema } from "effect"
+import { Effect, Match, Schema, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 
@@ -76,32 +76,38 @@ const toWireSubject = Effect.fn("HttpV2Investigations.toWireSubject")(function* 
 	return yield* Match.value(subject.incidentKind).pipe(
 		Match.when("error", () =>
 			Schema.decodeEffect(ErrorIncidentId)(subject.incidentId).pipe(
-				Effect.mapError(decodeFailure),
-				Effect.map((incidentId) => ({
-					...shared,
-					incident_kind: "error" as const,
-					incident_id: incidentId,
-				})),
+				Effect.mapBoth({
+					onFailure: decodeFailure,
+					onSuccess: (incidentId) => ({
+						...shared,
+						incident_kind: "error" as const,
+						incident_id: incidentId,
+					}),
+				}),
 			),
 		),
 		Match.when("anomaly", () =>
 			Schema.decodeEffect(AnomalyIncidentId)(subject.incidentId).pipe(
-				Effect.mapError(decodeFailure),
-				Effect.map((incidentId) => ({
-					...shared,
-					incident_kind: "anomaly" as const,
-					incident_id: incidentId,
-				})),
+				Effect.mapBoth({
+					onFailure: decodeFailure,
+					onSuccess: (incidentId) => ({
+						...shared,
+						incident_kind: "anomaly" as const,
+						incident_id: incidentId,
+					}),
+				}),
 			),
 		),
 		Match.when("alert", () =>
 			Schema.decodeEffect(AlertIncidentId)(subject.incidentId).pipe(
-				Effect.mapError(decodeFailure),
-				Effect.map((incidentId) => ({
-					...shared,
-					incident_kind: "alert" as const,
-					incident_id: incidentId,
-				})),
+				Effect.mapBoth({
+					onFailure: decodeFailure,
+					onSuccess: (incidentId) => ({
+						...shared,
+						incident_kind: "alert" as const,
+						incident_id: incidentId,
+					}),
+				}),
 			),
 		),
 		Match.exhaustive,
@@ -198,7 +204,10 @@ const requireInvestigationScopes = (scopes: ReadonlyArray<string> | undefined) =
 		? Effect.void
 		: Effect.fail(
 				V2InsufficientScope.make(
-					`Running an investigation requires read access to everything its agent reads. Missing scopes: ${missing.map((family) => `"${family}:read"`).join(", ")}.`,
+					`Running an investigation requires read access to everything its agent reads. Missing scopes: ${Arr.join(
+						Arr.map(missing, (family) => `"${family}:read"`),
+						", ",
+					)}.`,
 				),
 			)
 }

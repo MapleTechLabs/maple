@@ -1,9 +1,9 @@
 import { pluralize } from "@maple/ui/lib/format"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { activeFilterChips } from "../../../ui/filters/active-filter-chips"
-import { isMounted } from "../../../ui/overlay/transition"
-import { refreshButton } from "../../../ui/refresh-button"
+import { activeFilterChips } from "@maple/views/ui/filters/active-filter-chips"
+import { isMounted } from "@maple/views/ui/overlay/transition"
+import { refreshButton } from "@maple/views/ui/refresh-button"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { stableSlice } from "../../kit/stable-slice"
@@ -14,6 +14,7 @@ import { filtersRail } from "./view-filters"
 import { isNarrowedBySidebar } from "./view-empty"
 import { listBody } from "./view-list"
 import { statStrip, toolbar } from "./view-toolbar"
+import { Array as Arr } from "effect"
 
 // The errors page: sidebar, Reload, chips and the hub.
 
@@ -42,7 +43,6 @@ const hub = (h: H, model: Model, inputs: PageViewInputs): Html => {
 		[],
 		[
 			...(strip === null ? [] : [strip]),
-			toolbar(h, model, countReadout(model, signals.length)),
 			...listBody(h, model, {
 				status,
 				signals,
@@ -74,8 +74,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		{
 			title: "Errors",
 			filters: filtersRail(h, model),
-			// The toolbar sits one header gap under the title, as tabs do on tabbed pages.
-			scrollClassName: "pt-0",
+			// Only the toolbar row is pinned, like replays and anomalies; the stats scroll with the list.
+			// The sticky area pads the page edge, so the toolbar adds no gap under itself.
+			sticky: toolbar(h, model, countReadout(model, signalsOf(model).length), "pb-0"),
 			actions: refreshButton(h, {
 				onRefresh: Message.ClickedReload(),
 				isPending: model.isReloading,
@@ -84,17 +85,20 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				isHidden: listStatusOf(model) === "failed",
 			}),
 		},
-		[
-			activeFilterChips(h, {
-				chips: errorFilterChips(model.search).map((chip) => ({
-					id: chip.param,
-					label: chip.label,
-					values: chip.values,
-					onRemove: Message.RemovedFilterChip({ param: chip.param }),
-				})),
-				onClearAll: Message.ClickedClearFilters(),
-			}),
-			hub(h, model, inputs),
-		].filter((node): node is Html => node !== null),
+		Arr.filter(
+			[
+				activeFilterChips(h, {
+					chips: Arr.map(errorFilterChips(model.search), (chip) => ({
+						id: chip.param,
+						label: chip.label,
+						values: chip.values,
+						onRemove: Message.RemovedFilterChip({ param: chip.param }),
+					})),
+					onClearAll: Message.ClickedClearFilters(),
+				}),
+				hub(h, model, inputs),
+			],
+			(node): node is Html => node !== null,
+		),
 	),
 )

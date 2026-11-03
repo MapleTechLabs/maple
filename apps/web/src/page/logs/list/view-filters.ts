@@ -1,13 +1,13 @@
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { isSameFailure, type LoadFailure } from "../../../data/load-failure"
-import { kbd } from "../../../ui/display"
-import { errorState } from "../../../ui/error-state"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import { type FilterOption, filterSection } from "../../../ui/filters/filter-section"
+import { isSameFailure, type LoadFailure } from "@maple/views/data/load-failure"
+import { kbd } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import { type FilterOption, filterSection } from "@maple/views/ui/filters/filter-section"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
@@ -15,15 +15,15 @@ import {
 	filterSidebarHeader,
 	filterSidebarLoading,
 	filterSidebarGroupLabel,
-} from "../../../ui/filters/filter-sidebar"
-import type * as Popover from "../../../ui/popover"
+} from "@maple/views/ui/filters/filter-sidebar"
+import type * as Popover from "@maple/views/ui/popover"
 import { MountFilterRail } from "./command"
 import { searchHelp } from "./view-search-help"
 import { pinnedNamespaceNotice } from "../../kit/pinned-namespace-notice"
 import type { Search } from "./derive"
 import { type Facet, Message } from "./message"
 import type { LogsFacets, Model } from "./model"
-import { searchInput } from "../../../ui/search-input"
+import { searchInput } from "@maple/views/ui/search-input"
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
@@ -57,17 +57,20 @@ const facetSection = (
 
 /** Any filter narrowing the stream, the search and trace scope included. */
 export const hasActiveFilters = (search: Search): boolean =>
-	[
-		search.services,
-		search.severities,
-		search.deploymentEnvs,
-		search.namespaces,
-		search.excludedServices,
-		search.excludedSeverities,
-		search.excludedDeploymentEnvs,
-		search.excludedNamespaces,
-		search.attrs,
-	].some((values) => (values?.length ?? 0) > 0) ||
+	Arr.some(
+		[
+			search.services,
+			search.severities,
+			search.deploymentEnvs,
+			search.namespaces,
+			search.excludedServices,
+			search.excludedSeverities,
+			search.excludedDeploymentEnvs,
+			search.excludedNamespaces,
+			search.attrs,
+		],
+		(values) => (values?.length ?? 0) > 0,
+	) ||
 	!!search.search ||
 	!!search.traceId
 
@@ -80,7 +83,7 @@ const logSearchInput = (h: HtmlBuilder<Message>, value: string, help: Popover.Mo
 			searchInput(h, {
 				id: "logs-search-input",
 				size: "sm",
-				placeholder: "Text or trace id",
+				placeholder: "Text or trace ID…",
 				value,
 				onInput: (text) => Message.ChangedSearchText({ text }),
 				onClear: Message.ChangedSearchText({ text: "" }),
@@ -144,7 +147,7 @@ const loadedRail = (
 				isSearchable: true,
 				// `serviceColorMap` covers the facet's services only: a selected unknown one has no swatch.
 				colorOf: (name) =>
-					facets.services.some((option) => option.name === name)
+					Arr.some(facets.services, (option) => option.name === name)
 						? getServiceColor(name)
 						: undefined,
 			}),

@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
-import { ConfigProvider, Context, Effect, Layer, Option, Schema, Tracer } from "effect"
+import {
+	ConfigProvider,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Schema,
+	Tracer,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -20,13 +30,20 @@ const makeMcpToolExecutorStubLayer = (
 	execute: McpToolExecutorApi["execute"] = () =>
 		Effect.succeed({ content: [{ type: "text" as const, text: "ok" }] }),
 ) =>
-	Layer.succeed(McpToolExecutorLoader, {
-		load: Effect.succeed({
-			execute,
-			prepareRepository: () => Effect.void,
-			prepareConnectedRepositories: () => Effect.void,
+	Layer.effect(
+		McpToolExecutorLoader,
+		Effect.sync(() => {
+			const executor = {
+				execute,
+				prepareRepository: () => Effect.void,
+				prepareConnectedRepositories: () => Effect.void,
+			}
+			return {
+				load: Effect.succeed(executor),
+				loadReportingBuild: Effect.succeed({ executor, built: false }),
+			}
 		}),
-	})
+	)
 
 // Loose shape of the MCP responses the tests read; unknown fields are ignored.
 const McpResponseBody = Schema.Struct({
@@ -382,7 +399,7 @@ describe("MCP HTTP authorization", () => {
 				Context.empty() as never,
 			)
 			const body = await listed.clone().text()
-			expect({ status: listed.status, defect: body.includes("A defect occurred") }).toEqual({
+			expect({ status: listed.status, defect: Str.includes("A defect occurred")(body) }).toEqual({
 				status: 200,
 				defect: false,
 			})
@@ -622,7 +639,7 @@ describe("MCP HTTP authorization", () => {
 				(await readBody(listed)).result?.tools ?? []
 			expect({
 				status: listed.status,
-				hasInspectTrace: tools.some((tool) => tool.name === "inspect_trace"),
+				hasInspectTrace: Arr.some(tools, (tool) => tool.name === "inspect_trace"),
 			}).toEqual({
 				status: 200,
 				hasInspectTrace: true,
@@ -651,7 +668,11 @@ describe("MCP server spans", () => {
 			AuthService.layer,
 			// The tool fails the way a tool does: a result with `isError`, not a JSON-RPC error.
 			makeMcpToolExecutorStubLayer(() =>
-				Effect.succeed({ isError: true, content: [{ type: "text" as const, text: "bad input" }] }),
+				Effect.succeed({
+					isError: true,
+					content: [{ type: "text" as const, text: "Invalid input (`trace_id`): bad input" }],
+					failureCategory: "invalid_input",
+				}),
 			),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
@@ -710,11 +731,12 @@ describe("MCP server spans", () => {
 			await dispose()
 		}
 
-		const server = spans.filter(
+		const server = Arr.filter(
+			spans,
 			(span) => span.kind === "server" && span.attributes.has("mcp.method.name"),
 		)
 		expect(
-			server.map((span) => ({
+			Arr.map(server, (span) => ({
 				name: span.name,
 				sampled: span.sampled,
 				method: span.attributes.get("mcp.method.name"),
@@ -722,8 +744,11 @@ describe("MCP server spans", () => {
 				tool: span.attributes.get("gen_ai.tool.name"),
 				operation: span.attributes.get("gen_ai.operation.name"),
 				errorType: span.attributes.get("error.type"),
+				errorMessage: span.attributes.get("error.message"),
+				errorCategory: span.attributes.get("maple.mcp.error.category"),
 				requestId: span.attributes.get("jsonrpc.request.id"),
 				userAgent: span.attributes.get("user_agent.original"),
+				user: span.attributes.get("user.id"),
 			})),
 		).toEqual([
 			{
@@ -734,8 +759,11 @@ describe("MCP server spans", () => {
 				tool: undefined,
 				operation: undefined,
 				errorType: undefined,
+				errorMessage: undefined,
+				errorCategory: undefined,
 				requestId: "1",
 				userAgent: "claude-code/2.1.312 (cli)",
+				user: "user_test",
 			},
 			{
 				name: "tools/call inspect_trace",
@@ -745,14 +773,18 @@ describe("MCP server spans", () => {
 				tool: "inspect_trace",
 				operation: "execute_tool",
 				errorType: "tool_error",
+				// Why it failed rides on the span, so the hub can group failures by cause.
+				errorMessage: "Invalid input (`trace_id`): bad input",
+				errorCategory: "invalid_input",
 				requestId: "2",
 				userAgent: "claude-code/2.1.312 (cli)",
+				user: "user_test",
 			},
 		])
 
 		// The handshake the transport synthesises for the tool call is not recorded.
-		const handshakes = spans.filter((span) => span.name.endsWith("/initialize"))
-		expect(handshakes.map((span) => span.sampled)).toEqual([false])
+		const handshakes = Arr.filter(spans, (span) => Str.endsWith("/initialize")(span.name))
+		expect(Arr.map(handshakes, (span) => span.sampled)).toEqual([false])
 
 		// The caller's span is the parent; the HTTP request's span is only a link.
 		const toolCall = server[1]
@@ -760,7 +792,9 @@ describe("MCP server spans", () => {
 		expect(Option.map(parent, (span) => ({ traceId: span.traceId, spanId: span.spanId }))).toEqual(
 			Option.some({ traceId: callerTrace, spanId: callerSpan }),
 		)
-		expect(toolCall?.links.map((link) => link.span._tag === "Span" && link.span.name)).toEqual(["POST"])
+		expect(Arr.map(toolCall?.links, (link) => link.span._tag === "Span" && link.span.name)).toEqual([
+			"POST",
+		])
 		// Without a caller span the HTTP span is the parent, and not linked a second time.
 		const initialize = server[0]
 		expect(initialize?.links).toEqual([])

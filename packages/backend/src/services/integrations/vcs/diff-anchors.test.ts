@@ -1,19 +1,23 @@
 import { assert, describe, it } from "vitest"
 import { anchorComments, commentableLines } from "./diff-anchors"
+import { Array as Arr } from "effect"
 
-const PATCH = [
-	"@@ -1,3 +1,4 @@",
-	" one",
-	"-two",
-	"+two!",
-	"+two and a half",
-	" three",
-	"@@ -20,2 +21,2 @@",
-	" twenty",
-	"-old",
-	"+new",
-	"\\ No newline at end of file",
-].join("\n")
+const PATCH = Arr.join(
+	[
+		"@@ -1,3 +1,4 @@",
+		" one",
+		"-two",
+		"+two!",
+		"+two and a half",
+		" three",
+		"@@ -20,2 +21,2 @@",
+		" twenty",
+		"-old",
+		"+new",
+		"\\ No newline at end of file",
+	],
+	"\n",
+)
 
 describe("commentableLines", () => {
 	it("maps added and context lines to their hunk, skipping deletions", () => {
@@ -49,7 +53,7 @@ describe("anchorComments", () => {
 			patches,
 		)
 		assert.deepEqual(
-			anchored.map((c) => c.line),
+			Arr.map(anchored, (c) => c.line),
 			[2],
 		)
 		assert.lengthOf(dropped, 3)

@@ -1,7 +1,8 @@
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon, type IconName } from "../../../ui/icon"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { String as Str } from "effect"
 
 // `GcpServiceIcon`: the service glyph as a tile, or a Cloud SQL instance's engine logo once the
 // inventory knows it.
@@ -31,7 +32,7 @@ const TILE = {
 const engineIcon = (databaseVersion: string | null | undefined): IconName | undefined =>
 	databaseVersion === null || databaseVersion === undefined
 		? undefined
-		: ENGINE_ICON.find(([prefix]) => databaseVersion.startsWith(prefix))?.[1]
+		: ENGINE_ICON.find(([prefix]) => Str.startsWith(prefix)(databaseVersion))?.[1]
 
 export const gcpServiceIcon = <M>(
 	h: HtmlBuilder<M>,

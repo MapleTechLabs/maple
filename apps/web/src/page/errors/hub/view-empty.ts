@@ -1,13 +1,16 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
-import { icon, type IconName } from "../../../ui/icon"
-import { docsLink, presenceLoading, signalEmptyState } from "../../kit/signal-empty-state"
-import { presenceOf } from "../../kit/signal-presence"
+import { button } from "@maple/views/ui/button"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { docsLink, signalEmptyState } from "../../kit/signal-empty-state"
+import { filteredEmpty, presenceLoading } from "@maple/views/ui/signal-empty-state"
+import { presenceOf } from "@maple/views/data/signal-presence"
 import { SEVERITY_LABEL } from "../kit/severity"
 import { hasErrorFilters, severityOf, viewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { hstack } from "@maple/views/ui/stack"
+import { String as Str } from "effect"
 
 // The hub's empty state: what an empty view says, and what it offers.
 
@@ -37,11 +40,10 @@ const ERRORS_PURPOSE = "Group failed spans and exceptions into issues you can tr
 
 const SEVERITY_FILTER_LABEL = { all: "All severities", ...SEVERITY_LABEL, unset: "Unset" } as const
 
-const iconMedia = (h: H, name: IconName): Html =>
-	emptyMedia(h, { variant: "icon" }, [icon(h, name, { size: 18 })])
+const iconMedia = (h: H, name: IconName): Html => emptyMedia(h, { variant: "icon" }, [icon(h, name)])
 
 const actions = (h: H, children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class("flex flex-wrap items-center justify-center gap-2")], children)
+	hstack(h, { gap: "2", justify: "center", wrap: true }, children)
 
 /** A search with no matches: offer every tab, and the way out of the search. */
 const searchEmpty = (h: H, search: string, view: keyof typeof VIEW_LABEL): Html =>
@@ -102,6 +104,21 @@ export const hubEmpty = (h: H, model: Model, isNarrowedBySidebar: boolean): Html
 			className: "py-12",
 		})
 	}
+	if (isNarrowedBySidebar && !isFiltered)
+		return filteredEmpty(h, {
+			noun: view === "all" ? "errors" : `${Str.toLowerCase(VIEW_LABEL[view])} errors`,
+			description: "Everything in this view was excluded by the sidebar filters.",
+			className: "py-12",
+			// Open and Closed also offer the All tab, beside the kit's Clear filters.
+			...(view === "all"
+				? { onClear: Message.ClickedClearFilters() }
+				: {
+						detail: actions(h, [
+							outline(h, "outline", Message.ClickedClearFilters(), "Clear filters"),
+							outline(h, "ghost", Message.ClickedViewAll(), "See every error"),
+						]),
+					}),
+		})
 	const copy = EMPTY_COPY[view]
 	const isUnknown = !isNarrowed && presence.status === "unknown"
 	const iconName: IconName = isNarrowed ? "MagnifierIcon" : isUnknown ? "HistoryIcon" : copy.icon
@@ -109,7 +126,7 @@ export const hubEmpty = (h: H, model: Model, isNarrowedBySidebar: boolean): Html
 		? copy.title
 		: view === "all"
 			? "No errors found"
-			: `No ${VIEW_LABEL[view].toLowerCase()} errors`
+			: `No ${Str.toLowerCase(VIEW_LABEL[view])} errors`
 	const description = isUnknown ? ERRORS_PURPOSE : copy.description
 	return empty(
 		h,
@@ -117,18 +134,12 @@ export const hubEmpty = (h: H, model: Model, isNarrowedBySidebar: boolean): Html
 			emptyHeader(h, [
 				iconMedia(h, iconName),
 				emptyTitle(h, [
-					isFiltered
-						? `No ${SEVERITY_FILTER_LABEL[severity].toLowerCase()} errors here`
-						: isNarrowed
-							? "Nothing matches these filters"
-							: title,
+					isFiltered ? `No ${Str.toLowerCase(SEVERITY_FILTER_LABEL[severity])} errors here` : title,
 				]),
 				emptyDescription(h, [
 					isFiltered
 						? `Nothing in ${VIEW_LABEL[view]} matches that severity. Other severities may have plenty.`
-						: isNarrowed
-							? `No ${VIEW_LABEL[view].toLowerCase()} errors match the sidebar filters. Clear them to see everything.`
-							: description,
+						: description,
 				]),
 			]),
 			...(view === "all" && !isNarrowed ? [docsLink(h, "errors")] : []),

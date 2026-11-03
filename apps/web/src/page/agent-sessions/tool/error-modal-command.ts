@@ -2,7 +2,7 @@ import { AiToolErrorSampleCursor } from "@maple/domain/http"
 import { getAiToolErrorDetail, getAiToolErrorSamples } from "@maple/web-data/warehouse/ai-session-tools"
 import { Effect, Option, Schema, Stream } from "effect"
 import { Command, Dom } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { writeClipboard } from "../../kit/clipboard"
 import { Selection, toInput } from "../tools-kit/reads"
 import { Message, type ModalKey } from "./error-modal-model"
@@ -43,8 +43,10 @@ export const FetchErrorSamples = Command.define("FetchAgentToolErrorSamples", {
 				before,
 			},
 		}).pipe(
-			Effect.map((page) => ({ occurrences: page.occurrences, nextCursor: page.nextCursor })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (page) => ({ occurrences: page.occurrences, nextCursor: page.nextCursor }),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSamples({ key, result })),
 		),

@@ -3,9 +3,9 @@ import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { errorState } from "../../../../ui/error-state"
-import { activeFilterChips } from "../../../../ui/filters/active-filter-chips"
-import { icon } from "../../../../ui/icon"
+import { errorState } from "@maple/views/ui/error-state"
+import { activeFilterChips } from "@maple/views/ui/filters/active-filter-chips"
+import { icon } from "@maple/views/ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { facetChips } from "../../kit/facets"
@@ -14,8 +14,8 @@ import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
 import { offsetPager, pageRangeLabel } from "../../kit/offset-pager"
-import { countLabel, pageHeroParts, searchToolbar, setupEmpty } from "../../kit/page-parts"
-import { filteredEmpty } from "../../../kit/signal-empty-state"
+import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { hostsViewTabs } from "../../kit/view-tabs"
 import { PAGE_SIZE } from "./command"
 import { type ContainerScope, type FilterParam, Message } from "./message"
@@ -23,6 +23,7 @@ import type { ContainerCounts, ContainersPage, Model } from "./model"
 import { DEFAULT_PRESET, filtersOf, pageIndexOf, sortOf } from "./update"
 import { filtersRail } from "./view-filters"
 import { containerTable, containerTableLoading } from "./view-table"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // `ContainersPage`.
 
@@ -99,11 +100,12 @@ const tableArea = (h: H, model: Model, page: ContainersPage, inputs: PageViewInp
 	const searchText = model.search.q ?? ""
 	const scope = model.search.scope
 	const offset = pageIndexOf(model) * PAGE_SIZE
-	const hasStructuredFilter = Object.values(filtersOf(model.search)).some(
+	const hasStructuredFilter = Arr.some(
+		Rec.values(filtersOf(model.search)),
 		(values) => (values?.length ?? 0) > 0,
 	)
 	const hasAnyNarrowing =
-		hasStructuredFilter || searchText.trim() !== "" || scope !== undefined || offset > 0
+		hasStructuredFilter || Str.trim(searchText) !== "" || scope !== undefined || offset > 0
 	const containers = page.data
 	if (containers.length === 0 && !hasAnyNarrowing)
 		return setupEmpty(h, {
@@ -189,11 +191,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					titleContent: pageHeroParts(h, {
-						title: "Containers",
-						description:
-							"Sorted worst-first by peak utilization against each container's own limits.",
-					}).title,
+					title: "Containers",
+					description:
+						"Sorted worst-first by peak utilization against each container's own limits.",
 					actions: Frame.controls(
 						h,
 						model.frame,
@@ -207,13 +207,16 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				},
 				[
 					activeFilterChips(h, {
-						chips: facetChips(FACETS, (param) => model.search[param]).map((chip) => ({
-							id: chip.param,
-							label: chip.label,
-							values: chip.values,
-							isNegated: chip.isNegated,
-							onRemove: Message.RemovedFilterChip({ param: chip.param }),
-						})),
+						chips: Arr.map(
+							facetChips(FACETS, (param) => model.search[param]),
+							(chip) => ({
+								id: chip.param,
+								label: chip.label,
+								values: chip.values,
+								isNegated: chip.isNegated,
+								onRemove: Message.RemovedFilterChip({ param: chip.param }),
+							}),
+						),
 					}),
 					summaryBand(h, model),
 					containersArea(h, model, inputs),

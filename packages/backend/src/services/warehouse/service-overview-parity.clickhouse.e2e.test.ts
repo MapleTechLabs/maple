@@ -34,6 +34,7 @@ import {
 	clickhouseExec,
 	uniqueDatabase,
 } from "./clickhouse-e2e-support"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 const database = uniqueDatabase("maple_service_overview_parity_e2e")
 const ORG_ID = "org_service_overview_parity"
@@ -52,7 +53,8 @@ const HOUR_MS = 3_600_000
 const MINUTE_MS = 60_000
 const SECOND_MS = 1000
 
-const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 19)
+const chDateTime = (epochMs: number): string =>
+	Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 
 /** Midnight, three days back — comfortably inside the TTL horizon on both ends. */
 const BASE_MS = Math.floor((Date.now() - 3 * DAY_MS) / DAY_MS) * DAY_MS
@@ -170,15 +172,18 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 ]
 
 /** Rows the query window actually covers — the denominator for the tripwire. */
-const IN_WINDOW_SPANS = SEED_SPANS.filter((row) => row.ms >= START_MS && row.ms <= END_MS)
+const IN_WINDOW_SPANS = Arr.filter(SEED_SPANS, (row) => row.ms >= START_MS && row.ms <= END_MS)
 
-const quote = (value: string): string => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
 
 const seed = async (): Promise<void> => {
-	const rows = SEED_SPANS.map((row, index) => {
-		const resourceAttributes = `map('deployment.environment', ${quote(row.environment)}, 'service.namespace', ${quote(row.namespace)}, 'vcs.ref.head.revision', ${quote(row.commitSha)})`
-		return `(${quote(ORG_ID)}, ${quote(chDateTime(row.ms))}, ${quote(`trace-${index}`)}, ${quote(`span-${index}`)}, '', ${quote("GET /x")}, 'Server', ${quote(row.service)}, ${row.durationNs}, ${quote(row.status)}, ${row.sampleRate}, ${resourceAttributes})`
-	}).join(",\n")
+	const rows = Arr.join(
+		Arr.map(SEED_SPANS, (row, index) => {
+			const resourceAttributes = `map('deployment.environment', ${quote(row.environment)}, 'service.namespace', ${quote(row.namespace)}, 'vcs.ref.head.revision', ${quote(row.commitSha)})`
+			return `(${quote(ORG_ID)}, ${quote(chDateTime(row.ms))}, ${quote(`trace-${index}`)}, ${quote(`span-${index}`)}, '', ${quote("GET /x")}, 'Server', ${quote(row.service)}, ${row.durationNs}, ${quote(row.status)}, ${row.sampleRate}, ${resourceAttributes})`
+		}),
+		",\n",
+	)
 
 	await clickhouseExec(
 		`INSERT INTO traces
@@ -300,7 +305,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 		}
 	})
 
-	for (const metric of Object.keys(METRIC_FIELDS) as Array<keyof typeof METRIC_FIELDS>) {
+	for (const metric of Rec.keys(METRIC_FIELDS) as Array<keyof typeof METRIC_FIELDS>) {
 		for (const needsSampling of [false, true]) {
 			// Hour-multiple single-metric requests deliberately use the separate
 			// weighted aggregate route, with different sample-count semantics.
@@ -323,14 +328,14 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 						),
 					])
 					assert.isAbove(selected.length, 0)
-					assert.deepEqual(selected.map(key), all.map(key))
+					assert.deepEqual(Arr.map(selected, key), Arr.map(all, key))
 					const used = new Set<string>([
 						"count",
 						"spanCount",
 						"estimatedSpanCount",
 						...METRIC_FIELDS[metric],
 					])
-					const fields = new Set(Object.values(METRIC_FIELDS).flat())
+					const fields = new Set(Rec.values(METRIC_FIELDS).flat())
 					for (let i = 0; i < selected.length; i++) {
 						for (const field of used) {
 							const expected = num(all[i][field])
@@ -350,8 +355,8 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 						}
 					}
 					assert.isAbove(
-						all.reduce((n, row) => n + num(row.count), 0),
-						all.reduce((n, row) => n + num(row.spanCount), 0),
+						Arr.reduce(all, 0, (n, row) => n + num(row.count)),
+						Arr.reduce(all, 0, (n, row) => n + num(row.spanCount)),
 						"sampling seed must distinguish weighted counts from confidence counts",
 					)
 				})
@@ -377,7 +382,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 					`bucket/group count differs — the tiers do not tile the window (${label})`,
 				)
 
-				const truthByKey = new Map(truth.map((row) => [key(row), row]))
+				const truthByKey = new Map(Arr.map(truth, (row) => [key(row), row]))
 				for (const row of spliced) {
 					const expected = truthByKey.get(key(row))
 					assert.isDefined(expected, `spliced produced a bucket the flat scan did not: ${key(row)}`)
@@ -431,7 +436,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 		// on a cluster missing migration 0015 — it must not change the answer.
 		const sumOf = async (sql: string): Promise<number> => {
 			const rows = await runJson(sql)
-			return rows.reduce((total, row) => total + num(row.spanCount), 0)
+			return Arr.reduce(rows, 0, (total, row) => total + num(row.spanCount))
 		}
 
 		const threeTier = await sumOf(splicedSql(3600, false))
@@ -484,10 +489,11 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 		`)
 		assert.lengthOf(perNamespace, 2, "the skew seed must produce two namespaces")
 
-		const totalSpans = perNamespace.reduce((total, row) => total + num(row.spanCount), 0)
-		const weightedMeanP95 = perNamespace.reduce(
-			(total, row) => total + num(row.p95) * (num(row.spanCount) / totalSpans),
+		const totalSpans = Arr.reduce(perNamespace, 0, (total, row) => total + num(row.spanCount))
+		const weightedMeanP95 = Arr.reduce(
+			perNamespace,
 			0,
+			(total, row) => total + num(row.p95) * (num(row.spanCount) / totalSpans),
 		)
 		const mergedP95 = num(skewed.p95LatencyMs)
 
@@ -513,7 +519,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 
 	it("collapses namespace variants into one row per service and environment", async () => {
 		const rows = await runJson(CH.compileUnsafe(CH.serviceOverviewQuery({}), window).sql)
-		const skewed = rows.filter((row) => String(row.serviceName) === "skewed")
+		const skewed = Arr.filter(rows, (row) => String(row.serviceName) === "skewed")
 		assert.lengthOf(skewed, 1, "namespace variants must not surface as separate rows")
 		// argMax on estimated span count — `slow` carries 200 spans to `fast`'s 20.
 		assert.strictEqual(String(skewed[0]?.serviceNamespace), "slow")

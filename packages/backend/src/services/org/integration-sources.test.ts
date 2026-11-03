@@ -1,8 +1,13 @@
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { OrgId, SourceId } from "@maple/domain/primitives"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, insertTestSource, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	insertTestSource,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 import { pollReportDue, upsertWithSource } from "./integration-sources"
 
 const trackedDbs: TestDb[] = []
@@ -19,7 +24,11 @@ describe("pollReportDue", () => {
 	it("writes as soon as the outcome moves", () => {
 		expect(pollReportDue(recorded, { _tag: "Failed", error: "HTTP 503" }, now)).toBe(true)
 		expect(
-			pollReportDue({ ...recorded, lastPollError: "HTTP 503" }, { _tag: "Failed", error: "HTTP 503" }, now),
+			pollReportDue(
+				{ ...recorded, lastPollError: "HTTP 503" },
+				{ _tag: "Failed", error: "HTTP 503" },
+				now,
+			),
 		).toBe(false)
 		expect(pollReportDue({ ...recorded, lastPollError: "HTTP 503" }, { _tag: "Ok" }, now)).toBe(true)
 		expect(pollReportDue(recorded, { _tag: "Disconnected", reason: "Revoked" }, now)).toBe(true)
@@ -29,7 +38,7 @@ describe("pollReportDue", () => {
 
 const sourceIds = (testDb: TestDb) =>
 	Effect.promise(() => testDb.pglite.query<{ id: string }>("SELECT id FROM sources ORDER BY id")).pipe(
-		Effect.map((result) => result.rows.map((row) => row.id)),
+		Effect.map((result) => Arr.map(result.rows, (row) => row.id)),
 	)
 
 const orgId = Schema.decodeUnknownSync(OrgId)("org_upsert")

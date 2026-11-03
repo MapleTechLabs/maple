@@ -128,19 +128,15 @@ const parseWindow = (
 		const maxSeconds = options.maxSeconds ?? MAX_QUERY_RANGE_SECONDS
 		const violation = timeWindowViolation(startMs, endMs, maxSeconds)
 		if (violation === "empty") {
-			return yield* Effect.fail(
-				V2TimeRangeInvalid.make(
-					`${options.params?.end ?? "end_time"} must be later than ${options.params?.start ?? "start_time"}.`,
-					{ param: options.params?.end ?? "end_time" },
-				),
+			return yield* V2TimeRangeInvalid.make(
+				`${options.params?.end ?? "end_time"} must be later than ${options.params?.start ?? "start_time"}.`,
+				{ param: options.params?.end ?? "end_time" },
 			)
 		}
 		if (violation === "too_wide") {
-			return yield* Effect.fail(
-				V2TelemetryRangeTooLarge.make(
-					`${options.rangeLabel ?? "Telemetry queries"} support a maximum time range of ${formatRangeSeconds(maxSeconds)}.`,
-					{ param: options.params?.start ?? "start_time" },
-				),
+			return yield* V2TelemetryRangeTooLarge.make(
+				`${options.rangeLabel ?? "Telemetry queries"} support a maximum time range of ${formatRangeSeconds(maxSeconds)}.`,
+				{ param: options.params?.start ?? "start_time" },
 			)
 		}
 		const rangeSeconds = (endMs - startMs) / 1000
@@ -200,15 +196,19 @@ const expandHexId = (value: string): Option.Option<string> => {
 	if (Result.isFailure(decoded)) return Option.none()
 	return Option.some([...decoded.success].map((byte) => byte.toString(16).padStart(2, "0")).join(""))
 }
-const logKey = (row: { exactTimestamp: string; recordIdentity: string }) =>
-	JSON.stringify([compactTimestamp(row.exactTimestamp), compactHexId(row.recordIdentity)] satisfies LogKey)
+const StringPairJson = Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String]))
+const encodeStringPair = Schema.encodeSync(StringPairJson)
 
-const decodeLogKeyParts = Schema.decodeUnknownOption(
-	Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String])),
-)
+const logKey = (row: { exactTimestamp: string; recordIdentity: string }) =>
+	encodeStringPair([
+		compactTimestamp(row.exactTimestamp),
+		compactHexId(row.recordIdentity),
+	] satisfies LogKey)
+
+const decodeLogKeyParts = Schema.decodeUnknownOption(StringPairJson)
 
 const parseLogKey = (value: string) =>
-	Option.match(
+	Effect.fromOption(
 		Option.flatMap(decodeLogKeyParts(value), ([rawTimestamp, rawIdentity]) => {
 			const logTimestamp = expandTimestamp(rawTimestamp)
 			if (Number.isNaN(parseWarehouseDateTime(logTimestamp))) return Option.none()
@@ -217,10 +217,7 @@ const parseLogKey = (value: string) =>
 				Option.map((hex) => [logTimestamp, hex.toUpperCase()] as const),
 			)
 		}),
-		{
-			onNone: () => Effect.fail(V2LogIdInvalid.make(undefined, { param: "id" })),
-			onSome: (key) => Effect.succeed(key),
-		},
+		() => V2LogIdInvalid.make(undefined, { param: "id" }),
 	)
 
 const toLog = (row: {
@@ -546,7 +543,7 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 					const response = yield* queryEngine.execute(tenant, request)
 
 					if (response.result.kind !== "timeseries") {
-						return yield* Effect.fail(queryResultMismatch("timeseries", response.result.kind))
+						return yield* queryResultMismatch("timeseries", response.result.kind)
 					}
 					return {
 						object: "trace_timeseries" as const,
@@ -590,7 +587,7 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 					const response = yield* queryEngine.execute(tenant, request)
 
 					if (response.result.kind !== "breakdown") {
-						return yield* Effect.fail(queryResultMismatch("breakdown", response.result.kind))
+						return yield* queryResultMismatch("breakdown", response.result.kind)
 					}
 					return {
 						object: "trace_breakdown" as const,
@@ -609,7 +606,7 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const { rows, truncated } = yield* telemetry.traceSpans(tenant, params.trace_id)
-					if (rows.length === 0) return yield* Effect.fail(V2TraceNotFound.make())
+					if (rows.length === 0) return yield* V2TraceNotFound.make()
 					const spans = rows.map(toSpan)
 					const startMs = Math.min(...spans.map((span) => parseWarehouseDateTime(span.start_time)))
 					const endMs = Math.max(
@@ -618,8 +615,8 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 					return {
 						id: params.trace_id,
 						object: "trace" as const,
-						start_time: timestamp(new Date(startMs).toISOString()),
-						end_time: timestamp(new Date(endMs).toISOString()),
+						start_time: timestamp(DateTime.formatIso(DateTime.makeUnsafe(startMs))),
+						end_time: timestamp(DateTime.formatIso(DateTime.makeUnsafe(endMs))),
 						duration_ms: endMs - startMs,
 						span_count: spans.length,
 						service_count: new Set(spans.map((span) => span.service_name)).size,
@@ -634,7 +631,7 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 					const detail = yield* telemetry
 						.span(tenant, params.trace_id, params.span_id)
 						.pipe(Effect.map(Option.getOrNull))
-					if (!detail) return yield* Effect.fail(V2SpanNotFound.make())
+					if (!detail) return yield* V2SpanNotFound.make()
 					return toSpan(detail)
 				}),
 			)
@@ -727,7 +724,7 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 					const response = yield* queryEngine.execute(tenant, request)
 
 					if (response.result.kind !== "timeseries") {
-						return yield* Effect.fail(queryResultMismatch("timeseries", response.result.kind))
+						return yield* queryResultMismatch("timeseries", response.result.kind)
 					}
 					return {
 						object: "log_timeseries" as const,
@@ -767,7 +764,7 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 					const response = yield* queryEngine.execute(tenant, request)
 
 					if (response.result.kind !== "breakdown") {
-						return yield* Effect.fail(queryResultMismatch("breakdown", response.result.kind))
+						return yield* queryResultMismatch("breakdown", response.result.kind)
 					}
 					return {
 						object: "log_breakdown" as const,
@@ -789,7 +786,7 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 					const row = yield* telemetry
 						.log(tenant, { timestamp: logTimestamp, recordIdentity })
 						.pipe(Effect.map(Option.getOrNull))
-					if (!row) return yield* Effect.fail(V2LogNotFound.make())
+					if (!row) return yield* V2LogNotFound.make()
 					return toLog(row)
 				}),
 			)
@@ -879,7 +876,7 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 					const response = yield* queryEngine.execute(tenant, request)
 
 					if (response.result.kind !== "timeseries") {
-						return yield* Effect.fail(queryResultMismatch("timeseries", response.result.kind))
+						return yield* queryResultMismatch("timeseries", response.result.kind)
 					}
 					return {
 						object: "metric_timeseries" as const,
@@ -923,7 +920,7 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 					const response = yield* queryEngine.execute(tenant, request)
 
 					if (response.result.kind !== "breakdown") {
-						return yield* Effect.fail(queryResultMismatch("breakdown", response.result.kind))
+						return yield* queryResultMismatch("breakdown", response.result.kind)
 					}
 					return {
 						object: "metric_breakdown" as const,
@@ -1005,7 +1002,7 @@ const toOverviewPoints = (
 		p99_latency_ms: Number(point.series.p99_duration ?? 0),
 	}))
 
-const baselineKey = (serviceName: string, environment: string) => JSON.stringify([serviceName, environment])
+const baselineKey = (serviceName: string, environment: string) => encodeStringPair([serviceName, environment])
 
 /** Baseline per (service, environment); of several namespaces, the busiest one's. */
 const baselineByServiceEnvironment = (rows: ReadonlyArray<CH.ServiceHealthBaselineOutput>) =>
@@ -1117,10 +1114,11 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 							previousBounds !== undefined &&
 							timestampMs(previousEnd) > timestampMs(payload.start_time)
 						) {
-							return yield* Effect.fail(
-								V2TimeRangeInvalid.make("previous_end_time must not be after start_time.", {
+							return yield* V2TimeRangeInvalid.make(
+								"previous_end_time must not be after start_time.",
+								{
 									param: "previous_end_time",
-								}),
+								},
 							)
 						}
 						const environments = payload.deployment_environment
@@ -1243,7 +1241,7 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 							serviceName: params.name,
 							limit: 1,
 						})
-						if (!rows[0]) return yield* Effect.fail(V2ServiceNotFound.make())
+						if (!rows[0]) return yield* V2ServiceNotFound.make()
 						return rows[0]
 					}),
 				)
@@ -1365,7 +1363,7 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 							[summary, points, operations],
 							{ concurrency: 3 },
 						)
-						if (!service) return yield* Effect.fail(V2ServiceNotFound.make())
+						if (!service) return yield* V2ServiceNotFound.make()
 						return {
 							object: "service_overview" as const,
 							service,

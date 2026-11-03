@@ -1,14 +1,14 @@
-import { Array as Arr, Option } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import { formatCompact, parseRange, type RangeUnit } from "../../../ui/filters/range-format"
-import { HistogramMessage } from "../../../ui/filters/range-histogram"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import { formatCompact, parseRange, type RangeUnit } from "@maple/views/ui/filters/range-format"
+import { HistogramMessage } from "@maple/views/ui/filters/range-histogram"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { SignalPresenceData } from "../../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { missingDetection } from "../kit/detected-models"
 import { emptyWindow } from "../kit/virtualize"
 import {
@@ -45,8 +45,11 @@ import type { Model, RangeKey } from "./model"
 
 type Return = PageReturn<Model, Message>
 
-const withoutKey = (record: Readonly<Record<string, number>>, key: string): Readonly<Record<string, number>> =>
-	Object.fromEntries(Object.entries(record).filter(([entry]) => entry !== key))
+const withoutKey = (
+	record: Readonly<Record<string, number>>,
+	key: string,
+): Readonly<Record<string, number>> =>
+	Rec.fromEntries(Arr.filter(Rec.toEntries(record), ([entry]) => entry !== key))
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
 export const RANGE_UNITS = {
@@ -61,8 +64,8 @@ const RANGE_KEYS: ReadonlyArray<RangeKey> = ["duration", "cost", "tokens", "llmC
 
 /** The drafts the inputs show for a search: the canonical text of each bound. */
 const draftsOf = (search: Search): Model["rangeDrafts"] =>
-	Object.fromEntries(
-		RANGE_KEYS.map((range) => {
+	Rec.fromEntries(
+		Arr.map(RANGE_KEYS, (range) => {
 			const [minKey, maxKey] = RANGE_PARAMS[range]
 			const unit = RANGE_UNITS[range]
 			const min = search[minKey]
@@ -164,7 +167,7 @@ const requestAll = (model: Model, context: PageContext, mode: RequestMode): Retu
 const railModels = (model: Model): ReadonlyArray<string> => [
 	...Option.match(AsyncData.getData(model.facets.data), {
 		onNone: () => [],
-		onSome: (facets) => facets.models.map((option) => option.name),
+		onSome: (facets) => Arr.map(facets.models, (option) => option.name),
 	}),
 	...(Option.isSome(AsyncData.getData(model.facets.data)) ? (model.search.models ?? []) : []),
 ]
@@ -183,7 +186,7 @@ const followRail = (result: Return): Return =>
 const detectionSets = (model: Model, filterKey: string): ReadonlyArray<ReadonlyArray<string>> => [
 	...(model.isFilterRailMounted ? [railModels(model)] : []),
 	...(Option.isSome(AsyncData.getData(model.firstPage.data))
-		? [pageRows(model, filterKey).flatMap((row) => row.models)]
+		? [Arr.flatMap(pageRows(model, filterKey), (row) => row.models)]
 		: []),
 ]
 
@@ -195,18 +198,21 @@ const follow = (result: Return): Return => {
 	const inputs = filterInputs(model.search, window)
 	const filterKey = filterKeyOf(inputs)
 	const detectKeys = Arr.dedupe(
-		detectionSets(model, filterKey).flatMap((models) =>
+		Arr.flatMap(detectionSets(model, filterKey), (models) =>
 			Option.toArray(missingDetection(model.detections, models)),
 		),
 	)
 	const detections = {
 		...model.detections,
-		...Object.fromEntries(detectKeys.map((key) => [key, null])),
+		...Rec.fromEntries(Arr.map(detectKeys, (key) => [key, null])),
 	}
 	const isWaiting = AsyncData.isRefreshing(model.firstPage.data)
 	const undetailed =
 		model.hasPaintedTable && !isWaiting
-			? pageRows(model, filterKey).filter((row) => !model.details.requested.includes(row.sessionId))
+			? Arr.filter(
+					pageRows(model, filterKey),
+					(row) => !model.details.requested.includes(row.sessionId),
+				)
 			: []
 	const chunks = Arr.chunksOf(undetailed, DETAILS_CHUNK)
 	return {
@@ -216,18 +222,18 @@ const follow = (result: Return): Return => {
 			detections,
 			details: {
 				...model.details,
-				requested: [...model.details.requested, ...undetailed.map((row) => row.sessionId)],
+				requested: [...model.details.requested, ...Arr.map(undetailed, (row) => row.sessionId)],
 			},
 		},
 		commands: [
 			...(result.commands ?? []),
-			...detectKeys.map((key) => DetectModels({ key })),
-			...chunks.map((rows) =>
+			...Arr.map(detectKeys, (key) => DetectModels({ key })),
+			...Arr.map(chunks, (rows) =>
 				FetchDetails({
 					detailsKey: model.details.detailsKey,
 					search: model.search,
 					window,
-					rows: rows.map((row) => ({
+					rows: Arr.map(rows, (row) => ({
 						sessionId: row.sessionId,
 						startTime: row.startTime,
 						endTime: row.endTime,
@@ -253,7 +259,7 @@ const toggled = (
 	name: string,
 ): ReadonlyArray<string> | undefined => {
 	const current = values ?? []
-	const next = current.includes(name) ? current.filter((value) => value !== name) : [...current, name]
+	const next = current.includes(name) ? Arr.filter(current, (value) => value !== name) : [...current, name]
 	return next.length > 0 ? next : undefined
 }
 
@@ -372,12 +378,15 @@ export const routeChanged = (
 ): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const query = route.search.q ?? ""
-	const changedDrafts = Object.fromEntries(
-		RANGE_KEYS.filter((range) => {
-			const before = rangeOf(model.search, range)
-			const after = rangeOf(route.search, range)
-			return before.min !== after.min || before.max !== after.max
-		}).map((range) => [range, draftsOf(route.search)[range] ?? { min: "", max: "" }]),
+	const changedDrafts = Rec.fromEntries(
+		Arr.map(
+			Arr.filter(RANGE_KEYS, (range) => {
+				const before = rangeOf(model.search, range)
+				const after = rangeOf(route.search, range)
+				return before.min !== after.min || before.max !== after.max
+			}),
+			(range) => [range, draftsOf(route.search)[range] ?? { min: "", max: "" }],
+		),
 	)
 	// `ToolbarSearch` resyncs on an outside change, never on its own echo.
 	const isOutsideQuery = query !== (model.search.q ?? "") && query !== model.lastSentQuery
@@ -447,8 +456,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 								...model.details,
 								bySession: {
 									...model.details.bySession,
-									...Object.fromEntries(
-										result.success.map((item) => [item.sessionId, item]),
+									...Rec.fromEntries(
+										Arr.map(result.success, (item) => [item.sessionId, item]),
 									),
 								},
 							},
@@ -460,7 +469,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							...model,
 							details: {
 								...model.details,
-								requested: model.details.requested.filter((id) => !sessionIds.includes(id)),
+								requested: Arr.filter(
+									model.details.requested,
+									(id) => !sessionIds.includes(id),
+								),
 							},
 						},
 					}
@@ -512,7 +524,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ElapsedSearchDebounce: ({ version }) => {
 			if (version !== model.searchVersion) return { model }
-			const trimmed = model.searchInput.trim()
+			const trimmed = Str.trim(model.searchInput)
 			const q = trimmed === "" ? undefined : trimmed
 			return navigate({ ...model, lastSentQuery: q ?? "" }, { ...model.search, q })
 		},
@@ -531,7 +543,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedClearAllFilters: () =>
 			navigate(model, {
 				...model.search,
-				...Object.fromEntries(FILTER_KEYS.map((key) => [key, undefined])),
+				...Rec.fromEntries(Arr.map(FILTER_KEYS, (key) => [key, undefined])),
 			}),
 		ToggledFacetOption: ({ facet, name }) => navigate(model, toggledFacet(model.search, facet, name)),
 		ToggledGrouped: () =>
@@ -566,13 +578,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				LeftHistogram: () => ({
 					model: {
 						...model,
-						histogramHover: Object.fromEntries(
-							Object.entries(model.histogramHover).filter(([key]) => key !== range),
+						histogramHover: Rec.fromEntries(
+							Arr.filter(Rec.toEntries(model.histogramHover), ([key]) => key !== range),
 						),
 					},
 				}),
 				SelectedHistogramRange: ({ min, max }) =>
-					applyRange({ ...model, histogramDrag: withoutKey(model.histogramDrag, range) }, range, min, max),
+					applyRange(
+						{ ...model, histogramDrag: withoutKey(model.histogramDrag, range) },
+						range,
+						min,
+						max,
+					),
 			}),
 		GotFilterSectionsMessage: ({ message: inner }) => {
 			const next = FilterSections.update(model.filterSections, inner)

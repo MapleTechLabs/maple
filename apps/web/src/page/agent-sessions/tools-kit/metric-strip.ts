@@ -1,7 +1,6 @@
-import { formatPercent } from "@maple/ui/lib/format"
+import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import {
-	formatToolCount,
 	formatToolMetric,
 	metricSpark,
 	metricValue,
@@ -10,11 +9,12 @@ import {
 	type ToolDelta,
 } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { delta } from "../../../ui/delta"
-import { skeleton } from "../../../ui/skeleton"
-import * as ToggleGroup from "../../../ui/toggle-group"
+import { delta } from "@maple/views/ui/delta"
+import { skeleton } from "@maple/views/ui/skeleton"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { ToolMetric, ToolPercentile, ToolSeriesPoint, ToolTotals } from "./model"
 import { statRailItem } from "../../kit/stat-rail"
+import { Array as Arr } from "effect"
 
 // The tool metric strip over selectable stat rail items.
 
@@ -94,7 +94,7 @@ export const metricStrip = <M>(h: HtmlBuilder<M>, config: MetricStripConfig<M>):
 							h.span([], [formatPercent(share)]),
 							h.span(
 								[h.Class("text-foreground-subtle")],
-								["of all ", formatToolCount(config.allSessions), " sessions"],
+								["of all ", formatNumber(config.allSessions), " sessions"],
 							),
 						]),
 			isSelected: config.metric === key,
@@ -128,7 +128,7 @@ export const metricStrip = <M>(h: HtmlBuilder<M>, config: MetricStripConfig<M>):
 					ToggleGroup.view(h, {
 						model: config.percentileToggle,
 						toParentMessage: config.toPercentileMessage,
-						items: (["p50", "p90", "p95"] as const).map((value) => ({ value, label: value })),
+						items: Arr.map(["p50", "p90", "p95"] as const, (value) => ({ value, label: value })),
 						variant: "outline",
 						size: "sm",
 						className: "absolute top-3 right-5 p-px",

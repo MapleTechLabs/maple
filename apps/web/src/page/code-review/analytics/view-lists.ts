@@ -1,76 +1,69 @@
+import { formatNumber } from "@maple/ui/lib/format"
 import type { CodeReviewAnalytics, CodeReviewTotals } from "@maple/domain/http"
-import { CATEGORY_LABELS, formatCount } from "../../../components/code-review/code-review-format"
+import { CATEGORY_LABELS } from "../../../components/code-review/code-review-format"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { emptyMessage } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { meter } from "../../../ui/meter"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { meter } from "@maple/views/ui/meter"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { analyticsPanel } from "../kit/analytics-panel"
 import { authorLabel } from "../kit/author"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `RepositoryList`, `BarList`, `CategoriesCard`, `OutcomesCard`, `AuthorsCard`.
 
 type Row = Readonly<{ key: string; name: string; value: number }>
 
 export const repositoryList = <M>(h: HtmlBuilder<M>, title: string, rows: ReadonlyArray<Row>): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-2")],
-		[
-			h.span([h.Class("text-xs text-muted-foreground")], [title]),
-			rows.length === 0
-				? h.span(
-						[h.Class("py-1 text-sm text-foreground-subtle")],
-						["No repositories in this window"],
-					)
-				: h.ul(
-						[h.Class("flex flex-col")],
-						rows.map((row) =>
-							h.li(
-								[h.Key(row.key), h.Class("flex items-center gap-2.5 py-1.5 text-sm")],
-								[
-									icon(h, "GithubIcon", {
-										size: 16,
-										className: "shrink-0 text-muted-foreground",
-									}),
-									h.span([h.Class("min-w-0 flex-1 truncate")], [row.name]),
-									h.span(
-										[h.Class("tabular-nums text-muted-foreground")],
-										[formatCount(row.value)],
-									),
-								],
-							),
+	vstack(h, { gap: "2" }, [
+		typography(h, { size: "xs", tone: "muted" }, [title]),
+		rows.length === 0
+			? h.span([h.Class("py-1 text-sm text-foreground-subtle")], ["No repositories in this window"])
+			: h.ul(
+					[h.Class("flex flex-col")],
+					Arr.map(rows, (row) =>
+						h.li(
+							[h.Key(row.key), h.Class("flex items-center gap-2.5 py-1.5 text-sm")],
+							[
+								icon(h, "GithubIcon", {
+									size: 16,
+									className: "shrink-0 text-muted-foreground",
+								}),
+								typography(h, { truncate: true, className: "min-w-0 flex-1" }, [row.name]),
+								typography(h, { tone: "muted", numeric: true }, [formatNumber(row.value)]),
+							],
 						),
 					),
-		],
-	)
+				),
+	])
 
 type Bar = Readonly<{ key: string; label: string; value: number; tone?: string }>
 
 const barList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<Bar>, emptyLabel: string): Html => {
-	const max = Math.max(...rows.map((row) => row.value), 1)
+	const max = Math.max(...Arr.map(rows, (row) => row.value), 1)
 	if (rows.length === 0) return emptyMessage(h, {}, [emptyLabel])
-	return h.ul(
-		[h.Class("flex flex-col gap-2.5")],
-		rows.map((row) =>
-			h.li(
-				[h.Key(row.key), h.Class("flex flex-col gap-1")],
-				[
-					h.span(
-						[h.Class("flex items-center justify-between gap-2 text-sm")],
-						[
-							h.span([h.Class("truncate")], [row.label]),
-							h.span([h.Class("tabular-nums text-muted-foreground")], [formatCount(row.value)]),
-						],
-					),
-					meter(h, {
-						value: row.value,
-						max,
-						className: "h-1.5 bg-muted",
-						fillClassName: row.tone ?? "bg-primary",
-					}),
-				],
-			),
+	return vstack(
+		h,
+		{ gap: "2.5", as: "ul" },
+		Arr.map(rows, (row) =>
+			vstack(h, { gap: "1", as: "li", attributes: [h.Key(row.key)] }, [
+				h.span(
+					[h.Class("flex items-center justify-between gap-2 text-sm")],
+					[
+						h.span([h.Class("truncate")], [row.label]),
+						typography(h, { tone: "muted", numeric: true }, [formatNumber(row.value)]),
+					],
+				),
+				meter(h, {
+					value: row.value,
+					max,
+					className: "h-1.5 bg-muted",
+					fillClassName: row.tone ?? "bg-primary",
+				}),
+			]),
 		),
 	)
 }
@@ -79,7 +72,7 @@ export const categoriesCard = <M>(h: HtmlBuilder<M>, analytics: CodeReviewAnalyt
 	analyticsPanel(h, { title: "Issues by category" }, [
 		barList(
 			h,
-			analytics.categories.map((row) => ({
+			Arr.map(analytics.categories, (row) => ({
 				key: row.category,
 				label: CATEGORY_LABELS[row.category],
 				value: row.findings,
@@ -108,7 +101,7 @@ export const outcomesCard = <M>(
 	return analyticsPanel(h, { title: "Review outcomes" }, [
 		barList(
 			h,
-			rows.filter((row) => row.value > 0),
+			Arr.filter(rows, (row) => row.value > 0),
 			"No reviews in this window",
 		),
 	])
@@ -128,7 +121,7 @@ export const authorsCard = <M>(h: HtmlBuilder<M>, analytics: CodeReviewAnalytics
 					]),
 					tableBody(
 						h,
-						analytics.authors.map((row) =>
+						Arr.map(analytics.authors, (row) =>
 							tableRow(
 								h,
 								[
@@ -139,12 +132,12 @@ export const authorsCard = <M>(h: HtmlBuilder<M>, analytics: CodeReviewAnalytics
 									),
 									tableCell(
 										h,
-										[formatCount(row.pullRequests)],
+										[formatNumber(row.pullRequests)],
 										"text-right text-sm tabular-nums",
 									),
 									tableCell(
 										h,
-										[formatCount(row.findings)],
+										[formatNumber(row.findings)],
 										"pr-0 text-right text-sm tabular-nums text-muted-foreground",
 									),
 								],

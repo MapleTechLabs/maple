@@ -1,17 +1,18 @@
 import { formatNumber } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { isChartRuntimeReady } from "../../../charts/chart-runtime"
-import { ResolveThemeColors } from "../../../charts/theme-colors"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import type * as Select from "../../../ui/select"
-import { type SelectEntry, type SelectOption, view as selectView } from "../../../ui/select-view"
+import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import type * as Select from "@maple/views/ui/select"
+import { type SelectEntry, type SelectOption, view as selectView } from "@maple/views/ui/select-view"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { presenceOf } from "../../kit/signal-presence"
+import { listToolbar } from "../../kit/list-toolbar"
+import { presenceOf } from "@maple/views/data/signal-presence"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -22,7 +23,9 @@ import type { Model, SummaryRow } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { loadingGrid, previewGrid } from "./view-grid"
 import { loadingTable, metricsTable } from "./view-table"
-import { searchInput } from "../../../ui/search-input"
+import { searchInput } from "@maple/views/ui/search-input"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The window carried across pages is the root's (`route/session-time-range.ts`).
 // TODO(session-range): `sessionTimeRangeSearchMiddleware` (the window carried across pages) is not ported.
@@ -39,7 +42,7 @@ const TYPE_ITEMS = [
 	{ value: "exponential_histogram", label: "Exp histogram" },
 ] as const
 
-const TYPE_ENTRIES: ReadonlyArray<SelectEntry> = TYPE_ITEMS.map((item) => ({
+const TYPE_ENTRIES: ReadonlyArray<SelectEntry> = Arr.map(TYPE_ITEMS, (item) => ({
 	_tag: "Item",
 	item: { value: item.value, label: item.label },
 }))
@@ -54,7 +57,7 @@ const typeItem =
 			rows === undefined
 				? undefined
 				: option.value === "all"
-					? rows.reduce((total, next) => total + next.metricCount, 0)
+					? Arr.reduce(rows, 0, (total, next) => total + next.metricCount)
 					: (row?.metricCount ?? 0)
 		const dataPoints =
 			option.value === "all"
@@ -70,7 +73,7 @@ const typeItem =
 					option.label,
 					...(count === undefined
 						? []
-						: [h.span([h.Class("text-muted-foreground tabular-nums")], [String(count)])]),
+						: [typography(h, { tone: "muted", numeric: true }, [String(count)])]),
 				],
 			),
 		]
@@ -81,7 +84,7 @@ const toolbarSearch = (h: H, model: Model): Html =>
 	searchInput(h, {
 		id: "metrics-search",
 		size: "sm",
-		className: "max-w-sm w-64",
+		className: "w-full max-w-sm",
 		placeholder: "Search metrics…",
 		value: model.searchInput,
 		onInput: (value) => Message.ChangedSearchInput({ value }),
@@ -90,7 +93,7 @@ const toolbarSearch = (h: H, model: Model): Html =>
 
 const toTypeSelect = (message: Select.Message) => Message.GotTypeSelectMessage({ message })
 
-const filters = (h: H, model: Model): Html =>
+const typeSelect = (h: H, model: Model): Html =>
 	h.submodel({
 		slotId: "metrics-type-filter",
 		model: model.typeSelect,
@@ -102,12 +105,16 @@ const filters = (h: H, model: Model): Html =>
 			ariaLabel: "Metric type",
 			size: "sm",
 			className: "w-auto min-w-0",
-			toView: (parts) =>
-				h.div(
-					[h.Class("flex min-w-0 flex-wrap items-center gap-2")],
-					[toolbarSearch(h, model), ...parts],
-				),
+			toView: (parts) => h.div([h.Class("contents")], parts),
 		},
+	})
+
+// The sticky area pads the page edge, so the toolbar adds no gap under itself.
+const filters = (h: H, model: Model): Html =>
+	listToolbar(h, {
+		className: "pb-0",
+		leading: toolbarSearch(h, model),
+		trailing: [typeSelect(h, model)],
 	})
 
 const VIEW_OPTIONS = (h: H) =>
@@ -119,40 +126,37 @@ const VIEW_OPTIONS = (h: H) =>
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 
 const actions = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-2")],
-		[
-			segmentedSelect<BrowseView, Message>(h, {
-				size: "sm",
-				ariaLabel: "View",
-				options: VIEW_OPTIONS(h),
-				value: model.search.view ?? "grid",
-				onChange: (view) => Message.ClickedView({ view }),
-			}),
-			timeControls(h, {
-				search: model.search,
-				defaultPreset: DEFAULT_PRESET,
-				window: model.window,
-				onReset: Message.ClickedResetTimeRange(),
-				onReload: Message.ClickedReload(),
-				isReloading: model.isReloading,
-				trigger: (label) =>
-					h.submodel({
-						slotId: "time-range-picker",
-						model: model.timePicker,
-						view: TimeRangePicker.view,
-						toParentMessage: toTimePicker,
-						viewInputs: {
-							label,
-							selectedPreset:
-								model.search.timePreset ??
-								(model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
-							presets: TimeRangePicker.PRESET_VALUES,
-						},
-					}),
-			}),
-		],
-	)
+	hstack(h, { gap: "2", wrap: true }, [
+		segmentedSelect<BrowseView, Message>(h, {
+			size: "sm",
+			ariaLabel: "View",
+			options: VIEW_OPTIONS(h),
+			value: model.search.view ?? "grid",
+			onChange: (view) => Message.ClickedView({ view }),
+		}),
+		timeControls(h, {
+			search: model.search,
+			defaultPreset: DEFAULT_PRESET,
+			window: model.window,
+			onReset: Message.ClickedResetTimeRange(),
+			onReload: Message.ClickedReload(),
+			isReloading: model.isReloading,
+			trigger: (label) =>
+				h.submodel({
+					slotId: "time-range-picker",
+					model: model.timePicker,
+					view: TimeRangePicker.view,
+					toParentMessage: toTimePicker,
+					viewInputs: {
+						label,
+						selectedPreset:
+							model.search.timePreset ??
+							(model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
+						presets: TimeRangePicker.PRESET_VALUES,
+					},
+				}),
+		}),
+	])
 
 const isFiltered = (model: Model) => (model.search.q ?? "") !== "" || model.search.type !== undefined
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import type { CheckPoint, CheckStats, PhasePoint } from "./model"
 import { chartRows, phaseSeries } from "./view-panels"
+import { Array as Arr } from "effect"
 
 const MINUTE = 60_000
 const START = Date.UTC(2026, 9, 27, 12, 0)
@@ -8,7 +9,7 @@ const START = Date.UTC(2026, 9, 27, 12, 0)
 /** One-minute buckets, a check count each. */
 const stats = (counts: ReadonlyArray<number>): CheckStats => ({
 	window: "1h",
-	points: counts.map((totalCount, index): CheckPoint => ({
+	points: Arr.map(counts, (totalCount, index): CheckPoint => ({
 		bucket: new Date(START + index * MINUTE).toISOString(),
 		errorRate: 0,
 		p50LatencyMs: 100,
@@ -22,7 +23,7 @@ const stats = (counts: ReadonlyArray<number>): CheckStats => ({
 	samplesFailed: false,
 	windowStartMs: START,
 	windowEndMs: START + counts.length * MINUTE,
-	checks: counts.reduce((sum, count) => sum + count, 0),
+	checks: Arr.reduce(counts, 0, (sum, count) => sum + count),
 	failures: 0,
 	p50Ms: null,
 	p95Ms: null,
@@ -32,7 +33,7 @@ const stats = (counts: ReadonlyArray<number>): CheckStats => ({
 })
 
 const lineSegments = (counts: ReadonlyArray<number>, intervalMs: number) =>
-	chartRows(stats(counts), intervalMs).map((row) => (row.p50LatencyMs === null ? "gap" : "check"))
+	Arr.map(chartRows(stats(counts), intervalMs), (row) => (row.p50LatencyMs === null ? "gap" : "check"))
 
 describe("response time rows", () => {
 	test("an empty bucket between checks a minute apart stays joined", () => {
@@ -73,7 +74,7 @@ describe("phase breakdown series", () => {
 			MINUTE,
 		)
 		expect(series.breaks).toEqual([phase(1, 0).bucket])
-		expect(new Set(series.rows.map((row) => row.bucket))).toEqual(
+		expect(new Set(Arr.map(series.rows, (row) => row.bucket))).toEqual(
 			new Set([phase(0, 1).bucket, phase(2, 1).bucket]),
 		)
 	})

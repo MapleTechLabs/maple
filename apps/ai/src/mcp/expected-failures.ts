@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Record as Rec, String as Str } from "effect"
 
 /**
  * MCP failures that are expected 4xx client outcomes, not bugs: a bad or absent
@@ -32,7 +32,7 @@ const MCP_EXPECTED_FAILURE_STATUS = {
 
 // Keyed by a plain string so a `_tag` off any failure can be looked up without
 // narrowing it into the literal union first.
-const expectedStatusByTag = new Map<string, number>(Object.entries(MCP_EXPECTED_FAILURE_STATUS))
+const expectedStatusByTag = new Map<string, number>(Rec.toEntries(MCP_EXPECTED_FAILURE_STATUS))
 
 /** Spread into `anticipatedErrorIdentifiers` next to `ANTICIPATED_ERROR_IDENTIFIERS`. */
 export const MCP_ANTICIPATED_ERROR_IDENTIFIERS: ReadonlyArray<string> = [...expectedStatusByTag.keys()]
@@ -57,7 +57,7 @@ export const recordExpectedMcpFailure = (
 		"error.type": error._tag,
 		"http.response.status_code": status,
 		// On the span too, so a tool's failure reasons are one query rather than a join to logs.
-		"maple.mcp.error.message": error.message.slice(0, MAX_SPAN_MESSAGE_CHARS),
+		"maple.mcp.error.message": Str.slice(0, MAX_SPAN_MESSAGE_CHARS)(error.message),
 	}).pipe(
 		Effect.andThen(
 			Effect.logWarning(logMessage).pipe(

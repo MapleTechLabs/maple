@@ -2,20 +2,20 @@ import { activeFilterChips } from "../../components/analytics/filters"
 import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { TONE_BORDER, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ResolveThemeColors } from "../../charts/theme-colors"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../route"
-import { button, linkButton } from "../../ui/button"
-import { icon } from "../../ui/icon"
-import { statusDot } from "../../ui/status-dot"
+import { button, linkButton } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { statusDot } from "@maple/views/ui/status-dot"
 import type { PageViewInputs } from "../contract"
 import { pageTime } from "../infra-integrations/kit/page-time"
 import { dashboardPage } from "../kit/dashboard-page"
 import { signalEmptyState } from "../kit/signal-empty-state"
-import { presenceOf } from "../kit/signal-presence"
+import { presenceOf } from "@maple/views/data/signal-presence"
 import { underlineTabClass, underlineTabStrip } from "../kit/underline-tabs"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -26,6 +26,7 @@ import { TRAFFIC_TOKENS } from "./view-chart"
 import { expandDialog } from "./view-expand"
 import { filtersRail, showsBreakdownCards } from "./view-filters"
 import { overviewContent, sharedPageFailure } from "./view-overview"
+import { hstack } from "@maple/views/ui/stack"
 
 // The web analytics page.
 
@@ -90,7 +91,7 @@ const tabs = (h: H, model: Model): Html => {
 	return underlineTabStrip(
 		h,
 		{ label: "Analytics views", navigation: true },
-		(["overview", "ai"] as const).map((tab) => {
+		Arr.map(["overview", "ai"] as const, (tab) => {
 			const isCurrent = tab === active
 			// TanStack's partial search match: Overview's link (no `tab`) matches every tab.
 			const isLinkActive = tab === "overview" || isCurrent
@@ -119,43 +120,32 @@ const chipsRow = (h: H, model: Model): ReadonlyArray<Html> => {
 	const chips = activeFilterChips(filtersOf(model.search))
 	if (chips.length === 0) return []
 	return [
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-1.5")],
-			[
-				...chips.map((chip) =>
-					h.button(
-						[
-							h.Key(`${chip.key}:${chip.value}`),
-							h.Type("button"),
-							h.Class(
-								cn(
-									badgeVariants({
-										variant: "meta",
-										size: "xs",
-										mono: true,
-										className:
-											"h-auto px-1.5 py-0.5 hover:text-foreground active:text-foreground",
-									}),
-								),
-							),
-							h.DataAttribute("slot", "badge"),
-							h.OnClick(Message.ChangedFilter({ key: chip.key, value: undefined })),
-						],
-						[chip.label, " ✕"],
-					),
-				),
-				button(
+		hstack(h, { gap: "1.5", wrap: true }, [
+			...Arr.map(chips, (chip) =>
+				badge(
 					h,
 					{
-						variant: "link",
+						variant: "meta",
 						size: "xs",
-						className: "h-auto px-1 text-3xs text-muted-foreground sm:text-3xs",
-						attributes: [h.OnClick(Message.ClickedClearFilters())],
+						mono: true,
+						className: "h-auto px-1.5 py-0.5 hover:text-foreground active:text-foreground",
+						onClick: Message.ChangedFilter({ key: chip.key, value: undefined }),
+						attributes: [h.Key(`${chip.key}:${chip.value}`)],
 					},
-					["Clear all"],
+					[chip.label, " ✕"],
 				),
-			],
-		),
+			),
+			button(
+				h,
+				{
+					variant: "link",
+					size: "xs",
+					className: "h-auto px-1 text-3xs text-muted-foreground sm:text-3xs",
+					attributes: [h.OnClick(Message.ClickedClearFilters())],
+				},
+				["Clear all"],
+			),
+		]),
 	]
 }
 
@@ -183,29 +173,26 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					title: "Web Analytics",
+					title: "Web analytics",
 					gap: "lg",
 					filters: filtersRail(h, model),
-					actions: h.div(
-						[h.Class("flex flex-wrap items-center gap-2")],
-						[
-							...liveBadge(h, model),
-							replaysLink(h, model),
-							pageTime(h, {
-								search: model.search,
-								defaultPreset: DEFAULT_PRESET,
-								window: model.window,
-								picker: model.timePicker,
-								toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-								onReset: Message.ClickedResetTimeRange(),
-								onReload: Message.ClickedReload(),
-								isReloading: model.isReloading,
-								// The page-level failure card's Try again is the one retry.
-								isReloadHidden:
-									showsBreakdownCards(model) && sharedPageFailure(model) !== undefined,
-							}),
-						],
-					),
+					actions: hstack(h, { gap: "2", wrap: true }, [
+						...liveBadge(h, model),
+						replaysLink(h, model),
+						pageTime(h, {
+							search: model.search,
+							defaultPreset: DEFAULT_PRESET,
+							window: model.window,
+							picker: model.timePicker,
+							toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+							onReset: Message.ClickedResetTimeRange(),
+							onReload: Message.ClickedReload(),
+							isReloading: model.isReloading,
+							// The page-level failure card's Try again is the one retry.
+							isReloadHidden:
+								showsBreakdownCards(model) && sharedPageFailure(model) !== undefined,
+						}),
+					]),
 					tabs: tabs(h, model),
 				},
 				[...chipsRow(h, model), body(h, model, timeZone, inputs.isBelowSm === true)],

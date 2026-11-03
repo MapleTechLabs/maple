@@ -7,7 +7,7 @@ import {
 	MapleApi,
 	UnauthorizedError,
 } from "@maple/domain/http"
-import { Effect, Option } from "effect"
+import { Effect, Option, String as Str } from "effect"
 import { HttpServerRequest } from "effect/http"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -17,7 +17,7 @@ import { PreviewSignInService } from "@maple/backend/services/auth/PreviewSignIn
 
 const bearerToken = (header: string | undefined) => {
 	if (!header) return undefined
-	const [scheme, token] = header.split(" ")
+	const [scheme, token] = Str.split(" ")(header)
 	return scheme?.toLowerCase() === "bearer" ? token : undefined
 }
 

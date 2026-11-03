@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
@@ -55,7 +55,7 @@ const withReleaseServer = async (
 			requests,
 		})
 	} finally {
-		server.stop(true)
+		await server.stop(true)
 		rmSync(root, { recursive: true, force: true })
 	}
 }
@@ -93,7 +93,7 @@ describe("provisionLibchdb", () => {
 
 	it("refuses an archive whose checksum does not match the pin and installs nothing", async () => {
 		await withReleaseServer(async ({ baseUrl, cacheRoot }) => {
-			const release = { version: "v1.0.0", sha256: { [asset]: "0".repeat(64) } }
+			const release = { version: "v1.0.0", sha256: { [asset]: Str.repeat(64)("0") } }
 			const exit = await Effect.runPromiseExit(provision({ cacheRoot, baseUrl, release }))
 			expect(Exit.isFailure(exit)).toBe(true)
 			expect(JSON.stringify(exit)).toContain("checksum mismatch")
@@ -103,7 +103,7 @@ describe("provisionLibchdb", () => {
 
 	it("fails on a missing release without retrying", async () => {
 		await withReleaseServer(async ({ baseUrl, cacheRoot, requests }) => {
-			const release = { version: "v2.0.0", sha256: { [asset]: "0".repeat(64) } }
+			const release = { version: "v2.0.0", sha256: { [asset]: Str.repeat(64)("0") } }
 			const exit = await Effect.runPromiseExit(provision({ cacheRoot, baseUrl, release }))
 			expect(JSON.stringify(exit)).toContain("HTTP 404")
 			expect(requests).toEqual([`/v2.0.0/${asset}`])

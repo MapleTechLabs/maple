@@ -5,22 +5,39 @@
  * transport wraps each message's tracer so the span is born with the spec name
  * and attributes instead, and takes its parent from `params._meta`.
  */
-import { Option, Predicate, Tracer } from "effect"
+import { Option, Predicate, Tracer, Array as Arr, String as Str } from "effect"
 import { Headers, HttpTraceContext } from "effect/http"
 import type { HttpServerRequest } from "effect/http"
 import type { FromClientEncoded } from "effect/rpc/RpcMessage"
 
 const RPC_SERVER_SPAN = /^McpServer\.@effect\/mcp\/([^/]+)\/(.+)$/
+const META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion"
+const META_CLIENT_INFO = "io.modelcontextprotocol/clientInfo"
+/** A spec version is a date; anything else the caller sends is not recorded. */
+const SPEC_VERSION = /^\d{4}-\d{2}-\d{2}$/
+/** `clientInfo` is the caller's free text, now on every request: bound what reaches the span. */
+const CLIENT_INFO_MAX = 128
+
+const metaVersion = (meta: unknown): string | undefined => {
+	const version = stringField(meta, META_PROTOCOL_VERSION)
+	return version !== undefined && SPEC_VERSION.test(version) ? version : undefined
+}
 
 /** What the HTTP request knows about the caller, for every message it carries. */
 export interface McpCaller {
 	readonly userAgent: string | undefined
 	readonly clientAddress: string | undefined
+	/** The signed-in user the request's credential belongs to: the hub builds sessions from it. */
+	readonly userId: string | undefined
 }
 
-export const mcpCaller = (request: HttpServerRequest.HttpServerRequest): McpCaller => ({
+export const mcpCaller = (
+	request: HttpServerRequest.HttpServerRequest,
+	userId: string | undefined,
+): McpCaller => ({
 	userAgent: request.headers["user-agent"],
 	clientAddress: Option.getOrUndefined(request.remoteAddress),
+	userId,
 })
 
 const stringField = (value: unknown, key: string): string | undefined => {
@@ -59,17 +76,32 @@ export const mcpServerSpan = (
 	caller: McpCaller,
 ): McpServerSpan => {
 	const method = message.tag
+	const payload = message.payload
+	// Stateless MCP (2026-07-28) sends the version and `clientInfo` on every request, in `_meta`.
+	const meta = Predicate.hasProperty(payload, "_meta") ? payload._meta : undefined
 	const attributes = new Map([
 		["mcp.method.name", method],
-		["mcp.protocol.version", protocolVersion],
+		["mcp.protocol.version", metaVersion(meta) ?? protocolVersion],
 		["jsonrpc.request.id", String(message.id)],
 		["network.transport", "tcp"],
 		["network.protocol.name", "http"],
 	])
 	if (caller.userAgent !== undefined) attributes.set("user_agent.original", caller.userAgent)
 	if (caller.clientAddress !== undefined) attributes.set("client.address", caller.clientAddress)
+	if (caller.userId !== undefined) attributes.set("user.id", caller.userId)
+	// The spec has no client-identity attribute; `clientInfo` rides on `initialize`, or per request.
+	const clientInfo = Predicate.hasProperty(payload, "clientInfo")
+		? payload.clientInfo
+		: Predicate.hasProperty(meta, META_CLIENT_INFO)
+			? meta[META_CLIENT_INFO]
+			: undefined
+	const clientName = stringField(clientInfo, "name")
+	const clientVersion = stringField(clientInfo, "version")
+	if (clientName !== undefined)
+		attributes.set("maple.mcp.client.name", Str.slice(0, CLIENT_INFO_MAX)(clientName))
+	if (clientVersion !== undefined)
+		attributes.set("maple.mcp.client.version", Str.slice(0, CLIENT_INFO_MAX)(clientVersion))
 
-	const payload = message.payload
 	let target: string | undefined
 	switch (method) {
 		case "tools/call":
@@ -87,15 +119,6 @@ export const mcpServerSpan = (
 			// The URI is high-cardinality: an attribute, never part of the name.
 			const uri = stringField(payload, "uri")
 			if (uri !== undefined) attributes.set("mcp.resource.uri", uri)
-			break
-		}
-		case "initialize": {
-			// The spec has no client-identity attribute; `clientInfo` only exists here.
-			const clientInfo = Predicate.hasProperty(payload, "clientInfo") ? payload.clientInfo : undefined
-			const name = stringField(clientInfo, "name")
-			const version = stringField(clientInfo, "version")
-			if (name !== undefined) attributes.set("maple.mcp.client.name", name)
-			if (version !== undefined) attributes.set("maple.mcp.client.version", version)
 			break
 		}
 	}
@@ -126,7 +149,8 @@ export const mcpMessageTracer = (
 			// already the parent.
 			const links = Option.match(spanOptions.parent, {
 				onNone: () => spanOptions.links,
-				onSome: (parent) => spanOptions.links.filter((link) => link.span.spanId !== parent.spanId),
+				onSome: (parent) =>
+					Arr.filter(spanOptions.links, (link) => link.span.spanId !== parent.spanId),
 			})
 			const span = base.span({ ...spanOptions, name: conventions.name, links })
 			conventions.attributes.forEach((value, key) => span.attribute(key, value))

@@ -104,6 +104,8 @@ interface ServiceUsageRow {
 	totalSizeBytes: number
 }
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 /** Empty arrays mean "the whole org", which is every pre-existing subscription. */
 const UNSCOPED: DigestScope = { environments: [], namespaces: [] }
 
@@ -112,10 +114,11 @@ const UNSCOPED: DigestScope = { environments: [], namespaces: [] }
  * one set of warehouse queries and one rendered email.
  */
 const scopeKey = (orgId: string, scope: DigestScope): string =>
-	JSON.stringify([orgId, [...scope.environments].sort(), [...scope.namespaces].sort()])
+	encodeJson([orgId, [...scope.environments].sort(), [...scope.namespaces].sort()])
 
 const StoredScopeColumn = Schema.fromJsonString(Schema.Array(Schema.String))
 const decodeScopeColumn = Schema.decodeUnknownOption(StoredScopeColumn)
+const encodeScopeColumn = Schema.encodeSync(StoredScopeColumn)
 
 /**
  * `[]` for anything that is not a JSON array of strings — a malformed scope
@@ -128,7 +131,7 @@ const parseScopeColumn = (raw: string | null): ReadonlyArray<string> =>
 	raw == null || raw === "" ? [] : Option.getOrElse(decodeScopeColumn(raw), () => [])
 
 const nonEmpty = (values: ReadonlyArray<string>): ReadonlyArray<string> | undefined => {
-	const kept = values.filter((value) => value !== "")
+	const kept = Arr.filter(values, (value) => value !== "")
 	return kept.length > 0 ? kept : undefined
 }
 
@@ -193,17 +196,15 @@ function groupServicesByEnvironment(
 		else byEnvironment.set(service.environment, [service])
 	}
 
-	return [...byEnvironment.entries()]
-		.map(([environment, groupServices]) => {
-			const requests = currentTotals.get(environment) ?? 0
-			return {
-				environment,
-				requests,
-				requestsDelta: computeDelta(requests, previousTotals.get(environment) ?? 0),
-				services: groupServices,
-			}
-		})
-		.sort((a, b) => b.requests - a.requests)
+	return Arr.map([...byEnvironment.entries()], ([environment, groupServices]) => {
+		const requests = currentTotals.get(environment) ?? 0
+		return {
+			environment,
+			requests,
+			requestsDelta: computeDelta(requests, previousTotals.get(environment) ?? 0),
+			services: groupServices,
+		}
+	}).sort((a, b) => b.requests - a.requests)
 }
 
 /**
@@ -240,14 +241,12 @@ function buildBreakdown(
 		prevTotals.set(label, (prevTotals.get(label) ?? 0) + (row.estimatedSpanCount || 0))
 	}
 
-	return [...totals.entries()]
-		.map(([label, { requests, errors }]) => ({
-			label,
-			requests,
-			errorRate: requests > 0 ? (errors / requests) * 100 : 0,
-			requestsDelta: computeDelta(requests, prevTotals.get(label) ?? 0),
-		}))
-		.sort((a, b) => b.requests - a.requests)
+	return Arr.map([...totals.entries()], ([label, { requests, errors }]) => ({
+		label,
+		requests,
+		errorRate: requests > 0 ? (errors / requests) * 100 : 0,
+		requestsDelta: computeDelta(requests, prevTotals.get(label) ?? 0),
+	})).sort((a, b) => b.requests - a.requests)
 }
 
 /**
@@ -259,19 +258,17 @@ function buildBreakdownFromRows(
 	current: ReadonlyArray<TracesBreakdownRow>,
 	previous: ReadonlyArray<TracesBreakdownRow>,
 ): Array<DigestBreakdownRow> {
-	const previousByName = new Map(previous.map((row) => [row.name, row.count || 0] as const))
-	return current
-		.map((row) => {
-			const label = row.name
-			const requests = row.count || 0
-			return {
-				label,
-				requests,
-				errorRate: (row.errorRate || 0) * 100,
-				requestsDelta: computeDelta(requests, previousByName.get(label) ?? 0),
-			}
-		})
-		.sort((a, b) => b.requests - a.requests)
+	const previousByName = new Map(Arr.map(previous, (row) => [row.name, row.count || 0] as const))
+	return Arr.map(current, (row) => {
+		const label = row.name
+		const requests = row.count || 0
+		return {
+			label,
+			requests,
+			errorRate: (row.errorRate || 0) * 100,
+			requestsDelta: computeDelta(requests, previousByName.get(label) ?? 0),
+		}
+	}).sort((a, b) => b.requests - a.requests)
 }
 
 export class DigestService extends Context.Service<DigestService>()("@maple/backend/services/DigestService", {
@@ -347,8 +344,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 							dayOfWeek: input.dayOfWeek ?? 1,
 							...(input.sendHour != null ? { sendHour: input.sendHour } : undefined),
 							timezone: input.timezone ?? "UTC",
-							namespacesJson: JSON.stringify(input.namespaces ?? []),
-							environmentsJson: JSON.stringify(input.environments ?? []),
+							namespacesJson: encodeScopeColumn(input.namespaces ?? []),
+							environmentsJson: encodeScopeColumn(input.environments ?? []),
 							webAnalyticsEnabled: input.webAnalyticsEnabled !== false,
 							webAnalyticsOptedOutAt: input.webAnalyticsEnabled === false ? now : null,
 							createdAt: now,
@@ -367,10 +364,10 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 								...(input.sendHour != null ? { sendHour: input.sendHour } : undefined),
 								...(input.timezone != null ? { timezone: input.timezone } : undefined),
 								...(input.namespaces != null
-									? { namespacesJson: JSON.stringify(input.namespaces) }
+									? { namespacesJson: encodeScopeColumn(input.namespaces) }
 									: undefined),
 								...(input.environments != null
-									? { environmentsJson: JSON.stringify(input.environments) }
+									? { environmentsJson: encodeScopeColumn(input.environments) }
 									: undefined),
 								// Only touched when sent, so saving the ops digest never flips it.
 								...(input.webAnalyticsEnabled != null
@@ -457,7 +454,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			yield* Effect.annotateCurrentSpan("maple.digest.environments", scope.environments.join(","))
 			yield* Effect.annotateCurrentSpan("maple.digest.namespaces", scope.namespaces.join(","))
 
-			const now = new Date(yield* Clock.currentTimeMillis)
+			const nowMs = yield* Clock.currentTimeMillis
 
 			// Every window is day-aligned to UTC midnight. `bucket_seconds: 86_400`
 			// snaps `toStartOfInterval` to UTC midnight, so a rolling now-7d window
@@ -466,7 +463,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			// makes the sparkline's bars add up to the headline Requests number —
 			// they used to be measured over different spans.
 			const DAY_MS = 24 * 60 * 60 * 1000
-			const todayStartMs = Math.floor(now.getTime() / DAY_MS) * DAY_MS
+			const todayStartMs = Math.floor(nowMs / DAY_MS) * DAY_MS
 			const currentStartMs = todayStartMs - 7 * DAY_MS
 			const previousStartMs = todayStartMs - 14 * DAY_MS
 
@@ -881,12 +878,14 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 		) =>
 			Stream.paginate(0, (offset: number) =>
 				clerkRequest(spanName, attributes, () => fetchPage({ limit: CLERK_PAGE_SIZE, offset })).pipe(
-					Effect.mapError(() => new DigestPersistenceError({ message: errorMessage })),
-					Effect.map((page) => {
-						// Advance by the rows returned; stop on totalCount or an empty page.
-						const next = offset + page.data.length
-						const done = next >= page.totalCount || page.data.length === 0
-						return [page.data, done ? Option.none<number>() : Option.some(next)] as const
+					Effect.mapBoth({
+						onFailure: () => new DigestPersistenceError({ message: errorMessage }),
+						onSuccess: (page) => {
+							// Advance by the rows returned; stop on totalCount or an empty page.
+							const next = offset + page.data.length
+							const done = next >= page.totalCount || page.data.length === 0
+							return [page.data, done ? Option.none<number>() : Option.some(next)] as const
+						},
 					}),
 				),
 			).pipe(Stream.runCollect)
@@ -1289,9 +1288,10 @@ function hasDigestContent(props: WeeklyDigestProps): boolean {
 		props.ingestion.traces > 0 ||
 		props.ingestion.metrics > 0 ||
 		props.ingestion.totalBytes > 0 ||
-		props.services.some(
+		Arr.some(
+			props.services,
 			(service) => service.requests > 0 || service.errorRate > 0 || service.p95Ms > 0,
 		) ||
-		props.topErrors.some((error) => error.count > 0)
+		Arr.some(props.topErrors, (error) => error.count > 0)
 	)
 }

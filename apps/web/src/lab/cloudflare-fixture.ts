@@ -13,6 +13,7 @@ import type {
 	CloudflareZoneRow,
 	CloudflareZoneStatusBucket,
 } from "@maple/web-data/warehouse/cloudflare-infra"
+import { Array as Arr, String as Str } from "effect"
 
 // maple.dev, 2026-10-14 00:00-10:00 UTC, 30-minute buckets, copied from production.
 // [time, 2xx, 3xx, 4xx, 5xx]
@@ -67,29 +68,33 @@ const CACHE: ReadonlyArray<readonly [string, number, number, number, number, num
 
 const iso = (time: string) => `2026-10-14T${time}:00.000Z`
 
-export const MAPLE_DEV_STATUS: ReadonlyArray<CloudflareZoneStatusBucket> = STATUS.flatMap(
+export const MAPLE_DEV_STATUS: ReadonlyArray<CloudflareZoneStatusBucket> = Arr.flatMap(
+	STATUS,
 	([time, ok, redirect, client, server]) =>
-		(
+		Arr.map(
 			[
 				["2xx", ok],
 				["3xx", redirect],
 				["4xx", client],
 				["5xx", server],
-			] as const
-		).map(([statusClass, requests]) => ({ bucket: iso(time), statusClass, requests })),
+			] as const,
+			([statusClass, requests]) => ({ bucket: iso(time), statusClass, requests }),
+		),
 )
 
-export const MAPLE_DEV_CACHE: ReadonlyArray<CloudflareZoneCacheBucket> = CACHE.flatMap(
+export const MAPLE_DEV_CACHE: ReadonlyArray<CloudflareZoneCacheBucket> = Arr.flatMap(
+	CACHE,
 	([time, none, dynamic, hit, miss, expired]) =>
-		(
+		Arr.map(
 			[
 				["none", none],
 				["dynamic", dynamic],
 				["hit", hit],
 				["miss", miss],
 				["expired", expired],
-			] as const
-		).map(([cacheStatus, requests]) => ({ bucket: iso(time), cacheStatus, requests })),
+			] as const,
+			([cacheStatus, requests]) => ({ bucket: iso(time), cacheStatus, requests }),
+		),
 )
 
 export const MAPLE_DEV_ROW: CloudflareZoneRow = {
@@ -141,7 +146,8 @@ const ZONES: ReadonlyArray<
 
 const ratio = (a: number, b: number) => (b > 0 ? a / b : 0)
 
-export const MAKI_ZONES: ReadonlyArray<CloudflareZoneRow> = ZONES.map(
+export const MAKI_ZONES: ReadonlyArray<CloudflareZoneRow> = Arr.map(
+	ZONES,
 	([zoneName, requests, ok, redirect, client, server, hits, cacheable, bytes, visits]) => ({
 		serviceName: `cloudflare/${zoneName}`,
 		zoneName,
@@ -168,7 +174,7 @@ export const MAKI_ZONES: ReadonlyArray<CloudflareZoneRow> = ZONES.map(
 
 /** Hourly requests per zone, same window. */
 export const MAKI_ZONE_SPARKS: ReadonlyMap<string, ReadonlyArray<number>> = new Map(
-	(
+	Arr.map(
 		[
 			[
 				"maple.dev",
@@ -191,8 +197,9 @@ export const MAKI_ZONE_SPARKS: ReadonlyMap<string, ReadonlyArray<number>> = new 
 			["semconv.com", [32, 62, 66, 21, 29, 75, 37, 30, 54, 123, 53, 70]],
 			["kubly.dev", [2, 14, 92, 2, 3, 3, 4, 17, 4, 73, 3]],
 			["oakroot.dev", [2, 3, 3, 3, 2]],
-		] as const
-	).map(([zone, values]) => [`cloudflare/${zone}`, values]),
+		] as const,
+		([zone, values]) => [`cloudflare/${zone}`, values],
+	),
 )
 
 // [script, invocations, errors, doCalls, doErrors, cpuP99, durationP99, cpuP50, durationP50]
@@ -239,49 +246,52 @@ const WORKERS: ReadonlyArray<
 	["maple-sandbox-eu", 0, 0, 100, 0, 0, 0, 0, 0],
 ]
 
-export const MAKI_WORKERS: ReadonlyArray<CloudflareWorkerRow> = WORKERS.filter(
-	([, requests]) => requests > 0,
-).map(([scriptName, requests, errors, , , cpuP99Ms, durationP99Ms, cpuP50Ms, durationP50Ms]) => ({
-	serviceName: `cloudflare-worker/${scriptName}`,
-	accountId: MAKI_ACCOUNT_ID,
-	scriptName,
-	requests,
-	errors,
-	errorRate: ratio(errors, requests),
-	subrequests: 0,
-	cpuP50Ms,
-	cpuP99Ms,
-	durationP50Ms,
-	durationP99Ms,
-}))
+export const MAKI_WORKERS: ReadonlyArray<CloudflareWorkerRow> = Arr.map(
+	Arr.filter(WORKERS, ([, requests]) => requests > 0),
+	([scriptName, requests, errors, , , cpuP99Ms, durationP99Ms, cpuP50Ms, durationP50Ms]) => ({
+		serviceName: `cloudflare-worker/${scriptName}`,
+		accountId: MAKI_ACCOUNT_ID,
+		scriptName,
+		requests,
+		errors,
+		errorRate: ratio(errors, requests),
+		subrequests: 0,
+		cpuP50Ms,
+		cpuP99Ms,
+		durationP50Ms,
+		durationP99Ms,
+	}),
+)
 
-export const MAKI_DURABLE_OBJECTS: ReadonlyArray<CloudflareDurableObjectRow> = WORKERS.filter(
-	([, , , doCalls]) => doCalls > 0,
-).map(([scriptName, , , requests, errors]) => ({
-	serviceName: `cloudflare-worker/${scriptName}`,
-	accountId: MAKI_ACCOUNT_ID,
-	scriptName,
-	requests,
-	errors,
-	errorRate: ratio(errors, requests),
-}))
+export const MAKI_DURABLE_OBJECTS: ReadonlyArray<CloudflareDurableObjectRow> = Arr.map(
+	Arr.filter(WORKERS, ([, , , doCalls]) => doCalls > 0),
+	([scriptName, , , requests, errors]) => ({
+		serviceName: `cloudflare-worker/${scriptName}`,
+		accountId: MAKI_ACCOUNT_ID,
+		scriptName,
+		requests,
+		errors,
+		errorRate: ratio(errors, requests),
+	}),
+)
 
-export const MAKI_QUEUES: ReadonlyArray<CloudflareQueueRow> = (
+export const MAKI_QUEUES: ReadonlyArray<CloudflareQueueRow> = Arr.map(
 	[
 		["0a1b2c3d4e5f60718293a4b5c6d7e8f9", 55, 1100, 12_200, 0.3],
 		["1b2c3d4e5f60718293a4b5c6d7e8f90a", 2, 84, 5_800, 0.2],
 		["2c3d4e5f60718293a4b5c6d7e8f90a1b", 2, 6, 1_900, 0.4],
 		["3d4e5f60718293a4b5c6d7e8f90a1b2c", 2, 3, 1_400, 0.3],
-	] as const
-).map(([queueName, backlogMessages, backlogMessagesMax, backlogBytes, consumerConcurrency]) => ({
-	serviceName: `cloudflare-queue/${queueName}`,
-	accountId: MAKI_ACCOUNT_ID,
-	queueName,
-	backlogMessages,
-	backlogMessagesMax,
-	backlogBytes,
-	consumerConcurrency,
-}))
+	] as const,
+	([queueName, backlogMessages, backlogMessagesMax, backlogBytes, consumerConcurrency]) => ({
+		serviceName: `cloudflare-queue/${queueName}`,
+		accountId: MAKI_ACCOUNT_ID,
+		queueName,
+		backlogMessages,
+		backlogMessagesMax,
+		backlogBytes,
+		consumerConcurrency,
+	}),
+)
 
 /** maple.dev's top paths over the same 12h, as the breakdown endpoint returns them. */
 export const MAPLE_DEV_PATHS: CloudflareZoneBreakdown = (() => {
@@ -299,9 +309,9 @@ export const MAPLE_DEV_PATHS: CloudflareZoneBreakdown = (() => {
 		["/", 3_300, 0.0027, 24.9e6],
 		["/api/integrations/github/webhook", 2_700, 0, 840e3],
 	]
-	const total = rows.reduce((acc, [, requests]) => acc + requests, 0)
+	const total = Arr.reduce(rows, 0, (acc, [, requests]) => acc + requests)
 	return {
-		totals: rows.map(([key, requests, errorRate, bytes]) => ({
+		totals: Arr.map(rows, ([key, requests, errorRate, bytes]) => ({
 			key,
 			requests,
 			errors5xx: Math.round(requests * errorRate),
@@ -378,7 +388,7 @@ const MAPLE_API_LATENCY: ReadonlyArray<readonly [number, number, number, number]
 
 export const MAPLE_API_DETAIL: CloudflareWorkerDetail = {
 	outcomeBuckets: [
-		...MAPLE_API_TIMES.map((time, i) => ({
+		...Arr.map(MAPLE_API_TIMES, (time, i) => ({
 			bucket: iso(time),
 			status: "success",
 			requests: MAPLE_API_SUCCESS[i] ?? 0,
@@ -387,7 +397,7 @@ export const MAPLE_API_DETAIL: CloudflareWorkerDetail = {
 		{ bucket: iso("00:30"), status: "scriptThrewException", requests: 25 },
 		{ bucket: iso("11:30"), status: "clientDisconnected", requests: 2 },
 	],
-	latencyBuckets: MAPLE_API_TIMES.map((time, i) => {
+	latencyBuckets: Arr.map(MAPLE_API_TIMES, (time, i) => {
 		const [cpuP50Ms, cpuP99Ms, durationP50Ms, durationP99Ms] = MAPLE_API_LATENCY[i] ?? [0, 0, 0, 0]
 		return {
 			bucket: iso(time),
@@ -452,20 +462,20 @@ export const MAPLE_API_RELEASES: ReadonlyArray<{
 export const DEMO_NOW = Date.parse("2026-10-14T12:00:00.000Z")
 const MIN = 60_000
 const ACCOUNT_OF_ZONE = (zone: string) =>
-	zone.startsWith("maple") || zone === "makisuo.com" || zone === "semconv.com"
+	Str.startsWith("maple")(zone) || zone === "makisuo.com" || zone === "semconv.com"
 		? "acct-maple"
-		: zone.startsWith("hazel")
+		: Str.startsWith("hazel")(zone)
 			? "acct-hazel"
 			: "acct-side"
 const ACCOUNT_OF_SCRIPT = (script: string) =>
-	script.startsWith("maple") || script === "alchemy-state-store" || script === "semconv"
+	Str.startsWith("maple")(script) || script === "alchemy-state-store" || script === "semconv"
 		? "acct-maple"
-		: script.startsWith("hazel")
+		: Str.startsWith("hazel")(script)
 			? "acct-hazel"
 			: "acct-side"
 
 export const DEMO_WORKERS: ReadonlyArray<CloudflareWorkerRow> = [
-	...MAKI_WORKERS.map((w) => ({ ...w, accountId: ACCOUNT_OF_SCRIPT(w.scriptName) })),
+	...Arr.map(MAKI_WORKERS, (w) => ({ ...w, accountId: ACCOUNT_OF_SCRIPT(w.scriptName) })),
 	// The same script name deployed in a second account.
 	{
 		...MAKI_WORKERS.find((w) => w.scriptName === "favicon-service")!,
@@ -475,7 +485,8 @@ export const DEMO_WORKERS: ReadonlyArray<CloudflareWorkerRow> = [
 		errorRate: 4 / 96,
 	},
 ]
-export const DEMO_DURABLE_OBJECTS: ReadonlyArray<CloudflareDurableObjectRow> = MAKI_DURABLE_OBJECTS.map(
+export const DEMO_DURABLE_OBJECTS: ReadonlyArray<CloudflareDurableObjectRow> = Arr.map(
+	MAKI_DURABLE_OBJECTS,
 	(d) => ({
 		...d,
 		accountId: ACCOUNT_OF_SCRIPT(d.scriptName),
@@ -505,8 +516,9 @@ const accountStatus = (
 		scope: "analytics",
 		analyticsCapable: true,
 		revoked: false,
-		zones: MAKI_ZONES.filter((z) => ACCOUNT_OF_ZONE(z.zoneName) === accountId).map((z) =>
-			zoneStatus(z.zoneName, syncedAt, errors[z.zoneName] ?? null),
+		zones: Arr.map(
+			Arr.filter(MAKI_ZONES, (z) => ACCOUNT_OF_ZONE(z.zoneName) === accountId),
+			(z) => zoneStatus(z.zoneName, syncedAt, errors[z.zoneName] ?? null),
 		),
 		workers: new CloudflareAnalyticsWorkersStatus({
 			enabled: true,

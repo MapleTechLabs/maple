@@ -20,8 +20,14 @@
 
 import { type DateTime, Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { dateTime64, from, param, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
-import { ProductEvents, ServiceUsage, SessionReplays, orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
+import { dateTime64, from, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import {
+	ProductEvents,
+	ServiceUsage,
+	SessionReplays,
+	orgIdParam,
+	utcSecondsParam,
+} from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { utcHourFloor } from "@maple/query-engine/ch/query-helpers"
 

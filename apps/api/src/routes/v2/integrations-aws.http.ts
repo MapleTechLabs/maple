@@ -7,7 +7,7 @@ import {
 	isoTimestampOrNull,
 	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import {
@@ -61,7 +61,7 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 						object: "aws_integration" as const,
 						available: status.available,
 						modules: status.modules,
-						connections: status.connections.map(toV2Connection),
+						connections: Arr.map(status.connections, toV2Connection),
 					}
 				}),
 			)
@@ -118,7 +118,8 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* requireAdmin(tenant.roles, adminOnly)
-					return toV2Connection(yield* aws.check(tenant.orgId, params.id))
+					const connection = yield* aws.check(tenant.orgId, params.id)
+					return toV2Connection(connection)
 				}),
 			)
 			.handle("ingest", ({ params }) =>
@@ -131,7 +132,7 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 						window_end: isoTimestamp(ingest.windowEnd),
 						data_points: ingest.dataPoints,
 						last_point_at: isoTimestampOrNull(ingest.lastPointAt),
-						groups: ingest.groups.map((group) => ({
+						groups: Arr.map(ingest.groups, (group) => ({
 							namespace: group.namespace,
 							region: group.region,
 							metrics: group.metrics,

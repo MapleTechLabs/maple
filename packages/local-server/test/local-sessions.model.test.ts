@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import fc from "fast-check"
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
@@ -16,8 +16,7 @@ const libchdbAvailable =
 	(process.env.MAPLE_LIBCHDB !== undefined && existsSync(process.env.MAPLE_LIBCHDB)) ||
 	existsSync(join(homedir(), ".maple", "bin", "libchdb.so")) ||
 	existsSync(join(homedir(), ".maple", "bin", "libchdb.dylib"))
-const describeWithChdb =
-	process.env.MAPLE_REQUIRE_LIBCHDB === "1" ? describe : describe.skipIf(!libchdbAvailable)
+const skipWithoutChdb = process.env.MAPLE_REQUIRE_LIBCHDB !== "1" && !libchdbAvailable
 
 const SESSION = join(import.meta.dir, "fixtures", "local-session.ts")
 
@@ -51,7 +50,7 @@ const freePort = () => {
 }
 
 /** The `SESSION ` line a fixture prints once started or refused. */
-const readSession = async (child: Bun.Subprocess<"ignore", "pipe", "pipe">, log: string[]) => {
+const readSession = async (child: Bun.Subprocess<"ignore", "pipe", "pipe">, log: string[], drain = true) => {
 	const reader = child.stdout.getReader()
 	const decoder = new TextDecoder()
 	let buffered = ""
@@ -62,14 +61,15 @@ const readSession = async (child: Bun.Subprocess<"ignore", "pipe", "pipe">, log:
 		const chunk = decoder.decode(value, { stream: true })
 		buffered += chunk
 		log.push(chunk)
-		const line = buffered.split("\n").find((candidate) => candidate.startsWith("SESSION "))
+		const line = Str.split("\n")(buffered).find((candidate) => Str.startsWith("SESSION ")(candidate))
 		if (line !== undefined) {
 			reader.releaseLock()
 			// Keep draining so the child never blocks on a full pipe.
-			void child.stdout.pipeTo(
-				new WritableStream({ write: (bytes) => void log.push(decoder.decode(bytes)) }),
-			)
-			return decodeSessionLine(line.slice("SESSION ".length))
+			if (drain)
+				void child.stdout.pipeTo(
+					new WritableStream({ write: (bytes) => void log.push(decoder.decode(bytes)) }),
+				)
+			return decodeSessionLine(Str.slice("SESSION ".length)(line))
 		}
 	}
 	throw new Error(`session printed no SESSION line: ${buffered}`)
@@ -115,8 +115,8 @@ const settled = async (world: World) => {
 	while (Date.now() < deadline) {
 		const owner = claimPid(world.dataDir)
 		const discovered = discoveryPid(world.dataDir)
-		const alive = world.sessions.map((session) => session.process.pid)
-		const endpoints = [...new Set(world.sessions.map((session) => session.endpoint))]
+		const alive = Arr.map(world.sessions, (session) => session.process.pid)
+		const endpoints = [...new Set(Arr.map(world.sessions, (session) => session.endpoint))]
 		if (alive.length === 0) {
 			last = { owner, discovered, open: existsSync(storeOpenMarkerPath(world.dataDir)) }
 			if (
@@ -126,21 +126,24 @@ const settled = async (world: World) => {
 			)
 				return
 		} else {
-			const serving = await Promise.all(endpoints.map(healthy))
+			const serving = await Promise.all(Arr.map(endpoints, healthy))
 			last = { owner, discovered, alive, endpoints, serving }
 			if (
 				owner !== undefined &&
 				alive.includes(owner) &&
 				discovered === owner &&
 				endpoints.length === 1 &&
-				serving.every(Boolean)
+				Arr.every(serving, Boolean)
 			)
 				return
 		}
 		await Bun.sleep(200)
 	}
-	const logs = world.sessions.map((session) => `--- PID ${session.process.pid}\n${session.log.join("")}`)
-	throw new Error(`sessions never settled: ${JSON.stringify(last)}\n${logs.join("\n")}`)
+	const logs = Arr.map(
+		world.sessions,
+		(session) => `--- PID ${session.process.pid}\n${Arr.join(session.log, "")}`,
+	)
+	throw new Error(`sessions never settled: ${JSON.stringify(last)}\n${Arr.join(logs, "\n")}`)
 }
 
 class Start implements fc.AsyncCommand<{ running: number }, World> {
@@ -177,7 +180,10 @@ class Stop implements fc.AsyncCommand<{ running: number }, World> {
 			Bun.sleep(30_000).then(() => "timed out"),
 		])
 		if (exited === "timed out") session!.process.kill("SIGKILL")
-		expect({ exited, log: exited === 0 ? "" : session!.log.join("") }).toEqual({ exited: 0, log: "" })
+		expect({ exited, log: exited === 0 ? "" : Arr.join(session!.log, "") }).toEqual({
+			exited: 0,
+			log: "",
+		})
 		model.running--
 		await settled(world)
 	}
@@ -185,7 +191,133 @@ class Stop implements fc.AsyncCommand<{ running: number }, World> {
 
 const commands = [fc.constant(new Start()), fc.nat(5).map((pick) => new Stop(pick))]
 
-describeWithChdb("several alchemy dev sessions on one store", () => {
+describe.skipIf(skipWithoutChdb)("several alchemy dev sessions on one store", () => {
+	it.each(["foreign-exit", "lost-stdout"])(
+		"reopens cleanly after %s",
+		async (mode) => {
+			const root = mkdtempSync(join(tmpdir(), "maple-local-exit-"))
+			const dataDir = join(root, "data")
+			const children: Bun.Subprocess<"ignore", "pipe", "pipe">[] = []
+			const log: string[] = []
+			const spawn = (exitMode: string) => {
+				const child = Bun.spawn(["bun", SESSION, dataDir, "0", exitMode], {
+					stdin: "ignore",
+					stdout: "pipe",
+					stderr: "pipe",
+				})
+				children.push(child)
+				void child.stderr.pipeTo(
+					new WritableStream({ write: (bytes) => void log.push(new TextDecoder().decode(bytes)) }),
+				)
+				return child
+			}
+			try {
+				const child = spawn(mode)
+				const started = await readSession(child, [], false)
+				expect(started.error).toBeUndefined()
+				const ingested = await fetch(`${started.endpoint}/v1/logs`, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({
+						resourceLogs: [
+							{
+								scopeLogs: [
+									{
+										logRecords: [
+											{
+												timeUnixNano: String(BigInt(Date.now()) * 1_000_000n),
+												body: { stringValue: "survives-exit" },
+											},
+										],
+									},
+								],
+							},
+						],
+					}),
+				})
+				expect(ingested.status).toBe(200)
+				const readLog = async (endpoint: string) => {
+					const response = await fetch(`${endpoint}/local/query`, {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({
+							sql: "SELECT Body FROM logs WHERE OrgId = 'local' AND Body = 'survives-exit'",
+						}),
+					})
+					expect(response.status).toBe(200)
+					return response.json()
+				}
+				// A query flushes the ingest batch before the host exits.
+				expect(await readLog(started.endpoint!)).toEqual([{ Body: "survives-exit" }])
+				if (mode === "lost-stdout") {
+					await child.stdout.cancel()
+					child.kill("SIGUSR2")
+				} else child.kill("SIGTERM")
+				const exited = await Promise.race([child.exited, Bun.sleep(10_000).then(() => "timeout")])
+				expect(existsSync(storeOpenMarkerPath(dataDir)), Arr.join(log, "")).toBe(false)
+				if (mode === "foreign-exit") expect(exited, Arr.join(log, "")).toBe(143)
+				// Bun versions differ on whether EPIPE is an unhandled error or a native exit.
+				else expect([0, 1], Arr.join(log, "")).toContain(exited)
+				const reopened = spawn("scoped")
+				const printed = await readSession(reopened, [])
+				expect(printed.error).toBeUndefined()
+				expect(await healthy(printed.endpoint!)).toBe(true)
+				expect(await readLog(printed.endpoint!)).toEqual([{ Body: "survives-exit" }])
+				reopened.kill("SIGTERM")
+				expect(await reopened.exited).toBe(0)
+			} finally {
+				for (const child of children) if (child.exitCode === null) child.kill("SIGKILL")
+				await Promise.all(Arr.map(children, (child) => child.exited))
+				rmSync(root, { recursive: true, force: true })
+			}
+		},
+		60_000,
+	)
+
+	it("refuses a dirty takeover once without retrying", async () => {
+		const root = mkdtempSync(join(tmpdir(), "maple-local-dirty-takeover-"))
+		const dataDir = join(root, "data")
+		const children: Bun.Subprocess<"ignore", "pipe", "pipe">[] = []
+		const port = freePort()
+		const spawn = () => {
+			const child = Bun.spawn(["bun", SESSION, dataDir, String(port)], {
+				stdin: "ignore",
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			children.push(child)
+			return child
+		}
+		try {
+			const owner = spawn()
+			void owner.stderr.pipeTo(new WritableStream({ write() {} }))
+			expect((await readSession(owner, [])).error).toBeUndefined()
+			const sharer = spawn()
+			const log: string[] = []
+			void sharer.stderr.pipeTo(
+				new WritableStream({ write: (bytes) => void log.push(new TextDecoder().decode(bytes)) }),
+			)
+			expect((await readSession(sharer, log)).error).toBeUndefined()
+			owner.kill("SIGKILL")
+			await owner.exited
+			expect(existsSync(storeOpenMarkerPath(dataDir))).toBe(true)
+			// The retry clock lives in a separate Bun process; fake timers cannot drive it.
+			const deadline = Date.now() + 10_000
+			while (!Str.includes("not cleanly closed")(Arr.join(log, "")) && Date.now() < deadline)
+				await Bun.sleep(50)
+			expect(Arr.join(log, "")).toContain("not cleanly closed")
+			await Bun.sleep(3500)
+			const output = Arr.join(log, "")
+			expect(output.match(/cannot take over Maple Local/g)).toHaveLength(1)
+			expect(output).toContain('onDirtyStore: "wipe"')
+			expect(output).not.toContain("; retrying")
+		} finally {
+			for (const child of children) if (child.exitCode === null) child.kill("SIGKILL")
+			await Promise.all(Arr.map(children, (child) => child.exited))
+			rmSync(root, { recursive: true, force: true })
+		}
+	}, 60_000)
+
 	it("always have exactly one owner, one live endpoint, and a clean store at the end", async () => {
 		await fc.assert(
 			fc.asyncProperty(fc.commands(commands, { maxCommands: 7 }), async (sequence) => {

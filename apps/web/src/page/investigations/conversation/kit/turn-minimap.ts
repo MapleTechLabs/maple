@@ -1,10 +1,11 @@
 import { stripChatContext } from "@maple/domain/chat-preamble"
 import { cn } from "@maple/ui/lib/utils"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { icon } from "../../../../ui/icon"
-import { iconButton } from "../../../../ui/icon-button"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { pressable } from "@maple/views/ui/pressable"
 import { isMachineTurn, messageText, type TranscriptRow } from "./transcript-rows"
 
 // The turn minimap: one marker per human turn down the transcript's gutter, lit while its turn
@@ -23,7 +24,7 @@ export const TURN_MINIMAP_MIN_ITEMS = 2
 export type TurnItem = Readonly<{ id: string; userText: string | null; assistantText: string | null }>
 
 const compactPreview = (text: string): string | null => {
-	const compact = text.replace(/\s+/gu, " ").trim()
+	const compact = Str.trim(Str.replace(/\s+/gu, " ")(text))
 	return compact.length > 0 ? compact : null
 }
 
@@ -49,7 +50,7 @@ export const deriveTurnMinimap = (
 			: acc
 	}, [])
 	const turnByRowId = new Map(
-		rows.flatMap((row, index) => {
+		Arr.flatMap(rows, (row, index) => {
 			const turns = deriveTurnCount(rows.slice(0, index + 1))
 			return turns > 0 ? [[row.id, turns - 1] as const] : []
 		}),
@@ -58,8 +59,10 @@ export const deriveTurnMinimap = (
 }
 
 const deriveTurnCount = (rows: ReadonlyArray<TranscriptRow>): number =>
-	rows.filter((row) => row.kind === "message" && row.message.role === "user" && !isMachineTurn(row.message))
-		.length
+	Arr.filter(
+		rows,
+		(row) => row.kind === "message" && row.message.role === "user" && !isMachineTurn(row.message),
+	).length
 
 const resolveCurrentTurnIndex = (
 	visibleIds: ReadonlyArray<string>,
@@ -159,7 +162,7 @@ export const turnMinimap = <M>(
 	if (items.length < TURN_MINIMAP_MIN_ITEMS) return h.empty
 	const currentIndex = resolveCurrentTurnIndex(state.visibleIds, turnByRowId)
 	const visibleTurns = new Set(
-		state.visibleIds.flatMap((id) => Option.toArray(Option.fromNullishOr(turnByRowId.get(id)))),
+		Arr.flatMap(state.visibleIds, (id) => Option.toArray(Option.fromNullishOr(turnByRowId.get(id)))),
 	)
 	const active = state.activeIndex !== null && state.activeIndex < items.length ? state.activeIndex : null
 	const activeItem = active === null ? undefined : items[active]
@@ -197,23 +200,23 @@ export const turnMinimap = <M>(
 				],
 				[
 					step(h, "previous", neighbour(-1)),
-					h.button(
-						[
-							h.Type("button"),
-							h.AriaLabel(
+					pressable(
+						h,
+						{
+							label:
 								activeItem === undefined
 									? "Jump to a turn"
 									: `Jump to turn: ${activeItem.userText ?? "user message"}`,
-							),
-							h.Class(
-								"absolute inset-y-0 start-0 w-full cursor-pointer bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70",
-							),
-							h.DataAttribute("turn-rail", String(items.length)),
-							h.DataAttribute("turn-current", String(currentIndex ?? 0)),
-						],
+							className:
+								"absolute inset-y-0 start-0 w-full bg-transparent focus-visible:ring-ring/70",
+							attributes: [
+								h.DataAttribute("turn-rail", String(items.length)),
+								h.DataAttribute("turn-current", String(currentIndex ?? 0)),
+							],
+						},
 						[
 							h.div([h.Class("absolute top-0 start-3 h-full w-px bg-border-subtle")], []),
-							...items.map((item, index) =>
+							...Arr.map(items, (item, index) =>
 								h.span(
 									[
 										h.AriaHidden(true),

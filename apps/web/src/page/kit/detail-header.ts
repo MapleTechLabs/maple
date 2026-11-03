@@ -1,8 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../ui/eyebrow"
-import { pageTitle } from "../../ui/page-layout"
-import { skeleton } from "../../ui/skeleton"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { pageTitle } from "@maple/views/ui/page-layout"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { Array as Arr } from "effect"
 
 // `DetailHeader`'s title side and `DetailHeaderSkeleton`.
 // The page passes the result as `dashboardPage`'s `titleContent`, its actions as `actions`.
@@ -15,14 +16,19 @@ export const detailEyebrow = <M>(
 	segments: ReadonlyArray<Html | string | null>,
 	className?: string,
 ): Html | null => {
-	const shown = segments.filter((segment): segment is Html | string => segment !== null && segment !== "")
+	const shown = Arr.filter(
+		segments,
+		(segment): segment is Html | string => segment !== null && segment !== "",
+	)
 	return shown.length === 0
 		? null
 		: eyebrow(
 				h,
 				{ as: "div", className: cn("flex flex-wrap items-center gap-x-2 gap-y-1", className) },
-				shown.flatMap((segment, index) => [
-					...(index > 0 ? [h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])] : []),
+				Arr.flatMap(shown, (segment, index) => [
+					...(index > 0
+						? [h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])]
+						: []),
 					h.span([h.Class("truncate")], [segment]),
 				]),
 			)
@@ -50,11 +56,18 @@ export const detailTitle = <M>(h: HtmlBuilder<M>, options: DetailTitleOptions): 
 				h,
 				{
 					title: tooltip,
-					className: options.adornment === undefined ? undefined : "flex items-center gap-2.5",
+					// Phones have no hover for the tooltip, so the title wraps there instead.
+					className: cn(
+						"max-sm:whitespace-normal",
+						options.adornment !== undefined && "flex items-center gap-2.5",
+					),
 				},
 				options.adornment === undefined
 					? options.title
-					: [h.span([h.Class("truncate")], options.title), options.adornment],
+					: [
+							h.span([h.Class("truncate max-sm:whitespace-normal")], options.title),
+							options.adornment,
+						],
 			),
 			...(options.meta === undefined || options.meta.length === 0
 				? []

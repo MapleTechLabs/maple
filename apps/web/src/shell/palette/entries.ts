@@ -4,7 +4,7 @@ import { Array as Arr, Option, Schema } from "effect"
 import { DashboardId } from "@maple/domain/http"
 import { CATALOG } from "../../page/integrations/catalog"
 import { AppRoute, hrefOf } from "../../route"
-import type { IconName } from "../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 import type { PinnedDashboardRow } from "../dashboards-shape"
 import type { Theme } from "../message"
 import { navGroups } from "../nav"
@@ -60,17 +60,17 @@ const href = (url: string): Target => ({ _tag: "Href", href: url })
 
 /** `paletteNavItems`: every section, its children and their views, deduplicated by title and href. */
 const navigationEntries = (): ReadonlyArray<PaletteEntry> => {
-	const rows = navGroups({ releases: true, securityAudit: true, statusPages: true }).flatMap((group) =>
-		group.items.flatMap((item) => [
+	const rows = Arr.flatMap(navGroups({ releases: true, securityAudit: true, statusPages: true }), (group) =>
+		Arr.flatMap(group.items, (item) => [
 			{ id: `nav:${item.title}`, title: item.title, href: item.href, icon: item.icon },
-			...(item.subItems ?? []).flatMap((sub) => [
+			...Arr.flatMap(item.subItems ?? [], (sub) => [
 				{
 					id: `nav:${item.title}:${sub.title}`,
 					title: sub.paletteTitle ?? sub.title,
 					href: sub.href,
 					icon: sub.icon ?? item.icon,
 				},
-				...(sub.views ?? []).map((view) => ({
+				...Arr.map(sub.views ?? [], (view) => ({
 					id: `nav:${item.title}:${sub.title}:${view.title}`,
 					title: view.paletteTitle ?? `${sub.title} ${view.title}`,
 					href: view.href,
@@ -82,12 +82,16 @@ const navigationEntries = (): ReadonlyArray<PaletteEntry> => {
 	// One row per page, titled by its most specific row ("Traces", not its "Explore" parent);
 	// every title that opens the same page stays searchable as a keyword.
 	const unique = Arr.reverse(Arr.dedupeWith(Arr.reverse(rows), (a, b) => a.href === b.href))
-	const titlesByHref = (target: string) => rows.filter((row) => row.href === target).map((row) => row.title)
-	return unique.map((row) => ({
+	const titlesByHref = (target: string) =>
+		Arr.map(
+			Arr.filter(rows, (row) => row.href === target),
+			(row) => row.title,
+		)
+	return Arr.map(unique, (row) => ({
 		id: row.id,
 		title: row.title,
 		group: "Navigation",
-		keywords: `go to ${titlesByHref(row.href).join(" ")}`,
+		keywords: `go to ${Arr.join(titlesByHref(row.href), " ")}`,
 		glyph: icon(row.icon),
 		target: href(row.href),
 		isFlagged: FLAGGED_HREFS.has(row.href),
@@ -145,7 +149,7 @@ const integrationGlyph = (entry: (typeof CATALOG)[number]): Glyph =>
 
 // Every provider is typeable as "Connect <name>", so trying "railway" finds it from anywhere.
 const integrationEntries = (): ReadonlyArray<PaletteEntry> =>
-	CATALOG.map((entry) => ({
+	Arr.map(CATALOG, (entry) => ({
 		id: `integration:${entry.id}`,
 		title: `Connect ${entry.name}`,
 		group: "Integrations",
@@ -159,9 +163,9 @@ const decodeDashboardId = Schema.decodeUnknownOption(DashboardId)
 
 /** Favourites first, each half newest first (`useDashboardsRead`'s order). */
 const dashboardEntries = (inputs: EntryInputs): ReadonlyArray<PaletteEntry> => {
-	const favorites = inputs.dashboards.filter((row) => inputs.favorites.includes(row.id))
-	const others = inputs.dashboards.filter((row) => !inputs.favorites.includes(row.id))
-	return [...favorites, ...others].flatMap((row) =>
+	const favorites = Arr.filter(inputs.dashboards, (row) => inputs.favorites.includes(row.id))
+	const others = Arr.filter(inputs.dashboards, (row) => !inputs.favorites.includes(row.id))
+	return Arr.flatMap([...favorites, ...others], (row) =>
 		Option.match(decodeDashboardId(row.id), {
 			onNone: () => [],
 			onSome: (dashboardId): ReadonlyArray<PaletteEntry> => [
@@ -208,7 +212,7 @@ export const MAX_RESULTS = 12
 export const paletteEntries = (inputs: EntryInputs): ReadonlyArray<PaletteEntry> => [
 	...navigationEntries(),
 	...footerEntries,
-	...inputs.serviceNames.map((name): PaletteEntry => ({
+	...Arr.map(inputs.serviceNames, (name): PaletteEntry => ({
 		id: `service:${name}`,
 		title: name,
 		group: "Services",
@@ -222,12 +226,12 @@ export const paletteEntries = (inputs: EntryInputs): ReadonlyArray<PaletteEntry>
 ]
 
 export const searchEntriesOf = (entries: ReadonlyArray<PaletteEntry>): ReadonlyArray<SearchEntry> =>
-	entries.map(({ id, title, keywords }) => ({ id, title, keywords }))
+	Arr.map(entries, ({ id, title, keywords }) => ({ id, title, keywords }))
 
 /** Browse mode: five services, and only the new providers; the rest stay a search away. */
 export const browseEntries = (entries: ReadonlyArray<PaletteEntry>): ReadonlyArray<PaletteEntry> => {
-	const services = entries.filter((entry) => entry.group === "Services").slice(0, 5)
-	return entries.filter((entry) =>
+	const services = Arr.filter(entries, (entry) => entry.group === "Services").slice(0, 5)
+	return Arr.filter(entries, (entry) =>
 		entry.group === "Services" ? services.includes(entry) : entry.isAdvertised !== false,
 	)
 }
@@ -236,6 +240,10 @@ export const browseEntries = (entries: ReadonlyArray<PaletteEntry>): ReadonlyArr
 export const groupEntries = (
 	entries: ReadonlyArray<PaletteEntry>,
 ): ReadonlyArray<Readonly<{ group: Group; entries: ReadonlyArray<PaletteEntry> }>> =>
-	GROUP_ORDER.map((group) => ({ group, entries: entries.filter((entry) => entry.group === group) })).filter(
+	Arr.filter(
+		Arr.map(GROUP_ORDER, (group) => ({
+			group,
+			entries: Arr.filter(entries, (entry) => entry.group === group),
+		})),
 		(section) => section.entries.length > 0,
 	)

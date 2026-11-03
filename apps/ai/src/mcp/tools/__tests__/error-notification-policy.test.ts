@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { Clock, Context, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertDestinations } from "@maple/db/tables"
 import { AlertDestinationId, AlertPersistenceError, OrgId, RoleName, UserId } from "@maple/domain/http"
@@ -160,7 +160,7 @@ describe("error notification policy tools", () => {
 				result.success.structuredContent,
 			)
 			expect(output.destinationNamesUnavailable).toBe(true)
-			expect(output.destinations.map((d) => [d.id, d.name])).toEqual([[DEST, null]])
+			expect(Arr.map(output.destinations, (d) => [d.id, d.name])).toEqual([[DEST, null]])
 		}).pipe(Effect.provide(makeLayer(true))),
 	)
 })

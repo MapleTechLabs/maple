@@ -1,12 +1,12 @@
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { getServiceWorkloads } from "@maple/web-data/warehouse/service-infra"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import * as Keyed from "../../../../data/keyed"
-import { KeyedSchema } from "../../../../data/keyed"
-import { LoadFailure, toLoadFailure } from "../../../../data/load-failure"
-import { requestKey } from "../../../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"
 import type { PageContext } from "../../../contract"
 import type { Resources } from "../../../../platform/resources"
@@ -38,7 +38,10 @@ export type Model = typeof Model.Type
 export const init = (): Model => ({ names: Keyed.idle(), workloads: Keyed.idle() })
 
 export const Message = defineMessageUnion({
-	CompletedFetchNames: { key: Schema.String, result: Schema.Result(Schema.Array(Schema.String), LoadFailure) },
+	CompletedFetchNames: {
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(Schema.String), LoadFailure),
+	},
 	CompletedFetchWorkloads: { key: Schema.String, result: Schema.Result(ServiceWorkloads, LoadFailure) },
 })
 export type Message = typeof Message.Type
@@ -64,10 +67,17 @@ export const FetchNames = Command.define("FetchLensServiceNames", {
 			data:
 				input.namespaces === undefined
 					? { startTime: input.startTime, endTime: input.endTime }
-					: { startTime: input.startTime, endTime: input.endTime, namespaces: [...input.namespaces] },
+					: {
+							startTime: input.startTime,
+							endTime: input.endTime,
+							namespaces: [...input.namespaces],
+						},
 		}).pipe(
-			Effect.map((response) => [...new Set(response.data.map((row) => row.serviceName))].sort()),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) =>
+					[...new Set(Arr.map(response.data, (row) => row.serviceName))].sort(),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchNames({ key, result })),
 		),
@@ -83,8 +93,7 @@ export type WorkloadsInput = typeof WorkloadsInput.Type
 /** `getServiceWorkloadsResultAtom`: an empty list answers locally, sending nothing. */
 export const fetchServiceWorkloads = (input: WorkloadsInput) =>
 	getServiceWorkloads({ data: { ...input, services: [...input.services] } }).pipe(
-		Effect.map((response) => response.workloads),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({ onSuccess: (response) => response.workloads, onFailure: toLoadFailure }),
 		Effect.result,
 	)
 
@@ -92,10 +101,15 @@ export const FetchWorkloads = Command.define("FetchLensServiceWorkloads", {
 	args: { key: Schema.String, input: WorkloadsInput },
 	messages: [Message.CompletedFetchWorkloads],
 	execute: ({ key, input }) =>
-		Effect.map(fetchServiceWorkloads(input), (result) => Message.CompletedFetchWorkloads({ key, result })),
+		Effect.map(fetchServiceWorkloads(input), (result) =>
+			Message.CompletedFetchWorkloads({ key, result }),
+		),
 })
 
-export type Return = Readonly<{ model: Model; commands: ReadonlyArray<Command.Command<Message, never, Resources>> }>
+export type Return = Readonly<{
+	model: Model
+	commands: ReadonlyArray<Command.Command<Message, never, Resources>>
+}>
 
 const workloadsStep = (model: Model, context: PageContext, window: TimeWindow, mode: Keyed.RequestMode) => {
 	const input = { services: AsyncData.getOrElse(model.names.data, () => []), ...window }
@@ -109,7 +123,12 @@ const workloadsStep = (model: Model, context: PageContext, window: TimeWindow, m
 }
 
 /** The names for the window, and the join over whatever names are known (empty until they land). */
-export const request = (model: Model, context: PageContext, window: TimeWindow, mode: Keyed.RequestMode): Return => {
+export const request = (
+	model: Model,
+	context: PageContext,
+	window: TimeWindow,
+	mode: Keyed.RequestMode,
+): Return => {
 	const input = namesInput(window, context.pinnedNamespace)
 	return applySteps<Model, Message>(model, [
 		keyed(
@@ -123,11 +142,18 @@ export const request = (model: Model, context: PageContext, window: TimeWindow, 
 	])
 }
 
-export const update = (model: Model, message: Message, context: PageContext, window: TimeWindow | null): Return =>
+export const update = (
+	model: Model,
+	message: Message,
+	context: PageContext,
+	window: TimeWindow | null,
+): Return =>
 	Message.match<Return>(message, {
 		CompletedFetchNames: ({ key, result }) => {
 			const next = { ...model, names: Keyed.accept(model.names, key, result) }
-			return window === null ? { model: next, commands: [] } : applySteps<Model, Message>(next, [workloadsStep(next, context, window, "Load")])
+			return window === null
+				? { model: next, commands: [] }
+				: applySteps<Model, Message>(next, [workloadsStep(next, context, window, "Load")])
 		},
 		CompletedFetchWorkloads: ({ key, result }) => ({
 			model: { ...model, workloads: Keyed.accept(model.workloads, key, result) },

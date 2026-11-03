@@ -1,4 +1,5 @@
-import * as ToggleGroup from "@maple/web/ui/toggle-group"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
+import { logsStreamToolbar } from "@maple/views/ui/logs/logs-stream-toolbar"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -6,9 +7,27 @@ import { refreshButton, timeRangeSelect, toolbar, toolbarSearch, toolbarStat, to
 import type { LogsMode } from "./filters"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { rowsOf } from "./stream"
+import { rowsOf } from "./update-stream"
 
-// The toolbar `renderPage` wraps every mode in: mode toggle, search, the mode's stats, refresh, range.
+// The toolbar `renderPage` wraps every mode in: mode toggle, search, the list's columns, wrap and
+// density, the mode's stats, refresh, range.
+
+const streamControls = (h: HtmlBuilder<Message>, model: Model): Html =>
+	logsStreamToolbar(h, {
+		tooltip: model.toolbarTooltip,
+		toTooltipMessage: (message) => Message.GotToolbarTooltipMessage({ message }),
+		columnsPopover: model.columnsPopover,
+		toColumnsPopoverMessage: (message) => Message.GotColumnsPopoverMessage({ message }),
+		columnOptions: model.columnOptions,
+		pinnedColumns: model.columns,
+		onToggleColumn: (key) => Message.ToggledColumn({ key }),
+		sections: model.sections,
+		toSectionsMessage: (message) => Message.GotFilterSectionsMessage({ message }),
+		wrap: model.wrap,
+		onToggleWrap: Message.ClickedWrap(),
+		density: model.density,
+		onToggleDensity: Message.ClickedDensity(),
+	})
 
 /** Each mode supplies its own stat (`LogListMode` / `LogPatternsMode`). */
 const stats = (h: HtmlBuilder<Message>, model: Model, mode: LogsMode): ReadonlyArray<Html> => {
@@ -56,6 +75,7 @@ export const logsToolbar = (
 		toolbarStats(
 			h,
 			[
+				...(mode === "list" ? [streamControls(h, model)] : []),
 				...stats(h, model, mode),
 				refreshButton(h, { isSpinning: model.isRefreshing, hasNewData: options.hasNewData, onRefresh: Message.ClickedRefresh() }),
 				timeRangeSelect(h, options.range, (range) => Message.ChangedRange({ range })),

@@ -4,7 +4,7 @@ import {
 	SupabaseLogIssuesResponse,
 	SupabaseProjectInsights,
 } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../../contract"
@@ -23,7 +23,7 @@ const NOW = 1_790_000_000_000
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const project = (ref: string, name: string, metricsEnabled: boolean, lifecycle = "ACTIVE_HEALTHY") => ({
 	ref,
@@ -109,7 +109,7 @@ const insights = (projectRef: string) =>
 	})
 
 const steps = (model: Model, messages: ReadonlyArray<Message>) =>
-	messages.reduce((current, message) => pageUpdate(current, message).model, model)
+	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message).model)
 
 const withStatus = (connected: boolean): Model => {
 	const entered = init({ search: {} }, context).model
@@ -255,7 +255,7 @@ describe("supabase list", () => {
 describe("projectViews", () => {
 	test("keeps a project that still has metrics after discovery dropped it", () => {
 		const views = projectViews(status(true), [row("goneprojectaaaaaaaaa")])
-		expect(views.map((view) => [view.ref, view.collection])).toEqual([
+		expect(Arr.map(views, (view) => [view.ref, view.collection])).toEqual([
 			["storefrontaaaaaaaaaa", "waiting"],
 			["newprojectaaaaaaaaaa", "waiting"],
 			["sandboxaaaaaaaaaaaaa", "off"],
@@ -274,7 +274,7 @@ describe("advisorFindings", () => {
 			{ insights: [warned, insights("storefrontaaaaaaaaaa")], failedRefs: [] },
 			new Map([["storefrontaaaaaaaaaa", "storefront"]]),
 		)
-		expect(findings.map((finding) => [finding.lint.title, finding.projectName])).toEqual([
+		expect(Arr.map(findings, (finding) => [finding.lint.title, finding.projectName])).toEqual([
 			["RLS disabled in public", "storefront"],
 			["Function search_path is mutable", "newprojectaaaaaaaaaa"],
 		])

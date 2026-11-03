@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { sparkSegments } from "./window-sparkline"
+import { Array as Arr } from "effect"
 
 const MINUTE = 60_000
 const start = Date.parse("2026-10-21T17:00:00Z")
@@ -33,7 +34,7 @@ describe("sparkSegments", () => {
 			],
 			window,
 		)
-		expect(runs.map((run) => run.length)).toEqual([2, 1, 1])
+		expect(Arr.map(runs, (run) => run.length)).toEqual([2, 1, 1])
 	})
 
 	test("the highest value draws at the top and the lowest at the bottom; a flat series in the middle", () => {

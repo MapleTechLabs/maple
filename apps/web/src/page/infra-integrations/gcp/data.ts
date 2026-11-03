@@ -14,9 +14,9 @@ import {
 	getGcpInfraTimeseries,
 } from "@maple/web-data/warehouse/gcp-infra"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 
@@ -69,8 +69,10 @@ export const loadStatus = (refresh: boolean) =>
 /** `gcpInfraFleetResultAtom({ data: window })`: presence, then every reporting service's metrics. */
 export const loadFleet = (window: TimeWindow) =>
 	getGcpInfraFleet({ data: window }).pipe(
-		Effect.map((response): ReadonlyArray<FleetRead> => response.services),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<FleetRead> => response.services,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -85,8 +87,10 @@ export type SparksInput = typeof SparksInput.Type
 /** `gcpInfraSparklinesResultAtom`. */
 export const loadSparks = (input: SparksInput) =>
 	getGcpInfraSparklines({ data: input }).pipe(
-		Effect.map((response): ReadonlyArray<SparkRead> => response.services),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<SparkRead> => response.services,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -118,8 +122,10 @@ export type TimeseriesInput = typeof TimeseriesInput.Type
 /** `gcpInfraTimeseriesResultAtom`: one source's points for one workload (or cluster). */
 export const loadTimeseries = (input: TimeseriesInput) =>
 	getGcpInfraTimeseries({ data: { ...input, keys: [...input.keys] } }).pipe(
-		Effect.map((response): ReadonlyArray<BucketPoint> => response.points),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<BucketPoint> => response.points,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -135,8 +141,10 @@ export type CloudSqlInput = typeof CloudSqlInput.Type
 
 export const loadTopQueries = (input: CloudSqlInput) =>
 	getGcpCloudSqlTopQueries({ data: { ...input, keys: [...input.keys] } }).pipe(
-		Effect.map((response): ReadonlyArray<Statement> => response.statements),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<Statement> => response.statements,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -158,19 +166,21 @@ export type TraceSide = typeof TraceSide.Type
 
 export const loadTraceSide = (input: CloudSqlInput) =>
 	getGcpCloudSqlTraceSide({ data: { ...input, keys: [...input.keys] } }).pipe(
-		Effect.map((response): TraceSide => ({
-			databases: response.databases,
-			tracedQueries: response.tracedQueries.map((query) => ({
-				queryKey: query.queryKey,
-				sampleStatement: query.sampleStatement,
-				sampleService: query.sampleService,
-				serviceCount: query.serviceCount,
-				estimatedQueryCount: query.estimatedQueryCount,
-				p95DurationMs: query.p95DurationMs,
-			})),
-			services: response.services,
-		})),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): TraceSide => ({
+				databases: response.databases,
+				tracedQueries: Arr.map(response.tracedQueries, (query) => ({
+					queryKey: query.queryKey,
+					sampleStatement: query.sampleStatement,
+					sampleService: query.sampleService,
+					serviceCount: query.serviceCount,
+					estimatedQueryCount: query.estimatedQueryCount,
+					p95DurationMs: query.p95DurationMs,
+				})),
+				services: response.services,
+			}),
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -197,8 +207,10 @@ export const loadStatementSpans = (input: StatementSpansInput) =>
 	getGcpCloudSqlStatementSpans({
 		data: { ...input, databases: [...input.databases], queryKeys: [...input.queryKeys] },
 	}).pipe(
-		Effect.map((response): ReadonlyArray<StatementSpan> => response.spans),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<StatementSpan> => response.spans,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -225,13 +237,14 @@ export const loadOverview = (input: OverviewInput) =>
 				? { startTime: input.startTime, endTime: input.endTime }
 				: { ...input, namespaces: [...input.namespaces] },
 	}).pipe(
-		Effect.map((response): ReadonlyArray<OverviewRow> =>
-			response.data.map((row) => ({
-				serviceName: row.serviceName,
-				errorRate: row.errorRate,
-				throughput: row.throughput,
-			})),
-		),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<OverviewRow> =>
+				Arr.map(response.data, (row) => ({
+					serviceName: row.serviceName,
+					errorRate: row.errorRate,
+					throughput: row.throughput,
+				})),
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)

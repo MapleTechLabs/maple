@@ -1,10 +1,13 @@
 import path from "node:path"
 import { foldkit } from "@foldkit/vite-plugin"
 import tailwindcss from "@tailwindcss/vite"
+import { Schema, Record as Rec, String as Str } from "effect"
 import { defineConfig, loadEnv, type Plugin } from "vite"
 import { siblingUrl } from "../../packages/infra/src/dev-urls.ts"
-import { clerkJsUrl } from "./src/platform/clerk-js-url.ts"
+import { clerkJsUrl } from "../../packages/domain/src/clerk-js-url.ts"
 import { versionManifest } from "./vite-plugin-version-manifest.ts"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.String))
 
 const envDir = path.resolve(import.meta.dirname, "../..")
 
@@ -81,7 +84,7 @@ const earlyBoot = (): Plugin => {
 		transformIndexHtml: {
 			order: "post",
 			handler(_html, context) {
-				const chunk = Object.values(context.bundle ?? {}).find(
+				const chunk = Rec.values(context.bundle ?? {}).find(
 					(output) => output.type === "chunk" && output.isEntry && output.name === "boot",
 				)
 				// A build without it would still work, just without the early start: fail loudly instead.
@@ -122,7 +125,7 @@ export default defineConfig(({ mode, command }) => {
 	const define: Record<string, string> = {}
 	for (const key of overrideKeys) {
 		const value = process.env[key]?.trim()
-		if (value) define[`import.meta.env.${key}`] = JSON.stringify(value)
+		if (value) define[`import.meta.env.${key}`] = encodeJson(value)
 	}
 
 	return {
@@ -136,7 +139,7 @@ export default defineConfig(({ mode, command }) => {
 			// `/version.json`, which open tabs poll to offer a reload after a deploy (shell/version.ts).
 			versionManifest(process.env.VITE_COMMIT_SHA?.trim() || ""),
 			earlyBoot(),
-			...(process.env.VITE_MAPLE_AUTH_MODE?.trim().toLowerCase() === "clerk" && clerkKey
+			...(Str.toLowerCase(process.env.VITE_MAPLE_AUTH_MODE?.trim()) === "clerk" && clerkKey
 				? [clerkEarlyLoad(clerkKey)]
 				: []),
 		],

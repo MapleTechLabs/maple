@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { tinybirdProjectManifest } from "../generated/tinybird-project-manifest"
+import { Array as Arr, Record as Rec } from "effect"
 
 const RETENTION_DAYS = {
 	alert_checks: 365,
@@ -73,10 +74,10 @@ const ZERO_RETENTION_DATASOURCES = ["service_map_edges_hourly_ingest"] as const
 
 describe("Tinybird retention matrix", () => {
 	it("assigns every stored datasource to the intended 30/90/365-day tier", () => {
-		const actualNames = tinybirdProjectManifest.datasources.map(({ name }) => name).sort()
-		expect(actualNames).toEqual([...Object.keys(RETENTION_DAYS), ...ZERO_RETENTION_DATASOURCES].sort())
+		const actualNames = Arr.map(tinybirdProjectManifest.datasources, ({ name }) => name).sort()
+		expect(actualNames).toEqual([...Rec.keys(RETENTION_DAYS), ...ZERO_RETENTION_DATASOURCES].sort())
 
-		for (const [name, expectedDays] of Object.entries(RETENTION_DAYS)) {
+		for (const [name, expectedDays] of Rec.toEntries(RETENTION_DAYS)) {
 			const datasource = tinybirdProjectManifest.datasources.find(
 				(candidate) => candidate.name === name,
 			)
@@ -115,6 +116,19 @@ describe("Tinybird retention matrix", () => {
 			"service_operations_hourly_mv",
 			"service_endpoint_details_hourly_mv",
 		]) {
+			const pipe = tinybirdProjectManifest.pipes.find((candidate) => candidate.name === name)
+			expect(pipe, name).toBeDefined()
+			expect(pipe?.content, name).toContain("DEPLOYMENT_METHOD alter")
+		}
+	})
+
+	/**
+	 * The error views also replay 30-day `traces` into 90-day targets, and a rebuild
+	 * recomputes FingerprintHash for every stored row, re-keying every issue. The
+	 * fingerprint fixes in #2071 sat undeployable behind this refusal.
+	 */
+	it("applies error-events view changes by ALTER, never by rebuild", () => {
+		for (const name of ["error_events_mv", "error_events_by_time_mv"]) {
 			const pipe = tinybirdProjectManifest.pipes.find((candidate) => candidate.name === name)
 			expect(pipe, name).toBeDefined()
 			expect(pipe?.content, name).toContain("DEPLOYMENT_METHOD alter")

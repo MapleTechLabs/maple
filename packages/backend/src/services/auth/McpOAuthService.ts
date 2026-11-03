@@ -15,7 +15,20 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
 import { ApiKeys, McpOAuthAuthorizations, McpOAuthClients, McpOAuthRefreshTokens } from "@maple/db/tables"
 import { REFRESH_FAMILY_ABSOLUTE_TTL_MS, revokeRefreshFamily } from "./mcp-oauth-family"
-import { Clock, Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
+import {
+	DateTime,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Result,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -134,7 +147,7 @@ const fnClientErrorsOk =
 		body(...args).pipe(
 			Effect.map((value): Result.Result<A, McpOAuthProtocolError> => Result.succeed(value)),
 			Effect.catchIf(
-				(error): error is McpOAuthProtocolError => error instanceof McpOAuthProtocolError,
+				(error): error is McpOAuthProtocolError => Schema.is(McpOAuthProtocolError)(error),
 				(error) =>
 					Effect.annotateCurrentSpan({
 						"error.type": error._tag,
@@ -146,7 +159,7 @@ const fnClientErrorsOk =
 		)
 
 const parseScopes = (scope: string | undefined) => {
-	const scopes = [...new Set((scope ?? MCP_SCOPE).split(/\s+/).filter(Boolean))]
+	const scopes = [...new Set(Arr.filter(Str.split(/\s+/)(scope ?? MCP_SCOPE), Boolean))]
 	return scopes.length === 1 && scopes[0] === MCP_SCOPE ? scopes : undefined
 }
 
@@ -187,11 +200,11 @@ const parseLoopbackRedirectUri = (value: string) =>
 		// RFC 8252 permits only the port to vary. Keep the original suffix so path and query
 		// matching does not inherit URL parser normalization.
 		const authorityStart = value.indexOf("//") + 2
-		const suffixOffset = value.slice(authorityStart).search(/[/?]/)
+		const suffixOffset = Str.slice(authorityStart)(value).search(/[/?]/)
 		return {
 			protocol: url.protocol,
 			hostname: url.hostname,
-			suffix: suffixOffset === -1 ? "" : value.slice(authorityStart + suffixOffset),
+			suffix: suffixOffset === -1 ? "" : Str.slice(authorityStart + suffixOffset)(value),
 		}
 	})
 
@@ -215,7 +228,7 @@ export const matchesMcpOAuthRedirectUri = (registered: string, requested: string
 
 const appendOAuthParams = (redirectUri: string, params: Record<string, string | undefined>) => {
 	const url = new URL(redirectUri)
-	for (const [key, value] of Object.entries(params)) {
+	for (const [key, value] of Rec.toEntries(params)) {
 		if (value !== undefined) url.searchParams.set(key, value)
 	}
 	return url.toString()
@@ -525,7 +538,7 @@ export class McpOAuthService extends Context.Service<
 				redirectUri: row.redirectUri,
 				resource: row.resource,
 				scopes: row.scopes,
-				expiresAt: new Date(row.expiresAt).toISOString(),
+				expiresAt: DateTime.formatIso(DateTime.makeUnsafe(row.expiresAt)),
 				status,
 			})
 		})

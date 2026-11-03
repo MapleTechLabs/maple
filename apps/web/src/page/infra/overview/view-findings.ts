@@ -1,21 +1,24 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { isSameFailure, type LoadFailure } from "../../../data/load-failure"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { emptyMessage } from "../../../ui/empty"
-import { skeleton } from "../../../ui/skeleton"
-import { statusDot } from "../../../ui/status-dot"
+import { isSameFailure, type LoadFailure } from "@maple/views/data/load-failure"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { sectionHeading } from "../../kit/section-heading"
 import type { TimeSearch } from "../kit/view-tabs"
 import { findingHref } from "./links"
 import type { Finding, SourceId } from "./model"
 import { sourceMark, SOURCE_TITLE } from "./source-mark"
 import type { SourceState } from "./state"
+import { typography } from "@maple/views/ui/typography"
+import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 /** The muted caption beside an overview section's title, set in the sans prose face. */
 export const sectionCaption = <M>(h: HtmlBuilder<M>, text: string): Html =>
-	h.span([h.Class("font-prose text-xs text-muted-foreground")], [text])
+	typography(h, { size: "xs", tone: "muted", className: "font-prose" }, [text])
 
 // `NeedsAttention` and its rows.
 
@@ -42,7 +45,7 @@ const sourceLabel = <M>(h: HtmlBuilder<M>, id: SourceId): Html =>
 
 /** The name truncates; the metric after it ("at 97% CPU") always stays visible. */
 const findingTitle = <M>(h: HtmlBuilder<M>, { subject, title }: Finding): Html =>
-	subject === undefined || subject === "" || !title.startsWith(subject)
+	subject === undefined || subject === "" || !Str.startsWith(subject)(title)
 		? h.span(
 				[h.Class("truncate text-sm text-foreground group-hover:text-primary"), h.Title(title)],
 				[title],
@@ -51,7 +54,10 @@ const findingTitle = <M>(h: HtmlBuilder<M>, { subject, title }: Finding): Html =
 				[h.Class("flex min-w-0 text-sm text-foreground group-hover:text-primary"), h.Title(title)],
 				[
 					h.span([h.Class("truncate")], [subject]),
-					h.span([h.Class("shrink-0 whitespace-pre tabular-nums")], [title.slice(subject.length)]),
+					h.span(
+						[h.Class("shrink-0 whitespace-pre tabular-nums")],
+						[Str.slice(subject.length)(title)],
+					),
 				],
 			)
 
@@ -63,41 +69,37 @@ export const findingRow = <M>(h: HtmlBuilder<M>, finding: Finding, time: TimeSea
 				? statusDot(h, { tone: "custom", size: "lg", className: STALE_DOT })
 				: statusDot(h, { tone: finding.tone, size: "lg" }),
 			sourceLabel(h, finding.source),
-			h.span(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
-				[
-					findingTitle(h, finding),
-					h.span([h.Class("truncate text-xs text-muted-foreground")], [finding.detail]),
-				],
-			),
+			vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
+				findingTitle(h, finding),
+				typography(h, { size: "xs", tone: "muted", truncate: true }, [finding.detail]),
+			]),
 			icon(h, "ChevronRightIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
 		],
 	)
 
 const findingRowLoading = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
-		[h.Class(cn("flex items-center gap-4 px-4 py-3", FINDINGS_ROW_CLASS))],
+		[h.Class(cn(hstackClass({ gap: "4", className: "px-4 py-3" }), FINDINGS_ROW_CLASS))],
 		[
 			skeleton(h, "size-2 shrink-0 rounded-full"),
 			h.span([h.Class("flex w-32 shrink-0 items-center")], [skeleton(h, "h-3 w-20")]),
-			h.span(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
-				[skeleton(h, "my-0.5 h-4 w-64 max-w-full"), skeleton(h, "my-0.5 h-3 w-40 max-w-full")],
-			),
+			vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
+				skeleton(h, "my-0.5 h-4 w-64 max-w-full"),
+				skeleton(h, "my-0.5 h-3 w-40 max-w-full"),
+			]),
 		],
 	)
 
 /** A source we couldn't read is not an all-clear, so it gets a row of its own. */
 const findingRowError = <M>(h: HtmlBuilder<M>, id: SourceId): Html =>
 	h.div(
-		[h.Class(cn("flex items-center gap-4 px-4 py-3", FINDINGS_ROW_CLASS))],
+		[h.Class(cn(hstackClass({ gap: "4", className: "px-4 py-3" }), FINDINGS_ROW_CLASS))],
 		[
 			statusDot(h, { tone: "neutral", size: "lg" }),
 			sourceLabel(h, id),
-			h.span(
-				[h.Class("text-sm text-muted-foreground")],
-				["Couldn't check this source. Its page shows the error."],
-			),
+			typography(h, { size: "sm", tone: "muted" }, [
+				"Couldn't check this source. Its page shows the error.",
+			]),
 		],
 	)
 
@@ -110,7 +112,7 @@ const entriesOf = <M>(
 	time: TimeSearch,
 ): ReadonlyArray<Entry> =>
 	state.status === "ready"
-		? state.summary.findings.map((finding) => ({
+		? Arr.map(state.summary.findings, (finding) => ({
 				rank: RANK[finding.tone],
 				row: findingRow(h, finding, time),
 			}))
@@ -122,14 +124,14 @@ const entriesOf = <M>(
 export const sharedFailure = (
 	sources: ReadonlyArray<Readonly<{ id: SourceId; state: SourceState }>>,
 ): LoadFailure | undefined => {
-	const failures = sources.flatMap(({ state }) =>
+	const failures = Arr.flatMap(sources, ({ state }) =>
 		state.status === "error" && state.failure !== undefined ? [state.failure] : [],
 	)
 	const [first] = failures
 	return first !== undefined &&
 		sources.length > 1 &&
 		failures.length === sources.length &&
-		failures.every((failure) => isSameFailure(failure, first))
+		Arr.every(failures, (failure) => isSameFailure(failure, first))
 		? first
 		: undefined
 }
@@ -154,12 +156,14 @@ export const needsAttention = <M>(
 	time: TimeSearch,
 	onRetry: M,
 ): Html => {
-	const isSettled = sources !== null && sources.every(({ state }) => state.status !== "loading")
+	const isSettled = sources !== null && Arr.every(sources, ({ state }) => state.status !== "loading")
 	const rows = isSettled
-		? sources
-				.flatMap(({ id, state }) => entriesOf(h, id, state, time))
-				.toSorted((a, b) => a.rank - b.rank)
-				.map(({ row }) => row)
+		? Arr.map(
+				Arr.flatMap(sources, ({ id, state }) => entriesOf(h, id, state, time)).toSorted(
+					(a, b) => a.rank - b.rank,
+				),
+				({ row }) => row,
+			)
 		: []
 	const shared = isSettled ? sharedFailure(sources) : undefined
 	return h.section(

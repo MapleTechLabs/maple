@@ -1,6 +1,7 @@
 import { Replayer } from "@rrweb/replay"
 import { ReplayerEvents } from "@rrweb/types"
 import type { ReplayEngine, ReplayEngineCreateInput, ReplayEngineFactory } from "./replay-engine"
+import { String as Str } from "effect"
 
 // The rrweb engine — browser recordings.
 //
@@ -13,7 +14,7 @@ class RrwebEngine implements ReplayEngine {
 
 	constructor(input: ReplayEngineCreateInput) {
 		const accent =
-			getComputedStyle(document.documentElement).getPropertyValue("--primary").trim() || "#6366f1"
+			Str.trim(getComputedStyle(document.documentElement).getPropertyValue("--primary")) || "#6366f1"
 
 		this.fallbackViewport = input.fallbackViewport
 		this.replayer = new Replayer(input.events as never, {

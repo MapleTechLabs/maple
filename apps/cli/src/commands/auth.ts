@@ -7,6 +7,7 @@ import { HttpClient, HttpClientRequest } from "effect/http"
 import { MapleConfig } from "../core/config"
 import { deleteNativeCredential } from "../core/credential-store"
 import { Mode } from "../core/mode"
+import { encodeJsonEffect } from "@maple/local-server/json"
 import { printJson } from "../lib/output"
 
 class CliAuthError extends Schema.TaggedError<CliAuthError>()("@maple/cli/CliAuthError", {
@@ -106,10 +107,9 @@ const validateToken = (
 	requestJson<Session>(`${apiUrl}/api/auth/session`, {
 		headers: { authorization: `Bearer ${token}` },
 	}).pipe(
-		Effect.flatMap((session) =>
-			typeof session.orgId === "string" && typeof session.userId === "string"
-				? Effect.succeed(session)
-				: Effect.fail(new CliAuthError({ message: "Maple returned an invalid session response" })),
+		Effect.filterOrFail(
+			(session) => typeof session.orgId === "string" && typeof session.userId === "string",
+			() => new CliAuthError({ message: "Maple returned an invalid session response" }),
 		),
 	)
 
@@ -190,10 +190,13 @@ const loginHandler = Effect.fnUntraced(function* (a: {
 		return
 	}
 
+	const startBody = yield* encodeJsonEffect({ deviceName: `Maple CLI on ${os.hostname()}` }).pipe(
+		Effect.orDie,
+	)
 	const started = yield* requestJson<DeviceStart>(`${apiUrl}/api/auth/cli/device`, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ deviceName: `Maple CLI on ${os.hostname()}` }),
+		body: startBody,
 	})
 	yield* Console.error(`! First copy your one-time code: ${started.userCode}`)
 	yield* Console.error(`  ${started.verificationUri}`)
@@ -228,10 +231,11 @@ const pollDeviceToken = Effect.fnUntraced(function* (apiUrl: string, started: De
 	let interval = Math.max(1, started.interval)
 	while ((yield* Clock.currentTimeMillis) < deadline) {
 		yield* Effect.sleep(Duration.seconds(interval))
+		const pollBody = yield* encodeJsonEffect({ deviceCode: started.deviceCode }).pipe(Effect.orDie)
 		const result = yield* requestJson<DevicePoll>(`${apiUrl}/api/auth/cli/device/token`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ deviceCode: started.deviceCode }),
+			body: pollBody,
 		}).pipe(Effect.option)
 		if (Option.isNone(result)) continue
 		if (result.value.status === "pending") {

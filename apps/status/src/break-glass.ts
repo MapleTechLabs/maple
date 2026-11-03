@@ -8,7 +8,7 @@ import {
 	statusFitsKind,
 } from "@maple/domain/status-page"
 import { MANAGE_FIELDS, NEW_INCIDENT, NO_CHANGE } from "@maple/status-page"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import type { StatusEnv, StatusStorageError } from "./ports"
 import { listOverlay, rememberOverlay } from "./snapshot"
 
@@ -49,14 +49,18 @@ const TOO_LARGE = "The update is too large."
 
 /** Compares every character whatever the first mismatch, so timing does not leak the digest. */
 export const constantTimeEqual = (a: string, b: string): boolean =>
-	Array.from(
-		{ length: Math.max(a.length, b.length) },
-		(_, index) => a.charCodeAt(index) ^ b.charCodeAt(index),
-	).reduce((diff, bits) => diff | bits, a.length ^ b.length) === 0
+	Arr.reduce(
+		Array.from(
+			{ length: Math.max(a.length, b.length) },
+			(_, index) => a.charCodeAt(index) ^ b.charCodeAt(index),
+		),
+		a.length ^ b.length,
+		(diff, bits) => diff | bits,
+	) === 0
 
 const text = (form: FormData, name: string): string => {
 	const value = form.get(name)
-	return typeof value === "string" ? value.trim() : ""
+	return typeof value === "string" ? Str.trim(value) : ""
 }
 
 const orNoChange = (value: string): string | null => (value === NO_CHANGE ? null : value)
@@ -72,7 +76,7 @@ const readCapped = (
 			if (chunk.done) return Effect.succeed(chunks)
 			const size = total + chunk.value.byteLength
 			if (size > MAX_FORM_BYTES) {
-				return Effect.tryPromise(() => reader.cancel()).pipe(
+				return Effect.tryPromise({ try: () => reader.cancel(), catch: unreadable }).pipe(
 					Effect.ignore,
 					Effect.andThen(reject(413, TOO_LARGE)),
 				)
@@ -87,11 +91,11 @@ const readFormData = (request: Request): Effect.Effect<FormData, BreakGlassRejec
 			return yield* reject(413, TOO_LARGE)
 		}
 		const chunks = request.body === null ? [] : yield* readCapped(request.body.getReader(), [], 0)
-		const bytes = new Uint8Array(chunks.reduce((size, chunk) => size + chunk.byteLength, 0))
-		chunks.reduce((offset, chunk) => {
+		const bytes = new Uint8Array(Arr.reduce(chunks, 0, (size, chunk) => size + chunk.byteLength))
+		Arr.reduce(chunks, 0, (offset, chunk) => {
 			bytes.set(chunk, offset)
 			return offset + chunk.byteLength
-		}, 0)
+		})
 		const contentType = request.headers.get("content-type") ?? ""
 		return yield* Effect.tryPromise({
 			try: () => new Response(bytes, { headers: { "content-type": contentType } }).formData(),
@@ -110,9 +114,10 @@ export const parseForm = (request: Request): Effect.Effect<BreakGlassForm, Break
 			status: orNoChange(text(form, MANAGE_FIELDS.status)),
 			impact: orNoChange(text(form, MANAGE_FIELDS.impact)),
 			body: text(form, MANAGE_FIELDS.body),
-			componentIds: form
-				.getAll(MANAGE_FIELDS.componentIds)
-				.filter((value) => typeof value === "string"),
+			componentIds: Arr.filter(
+				form.getAll(MANAGE_FIELDS.componentIds),
+				(value) => typeof value === "string",
+			),
 		})
 		if (Option.isNone(decoded)) {
 			return yield* reject(
@@ -123,8 +128,10 @@ export const parseForm = (request: Request): Effect.Effect<BreakGlassForm, Break
 		return decoded.value
 	})
 
-const notSaved = (message: string) => (cause: StatusStorageError) =>
+const notSaved = (message: string) => (cause: StatusStorageError | Schema.SchemaError) =>
 	new BreakGlassNotSaved({ message, cause })
+
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
 /**
  * Checks the token and the form against the page as visitors see it (overlay applied), then writes
@@ -159,8 +166,8 @@ export const postBreakGlassUpdate = (
 		}
 		// Deduped, and every id must be one of the page's components, so at most that many remain.
 		const componentIds = [...new Set(form.componentIds)]
-		const known = new Set<string>(snapshot.components.map((component) => component.id))
-		if (!componentIds.every((id) => known.has(id))) {
+		const known = new Set<string>(Arr.map(snapshot.components, (component) => component.id))
+		if (!Arr.every(componentIds, (id) => known.has(id))) {
 			return yield* reject(400, "One of the selected components is not on this page.")
 		}
 
@@ -185,9 +192,12 @@ export const postBreakGlassUpdate = (
 			body: form.body,
 			componentIds,
 		}
-		yield* env.storage
-			.kvPut(StatusPageKeys.overlayEntry(snapshot.pageId, id), JSON.stringify(entry))
-			.pipe(Effect.mapError(notSaved("The overlay could not be written.")))
+		yield* encodeJson(entry).pipe(
+			Effect.flatMap((json) =>
+				env.storage.kvPut(StatusPageKeys.overlayEntry(snapshot.pageId, id), json),
+			),
+			Effect.mapError(notSaved("The overlay could not be written.")),
+		)
 		// KV `list` lags writes, so the colo cache carries the new entry until the list catches up.
 		yield* rememberOverlay(env, snapshot.pageId, [...listed.entries, entry])
 		return entry

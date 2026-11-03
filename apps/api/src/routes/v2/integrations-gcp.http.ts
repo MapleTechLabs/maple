@@ -7,7 +7,7 @@ import {
 	isoTimestampOrNull,
 	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import {
@@ -60,7 +60,7 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 					return {
 						object: "gcp_integration" as const,
 						metrics_available: status.metricsAvailable,
-						connectors: status.connectors.map(toV2Connector),
+						connectors: Arr.map(status.connectors, toV2Connector),
 					}
 				}),
 			)

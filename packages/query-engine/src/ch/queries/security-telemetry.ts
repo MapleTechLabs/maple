@@ -6,10 +6,11 @@
 import * as CH from "@maple-dev/effect-orm/expr"
 import type { DateTime } from "effect"
 import { param, from } from "@maple-dev/effect-orm/clickhouse"
-import type { CHQuery, ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
+import type { CHQuery, ColumnDefs, ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { CRITICAL_PROBE_SIGNATURES } from "@maple/domain/security-telemetry"
 import { ScannerRequests, ServiceRuntimesHourly, orgIdParam, utcSecondsParam } from "../tables"
 import { utcHourFloor } from "./query-helpers"
+import { Array as Arr } from "effect"
 
 type ScannerAccessor = ColumnAccessor<typeof ScannerRequests.columns>
 
@@ -38,7 +39,7 @@ export interface ScannerSignaturesOutput {
 export const SCANNER_SIGNATURES_MAX_ROWS = 5000
 
 /** Requests per probe signature and service. Bounded: a few dozen signatures per service. */
-export function scannerSignaturesQuery(): CHQuery<any, ScannerSignaturesOutput, any> {
+export function scannerSignaturesQuery(): CHQuery<ColumnDefs, ScannerSignaturesOutput, {}> {
 	return from(ScannerRequests)
 		.select(($) => ({
 			signature: $.Signature,
@@ -72,7 +73,9 @@ export interface ScannerExposedOutput {
 }
 
 /** Probes on a critical signature that the service answered with a 2xx: the paths to check now. */
-export function scannerExposedQuery(opts: ScannerExposedOpts = {}): CHQuery<any, ScannerExposedOutput, any> {
+export function scannerExposedQuery(
+	opts: ScannerExposedOpts = {},
+): CHQuery<ColumnDefs, ScannerExposedOutput, {}> {
 	return from(ScannerRequests)
 		.select(($) => ({
 			service: $.ServiceName,
@@ -88,7 +91,7 @@ export function scannerExposedQuery(opts: ScannerExposedOpts = {}): CHQuery<any,
 			...scannerWhere($),
 			CH.inList(
 				$.Signature,
-				CRITICAL_PROBE_SIGNATURES.map((signature) => signature.token),
+				Arr.map(CRITICAL_PROBE_SIGNATURES, (signature) => signature.token),
 			),
 			answered($),
 		])
@@ -113,7 +116,9 @@ export interface ScannerSourcesOutput {
 }
 
 /** The busiest sources. Spans without a client address are left out. */
-export function scannerSourcesQuery(opts: ScannerSourcesOpts = {}): CHQuery<any, ScannerSourcesOutput, any> {
+export function scannerSourcesQuery(
+	opts: ScannerSourcesOpts = {},
+): CHQuery<ColumnDefs, ScannerSourcesOutput, {}> {
 	return from(ScannerRequests)
 		.select(($) => ({
 			clientAddress: $.ClientAddress,
@@ -146,7 +151,7 @@ export interface ScannerTimelineOutput {
 
 export function scannerTimelineQuery(
 	opts: ScannerTimelineOpts = {},
-): CHQuery<any, ScannerTimelineOutput, any> {
+): CHQuery<ColumnDefs, ScannerTimelineOutput, {}> {
 	const bucketSeconds = opts.bucketSeconds ?? 3600
 	return from(ScannerRequests)
 		.select(($) => ({
@@ -176,7 +181,7 @@ export interface RuntimeVersionsOutput {
 }
 
 /** Each service's runtime and SDK versions seen in the window, one row per combination. */
-export function runtimeVersionsQuery(): CHQuery<any, RuntimeVersionsOutput, any> {
+export function runtimeVersionsQuery(): CHQuery<ColumnDefs, RuntimeVersionsOutput, {}> {
 	return (
 		from(ServiceRuntimesHourly)
 			.select(($) => ({

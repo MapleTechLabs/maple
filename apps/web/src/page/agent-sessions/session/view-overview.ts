@@ -9,12 +9,13 @@ import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { separator } from "../../../ui/display"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { keyValue, keyValueList } from "../../../ui/key-value"
-import { truncatedText } from "../../../ui/truncated-text"
+import { button } from "@maple/views/ui/button"
+import { separator } from "@maple/views/ui/display"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { keyValue, keyValueList } from "@maple/views/ui/key-value"
+import { pressable } from "@maple/views/ui/pressable"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { detectLookup } from "../kit/detected-models"
 import type { LoadProgress, SessionData } from "./derive"
 import { Message } from "./message"
@@ -25,6 +26,9 @@ import { sectionHeading } from "../../kit/section-heading"
 import { loadIndicator } from "./view-load"
 import { rail } from "./view-rail"
 import { errorChip, TOOL_CHIP } from "../kit/error-chip"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The session overview: checks and the tool ledger, the rail.
 
@@ -49,51 +53,46 @@ const openSpan = (model: Model, spanId: string) =>
 	Message.ClickedSpan({ spanId: model.search.span === spanId ? undefined : spanId })
 
 const ledgerHeader = (h: H, summary: SessionSummary): Html => {
-	const calls = summary.tools.reduce((total, tool) => total + tool.calls, 0)
-	const failed = summary.tools.reduce((total, tool) => total + tool.failed, 0)
-	const toolMs = summary.tools.reduce((total, tool) => total + tool.totalMs, 0)
+	const calls = Arr.reduce(summary.tools, 0, (total, tool) => total + tool.calls)
+	const failed = Arr.reduce(summary.tools, 0, (total, tool) => total + tool.failed)
+	const toolMs = Arr.reduce(summary.tools, 0, (total, tool) => total + tool.totalMs)
 	return h.div(
 		[h.Class("flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2")],
 		[
 			sectionHeading(h, { variant: "eyebrow", as: "h3", title: "Tools", className: "mb-0" }),
 			...(summary.tools.length > 0
 				? [
-						h.div(
-							[h.Class("flex flex-wrap items-baseline gap-x-4 gap-y-1")],
-							[
-								keyValueList(h, { layout: "inline" }, [
-									keyValue(
-										h,
-										{ label: "Distinct", mono: true, valueClassName: "font-semibold" },
-										[formatNumber(summary.tools.length)],
-									),
-									keyValue(
-										h,
-										{ label: "Calls", mono: true, valueClassName: "font-semibold" },
-										[formatNumber(calls)],
-									),
-									keyValue(
-										h,
-										{
-											label: "Tool time",
-											mono: true,
-											valueClassName: "font-semibold text-chart-4",
-										},
-										[formatDuration(toolMs)],
-									),
+						hstack(h, { align: "baseline", wrap: true, className: "gap-x-4 gap-y-1" }, [
+							keyValueList(h, { layout: "inline" }, [
+								keyValue(
+									h,
+									{ label: "Distinct", mono: true, valueClassName: "font-semibold" },
+									[formatNumber(summary.tools.length)],
+								),
+								keyValue(h, { label: "Calls", mono: true, valueClassName: "font-semibold" }, [
+									formatNumber(calls),
 								]),
-								...(failed > 0
-									? [
-											errorChip(h, {
-												iconName: "GearIcon",
-												count: failed,
-												noun: "failed call",
-												className: TOOL_CHIP,
-											}),
-										]
-									: []),
-							],
-						),
+								keyValue(
+									h,
+									{
+										label: "Tool time",
+										mono: true,
+										valueClassName: "font-semibold text-chart-4",
+									},
+									[formatDuration(toolMs)],
+								),
+							]),
+							...(failed > 0
+								? [
+										errorChip(h, {
+											iconName: "GearIcon",
+											count: failed,
+											noun: "failed call",
+											className: TOOL_CHIP,
+										}),
+									]
+								: []),
+						]),
 					]
 				: []),
 		],
@@ -109,7 +108,7 @@ const ledgerColumns = (h: H, axis: SessionAxis): Html =>
 		h.span([h.Class(LEDGER_TIME)], ["Slowest"]),
 		h.span(
 			[h.Class("relative h-3.5 min-w-0 grow")],
-			axis.ticks.flatMap((tick) =>
+			Arr.flatMap(axis.ticks, (tick) =>
 				tick.fraction === 0
 					? []
 					: [
@@ -146,27 +145,25 @@ const callLane = (
 		[h.Class("relative h-6 min-w-0 grow")],
 		[
 			h.span([h.AriaHidden(true), h.Class("absolute top-1/2 left-0 h-px w-full bg-border")], []),
-			...tool.events.map((event) =>
-				h.button(
-					[
-						h.Key(event.spanId),
-						h.AriaHasPopup("dialog"),
-						h.Class(
-							cn(
-								"absolute cursor-pointer rounded-2xs",
-								event.failed
-									? "top-[5px] h-3.5 bg-severity-error"
-									: "top-[7px] h-2.5 bg-chart-4",
-							),
+			...Arr.map(tool.events, (event) =>
+				pressable(
+					h,
+					{
+						onClick: openSpan(model, event.spanId),
+						className: cn(
+							"absolute rounded-2xs",
+							event.failed ? "top-[5px] h-3.5 bg-severity-error" : "top-[7px] h-2.5 bg-chart-4",
 						),
-						h.Style({
-							left: `min(${axis.fraction(event.startMs) * 100}%, 100% - 3px)`,
-							width: `max(3px, ${(event.durationMs / axis.totalMs) * 100}%)`,
-						}),
-						h.Title(callTitle(tool.name, event, sessionStartMs)),
-						h.Type("button"),
-						h.OnClick(openSpan(model, event.spanId)),
-					],
+						attributes: [
+							h.Key(event.spanId),
+							h.AriaHasPopup("dialog"),
+							h.Style({
+								left: `min(${axis.fraction(event.startMs) * 100}%, 100% - 3px)`,
+								width: `max(3px, ${(event.durationMs / axis.totalMs) * 100}%)`,
+							}),
+							h.Title(callTitle(tool.name, event, sessionStartMs)),
+						],
+					},
 					[h.span([h.Class("sr-only")], [callTitle(tool.name, event, sessionStartMs)])],
 				),
 			),
@@ -186,10 +183,10 @@ const failedCallRow = (h: H, model: Model, event: SessionToolCall, sessionStartM
 				[h.Class("font-medium font-mono text-severity-error text-xs")],
 				[event.errorLabel ?? "error"],
 			),
-			h.span([h.Class("font-mono text-muted-foreground text-xs")], [callWhen(event, sessionStartMs)]),
+			typography(h, { size: "xs", tone: "muted", mono: true }, [callWhen(event, sessionStartMs)]),
 			...(event.errorDetail === undefined
 				? []
-				: [h.span([h.Class("min-w-0 text-muted-foreground text-xs")], [event.errorDetail])]),
+				: [typography(h, { size: "xs", tone: "muted", className: "min-w-0" }, [event.errorDetail])]),
 			button(
 				h,
 				{
@@ -210,7 +207,7 @@ const ledgerRow = (
 	axis: SessionAxis,
 	sessionStartMs: number,
 ): Html => {
-	const failures = tool.events.filter((event) => event.failed)
+	const failures = Arr.filter(tool.events, (event) => event.failed)
 	const isDisclosable = tool.description !== undefined || failures.length > 0
 	const isExpanded = model.ledgerOpen === tool.name
 	return h.div(
@@ -220,18 +217,16 @@ const ledgerRow = (
 				[h.Class("flex h-6 items-center gap-4")],
 				[
 					isDisclosable
-						? h.button(
-								[
-									h.AriaExpanded(isExpanded),
-									h.Class(
-										cn(
-											LEDGER_NAME,
-											"flex cursor-pointer items-center gap-1.5 text-left hover:text-primary active:text-primary",
-										),
+						? pressable(
+								h,
+								{
+									onClick: Message.ToggledLedgerTool({ name: tool.name }),
+									className: cn(
+										LEDGER_NAME,
+										"flex items-center gap-1.5 text-left hover:text-primary active:text-primary",
 									),
-									h.Type("button"),
-									h.OnClick(Message.ToggledLedgerTool({ name: tool.name })),
-								],
+									attributes: [h.AriaExpanded(isExpanded)],
+								},
 								[
 									disclosureChevron(h, { isOpen: isExpanded, size: 9 }),
 									truncatedText(h, { text: tool.name, mono: true, className: "text-xs" }),
@@ -243,7 +238,11 @@ const ledgerRow = (
 								className: cn(LEDGER_NAME, "pl-[15px] text-xs"),
 							}),
 					h.span(
-						[h.Class(cn(LEDGER_COUNT, "font-mono text-xs tabular-nums"))],
+						[
+							h.Class(
+								cn(LEDGER_COUNT, typographyClass({ size: "xs", mono: true, numeric: true })),
+							),
+						],
 						[String(tool.calls)],
 					),
 					h.span(
@@ -251,7 +250,7 @@ const ledgerRow = (
 							h.Class(
 								cn(
 									LEDGER_COUNT,
-									"font-mono text-xs tabular-nums",
+									typographyClass({ size: "xs", mono: true, numeric: true }),
 									tool.failed > 0 ? "text-severity-error" : "text-foreground-faint",
 								),
 							),
@@ -259,11 +258,22 @@ const ledgerRow = (
 						[String(tool.failed)],
 					),
 					h.span(
-						[h.Class(cn(LEDGER_TIME, "font-mono text-xs tabular-nums"))],
+						[
+							h.Class(
+								cn(LEDGER_TIME, typographyClass({ size: "xs", mono: true, numeric: true })),
+							),
+						],
 						[formatDuration(tool.totalMs)],
 					),
 					h.span(
-						[h.Class(cn(LEDGER_TIME, "font-mono text-muted-foreground text-xs tabular-nums"))],
+						[
+							h.Class(
+								cn(
+									LEDGER_TIME,
+									typographyClass({ size: "xs", tone: "muted", mono: true, numeric: true }),
+								),
+							),
+						],
 						[formatDuration(tool.slowestMs)],
 					),
 					callLane(h, model, tool, axis, sessionStartMs),
@@ -286,7 +296,9 @@ const ledgerRow = (
 												[tool.description],
 											),
 										]),
-								...failures.map((event) => failedCallRow(h, model, event, sessionStartMs)),
+								...Arr.map(failures, (event) =>
+									failedCallRow(h, model, event, sessionStartMs),
+								),
 							],
 						),
 					]
@@ -302,12 +314,14 @@ const toolUsage = (h: H, model: Model, summary: SessionSummary): Html => {
 		[
 			ledgerHeader(h, summary),
 			summary.tools.length === 0
-				? h.p([h.Class("text-muted-foreground text-xs")], ["no tool calls"])
+				? typography(h, { size: "xs", tone: "muted", as: "p" }, ["no tool calls"])
 				: h.div(
 						[h.Class("flex flex-col")],
 						[
 							ledgerColumns(h, axis),
-							...summary.tools.map((tool) => ledgerRow(h, model, tool, axis, summary.startMs)),
+							...Arr.map(summary.tools, (tool) =>
+								ledgerRow(h, model, tool, axis, summary.startMs),
+							),
 						],
 					),
 		],
@@ -321,15 +335,13 @@ const waiting = (h: H, model: Model, progress: LoadProgress): Html =>
 			h.Class("flex grow flex-col items-center justify-center gap-3 py-16 text-center"),
 		],
 		[
-			h.p(
-				[h.Class("text-sm text-muted-foreground")],
-				["The overview reads the whole session, and this one is still arriving."],
-			),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [
+				"The overview reads the whole session, and this one is still arriving.",
+			]),
 			loadIndicator(h, model, progress, "items-center"),
-			h.p(
-				[h.Class("text-xs text-foreground-subtle")],
-				["The Traces, Flow and Transcript views already show what has loaded."],
-			),
+			typography(h, { size: "xs", tone: "subtle", as: "p" }, [
+				"The Traces, Flow and Transcript views already show what has loaded.",
+			]),
 		],
 	)
 

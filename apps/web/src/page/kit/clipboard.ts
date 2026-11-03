@@ -1,5 +1,6 @@
-import * as CopyButton from "../../ui/copy-button"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import { PageOutMessage } from "../contract"
+import { String as Str } from "effect"
 
 /** `useCopy`'s write: the clipboard API, then the `execCommand` fallback; `true` when it landed. */
 export const writeClipboard = CopyButton.writeClipboard
@@ -15,7 +16,7 @@ export const copyToast = (label: string | undefined, isOk: boolean, successMessa
 				}
 			: {
 					type: "error",
-					title: label ? `Couldn't copy ${label.toLowerCase()}` : "Couldn't copy",
+					title: label ? `Couldn't copy ${Str.toLowerCase(label)}` : "Couldn't copy",
 					description: "",
 				},
 	)

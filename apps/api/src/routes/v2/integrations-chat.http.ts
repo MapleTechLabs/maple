@@ -122,10 +122,8 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 							yield* Effect.logError("Rejected chat install: untrusted callback origin", {
 								origin,
 							})
-							return yield* Effect.fail(
-								V2CallbackHostUnavailable.make(
-									"Chat installs are not available from this host",
-								),
+							return yield* V2CallbackHostUnavailable.make(
+								"Chat installs are not available from this host",
 							)
 						}
 						const result = yield* chat.beginInstall(
@@ -156,10 +154,8 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 							yield* Effect.logError("Rejected chat account link: untrusted callback origin", {
 								origin,
 							})
-							return yield* Effect.fail(
-								V2CallbackHostUnavailable.make(
-									"Chat account links are not available from this host",
-								),
+							return yield* V2CallbackHostUnavailable.make(
+								"Chat account links are not available from this host",
 							)
 						}
 						const result = yield* chat.beginLink(

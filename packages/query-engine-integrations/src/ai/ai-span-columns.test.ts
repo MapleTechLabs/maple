@@ -9,6 +9,7 @@ import {
 	sessionUsageSum,
 	traceUsageColumns,
 } from "./ai-span-columns"
+import { String as Str } from "effect"
 
 const sql = (expr: { toFragment(): Parameters<typeof compile>[0] }) => compile(expr.toFragment())
 
@@ -96,14 +97,14 @@ describe("session usage SQL", () => {
 			"(0., 0., 0., 0., 0., 0., 0., 0.)",
 		)
 		expect(
-			text.startsWith(
+			Str.startsWith(
 				"arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, ",
-			),
+			)(text),
 		).toBe(true)
 		expect(
-			text.endsWith(
+			Str.endsWith(
 				`, reporters, arraySlice(charged, 0 * length(reporters) + 1, length(reporters)), arraySlice(charged, 1 * length(reporters) + 1, length(reporters)), arraySlice(charged, 2 * length(reporters) + 1, length(reporters)), arraySlice(charged, 3 * length(reporters) + 1, length(reporters))), [${charged}])[1]`,
-			),
+			)(text),
 		).toBe(true)
 		// A reporting call counts by its netted claim; a non-reporting one by
 		// having no reporting ancestor and no model call for a parent.

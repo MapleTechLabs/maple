@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { extractIssueIdsFromText, parsePullRequestUrl } from "./pull-request-ref"
+import { Array as Arr, String as Str } from "effect"
 
 const APP = "https://app.maple.dev"
 const ISSUE = "3f1c8a2e-9b4d-4f7a-8c1e-2d5b6a7c8e90"
@@ -58,7 +59,7 @@ describe("parsePullRequestUrl", () => {
 
 	it("rejects PR numbers that are zero or beyond safe-integer precision", () => {
 		expect(parsePullRequestUrl("https://github.com/o/r/pull/0")).toBeNull()
-		expect(parsePullRequestUrl(`https://github.com/o/r/pull/${"9".repeat(25)}`)).toBeNull()
+		expect(parsePullRequestUrl(`https://github.com/o/r/pull/${Str.repeat(25)("9")}`)).toBeNull()
 	})
 })
 
@@ -88,11 +89,14 @@ describe("extractIssueIdsFromText", () => {
 	})
 
 	it("deduplicates an issue referenced both ways and in both cases", () => {
-		const body = [
-			`${APP}/errors/issues/${ISSUE}`,
-			`maple-issue:${ISSUE.toUpperCase()}`,
-			`${APP}/errors/issues/${ISSUE}`,
-		].join("\n")
+		const body = Arr.join(
+			[
+				`${APP}/errors/issues/${ISSUE}`,
+				`maple-issue:${Str.toUpperCase(ISSUE)}`,
+				`${APP}/errors/issues/${ISSUE}`,
+			],
+			"\n",
+		)
 		expect(extractIssueIdsFromText(body, APP)).toEqual([ISSUE])
 	})
 

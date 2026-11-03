@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import {
@@ -15,10 +15,10 @@ import {
 } from "foldkit/scene"
 import { Lazy } from "foldkit/test"
 import { describe, expect, test } from "vitest"
-import * as Chart from "../../charts/chart"
-import { MountChart, PortalTooltipBody } from "../../charts/chart-mounts"
-import { CHART_SPEC_ATTRIBUTE, decodeChartSpec } from "../../charts/chart-spec"
-import { LinkedCursorMessage, MountLinkedCursor } from "../../charts/linked-cursor"
+import * as Chart from "@maple/views/charts/chart"
+import { MountChart, PortalTooltipBody } from "@maple/views/charts/chart-mounts"
+import { CHART_SPEC_ATTRIBUTE, decodeChartSpec } from "@maple/views/charts/chart-spec"
+import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
 import type { PageContext } from "../contract"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import { Message } from "./message"
@@ -50,7 +50,7 @@ const ready = (): Model => {
 	const base = init({ search: {} }, context).model
 	return {
 		...base,
-		charts: Object.fromEntries(IDS.map((id) => [id, Chart.init()])),
+		charts: Rec.fromEntries(Arr.map(IDS, (id) => [id, Chart.init()])),
 		overviewSeries: { ...base.overviewSeries, key: "overview", data: AsyncData.succeed([point]) },
 		logSeries: { ...base.logSeries, data: AsyncData.succeed([{ bucket: point.bucket, count: 50 }]) },
 		refinement: { ...base.refinement, data: AsyncData.succeed([]) },

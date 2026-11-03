@@ -1,8 +1,8 @@
 import { V2ApiKey, V2ApiKeyWithSecret } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
-import * as Dialog from "../../../ui/dialog"
-import * as Field from "../../../ui/field"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
 import { PageOutMessage } from "../../contract"
 import * as CreateDialog from "./create-dialog"
 import { Message } from "./message"
@@ -10,7 +10,7 @@ import type { Model } from "./model"
 import { init, update } from "./update"
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const key = Schema.decodeUnknownSync(V2ApiKey)({
 	id: "key_aXwpxqBkqtYwtBtmsGbR41",
@@ -33,7 +33,7 @@ const loaded = (): Model =>
 	update(init({ isAdmin: true, userId: null }).model, Message.UpdatedApiKeys({ rows: [key] })).model
 const create = (message: CreateDialog.Message) => Message.GotCreateMessage({ message })
 const steps = (model: Model, messages: ReadonlyArray<Message>) =>
-	messages.reduce((current, message) => update(current, message).model, model)
+	Arr.reduce(messages, model, (current, message) => update(current, message).model)
 
 describe("keys tab", () => {
 	test("entry reads nothing: the keys follow the synced shape and ingest keys live in Ingestion", () => {

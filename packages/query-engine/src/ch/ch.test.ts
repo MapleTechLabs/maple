@@ -11,6 +11,7 @@ import {
 	recentTraceTimeProbeQuery,
 } from "./queries/errors"
 import { OrgId } from "@maple/domain"
+import { String as Str } from "effect"
 
 // Traces timeseries query — parity with buildTracesTimeseriesSQL
 
@@ -790,9 +791,9 @@ describe("converted queries", () => {
 		const { sql } = compileUnionUnsafe(q, baseParams)
 		// The browser branch must still see every browser (no BrowserName = 'Chrome'
 		// constraint), but other branches keep it so their counts respect the filter.
-		const branches = sql.split("UNION ALL")
-		const browserBranch = branches.find((b) => b.includes("'browser' AS facetType"))!
-		const serviceBranch = branches.find((b) => b.includes("'service' AS facetType"))!
+		const branches = Str.split("UNION ALL")(sql)
+		const browserBranch = branches.find((b) => Str.includes("'browser' AS facetType")(b))!
+		const serviceBranch = branches.find((b) => Str.includes("'service' AS facetType")(b))!
 		expect(browserBranch).not.toContain("BrowserName = 'Chrome'")
 		expect(serviceBranch).toContain("BrowserName = 'Chrome'")
 		expect(serviceBranch).toContain("DeviceType = 'mobile'")

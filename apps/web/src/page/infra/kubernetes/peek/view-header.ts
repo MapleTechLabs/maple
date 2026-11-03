@@ -4,6 +4,7 @@ import { relativeTime } from "../../../kit/relative-time"
 import { sheetDetailHeader } from "../../../kit/sheet-detail-header"
 import { hostStatusBadge } from "../../kit/status"
 import type { PodRow } from "../pod-data"
+import { typographyClass } from "@maple/views/ui/typography"
 
 // The peek's `SheetDetailHeader`: the "Pod" eyebrow, the mono title with its status, and the
 // workload chips.
@@ -43,7 +44,7 @@ export const peekHeader = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: HeaderInpu
 				timeZone: inputs.timeZone,
 				prefix: "seen",
 				mono: true,
-				className: "ml-auto text-2xs text-muted-foreground",
+				className: typographyClass({ size: "2xs", tone: "muted", className: "ml-auto" }),
 			}),
 		],
 	})

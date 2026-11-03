@@ -6,11 +6,12 @@ import {
 	MAX_REGISTRY_CONFIG_READS,
 	scanDependencies,
 } from "./ecosystems"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /** A fixture tree: tracked path to content. Only config files' content is ever read. */
 const scan = (tree: Record<string, string>) => {
-	const paths = Object.keys(tree)
-	const configs = new Map(configFilesToRead(paths).map((path) => [path, tree[path] ?? ""]))
+	const paths = Rec.keys(tree)
+	const configs = new Map(Arr.map(configFilesToRead(paths), (path) => [path, tree[path] ?? ""]))
 	return scanDependencies(paths, configs)
 }
 
@@ -134,12 +135,15 @@ describe("scanDependencies, private dependencies", () => {
 	it("flags submodules on a private host or over SSH, not public HTTPS ones", () => {
 		expect(
 			scan({
-				".gitmodules": [
-					'[submodule "lib"]\n\turl = https://github.com/acme/lib',
-					'[submodule "docs"]\n\turl = git://gitlab.com/acme/docs.git',
-					'[submodule "infra"]\n\turl = https://git.acme.dev/infra.git',
-					'[submodule "keys"]\n\turl = ssh://git@github.com/acme/keys.git',
-				].join("\n"),
+				".gitmodules": Arr.join(
+					[
+						'[submodule "lib"]\n\turl = https://github.com/acme/lib',
+						'[submodule "docs"]\n\turl = git://gitlab.com/acme/docs.git',
+						'[submodule "infra"]\n\turl = https://git.acme.dev/infra.git',
+						'[submodule "keys"]\n\turl = ssh://git@github.com/acme/keys.git',
+					],
+					"\n",
+				),
 			}).privateDependencies,
 		).toEqual([
 			".gitmodules: git submodule https://git.acme.dev/infra.git, not checked out",
@@ -163,27 +167,30 @@ describe("scanDependencies, private dependencies", () => {
 	it("ignores commented requirements lines and the well-known public Python indexes", () => {
 		expect(
 			scan({
-				"requirements.txt": [
-					"# --index-url https://pypi.acme.internal/simple",
-					"--extra-index-url https://download.pytorch.org/whl/cu121",
-					"--index-url https://pypi.org/simple  # the default",
-					"torch==2.5.0",
-					"# acme-auth @ git+ssh://git@github.com/acme/auth.git",
-				].join("\n"),
+				"requirements.txt": Arr.join(
+					[
+						"# --index-url https://pypi.acme.internal/simple",
+						"--extra-index-url https://download.pytorch.org/whl/cu121",
+						"--index-url https://pypi.org/simple  # the default",
+						"torch==2.5.0",
+						"# acme-auth @ git+ssh://git@github.com/acme/auth.git",
+					],
+					"\n",
+				),
 			}).privateDependencies,
 		).toEqual([])
 	})
 
 	it("reads the shallowest registry configs first and caps how many", () => {
-		const tree = Object.fromEntries(
+		const tree = Rec.fromEntries(
 			Array.from({ length: MAX_REGISTRY_CONFIG_READS + 10 }, (_, i) => [`packages/p${i}/.npmrc`, ""]),
 		)
-		const toRead = configFilesToRead([...Object.keys(tree), ".npmrc"])
+		const toRead = configFilesToRead([...Rec.keys(tree), ".npmrc"])
 		expect([toRead.length, toRead[0]]).toEqual([MAX_REGISTRY_CONFIG_READS, ".npmrc"])
 	})
 
 	it("never lets a monorepo's package.json files crowd out a nested .npmrc", () => {
-		const tree: Record<string, string> = Object.fromEntries(
+		const tree: Record<string, string> = Rec.fromEntries(
 			Array.from({ length: 80 }, (_, i) => [`apps/a${i}/package.json`, "{}"]),
 		)
 		const nested = "packages/deep/billing/client/.npmrc"
@@ -200,8 +207,8 @@ describe("scanDependencies, hostile config text", () => {
 	it("reads repeated unclosed tags and long whitespace runs in linear time", () => {
 		const started = performance.now()
 		const result = scan({
-			"pom.xml": `${"<mirror>".repeat(50_000)}<repository><url>https://nexus.acme.internal/m2</url></repository>`,
-			"requirements.txt": `pytest${" ".repeat(100_000)}x\n--index-url https://pypi.acme.internal/simple # mirror`,
+			"pom.xml": `${Str.repeat(50_000)("<mirror>")}<repository><url>https://nexus.acme.internal/m2</url></repository>`,
+			"requirements.txt": `pytest${Str.repeat(100_000)(" ")}x\n--index-url https://pypi.acme.internal/simple # mirror`,
 		})
 		expect([performance.now() - started < 1_000, result.privateDependencies]).toEqual([
 			true,
@@ -248,11 +255,19 @@ describe("executionProfile", () => {
 		])
 	})
 
-	it("is executable once every ecosystem has a sandbox and nothing is private", () => {
+	it("is executable once any ecosystem has a sandbox, naming what stays source-only", () => {
 		const node = (ecosystem: string) => ecosystem === "node"
+		const mixed = executionProfile({ ecosystems: ["node", "go"], privateDependencies: [] }, node)
 		expect([
 			executionProfile({ ecosystems: ["node"], privateDependencies: [] }, node).mode,
-			executionProfile({ ecosystems: ["node", "go"], privateDependencies: [] }, node).reasons,
-		]).toEqual(["executable", ["no execution sandbox for Go yet"]])
+			mixed.mode,
+			executionModeLine(mixed),
+			executionProfile({ ecosystems: ["go"], privateDependencies: [] }, node).mode,
+		]).toEqual([
+			"executable",
+			"executable",
+			"Executable review: hunters and verifiers could run target code in the execution sandbox (no execution sandbox for Go yet)",
+			"source_only",
+		])
 	})
 })

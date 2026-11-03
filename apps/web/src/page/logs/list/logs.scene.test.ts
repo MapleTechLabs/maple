@@ -1,5 +1,5 @@
-import { OrgId } from "@maple/domain"
-import { Option, Result, Schema } from "effect"
+import { OrgId, TraceId } from "@maple/domain"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import {
 	Command,
 	expect as expectView,
@@ -14,12 +14,14 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import * as Chart from "../../../charts/chart"
-import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
-import { toLoadFailure } from "../../../data/load-failure"
-import { requestKey } from "../../../data/request-key"
-import * as LogsStream from "../../../ui/logs/logs-stream"
-import { VirtualizeLogStream } from "../../../ui/logs/virtualize"
+import * as Chart from "@maple/views/charts/chart"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import { requestKey } from "@maple/views/data/request-key"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Tabs from "@maple/views/ui/tabs"
+import * as LogsStream from "@maple/views/ui/logs/logs-stream"
+import { VirtualizeLogStream } from "@maple/views/ui/logs/virtualize"
 import { PageOutMessage, type PageContext } from "../../contract"
 import {
 	FetchAttributeKeys,
@@ -46,8 +48,8 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 
 const log = (index: number): LogRowSchema => ({
-	timestamp: `2026-10-01T11:${String(59 - (index % 60)).padStart(2, "0")}:00.000Z`,
-	exactTimestamp: `2026-10-01 11:${String(59 - (index % 60)).padStart(2, "0")}:00.000000000`,
+	timestamp: `2026-10-01T11:${Str.padStart(2, "0")(String(59 - (index % 60)))}:00.000Z`,
+	exactTimestamp: `2026-10-01 11:${Str.padStart(2, "0")(String(59 - (index % 60)))}:00.000000000`,
 	severityText: index % 10 === 0 ? "WARN" : "INFO",
 	severityNumber: 9,
 	serviceName: "checkout",
@@ -64,7 +66,7 @@ const page = (from: number, count: number, cursor: string | null) => ({
 })
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 /** Entered and windowed: every query in flight. */
 const windowed = (search = {}): Model => {
@@ -104,7 +106,9 @@ describe("logs list", () => {
 			init({ search: {} }, context).model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual(expect.arrayContaining([FetchFirstPage.name, FetchVolume.name, FetchAttributeKeys.name]))
+		expect(names(resolved.commands)).toEqual(
+			expect.arrayContaining([FetchFirstPage.name, FetchVolume.name, FetchAttributeKeys.name]),
+		)
 		const mounted = pageUpdate(resolved.model, Message.MountedFilterRail())
 		expect(names(mounted.commands)).toEqual([FetchFacets.name])
 		expect(names(pageUpdate(mounted.model, Message.MountedFilterRail()).commands)).toEqual([])
@@ -220,8 +224,14 @@ describe("logs list", () => {
 	})
 
 	test("an empty volume strip labels its axis in the locale read on entry", () => {
-		const base = pageUpdate(windowed(), Message.CompletedReadPreferences({ wrap: false, density: "comfortable", locale: "de-DE" })).model
-		const model = pageUpdate(base, Message.CompletedFetchVolume({ key: base.volume.key ?? "", result: Result.succeed([]) })).model
+		const base = pageUpdate(
+			windowed(),
+			Message.CompletedReadPreferences({ wrap: false, density: "comfortable", locale: "de-DE" }),
+		).model
+		const model = pageUpdate(
+			base,
+			Message.CompletedFetchVolume({ key: base.volume.key ?? "", result: Result.succeed([]) }),
+		).model
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
@@ -263,7 +273,7 @@ describe("logs list", () => {
 			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
 			Mount.resolve(VirtualizeLogStream, streamWindow(0, 20)),
 			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
-			type(placeholder("Text or trace id"), traceId),
+			type(placeholder("Text or trace ID…"), traceId),
 			Command.resolve(WaitSearchDebounce, Message.ElapsedSearchDebounce({ generation: 1 })),
 			expectOutMessage(
 				PageOutMessage.RequestedNavigation({ url: `/logs?traceId=${traceId}`, isReplace: false }),
@@ -284,24 +294,40 @@ describe("logs list", () => {
 		const filtered = routeChanged(reloaded, { search: { severities: ["ERROR"] } }, context)
 		expect(names(filtered.commands)).not.toContain("ResolveLogsWindow")
 		expect(filtered.commands?.[0]?.args).toMatchObject({ window, search: { severities: ["ERROR"] } })
-		const moved = routeChanged(filtered.model, { search: { severities: ["ERROR"], timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveLogsWindow", "Refresh"]])
+		const moved = routeChanged(
+			filtered.model,
+			{ search: { severities: ["ERROR"], timePreset: "1h" } },
+			context,
+		)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveLogsWindow", "Refresh"],
+		])
 	})
 
 	test("dragging across the volume bars zooms to those buckets, as a replace", () => {
 		const base = windowed({ timePreset: "1h" })
-		const buckets = ["11:00", "11:05", "11:10"].map((t) => ({ bucket: `2026-10-01 ${t}:00`, counts: { INFO: 4 } }))
+		const buckets = Arr.map(["11:00", "11:05", "11:10"], (t) => ({
+			bucket: `2026-10-01 ${t}:00`,
+			counts: { INFO: 4 },
+		}))
 		const loaded = pageUpdate(
 			base,
 			Message.CompletedFetchVolume({ key: base.volume.key ?? "", result: Result.succeed(buckets) }),
 		).model
 		const focus = (key: string) =>
-			Message.GotVolumeChartMessage({ message: Chart.Message.ChangedChartFocus({ maybeKey: Option.some(key) }) })
-		const pressed = [focus(buckets[0].bucket), Message.PressedVolumeChart(), focus(buckets[1].bucket)].reduce(
-			(model, message) => pageUpdate(model, message).model,
+			Message.GotVolumeChartMessage({
+				message: Chart.Message.ChangedChartFocus({ maybeKey: Option.some(key) }),
+			})
+		const pressed = Arr.reduce(
+			[focus(buckets[0].bucket), Message.PressedVolumeChart(), focus(buckets[1].bucket)],
 			loaded,
+			(model, message) => pageUpdate(model, message).model,
 		)
-		expect(pressed.volumeBrush).toEqual({ left: buckets[0].bucket, right: buckets[1].bucket, isSelecting: true })
+		expect(pressed.volumeBrush).toEqual({
+			left: buckets[0].bucket,
+			right: buckets[1].bucket,
+			isSelecting: true,
+		})
 		const released = pageUpdate(pressed, Message.ReleasedVolumeChart())
 		expect(released.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
@@ -313,5 +339,40 @@ describe("logs list", () => {
 		// A click without a drag does not zoom.
 		const clicked = pageUpdate(released.model, Message.PressedVolumeChart()).model
 		expect(pageUpdate(clicked, Message.ReleasedVolumeChart()).outMessage).toBeUndefined()
+	})
+
+	test("the sheet's trace link points at the trace; a host log gets the Infrastructure tab", () => {
+		const traceId = Schema.decodeSync(TraceId)("4bf92f3577b34da6a3ce929d0e0e4736")
+		const hosted = { ...log(0), traceId, resourceAttributes: { "host.name": "web-1" } }
+		const loaded = pageUpdate(
+			windowed(),
+			Message.CompletedFetchFirstPage({
+				key: windowed().firstPage.key ?? "",
+				result: Result.succeed({ logs: [hosted], cursor: null }),
+			}),
+		).model
+		const opened = pageUpdate(
+			loaded,
+			Message.GotStreamMessage({ message: LogsStream.Message.ClickedRow({ index: 0 }) }),
+		).model
+		expect(opened.detail.tabs.values).toEqual(["attributes", "trace", "context", "raw", "infrastructure"])
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve(VirtualizeLogStream, streamWindow(0, 0)),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
+			Mount.resolve(
+				Tabs.MeasureTabIndicator,
+				Tabs.Message.MeasuredIndicator({
+					rect: { left: 16, right: 420, top: 4, bottom: 5, width: 122, height: 32 },
+				}),
+			),
+			expectView(role("link", { name: /trace:/ })).toHaveAttr(
+				"href",
+				`/traces/${traceId}?t=${encodeURIComponent(hosted.timestamp)}`,
+			),
+		)
 	})
 })

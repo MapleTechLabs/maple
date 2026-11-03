@@ -3,7 +3,7 @@
  * preview them; creating, changing and deleting is admin-only, like the REST routes, since a
  * rule rewrites or discards the whole organization's incoming data.
  */
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	DeleteIngestRuleOutput,
 	IngestRuleMutationOutput,
@@ -40,6 +40,7 @@ import {
 	logSampleToRecord,
 	spanSampleToRecord,
 	type AttrMap,
+	type AttrValue,
 	type RuleRecord,
 } from "@maple/ingest-rules"
 import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
@@ -47,6 +48,7 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { truncate } from "../lib/format"
+import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -71,11 +73,11 @@ const adminOnly = (tool: string) =>
 /** Validation failures name the parameter, so the model can fix the call. */
 /** The tool parameter a validator problem is about, so the model knows which argument to fix. */
 export const parameterOfProblem = (problem: string): string => {
-	if (problem.startsWith("condition ") || problem.includes("needs at least one condition"))
+	if (Str.startsWith("condition ")(problem) || Str.includes("needs at least one condition")(problem))
 		return "conditions"
-	if (problem.includes("signal")) return "signals"
-	if (problem.startsWith("the name")) return "name"
-	if (problem.startsWith("position")) return "position"
+	if (Str.includes("signal")(problem)) return "signals"
+	if (Str.startsWith("the name")(problem)) return "name"
+	if (Str.startsWith("position")(problem)) return "position"
 	return "action"
 }
 
@@ -104,8 +106,8 @@ const toRow = (rule: IngestRule): IngestRuleRow => ({
 const resolveRule = Effect.fnUntraced(function* (tool: string, orgId: OrgId, ref: string) {
 	const service = yield* IngestRuleService
 	const rules = yield* service.list(orgId).pipe(Effect.mapError(toMcpHttpError(tool)))
-	const id = decodePublicId(PublicIdPrefixes.ingestRule, ref.trim()) ?? ref.trim()
-	const matches = rules.filter((rule) => rule.id === id || rule.name === ref.trim())
+	const id = decodePublicId(PublicIdPrefixes.ingestRule, Str.trim(ref)) ?? Str.trim(ref)
+	const matches = Arr.filter(rules, (rule) => rule.id === id || rule.name === Str.trim(ref))
 	const [rule] = matches
 	if (rule === undefined) {
 		return yield* new McpInvalidInputError({
@@ -115,10 +117,10 @@ const resolveRule = Effect.fnUntraced(function* (tool: string, orgId: OrgId, ref
 	}
 	if (matches.length > 1) {
 		return yield* new McpInvalidInputError({
-			message: `${matches.length} ingest rules match "${ref}"; pass one's id instead: ${matches
-				.map(toRow)
-				.map((row) => row.id)
-				.join(", ")}.`,
+			message: `${matches.length} ingest rules match "${ref}"; pass one's id instead: ${Arr.join(
+				Arr.map(Arr.map(matches, toRow), (row) => row.id),
+				", ",
+			)}.`,
 			parameter: "rule",
 		})
 	}
@@ -130,7 +132,7 @@ const decodeSignals = (raw: ReadonlyArray<string>) =>
 		Effect.mapError(
 			() =>
 				new McpInvalidInputError({
-					message: `signals are ${SIGNALS.join(", ")}.`,
+					message: `signals are ${Arr.join(SIGNALS, ", ")}.`,
 					parameter: "signals",
 				}),
 		),
@@ -144,7 +146,7 @@ const actionDescription =
 	'What to do: {"type":"drop","keep_percent":0} or {"type":"redact","keys":["*password*"],"detectors":["email","credit_card","jwt","api_token","ipv4","ipv6","phone","iban"],"patterns":["ORD-[0-9]+"],"scopes":["attributes","resource","events","body"],"method":"mask"|"hash"|"remove"}.'
 
 const SPEC_FIELDS = {
-	signals: P.list(`Signals the rule applies to: ${SIGNALS.join(", ")}`),
+	signals: P.list(`Signals the rule applies to: ${Arr.join(SIGNALS, ", ")}`),
 	conditions: conditionsParam,
 	action: P.json(V2IngestRuleAction, actionDescription),
 }
@@ -201,7 +203,7 @@ const sampleRecords = Effect.fnUntraced(function* (
 		readonly spanAttributes?: Record<string, string>
 		readonly resourceAttributes?: Record<string, string>
 	}>("span_search", params, { profile: "list" })
-	return result.data.map((row) =>
+	return Arr.map(result.data, (row) =>
 		spanSampleToRecord({
 			...row,
 			spanAttributes: row.spanAttributes ?? {},
@@ -210,19 +212,23 @@ const sampleRecords = Effect.fnUntraced(function* (
 	)
 })
 
+/** A changed value as transcript text: strings raw, maps and lists as JSON rather than `[object Object]`. */
+const valueText = (value: AttrValue): string =>
+	typeof value === "string" ? value : (stringifyJson(value) ?? String(value))
+
 /** `key -> after` for every top-level value a rule changed; the value before stays out of the transcript. */
 const changedValues = (before: RuleRecord, after: RuleRecord): ReadonlyArray<string> => {
 	const diff = (scope: string, a: AttrMap, b: AttrMap) =>
-		Object.entries(a).flatMap(([key, value]) => {
+		Arr.flatMap(Rec.toEntries(a), ([key, value]) => {
 			const next = b[key]
 			if (next === undefined) return [`${scope}${key}: removed`]
-			return JSON.stringify(next) === JSON.stringify(value)
+			return stringifyJson(next) === stringifyJson(value)
 				? []
-				: [`${scope}${key} -> ${truncate(String(next), 60)}`]
+				: [`${scope}${key} -> ${truncate(valueText(next), 60)}`]
 		})
 	const body =
-		before.body !== undefined && JSON.stringify(before.body) !== JSON.stringify(after.body)
-			? [`body: ${truncate(String(after.body), 120)}`]
+		before.body !== undefined && stringifyJson(before.body) !== stringifyJson(after.body)
+			? [`body: ${truncate(after.body === undefined ? "removed" : valueText(after.body), 120)}`]
 			: []
 	return [
 		...diff("", before.attributes, after.attributes),
@@ -240,10 +246,10 @@ const recordService = (record: RuleRecord) => {
 
 /** Why a signal cannot be previewed for this rule, naming only the signals `signal` accepts. */
 const notTargeted = (signal: string, signals: ReadonlyArray<string>): string => {
-	const previewable = signals.filter((candidate) => candidate === "traces" || candidate === "logs")
+	const previewable = Arr.filter(signals, (candidate) => candidate === "traces" || candidate === "logs")
 	return previewable.length === 0
 		? `the rule does not apply to ${signal}, and metrics rules cannot be previewed`
-		: `the rule does not apply to ${signal}; pick one of ${previewable.join(", ")}`
+		: `the rule does not apply to ${signal}; pick one of ${Arr.join(previewable, ", ")}`
 }
 
 /** What a preview over stored samples cannot show for this rule; span events are not sampled. */
@@ -257,31 +263,32 @@ export const previewNotes = (spec: IngestRuleSpec, signal: "traces" | "logs"): R
 /** What one rule does to sampled records: counts plus a few examples of each outcome. */
 export const previewOver = (spec: IngestRuleSpec, records: ReadonlyArray<RuleRecord>) => {
 	const compiled = compileRules([spec], PREVIEW_SALT)
-	const outcomes = records.map((record, index) => ({
+	const outcomes = Arr.map(records, (record, index) => ({
 		record,
 		// Records without a trace id sample at random in the gateway; a fixed draw keeps answers stable.
 		outcome: applyRules(compiled, record, () => (((index * 0.618_033_988_75) % 1) + 1) % 1),
 	}))
-	const dropped = outcomes.filter(({ outcome }) => outcome._tag === "dropped")
-	const redacted = outcomes.flatMap(({ record, outcome }) =>
+	const dropped = Arr.filter(outcomes, ({ outcome }) => outcome._tag === "dropped")
+	const redacted = Arr.flatMap(outcomes, ({ record, outcome }) =>
 		outcome._tag === "kept" && outcome.redactions.size > 0 ? [{ record, outcome }] : [],
 	)
 	return {
 		sampled: records.length,
 		dropped: dropped.length,
 		redactedRecords: redacted.length,
-		redactedValues: redacted.reduce(
-			(total, { outcome }) => total + [...outcome.redactions.values()].reduce((a, b) => a + b, 0),
+		redactedValues: Arr.reduce(
+			redacted,
 			0,
+			(total, { outcome }) => total + Arr.reduce([...outcome.redactions.values()], 0, (a, b) => a + b),
 		),
 		examples: [
-			...dropped.slice(0, 3).map(({ record }) => ({
+			...Arr.map(dropped.slice(0, 3), ({ record }) => ({
 				service: recordService(record),
 				label: recordLabel(record),
 				outcome: "dropped" as const,
 				changes: [],
 			})),
-			...redacted.slice(0, 5).map(({ record, outcome }) => ({
+			...Arr.map(redacted.slice(0, 5), ({ record, outcome }) => ({
 				service: recordService(outcome.record),
 				// The label comes from the redacted record: a masked body must not reappear here.
 				label: recordLabel(outcome.record),
@@ -309,7 +316,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 				.list(tenant.orgId)
 				.pipe(Effect.mapError(toMcpHttpError("list_ingest_rules")))
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "result.rowCount": rules.length })
-			return { rules: rules.map(toRow) }
+			return { rules: Arr.map(rules, toRow) }
 		}),
 		render: (output) => ({
 			title: "Ingest Rules",
@@ -330,7 +337,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 					: [
 							doc.table(
 								["ID", "Name", "On", "Rule"],
-								output.rules.map((row) => [
+								Arr.map(output.rules, (row) => [
 									row.id,
 									row.name,
 									row.enabled ? "yes" : "no",
@@ -348,7 +355,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			"Run an ingest rule (an existing one by `rule`, or a draft from signals/conditions/action) over recent stored traces or logs and report how many records it would drop or redact, with examples. Changes nothing. Recent data may already be redacted by existing rules; metrics are not previewed.",
 		parameters: Schema.Struct({
 			rule: P.optionalText("An existing rule's name or id (list_ingest_rules lists them)"),
-			signals: P.optionalList(`Draft: signals, ${SIGNALS.join(", ")}`),
+			signals: P.optionalList(`Draft: signals, ${Arr.join(SIGNALS, ", ")}`),
 			conditions: conditionsParam,
 			action: P.optionalJson(V2IngestRuleAction, `Draft: ${actionDescription}`),
 			signal: P.optionalOneOf(
@@ -386,7 +393,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 					? [notTargeted(signal, spec.signals)]
 					: []),
 				...(signal === "traces" &&
-				spec.conditions.some((condition) => condition.field === "span_kind")
+				Arr.some(spec.conditions, (condition) => condition.field === "span_kind")
 					? [
 							"span_kind conditions cannot be previewed here; use the preview in Settings > Ingestion",
 						]
@@ -423,9 +430,9 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			// A refused preview ran nothing, so it shows why and no counts.
 			blocks:
 				output.problems.length > 0
-					? [doc.text(`Not previewed: ${output.problems.join("; ")}.`)]
+					? [doc.text(`Not previewed: ${Arr.join(output.problems, "; ")}.`)]
 					: [
-							...(output.notes ?? []).map((note) => doc.text(note)),
+							...Arr.map(output.notes ?? [], (note) => doc.text(note)),
 							doc.text(
 								`Of ${output.sampled} recent ${output.signal} records, ${output.dropped} would be dropped and ${output.redactedRecords} redacted (${output.redactedValues} values). Hashes use a preview key and differ from stored ones.`,
 							),
@@ -434,11 +441,11 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 								: [
 										doc.table(
 											["Outcome", "Service", "Record", "Changes"],
-											output.examples.map((example) => [
+											Arr.map(output.examples, (example) => [
 												example.outcome,
 												example.service,
 												example.label,
-												example.changes.join("; ") || "-",
+												Arr.join(example.changes, "; ") || "-",
 											]),
 										),
 									]),
@@ -490,7 +497,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			name: P.optionalText("A new name"),
 			enabled: P.optionalFlag("false turns the rule off, true turns it on"),
 			position: P.optionalNumber("New run order among redact rules"),
-			signals: P.optionalList(`Replaces the signals: ${SIGNALS.join(", ")}`),
+			signals: P.optionalList(`Replaces the signals: ${Arr.join(SIGNALS, ", ")}`),
 			conditions: conditionsParam,
 			action: P.optionalJson(V2IngestRuleAction, `Replaces the action: ${actionDescription}`),
 		}),

@@ -1,11 +1,11 @@
 import { readRealFile, ensureLocalToken, localTokenMatches } from "../local-token"
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 import { createHash, randomUUID } from "node:crypto"
-import { existsSync, lstatSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { mkdir, rm } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import type { Chdb } from "../chdb"
-import { durableJson, durableRemove, durableRename, durableWrite, syncDirectory } from "../durable-files"
+import { durableJson, durableRemove, durableRename, syncDirectory } from "../durable-files"
 import { withMaintenanceLock } from "../checkpoints"
 import { computeMultisetDigest, captureSourceSchema } from "./export"
 import { assertCatalogExact, listActiveGenerations, rebuildCatalog, verifyActiveGeneration } from "./listing"
@@ -21,6 +21,12 @@ import {
 	validateRangeDate,
 	validateSealedRangeDate,
 } from "./paths"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { decodeJsonSync, encodeJson } from "../json"
+
+const decodeJsonRecord = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+)
 
 const LEDGER_FORMAT_VERSION = 1
 const EXPIRATION_FORMAT_VERSION = 3
@@ -57,12 +63,12 @@ interface ExpireOperation {
 type Db = Pick<Chdb, "query" | "exec">
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[], label: string): void => {
 	const expected = new Set(keys)
-	for (const key of keys) if (!Object.hasOwn(value, key)) throw new Error(`${label} is missing ${key}`)
-	for (const key of Object.keys(value))
+	for (const key of keys) if (!Rec.has(value, key)) throw new Error(`${label} is missing ${key}`)
+	for (const key of Rec.keys(value))
 		if (!expected.has(key)) throw new Error(`${label} has unknown field ${key}`)
 }
 
@@ -87,7 +93,7 @@ const parseSignalEvidence = (value: unknown): RetiredSignalEvidence => {
 		"retired-day signal evidence",
 	)
 	const signal = requiredString(value, "signal", "retired-day signal evidence")
-	if (!ARCHIVE_SIGNALS.some((candidate) => candidate.name === signal))
+	if (!Arr.some(ARCHIVE_SIGNALS, (candidate) => candidate.name === signal))
 		throw new Error(`unknown retired-day signal: ${signal}`)
 	const manifestSha256 = requiredString(value, "manifestSha256", "retired-day signal evidence")
 	if (!SHA256.test(manifestSha256)) throw new Error("retired-day manifestSha256 must be lowercase SHA-256")
@@ -110,9 +116,9 @@ const parseDayRecord = (value: unknown): RetiredDayRecord => {
 	if (!isRecord(value)) throw new Error("retired-day record must be a record")
 	exactKeys(value, ["rangeDate", "retiredAt", "signals"], "retired-day record")
 	const signalsRaw = value.signals
-	if (!Array.isArray(signalsRaw)) throw new Error("retired-day signals must be an array")
-	const signals = signalsRaw.map(parseSignalEvidence)
-	const names = signals.map((signal) => signal.signal)
+	if (!Arr.isArray(signalsRaw)) throw new Error("retired-day signals must be an array")
+	const signals = Arr.map(signalsRaw, parseSignalEvidence)
+	const names = Arr.map(signals, (signal) => signal.signal)
 	if (names.length !== ARCHIVE_SIGNALS.length || new Set(names).size !== ARCHIVE_SIGNALS.length)
 		throw new Error("retired-day record must contain each raw signal exactly once")
 	for (let index = 0; index < ARCHIVE_SIGNALS.length; index++)
@@ -134,10 +140,10 @@ export const parseRetiredDayLedger = (value: unknown): RetiredDayLedger => {
 	exactKeys(value, ["formatVersion", "retiredDays"], "retired-day ledger")
 	if (value.formatVersion !== LEDGER_FORMAT_VERSION)
 		throw new Error(`unsupported retired-day ledger formatVersion: ${String(value.formatVersion)}`)
-	if (!Array.isArray(value.retiredDays)) throw new Error("retired-day ledger retiredDays must be an array")
-	const retiredDays = value.retiredDays.map(parseDayRecord)
-	const dates = retiredDays.map((day) => day.rangeDate)
-	if (dates.some((date, index) => index > 0 && dates[index - 1]! >= date))
+	if (!Arr.isArray(value.retiredDays)) throw new Error("retired-day ledger retiredDays must be an array")
+	const retiredDays = Arr.map(value.retiredDays, parseDayRecord)
+	const dates = Arr.map(retiredDays, (day) => day.rangeDate)
+	if (Arr.some(dates, (date, index) => index > 0 && dates[index - 1]! >= date))
 		throw new Error("retired-day ledger dates must be unique and sorted")
 	return { formatVersion: LEDGER_FORMAT_VERSION, retiredDays }
 }
@@ -148,7 +154,7 @@ export const maintenanceTokenPath = (dataDir: string): string => `${resolve(data
 export const readRetiredDayLedger = (dataDir: string): RetiredDayLedger => {
 	const path = retiredDayLedgerPath(dataDir)
 	if (!existsSync(path)) return { formatVersion: LEDGER_FORMAT_VERSION, retiredDays: [] }
-	return parseRetiredDayLedger(JSON.parse(readRealFile(path, "retired-day ledger")) as unknown)
+	return parseRetiredDayLedger(decodeJsonSync(readRealFile(path, "retired-day ledger")))
 }
 
 export const ensureMaintenanceToken = (dataDir: string): Promise<string> =>
@@ -172,7 +178,7 @@ export class RetiredDayAuthority {
 	constructor(dataDir: string) {
 		this.#dataDir = dataDir
 		this.#ledger = readRetiredDayLedger(dataDir)
-		this.#dates = new Set(this.#ledger.retiredDays.map((day) => day.rangeDate))
+		this.#dates = new Set(Arr.map(this.#ledger.retiredDays, (day) => day.rangeDate))
 	}
 
 	isRetired(rangeDate: string): boolean {
@@ -201,29 +207,29 @@ export class RetiredDayAuthority {
 		if (!key) throw new Error(`unknown raw telemetry datasource: ${datasource}`)
 		const accepted: string[] = []
 		let rejected = 0
-		for (const line of ndjson.split("\n")) {
+		for (const line of Str.split("\n")(ndjson)) {
 			if (line.length === 0) continue
-			const row = JSON.parse(line) as Record<string, unknown>
+			const row = decodeJsonRecord(line)
 			const timestamp = row[key]
 			if (typeof timestamp !== "string" || !/^\d{4}-\d{2}-\d{2} /.test(timestamp))
 				throw new Error(`encoded ${datasource} row has no canonical UTC timestamp`)
-			const rangeDate = timestamp.slice(0, 10)
+			const rangeDate = Str.slice(0, 10)(timestamp)
 			if (this.isRetired(rangeDate)) rejected++
 			else accepted.push(line)
 		}
-		return { ndjson: accepted.join("\n"), accepted: accepted.length, rejected }
+		return { ndjson: Arr.join(accepted, "\n"), accepted: accepted.length, rejected }
 	}
 
 	async commit(record: RetiredDayRecord): Promise<void> {
 		const parsed = parseDayRecord(record)
 		const existing = this.record(parsed.rangeDate)
 		if (existing) {
-			if (JSON.stringify(existing) !== JSON.stringify(parsed))
+			if (encodeJson(existing) !== encodeJson(parsed))
 				throw new Error(`retired-day evidence changed for ${parsed.rangeDate}`)
 			return
 		}
 		const retiredDays = [...this.#ledger.retiredDays, parsed].sort((a, b) =>
-			a.rangeDate.localeCompare(b.rangeDate),
+			Str.localeCompare(b.rangeDate)(a.rangeDate),
 		)
 		const next = parseRetiredDayLedger({ formatVersion: LEDGER_FORMAT_VERSION, retiredDays })
 		await durableJson(retiredDayLedgerPath(this.#dataDir), next)
@@ -242,8 +248,8 @@ export class RetiredDayAuthority {
 }
 
 const parseCount = (text: string, label: string): number => {
-	const line = text.split("\n").find((candidate) => candidate.trim().length > 0)
-	const row = line ? (JSON.parse(line) as Record<string, unknown>) : {}
+	const line = Str.split("\n")(text).find((candidate) => Str.trim(candidate).length > 0)
+	const row: { readonly [key: string]: unknown } = line ? decodeJsonRecord(line) : {}
 	const count = Number(row.count ?? row["count()"] ?? 0)
 	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid ${label} count`)
 	return count
@@ -268,7 +274,11 @@ const removeUtcDay = (db: Db, rangeDate: string): void => {
 	}
 }
 
-const sqlDates = (dates: readonly string[]): string => dates.map((date) => `'${date}'`).join(", ")
+const sqlDates = (dates: readonly string[]): string =>
+	Arr.join(
+		Arr.map(dates, (date) => `'${date}'`),
+		", ",
+	)
 
 /** Startup repair is bounded by table count, not ledger length. */
 const removeRetiredDays = (db: Db, dates: readonly string[]): void => {
@@ -279,11 +289,13 @@ const removeRetiredDays = (db: Db, dates: readonly string[]): void => {
 			`SELECT DISTINCT toString(toDate(${signal.eventTimeColumn}, 'UTC')) AS rangeDate FROM ${signal.name} WHERE toDate(${signal.eventTimeColumn}, 'UTC') IN (${allDates})`,
 			"JSONEachRow",
 		)
-		const present = rows
-			.split("\n")
-			.filter((line) => line.trim().length > 0)
-			.map((line) => (JSON.parse(line) as { rangeDate?: unknown }).rangeDate)
-			.filter((date): date is string => typeof date === "string" && dates.includes(date))
+		const present = Arr.filter(
+			Arr.map(
+				Arr.filter(Str.split("\n")(rows), (line) => Str.trim(line).length > 0),
+				(line) => decodeJsonRecord(line).rangeDate,
+			),
+			(date): date is string => typeof date === "string" && dates.includes(date),
+		)
 		if (present.length === 0) continue
 		db.exec(
 			`ALTER TABLE ${signal.name} DELETE WHERE toDate(${signal.eventTimeColumn}, 'UTC') IN (${sqlDates(present)}) SETTINGS mutations_sync = 2`,
@@ -305,19 +317,27 @@ export const assertSealedUtcDay = (range: string, sealingLagHours = 24, now = Da
 
 const sha256File = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex")
 const safeSqlPath = (path: string): string => {
-	if (path.includes("'") || path.includes("\\")) throw new Error(`unsafe archive path for chDB: ${path}`)
+	if (Str.includes("'")(path) || Str.includes("\\")(path))
+		throw new Error(`unsafe archive path for chDB: ${path}`)
 	return path
 }
 
 const completeArchiveDay = (archiveDir: string, rangeDate: string) => {
 	const listing = listActiveGenerations(archiveDir)
-	const errors = listing.errors.filter((error) => error.rangeStart === rangeDate || error.rangeStart === "")
+	const errors = Arr.filter(
+		listing.errors,
+		(error) => error.rangeStart === rangeDate || error.rangeStart === "",
+	)
 	if (errors.length > 0)
 		throw new Error(
-			`archive date ${rangeDate} is malformed: ${errors.map((error) => error.error).join("; ")}`,
+			`archive date ${rangeDate} is malformed: ${Arr.join(
+				Arr.map(errors, (error) => error.error),
+				"; ",
+			)}`,
 		)
-	return ARCHIVE_SIGNALS.map((signal) => {
-		const matches = listing.active.filter(
+	return Arr.map(ARCHIVE_SIGNALS, (signal) => {
+		const matches = Arr.filter(
+			listing.active,
 			(generation) => generation.signal === signal.name && generation.rangeStart === rangeDate,
 		)
 		if (matches.length !== 1)
@@ -448,9 +468,12 @@ const parseExpireOperation = (value: unknown): ExpireOperation => {
 	)
 	if (value.formatVersion !== EXPIRATION_FORMAT_VERSION)
 		throw new Error(`unsupported archive expiration journal version: ${String(value.formatVersion)}`)
-	if (!Array.isArray(value.completedSignals)) throw new Error("completedSignals must be an array")
-	const completedSignals = value.completedSignals.map((signal) => {
-		if (typeof signal !== "string" || !ARCHIVE_SIGNALS.some((candidate) => candidate.name === signal))
+	if (!Arr.isArray(value.completedSignals)) throw new Error("completedSignals must be an array")
+	const completedSignals = Arr.map(value.completedSignals, (signal) => {
+		if (
+			typeof signal !== "string" ||
+			!Arr.some(ARCHIVE_SIGNALS, (candidate) => candidate.name === signal)
+		)
 			throw new Error(`invalid completed signal: ${String(signal)}`)
 		return signal as ArchiveSignalName
 	})
@@ -463,20 +486,20 @@ const parseExpireOperation = (value: unknown): ExpireOperation => {
 	if (
 		removingSignal !== null &&
 		(typeof removingSignal !== "string" ||
-			!ARCHIVE_SIGNALS.some((candidate) => candidate.name === removingSignal))
+			!Arr.some(ARCHIVE_SIGNALS, (candidate) => candidate.name === removingSignal))
 	)
-		throw new Error(`invalid removingSignal: ${String(removingSignal)}`)
+		throw new Error(`invalid removingSignal: ${encodeJson(removingSignal)}`)
 	const expectedRemoving = ARCHIVE_SIGNALS[completedSignals.length]?.name ?? null
 	if (removingSignal !== null && removingSignal !== expectedRemoving)
 		throw new Error("removingSignal must be the next canonical signal")
 	if (!isRecord(value.archivedGenerations)) throw new Error("archivedGenerations must be a record")
 	exactKeys(
 		value.archivedGenerations,
-		ARCHIVE_SIGNALS.map((signal) => signal.name),
+		Arr.map(ARCHIVE_SIGNALS, (signal) => signal.name),
 		"archivedGenerations",
 	)
-	const archivedGenerations = Object.fromEntries(
-		ARCHIVE_SIGNALS.map((signal) => [
+	const archivedGenerations = Rec.fromEntries(
+		Arr.map(ARCHIVE_SIGNALS, (signal) => [
 			signal.name,
 			validateArchiveId(
 				requiredString(
@@ -503,7 +526,7 @@ const parseExpireOperation = (value: unknown): ExpireOperation => {
 
 const readExpireOperation = (path: string): ExpireOperation | null => {
 	if (!existsSync(path)) return null
-	return parseExpireOperation(JSON.parse(readRealFile(path, "archive expiration journal")) as unknown)
+	return parseExpireOperation(decodeJsonSync(readRealFile(path, "archive expiration journal")))
 }
 
 /** Expire one already-retired archived UTC day. Resumes safely after interruption. */
@@ -526,8 +549,8 @@ export const expireArchiveDay = async (options: {
 		if (!op) {
 			const complete = completeArchiveDay(options.archiveDir, rangeDate)
 			for (const signal of ARCHIVE_SIGNALS) assertCatalogExact(options.archiveDir, signal.name)
-			const archivedGenerations = Object.fromEntries(
-				complete.map(({ signal, summary }) => [signal.name, summary.generationId]),
+			const archivedGenerations = Rec.fromEntries(
+				Arr.map(complete, ({ signal, summary }) => [signal.name, summary.generationId]),
 			) as Record<ArchiveSignalName, string>
 			for (const item of retired.signals)
 				if (archivedGenerations[item.signal] !== item.generationId)
@@ -560,14 +583,16 @@ export const expireArchiveDay = async (options: {
 				)
 			if (existsSync(source)) {
 				const listing = listActiveGenerations(options.archiveDir)
-				const relevantErrors = listing.errors.filter(
+				const relevantErrors = Arr.filter(
+					listing.errors,
 					(error) =>
 						error.signal === signal.name &&
 						(error.rangeStart === rangeDate || error.rangeStart === ""),
 				)
 				if (relevantErrors.length > 0)
 					throw new Error(`archive became malformed during expiration: ${signal.name}/${rangeDate}`)
-				const current = listing.active.filter(
+				const current = Arr.filter(
+					listing.active,
 					(candidate) => candidate.signal === signal.name && candidate.rangeStart === rangeDate,
 				)
 				if (current.length !== 1 || current[0]!.generationId !== op.archivedGenerations[signal.name])
@@ -617,12 +642,12 @@ export const retireLiveDay = async (options: {
 	await withMaintenanceLock(options.dataDir, randomUUID(), async () => {
 		const { reconcileArchiveGeneration } = await import("./generation")
 		await reconcileArchiveGeneration(options.dataDir, options.archiveDir, options.scratchRoot)
-		const token = readRealFile(maintenanceTokenPath(options.dataDir), "maintenance token").trim()
+		const token = Str.trim(readRealFile(maintenanceTokenPath(options.dataDir), "maintenance token"))
 		const request = options.request ?? fetch
 		const response = await request(`http://127.0.0.1:${options.port}/local/retention/retire`, {
 			method: "POST",
 			headers: { "content-type": "application/json", "x-maple-maintenance-token": token },
-			body: JSON.stringify({
+			body: encodeJson({
 				archiveDir: resolve(options.archiveDir),
 				rangeDate,
 				sealingLagHours: options.sealingLagHours ?? 24,

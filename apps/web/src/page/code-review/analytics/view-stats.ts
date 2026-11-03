@@ -1,9 +1,11 @@
 import type { CodeReviewTotals } from "@maple/domain/http"
-import { formatCount, formatSpan } from "../../../components/code-review/code-review-format"
-import { countLabel, EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
+import { formatSpan } from "../../../components/code-review/code-review-format"
+import { countLabel, EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { formatExactCount } from "@maple/views/lib/locale"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { delta, relativeChange } from "../../../ui/delta"
+import { delta, relativeChange } from "@maple/views/ui/delta"
 import { statRail, statRailItem } from "../../kit/stat-rail"
+import { Array as Arr } from "effect"
 
 // `HeadlineStrip` and `SecondaryStats`.
 
@@ -48,14 +50,14 @@ export const headlineStrip = <M>(
 		statRailItem(h, {
 			compact: true,
 			eyebrow: HEADLINE_LABELS.reviewed,
-			value: formatCount(current.pullRequests),
+			value: formatNumber(current.pullRequests),
 			delta: changeOf(h, current.pullRequests, previous.pullRequests),
 			subline: versus,
 		}),
 		statRailItem(h, {
 			compact: true,
 			eyebrow: HEADLINE_LABELS.reviews,
-			value: formatCount(current.reviews),
+			value: formatNumber(current.reviews),
 			delta: changeOf(h, current.reviews, previous.reviews),
 			subline: versus,
 		}),
@@ -74,7 +76,7 @@ export const headlineStrip = <M>(
 		statRailItem(h, {
 			compact: true,
 			eyebrow: HEADLINE_LABELS.issues,
-			value: formatCount(current.findings),
+			value: formatNumber(current.findings),
 			subline:
 				current.repositoriesWithFindings > 0
 					? `in ${countLabel(current.repositoriesWithFindings, "repo")}`
@@ -113,14 +115,14 @@ const secondaryStatList = (current: CodeReviewTotals): ReadonlyArray<Stat> => {
 		},
 		{
 			label: SECONDARY_LABELS.dismissed,
-			value: settled === 0 ? EMPTY_VALUE : formatCount(current.dismissedFindings),
+			value: settled === 0 ? EMPTY_VALUE : formatNumber(current.dismissedFindings),
 			hint: "Issues a person dismissed as not worth fixing",
 		},
-		{ label: SECONDARY_LABELS.critical, value: formatCount(current.criticalFindings) },
+		{ label: SECONDARY_LABELS.critical, value: formatNumber(current.criticalFindings) },
 		{
 			label: SECONDARY_LABELS.tokens,
-			value: formatCount(current.inputTokens + current.outputTokens),
-			hint: `${formatCount(current.inputTokens)} in, ${formatCount(current.outputTokens)} out`,
+			value: formatNumber(current.inputTokens + current.outputTokens),
+			hint: `${formatExactCount(current.inputTokens)} in, ${formatExactCount(current.outputTokens)} out`,
 		},
 	]
 }
@@ -129,7 +131,7 @@ export const secondaryStats = <M>(h: HtmlBuilder<M>, current: CodeReviewTotals):
 	statRail(
 		h,
 		{ columns: 4, className: "xl:grid-cols-7" },
-		secondaryStatList(current).map((stat) =>
+		Arr.map(secondaryStatList(current), (stat) =>
 			h.div(
 				[h.Key(stat.label), ...(stat.hint === undefined ? [] : [h.Title(stat.hint)])],
 				[

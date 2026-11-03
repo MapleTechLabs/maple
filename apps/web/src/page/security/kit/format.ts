@@ -13,8 +13,8 @@ import {
 } from "@maple/domain/security-audit"
 import type { Tone } from "@maple/ui/lib/tone"
 import { shortId as shortDisplayId } from "@maple/ui/lib/ids"
-import { DateTime } from "effect"
-import type { LoadFailure } from "../../../data/load-failure"
+import { DateTime, Array as Arr, String as Str } from "effect"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 
 // Labels, tones and small derivations every Security Center view shares.
 
@@ -47,7 +47,7 @@ export const isCancelled = (run: Pick<SecurityAuditRun, "status" | "incompleteRe
 	run.status === "incomplete" && run.incompleteReason === CANCELLED_REASON
 
 const RUN_STATUS_TONE = {
-	in_progress: "done",
+	in_progress: "live",
 	complete: "ok",
 	incomplete: "warn",
 	failed: "crit",
@@ -115,7 +115,7 @@ export const runTotalUsd = (run: Pick<SecurityAuditRun, "costUsd" | "sandboxUsd"
 	run.costUsd === null && run.sandboxUsd === 0 ? null : (run.costUsd ?? 0) + run.sandboxUsd
 
 /** The engine's run id is long; the first block is what people say out loud. */
-export const shortId = (id: string): string => id.replace(/^run[_-]/u, "").slice(0, 8)
+export const shortId = (id: string): string => Str.slice(0, 8)(Str.replace(/^run[_-]/u, "")(id))
 
 /** A commit as its short SHA; a branch name the run resolved nothing for stays as written. */
 export const refLabel = (ref: string): string =>
@@ -149,10 +149,13 @@ const INCOMPLETE_REASON_LABEL = new Map<string, string>([
 export const incompleteReasonLabel = (reason: string | null): string =>
 	reason === null
 		? "stopped early"
-		: reason
-				.split("; ")
-				.map((part) => INCOMPLETE_REASON_LABEL.get(part) ?? part.replaceAll("_", " "))
-				.join("; ")
+		: Arr.join(
+				Arr.map(
+					Str.split("; ")(reason),
+					(part) => INCOMPLETE_REASON_LABEL.get(part) ?? Str.replaceAll("_", " ")(part),
+				),
+				"; ",
+			)
 
 /** `1h 12m`, `3h 41m`, `48s`: how long a run has taken (or took). */
 export const formatElapsed = (ms: number): string => {
@@ -161,7 +164,7 @@ export const formatElapsed = (ms: number): string => {
 	const minutes = Math.floor(seconds / 60)
 	if (minutes < 60) return `${minutes}m`
 	const hours = Math.floor(minutes / 60)
-	return `${hours}h ${String(minutes % 60).padStart(2, "0")}m`
+	return `${hours}h ${Str.padStart(2, "0")(String(minutes % 60))}m`
 }
 
 export const runElapsed = (run: SecurityAuditRun, nowMs: number): number =>

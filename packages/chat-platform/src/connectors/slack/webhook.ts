@@ -14,7 +14,7 @@
  * to the host, which relays them afterwards — Slack drops an event that is not acknowledged within
  * three seconds and retries it, and an agent turn is not a three-second operation.
  */
-import { Clock, Effect, Option } from "effect"
+import { Clock, Effect, Option, String as Str } from "effect"
 import { HttpServerResponse, type HttpServerRequest } from "effect/http"
 import {
 	ConnectorIngressError,
@@ -80,7 +80,7 @@ const interactivityPayload = (body: string): string | undefined =>
 	new URLSearchParams(body).get("payload") ?? undefined
 
 const isFormEncoded = (request: HttpServerRequest.HttpServerRequest): boolean =>
-	(request.headers["content-type"] ?? "").includes("application/x-www-form-urlencoded")
+	Str.includes("application/x-www-form-urlencoded")(request.headers["content-type"] ?? "")
 
 /**
  * One event, one delivery.
@@ -106,7 +106,7 @@ const handle = Effect.fnUntraced(function* (
 	if (signingSecret === undefined) {
 		// Unreachable through the host, which skips a connector whose declared configuration is
 		// missing. Present so this can never degrade into an unverified mode if that ever changes.
-		return yield* Effect.fail(rejected("Slack ingress has no signing secret"))
+		return yield* rejected("Slack ingress has no signing secret")
 	}
 	const body = yield* request.text.pipe(
 		Effect.mapError((cause) => rejected("Slack's request body could not be read", cause)),
@@ -121,7 +121,7 @@ const handle = Effect.fnUntraced(function* (
 	})
 	if (verdict._tag === "rejected") {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.reject_reason": verdict.reason })
-		return yield* Effect.fail(rejected(REJECTED_MESSAGE))
+		return yield* rejected(REJECTED_MESSAGE)
 	}
 
 	if (isFormEncoded(request)) {

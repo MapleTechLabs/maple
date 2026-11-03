@@ -1,8 +1,8 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { dotLoader } from "../../page/investigations/conversation/kit/dot-loader"
 import { statusMarker } from "../../page/investigations/conversation/kit/view-transcript"
-import { eyebrow } from "../../ui/eyebrow"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 import { defineLab } from "../define"
 
 // `/lab/loaders`: the chat's loader on the lines it sits on.
@@ -37,7 +37,7 @@ const view = (_model: Model, h: HtmlBuilder<never>): Html =>
 				[h.Class("flex flex-col gap-1")],
 				[
 					heading(h, "The tool row: running, then settled"),
-					...["Searching traces", "Reading spans", "Grouping by service"].map((line) =>
+					...Arr.map(["Searching traces", "Reading spans", "Grouping by service"], (line) =>
 						h.div(
 							[h.Key(line), h.Class("flex items-center gap-2 py-0.5 text-xs")],
 							[

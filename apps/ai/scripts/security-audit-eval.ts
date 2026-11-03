@@ -11,7 +11,8 @@
  * Options: --results <dir> (~/.cache/maple-security-eval/results, never inside this repo) · --repos <dir> (~/.cache/maple-security-eval/repos) · --only <id,...>
  * · --variant <name> with --profile/--budget/--concurrency overrides · --cap-usd <n> (250)
  * · --per-invocation-usd <n> (1.5, the estimate before any run) · --grades <file> (<results>/grades.json)
- * · --discovery-model / --validation-model <openrouter id> · --score-only · --dry-run
+ * · --discovery-model / --validation-model <openrouter id> · --executor <url> (executor:local, serving
+ * the case's clone) · --score-only · --dry-run
  */
 import { spawn, spawnSync } from "node:child_process"
 import {
@@ -27,7 +28,7 @@ import {
 import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
-import { Effect } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import {
 	aggregate,
 	type CaseResult,
@@ -55,6 +56,13 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const AI_DIR = resolve(SCRIPT_DIR, "..")
 const POLL_MS = 30_000
 const EVAL_CACHE = join(homedir(), ".cache", "maple-security-eval")
+const decodeJson = Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+
+class ClaimTakenError extends Schema.TaggedError<ClaimTakenError>()("@maple/ai/scripts/ClaimTakenError", {
+	message: Schema.String,
+	cause: Schema.Defect(),
+}) {}
 
 /** `path` with symlinks resolved, through its nearest existing ancestor when it does not exist yet. */
 const realPath = (path: string): string =>
@@ -65,13 +73,13 @@ const realPath = (path: string): string =>
 /** Whether `path` is `dir` or inside it, both already real. */
 const isWithin = (path: string, dir: string) => {
 	const rel = relative(dir, path)
-	return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
+	return rel === "" || (rel !== ".." && !Str.startsWith(`..${sep}`)(rel) && !isAbsolute(rel))
 }
 
 /** The Maple checkout this script runs from: results (case repos, findings) must stay out of it. */
 const repoRoot = () => {
 	const top = spawnSync("git", ["-C", AI_DIR, "rev-parse", "--show-toplevel"], { encoding: "utf8" })
-	return realPath(top.status === 0 ? top.stdout.trim() : resolve(AI_DIR, "..", ".."))
+	return realPath(top.status === 0 ? Str.trim(top.stdout) : resolve(AI_DIR, "..", ".."))
 }
 
 interface Args {
@@ -90,11 +98,13 @@ interface Args {
 	readonly dryRun: boolean
 	readonly discoveryModel: string | undefined
 	readonly validationModel: string | undefined
+	/** `executor:local`'s address, passed to every run: they execute target code. */
+	readonly executor: string | undefined
 }
 
 const usage = () => {
 	console.error(
-		"usage: bun run security:eval <cases.json>... [--results <dir>] [--repos <dir>] [--only <id,...>] [--variant <name> --profile <p> --budget <n> --concurrency <n>] [--cap-usd <n>] [--per-invocation-usd <n>] [--grades <file>] [--score-only] [--dry-run]",
+		"usage: bun run security:eval <cases.json>... [--results <dir>] [--repos <dir>] [--only <id,...>] [--variant <name> --profile <p> --budget <n> --concurrency <n>] [--cap-usd <n>] [--per-invocation-usd <n>] [--grades <file>] [--executor <url>] [--score-only] [--dry-run]",
 	)
 	return process.exit(2)
 }
@@ -112,10 +122,10 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		(acc, arg) =>
 			acc.pending !== null
 				? { ...acc, flags: new Map(acc.flags).set(acc.pending, arg), pending: null }
-				: arg.startsWith("--")
-					? switches.has(arg.slice(2))
-						? { ...acc, flags: new Map(acc.flags).set(arg.slice(2), "true") }
-						: { ...acc, pending: arg.slice(2) }
+				: Str.startsWith("--")(arg)
+					? switches.has(Str.slice(2)(arg))
+						? { ...acc, flags: new Map(acc.flags).set(Str.slice(2)(arg), "true") }
+						: { ...acc, pending: Str.slice(2)(arg) }
 					: { ...acc, positional: [...acc.positional, arg] },
 		{ flags: new Map(), positional: [], pending: null },
 	)
@@ -139,11 +149,13 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	const variant = flag("variant")
 	// An override without a variant name would overwrite the default run's results.
 	if (variant === undefined && (profile !== undefined || flag("budget") !== undefined)) return usage()
+	// Executing runs measure something else: they never take the source-only baseline's key.
+	if (variant === undefined && flag("executor") !== undefined) return usage()
 	return {
-		caseFiles: parsed.positional.map((path) => resolve(path)),
+		caseFiles: Arr.map(parsed.positional, (path) => resolve(path)),
 		results,
 		repos: resolve(flag("repos") ?? join(EVAL_CACHE, "repos")),
-		only: flag("only") === undefined ? null : new Set((flag("only") ?? "").split(",")),
+		only: flag("only") === undefined ? null : new Set(Str.split(",")(flag("only") ?? "")),
 		variant,
 		profile,
 		budget: number("budget"),
@@ -155,6 +167,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		dryRun: flag("dry-run") === "true",
 		discoveryModel: flag("discovery-model"),
 		validationModel: flag("validation-model"),
+		executor: flag("executor"),
 	}
 }
 
@@ -162,8 +175,8 @@ const git = (dir: string, args: ReadonlyArray<string>) => {
 	const result = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8" })
 	return {
 		ok: result.status === 0,
-		stdout: (result.stdout ?? "").trim(),
-		stderr: (result.stderr ?? "").trim(),
+		stdout: Str.trim(result.stdout ?? ""),
+		stderr: Str.trim(result.stderr ?? ""),
 	}
 }
 
@@ -188,21 +201,33 @@ const ensureRepo = (repos: string, c: EvalCase): RepoCheck => {
 	const origin = git(dir, ["remote", "get-url", "--", "origin"])
 	if (!origin.ok || origin.stdout !== c.repo.url)
 		return { error: `${dir} exists with origin ${origin.stdout || "(none)"}, not ${c.repo.url}` }
-	const missing = [c.sha, ...c.bugs.map((bug) => bug.fixSha)].filter((sha) => !hasCommit(dir, sha))
+	const missing = Arr.filter(
+		[c.sha, ...Arr.map(c.bugs, (bug) => bug.fixSha)],
+		(sha) => !hasCommit(dir, sha),
+	)
 	if (missing.length > 0) {
 		const fetched = git(dir, ["fetch", "-q", "--filter=blob:none", "--", "origin", ...missing])
 		if (!fetched.ok)
-			return { error: `cannot fetch ${missing.join(", ")} from ${c.repo.url}: ${fetched.stderr}` }
+			return { error: `cannot fetch ${Arr.join(missing, ", ")} from ${c.repo.url}: ${fetched.stderr}` }
 	}
 	// An unknown fix commit cannot be checked, so it fails the case rather than reading as "not contained".
-	const unknown = [c.sha, ...c.bugs.map((bug) => bug.fixSha)].filter((sha) => !hasCommit(dir, sha))
-	if (unknown.length > 0) return { error: `commits not present after fetch: ${unknown.join(", ")}` }
+	const unknown = Arr.filter(
+		[c.sha, ...Arr.map(c.bugs, (bug) => bug.fixSha)],
+		(sha) => !hasCommit(dir, sha),
+	)
+	if (unknown.length > 0) return { error: `commits not present after fetch: ${Arr.join(unknown, ", ")}` }
 	// A run at a commit that already contains a fix would score a fixed bug as missed.
-	const fixed = c.bugs.filter(
+	const fixed = Arr.filter(
+		c.bugs,
 		(bug) => git(dir, ["merge-base", "--is-ancestor", "--", bug.fixSha, c.sha]).ok,
 	)
 	return fixed.length > 0
-		? { error: `${c.sha} already contains the fix for ${fixed.map((b) => b.id).join(", ")}` }
+		? {
+				error: `${c.sha} already contains the fix for ${Arr.join(
+					Arr.map(fixed, (b) => b.id),
+					", ",
+				)}`,
+			}
 		: { dir }
 }
 
@@ -210,20 +235,23 @@ const readJsonLines = (path: string) => (existsSync(path) ? parseEventLines(read
 
 const readFindings = (runDir: string): ReadonlyArray<Finding> => {
 	const path = join(runDir, "findings.json")
-	return existsSync(path) ? decodeFindings(JSON.parse(readFileSync(path, "utf8"))) : []
+	return existsSync(path) ? decodeFindings(decodeJson(readFileSync(path, "utf8"))) : []
 }
 
 const readStatus = (runDir: string) => {
 	const path = join(runDir, "run-metadata.json")
-	return existsSync(path) ? decodeRunStatus(JSON.parse(readFileSync(path, "utf8"))).run_status : "missing"
+	return existsSync(path) ? decodeRunStatus(decodeJson(readFileSync(path, "utf8"))).run_status : "missing"
 }
 
 const loadResults = (results: string): ReadonlyArray<CaseResult> =>
 	existsSync(results)
-		? readdirSync(results)
-				.map((name) => join(results, name, "result.json"))
-				.filter((path) => existsSync(path))
-				.map((path) => decodeCaseResult(JSON.parse(readFileSync(path, "utf8"))))
+		? Arr.map(
+				Arr.filter(
+					Arr.map(readdirSync(results), (name) => join(results, name, "result.json")),
+					(path) => existsSync(path),
+				),
+				(path) => decodeCaseResult(decodeJson(readFileSync(path, "utf8"))),
+			)
 		: []
 
 /**
@@ -233,14 +261,16 @@ const loadResults = (results: string): ReadonlyArray<CaseResult> =>
 const RUN_DIR = /^run(\.aborted-\d+)?$/
 
 const spentUsd = (results: string) =>
-	readdirSync(results, { withFileTypes: true })
-		.filter((entry) => entry.isDirectory())
-		.flatMap((entry) =>
-			readdirSync(join(results, entry.name))
-				.filter((name) => RUN_DIR.test(name))
-				.map((name) => join(results, entry.name, name, "events.jsonl")),
-		)
-		.reduce((acc, path) => acc + usageOf(readJsonLines(path)).costUsd, 0)
+	Arr.reduce(
+		Arr.filter(readdirSync(results, { withFileTypes: true }), (entry) => entry.isDirectory()).flatMap(
+			(entry) =>
+				readdirSync(join(results, entry.name))
+					.filter((name) => RUN_DIR.test(name))
+					.map((name) => join(results, entry.name, name, "events.jsonl")),
+		),
+		0,
+		(acc, path) => acc + usageOf(readJsonLines(path)).costUsd,
+	)
 
 /**
  * Claims a key for this process: an exclusive create, so two harnesses never run the same key.
@@ -249,9 +279,10 @@ const spentUsd = (results: string) =>
 const claim = (results: string, key: string) =>
 	Effect.runSync(
 		Effect.result(
-			Effect.try(() =>
-				writeFileSync(join(results, `${key}.claim`), `${process.pid}\n`, { flag: "wx" }),
-			),
+			Effect.try({
+				try: () => writeFileSync(join(results, `${key}.claim`), `${process.pid}\n`, { flag: "wx" }),
+				catch: (cause) => new ClaimTakenError({ message: `Could not claim ${key}`, cause }),
+			}),
 		),
 	)._tag === "Success"
 
@@ -285,7 +316,7 @@ const runCase = (
 		repoDir,
 		"--ref",
 		c.sha,
-		...c.scope.flatMap((path) => ["--scope", path]),
+		...Arr.flatMap(c.scope, (path) => ["--scope", path]),
 		"--profile",
 		settings.profile,
 		"--budget",
@@ -296,9 +327,10 @@ const runCase = (
 		runDir,
 		...(args.discoveryModel === undefined ? [] : ["--discovery-model", args.discoveryModel]),
 		...(args.validationModel === undefined ? [] : ["--validation-model", args.validationModel]),
+		...(args.executor === undefined ? [] : ["--executor", args.executor]),
 	]
 	const log = join(out, "runner.log")
-	writeFileSync(log, `bun ${runnerArgs.join(" ")}\n`)
+	writeFileSync(log, `bun ${Arr.join(runnerArgs, " ")}\n`)
 	return new Promise((done) => {
 		const child = spawn("bun", runnerArgs, { cwd: AI_DIR, stdio: ["ignore", "pipe", "pipe"] })
 		const append = (chunk: Buffer) => writeFileSync(log, chunk, { flag: "a" })
@@ -336,41 +368,54 @@ const runCase = (
 				locationMatches: locationMatches(findings, c.bugs),
 				models: { discovery: args.discoveryModel ?? null, validation: args.validationModel ?? null },
 			}
-			writeFileSync(join(out, "result.json"), `${JSON.stringify(result, null, 2)}\n`)
+			writeFileSync(join(out, "result.json"), `${encodePrettyJson(result)}\n`)
 			done(result)
 		})
 	})
 }
 
 const loadGrades = (path: string): Grades =>
-	existsSync(path) ? decodeGrades(JSON.parse(readFileSync(path, "utf8"))) : { bugs: [], spotChecks: [] }
+	existsSync(path) ? decodeGrades(decodeJson(readFileSync(path, "utf8"))) : { bugs: [], spotChecks: [] }
 
 const writeSummary = (args: Args) => {
 	const results = loadResults(args.results)
 	const grades = loadGrades(args.grades)
-	const runs = results.map((r) => scoreRun(r, readFindings(join(args.results, r.key, "run")), grades))
+	const runs = Arr.map(results, (r) => scoreRun(r, readFindings(join(args.results, r.key, "run")), grades))
 	const byLanguage = aggregate(runs, (r) => `${r.corpus}/${r.language}`)
 	const byCorpus = aggregate(runs, (r) => r.corpus)
 	const total = aggregate(runs, () => "all")
 	writeFileSync(
 		join(args.results, "results.json"),
-		`${JSON.stringify({ generatedAt: new Date().toISOString(), byLanguage, byCorpus, total, runs }, null, 2)}\n`,
+		`${encodePrettyJson({ generatedAt: new Date().toISOString(), byLanguage, byCorpus, total, runs })}\n`,
 	)
-	const summary = [
-		"# Security audit eval",
-		`Generated ${new Date().toISOString()} from ${results.length} runs; grades from ${args.grades}.`,
-		"## By language",
-		renderTable(byLanguage),
-		"## By corpus",
-		renderTable([...byCorpus, ...total]),
-		"## Runs",
-		renderRuns(runs),
-		"## Location suggestions (ungraded aid)",
-		...results.map(
-			(r) =>
-				`- ${r.key}: ${r.locationMatches.map((m) => `${m.bug} <- ${m.fingerprint} [${m.verdict}] ${m.files.join(", ")}`).join("; ") || "none"}`,
-		),
-	].join("\n\n")
+	const summary = Arr.join(
+		[
+			"# Security audit eval",
+			`Generated ${new Date().toISOString()} from ${results.length} runs; grades from ${args.grades}.`,
+			"## By language",
+			renderTable(byLanguage),
+			"## By corpus",
+			renderTable([...byCorpus, ...total]),
+			"## Runs",
+			renderRuns(runs),
+			"## Location suggestions (ungraded aid)",
+			...Arr.map(
+				results,
+				(r) =>
+					`- ${r.key}: ${
+						Arr.join(
+							Arr.map(
+								r.locationMatches,
+								(m) =>
+									`${m.bug} <- ${m.fingerprint} [${m.verdict}] ${Arr.join(m.files, ", ")}`,
+							),
+							"; ",
+						) || "none"
+					}`,
+			),
+		],
+		"\n\n",
+	)
 	writeFileSync(join(args.results, "summary.md"), `${summary}\n`)
 	console.log(renderTable([...byLanguage, ...total]))
 }
@@ -380,14 +425,14 @@ type Settings = { readonly profile: Profile; readonly budget: number; readonly c
 /** One case under its claim: skip a finished key, check the cap and the repository, then run. */
 const runClaimed = async (args: Args, c: EvalCase, settings: Settings, key: string) => {
 	const existing = loadResults(args.results)
-	if (existing.some((r) => r.key === key)) {
+	if (Arr.some(existing, (r) => r.key === key)) {
 		console.log(`skip ${key}: already has a result`)
 		return
 	}
 	const spent = spentUsd(args.results)
 	const estimate = estimateCost(
 		settings.budget,
-		existing.map((r) => r.metrics),
+		Arr.map(existing, (r) => r.metrics),
 		args.perInvocationUsd,
 	)
 	if (!fitsCap(spent, estimate, args.capUsd)) {
@@ -419,11 +464,12 @@ const main = async () => {
 		console.error("OPENROUTER_API_KEY is not set; run under `infisical run --env dev --`.")
 		return process.exit(1)
 	}
-	const files = args.caseFiles.map((path) => decodeCaseFile(JSON.parse(readFileSync(path, "utf8"))))
-	const queue = files.flatMap((file) =>
-		file.cases
-			.filter((c) => args.only === null || args.only.has(c.id))
-			.map((c) => ({ c, settings: settingsFor(args, file.defaults, c) })),
+	const files = Arr.map(args.caseFiles, (path) => decodeCaseFile(decodeJson(readFileSync(path, "utf8"))))
+	const queue = Arr.flatMap(files, (file) =>
+		Arr.map(
+			Arr.filter(file.cases, (c) => args.only === null || args.only.has(c.id)),
+			(c) => ({ c, settings: settingsFor(args, file.defaults, c) }),
+		),
 	)
 	// Sequential on purpose: each run already fans out to its own agents, and the cap is checked
 	// against real spend before every launch and while each run is in flight.

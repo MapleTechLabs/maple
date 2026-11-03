@@ -1,8 +1,8 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import { FetchMetricKeys, FetchMetricOptions } from "./metric-options"
 import { Message } from "./message"
@@ -35,7 +35,13 @@ const document = Schema.decodeUnknownSync(DashboardDocument)({
 						metricType: "gauge",
 						aggregation: "avg",
 						whereClause: "",
-						addOns: { groupBy: false, having: false, orderBy: false, limit: false, legend: false },
+						addOns: {
+							groupBy: false,
+							having: false,
+							orderBy: false,
+							limit: false,
+							legend: false,
+						},
 						groupBy: [],
 					},
 				],
@@ -52,7 +58,7 @@ const document = Schema.decodeUnknownSync(DashboardDocument)({
 type Step = Readonly<{ model: Model; names: ReadonlyArray<string> }>
 const step = (model: Model, message: Message): Step => {
 	const next = update(model, message, context)
-	return { model: next.model, names: (next.commands ?? []).map(({ name }) => name) }
+	return { model: next.model, names: Arr.map(next.commands ?? [], ({ name }) => name) }
 }
 
 const opened = () =>
@@ -66,10 +72,16 @@ const opened = () =>
 
 describe("widget editor metric reads", () => {
 	test("a failed metric list or key lookup is asked again on the next edit", () => {
-		const failedList = step(opened().model, Message.CompletedFetchMetricOptions({ search: "", result: Result.fail(toLoadFailure("down")) }))
+		const failedList = step(
+			opened().model,
+			Message.CompletedFetchMetricOptions({ search: "", result: Result.fail(toLoadFailure("down")) }),
+		)
 		const failed = step(
 			failedList.model,
-			Message.CompletedFetchMetricKeys({ metric: "process.cpu.utilization::gauge", result: Result.fail(toLoadFailure("down")) }),
+			Message.CompletedFetchMetricKeys({
+				metric: "process.cpu.utilization::gauge",
+				result: Result.fail(toLoadFailure("down")),
+			}),
 		)
 		const edited = step(failed.model, Message.ChangedTitle({ value: "CPU busy" }))
 		expect(edited.names).toEqual(expect.arrayContaining([FetchMetricOptions.name, FetchMetricKeys.name]))

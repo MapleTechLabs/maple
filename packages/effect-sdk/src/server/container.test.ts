@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { deriveContainerAttributes, type ContainerProbe } from "./container.js"
+import { String as Str } from "effect"
 
-const FULL_ID = "a".repeat(64)
-const OTHER_ID = "b".repeat(64)
+const FULL_ID = Str.repeat(64)("a")
+const OTHER_ID = Str.repeat(64)("b")
 
 const probe = (overrides: Partial<ContainerProbe>): ContainerProbe => ({
 	exists: () => false,

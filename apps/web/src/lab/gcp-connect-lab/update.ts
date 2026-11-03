@@ -4,11 +4,12 @@ import { initConfigure } from "../../page/integrations/gcp-configure"
 import type { ConfigureModel } from "../../page/integrations/gcp-configure-schema"
 import { Message as IntegrationsMessage } from "../../page/integrations/message"
 import type { Resources } from "../../platform/resources"
-import * as Dialog from "../../ui/dialog"
-import * as ToggleGroup from "../../ui/toggle-group"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { type GcpLabFlags, hubOf, hubStep } from "../gcp-host"
 import { fixturesAt, LAB_STATES, type LabState, type MethodApplyState } from "./fixture"
 import { Message, type Model } from "./model"
+import { Array as Arr } from "effect"
 
 export type Return = Update.Return<Model, Message, Resources>
 
@@ -145,7 +146,7 @@ const hubMessage = (model: Model, message: IntegrationsMessage): Return => {
 	const commands =
 		pinned === null
 			? next.commands
-			: next.commands.filter((command) => command.name !== "LoadGcpConfigureScripts")
+			: Arr.filter(next.commands, (command) => command.name !== "LoadGcpConfigureScripts")
 	return { model: { ...model, hub }, commands: Command.mapMessages(commands, toHub) }
 }
 

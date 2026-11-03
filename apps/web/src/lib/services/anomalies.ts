@@ -6,7 +6,7 @@ import {
 	IsoDateTimeString,
 } from "@maple/domain/http"
 import type { V2AnomalyIncident, V2AnomalyIncidentTimeseries } from "@maple/domain/http/v2"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 
 /**
  * v2 wire → the domain documents the anomaly components are typed on.
@@ -43,7 +43,8 @@ export const anomalyIncidentFromV2 = (incident: V2AnomalyIncident): AnomalyIncid
 		resolvedAt: asIsoOrNull(incident.resolved_at),
 		resolveReason: incident.resolve_reason,
 		triageStatus: incident.triage_status,
-		fingerprints: incident.fingerprints.map(
+		fingerprints: Arr.map(
+			incident.fingerprints,
 			(fingerprint) =>
 				new AnomalyIncidentFingerprint({
 					fingerprintHash: fingerprint.fingerprint_hash,
@@ -66,7 +67,8 @@ export const anomalyTimeseriesFromV2 = (
 		signalType: timeseries.signal_type,
 		unit: timeseries.unit,
 		bucketSeconds: timeseries.bucket_seconds,
-		buckets: timeseries.buckets.map(
+		buckets: Arr.map(
+			timeseries.buckets,
 			(bucket) =>
 				new AnomalyTimeseriesBucket({
 					bucket: asIso(bucket.bucket),

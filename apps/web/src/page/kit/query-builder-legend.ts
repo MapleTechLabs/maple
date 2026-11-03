@@ -2,9 +2,10 @@ import { isAllZeroStats, type SeriesStats, type SeriesStatsMap } from "@maple/ui
 import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr } from "effect"
 
 // `QueryBuilderLegend` (packages/ui/src/components/charts/_shared/query-builder-legend.tsx), bottom
-// layout, for hosts outside a chart. The chart's own copy lives in `charts/area-chart.ts`.
+// layout, for hosts outside a chart. The chart's own copy lives in `@maple/views/charts/area-chart.ts`.
 
 export type LegendSeries = Readonly<{ key: string; label: string; color: string }>
 
@@ -31,7 +32,7 @@ const swatch = <M>(h: HtmlBuilder<M>, color: string): Html =>
 const compactStrip = <M>(h: HtmlBuilder<M>, options: QueryBuilderLegendOptions<M>): Html =>
 	h.div(
 		[h.Class("h-full overflow-auto text-xs flex flex-wrap gap-x-3 gap-y-0.5 pt-2")],
-		options.series.map((entry) =>
+		Arr.map(options.series, (entry) =>
 			h.button(
 				[
 					h.Key(entry.key),
@@ -52,7 +53,7 @@ const compactStrip = <M>(h: HtmlBuilder<M>, options: QueryBuilderLegendOptions<M
 
 /** No data reads as a dash glyph and four zeros collapse to one muted 0, both in the Last column. */
 const statCells = <M>(h: HtmlBuilder<M>, stats: SeriesStats | null, unit: string | undefined) =>
-	STAT_COLUMNS.map((column) =>
+	Arr.map(STAT_COLUMNS, (column) =>
 		stats === null || isAllZeroStats(stats)
 			? h.td(
 					[
@@ -86,7 +87,7 @@ const statsTable = <M>(h: HtmlBuilder<M>, options: QueryBuilderLegendOptions<M>)
 								[h.Class("text-muted-foreground")],
 								[
 									h.th([h.Class("py-0.5 pr-3 text-left font-normal")], ["Series"]),
-									...STAT_COLUMNS.map((column) =>
+									...Arr.map(STAT_COLUMNS, (column) =>
 										h.th(
 											[
 												h.Class(
@@ -105,7 +106,7 @@ const statsTable = <M>(h: HtmlBuilder<M>, options: QueryBuilderLegendOptions<M>)
 					),
 					h.tbody(
 						[],
-						options.series.map((entry) => {
+						Arr.map(options.series, (entry) => {
 							const stats = options.stats[entry.key] ?? null
 							return h.keyed("tr")(
 								entry.key,

@@ -1,7 +1,7 @@
 import { TONE_BORDER, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { button } from "@maple/web/ui/button"
-import { statusDot } from "@maple/web/ui/status-dot"
+import { button } from "@maple/views/ui/button"
+import { statusDot } from "@maple/views/ui/status-dot"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { ShownData } from "../data/shown"
 import type { TimeFormat } from "../page/kit/local-time"
@@ -44,7 +44,7 @@ export const staleNotice = <M>(h: HtmlBuilder<M>, notice: Notice, onRetry: M): H
 				[
 					h.Class(
 						cn(
-							"stale-notice pointer-events-auto flex max-w-full items-center gap-2 rounded-full border bg-popover py-1 pr-1 pl-3 text-xs text-popover-foreground shadow-sm",
+							"stale-notice pointer-events-auto flex max-w-full items-center gap-2 rounded-full border bg-popover py-1 pr-1 pl-3 text-xs text-popover-foreground shadow-popup",
 							TONE_BORDER[notice.tone],
 							!notice.isRetrying && "pr-3",
 						),

@@ -2,15 +2,15 @@ import { formatClock } from "@maple/ui/lib/replay-format"
 import { hostFromUrl } from "@maple/ui/lib/replay"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { createKeyedLazy, createLazy, type Html, type HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { filterChip } from "../../../ui/filter-chip"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { panel } from "../../../ui/panel"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { spinner } from "../../../ui/spinner"
+import { button } from "@maple/views/ui/button"
+import { filterChip } from "@maple/views/ui/filter-chip"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { panel } from "@maple/views/ui/panel"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { spinner } from "@maple/views/ui/spinner"
 import { docsLink } from "../../kit/signal-empty-state"
 import { stableSlice } from "../../kit/stable-slice"
 import {
@@ -36,7 +36,11 @@ import {
 } from "./loader"
 import { Message } from "./message"
 import type { Model, ReplayDetail } from "./model"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The replay surface and its transport controls.
 // TODO(scrubber-drag): the scrubber seeks on pointer down; drag-to-scrub and the hover time bubble
@@ -44,7 +48,7 @@ import type { LoadFailure } from "../../../data/load-failure"
 
 type H = HtmlBuilder<Message>
 
-const SPEED_OPTIONS = [0.5, 1, 2, 4, 8].map((s) => ({ value: String(s), label: `${s}×` }))
+const SPEED_OPTIONS = Arr.map([0.5, 1, 2, 4, 8], (s) => ({ value: String(s), label: `${s}×` }))
 
 /**
  * The playhead on the recording's own clock: the only part a playback tick moves. Skip-idle jumps the
@@ -73,7 +77,7 @@ const idleBandsView = (h: H, intervals: ReadonlyArray<Interval>, totalMs: number
 		[h.Class("absolute inset-0")],
 		totalMs <= 0
 			? []
-			: intervals.map((interval, i) => {
+			: Arr.map(intervals, (interval, i) => {
 					const [leftPct, widthPct] = spanPct(interval.start, interval.end, totalMs)
 					return h.span(
 						[
@@ -97,7 +101,7 @@ const markersView = (h: H, markers: ReadonlyArray<Marker>, totalMs: number): Htm
 		[h.Class("absolute inset-0")],
 		totalMs <= 0
 			? []
-			: markers.map((marker, i) =>
+			: Arr.map(markers, (marker, i) =>
 					h.span(
 						[
 							h.Key(`${marker.kind}-${marker.ms}-${i}`),
@@ -169,7 +173,11 @@ const playerMessage = (h: H, children: ReadonlyArray<Html | string>, hasSpinner 
 						],
 						[hasSpinner ? spinner(h, "size-5") : icon(h, "EyeIcon", { className: "size-5" })],
 					),
-					h.p([h.Class("text-sm leading-relaxed text-muted-foreground")], children),
+					typography(
+						h,
+						{ size: "sm", tone: "muted", as: "p", className: "leading-relaxed" },
+						children,
+					),
 				],
 			),
 		],
@@ -196,8 +204,9 @@ const playerError = (h: H, failure: LoadFailure): Html => {
 						[h.Class("space-y-1")],
 						[
 							h.p([h.Class("text-sm font-medium text-muted-foreground")], [failure.title]),
-							h.p(
-								[h.Class("text-sm leading-relaxed text-muted-foreground")],
+							typography(
+								h,
+								{ size: "sm", tone: "muted", as: "p", className: "leading-relaxed" },
 								[failure.message],
 							),
 						],
@@ -245,7 +254,11 @@ const statusOverlay = (
 						)
 					: playerMessage(h, [
 							"This session wasn’t recorded. Replay is off or unsampled for this app. Its traces and events are still below.",
-							h.span([h.Class("mt-2 flex justify-center")], [docsLink(h, "sessionReplay")]),
+							hstack(
+								h,
+								{ align: "stretch", justify: "center", as: "span", className: "mt-2" },
+								[docsLink(h, "sessionReplay")],
+							),
 						])
 	return h.div([h.Class("absolute inset-0 bg-surface-sunken")], [body])
 }
@@ -284,7 +297,7 @@ const engineMount = (
 		h.Class("absolute inset-0"),
 		h.DataAttribute(CONTROL_ATTRIBUTE, stage.control),
 		h.DataAttribute(SPEED_ATTRIBUTE, String(stage.speed)),
-		h.DataAttribute(IDLE_ATTRIBUTE, JSON.stringify(stage.isSkippingIdle ? stage.inactiveIntervals : [])),
+		h.DataAttribute(IDLE_ATTRIBUTE, encodeJson(stage.isSkippingIdle ? stage.inactiveIntervals : [])),
 		h.DataAttribute(HOLD_ATTRIBUTE, String(isHolding)),
 		h.DataAttribute(TOTAL_ATTRIBUTE, String(stage.totalMs)),
 		h.DataAttribute(COMPLETE_ATTRIBUTE, stage.complete),
@@ -341,14 +354,11 @@ const urlBar = (h: H, urlInitial: string): Html =>
 	h.div(
 		[h.Class("flex items-center gap-3 border-b border-border bg-surface-sunken px-3.5 py-2.5")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-1.5"), h.AriaHidden(true)],
-				[
-					h.span([h.Class("size-3 rounded-full bg-[#ff5f57]")], []),
-					h.span([h.Class("size-3 rounded-full bg-[#febc2e]")], []),
-					h.span([h.Class("size-3 rounded-full bg-[#28c840]")], []),
-				],
-			),
+			hstack(h, { gap: "1.5", attributes: [h.AriaHidden(true)] }, [
+				h.span([h.Class("size-3 rounded-full bg-window-dot-close")], []),
+				h.span([h.Class("size-3 rounded-full bg-window-dot-minimize")], []),
+				h.span([h.Class("size-3 rounded-full bg-window-dot-zoom")], []),
+			]),
 			h.div(
 				[
 					h.Class(
@@ -357,10 +367,9 @@ const urlBar = (h: H, urlInitial: string): Html =>
 				],
 				[
 					icon(h, "GlobeIcon", { className: "size-3.5 shrink-0" }),
-					h.span(
-						[h.Class("truncate font-mono")],
-						[urlInitial ? hostFromUrl(urlInitial) : "about:blank"],
-					),
+					typography(h, { mono: true, truncate: true }, [
+						urlInitial ? hostFromUrl(urlInitial) : "about:blank",
+					]),
 				],
 			),
 		],
@@ -389,7 +398,7 @@ const stageView = (
 			engineMount(h, stage, session, status, isHolding),
 			...(status === "ready" ? [playOverlay(h, stage)] : []),
 			...(overlay === null ? [] : [overlay]),
-			...trailingRanges(stage).map((range) =>
+			...Arr.map(trailingRanges(stage), (range) =>
 				h.span(
 					[
 						h.Key(`feed-${range.key}`),

@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { DeploymentEnvironment, ServiceName, ServiceOperationsRequest } from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
@@ -57,7 +57,7 @@ export const getServiceOperations = Effect.fn("QueryEngine.getServiceOperations"
 		}),
 	)
 
-	const operations: ServiceOperation[] = result.data.map((row) => ({
+	const operations: ServiceOperation[] = Arr.map(result.data, (row) => ({
 		spanName: row.spanName,
 		spanCount: row.spanCount,
 		estimatedSpanCount: row.estimatedSpanCount,
@@ -67,7 +67,7 @@ export const getServiceOperations = Effect.fn("QueryEngine.getServiceOperations"
 		avgDurationMs: row.avgDurationMs,
 		p50DurationMs: row.p50DurationMs,
 		p95DurationMs: row.p95DurationMs,
-		sparkline: row.sparkline.map((point) => ({ bucket: point.bucket, count: point.count })),
+		sparkline: Arr.map(row.sparkline, (point) => ({ bucket: point.bucket, count: point.count })),
 	}))
 
 	return { operations }

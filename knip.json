@@ -31,7 +31,9 @@
 				"autumn.config.ts",
 				"scripts/cold-path/*.{ts,mjs}",
 				"scripts/bench-suites/*.ts"
-			]
+			],
+			// autumn.config.ts imports atmn, which scripts/atmn.sh runs through bunx.
+			"ignoreDependencies": ["atmn"]
 		},
 		// Single-module Workers: the root alchemy.run.ts imports src/worker.ts, and
 		// alchemy bundles it, so it is the app's one entry.
@@ -60,8 +62,11 @@
 		// generated entry would drop the container-backed class export), and the
 		// alchemy declaration beside it is what the root stack yields.
 		"apps/sandbox": {
-			"entry": ["src/worker.ts", "alchemy.run.ts"],
-			"ignoreDependencies": ["cloudflare"]
+			// The stand-in gateway is started by path inside a container (`verify:executor`).
+			"entry": ["src/worker.ts", "alchemy.run.ts", "scripts/executor-gateway-stand-in.ts"],
+			"ignoreDependencies": ["cloudflare"],
+			// The probe's TLS test makes its certificate with the system openssl, skipping where there is none.
+			"ignoreBinaries": ["openssl"]
 		},
 		// Run by path: the browser e2e suite (`e2e run`, `test:e2e`).
 		"apps/web": {
@@ -69,12 +74,9 @@
 			// input added by `vite.config.ts`.
 			"entry": ["src/worker-entry.ts", "src/boot.ts", "e2e/e2e.config.ts", "e2e/tests/**/*.e2e.ts"]
 		},
-		// local-ui renders apps/web's source modules (ui, charts), so their runtime packages
-		// must resolve from this app too.
 		// `src/worker-entry.ts` is named by string in `src/worker.ts`.
 		"apps/local-ui": {
-			"entry": ["src/worker.ts", "src/worker-entry.ts"],
-			"ignoreDependencies": ["@floating-ui/dom", "@tanstack/charts", "@tanstack/charts-scales"]
+			"entry": ["src/worker.ts", "src/worker-entry.ts"]
 		},
 		"apps/cli": {
 			"entry": [

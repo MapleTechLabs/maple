@@ -9,8 +9,8 @@ import {
 	type SecurityAuditUpdateSettingsRequest,
 } from "@maple/domain/http"
 import type { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { Effect, Schema } from "effect"
-import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleAiClient, MapleInternalApiClient } from "../../../platform/api-clients"
 
 // The `securityAudit` group on the ai Worker as Effects the Security Center's Commands wrap. Every
@@ -84,12 +84,14 @@ export const toCreateFailure = (error: unknown): LoadFailure => {
 		const line = error.details[0] ?? error.message
 		const param = error.param
 		const message =
-			param !== undefined && line.startsWith(`${param}: `) ? line.slice(param.length + 2) : line
+			param !== undefined && Str.startsWith(`${param}: `)(line)
+				? Str.slice(param.length + 2)(line)
+				: line
 		return refused(message, param)
 	}
 	if (Schema.isSchemaError(error)) {
-		const [first = "", ...rest] = error.message.split("\n")
-		const at = /\["(\w+)"\]/u.exec(rest.join("\n"))?.[1]
+		const [first, ...rest] = Str.split("\n")(error.message)
+		const at = /\["(\w+)"\]/u.exec(Arr.join(rest, "\n"))?.[1]
 		return refused(first, at)
 	}
 	return toLoadFailure(error)

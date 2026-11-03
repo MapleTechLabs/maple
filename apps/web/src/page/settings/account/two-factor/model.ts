@@ -1,8 +1,8 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as CopyButton from "../../../../ui/copy-button"
-import * as Dialog from "../../../../ui/dialog"
-import * as OtpField from "../../../../ui/otp-field"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as OtpField from "@maple/views/ui/otp-field"
 import { AccountUser } from "../user"
 
 // The Two-factor tab.

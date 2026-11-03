@@ -9,6 +9,7 @@ import { join } from "node:path"
 import { ArchiveProbe, readRows } from "../archive-probe-helpers"
 import { archiveSignal } from "@maple/local-server/archives/signals"
 import { exportSignalShards } from "@maple/local-server/archives/export"
+import { Array as Arr } from "effect"
 
 const SCHEMA = `
 CREATE DATABASE IF NOT EXISTS default;
@@ -30,14 +31,15 @@ try {
 		`INSERT INTO traces SELECT 'org1', toDateTime64('2026-06-29 12:00:00', 9, 'UTC'), 't'||toString(number), 's'||toString(number) FROM numbers(4)`,
 	)
 
-	const sourceSet = readRows(
-		db.query(
-			`SELECT TraceId FROM traces WHERE toHour(Timestamp,'UTC')=12 ORDER BY TraceId`,
-			"JSONEachRow",
+	const sourceSet = Arr.map(
+		readRows(
+			db.query(
+				`SELECT TraceId FROM traces WHERE toHour(Timestamp,'UTC')=12 ORDER BY TraceId`,
+				"JSONEachRow",
+			),
 		),
-	)
-		.map((r) => String(r.TraceId))
-		.sort()
+		(r) => String(r.TraceId),
+	).sort()
 
 	const written = exportSignalShards(db, archiveSignal("traces"), "2026-06-29", shardsDir, {
 		writerThreads: 1,
@@ -51,10 +53,11 @@ try {
 			archived.push(String(r.TraceId))
 	}
 	archived.sort()
-	if (archived.join(",") !== sourceSet.join(",")) h.fail(`source [${sourceSet}] != archived [${archived}]`)
+	if (Arr.join(archived, ",") !== Arr.join(sourceSet, ","))
+		h.fail(`source [${Arr.join(sourceSet, ",")}] != archived [${Arr.join(archived, ",")}]`)
 	if (archived.length !== 8) h.fail(`expected 8 rows got ${archived.length}`)
-	if (new Set(archived).size !== 8) h.fail(`duplicates among ${archived}`)
-	h.ok(`multi-part hour archived exact set [${archived}] (${written.length} shards)`)
+	if (new Set(archived).size !== 8) h.fail(`duplicates among ${Arr.join(archived, ",")}`)
+	h.ok(`multi-part hour archived exact set [${Arr.join(archived, ",")}] (${written.length} shards)`)
 } catch (e) {
 	h.fail(e instanceof Error ? e.message : String(e))
 }

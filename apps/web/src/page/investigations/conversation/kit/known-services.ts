@@ -1,5 +1,5 @@
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
-import { Clock, Effect } from "effect"
+import { Clock, Effect, Array as Arr } from "effect"
 import { loadServicesFacets } from "../../../../data/services-facets-probe"
 
 /**
@@ -13,5 +13,8 @@ export const loadKnownServices = Effect.gen(function* () {
 		endTime: formatWarehouseDateTime(end),
 	})
 	const response = yield* loadServicesFacets(range)
-	return response.data.services.map((service) => service.name).filter((name) => name !== "")
+	return Arr.filter(
+		Arr.map(response.data.services, (service) => service.name),
+		(name) => name !== "",
+	)
 }).pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []))

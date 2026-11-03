@@ -1,17 +1,18 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { type BubbleVariant, bubble, bubbleContent, bubbleGroup } from "../../ui/bubble"
-import type { CopyStatus } from "../../ui/copy-button"
-import { message, messageAvatar, messageContent, messageGroup, messageHeader } from "../../ui/message"
-import { middleTruncate } from "../../ui/middle-truncate"
-import { settingRow } from "../../ui/setting-row"
-import { icon } from "../../ui/icon"
-import { trace, traceDescription, traceIcon, traceLine, traceTitle } from "../../ui/trace"
-import { truncatedId } from "../../ui/truncated-id"
-import { truncatedText } from "../../ui/truncated-text"
-import { avatarFallback } from "../../ui/display"
-import { scrollArea } from "../../ui/scroll-area"
-import { switchControl } from "../../ui/switch"
+import { type BubbleVariant, bubble, bubbleContent, bubbleGroup } from "@maple/views/ui/bubble"
+import type { CopyStatus } from "@maple/views/ui/copy-button"
+import { message, messageAvatar, messageContent, messageGroup, messageHeader } from "@maple/views/ui/message"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
+import { settingRow } from "@maple/views/ui/setting-row"
+import { icon } from "@maple/views/ui/icon"
+import { trace, traceDescription, traceIcon, traceLine, traceTitle } from "@maple/views/ui/trace"
+import { truncatedId } from "@maple/views/ui/truncated-id"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { avatarFallback } from "@maple/views/ui/display"
+import { scrollArea } from "@maple/views/ui/scroll-area"
+import { switchControl } from "@maple/views/ui/switch"
 import { kitRow, kitSection } from "./kit-layout"
+import { Array as Arr, String as Str } from "effect"
 
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 const LONG_URL =
@@ -27,7 +28,7 @@ const BUBBLE_VARIANTS: ReadonlyArray<BubbleVariant> = [
 ]
 const SCROLL_ROWS = Array.from(
 	{ length: 12 },
-	(_, index) => `span-${String(index + 1).padStart(2, "0")} GET /api/cart`,
+	(_, index) => `span-${Str.padStart(2, "0")(String(index + 1))} GET /api/cart`,
 )
 
 /** The chat transcript's user bubble shape (page/investigations/conversation/kit/view-transcript.ts). */
@@ -65,7 +66,7 @@ export const conversationSection = <M>(h: HtmlBuilder<M>): Html =>
 		kitRow(
 			h,
 			undefined,
-			BUBBLE_VARIANTS.map((variant) =>
+			Arr.map(BUBBLE_VARIANTS, (variant) =>
 				bubble(h, { variant }, [bubbleContent(h, [variant], "rounded-lg")]),
 			),
 		),
@@ -177,7 +178,7 @@ export const scrollAreaSection = <M>(h: HtmlBuilder<M>): Html =>
 			[
 				h.div(
 					[h.Class("flex flex-col p-2 font-mono text-xs")],
-					SCROLL_ROWS.map((row) => h.span([h.Class("py-1")], [row])),
+					Arr.map(SCROLL_ROWS, (row) => h.span([h.Class("py-1")], [row])),
 				),
 			],
 		),

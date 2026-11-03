@@ -3,19 +3,23 @@ import { SEVERITY_TONE } from "@maple/web-data/anomalies/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { linkButton } from "../../../ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
-import { excludedEmptyHint } from "../../../ui/filters/excluded-empty-hint"
-import { icon } from "../../../ui/icon"
-import { listFooter } from "../../../ui/list-footer"
-import { statusDot } from "../../../ui/status-dot"
-import { serviceDot } from "../../../ui/values"
-import { docsLink, emptyActions, filteredEmpty, presenceLoading } from "../../kit/signal-empty-state"
-import { presenceOf } from "../../kit/signal-presence"
+import { linkButton } from "@maple/views/ui/button"
+import { empty, emptyContent, emptyDescription, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
+import { excludedEmptyHint } from "@maple/views/ui/filters/excluded-empty-hint"
+import { icon } from "@maple/views/ui/icon"
+import { listFooter } from "@maple/views/ui/list-footer"
+import { pressable } from "@maple/views/ui/pressable"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { serviceDot } from "@maple/views/ui/values"
+import { docsLink, signalEmptyState } from "../../kit/signal-empty-state"
+import { emptyActions, filteredEmpty, presenceLoading } from "@maple/views/ui/signal-empty-state"
+import { presenceOf } from "@maple/views/data/signal-presence"
 import { anomalyRow } from "../kit/row"
 import { clusterByService, GROUP_LABEL, groupIncidents } from "./derive"
 import { Message } from "./message"
 import type { GroupKey, Model, StatusTab } from "./model"
+import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // `AnomaliesPageBody` and `AnomalyGroup`: the anomalies, grouped.
 
@@ -32,20 +36,17 @@ const group = (
 	return h.section(
 		[h.Key(key)],
 		[
-			h.button(
-				[
-					h.Type("button"),
-					h.OnClick(Message.ToggledGroup({ group: key })),
-					h.AriaExpanded(isOpen),
-					h.AriaControls(`anomaly-group-${key}`),
-					h.Class(
-						cn(
-							"sticky top-0 z-10 flex h-8 w-full items-center gap-2 border-b border-border-subtle bg-surface-sunken pr-2 pl-2 text-left outline-none",
-							"backdrop-blur supports-[backdrop-filter]:bg-surface-strong",
-							"hover:bg-surface-strong active:bg-surface-strong",
-						),
+			pressable(
+				h,
+				{
+					onClick: Message.ToggledGroup({ group: key }),
+					className: cn(
+						"sticky top-0 z-10 flex h-8 w-full items-center gap-2 border-b border-border-subtle bg-surface-sunken pr-2 pl-2 text-left outline-none",
+						"backdrop-blur supports-[backdrop-filter]:bg-surface-strong",
+						"hover:bg-surface-strong active:bg-surface-strong",
 					),
-				],
+					attributes: [h.AriaExpanded(isOpen), h.AriaControls(`anomaly-group-${key}`)],
+				},
 				[
 					h.span(
 						[h.Class("flex size-4 shrink-0 items-center justify-center text-muted-foreground")],
@@ -53,14 +54,18 @@ const group = (
 					),
 					statusDot(h, { tone: SEVERITY_TONE[key].tone, size: "lg" }),
 					h.span([h.Class("shrink-0 text-sm font-medium text-foreground")], [GROUP_LABEL[key]]),
-					h.span([h.Class("text-xs text-muted-foreground tabular-nums")], [String(incidents.length)]),
+					typography(h, { size: "xs", tone: "muted", numeric: true }, [String(incidents.length)]),
 				],
 			),
 			...(isOpen
 				? [
 						h.div(
-							[h.Id(`anomaly-group-${key}`), h.Role("list"), h.Class("divide-y divide-border-subtle")],
-							clusterByService(incidents).map((cluster) =>
+							[
+								h.Id(`anomaly-group-${key}`),
+								h.Role("list"),
+								h.Class("divide-y divide-border-subtle"),
+							],
+							Arr.map(clusterByService(incidents), (cluster) =>
 								h.div(
 									[h.Key(cluster.key + (cluster.incidents[0]?.id ?? ""))],
 									[
@@ -73,17 +78,31 @@ const group = (
 															),
 														],
 														[
-															serviceDot(h, { serviceName: cluster.serviceName, size: "sm" }),
-															h.span([h.Class("font-medium text-foreground-soft")], [cluster.serviceName]),
-															...(cluster.deploymentEnv ? [h.span([], [cluster.deploymentEnv])] : []),
-															h.span([h.Class("tabular-nums")], [String(cluster.incidents.length), " anomalies"]),
+															serviceDot(h, {
+																serviceName: cluster.serviceName,
+																size: "sm",
+															}),
+															h.span(
+																[h.Class("font-medium text-foreground-soft")],
+																[cluster.serviceName],
+															),
+															...(cluster.deploymentEnv
+																? [h.span([], [cluster.deploymentEnv])]
+																: []),
+															h.span(
+																[h.Class("tabular-nums")],
+																[
+																	String(cluster.incidents.length),
+																	" anomalies",
+																],
+															),
 														],
 													),
 												]
 											: []),
 										h.div(
 											[h.Class("divide-y divide-border-subtle")],
-											cluster.incidents.map((incident) =>
+											Arr.map(cluster.incidents, (incident) =>
 												h.div(
 													[h.Key(incident.id), h.Role("listitem")],
 													[
@@ -114,44 +133,46 @@ const PURPOSE =
 const quietEmpty = (h: H, model: Model, status: StatusTab, excludedHint: Html | null): Html => {
 	const presence = presenceOf(model.presence, "traces")
 	if (presence.status === "loading") return h.div([h.Class("p-4")], [presenceLoading(h)])
+	if (presence.status === "absent")
+		return h.div(
+			[h.Class("p-4")],
+			[
+				signalEmptyState(h, {
+					signal: "traces",
+					presence,
+					nowMs: model.nowMs,
+					noun: "anomalies",
+					purpose: PURPOSE,
+					detail: excludedHint,
+				}),
+			],
+		)
 	return h.div(
 		[h.Class("p-4")],
 		[
 			empty(h, [
 				emptyHeader(h, [
 					emptyTitle(h, [status === "open" ? "No open anomalies" : "No anomalies"]),
-					emptyDescription(h, [
-						PURPOSE,
-						...(presence.status === "absent"
-							? [" Anomaly detection learns a baseline from your traces and logs. Send telemetry to start."]
-							: []),
-					]),
+					emptyDescription(h, [PURPOSE]),
 				]),
-				...(presence.status === "absent"
+				...(presence.status === "present"
 					? [
 							emptyContent(h, [
 								emptyActions(h, [
 									linkButton(
 										h,
-										{ size: "sm", className: "gap-2", href: hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } })) },
-										[icon(h, "ConnectionIcon"), "Set up tracing"],
+										{
+											variant: "outline",
+											size: "sm",
+											href: hrefOf(AppRoute.AlertsCreate({ search: {} })),
+										},
+										["Create an alert rule"],
 									),
-									docsLink(h, "instrumentation", "Setup guide"),
+									docsLink(h, "alertRules", "Alert rules"),
 								]),
 							]),
 						]
-					: presence.status === "present"
-						? [
-								emptyContent(h, [
-									emptyActions(h, [
-										linkButton(h, { variant: "outline", size: "sm", href: hrefOf(AppRoute.AlertsCreate({ search: {} })) }, [
-											"Create an alert rule",
-										]),
-										docsLink(h, "alertRules", "Alert rules"),
-									]),
-								]),
-							]
-						: []),
+					: []),
 				...(excludedHint === null ? [] : [excludedHint]),
 			]),
 		],
@@ -197,7 +218,9 @@ export const listBody = (h: H, model: Model, input: BodyInput): Html => {
 	return h.div(
 		[],
 		[
-			...groupIncidents(input.incidents).map(([key, incidents]) => group(h, model, key, incidents, input.timeZone)),
+			...Arr.map(groupIncidents(input.incidents), ([key, incidents]) =>
+				group(h, model, key, incidents, input.timeZone),
+			),
 			...(footer === null ? [] : [footer]),
 		],
 	)

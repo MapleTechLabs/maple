@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2AnomalyIncident } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 import {
 	click,
 	expect as expectView,
@@ -13,9 +13,9 @@ import {
 	text,
 	withViewInputs,
 } from "foldkit/scene"
-import { MeasureTabIndicator, Message as TabsMessage } from "../../../ui/tabs"
+import { MeasureTabIndicator, Message as TabsMessage } from "@maple/views/ui/tabs"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { allIncidentsOf } from "./derive"
@@ -24,10 +24,15 @@ import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
-const context: PageContext = { orgId: Schema.decodeSync(OrgId)("org_parity"), pinnedNamespace: null, timeZone: "UTC" }
+const context: PageContext = {
+	orgId: Schema.decodeSync(OrgId)("org_parity"),
+	pinnedNamespace: null,
+	timeZone: "UTC",
+}
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	Arr.map(commands ?? [], ({ name }) => name)
 const NOW = Date.UTC(2026, 9, 1, 12)
 const measured = () =>
 	Mount.resolve(
@@ -75,10 +80,17 @@ const incident = (index: number, severity: "critical" | "warning", resolved = fa
 
 const loaded = (rows: ReadonlyArray<V2AnomalyIncident>, search = {}) => {
 	const entered = init({ search }, context).model
-	return [
-		Message.ReadClock({ nowMs: NOW }),
-		Message.CompletedFetchFirstPage({ key: entered.firstPage.key ?? "", result: Result.succeed({ data: rows, nextCursor: null }) }),
-	].reduce((model, message) => pageUpdate(model, message).model, entered)
+	return Arr.reduce(
+		[
+			Message.ReadClock({ nowMs: NOW }),
+			Message.CompletedFetchFirstPage({
+				key: entered.firstPage.key ?? "",
+				result: Result.succeed({ data: rows, nextCursor: null }),
+			}),
+		],
+		entered,
+		(model, message) => pageUpdate(model, message).model,
+	)
 }
 
 describe("anomalies list", () => {
@@ -95,12 +107,28 @@ describe("anomalies list", () => {
 
 	test("a stale answer is dropped; a failure renders the error state", () => {
 		const entered = init({ search: {} }, context).model
-		expect(pageUpdate(entered, Message.CompletedFetchFirstPage({ key: "other", result: Result.succeed({ data: [], nextCursor: null }) })).model.firstPage).toEqual(entered.firstPage)
+		expect(
+			pageUpdate(
+				entered,
+				Message.CompletedFetchFirstPage({
+					key: "other",
+					result: Result.succeed({ data: [], nextCursor: null }),
+				}),
+			).model.firstPage,
+		).toEqual(entered.firstPage)
 		const failed = pageUpdate(
 			entered,
-			Message.CompletedFetchFirstPage({ key: entered.firstPage.key ?? "", result: Result.fail(toLoadFailure(new Error("down"))) }),
+			Message.CompletedFetchFirstPage({
+				key: entered.firstPage.key ?? "",
+				result: Result.fail(toLoadFailure(new Error("down"))),
+			}),
 		).model
-		scene({ update: pageUpdate, view }, given(failed), measured(), expectView(text("Couldn't load anomalies")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			measured(),
+			expectView(text("Couldn't load anomalies")).toExist(),
+		)
 	})
 
 	test("j and k walk the rows in group order, Enter opens the focused one, Escape clears it", () => {
@@ -110,7 +138,9 @@ describe("anomalies list", () => {
 		expect(names(first.commands)).toEqual(["ScrollAnomalyIncidentIntoView"])
 		const second = pageUpdate(first.model, Message.PressedListKey({ key: "Next" })).model
 		expect(second.focusedId).not.toBe(first.model.focusedId)
-		expect(pageUpdate(second, Message.PressedListKey({ key: "Previous" })).model.focusedId).toBe(first.model.focusedId)
+		expect(pageUpdate(second, Message.PressedListKey({ key: "Previous" })).model.focusedId).toBe(
+			first.model.focusedId,
+		)
 		const opened = pageUpdate(second, Message.PressedListKey({ key: "Open" }))
 		expect(opened.outMessage?._tag).toBe("RequestedNavigation")
 		expect(pageUpdate(second, Message.PressedListKey({ key: "Escape" })).model.focusedId).toBeNull()
@@ -134,7 +164,9 @@ describe("anomalies list", () => {
 			given(model),
 			measured(),
 			click(role("button", { name: "Live" })),
-			expectOutMessage(PageOutMessage.RequestedNavigation({ url: "/anomalies?live=false", isReplace: false })),
+			expectOutMessage(
+				PageOutMessage.RequestedNavigation({ url: "/anomalies?live=false", isReplace: false }),
+			),
 		)
 		const switched = routeChanged(model, { search: { status: "all" } }, context)
 		expect(names(switched.commands)).toEqual(["FetchAnomalyIncidents"])
@@ -153,7 +185,7 @@ describe("anomalies list", () => {
 			{ update: pageUpdate, view },
 			given(withPresence(loaded([]), "absent")),
 			measured(),
-			expectView(text("No open anomalies")).toExist(),
+			expectView(text("No anomalies yet")).toExist(),
 			expectView(role("link", { name: "Set up tracing" })).toExist(),
 		)
 		scene(
@@ -194,7 +226,7 @@ describe("anomalies list", () => {
 				result: Result.succeed({ data: [incident(2, "critical")], nextCursor: null }),
 			}),
 		).model
-		expect(allIncidentsOf(mixed).map((row) => row.id.slice(-1))).toEqual(["1"])
+		expect(Arr.map(allIncidentsOf(mixed), (row) => Str.slice(-1)(row.id))).toEqual(["1"])
 		const landed = pageUpdate(
 			mixed,
 			Message.CompletedFetchFirstPage({
@@ -202,21 +234,38 @@ describe("anomalies list", () => {
 				result: Result.succeed({ data: [incident(3, "critical")], nextCursor: "a1" }),
 			}),
 		).model
-		expect(names(pageUpdate(landed, Message.ClickedLoadMore()).commands)).toEqual(["LoadMoreAnomalyIncidents"])
+		expect(names(pageUpdate(landed, Message.ClickedLoadMore()).commands)).toEqual([
+			"LoadMoreAnomalyIncidents",
+		])
 	})
 
 	test("a load-more answer for a cursor a live tick discarded is dropped", () => {
 		const entered = init({ search: {} }, context).model
 		const first = (rows: ReadonlyArray<V2AnomalyIncident>) =>
-			Message.CompletedFetchFirstPage({ key: entered.firstPage.key ?? "", result: Result.succeed({ data: rows, nextCursor: "c1" }) })
-		const model = [
-			first([incident(1, "critical")]),
-			Message.CompletedLoadMore({ status: "open", cursor: "c1", result: Result.succeed({ data: [incident(2, "critical")], nextCursor: "c2" }) }),
-			Message.TickedLiveRefresh({ nowMs: NOW }),
-			first([incident(1, "critical")]),
-			Message.CompletedLoadMore({ status: "open", cursor: "c2", result: Result.succeed({ data: [incident(3, "critical")], nextCursor: null }) }),
-		].reduce((next, message) => pageUpdate(next, message).model, entered)
-		expect(allIncidentsOf(model).map((row) => row.id.slice(-1))).toEqual(["1"])
+			Message.CompletedFetchFirstPage({
+				key: entered.firstPage.key ?? "",
+				result: Result.succeed({ data: rows, nextCursor: "c1" }),
+			})
+		const model = Arr.reduce(
+			[
+				first([incident(1, "critical")]),
+				Message.CompletedLoadMore({
+					status: "open",
+					cursor: "c1",
+					result: Result.succeed({ data: [incident(2, "critical")], nextCursor: "c2" }),
+				}),
+				Message.TickedLiveRefresh({ nowMs: NOW }),
+				first([incident(1, "critical")]),
+				Message.CompletedLoadMore({
+					status: "open",
+					cursor: "c2",
+					result: Result.succeed({ data: [incident(3, "critical")], nextCursor: null }),
+				}),
+			],
+			entered,
+			(next, message) => pageUpdate(next, message).model,
+		)
+		expect(Arr.map(allIncidentsOf(model), (row) => Str.slice(-1)(row.id))).toEqual(["1"])
 		expect(model.isLoadingMore).toBe(false)
 	})
 })

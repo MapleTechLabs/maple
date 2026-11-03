@@ -12,6 +12,7 @@ import {
 	windowCount,
 } from "./history"
 import { PAGE_SCRIPT_LOGIC } from "./script"
+import { Array as Arr } from "effect"
 
 interface ScriptLogic {
 	readonly shift: (day: string, offset: number) => string
@@ -71,7 +72,7 @@ describe("page script logic", () => {
 		const october = monthCells(2026, 10)
 		expect(october.slice(0, 4)).toEqual([0, 0, 0, 1])
 		expect(october).toHaveLength(35)
-		expect(october.filter((date) => date > 0)).toHaveLength(31)
+		expect(Arr.filter(october, (date) => date > 0)).toHaveLength(31)
 		// February 2021 starts on a Monday and fills exactly four weeks.
 		expect(monthCells(2021, 2)).toHaveLength(28)
 		for (const [year, month] of [

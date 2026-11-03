@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec } from "effect"
 import * as Effect from "effect/Effect"
 import { deepEqual, isResolved } from "alchemy/Diff"
 import * as Provider from "alchemy/Provider"
@@ -91,7 +91,7 @@ const drifted = (props: DashboardProps, observed: Schema.Schema.Type<typeof Wire
 		...(observed as Record<string, unknown>),
 		sections: observed.sections ?? [],
 	} satisfies Record<string, unknown>
-	return Object.keys(body).some((key) => !deepEqual(body[key], seen[key], { stripNullish: true }))
+	return Arr.some(Rec.keys(body), (key) => !deepEqual(body[key], seen[key], { stripNullish: true }))
 }
 
 const toAttributes = (
@@ -102,8 +102,8 @@ const toAttributes = (
 	return {
 		dashboardId: observed.id,
 		name: observed.name,
-		configuration: Object.fromEntries(
-			Object.keys(desiredBody(props)).map((key) => [key, seen[key as keyof typeof seen]]),
+		configuration: Rec.fromEntries(
+			Arr.map(Object.keys(desiredBody(props)), (key) => [key, seen[key as keyof typeof seen]]),
 		),
 	}
 }
@@ -144,9 +144,7 @@ export const DashboardProvider = () =>
 							.get(`/v2/dashboards/${encodeURIComponent(dashboardId)}`)
 							.pipe(
 								Effect.catchTag(MapleErrorTags.dashboardNotFound, (error) =>
-									news.dashboardId !== undefined
-										? Effect.fail(error)
-										: Effect.succeed(undefined),
+									news.dashboardId !== undefined ? Effect.fail(error) : Effect.undefined,
 								),
 							)
 						if (fetched !== undefined) observed = yield* decodeWireDashboard(fetched)
@@ -174,13 +172,12 @@ export const DashboardProvider = () =>
 						.get(`/v2/dashboards/${encodeURIComponent(dashboardId)}`)
 						.pipe(
 							Effect.catchTag(MapleErrorTags.dashboardNotFound, (error) =>
-								olds.dashboardId !== undefined
-									? Effect.fail(error)
-									: Effect.succeed(undefined),
+								olds.dashboardId !== undefined ? Effect.fail(error) : Effect.undefined,
 							),
 						)
 					if (fetched === undefined) return undefined
-					return toAttributes(yield* decodeWireDashboard(fetched), olds)
+					const decoded = yield* decodeWireDashboard(fetched)
+					return toAttributes(decoded, olds)
 				}),
 				list: Effect.fn(function* () {
 					const items = yield* listAll(api, "/v2/dashboards")

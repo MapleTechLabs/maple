@@ -2,8 +2,8 @@ import type { IssueKind } from "@maple/domain/http"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import { filterSection, singleCheckboxFilter } from "../../../ui/filters/filter-section"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import { filterSection, singleCheckboxFilter } from "@maple/views/ui/filters/filter-section"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
@@ -11,20 +11,29 @@ import {
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
-} from "../../../ui/filters/filter-sidebar"
+} from "@maple/views/ui/filters/filter-sidebar"
 import { SOURCE_COLOR, SOURCE_DESCRIPTION, SOURCES } from "../kit/source"
-import { Option } from "effect"
-import { failureKind } from "../../../ui/error-state"
+import { Option, Array as Arr } from "effect"
+import { failureKind } from "@maple/views/ui/error-state"
 import { hasErrorFilters, KIND_LABEL, listFailureOf } from "./derive"
 import { MountFilterRail } from "./command"
 import { type FilterParam, Message } from "./message"
 import type { Model } from "./model"
 
+/** `SourceLegend`: what opened the issue, one line per source. */
+const SOURCE_LEGEND = Arr.join(
+	[
+		"What opened the issue.",
+		...Arr.map(SOURCES, (source) => `${KIND_LABEL[source]}: ${SOURCE_DESCRIPTION[source]}`),
+	],
+	"\n",
+)
+
 type H = HtmlBuilder<Message>
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
-const isIssueKind = (value: string): value is IssueKind => SOURCES.some((kind) => kind === value)
+const isIssueKind = (value: string): value is IssueKind => Arr.some(SOURCES, (kind) => kind === value)
 
 const section = (
 	h: H,
@@ -62,16 +71,22 @@ const railContent = (h: H, model: Model): Html => {
 		(listFailure !== undefined && failureKind(listFailure) !== "fixable" ? listFailure : undefined)
 	if (railFailure !== undefined)
 		return filterSidebarError(h, railFailure, Message.ClickedReload(), listFailure)
-	const services = AsyncData.getOrElse(counts, () => []).map((row) => ({
-		name: row.service_name,
-		count: row.open_count,
-	}))
+	const services = Arr.map(
+		AsyncData.getOrElse(counts, () => []),
+		(row) => ({
+			name: row.service_name,
+			count: row.open_count,
+		}),
+	)
 	if (AsyncData.hasData(counts) && services.length === 0 && !hasErrorFilters(search))
 		return filterSidebarEmpty(h)
-	const environments = AsyncData.getOrElse(model.environments.data, () => []).map((name) => ({
-		name,
-		count: 0,
-	}))
+	const environments = Arr.map(
+		AsyncData.getOrElse(model.environments.data, () => []),
+		(name) => ({
+			name,
+			count: 0,
+		}),
+	)
 	const hasFilters = hasErrorFilters(search)
 	return filterSidebarFrame(h, { isWaiting: false }, [
 		filterSidebarHeader(h, hasFilters ? { onClear: Message.ClickedClearFilters() } : {}),
@@ -87,7 +102,9 @@ const railContent = (h: H, model: Model): Html => {
 				section(h, model, "Service", "service", services, search.service, {
 					// The map covers the facet's services only: a selected unknown one has no swatch.
 					colorOf: (name) =>
-						services.some((option) => option.name === name) ? getServiceColor(name) : undefined,
+						Arr.some(services, (option) => option.name === name)
+							? getServiceColor(name)
+							: undefined,
 				}),
 				section(h, model, "Environment", "env", environments, search.env, { showCounts: false }),
 				section(
@@ -95,10 +112,10 @@ const railContent = (h: H, model: Model): Html => {
 					model,
 					"Source",
 					"kind",
-					SOURCES.map((name) => ({ name, count: 0 })),
+					Arr.map(SOURCES, (name) => ({ name, count: 0 })),
 					search.kind,
 					{
-						hasDescription: true,
+						description: SOURCE_LEGEND,
 						colorOf: (name) => (isIssueKind(name) ? SOURCE_COLOR[name] : undefined),
 						getOptionDescription: (name) =>
 							isIssueKind(name) ? SOURCE_DESCRIPTION[name] : undefined,
@@ -112,4 +129,4 @@ const railContent = (h: H, model: Model): Html => {
 }
 
 const present = (nodes: ReadonlyArray<Html | null>): ReadonlyArray<Html> =>
-	nodes.filter((node): node is Html => node !== null)
+	Arr.filter(nodes, (node): node is Html => node !== null)

@@ -13,16 +13,19 @@ import {
 } from "@maple/web-data/anomalies/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button } from "../../../ui/button"
-import { detailRailGroup, detailRailRow } from "../../../ui/detail-rail"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { statusDot } from "../../../ui/status-dot"
-import { truncatedId } from "../../../ui/truncated-id"
-import { serviceDot } from "../../../ui/values"
+import { button } from "@maple/views/ui/button"
+import { detailRailGroup, detailRailRow } from "@maple/views/ui/detail-rail"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { truncatedId } from "@maple/views/ui/truncated-id"
+import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { shortIssueId } from "../kit/row"
 import { Message } from "./message"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `AnomalySidebar`: the anomaly detail's side rail.
 
@@ -39,7 +42,7 @@ const row = (h: H, label: string, children: ReadonlyArray<Html | string>, title?
 	detailRailRow(h, { label, title }, children)
 
 const mono = (h: H, value: string, className: string): Html =>
-	h.span([h.Class(cn("font-mono text-sm tabular-nums", className))], [value])
+	h.span([h.Class(cn(typographyClass({ size: "sm", mono: true, numeric: true }), className))], [value])
 
 export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 	const { incident } = input
@@ -113,11 +116,18 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 					),
 				]),
 				row(h, "Signal", [
-					h.span([h.Class("text-sm text-foreground")], [SIGNAL_LABEL[incident.signalType]]),
+					typography(h, { size: "sm", tone: "foreground" }, [SIGNAL_LABEL[incident.signalType]]),
 				]),
 				row(h, "Severity", [
 					h.span(
-						[h.Class(cn("text-sm font-medium", live ? tone.text : "text-muted-foreground"))],
+						[
+							h.Class(
+								cn(
+									typographyClass({ size: "sm", weight: "medium" }),
+									live ? tone.text : "text-muted-foreground",
+								),
+							),
+						],
 						[incident.severity],
 					),
 				]),
@@ -125,18 +135,19 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 					h,
 					"Service",
 					[
-						h.span(
-							[h.Class("flex min-w-0 items-center gap-2")],
-							[
-								serviceDot(h, { serviceName: incident.serviceName, size: "sm" }),
-								h.span([h.Class("truncate text-sm text-foreground")], [incident.serviceName]),
-							],
-						),
+						hstack(h, { gap: "2", shrink: true, as: "span" }, [
+							serviceDot(h, { serviceName: incident.serviceName, size: "sm" }),
+							typography(h, { size: "sm", tone: "foreground", truncate: true }, [
+								incident.serviceName,
+							]),
+						]),
 					],
 					incident.serviceName,
 				),
 				row(h, "Environment", [
-					h.span([h.Class("text-sm text-foreground")], [incident.deploymentEnv || EMPTY_VALUE]),
+					typography(h, { size: "sm", tone: "foreground" }, [
+						incident.deploymentEnv || EMPTY_VALUE,
+					]),
 				]),
 				row(
 					h,
@@ -184,7 +195,7 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 						detailRailGroup(
 							h,
 							`Grouped errors · ${incident.fingerprints.length}`,
-							incident.fingerprints.map((fingerprint) =>
+							Arr.map(incident.fingerprints, (fingerprint) =>
 								h.div(
 									[
 										h.Key(fingerprint.fingerprintHash),
@@ -194,35 +205,45 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 										h.Title(fingerprint.fingerprintHash),
 									],
 									[
-										h.span(
-											[h.Class("flex min-w-0 items-center gap-1.5")],
-											[
-												statusDot(h, {
-													tone:
-														fingerprint.resolvedAt !== null
-															? "neutral"
-															: fingerprint.severity === "critical"
-																? "crit"
-																: "warn",
-												}),
-												fingerprint.errorIssueId !== null
-													? h.a(
-															[
-																h.Href(hrefOf(AppRoute.ErrorIssue({ issueId: fingerprint.errorIssueId, search: {} }))),
-																h.Class("truncate font-mono text-xs text-muted-foreground hover:text-foreground active:text-foreground"),
-															],
-															[shortIssueId(fingerprint.errorIssueId)],
-														)
-													: truncatedId(h, {
-															value: fingerprint.fingerprintHash,
-															length: 10,
-															className:
-																"truncate text-xs text-muted-foreground",
+										hstack(h, { gap: "1.5", shrink: true, as: "span" }, [
+											statusDot(h, {
+												tone:
+													fingerprint.resolvedAt !== null
+														? "neutral"
+														: fingerprint.severity === "critical"
+															? "crit"
+															: "warn",
+											}),
+											fingerprint.errorIssueId !== null
+												? h.a(
+														[
+															h.Href(
+																hrefOf(
+																	AppRoute.ErrorIssue({
+																		issueId: fingerprint.errorIssueId,
+																		search: {},
+																	}),
+																),
+															),
+															h.Class(
+																"truncate font-mono text-xs text-muted-foreground hover:text-foreground active:text-foreground",
+															),
+														],
+														[shortIssueId(fingerprint.errorIssueId)],
+													)
+												: truncatedId(h, {
+														value: fingerprint.fingerprintHash,
+														length: 10,
+														className: typographyClass({
+															size: "xs",
+															tone: "muted",
+															truncate: true,
 														}),
-											],
-										),
-										h.span(
-											[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
+													}),
+										]),
+										typography(
+											h,
+											{ size: "xs", tone: "muted", mono: true, numeric: true },
 											[
 												fingerprint.resolvedAt !== null
 													? "resolved"
@@ -278,10 +299,9 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 			]),
 			detailRailGroup(h, "Triage", [
 				triageChip === null
-					? h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							["No AI triage has run for this incident."],
-						)
+					? typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"No AI triage has run for this incident.",
+						])
 					: badge(
 							h,
 							{

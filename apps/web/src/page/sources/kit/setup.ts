@@ -1,18 +1,19 @@
 import type { SourcePlatform } from "@maple/domain/primitives"
-import { resolveLang } from "../../../lib/highlight"
 import { ingestUrl } from "../../../lib/services/common/ingest-url"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import * as CopyButton from "../../../ui/copy-button"
-import { copyableField } from "../../../ui/copyable-field"
-import { eyebrow } from "../../../ui/eyebrow"
-import { panel } from "../../../ui/panel"
-import * as Tabs from "../../../ui/tabs"
-import * as TabsView from "../../../ui/tabs-view"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { copyableField } from "@maple/views/ui/copyable-field"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { panel } from "@maple/views/ui/panel"
+import * as Tabs from "@maple/views/ui/tabs"
+import * as TabsView from "@maple/views/ui/tabs-view"
 import { codeBlock } from "../../settings/kit/code-block"
 import { maskedToken, sourceSnippets } from "./snippets"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 // `SourceSetup`: endpoint, header and the platform's setup snippets. The parent embeds it and passes the
 // token only right after a create or roll.
@@ -35,7 +36,7 @@ export type Message = typeof Message.Type
 
 /** The snippet tabs start on the first snippet, as `useState(snippets[0]?.id)`. */
 export const init = (platform: SourcePlatform, idBase = 60): Model => {
-	const values = sourceSnippets(platform, "", "").map((snippet) => snippet.id)
+	const values = Arr.map(sourceSnippets(platform, "", ""), (snippet) => snippet.id)
 	return {
 		tabs: Tabs.init({ idBase, values, selected: values[0] ?? "" }),
 		endpointCopy: CopyButton.init(),
@@ -50,28 +51,36 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 			const step = Tabs.update(model.tabs, inner)
 			return {
 				model: { ...model, tabs: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotTabsMessage({ message: child })),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotTabsMessage({ message: child }),
+				),
 			}
 		},
 		GotEndpointCopyMessage: ({ message: inner }) => {
 			const step = CopyButton.update(model.endpointCopy, inner)
 			return {
 				model: { ...model, endpointCopy: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotEndpointCopyMessage({ message: child })),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotEndpointCopyMessage({ message: child }),
+				),
 			}
 		},
 		GotHeaderCopyMessage: ({ message: inner }) => {
 			const step = CopyButton.update(model.headerCopy, inner)
 			return {
 				model: { ...model, headerCopy: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotHeaderCopyMessage({ message: child })),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotHeaderCopyMessage({ message: child }),
+				),
 			}
 		},
 		GotCodeCopyMessage: ({ message: inner }) => {
 			const step = CopyButton.update(model.codeCopy, inner)
 			return {
 				model: { ...model, codeCopy: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotCodeCopyMessage({ message: child })),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotCodeCopyMessage({ message: child }),
+				),
 			}
 		},
 	})
@@ -92,81 +101,75 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 	const shown = token ?? maskedToken(config.keyPrefix)
 	const snippets = sourceSnippets(config.platform, shown, config.name)
 	const snippet = snippets.find((entry) => entry.id === model.tabs.selected) ?? snippets[0]
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
-		[
-			panel(h, { padded: true, className: "gap-3" }, [
-				h.div(
-					[h.Class("flex flex-col gap-1.5")],
-					[
-						eyebrow(h, {}, ["OTLP endpoint"]),
-						copyableField(h, {
-							id: `${config.idPrefix}-endpoint`,
-							value: ingestUrl,
-							copyLabel: "OTLP endpoint",
-							copy: model.endpointCopy,
-							toCopyMessage: (message) => toParentMessage(Message.GotEndpointCopyMessage({ message })),
-						}),
-					],
-				),
-				h.div(
-					[h.Class("flex flex-col gap-1.5")],
-					[
-						eyebrow(h, {}, ["Header"]),
-						token === null
-							? h.div(
-									[h.Class("bg-surface-sunken text-muted-foreground rounded-md border px-3 py-2 font-mono text-xs")],
-									["Authorization: Bearer ", shown],
-								)
-							: copyableField(h, {
-									id: `${config.idPrefix}-header`,
-									value: `Authorization: Bearer ${token}`,
-									copyLabel: "Header",
-									copy: model.headerCopy,
-									toCopyMessage: (message) => toParentMessage(Message.GotHeaderCopyMessage({ message })),
-								}),
-					],
-				),
+	return vstack(h, { gap: "4" }, [
+		panel(h, { padded: true, className: "gap-3" }, [
+			vstack(h, { gap: "1.5" }, [
+				eyebrow(h, {}, ["OTLP endpoint"]),
+				copyableField(h, {
+					id: `${config.idPrefix}-endpoint`,
+					value: ingestUrl,
+					copyLabel: "OTLP endpoint",
+					copy: model.endpointCopy,
+					toCopyMessage: (message) => toParentMessage(Message.GotEndpointCopyMessage({ message })),
+				}),
 			]),
-			...(snippet === undefined
-				? []
-				: [
-						h.div(
-							[h.Class("flex flex-col gap-2")],
+			vstack(h, { gap: "1.5" }, [
+				eyebrow(h, {}, ["Header"]),
+				token === null
+					? h.div(
 							[
-								...(snippets.length > 1
-									? [
-											h.submodel({
-												slotId: `${config.idPrefix}-snippet-tabs`,
-												model: model.tabs,
-												view: TabsView.view,
-												toParentMessage: (message) => toParentMessage(Message.GotTabsMessage({ message })),
-												viewInputs: {
-													variant: "underline",
-													labels: snippets.map((entry) => entry.label),
-													panel: () => undefined,
-												},
-											}),
-										]
-									: []),
-								codeBlock(h, {
-									code: snippet.code,
-									language: snippets.length > 1 ? snippet.language : snippet.label,
-									lang: resolveLang(snippet.language),
-									copy: model.codeCopy,
-									toCopyMessage: (message) => toParentMessage(Message.GotCodeCopyMessage({ message })),
-								}),
+								h.Class(
+									"bg-surface-sunken text-muted-foreground rounded-md border px-3 py-2 font-mono text-xs",
+								),
 							],
-						),
+							["Authorization: Bearer ", shown],
+						)
+					: copyableField(h, {
+							id: `${config.idPrefix}-header`,
+							value: `Authorization: Bearer ${token}`,
+							copyLabel: "Header",
+							copy: model.headerCopy,
+							toCopyMessage: (message) =>
+								toParentMessage(Message.GotHeaderCopyMessage({ message })),
+						}),
+			]),
+		]),
+		...(snippet === undefined
+			? []
+			: [
+					vstack(h, { gap: "2" }, [
+						...(snippets.length > 1
+							? [
+									h.submodel({
+										slotId: `${config.idPrefix}-snippet-tabs`,
+										model: model.tabs,
+										view: TabsView.view,
+										toParentMessage: (message) =>
+											toParentMessage(Message.GotTabsMessage({ message })),
+										viewInputs: {
+											variant: "underline",
+											labels: Arr.map(snippets, (entry) => entry.label),
+											panel: () => undefined,
+										},
+									}),
+								]
+							: []),
+						codeBlock(h, {
+							code: snippet.code,
+							language: snippets.length > 1 ? snippet.language : snippet.label,
+							lang: snippet.language,
+							copy: model.codeCopy,
+							toCopyMessage: (message) =>
+								toParentMessage(Message.GotCodeCopyMessage({ message })),
+						}),
 					]),
-			...(token === null
-				? [
-						h.p(
-							[h.Class("text-muted-foreground text-xs")],
-							["The token is only shown when the source is created or rolled. Roll it to get a new one."],
-						),
-					]
-				: []),
-		],
-	)
+				]),
+		...(token === null
+			? [
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						"The token is only shown when the source is created or rolled. Roll it to get a new one.",
+					]),
+				]
+			: []),
+	])
 }

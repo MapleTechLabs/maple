@@ -1,9 +1,9 @@
 import { toV2IngestRuleAction } from "@maple/domain/http/v2"
 import type { IngestRuleSignal } from "@maple/domain/ingest-rules"
-import { Option, Result } from "effect"
+import { Option, Result, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import type { AppRoute } from "../../../route"
-import * as Combobox from "../../../ui/combobox"
+import * as Combobox from "@maple/views/ui/combobox"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { FetchKeys, FetchRule, FetchSamples, FetchServices, FetchSession, SaveRule } from "./command"
 import {
@@ -54,12 +54,13 @@ const requestSamples = (model: Model): Return => {
 
 /** Every attribute condition gets a key autocomplete holding its key. */
 const withKeyBoxes = (model: Model): Model => {
-	const missing = model.draft.conditions.filter(
+	const missing = Arr.filter(
+		model.draft.conditions,
 		(condition) => isKeyed(condition.field) && model.keyBoxes[String(condition.id)] === undefined,
 	)
 	if (missing.length === 0) return model
-	const added = Object.fromEntries(
-		missing.map((condition) => [
+	const added = Rec.fromEntries(
+		Arr.map(missing, (condition) => [
 			String(condition.id),
 			{ ...Combobox.init(keyBoxId(condition.id), "autocomplete"), inputValue: condition.key },
 		]),
@@ -86,13 +87,13 @@ const mapCondition = (
 	change: (condition: ConditionDraft) => ConditionDraft,
 ): Return =>
 	patchDraft(model, {
-		conditions: model.draft.conditions.map((condition) =>
+		conditions: Arr.map(model.draft.conditions, (condition) =>
 			condition.id === id ? change(condition) : condition,
 		),
 	})
 
 const toggled = <A>(list: ReadonlyArray<A>, value: A): ReadonlyArray<A> =>
-	list.includes(value) ? list.filter((entry) => entry !== value) : [...list, value]
+	list.includes(value) ? Arr.filter(list, (entry) => entry !== value) : [...list, value]
 
 export const init = (route: EditorRoute, context: PageContext): Return => {
 	const parsed = route._tag === "IngestRule" ? ruleIdFromUrl(route.ruleId) : Option.none()
@@ -134,7 +135,7 @@ const save = (model: Model): Return => {
 	if (model.isSaving || !model.isAdmin || draftProblems(model.draft).length > 0) return { model }
 	const spec = specOf(model.draft)
 	const payload = {
-		name: model.draft.name.trim(),
+		name: Str.trim(model.draft.name),
 		enabled: model.draft.enabled,
 		signals: spec.signals,
 		conditions: spec.conditions,
@@ -209,7 +210,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		RemovedCondition: ({ id }) =>
 			patchDraft(model, {
-				conditions: model.draft.conditions.filter((condition) => condition.id !== id),
+				conditions: Arr.filter(model.draft.conditions, (condition) => condition.id !== id),
 			}),
 		// The key autocomplete holds its own text; clear it with the key so it never shows a stale one.
 		ChangedConditionField: ({ id, field }) => {

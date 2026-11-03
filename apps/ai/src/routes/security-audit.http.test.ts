@@ -37,7 +37,7 @@ import {
 } from "@maple/backend/services/security-audit/SecurityAuditCredits"
 import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
-import { Clock, Context, Duration, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { HttpRouter, HttpServerRequest } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { HttpSecurityAuditLive } from "./security-audit.http"
@@ -82,9 +82,9 @@ const AuthorizationStubLayer = Layer.succeed(
 		bearer: (httpEffect) =>
 			Effect.gen(function* () {
 				const request = yield* HttpServerRequest.HttpServerRequest
-				const [org = "", role = ""] = (request.headers.authorization ?? "")
-					.replace("Bearer ", "")
-					.split("|")
+				const [org, role = ""] = Str.split("|")(
+					Str.replace("Bearer ", "")(request.headers.authorization ?? ""),
+				)
 				const tenant = new CurrentTenant.TenantSchema({
 					orgId: Schema.decodeUnknownSync(OrgId)(org),
 					userId: USER,
@@ -297,9 +297,9 @@ describe("/api/security-audit access", () => {
 				}),
 			])
 
-			expect(memberCalls.map((r) => r.status)).toEqual([200, 200, 403, 403, 403, 403, 403])
+			expect(Arr.map(memberCalls, (r) => r.status)).toEqual([200, 200, 403, 403, 403, 403, 403])
 			expect(memberCalls[5]?.body._tag).toBe(tag("SecurityAuditForbiddenError"))
-			expect(harness.started.map((p) => p.runId)).toEqual([run.body.id])
+			expect(Arr.map(harness.started, (p) => p.runId)).toEqual([run.body.id])
 		} finally {
 			await harness.dispose()
 		}
@@ -327,9 +327,9 @@ describe("/api/security-audit access", () => {
 			])
 			const foreignRuns = await harness.call("GET", "/runs", { as: other })
 
-			expect(responses.map((r) => r.status)).toEqual([404, 404, 404, 404, 404])
+			expect(Arr.map(responses, (r) => r.status)).toEqual([404, 404, 404, 404, 404])
 			expect(foreignRuns.body.runs).toEqual([])
-			expect(harness.started.map((p) => p.orgId)).toEqual([ORG_A])
+			expect(Arr.map(harness.started, (p) => p.orgId)).toEqual([ORG_A])
 		} finally {
 			await harness.dispose()
 		}
@@ -341,20 +341,23 @@ describe("/api/security-audit targets", () => {
 		const harness = makeHarness()
 		try {
 			const statuses = await Promise.all(
-				[
-					{ ...TARGET, repository: "acme" },
-					{ ...TARGET, repository: "acme/../etc" },
-					{ ...TARGET, branch: "--upload-pack=x" },
-					{ ...TARGET, scopePaths: ["../secrets"] },
-					{ ...TARGET, scopePaths: ["/etc/passwd"] },
-					{ ...TARGET, discoveryModel: "acme/unlisted-model" },
-					// It refused verifier prompts in the eval, so it never verifies.
-					{ ...TARGET, validationModel: "openai/gpt-6.1-sol" },
-				].map((body) => harness.call("POST", "/targets", { body }).then((r) => r.status)),
+				Arr.map(
+					[
+						{ ...TARGET, repository: "acme" },
+						{ ...TARGET, repository: "acme/../etc" },
+						{ ...TARGET, branch: "--upload-pack=x" },
+						{ ...TARGET, scopePaths: ["../secrets"] },
+						{ ...TARGET, scopePaths: ["/etc/passwd"] },
+						{ ...TARGET, discoveryModel: "acme/unlisted-model" },
+						// It refused verifier prompts in the eval, so it never verifies.
+						{ ...TARGET, validationModel: "openai/gpt-6.1-sol" },
+					],
+					(body) => harness.call("POST", "/targets", { body }).then((r) => r.status),
+				),
 			)
 			const run = "00000000-0000-4000-8000-000000000000"
 			const pages = await Promise.all(
-				["limit=0", "limit=1001", "beforeAt=-1"].map((q) =>
+				Arr.map(["limit=0", "limit=1001", "beforeAt=-1"], (q) =>
 					harness.call("GET", `/runs/${run}/events?${q}`).then((r) => r.status),
 				),
 			)
@@ -548,7 +551,14 @@ describe("/api/security-audit runs", () => {
 				validation: "anthropic/claude-sonnet-5.5",
 			}
 			expect(
-				harness.started.map((p) => [p.runId, p.ref, p.scopePaths, p.budget, p.priorRunId, p.models]),
+				Arr.map(harness.started, (p) => [
+					p.runId,
+					p.ref,
+					p.scopePaths,
+					p.budget,
+					p.priorRunId,
+					p.models,
+				]),
 			).toEqual([
 				[whole.body.id, "main", [], null, null, defaults],
 				[scoped.body.id, "main", ["apps/api/src/routes"], null, whole.body.id, defaults],
@@ -642,7 +652,7 @@ describe("/api/security-audit runs", () => {
 				aiCreditsUsd(10),
 				"2026-11-01T00:00:00.000Z",
 			])
-			expect([raised.status, harness.started.map((p) => p.runId)]).toEqual([200, [raised.body.id]])
+			expect([raised.status, Arr.map(harness.started, (p) => p.runId)]).toEqual([200, [raised.body.id]])
 		} finally {
 			await harness.dispose()
 		}
@@ -747,7 +757,7 @@ describe("/api/security-audit findings", () => {
 			)
 
 			const fingerprints = (body: { findings: ReadonlyArray<{ fingerprint: string }> }) =>
-				body.findings.map((f) => f.fingerprint)
+				Arr.map(body.findings, (f) => f.fingerprint)
 			expect([fingerprints(visible.body), fingerprints(all.body)]).toEqual([
 				[fingerprint],
 				[fingerprint, "f2"],
@@ -762,7 +772,7 @@ describe("/api/security-audit findings", () => {
 					],
 				),
 			).toEqual([["dismissed", "fixture data, not reachable", USER]])
-			expect(audit.map((entry) => [entry.userId, entry.metadata])).toEqual([
+			expect(Arr.map(audit, (entry) => [entry.userId, entry.metadata])).toEqual([
 				[
 					USER,
 					{
@@ -890,7 +900,7 @@ describe("/api/security-audit run cancellation", () => {
 			).toEqual([["Note", `Run cancelled by ${USER}`]])
 			// The cancelled run frees the target.
 			expect(next.status).toBe(200)
-			expect(audit.map((entry) => [entry.userId, entry.metadata])).toEqual([
+			expect(Arr.map(audit, (entry) => [entry.userId, entry.metadata])).toEqual([
 				[USER, { targetId: target.body.id, runId: run.body.id }],
 			])
 		} finally {
@@ -979,7 +989,7 @@ describe("/api/security-audit run units", () => {
 						reviewed_paths: [],
 						local_checks: [],
 						result_fingerprints: ["keys/roll"],
-						unresolved: ["x".repeat(500)],
+						unresolved: [Str.repeat(500)("x")],
 						priority: 1,
 					}),
 				],
@@ -1009,7 +1019,7 @@ describe("/api/security-audit run units", () => {
 					failedAttempts: null,
 					resultFingerprints: ["keys/roll"],
 					carriedFingerprint: null,
-					unresolved: ["x".repeat(300)],
+					unresolved: [Str.repeat(300)("x")],
 				},
 				{
 					coverageId: "u2",

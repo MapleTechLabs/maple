@@ -1,7 +1,7 @@
 import { Option } from "effect"
 import type { Command } from "foldkit"
-import * as Keyed from "../../data/keyed"
-import type { LoadFailure } from "../../data/load-failure"
+import * as Keyed from "@maple/views/data/keyed"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { Resources } from "../../platform/resources"
 import type { PageReturn } from "../contract"
 

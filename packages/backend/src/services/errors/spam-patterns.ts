@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 const SCANNER_SPAM_PATTERNS = [
 	// Environment/config file probes
 	".env",
@@ -91,5 +92,5 @@ const SCANNER_SPAM_PATTERNS = [
 
 export function getSpamPatternsParam(showSpam?: boolean): string | undefined {
 	if (showSpam) return undefined
-	return SCANNER_SPAM_PATTERNS.join(",")
+	return Arr.join(SCANNER_SPAM_PATTERNS, ",")
 }

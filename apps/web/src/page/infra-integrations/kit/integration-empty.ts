@@ -1,10 +1,13 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { linkButton } from "../../../ui/button"
-import { emptyMessage } from "../../../ui/empty"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon, type IconName } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
+import { linkButton } from "@maple/views/ui/button"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { typography } from "@maple/views/ui/typography"
+import { vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `IntegrationEmpty` and its parts and `IntegrationIconPlate`.
 
@@ -71,7 +74,7 @@ export const integrationEmptyFeatures = <M>(
 ): Html =>
 	h.ul(
 		[h.Class("grid grid-cols-1 gap-3 text-left @2xl/page:grid-cols-3")],
-		features.map((feature, index) =>
+		Arr.map(features, (feature, index) =>
 			h.li(
 				[
 					h.Class(
@@ -140,14 +143,14 @@ export const integrationEmptyHint = <M>(h: HtmlBuilder<M>, children: ReadonlyArr
 	h.p([h.Class("max-w-xl text-balance text-sm text-muted-foreground")], children)
 
 export const integrationEmptyFooter = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html | string>): Html =>
-	h.p([h.Class("text-xs text-muted-foreground")], children)
+	typography(h, { size: "xs", tone: "muted", as: "p" }, children)
 
 /** `IntegrationEmpty`: the feature row, then the card. */
 export const integrationEmpty = <M>(
 	h: HtmlBuilder<M>,
 	children: ReadonlyArray<Html>,
 	className?: string,
-): Html => h.div([h.Class(cn("flex flex-col gap-4", className))], children)
+): Html => h.div([h.Class(cn(vstackClass({ gap: "4" }), className))], children)
 
 export type IntegrationConnectCtaOptions = Readonly<{
 	brand: IntegrationBrand

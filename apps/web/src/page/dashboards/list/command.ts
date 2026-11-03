@@ -1,5 +1,5 @@
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { Clock, Duration, Effect, Option, Result, Schema } from "effect"
+import { Clock, Duration, Effect, Option, Result, Schema, Array as Arr } from "effect"
 import { Command, Dom } from "foldkit"
 import { File as FoldkitFile } from "foldkit/file"
 import { trackProduct } from "../../../data/analytics"
@@ -18,7 +18,7 @@ import {
 	toPortable,
 } from "../kit/portable"
 import { awaitTxid, deleteDashboard, errorMessageOf, mutateDashboard, readDocument } from "../kit/store"
-import { readLocale } from "../../kit/locale"
+import { readLocale } from "@maple/views/lib/locale"
 import type { V2Dashboard } from "@maple/domain/http/v2"
 import { documentOf } from "../view/command-history"
 import { toListDashboard } from "./derive"
@@ -27,6 +27,15 @@ import { Message } from "./message"
 /** `dashboardSortAtom`'s key: the default sort for a URL without `?sort`. */
 const SORT_KEY = "maple.dashboards.sort"
 const decodeStoredSort = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.String))
+const encodeStoredSort = Schema.encodeSync(Schema.fromJsonString(Schema.String))
+const encodeFavorites = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)))
+const decodeImportJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
+
+/** The picked import file could not be read. */
+export class DashboardImportFileError extends Schema.TaggedError<DashboardImportFileError>()(
+	"@maple/web/dashboards/DashboardImportFileError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
 
 export const ReadClock = Command.define("ReadDashboardsListClock", {
 	messages: [Message.CompletedReadClock],
@@ -64,10 +73,10 @@ export const SavePreferences = Command.define("SaveDashboardsPreferences", {
 	execute: ({ favorites, sort }) =>
 		Effect.sync(() => {
 			if (favorites !== null) {
-				writeLocalStorage(DASHBOARD_FAVORITES_KEY, JSON.stringify(favorites))
+				writeLocalStorage(DASHBOARD_FAVORITES_KEY, encodeFavorites(favorites))
 				window.dispatchEvent(new Event(DASHBOARD_FAVORITES_EVENT))
 			}
-			if (sort !== null) writeLocalStorage(SORT_KEY, JSON.stringify(sort))
+			if (sort !== null) writeLocalStorage(SORT_KEY, encodeStoredSort(sort))
 			return Message.CompletedSavePreferences()
 		}),
 })
@@ -154,8 +163,15 @@ export const ImportDashboard = Command.define("ImportDashboard", {
 		Effect.map(
 			toResult(
 				Effect.gen(function* () {
-					const raw = yield* Effect.tryPromise(() => file.text())
-					const parsed: unknown = yield* Effect.try(() => JSON.parse(raw))
+					const raw = yield* Effect.tryPromise({
+						try: () => file.text(),
+						catch: (cause) =>
+							new DashboardImportFileError({
+								message: "Could not read the dashboard file",
+								cause,
+							}),
+					})
+					const parsed = yield* decodeImportJson(raw)
 					if (isPersesDashboardJson(parsed)) {
 						const client = yield* MapleApiV2Client
 						const imported = yield* client.dashboards.importPerses({
@@ -169,7 +185,8 @@ export const ImportDashboard = Command.define("ImportDashboard", {
 							warnings: imported.warnings,
 						}
 					}
-					return yield* createFromPortable(orgId, yield* parsePortable(parsed))
+					const portable = yield* parsePortable(parsed)
+					return yield* createFromPortable(orgId, portable)
 				}),
 			),
 			(result) => Message.CompletedImportDashboard({ result }),
@@ -234,7 +251,7 @@ export const FetchDashboardsFallback = Command.define("FetchDashboardsFallback",
 			const documents = yield* Effect.forEach(dashboards, (dashboard) =>
 				Effect.option(documentOf(dashboard)),
 			)
-			return documents.flatMap((document) => Option.toArray(Option.map(document, toListDashboard)))
+			return Arr.flatMap(documents, (document) => Option.toArray(Option.map(document, toListDashboard)))
 		}).pipe(
 			// A hung snapshot read gives up too, so the list lands on its error state.
 			Effect.timeout(FALLBACK_TIMEOUT),

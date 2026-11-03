@@ -4,21 +4,14 @@ import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import { describe, expect, it } from "vitest"
 import {
-	apnsEnv,
 	appUrlsEnv,
-	authEnv,
-	cloudflareOAuthEnv,
 	derived,
-	ingestKeyCryptoEnv,
 	optionalPlain,
 	optionalSecret,
-	planetScaleOAuthEnv,
 	plainWithDefault,
 	PRD_LOCKSTEP_REVISION_SERVICES,
 	requiredPlain,
 	selfObservabilityEnv,
-	tinybirdEnv,
-	type WorkerEnv,
 } from "./env.ts"
 import { resolveMapleProfile } from "./profile.ts"
 
@@ -43,12 +36,6 @@ const run = <A>(config: Config.Config<A>, env: Env): A =>
 
 const runExit = <A>(config: Config.Config<A>, env: Env) =>
 	Effect.runSync(Effect.exit(config.parse(ConfigProvider.fromUnknown(env))))
-
-/** Compare records where secret values are `Redacted` (not deep-equal friendly). */
-const unwrap = (env: WorkerEnv): Env =>
-	Object.fromEntries(
-		Object.entries(env).map(([k, v]) => [k, typeof v === "string" ? v : `redacted:${Redacted.value(v)}`]),
-	)
 
 describe("primitives", () => {
 	it("resolves a value present only in the provider, not in process.env", () => {

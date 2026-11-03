@@ -20,7 +20,7 @@ import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { SpanId, TraceId } from "@maple/domain"
-import { Schema, type DateTime } from "effect"
+import { Schema, type DateTime, Array as Arr } from "effect"
 import {
 	ErrorEvents,
 	ErrorEventsByTime,
@@ -78,12 +78,12 @@ const fingerprintHashEq = (expr: CH.Expr<number>, hash: string) => expr.eq(finge
 const isWarehouseFingerprint = (hash: string) => /^[0-9]+$/.test(hash)
 
 const fingerprintHashIn = (expr: CH.Expr<number>, hashes: readonly string[]) => {
-	const usable = hashes.filter(isWarehouseFingerprint)
+	const usable = Arr.filter(hashes, isWarehouseFingerprint)
 	// Dropping every hash is a real answer, not an error: the caller asked about
 	// fingerprints that cannot exist here, and the answer is no rows. Emitted as
 	// a false literal because `IN ()` is a ClickHouse syntax error.
 	if (usable.length === 0) return CH.rawCond("1 = 0")
-	return CH.inExprList(expr, usable.map(fingerprintHashLiteral))
+	return CH.inExprList(expr, Arr.map(usable, fingerprintHashLiteral))
 }
 
 /**

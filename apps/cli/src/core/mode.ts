@@ -1,4 +1,16 @@
-import { Config, Context, Duration, Effect, Layer, Option, Predicate, Redacted, Schema } from "effect"
+import {
+	Config,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Predicate,
+	Redacted,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import * as os from "node:os"
@@ -28,7 +40,7 @@ type ResolvedMode =
 // parsing accepts them and `--help` lists them); the decision reads argv here
 // because the executor layer is constructed outside the parsed-flag context.
 const hasFlag = (name: string): boolean =>
-	typeof process !== "undefined" && Array.isArray(process.argv) && process.argv.includes(name)
+	typeof process !== "undefined" && Arr.isArray(process.argv) && process.argv.includes(name)
 
 /** What answered at the local URL. */
 export type ProbeResult = "maple" | "busy" | "absent" | "foreign"
@@ -53,7 +65,7 @@ export const probeLocal = (
 	baseUrl: string,
 	timeout: Duration.Duration = PROBE_TIMEOUT,
 ): Effect.Effect<ProbeResult> => {
-	const base = baseUrl.replace(/\/$/, "")
+	const base = Str.replace(/\/$/, "")(baseUrl)
 	const get = (route: string) =>
 		client.execute(HttpClientRequest.get(`${base}${route}`)).pipe(
 			Effect.flatMap((response) =>
@@ -66,7 +78,7 @@ export const probeLocal = (
 	const ok = (status: number) => status >= 200 && status < 300
 	const legacyHealth = get("/health").pipe(
 		Effect.map(({ status, body }): ProbeResult =>
-			ok(status) && body.trim() === "OK" ? "maple" : "foreign",
+			ok(status) && Str.trim(body) === "OK" ? "maple" : "foreign",
 		),
 	)
 	return get("/local/status").pipe(
@@ -133,10 +145,10 @@ export const discoverServers = (fs: FileSystem, dir: string = MAPLE_DIR): Effect
 		if (Option.isSome(primary)) return { url: primary, ambiguous: [] }
 		const names = yield* fs.readDirectory(dir).pipe(Effect.orElseSucceed((): Array<string> => []))
 		const found = yield* Effect.forEach(
-			names.filter((name) => name.endsWith(".maple-server.json")).sort(),
+			Arr.filter(names, (name) => Str.endsWith(".maple-server.json")(name)).sort(),
 			(name) => discoverLocalUrl(fs, path.join(dir, name)),
 		)
-		const urls = found.flatMap((url) => (Option.isSome(url) ? [url.value] : []))
+		const urls = Arr.flatMap(found, (url) => (Option.isSome(url) ? [url.value] : []))
 		const only = urls.length === 1 ? urls[0] : undefined
 		return only === undefined
 			? { url: Option.none(), ambiguous: urls }

@@ -2,18 +2,20 @@ import { Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Tabs from "../../../ui/tabs"
-import * as TabsView from "../../../ui/tabs-view"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Tabs from "@maple/views/ui/tabs"
+import * as TabsView from "@maple/views/ui/tabs-view"
 import { defineLab } from "../../define"
-import { separator } from "../../../ui/display"
+import { separator } from "@maple/views/ui/display"
 import { alertSection, cardAndPanelSection, emptySection, itemSection } from "../../kit/display-sections"
 import {
+	errorStateSection,
 	keyValueSection,
 	meterSection,
 	skeletonSection,
 	statSection,
 	tableSection,
+	typeAndStackSection,
 } from "../../kit/display-sections-more"
 import { kitPage, kitSection } from "../../kit/kit-layout"
 
@@ -46,6 +48,7 @@ const Message = defineMessageUnion({
 	GotDefaultTabsMessage: { message: Tabs.Message },
 	GotUnderlineTabsMessage: { message: Tabs.Message },
 	GotCopyMessage: { message: CopyButton.Message },
+	ClickedRetry: {},
 })
 type Message = typeof Message.Type
 
@@ -71,6 +74,7 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 				),
 			}
 		},
+		ClickedRetry: () => ({ model }),
 		GotCopyMessage: ({ message }) => {
 			const next = CopyButton.update(model.traceIdCopy, message)
 			return {
@@ -130,6 +134,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 			cardAndPanelSection(h),
 			alertSection(h),
 			emptySection(h),
+			errorStateSection(h, Message.ClickedRetry()),
 			itemSection(h),
 			keyValueSection(
 				h,
@@ -138,6 +143,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 			),
 			meterSection(h),
 			statSection(h),
+			typeAndStackSection(h),
 			skeletonSection(h),
 			tableSection(h),
 			tabsSection(model, h),

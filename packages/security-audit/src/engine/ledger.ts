@@ -7,6 +7,7 @@ import type { HunterUnitResult, MissingUnit, SeedUnit } from "../results"
 import type { CoverageUnit } from "../schema"
 import { coverageId, isSafeRelativePath, ledgerErrors, safeCoverageId } from "../validators"
 import { unknownBlockRefs } from "../prompts"
+import { Array as Arr, String as Str } from "effect"
 
 type PriorStatus = CoverageUnit["prior_status"]
 
@@ -27,8 +28,11 @@ const emptyLive = {
 
 export const inScope = (paths: ReadonlyArray<string>, scope: ReadonlyArray<string>): boolean =>
 	scope.length === 0 ||
-	paths.some((path) =>
-		scope.some((root) => path === root || path.startsWith(root.endsWith("/") ? root : `${root}/`)),
+	Arr.some(paths, (path) =>
+		Arr.some(
+			scope,
+			(root) => path === root || Str.startsWith(Str.endsWith("/")(root) ? root : `${root}/`)(path),
+		),
 	)
 
 /** A unit outside the run's scope is recorded `out_of_scope`, never assigned and never covered. */
@@ -39,7 +43,7 @@ export const scoped = (unit: LedgerUnit, scope: ReadonlyArray<string>): LedgerUn
 		...rest,
 		...emptyLive,
 		status: "out_of_scope",
-		unresolved: [`outside this run's scope (${scope.join(", ")})`],
+		unresolved: [`outside this run's scope (${Arr.join(scope, ", ")})`],
 	}
 }
 
@@ -47,10 +51,10 @@ export const scoped = (unit: LedgerUnit, scope: ReadonlyArray<string>): LedgerUn
 export const unitRefusal = (seed: SeedUnit | MissingUnit): string | undefined => {
 	if (safeCoverageId(seed.canonical_refs) === undefined) return "invalid canonical reference"
 	const unknown = unknownBlockRefs(seed)
-	if (unknown.length > 0) return `unknown skill block references: ${unknown.join(", ")}`
+	if (unknown.length > 0) return `unknown skill block references: ${Arr.join(unknown, ", ")}`
 	if (seed.starting_paths.length === 0) return "no starting paths"
-	const unsafe = seed.starting_paths.filter((path) => !isSafeRelativePath(path))
-	if (unsafe.length > 0) return `unsafe starting paths: ${unsafe.join(", ")}`
+	const unsafe = Arr.filter(seed.starting_paths, (path) => !isSafeRelativePath(path))
+	if (unsafe.length > 0) return `unsafe starting paths: ${Arr.join(unsafe, ", ")}`
 	if ((seed.lifecycle === undefined) !== (seed.canonical_refs.lifecycle === undefined)) {
 		return "lifecycle and canonical_refs.lifecycle must appear together"
 	}
@@ -92,7 +96,7 @@ export const seedUnit = (
 		: {
 				...withLifecycle,
 				status: "out_of_scope",
-				unresolved: [`outside this run's scope (${options.scope.join(", ")})`],
+				unresolved: [`outside this run's scope (${Arr.join(options.scope, ", ")})`],
 			}
 }
 
@@ -112,7 +116,7 @@ export const admitUnits = (
 		refused: ReadonlyArray<{ coverage_id: string; reason: string }>
 	}>(
 		(acc, unit) => {
-			if (acc.ledger.some((existing) => existing.coverage_id === unit.coverage_id)) {
+			if (Arr.some(acc.ledger, (existing) => existing.coverage_id === unit.coverage_id)) {
 				return {
 					...acc,
 					refused: [
@@ -129,7 +133,7 @@ export const admitUnits = (
 						...acc,
 						refused: [
 							...acc.refused,
-							{ coverage_id: unit.coverage_id, reason: errors.slice(0, 2).join("; ") },
+							{ coverage_id: unit.coverage_id, reason: Arr.join(errors.slice(0, 2), "; ") },
 						],
 					}
 		},
@@ -140,7 +144,7 @@ const update = (
 	ledger: Ledger,
 	ids: ReadonlySet<string>,
 	f: (unit: LedgerUnit) => LedgerUnit,
-): ReadonlyArray<LedgerUnit> => ledger.map((unit) => (ids.has(unit.coverage_id) ? f(unit) : unit))
+): ReadonlyArray<LedgerUnit> => Arr.map(ledger, (unit) => (ids.has(unit.coverage_id) ? f(unit) : unit))
 
 /** Before launch: the assigned units become `in_progress` under the hunter's id. */
 export const assign = (ledger: Ledger, ids: ReadonlySet<string>, agentId: string) =>
@@ -171,7 +175,7 @@ export const applyUnitResult = (ledger: Ledger, result: HunterUnitResult, agentI
 		...unit,
 		status: result.disposition,
 		agent_id: agentId,
-		reviewed_paths: [...new Set(result.checks.flatMap((check) => check.reviewed_paths))].sort(),
+		reviewed_paths: [...new Set(Arr.flatMap(result.checks, (check) => check.reviewed_paths))].sort(),
 		local_checks: result.checks,
 		result_fingerprints: result.disposition === "candidate" ? result.candidate_fingerprints : [],
 		unresolved: result.disposition === "covered" ? [] : result.unresolved,
@@ -205,9 +209,9 @@ export const reopen = (ledger: Ledger, ids: ReadonlySet<string>, reason: string)
 
 /** Units hunters may take this wave, in the skill's priority order. */
 export const huntable = (ledger: Ledger): ReadonlyArray<LedgerUnit> =>
-	ledger
-		.filter((unit) => unit.status === "planned" && unit.carried_fingerprint === undefined)
-		.sort((a, b) => rank(a) - rank(b) || (a.coverage_id < b.coverage_id ? -1 : 1))
+	Arr.filter(ledger, (unit) => unit.status === "planned" && unit.carried_fingerprint === undefined).sort(
+		(a, b) => rank(a) - rank(b) || (a.coverage_id < b.coverage_id ? -1 : 1),
+	)
 
 const PRIOR_GAP: ReadonlySet<PriorStatus> = new Set([
 	"prior_confirmed_changed_source",

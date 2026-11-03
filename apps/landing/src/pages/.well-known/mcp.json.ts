@@ -5,10 +5,13 @@
  */
 import { mapleMcpServerManifest } from "@maple/domain/mcp-manifest"
 import type { APIRoute } from "astro"
+import { Schema } from "effect"
 import { API_ORIGIN } from "../../lib/agent-resources"
+
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 export const GET: APIRoute = ({ site }) =>
 	new Response(
-		`${JSON.stringify(mapleMcpServerManifest({ apiBaseUrl: API_ORIGIN, siteUrl: site?.toString() }), null, 2)}\n`,
+		`${encodePrettyJson(mapleMcpServerManifest({ apiBaseUrl: API_ORIGIN, siteUrl: site?.toString() }))}\n`,
 		{ headers: { "Content-Type": "application/json; charset=utf-8" } },
 	)

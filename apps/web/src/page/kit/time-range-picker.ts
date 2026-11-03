@@ -6,15 +6,15 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { kbdStyles } from "@maple/ui/styles/ui/kbd"
 import { isDialogOpen, isEditableTarget, pressedKey } from "@maple/ui/lib/keyboard"
-import { Clock, Effect, Option, Schema, type Stream } from "effect"
+import { Clock, Effect, Option, Schema, type Stream, Array as Arr, String as Str } from "effect"
 import { Command, Dom, Mount, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { button } from "../../ui/button"
-import { eyebrow } from "../../ui/eyebrow"
-import { icon } from "../../ui/icon"
-import * as Combobox from "../../ui/combobox"
-import * as Popover from "../../ui/popover"
+import { button } from "@maple/views/ui/button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Popover from "@maple/views/ui/popover"
 import {
 	readEffectiveTimeZone,
 	readSelectedTimeZone,
@@ -24,10 +24,15 @@ import {
 import { PageOutMessage } from "../contract"
 import { zoneListView } from "./timezone-select-view"
 import { formatUtcOffset, readZoneRows, ZoneRow } from "./timezone-zones"
-import { isMounted } from "../../ui/overlay/transition"
+import { isMounted } from "@maple/views/ui/overlay/transition"
 import * as CustomRange from "./custom-range"
 import * as CustomRangeView from "./custom-range-view"
-import { presetLabel, timeRangeTriggerContent } from "./time-controls"
+import {
+	LONG_RANGE_PRESET_VALUES,
+	PRESET_VALUES,
+	presetLabel,
+	timeRangeTriggerContent,
+} from "./time-controls"
 
 // `TimeRangePicker`: the header
 // popover with the preset rail and quick select. Picking a range is an OutMessage; the page writes
@@ -260,7 +265,7 @@ export const update = (model: Model, message: Message): Return =>
 			isValidShorthand(model.shorthand)
 				? pickedPreset(
 						{ ...model, shorthand: "", isShorthandInvalid: false },
-						model.shorthand.toLowerCase(),
+						Str.toLowerCase(model.shorthand),
 						maxRangeSeconds,
 					)
 				: { model: { ...model, isShorthandInvalid: true } },
@@ -273,7 +278,7 @@ export const update = (model: Model, message: Message): Return =>
 			const value = model.utcOffset?.isSystem === false ? model.utcOffset.timeZone : SYSTEM_VALUE
 			return zonesStep(
 				{ ...model, zoneRows: rows, zones: { ...model.zones, selected: [value], inputValue: "" } },
-				Combobox.Message.ClickedTriggerOf({ items: rows.map((row) => row.value) }),
+				Combobox.Message.ClickedTriggerOf({ items: Arr.map(rows, (row) => row.value) }),
 			)
 		},
 		GotTimeZoneComboboxMessage: ({ message: inner }) => zonesStep(model, inner),
@@ -286,8 +291,27 @@ export const update = (model: Model, message: Message): Return =>
 	})
 
 /** The list presets (`LONG_RANGE_PRESET_OPTIONS` for long-range pages, else `PRESET_OPTIONS`). */
-export const PRESET_VALUES = ["5m", "15m", "30m", "1h", "6h", "12h", "1d", "3d", "1w", "2w", "1mo"]
-export const LONG_RANGE_PRESET_VALUES = [...PRESET_VALUES, "3mo", "6mo", "12mo"]
+export { LONG_RANGE_PRESET_VALUES, PRESET_VALUES }
+
+/** The window a shorthand resolves to: minutes and hours roll, days and weeks count calendar days,
+ * months count calendar months (`resolveRelativeRange`). Null for "today" and non-shorthand. */
+const windowIdentity = (shorthand: string): string | null => {
+	const match = Str.toLowerCase(Str.trim(shorthand)).match(/^(\d+)(mo|m|h|d|w)$/)
+	if (match === null) return null
+	const amount = Number.parseInt(match[1] ?? "0", 10)
+	const unit = match[2]
+	if (unit === "m" || unit === "h") return `rolling:${unit === "h" ? amount * 60 : amount}`
+	if (unit === "d" || unit === "w") return `days:${unit === "w" ? amount * 7 : amount}`
+	return `months:${amount}`
+}
+
+/** A preset row is active for its own value or one naming the same window ("7d" marks "1w"). */
+export const isActivePreset = (selected: string | undefined, value: string): boolean => {
+	if (selected === undefined) return false
+	if (selected === value) return true
+	const identity = windowIdentity(selected)
+	return identity !== null && identity === windowIdentity(value)
+}
 const LONG_LABELS = new Map([
 	["3mo", "Last 3 months"],
 	["6mo", "Last 6 months"],
@@ -321,8 +345,8 @@ const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 			eyebrow(h, { as: "div", className: "px-3 pb-2" }, ["Presets"]),
 			h.div(
 				[h.Class("flex flex-col")],
-				inputs.presets.map((value) => {
-					const isActive = inputs.selectedPreset === value
+				Arr.map(inputs.presets, (value) => {
+					const isActive = isActivePreset(inputs.selectedPreset, value)
 					return h.button(
 						[
 							h.Key(value),
@@ -371,7 +395,7 @@ const quickSelect = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 			eyebrow(h, { as: "div" }, ["Quick select"]),
 			h.div(
 				[h.Class("grid grid-cols-4 gap-1.5")],
-				QUICK_SELECT.map((value) =>
+				Arr.map(QUICK_SELECT, (value) =>
 					h.button(
 						[
 							h.Key(value),
@@ -512,7 +536,7 @@ type KeyPress = Readonly<{
 
 /** The `time.open` combo: a bare "D" (either case), no modifier held. */
 export const isOpenKey = (event: KeyPress): boolean =>
-	pressedKey(event).toLowerCase() === "d" &&
+	Str.toLowerCase(pressedKey(event)) === "d" &&
 	!event.metaKey &&
 	!event.ctrlKey &&
 	!event.altKey &&

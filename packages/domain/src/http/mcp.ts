@@ -6,7 +6,7 @@ import { BucketSeconds } from "./query-engine"
 import { SessionAuthorization } from "./current-tenant"
 import { warehouseReadHttpErrors } from "./warehouse"
 
-// MCP hub endpoint schemas (`/mcp-servers`, a server's overview and its tool page).
+// MCP hub endpoint schemas (`/mcp-servers`, a server's overview, its tool page and its sessions).
 //
 // Backed by MCP server spans that follow the OpenTelemetry MCP conventions
 // (`docs/mcp-hub-plan.md`), read raw from `traces` by `ch/queries/mcp.ts`.
@@ -51,6 +51,12 @@ export const McpClientItem = Schema.Struct({
 	kind: McpClientKind,
 	calls: Schema.Number,
 	errors: Schema.Number,
+	/** `initialize` requests: connections, which a client can open many of without calling a tool. */
+	connects: Schema.Number,
+	/** Distinct `client.address` values across its MCP requests. */
+	sources: Schema.Number,
+	/** Its latest MCP request of any method; `0` when unknown. */
+	lastSeenMs: Schema.Number,
 })
 export type McpClientItem = typeof McpClientItem.Type
 
@@ -119,6 +125,8 @@ export const McpCoverage = Schema.Struct({
 	/** Failed calls carrying a status message, the only "why" a span can give. */
 	errorsWithMessage: Schema.Number,
 	withSession: Schema.Number,
+	/** Tool calls naming their user (`user.id`), which a stateless server's sessions are built from. */
+	withUser: Schema.Number,
 	withCallerTrace: Schema.Number,
 	protocolVersion: Schema.String,
 	transport: Schema.String,
@@ -141,8 +149,10 @@ export class McpOverviewResponse extends Schema.Class<McpOverviewResponse>("McpO
 	clients: Schema.Array(McpClientItem),
 	/** Every client in the window, for the client and kind facets. */
 	allClients: Schema.Array(McpClientItem),
-	/** `clientInfo.name` from real `initialize` requests. */
-	initializers: Schema.Array(Schema.Struct({ name: Schema.String, count: Schema.Number })),
+	/** Requests per `clientInfo.name` (`connects` of them `initialize`): stateless requests send it too. */
+	clientInfo: Schema.Array(
+		Schema.Struct({ name: Schema.String, count: Schema.Number, connects: Schema.Number }),
+	),
 	/** Failed calls per `error.type` under the selection. */
 	failures: Schema.Array(Schema.Struct({ errorType: Schema.String, count: Schema.Number })),
 	methods: Schema.Array(McpMethodItem),
@@ -183,6 +193,7 @@ export const McpErrorGroupItem = Schema.Struct({
 export type McpErrorGroupItem = typeof McpErrorGroupItem.Type
 
 export class McpToolResponse extends Schema.Class<McpToolResponse>("McpToolResponse")({
+	service: Schema.String,
 	tool: Schema.String,
 	calls: Schema.Number,
 	errors: Schema.Number,
@@ -197,6 +208,118 @@ export class McpToolResponse extends Schema.Class<McpToolResponse>("McpToolRespo
 	slowest: Schema.Array(McpCallItem),
 	failed: Schema.Array(McpCallItem),
 	recent: Schema.Array(McpCallItem),
+}) {}
+
+// ---------------------------------------------------------------------------
+// /mcp/:service/sessions
+// ---------------------------------------------------------------------------
+
+export class McpSessionsRequest extends Schema.Class<McpSessionsRequest>("McpSessionsRequest")({
+	service: selectionText,
+	...windowFields,
+	...selectionFields,
+	/** Case-insensitive substring of the session id or the user id. */
+	search: Schema.optionalKey(selectionText),
+	failingOnly: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+/**
+ * Where a session comes from: `issued` by the server (`mcp.session.id`), or a `user`'s requests to a
+ * stateless server from one client, split at 30 idle minutes.
+ */
+export const McpSessionSource = Schema.Literals(["issued", "user"])
+export type McpSessionSource = typeof McpSessionSource.Type
+
+export const McpSessionItem = Schema.Struct({
+	sessionId: Schema.String,
+	source: McpSessionSource,
+	/** `user.id`, else `enduser.id`; `null` when no request named one. */
+	user: Schema.NullOr(Schema.String),
+	/** `user.name`, else `user.email`. */
+	userName: Schema.NullOr(Schema.String),
+	client: Schema.String,
+	kind: McpClientKind,
+	/** Requests of every method, `initialize` and `tools/list` included. */
+	requests: Schema.Number,
+	calls: Schema.Number,
+	errors: Schema.Number,
+	tools: Schema.Number,
+	firstSeenMs: Schema.Number,
+	lastSeenMs: Schema.Number,
+})
+export type McpSessionItem = typeof McpSessionItem.Type
+
+export class McpSessionsResponse extends Schema.Class<McpSessionsResponse>("McpSessionsResponse")({
+	service: Schema.String,
+	/** Under the selection, failing-only aside. */
+	totals: Schema.Struct({
+		sessions: Schema.Number,
+		failingSessions: Schema.Number,
+		users: Schema.Number,
+		calls: Schema.Number,
+		errors: Schema.Number,
+	}),
+	/** Sessions and users active per bucket, zeros included. */
+	activity: Schema.Array(
+		Schema.Struct({ bucket: Schema.Number, sessions: Schema.Number, users: Schema.Number }),
+	),
+	/** The window's tool calls, those carrying `mcp.session.id` and those naming a user: none of either means no sessions view. */
+	toolCalls: Schema.Number,
+	/** The window's other MCP requests (`initialize`, `tools/list`...): a server can answer those and call no tool. */
+	otherRequests: Schema.Number,
+	withSession: Schema.Number,
+	withUser: Schema.Number,
+	/** Tool calls in a session of either kind: carrying a session id, a user, or both. */
+	inSession: Schema.Number,
+	/** The read of users' activity hit its limit: the oldest user sessions are missing or cut short. */
+	isUserActivityCut: Schema.Boolean,
+	/** The latest sessions under the selection, at most the list's limit. */
+	sessions: Schema.Array(McpSessionItem),
+	/** Every client in the window, for the client and kind facets. */
+	allClients: Schema.Array(McpClientItem),
+}) {}
+
+// ---------------------------------------------------------------------------
+// /mcp/:service/sessions/:sessionId
+// ---------------------------------------------------------------------------
+
+/** An issued session id, or a user session's key, which carries the user id. */
+const sessionKeyText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))
+
+export class McpSessionRequest extends Schema.Class<McpSessionRequest>("McpSessionRequest")({
+	service: selectionText,
+	sessionId: sessionKeyText,
+	...windowFields,
+}) {}
+
+export const McpSessionRequestItem = Schema.Struct({
+	timeMs: Schema.Number,
+	method: Schema.String,
+	tool: Schema.NullOr(Schema.String),
+	requestId: Schema.String,
+	durationNs: Schema.Number,
+	errorType: Schema.NullOr(Schema.String),
+	message: Schema.NullOr(Schema.String),
+	traceId: Schema.String,
+	spanId: Schema.String,
+	/** The Agent Session whose trace made this request, when the caller propagated one. */
+	agentSessionId: Schema.NullOr(Schema.String),
+})
+export type McpSessionRequestItem = typeof McpSessionRequestItem.Type
+
+export class McpSessionResponse extends Schema.Class<McpSessionResponse>("McpSessionResponse")({
+	service: Schema.String,
+	sessionId: Schema.String,
+	source: McpSessionSource,
+	user: Schema.NullOr(Schema.String),
+	userName: Schema.NullOr(Schema.String),
+	client: Schema.String,
+	kind: McpClientKind,
+	protocolVersion: Schema.String,
+	/** The session's requests in the window, in order, at most the read's limit. */
+	requests: Schema.Array(McpSessionRequestItem),
+	/** More requests matched than `requests` holds. */
+	isTruncated: Schema.Boolean,
 }) {}
 
 export class McpInternalApiGroup extends HttpApiGroup.make("mcpInternal")
@@ -218,6 +341,20 @@ export class McpInternalApiGroup extends HttpApiGroup.make("mcpInternal")
 		HttpApiEndpoint.post("tool", "/tool", {
 			payload: McpToolRequest,
 			success: McpToolResponse,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("sessions", "/sessions", {
+			payload: McpSessionsRequest,
+			success: McpSessionsResponse,
+			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("session", "/session", {
+			payload: McpSessionRequest,
+			success: McpSessionResponse,
 			error: warehouseReadHttpErrors,
 		}),
 	)

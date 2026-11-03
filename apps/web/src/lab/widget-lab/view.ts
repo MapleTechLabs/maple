@@ -1,28 +1,29 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../charts/chart"
-import * as Sparkline from "../../charts/sparkline"
-import { resolveColor, ResolveThemeColors } from "../../charts/theme-colors"
-import { isChartRuntimeReady } from "../../charts/chart-runtime"
+import * as Chart from "@maple/views/charts/chart"
+import * as Sparkline from "@maple/views/charts/sparkline"
+import { resolveColor, ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import { validateCssColor } from "@maple/ui/lib/sanitizers"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { errorDetailsPopover } from "../../page/dashboards/kit/error-details"
 import { type TileContext, widgetTile } from "../../page/dashboards/kit/tiles"
 import { sparklineValues } from "../../page/dashboards/kit/tiles-stat"
-import { button } from "../../ui/button"
-import * as CopyButton from "../../ui/copy-button"
-import { eyebrow } from "../../ui/eyebrow"
-import { icon } from "../../ui/icon"
-import * as Menu from "../../ui/menu"
-import * as MenuView from "../../ui/menu-view"
-import * as Popover from "../../ui/popover"
-import * as ToastView from "../../ui/toast-view"
-import * as ToggleGroup from "../../ui/toggle-group"
+import { button } from "@maple/views/ui/button"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import * as Menu from "@maple/views/ui/menu"
+import * as MenuView from "@maple/views/ui/menu-view"
+import * as Popover from "@maple/views/ui/popover"
+import * as ToastView from "@maple/views/ui/toast-view"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { labShellView } from "../app-shell"
 import { type Cell, LATER_SECTIONS, type Section, SECTIONS, SPARKLINE_SAMPLES } from "./catalog"
 import { Message, type Model } from "./model"
 import { THEME_TOKENS } from "./tokens"
 import { detailsIdOf, isEditMode, menuIdOf } from "./update"
 import { copyScenarios } from "./view-copy"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -166,7 +167,7 @@ const tileSection = (h: H, model: Model, entry: Section): Html =>
 		entry.title,
 		entry.description,
 		entry.minColWidth,
-		entry.cells.map((cell) =>
+		Arr.map(entry.cells, (cell) =>
 			scenarioCell(h, cell.label, cell.height, widgetTile(h, tileContext(h, model, cell), cell.widget)),
 		),
 	)
@@ -179,7 +180,7 @@ const sparklineSection = (h: H, model: Model): Html =>
 		"Sparkline",
 		"The stat-widget trend line, rendered standalone across timeseries shapes. Polish: stroke, gradient, threshold color.",
 		320,
-		SPARKLINE_SAMPLES.map((sample) => {
+		Arr.map(SPARKLINE_SAMPLES, (sample) => {
 			const values = sparklineValues(sample.state)
 			const theme = model.themeColors
 			const isReady = theme !== null && isChartRuntimeReady(model.chartRuntime)
@@ -257,7 +258,7 @@ const pageContent = (h: H, model: Model): Html =>
 											"flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]",
 										),
 									],
-									NAV_ITEMS.map(([id, label]) =>
+									Arr.map(NAV_ITEMS, ([id, label]) =>
 										h.a(
 											[
 												h.Href(`#${id}`),
@@ -280,9 +281,9 @@ const pageContent = (h: H, model: Model): Html =>
 							240,
 							copyScenarios(h, model),
 						),
-						...SECTIONS.map((entry) => tileSection(h, model, entry)),
+						...Arr.map(SECTIONS, (entry) => tileSection(h, model, entry)),
 						sparklineSection(h, model),
-						...LATER_SECTIONS.map((entry) => tileSection(h, model, entry)),
+						...Arr.map(LATER_SECTIONS, (entry) => tileSection(h, model, entry)),
 					],
 		),
 	])

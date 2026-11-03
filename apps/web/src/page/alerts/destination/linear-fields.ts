@@ -1,11 +1,11 @@
-import { Effect, Option, Result, Schedule, Schema } from "effect"
+import { Effect, Option, Result, Schedule, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import * as Keyed from "../../../data/keyed"
-import { LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import * as Keyed from "@maple/views/data/keyed"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
-import * as Select from "../../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import { currentReturnPath, startConnect } from "../../integrations/connect"
 import { readIsAdmin } from "../shared/commands"
 import type { DestinationForm } from "./form"
@@ -93,7 +93,7 @@ const FetchTeams = Command.define("FetchAlertLinearTeams", {
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			const response = yield* client.integrations.linearTeams()
-			return response.teams.map((team) => ({ id: team.id, key: team.key, name: team.name }))
+			return Arr.map(response.teams, (team) => ({ id: team.id, key: team.key, name: team.name }))
 		}).pipe(
 			settle,
 			Effect.map((result) => Message.CompletedFetchTeams({ key, result })),

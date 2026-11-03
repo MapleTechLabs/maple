@@ -4,19 +4,20 @@ import {
 	FINDING_STATUS_LABELS,
 	SEVERITY_LABELS,
 } from "../../../components/code-review/code-review-format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { errorState } from "../../../ui/error-state"
-import { listFooter } from "../../../ui/list-footer"
-import type * as Select from "../../../ui/select"
-import { type SelectEntry, view as selectView } from "../../../ui/select-view"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { listFooter } from "@maple/views/ui/list-footer"
+import type * as Select from "@maple/views/ui/select"
+import { type SelectEntry, view as selectView } from "@maple/views/ui/select-view"
 import { findingsListSkeleton } from "../kit/skeletons"
 import type { PageViewInputs } from "../../contract"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { ALL } from "../kit/frame"
 import { filtersView } from "../kit/filters-view"
-import { nothingInWindow } from "../../kit/nothing-in-window"
 import { codeReviewLayout } from "../kit/layout"
 import type { SheetMessage } from "../kit/review-sheet"
 import * as ReviewSheetView from "../kit/review-sheet-view"
@@ -24,6 +25,7 @@ import { searchBox } from "../kit/search"
 import { type FilterKey, Message, type Model } from "./model"
 import { DEFAULT_PRESET, MAX_ROWS } from "./update"
 import { findingsList } from "./view-list"
+import { vstack } from "@maple/views/ui/stack"
 
 // The code review issues page.
 
@@ -34,7 +36,7 @@ const entries = (
 	options: ReadonlyArray<readonly [string, string]>,
 ): ReadonlyArray<SelectEntry> => [
 	{ _tag: "Item", item: { value: ALL, label: allLabel } },
-	...options.map(([value, label]): SelectEntry => ({ _tag: "Item", item: { value, label } })),
+	...Arr.map(options, ([value, label]): SelectEntry => ({ _tag: "Item", item: { value, label } })),
 ]
 
 const FILTERS: ReadonlyArray<{
@@ -49,7 +51,7 @@ const FILTERS: ReadonlyArray<{
 		field: "severitySelect",
 		entries: entries(
 			"All severities",
-			PrReviewSeverity.literals.map((value) => [value, SEVERITY_LABELS[value]]),
+			Arr.map(PrReviewSeverity.literals, (value) => [value, SEVERITY_LABELS[value]]),
 		),
 	},
 	{
@@ -58,7 +60,7 @@ const FILTERS: ReadonlyArray<{
 		field: "categorySelect",
 		entries: entries(
 			"All categories",
-			PrReviewCategory.literals.map((value) => [value, CATEGORY_LABELS[value]]),
+			Arr.map(PrReviewCategory.literals, (value) => [value, CATEGORY_LABELS[value]]),
 		),
 	},
 	{
@@ -67,13 +69,13 @@ const FILTERS: ReadonlyArray<{
 		field: "stateSelect",
 		entries: entries(
 			"All states",
-			PrReviewFindingStatus.literals.map((value) => [value, FINDING_STATUS_LABELS[value]]),
+			Arr.map(PrReviewFindingStatus.literals, (value) => [value, FINDING_STATUS_LABELS[value]]),
 		),
 	},
 ]
 
 const filterSelects = (h: H, model: Model): ReadonlyArray<Html> =>
-	FILTERS.map(({ filter, label, field, entries: options }) =>
+	Arr.map(FILTERS, ({ filter, label, field, entries: options }) =>
 		h.submodel({
 			slotId: model[field].id,
 			model: model[field],
@@ -109,13 +111,24 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 		onData: (response) => {
 			if (response.findings.length === 0) {
 				const filtered = isFiltered(model)
-				return nothingInWindow(h, {
-					title: "No issues in this window",
-					description: filtered
-						? "Nothing matches these filters."
-						: "Issues the reviewer posts on pull requests are listed here.",
-					onClear: filtered ? Message.ClickedClearFilters() : undefined,
-				})
+				if (filtered)
+					return filteredEmpty(h, {
+						noun: "issues",
+						onClear: Message.ClickedClearFilters(),
+						className: emptyFrameClass("dashed"),
+					})
+				return empty(
+					h,
+					[
+						emptyHeader(h, [
+							emptyTitle(h, ["No issues in this window"]),
+							emptyDescription(h, [
+								"Issues the reviewer posts on pull requests are listed here.",
+							]),
+						]),
+					],
+					emptyFrameClass("dashed"),
+				)
 			}
 			const footer =
 				response.nextCursor === null
@@ -128,17 +141,17 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 							isLoading: AsyncData.isRefreshing(model.findings.data),
 							onLoadMore: Message.ClickedLoadMore(),
 						})
-			return h.div(
-				[h.Class("flex flex-col gap-3")],
-				[findingsList(h, model, response.findings, timeZone), ...(footer === null ? [] : [footer])],
-			)
+			return vstack(h, { gap: "3" }, [
+				findingsList(h, model, response.findings, timeZone),
+				...(footer === null ? [] : [footer]),
+			])
 		},
 	})
 
 const authorsOf = (model: Model): ReadonlyArray<string> =>
 	Option.match(AsyncData.getData(model.authors.data), {
 		onNone: () => [],
-		onSome: (analytics) => analytics.authors.map((row) => row.author),
+		onSome: (analytics) => Arr.map(analytics.authors, (row) => row.author),
 	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {

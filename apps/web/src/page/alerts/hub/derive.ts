@@ -2,11 +2,11 @@ import type { AlertDestinationDocument } from "@maple/domain/http"
 import { type AlertsOverviewReady, deriveOverview } from "@maple/web-data/alerts/overview"
 import {
 	buildRuleStatesByRuleId,
-	rowToAlertDestinationDocument,
+	rowsToAlertDestinationDocuments,
 	rowToAlertIncidentDocument,
 	rowToAlertRuleDocument,
 } from "@maple/web-data/collections/alerts"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { RuleBucket } from "./message"
 import type { Model } from "./model"
@@ -21,8 +21,8 @@ export const overviewOf = (model: Model): Option.Option<AlertsOverviewReady> => 
 	const statesByRule = buildRuleStatesByRuleId(stateRows)
 	return Option.some(
 		deriveOverview({
-			rules: model.rules.map((row) => rowToAlertRuleDocument(row, statesByRule)),
-			incidents: model.incidents.map(rowToAlertIncidentDocument),
+			rules: Arr.map(model.rules, (row) => rowToAlertRuleDocument(row, statesByRule)),
+			incidents: Arr.map(model.incidents, rowToAlertIncidentDocument),
 			states: stateRows,
 			deliveryEvents: Option.getOrElse(AsyncData.getData(model.deliveries.data), () => []),
 			now: model.nowMs,
@@ -32,7 +32,7 @@ export const overviewOf = (model: Model): Option.Option<AlertsOverviewReady> => 
 
 /** `useAlertDestinationsList()`, `orElse(() => [])`. */
 export const destinationsOf = (model: Model): ReadonlyArray<AlertDestinationDocument> =>
-	(model.destinations ?? []).map(rowToAlertDestinationDocument)
+	rowsToAlertDestinationDocuments(model.destinations ?? [])
 
 export type AlertsTab = "inbox" | "rules" | "uptime" | "routing"
 

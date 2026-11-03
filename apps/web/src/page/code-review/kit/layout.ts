@@ -1,9 +1,11 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import type { IconName } from "../../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import type { WindowSearch } from "./frame"
+import { hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `CodeReviewLayout`, `CodeReviewTabs` and `NothingInWindow`.
 
@@ -28,14 +30,14 @@ const TABS: ReadonlyArray<{ tab: CodeReviewTab; path: string; label: string; ico
 export const tabLabel = (tab: CodeReviewTab): string => TABS.find((entry) => entry.tab === tab)?.label ?? ""
 
 export const breadcrumbsOf = (tab: CodeReviewTab) => [
-	{ label: "Code Review", href: "/code-review" },
+	{ label: "Code review", href: "/code-review" },
 	{ label: tabLabel(tab) },
 ]
 
 /** Defined keys only, in the order given: TanStack drops `undefined` search values. */
 const defined = (search: Readonly<Record<string, string | undefined>>): Readonly<Record<string, string>> =>
-	Object.fromEntries(
-		Object.entries(search).flatMap(([key, value]) =>
+	Rec.fromEntries(
+		Arr.flatMap(Rec.toEntries(search), ([key, value]) =>
 			value === undefined ? [] : [[key, value] as const],
 		),
 	)
@@ -81,7 +83,7 @@ const tabs = <M>(options: LayoutOptions<M>): Html => {
 	return linkTabStrip(
 		h,
 		"Code review views",
-		TABS.map((entry) => {
+		Arr.map(TABS, (entry) => {
 			const linkSearch = defined(entry.tab === "settings" ? {} : carried)
 			return {
 				key: entry.tab,
@@ -100,7 +102,7 @@ export const codeReviewLayout = <M>(options: LayoutOptions<M>, children: Readonl
 	const page = dashboardPage(
 		options.h,
 		{
-			title: "Code Review",
+			title: "Code review",
 			actions: options.toolbar,
 			tabs: tabs(options),
 			gap: "lg",
@@ -109,7 +111,7 @@ export const codeReviewLayout = <M>(options: LayoutOptions<M>, children: Readonl
 		options.filters === undefined || options.filters.length === 0
 			? children
 			: [
-					options.h.div([options.h.Class("flex flex-wrap items-center gap-2")], options.filters),
+					options.h.div([options.h.Class(hstackClass({ gap: "2", wrap: true }))], options.filters),
 					...children,
 				],
 	)

@@ -1,22 +1,31 @@
-import { cn } from "@maple/ui/lib/utils"
-import { truncatedCellStyles } from "@maple/ui/styles/ui/table"
 import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../../ui/button"
-import { confirmDialog } from "../../../../ui/confirm-dialog"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../../ui/empty"
-import { formDialog } from "../../../../ui/form-dialog"
-import { icon } from "../../../../ui/icon"
-import * as Menu from "../../../../ui/menu"
-import { rowActionsMenu } from "../../../../ui/row-actions-menu"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../../ui/table"
-import { truncatedText } from "../../../../ui/truncated-text"
+import { button } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { formDialog } from "@maple/views/ui/form-dialog"
+import { icon } from "@maple/views/ui/icon"
+import * as Menu from "@maple/views/ui/menu"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import {
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+	truncatedTableCell,
+} from "@maple/views/ui/table"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
 import { settingsSection, settingsSections } from "../../kit/section"
 import { textField } from "../fields"
 import type { AccountPasskey, AccountUser } from "../user"
 import { Message, type Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ timeZone: string }>
@@ -33,30 +42,23 @@ const passkeyRow = (h: H, model: Model, passkey: AccountPasskey, inputs: Inputs)
 	return tableRow(
 		h,
 		[
-			tableCell(
-				h,
-				[
-					h.div(
-						[h.Class("flex items-center gap-2.5")],
-						[
-							icon(h, "FingerprintIcon", {
-								size: 16,
-								className: "shrink-0 text-muted-foreground",
-							}),
-							truncatedText(h, {
-								text: passkey.name || "Unnamed passkey",
-								className: "text-xs font-medium",
-							}),
-						],
-					),
-				],
-				cn(truncatedCellStyles),
-			),
-			tableCell(h, [formatDate(passkey.createdAtMs)], "text-muted-foreground text-xs"),
+			truncatedTableCell(h, [
+				hstack(h, { gap: "2.5" }, [
+					icon(h, "FingerprintIcon", {
+						size: 16,
+						className: "shrink-0 text-muted-foreground",
+					}),
+					truncatedText(h, {
+						text: passkey.name || "Unnamed passkey",
+						className: typographyClass({ size: "xs", weight: "medium" }),
+					}),
+				]),
+			]),
+			tableCell(h, [formatDate(passkey.createdAtMs)], typographyClass({ size: "xs", tone: "muted" })),
 			tableCell(
 				h,
 				[passkey.lastUsedAtMs === null ? "Never" : formatDate(passkey.lastUsedAtMs)],
-				"text-muted-foreground text-xs",
+				typographyClass({ size: "xs", tone: "muted" }),
 			),
 			tableCell(h, [
 				rowActionsMenu(h, {
@@ -92,12 +94,9 @@ const passkeyRow = (h: H, model: Model, passkey: AccountPasskey, inputs: Inputs)
 const body = (h: H, model: Model, user: AccountUser, inputs: Inputs): ReadonlyArray<Html> => {
 	if (!model.isSupported)
 		return [
-			h.p(
-				[h.Class("text-sm text-muted-foreground")],
-				[
-					"This browser does not support passkeys. Open Maple in a recent version of Chrome, Safari, Edge or Firefox over HTTPS to register one.",
-				],
-			),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [
+				"This browser does not support passkeys. Open Maple in a recent version of Chrome, Safari, Edge or Firefox over HTTPS to register one.",
+			]),
 		]
 	if (user.passkeys.length === 0)
 		return [
@@ -122,7 +121,7 @@ const body = (h: H, model: Model, user: AccountUser, inputs: Inputs): ReadonlyAr
 			]),
 			tableBody(
 				h,
-				user.passkeys.map((passkey) => passkeyRow(h, model, passkey, inputs)),
+				Arr.map(user.passkeys, (passkey) => passkeyRow(h, model, passkey, inputs)),
 			),
 		]),
 	]
@@ -150,7 +149,7 @@ const loaded = (h: H, model: Model, user: AccountUser, inputs: Inputs): Html =>
 			title: "Rename passkey",
 			description: 'Give it a name you will recognise, like "MacBook Touch ID".',
 			onSubmit: Message.SubmittedRename(),
-			submitLabel: "Save",
+			submitLabel: "Save changes",
 			isPending: model.isBusy,
 			isSubmitDisabled: (model.renaming?.name.trim().length ?? 0) === 0,
 			fields: [
@@ -170,7 +169,7 @@ const loaded = (h: H, model: Model, user: AccountUser, inputs: Inputs): Html =>
 			toParentMessage: (message) => Message.GotRemoveDialogMessage({ message }),
 			title: "Remove passkey?",
 			description: `${model.removing?.name ?? "This passkey"} can no longer be used to sign in. The credential stays on your device until you delete it there too.`,
-			confirmLabel: "Remove",
+			confirmLabel: "Remove passkey",
 			isPending: model.isBusy,
 			onConfirm: Message.ClickedConfirmRemove(),
 		}),

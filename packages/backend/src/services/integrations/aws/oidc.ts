@@ -3,10 +3,11 @@
  * AWS credential. One RSA key signs them; its public half is the JWKS the API serves.
  */
 import { AWS_OIDC_AUDIENCE } from "@maple/domain/aws"
-import { Effect, Redacted } from "effect"
+import { Effect, Redacted, Schema, String as Str } from "effect"
 import { AwsOidcKeyError } from "./errors"
 
 /** STS accepts a token only while it is valid; Maple mints one right before each call. */
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const TOKEN_SECONDS = 300
 const ALGORITHM = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" } as const
 
@@ -33,7 +34,10 @@ const base64url = (bytes: ArrayBuffer | Uint8Array) =>
 	Buffer.from(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)).toString("base64url")
 
 const pemBody = (pem: string) =>
-	Buffer.from(pem.replace(/-----(BEGIN|END) PRIVATE KEY-----/gu, "").replace(/\s+/gu, ""), "base64")
+	Buffer.from(
+		Str.replace(/\s+/gu, "")(Str.replace(/-----(BEGIN|END) PRIVATE KEY-----/gu, "")(pem)),
+		"base64",
+	)
 
 /** The discovery document AWS reads from `{issuer}/.well-known/openid-configuration`. */
 export const awsOidcDiscovery = (issuer: string) => ({
@@ -68,11 +72,11 @@ export const makeAwsOidcSigner = Effect.fn("makeAwsOidcSigner")(function* (
 	}
 	const thumbprint = yield* Effect.tryPromise({
 		try: () =>
-			crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ e, kty: "RSA", n }))),
+			crypto.subtle.digest("SHA-256", new TextEncoder().encode(encodeJson({ e, kty: "RSA", n }))),
 		catch: failed("Hashing the AWS OIDC key failed"),
 	})
 	const jwk: AwsOidcJwk = { kty: "RSA", n, e, kid: base64url(thumbprint), alg: "RS256", use: "sig" }
-	const encode = (value: unknown) => base64url(new TextEncoder().encode(JSON.stringify(value)))
+	const encode = (value: unknown) => base64url(new TextEncoder().encode(encodeJson(value)))
 	const header = encode({ alg: "RS256", typ: "JWT", kid: jwk.kid })
 
 	const mint = (subject: string, nowMs: number) =>

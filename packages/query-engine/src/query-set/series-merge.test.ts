@@ -11,6 +11,7 @@ import {
 	shiftRunResults,
 	toDisplayNameById,
 } from "./series-merge"
+import { Array as Arr } from "effect"
 
 function makeQueryResult(overrides: Partial<QueryRunResult> = {}): QueryRunResult {
 	return {
@@ -240,7 +241,7 @@ describe("combineRows", () => {
 			},
 		])
 
-		expect(rows.map((row) => row.bucket)).toEqual([
+		expect(Arr.map(rows, (row) => row.bucket)).toEqual([
 			"2026-01-01T00:00:00.000Z",
 			"2026-01-01T01:00:00.000Z",
 		])

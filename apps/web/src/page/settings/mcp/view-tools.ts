@@ -1,18 +1,21 @@
 import type { McpToolCatalogEntry } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
 import { groupMcpTools, type McpToolGroup } from "../../../components/mcp/mcp-tool-groups"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { searchInput } from "../../../ui/search-input"
-import { skeletonList } from "../../../ui/skeleton"
+import { button } from "@maple/views/ui/button"
+import { collapsible } from "@maple/views/ui/collapsible"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { searchInput } from "@maple/views/ui/search-input"
+import { skeletonList } from "@maple/views/ui/skeleton"
 import { sectionNote, settingsSection } from "../kit/section"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { emptyMessage } from "../../../ui/empty"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr, String as Str } from "effect"
 
 // `McpToolsList`.
 
@@ -45,94 +48,59 @@ const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boo
 	const hidden = isShowingAll ? 0 : Math.max(0, group.tools.length - PREVIEW_ROWS)
 	const rows = hidden === 0 ? group.tools : group.tools.slice(0, PREVIEW_ROWS)
 	const panelId = `mcp-tools-${group.id}-panel`
-	return h.div(
-		[
-			h.Key(group.id),
-			h.DataAttribute(isOpen ? "open" : "closed", ""),
-			h.DataAttribute("slot", "collapsible"),
-		],
-		[
-			h.button(
-				[
-					...(isOpen ? [h.AriaControls(panelId)] : []),
-					h.AriaDisabled(false),
-					h.AriaExpanded(isOpen),
-					h.Class("flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-surface-sunken active:bg-surface-sunken"),
-					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
-					h.DataAttribute("slot", "collapsible-trigger"),
-					h.Tabindex(0),
-					h.Type("button"),
-					h.OnClick(Message.ToggledToolGroup({ groupId: group.id })),
-				],
-				[
-					icon(h, "ChevronRightIcon", {
-						size: 14,
-						className: cn(
-							"shrink-0 text-muted-foreground transition-transform",
-							isOpen && "rotate-90",
-						),
-					}),
-					h.span([h.Class("font-medium")], [group.label]),
-					h.span(
-						[h.Class("text-xs text-muted-foreground tabular-nums")],
-						[String(group.tools.length)],
+	return collapsible(
+		h,
+		{
+			isOpen,
+			onToggle: Message.ToggledToolGroup({ groupId: group.id }),
+			panelId,
+			attributes: [h.Key(group.id)],
+			triggerClassName:
+				"flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-surface-sunken active:bg-surface-sunken",
+			trigger: [
+				icon(h, "ChevronRightIcon", {
+					size: 14,
+					className: cn(
+						typographyClass({ tone: "muted", className: "shrink-0 transition-transform" }),
+						isOpen && "rotate-90",
 					),
+				}),
+				h.span([h.Class("font-medium")], [group.label]),
+				typography(h, { size: "xs", tone: "muted", numeric: true }, [String(group.tools.length)]),
+			],
+		},
+		[
+			h.div(
+				[h.Class("px-4 pb-3 pl-10")],
+				[
+					h.ul(
+						[],
+						Arr.map(rows, (tool) => toolRow(h, tool)),
+					),
+					...(hidden > 0
+						? [
+								button(
+									h,
+									{
+										variant: "ghost",
+										size: "xs",
+										className: "-ml-2 mt-1 text-muted-foreground",
+										attributes: [
+											h.OnClick(Message.ClickedShowAllTools({ groupId: group.id })),
+										],
+									},
+									["Show ", String(hidden), " more"],
+								),
+							]
+						: []),
 				],
 			),
-			...(isOpen
-				? [
-						h.div(
-							[
-								h.Class(collapsiblePanelStyles),
-								h.DataAttribute("open", ""),
-								h.DataAttribute("slot", "collapsible-panel"),
-								h.Id(panelId),
-								h.Style({
-									"--collapsible-panel-height": "auto",
-									"--collapsible-panel-width": "auto",
-									"animation-name": "none",
-								}),
-							],
-							[
-								h.div(
-									[h.Class("px-4 pb-3 pl-10")],
-									[
-										h.ul(
-											[],
-											rows.map((tool) => toolRow(h, tool)),
-										),
-										...(hidden > 0
-											? [
-													button(
-														h,
-														{
-															variant: "ghost",
-															size: "xs",
-															className: "-ml-2 mt-1 text-muted-foreground",
-															attributes: [
-																h.OnClick(
-																	Message.ClickedShowAllTools({
-																		groupId: group.id,
-																	}),
-																),
-															],
-														},
-														["Show ", String(hidden), " more"],
-													),
-												]
-											: []),
-									],
-								),
-							],
-						),
-					]
-				: []),
 		],
 	)
 }
 
 const catalog = (h: H, model: Model, tools: ReadonlyArray<McpToolCatalogEntry>): ReadonlyArray<Html> => {
-	const isSearching = model.toolSearch.trim() !== ""
+	const isSearching = Str.trim(model.toolSearch) !== ""
 	const groups = groupMcpTools(tools, model.toolSearch)
 	return [
 		h.div(
@@ -143,24 +111,32 @@ const catalog = (h: H, model: Model, tools: ReadonlyArray<McpToolCatalogEntry>):
 					value: model.toolSearch,
 					onInput: (value) => Message.ChangedToolSearch({ value }),
 					onClear: Message.ClickedClearToolSearch(),
-					placeholder: `Search ${tools.length} tools`,
+					placeholder: `Search ${tools.length} tools…`,
 					ariaLabel: "Search tools",
 				}),
 			],
 		),
-		groups.length === 0
-			? emptyMessage(h, {}, ["No tools match “", model.toolSearch, "”."])
-			: h.div(
-					[h.Class("divide-y")],
-					groups.map((group, index) =>
-						toolGroup(
-							h,
-							group,
-							isSearching || index < OPEN_GROUPS !== model.flippedGroups.includes(group.id),
-							isSearching || model.expandedGroups.includes(group.id),
+		tools.length === 0
+			? emptyMessage(h, { className: "py-10 md:py-12" }, ["No tools are registered yet"])
+			: groups.length === 0
+				? filteredEmpty(h, {
+						noun: "tools",
+						description: `Nothing matches “${model.toolSearch}”.`,
+						onClear: Message.ClickedClearToolSearch(),
+						clearLabel: "Clear search",
+						className: "py-10 md:py-12",
+					})
+				: h.div(
+						[h.Class("divide-y")],
+						Arr.map(groups, (group, index) =>
+							toolGroup(
+								h,
+								group,
+								isSearching || index < OPEN_GROUPS !== model.flippedGroups.includes(group.id),
+								isSearching || model.expandedGroups.includes(group.id),
+							),
 						),
 					),
-				),
 	]
 }
 

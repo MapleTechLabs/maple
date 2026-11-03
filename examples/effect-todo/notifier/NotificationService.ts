@@ -18,6 +18,7 @@
  * sleep, which is what keeps the example runnable offline.
  */
 import { Clock, Context, Duration, Effect, Layer, Random, Ref } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { type NotifyEvent, NotifyDispatchError, NotifyReceipt } from "../shared/notifier-api.ts"
 
 /** The channel every notification is (pretend-)delivered to. */
@@ -59,6 +60,7 @@ export class NotificationService extends Context.Service<NotificationService>()(
 	"@maple-examples/todo/NotificationService",
 	{
 		make: Effect.gen(function* () {
+			const secureRandom = yield* SecureRandom.SecureRandom
 			const templates = yield* Ref.make(new Map<string, string>())
 
 			/**
@@ -156,7 +158,7 @@ export class NotificationService extends Context.Service<NotificationService>()(
 						"http.response.status_code": 202,
 						"notification.body_length": body.length,
 					})
-					return crypto.randomUUID()
+					return yield* secureRandom.uuidV4()
 				}).pipe(
 					Effect.withSpan("POST /v1/notify", {
 						kind: "client",
@@ -195,5 +197,5 @@ export class NotificationService extends Context.Service<NotificationService>()(
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(SecureRandom.layerWebCrypto))
 }

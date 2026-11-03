@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import {
 	GitCommitSha,
 	OrgId,
@@ -28,7 +28,7 @@ const REPO = Schema.decodeUnknownSync(VcsRepositoryId)("00000000-0000-4000-8000-
 const OTHER_REPO = Schema.decodeUnknownSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000002")
 const INSTALLATION = Schema.decodeUnknownSync(VcsInstallationId)("00000000-0000-4000-8000-0000000000aa")
 const reviewId = (n: number) =>
-	Schema.decodeUnknownSync(PrReviewId)(`00000000-0000-4000-9000-${String(n).padStart(12, "0")}`)
+	Schema.decodeUnknownSync(PrReviewId)(`00000000-0000-4000-9000-${Str.padStart(12, "0")(String(n))}`)
 const tenant: TenantContext = {
 	orgId: ORG,
 	userId: Schema.decodeUnknownSync(UserId)("user_team"),
@@ -45,7 +45,7 @@ const postMerge = (verdict: "clean" | "regressed") => ({
 	deploy: {
 		service: "api",
 		environment: "production",
-		commitSha: "b".repeat(40),
+		commitSha: Str.repeat(40)("b"),
 		firstSeen: at(30),
 		exact: true,
 	},
@@ -71,7 +71,7 @@ const review = (input: {
 	orgId: input.orgId ?? ORG,
 	repositoryId: input.repositoryId ?? REPO,
 	number: input.number,
-	headSha: Schema.decodeUnknownSync(GitCommitSha)("a".repeat(39) + String(input.n % 10)),
+	headSha: Schema.decodeUnknownSync(GitCommitSha)(Str.repeat(39)("a") + String(input.n % 10)),
 	url: `https://github.com/acme/web/pull/${input.number}`,
 	authorLogin: input.author,
 	status: "completed" as const,
@@ -105,20 +105,23 @@ const seed = Effect.gen(function* () {
 	yield* database.execute((db) =>
 		db.run(
 			PG.insertInto(VcsRepositories).values(
-				[
-					{ id: REPO, orgId: ORG, fullName: "acme/web", defaultBranch: "trunk" },
-					{ id: OTHER_REPO, orgId: OTHER_ORG, fullName: "other/api", defaultBranch: "main" },
-				].map((repo) => ({
-					...repo,
-					provider: "github" as const,
-					installationId: INSTALLATION,
-					externalRepoId: repo.id,
-					owner: repo.fullName.split("/")[0] ?? "",
-					name: repo.fullName.split("/")[1] ?? "",
-					htmlUrl: `https://github.com/${repo.fullName}`,
-					createdAt: START,
-					updatedAt: START,
-				})),
+				Arr.map(
+					[
+						{ id: REPO, orgId: ORG, fullName: "acme/web", defaultBranch: "trunk" },
+						{ id: OTHER_REPO, orgId: OTHER_ORG, fullName: "other/api", defaultBranch: "main" },
+					],
+					(repo) => ({
+						...repo,
+						provider: "github" as const,
+						installationId: INSTALLATION,
+						externalRepoId: repo.id,
+						owner: Str.split("/")(repo.fullName)[0] ?? "",
+						name: Str.split("/")(repo.fullName)[1] ?? "",
+						htmlUrl: `https://github.com/${repo.fullName}`,
+						createdAt: START,
+						updatedAt: START,
+					}),
+				),
 			),
 		),
 	)
@@ -240,7 +243,7 @@ describe("CodeReviewTeamService.team", () => {
 				Effect.gen(function* () {
 					const team = yield* service.team(tenant, window)
 					assert.deepStrictEqual(
-						team.members.map((member) => member.login),
+						Arr.map(team.members, (member) => member.login),
 						["ada", "JeremyFunk", "lin"],
 					)
 					const [ada, jeremy, lin] = team.members
@@ -272,6 +275,33 @@ describe("CodeReviewTeamService.team", () => {
 					assert.strictEqual(team.totals.defaultBranchFailed, 2)
 					assert.strictEqual(team.totals.p95QueueMs, 9_000)
 				}),
+		),
+	)
+
+	it.effect("folds a year of first reviews and merges by day in the asked zone, bots left out", () =>
+		withService({}, (service) =>
+			Effect.gen(function* () {
+				const cells = (team: { readonly activity: ReadonlyArray<object> }) =>
+					Arr.map(team.activity, (cell) => ({ ...cell }))
+				const utc = yield* service.team(tenant, window)
+				// A year back from the window's end, so #9, first reviewed before the window, is on it.
+				assert.strictEqual(utc.activityStartTime, window.endTime - 365 * 86_400_000)
+				assert.deepStrictEqual(cells(utc), [
+					{ day: "2026-09-30", login: "ada", repository: "acme/web", opened: 1, merged: 0 },
+					{ day: "2026-10-01", login: "ada", repository: "acme/web", opened: 2, merged: 2 },
+					{ day: "2026-10-02", login: "lin", repository: "acme/web", opened: 1, merged: 1 },
+				])
+				// Seven hours behind UTC: ada's early hours fall on the last day of September.
+				assert.deepStrictEqual(
+					cells(yield* service.team(tenant, { ...window, timeZone: "America/Los_Angeles" })),
+					[
+						{ day: "2026-09-30", login: "ada", repository: "acme/web", opened: 2, merged: 0 },
+						{ day: "2026-10-01", login: "ada", repository: "acme/web", opened: 1, merged: 2 },
+						{ day: "2026-10-01", login: "lin", repository: "acme/web", opened: 1, merged: 0 },
+						{ day: "2026-10-02", login: "lin", repository: "acme/web", opened: 0, merged: 1 },
+					],
+				)
+			}),
 		),
 	)
 

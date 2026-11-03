@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 export function formatDurationFromMs(ms: number): string {
 	if (ms < 1) return `${(ms * 1000).toFixed(0)}us`
 	if (ms < 1000) return `${ms.toFixed(1)}ms`
@@ -35,16 +36,19 @@ export function formatNumber(value: number | bigint): string {
 }
 
 export function formatTable(headers: string[], rows: string[][]): string {
-	const headerLine = `| ${headers.join(" | ")} |`
-	const sep = `|${headers.map(() => "---").join("|")}|`
-	const dataLines = rows.map((row) => `| ${row.join(" | ")} |`)
+	const headerLine = `| ${Arr.join(headers, " | ")} |`
+	const sep = `|${Arr.join(
+		Arr.map(headers, () => "---"),
+		"|",
+	)}|`
+	const dataLines = Arr.map(rows, (row) => `| ${Arr.join(row, " | ")} |`)
 
-	return [headerLine, sep, ...dataLines].join("\n")
+	return Arr.join([headerLine, sep, ...dataLines], "\n")
 }
 
 export function truncate(str: string, maxLen = 80): string {
 	if (str.length <= maxLen) return str
-	return str.slice(0, maxLen - 3) + "..."
+	return Str.slice(0, maxLen - 3)(str) + "..."
 }
 
 /**
@@ -57,10 +61,11 @@ export function truncate(str: string, maxLen = 80): string {
  * the delimiter itself.
  */
 export function tableCell(text: string, max?: number): string {
-	const collapsed = text.replace(/\s+/g, " ").trim()
-	return (max === undefined ? collapsed : truncate(collapsed, max))
-		.replace(/\\/g, "\\\\")
-		.replace(/\|/g, "\\|")
+	const collapsed = Str.trim(Str.replace(/\s+/g, " ")(text))
+	return Str.replace(
+		/\|/g,
+		"\\|",
+	)(Str.replace(/\\/g, "\\\\")(max === undefined ? collapsed : truncate(collapsed, max)))
 }
 
 /**
@@ -73,11 +78,11 @@ export function tableCell(text: string, max?: number): string {
  */
 export function fencedBlock(text: string): string {
 	const runs = text.match(/`+/g)?.map((run) => run.length) ?? []
-	const fence = "`".repeat(Math.max(3, ...runs.map((length) => length + 1)))
+	const fence = Str.repeat(Math.max(3, ...Arr.map(runs, (length) => length + 1)))("`")
 	return `${fence}\n${text}\n${fence}`
 }
 
 /** A UTC timestamp cut to whole seconds (`YYYY-MM-DD HH:mm:ss`), for `timestamp` hints and Start columns. */
 export function toSecondTimestamp(value: string): string {
-	return value.slice(0, 19).replace("T", " ")
+	return Str.replace("T", " ")(Str.slice(0, 19)(value))
 }

@@ -3,7 +3,7 @@ import type { AlertDeliveryEventDocument } from "@maple/domain/http"
 import { CurrentTenant } from "@maple/domain/http"
 import type { V2AlertDelivery } from "@maple/domain/http/v2"
 import { MapleApiV2, paginateOffsetQuery, timestamp, timestampOrNull } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 
 const toV2Delivery = (doc: AlertDeliveryEventDocument): V2AlertDelivery => ({
@@ -42,7 +42,7 @@ export const HttpV2AlertDeliveriesLive = HttpApiBuilder.group(MapleApiV2, "alert
 							limit,
 							offset,
 						})
-						.pipe(Effect.map((response) => response.events.map(toV2Delivery))),
+						.pipe(Effect.map((response) => Arr.map(response.events, toV2Delivery))),
 				)
 				return { object: "list" as const, ...page }
 			}),

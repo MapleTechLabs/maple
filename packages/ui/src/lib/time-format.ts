@@ -18,6 +18,7 @@
 import { parseWarehouseDateTime } from "@maple/query-engine/datetime"
 
 import { EMPTY_VALUE } from "./empty-value"
+import { String as Str } from "effect"
 
 export type TimeInput = string | number | Date
 
@@ -121,7 +122,7 @@ export function formatRelativeTimeOrDate(
 	return formatRelativeFrom(epochMs, nowMs)
 }
 
-const pad2 = (value: number) => value.toString().padStart(2, "0")
+const pad2 = (value: number) => Str.padStart(2, "0")(value.toString())
 
 /**
  * Clock-style countdown for a remaining duration: `4:05`, `1:04:05`, or with

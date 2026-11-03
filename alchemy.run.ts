@@ -56,6 +56,7 @@ import { createMapleScraper } from "./apps/scraper/alchemy.run.ts"
 import Landing from "./apps/landing/src/worker.ts"
 import LocalUi from "./apps/local-ui/src/worker.ts"
 import Web from "./apps/web/src/worker.ts"
+import { Array as Arr } from "effect"
 
 // Infisical defines CLOUDFLARE_DEFAULT_ACCOUNT_ID; alchemy reads CLOUDFLARE_ACCOUNT_ID.
 if (!process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_DEFAULT_ACCOUNT_ID) {
@@ -77,7 +78,7 @@ const asConfigError = (error: { readonly message: string }) =>
 const appendStepOutputs = (lines: string[]): void => {
 	const file = process.env.GITHUB_OUTPUT
 	if (file) {
-		appendFileSync(file, `${lines.join("\n")}\n`)
+		appendFileSync(file, `${Arr.join(lines, "\n")}\n`)
 	}
 }
 
@@ -206,7 +207,7 @@ const declarePrdDb = ({ stage, region }: MapleDeployment, profile: MapleProfile)
 
 const declareMapleDb = (deployment: MapleDeployment, profile: MapleProfile) =>
 	!profile.migratesDatabase
-		? Effect.succeed(undefined)
+		? Effect.undefined
 		: profile.database === "preview"
 			? declarePreviewDb(deployment, profile)
 			: declarePrdDb(deployment, profile)
@@ -216,7 +217,8 @@ const MapleStackLive = Layer.effect(
 	MapleStack,
 	Effect.gen(function* () {
 		// The stage string (`prd`, `prd-eu`) names the instance; alchemy keys state by it.
-		const deployment = yield* parseMapleDeploymentEffect(yield* Alchemy.Stage)
+		const stage = yield* Alchemy.Stage
+		const deployment = yield* parseMapleDeploymentEffect(stage)
 		// The `preview:web` label: Workers and seeded branches only, no AWS (docs/pr-previews.md).
 		const webOnlyPreview =
 			deployment.stage.kind === "pr" &&

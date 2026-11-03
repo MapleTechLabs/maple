@@ -1,6 +1,7 @@
+import { String as Str } from "effect"
 const normalize = (configured: string | undefined, fallback: string) => {
 	const trimmed = configured?.trim()
-	return trimmed && trimmed.length > 0 ? trimmed.replace(/\/$/, "") : fallback
+	return trimmed && trimmed.length > 0 ? Str.replace(/\/$/, "")(trimmed) : fallback
 }
 
 /** The endpoint users send their telemetry to (setup snippets, connect flows). */

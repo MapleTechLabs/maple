@@ -1,7 +1,18 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Exit, Fiber, Layer, Result, Schema, Semaphore } from "effect"
+import {
+	Duration,
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Result,
+	Schema,
+	Semaphore,
+	Array as Arr,
+	Record as Rec,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { InternalScrapeTarget } from "@maple/domain/http"
 import { convertFamiliesToOtlp, parsePrometheusText, type OtlpExportRequest } from "@maple/prometheus-otlp"
@@ -87,8 +98,8 @@ describe("Scraper", () => {
 			assert.lengthOf(harness.sent, 1)
 			assert.strictEqual(harness.sent[0]!.ingestKey, "maple_pk_org")
 			const resource = harness.sent[0]!.request.resourceMetrics[0]!
-			const attrs = Object.fromEntries(
-				resource.resource.attributes.map((attr) => [attr.key, attr.value.stringValue]),
+			const attrs = Rec.fromEntries(
+				Arr.map(resource.resource.attributes, (attr) => [attr.key, attr.value.stringValue]),
 			)
 			// Org attribution comes from the ingest key at the gateway, never the client.
 			assert.deepStrictEqual(attrs, {
@@ -104,8 +115,8 @@ describe("Scraper", () => {
 		Effect.gen(function* () {
 			const harness = makeHarness()
 			yield* scrape(harness, decodeTarget({ ...TARGET, sourceId: "src_abc" }))
-			const attrs = Object.fromEntries(
-				harness.sent[0]!.request.resourceMetrics[0]!.resource.attributes.map((attr) => [
+			const attrs = Rec.fromEntries(
+				Arr.map(harness.sent[0]!.request.resourceMetrics[0]!.resource.attributes, (attr) => [
 					attr.key,
 					attr.value.stringValue,
 				]),
@@ -174,11 +185,11 @@ describe("Scraper", () => {
 			}
 			const spans = endedSpansNamed(tracer.ended, "scraper.scrape_target")
 			assert.deepStrictEqual(
-				spans.map((span) => Exit.isSuccess(span.exit)),
+				Arr.map(spans, (span) => Exit.isSuccess(span.exit)),
 				[true, false],
 			)
 			assert.deepStrictEqual(
-				spans.map((span) => span.attributes.get("error.type")),
+				Arr.map(spans, (span) => span.attributes.get("error.type")),
 				["target_rejected", "target_rejected"],
 			)
 		}),
@@ -201,15 +212,15 @@ describe("Scraper", () => {
 			)
 
 			assert.strictEqual(outcome.deliveryFailure?.reason, "delivery_blocked")
-			const errors = outcome.scrapes.map((scrape) =>
+			const errors = Arr.map(outcome.scrapes, (scrape) =>
 				Result.isFailure(scrape.result) ? scrape.result.failure : null,
 			)
 			assert.deepStrictEqual(
-				errors.map((error) => error?.reason),
+				Arr.map(errors, (error) => error?.reason),
 				["delivery_blocked", "delivery_blocked"],
 			)
 			assert.deepStrictEqual(
-				errors.map((error) => error?.targetHost),
+				Arr.map(errors, (error) => error?.targetHost),
 				["main.example.com", "dev.example.com"],
 			)
 			for (const span of endedSpansNamed(tracer.ended, "scraper.scrape_target")) {
@@ -222,11 +233,12 @@ describe("Scraper", () => {
 		Effect.gen(function* () {
 			const harness = makeHarness()
 			const keys = Array.from({ length: 54 }, (_, index) => `branch-${index}`)
-			const [first, ...rest] = keys.map(branch)
+			const [first, ...rest] = Arr.map(keys, branch)
 			const outcome = yield* cycle(harness, [first!, ...rest])
 
 			assert.lengthOf(harness.sent, 1)
-			const instances = harness.sent[0]!.request.resourceMetrics.map(
+			const instances = Arr.map(
+				harness.sent[0]!.request.resourceMetrics,
 				(resource) =>
 					resource.scopeMetrics[0]!.metrics[0]!.gauge!.dataPoints[0]!.attributes.find(
 						(a) => a.key === "instance",
@@ -234,14 +246,14 @@ describe("Scraper", () => {
 			)
 			assert.deepStrictEqual(
 				instances,
-				keys.map((key) => `${key}.example.com`),
+				Arr.map(keys, (key) => `${key}.example.com`),
 			)
 			assert.deepStrictEqual(
-				outcome.scrapes.map((scrape) => [
+				Arr.map(outcome.scrapes, (scrape) => [
 					scrape.target.subTargetKey,
 					Result.isSuccess(scrape.result),
 				]),
-				keys.map((key) => [key, true]),
+				Arr.map(keys, (key) => [key, true]),
 			)
 		}),
 	)
@@ -265,7 +277,7 @@ describe("Scraper", () => {
 			assert.lengthOf(harness.sent[0]!.request.resourceMetrics, 2)
 			assert.isNull(outcome.deliveryFailure)
 			const byKey = new Map(
-				outcome.scrapes.map((scrape) => [scrape.target.subTargetKey, scrape.result]),
+				Arr.map(outcome.scrapes, (scrape) => [scrape.target.subTargetKey, scrape.result]),
 			)
 			assert.isTrue(Result.isSuccess(byKey.get("main")!))
 			assert.isTrue(Result.isSuccess(byKey.get("dev")!))
@@ -339,7 +351,7 @@ describe("Scraper", () => {
 			for (const span of cycles) assert.isUndefined(span.parentSpanId)
 			const targets = endedSpansNamed(tracer.ended, "scraper.scrape_target")
 			assert.deepStrictEqual(
-				targets.map((span) => span.parentSpanId),
+				Arr.map(targets, (span) => span.parentSpanId),
 				[cycles[0]!.spanId, cycles[0]!.spanId, cycles[1]!.spanId],
 			)
 		}),
@@ -348,22 +360,25 @@ describe("Scraper", () => {
 
 describe("gateway contract fixture", () => {
 	it("matches the fixture apps/ingest's scraper_contract Rust test deserializes", () => {
-		const body = [
-			"# HELP http_requests Total requests.",
-			"# TYPE http_requests counter",
-			'http_requests_total{code="200"} 100',
-			"# TYPE up gauge",
-			"up 1",
-			"# TYPE lat histogram",
-			'lat_bucket{le="0.1"} 1',
-			'lat_bucket{le="+Inf"} 10',
-			"lat_sum 42.5",
-			"lat_count 10",
-			"# TYPE rpc summary",
-			'rpc{quantile="0.5"} 0.05',
-			"rpc_sum 102.1",
-			"rpc_count 800",
-		].join("\n")
+		const body = Arr.join(
+			[
+				"# HELP http_requests Total requests.",
+				"# TYPE http_requests counter",
+				'http_requests_total{code="200"} 100',
+				"# TYPE up gauge",
+				"up 1",
+				"# TYPE lat histogram",
+				'lat_bucket{le="0.1"} 1',
+				'lat_bucket{le="+Inf"} 10',
+				"lat_sum 42.5",
+				"lat_count 10",
+				"# TYPE rpc summary",
+				'rpc{quantile="0.5"} 0.05',
+				"rpc_sum 102.1",
+				"rpc_count 800",
+			],
+			"\n",
+		)
 
 		const { request } = convertFamiliesToOtlp(
 			parsePrometheusText(body).families,

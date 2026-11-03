@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { autocompleteOf } from "./advanced"
@@ -14,7 +14,7 @@ const window = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const windowed = (): Model =>
 	pageUpdate(
@@ -30,7 +30,9 @@ const urlOf = (result: { readonly outMessage?: unknown }) =>
 describe("traces advanced filter", () => {
 	test("opening starts the autocomplete lookups once, and focus shows key suggestions", () => {
 		const opened = pageUpdate(windowed(), Message.ClickedAdvancedFilter())
-		expect(names(opened.commands).filter((name) => name === "FetchTracesAdvancedLookup")).toHaveLength(6)
+		expect(
+			Arr.filter(names(opened.commands), (name) => name === "FetchTracesAdvancedLookup"),
+		).toHaveLength(6)
 		expect(opened.model.advanced.dialog.isOpen).toBe(true)
 		const focused = pageUpdate(opened.model, Message.FocusedAdvanced({ cursor: 0 })).model
 		expect(autocompleteOf(focused).suggestions[0]?.label).toBe("service.name")
@@ -40,7 +42,7 @@ describe("traces advanced filter", () => {
 		const opened = pageUpdate(windowed(), Message.ClickedAdvancedFilter()).model
 		const focused = pageUpdate(opened, Message.FocusedAdvanced({ cursor: 0 })).model
 		const picked = pageUpdate(focused, Message.PressedAdvancedKey({ key: "Enter" })).model
-		expect(picked.advanced.draft.startsWith("service.name")).toBe(true)
+		expect(Str.startsWith("service.name")(picked.advanced.draft)).toBe(true)
 		const typed = pageUpdate(
 			picked,
 			Message.EditedAdvanced({ value: 'service.name = "storefront"', cursor: 27 }),

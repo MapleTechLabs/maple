@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 /** Humans grade meaning, not proximity. An unmatched finding may be another real bug. */
 export const Grade = Schema.Struct({
@@ -15,30 +15,33 @@ export const Grade = Schema.Struct({
 export type Grade = typeof Grade.Type
 
 export const scoreGrade = (grade: Grade, findingCount: number, expected: "present" | "absent") => {
-	const indexes = new Set(grade.findings.map((f) => f.index))
+	const indexes = new Set(Arr.map(grade.findings, (f) => f.index))
 	const complete =
 		grade.status === "complete" &&
 		grade.findings.length === findingCount &&
 		indexes.size === findingCount &&
-		grade.findings.every(
+		Arr.every(
+			grade.findings,
 			(f) =>
 				f.index >= 0 &&
 				f.index < findingCount &&
 				f.verdict !== "ungraded" &&
-				f.rationale.trim() !== "",
+				Str.trim(f.rationale) !== "",
 		)
 	if (!complete) return null
-	const target = grade.findings.some((f) => f.verdict === "target")
-	const valid = grade.findings.filter(
+	const target = Arr.some(grade.findings, (f) => f.verdict === "target")
+	const valid = Arr.filter(
+		grade.findings,
 		(f) => f.verdict === "other_valid" || (expected === "present" && f.verdict === "target"),
 	).length
 	return {
 		passed: expected === "present" ? target : !target,
 		valid,
-		falsePositives: grade.findings.filter(
+		falsePositives: Arr.filter(
+			grade.findings,
 			(f) => f.verdict === "false_positive" || (expected === "absent" && f.verdict === "target"),
 		).length,
-		duplicates: grade.findings.filter((f) => f.verdict === "duplicate").length,
+		duplicates: Arr.filter(grade.findings, (f) => f.verdict === "duplicate").length,
 		precision: findingCount === 0 ? null : valid / findingCount,
 	}
 }

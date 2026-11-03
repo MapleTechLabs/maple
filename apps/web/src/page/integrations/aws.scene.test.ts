@@ -3,11 +3,11 @@ import { Timestamp, type V2AwsConnection, type V2AwsIntegration } from "@maple/d
 import { AwsAccountId, AwsConnectionId } from "@maple/domain/primitives"
 import { AwsMetricStream } from "@maple/domain/aws"
 import { AWS_METRIC_NAMESPACES } from "@maple/domain/primitives"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import * as Field from "../../ui/field"
+import * as Field from "@maple/views/ui/field"
 import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -21,7 +21,7 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const connectionId = Schema.decodeSync(AwsConnectionId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
 
@@ -87,11 +87,15 @@ describe("aws card", () => {
 		expect(overviewOf(model.statuses, model.nowMs, "aws")).toMatchObject({ issue: "Metrics off" })
 
 		const opened = pageUpdate(model, Message.ClickedAwsMetrics({ id: connectionId })).model
-		const edited = [
-			Message.ToggledAwsRegion({ id: connectionId, region: "eu-central-1" }),
-			Message.ToggledAwsRegion({ id: connectionId, region: "us-east-1" }),
-			Message.ToggledAwsNamespace({ id: connectionId, namespace: "AWS/SQS" }),
-		].reduce((next, message) => pageUpdate(next, message).model, opened)
+		const edited = Arr.reduce(
+			[
+				Message.ToggledAwsRegion({ id: connectionId, region: "eu-central-1" }),
+				Message.ToggledAwsRegion({ id: connectionId, region: "us-east-1" }),
+				Message.ToggledAwsNamespace({ id: connectionId, namespace: "AWS/SQS" }),
+			],
+			opened,
+			(next, message) => pageUpdate(next, message).model,
+		)
 		const sent = pageUpdate(edited, Message.SubmittedAwsMetrics({ id: connectionId }))
 		const [update] = sent.commands ?? []
 		expect(update?.name).toBe("UpdateAwsMetricStream")
@@ -99,7 +103,7 @@ describe("aws card", () => {
 			id: connectionId,
 			metricStream: {
 				regions: ["eu-central-1"],
-				namespaces: AWS_METRIC_NAMESPACES.filter((namespace) => namespace !== "AWS/SQS"),
+				namespaces: Arr.filter(AWS_METRIC_NAMESPACES, (namespace) => namespace !== "AWS/SQS"),
 			},
 		})
 		// A second submit while saving sends nothing.
@@ -399,8 +403,10 @@ describe("aws card", () => {
 			Message.CompletedLoadAws({ key: statusKey(context, "aws"), result: Result.succeed(status) }),
 		)
 		expect(names(elsewhere.commands)).not.toContain("LoadAwsIngest")
-		const loads = (arrived.commands ?? []).filter((command) => command.name === "LoadAwsIngest")
-		expect(loads.map((command) => command.args)).toEqual([{ key: expect.any(String), id: connectionId }])
+		const loads = Arr.filter(arrived.commands ?? [], (command) => command.name === "LoadAwsIngest")
+		expect(Arr.map(loads, (command) => command.args)).toEqual([
+			{ key: expect.any(String), id: connectionId },
+		])
 		const key = arrived.model.awsCard.ingest[connectionId]?.key ?? ""
 		const loaded = pageUpdate(
 			arrived.model,

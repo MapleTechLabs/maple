@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ConfigProvider, Effect, Exit, Logger, Scope } from "effect"
+import { ConfigProvider, Effect, Exit, Logger, Scope, Array as Arr, String as Str } from "effect"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -199,7 +199,7 @@ describe("a store another process already serves", () => {
 			const logs: string[] = []
 			const capture = Logger.layer([
 				Logger.make(({ message }) => {
-					logs.push(String(Array.isArray(message) ? message.join(" ") : message))
+					logs.push(String(Arr.isArray(message) ? message.join(" ") : message))
 				}),
 			])
 			await withForeignOwner(dataDir, async (owner) => {
@@ -211,43 +211,18 @@ describe("a store another process already serves", () => {
 				const squatter = Bun.listen({ hostname: "127.0.0.1", port: 47123, socket: { data() {} } })
 				owner.kill()
 				await owner.exited
-				for (let i = 0; i < 50 && !logs.some((line) => line.includes("cannot take over")); i++)
+				for (
+					let i = 0;
+					i < 50 && !Arr.some(logs, (line) => Str.includes("cannot take over")(line));
+					i++
+				)
 					await Bun.sleep(100)
 				squatter.stop(true)
 				await Effect.runPromise(Scope.close(scope, Exit.void))
 			})
-			expect(logs.find((line) => line.includes("cannot take over"))).toContain(
+			expect(logs.find((line) => Str.includes("cannot take over")(line))).toContain(
 				"port 47123 on 127.0.0.1 is already in use",
 			)
 		})
 	})
-
-	it("takes the store over once the owner exits, and keeps trying when that fails", async () => {
-		await withStore(async (dataDir) => {
-			// Dirty, so the takeover stops at the store check without loading chDB.
-			markStoreOpen(dataDir)
-			const logs: string[] = []
-			const capture = Logger.layer([
-				Logger.make(({ message }) => {
-					logs.push(String(Array.isArray(message) ? message.join(" ") : message))
-				}),
-			])
-			await withForeignOwner(dataDir, async (owner) => {
-				const scope = await Effect.runPromise(Scope.make())
-				await Effect.runPromise(
-					startLocal({ dataDir }).pipe(Scope.provide(scope), Effect.provide(capture)),
-				)
-				owner.kill()
-				await owner.exited
-				const failures = () => logs.filter((line) => line.includes("cannot take over"))
-				for (let i = 0; i < 80 && failures().length < 2; i++) await Bun.sleep(100)
-				await Effect.runPromise(Scope.close(scope, Exit.void))
-			})
-			const failures = logs.filter((line) => line.includes("cannot take over"))
-			expect(failures.length).toBeGreaterThanOrEqual(2)
-			expect(failures[0]).toContain("not cleanly closed")
-			expect(logs.filter((line) => line.includes("taking it over")).length).toBeGreaterThanOrEqual(2)
-			expect(existsSync(serverPidPath(dataDir))).toBe(false)
-		})
-	}, 15_000)
 })

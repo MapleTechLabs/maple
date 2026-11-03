@@ -1,8 +1,8 @@
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure, toLoadFailure } from "../../data/load-failure"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { currentWindow } from "../../data/time-range"
 
 // The last screen, "You're live": what the org's own first day of data already shows, read once.
@@ -31,14 +31,12 @@ export const findingsOf = (rows: ReadonlyArray<ServiceRow>): LiveFindings => {
 		(best, row) => (best === null || row.p95LatencyMs > best.p95LatencyMs ? row : best),
 		null,
 	)
-	const failing = rows
-		.filter((row) => row.errorRate > 0)
-		.reduce<ServiceRow | null>(
-			(worst, row) => (worst === null || row.errorRate > worst.errorRate ? row : worst),
-			null,
-		)
+	const failing = Arr.filter(rows, (row) => row.errorRate > 0).reduce<ServiceRow | null>(
+		(worst, row) => (worst === null || row.errorRate > worst.errorRate ? row : worst),
+		null,
+	)
 	return {
-		serviceCount: new Set(rows.map((row) => row.serviceName)).size,
+		serviceCount: new Set(Arr.map(rows, (row) => row.serviceName)).size,
 		slowest:
 			slowest === null
 				? null
@@ -54,16 +52,17 @@ export const LoadLiveFindings = Command.define("LoadOnboardingLiveFindings", {
 	execute: ({ timeZone }) =>
 		currentWindow({ preset: "24h", snap: false, timeZone }).pipe(
 			Effect.flatMap((window) => getServiceOverview({ data: window })),
-			Effect.map((response) =>
-				findingsOf(
-					response.data.map((row) => ({
-						serviceName: String(row.serviceName),
-						p95LatencyMs: row.p95LatencyMs,
-						errorRate: row.errorRate,
-					})),
-				),
-			),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) =>
+					findingsOf(
+						Arr.map(response.data, (row) => ({
+							serviceName: String(row.serviceName),
+							p95LatencyMs: row.p95LatencyMs,
+							errorRate: row.errorRate,
+						})),
+					),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => LiveMessage.LoadedFindings({ result })),
 		),

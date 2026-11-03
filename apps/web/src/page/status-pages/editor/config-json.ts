@@ -4,17 +4,17 @@ import {
 	StatusPageConfig,
 	type StatusPageConfigChanges,
 } from "@maple/domain/http/v2"
-import { Result, Schema, SchemaIssue } from "effect"
+import { Result, Schema, SchemaIssue, Array as Arr, String as Str } from "effect"
 
 // The JSON tab's document: the page as `GET …/config` returns it, and a draft parsed back.
 
-const encodeConfig = Schema.encodeSync(StatusPageConfig)
+const encodeConfigJson = Schema.encodeSync(Schema.fromJsonString(StatusPageConfig, { space: 2 }))
 const encodeId = Schema.encodeSync(StatusPageComponentPublicId)
 
 /** Pretty-printed with public ids, two-space indent; the version rides along as `if_version`. */
 export const formatConfig = (config: StatusPageConfig): string => {
 	const { version: _version, ...document } = config
-	return JSON.stringify(encodeConfig(document), null, 2)
+	return encodeConfigJson(document)
 }
 
 export type DraftProblem =
@@ -108,7 +108,7 @@ const scanValue = (text: string, at: number, depth: number): Scan => {
 }
 
 const locate = (text: string, at: number) => {
-	const before = text.slice(0, at).split("\n")
+	const before = Str.split("\n")(Str.slice(0, at)(text))
 	return { line: before.length, column: (before.at(-1)?.length ?? 0) + 1 }
 }
 
@@ -126,17 +126,11 @@ const formatIssue = SchemaIssue.makeFormatterStandardSchemaV1()
 type PathSegment = PropertyKey | { readonly key: PropertyKey }
 
 const pathOf = (path: ReadonlyArray<PathSegment>): string =>
-	path
-		.map((segment) => (typeof segment === "object" ? segment.key : segment))
-		.reduce<string>(
-			(out, key) =>
-				typeof key === "number"
-					? `${out}[${key}]`
-					: out === ""
-						? String(key)
-						: `${out}.${String(key)}`,
-			"",
-		)
+	Arr.map(path, (segment) => (typeof segment === "object" ? segment.key : segment)).reduce<string>(
+		(out, key) =>
+			typeof key === "number" ? `${out}[${key}]` : out === "" ? String(key) : `${out}.${String(key)}`,
+		"",
+	)
 
 const parseJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
 const decode = Schema.decodeUnknownResult(StatusPageConfig)
@@ -167,7 +161,7 @@ export const parseDraft = (text: string, current: StatusPageConfig): DraftResult
 			if (duplicate !== undefined)
 				return Result.fail({
 					_tag: "Schema",
-					path: `components[${config.components.map((c) => c.id).lastIndexOf(duplicate)}].id`,
+					path: `components[${Arr.map(config.components, (c) => c.id).lastIndexOf(duplicate)}].id`,
 					message: `${encodeId(duplicate)} is listed more than once`,
 				})
 			return Result.succeed({ config, changes })

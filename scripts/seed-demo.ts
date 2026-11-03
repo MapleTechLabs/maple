@@ -8,7 +8,17 @@
  * written to `seed-demo/.last-seed.json`; screenshots pin their time ranges to it.
  */
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
-import { Console, DateTime, Effect, FileSystem, Layer, Option, Schema } from "effect"
+import {
+	Clock,
+	Console,
+	DateTime,
+	Effect,
+	FileSystem,
+	Option,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { Command, Flag } from "effect/cli"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
@@ -86,7 +96,7 @@ const checkWarehouseRouting = Effect.fn("seedDemo.checkWarehouseRouting")(functi
 		yield* Console.warn("  ! could not run psql; skipped the BYO ClickHouse check")
 		return
 	}
-	const chUrl = output.value.trim()
+	const chUrl = Str.trim(output.value)
 	if (chUrl !== "") {
 		return yield* new SeedPreflightError({
 			message:
@@ -177,7 +187,7 @@ const resetDemo = Effect.fn("seedDemo.reset")(function* (orgId: string, incident
 	)
 
 	const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-	const watermark = new Date(incidentAt - 5 * MINUTE).toISOString()
+	const watermark = DateTime.formatIso(DateTime.makeUnsafe(incidentAt - 5 * MINUTE))
 	yield* spawner
 		.string(
 			ChildProcess.make("psql", [
@@ -187,7 +197,7 @@ const resetDemo = Effect.fn("seedDemo.reset")(function* (orgId: string, incident
 				"-v",
 				"ON_ERROR_STOP=1",
 				"-c",
-				`TRUNCATE ${ERROR_STATE_TABLES.join(", ")} CASCADE`,
+				`TRUNCATE ${Arr.join(ERROR_STATE_TABLES, ", ")} CASCADE`,
 				"-c",
 				`INSERT INTO error_tick_states (org_id, processed_through, bootstrap_completed, updated_at)
 				 VALUES ('${orgId}', '${watermark}', true, now())
@@ -202,19 +212,26 @@ const resetDemo = Effect.fn("seedDemo.reset")(function* (orgId: string, incident
 
 // ── sending ─────────────────────────────────────────────────────────────────
 
+const encodeJsonEffect = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+const encodeStateJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
+
 const post = Effect.fn("seedDemo.post")(
 	function* (target: Target, path: string, body: unknown) {
 		const client = yield* HttpClient.HttpClient
+		const json = yield* encodeJsonEffect(body).pipe(Effect.orDie)
 		const request = HttpClientRequest.post(`${target.endpoint}${path}`).pipe(
 			HttpClientRequest.bearerToken(target.key),
-			HttpClientRequest.bodyText(JSON.stringify(body), "application/json"),
+			HttpClientRequest.bodyText(json, "application/json"),
 		)
 		const response = yield* client
 			.execute(request)
 			.pipe(Effect.mapError((cause) => new SeedIngestError({ message: cause.message, path })))
 		if (response.status >= 300) {
 			const text = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
-			return yield* new SeedIngestError({ message: `${response.status}: ${text.slice(0, 300)}`, path })
+			return yield* new SeedIngestError({
+				message: `${response.status}: ${Str.slice(0, 300)(text)}`,
+				path,
+			})
 		}
 	},
 	Effect.retry({ times: 3, schedule: Schedule.exponential("250 millis") }),
@@ -224,26 +241,26 @@ const chunk = <T>(items: ReadonlyArray<T>, size: number): ReadonlyArray<Readonly
 	Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size))
 
 const requestsFor = (out: WindowOutput) => [
-	...out.spans.flatMap((group) =>
-		chunk(group.items, SPANS_PER_REQUEST).map((spans) => ({
+	...Arr.flatMap(out.spans, (group) =>
+		Arr.map(chunk(group.items, SPANS_PER_REQUEST), (spans) => ({
 			path: "/v1/traces",
 			body: resourceSpans(group.resource.attributes, spans),
 		})),
 	),
-	...out.logs.map((group) => ({
+	...Arr.map(out.logs, (group) => ({
 		path: "/v1/logs",
 		body: resourceLogs(group.resource.attributes, group.items),
 	})),
-	...out.metrics.map((group) => ({
+	...Arr.map(out.metrics, (group) => ({
 		path: "/v1/metrics",
 		body: resourceMetrics(group.resource.attributes, group.items),
 	})),
 ]
 
 const count = <T>(groups: ReadonlyArray<Grouped<T>>) =>
-	groups.reduce((total, group) => total + group.items.length, 0)
+	Arr.reduce(groups, 0, (total, group) => total + group.items.length)
 
-const clock = (ms: number) => new Date(ms).toTimeString().slice(0, 5)
+const clock = (ms: number) => Str.slice(0, 5)(new Date(ms).toTimeString())
 
 // ── command ─────────────────────────────────────────────────────────────────
 
@@ -301,19 +318,18 @@ const seed = Command.make(
 	Effect.fn("seedDemo")(function* (flags) {
 		const fs = yield* FileSystem.FileSystem
 		const previous = flags.resume
-			? Option.some(
-					yield* fs.readFileString(STATE_FILE).pipe(
-						Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(SeedState))),
-						Effect.mapError(
-							() =>
-								new SeedPreflightError({
-									message: `--resume: no readable state at ${STATE_FILE}`,
-								}),
-						),
-					),
+			? yield* fs.readFileString(STATE_FILE).pipe(
+					Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(SeedState))),
+					Effect.mapBoth({
+						onSuccess: Option.some,
+						onFailure: () =>
+							new SeedPreflightError({
+								message: `--resume: no readable state at ${STATE_FILE}`,
+							}),
+					}),
 				)
 			: Option.none()
-		const target: Target = { endpoint: flags.endpoint.replace(/\/$/, ""), key: flags.key }
+		const target: Target = { endpoint: Str.replace(/\/$/, "")(flags.endpoint), key: flags.key }
 		const anchor = Option.match(previous, {
 			onSome: (state) => DateTime.toEpochMillis(state.anchor),
 			onNone: () =>
@@ -397,8 +413,8 @@ const seed = Command.make(
 					})
 				}
 				yield* Console.log(
-					`  ${clock(from)}  ${String(out.traceCount).padStart(6)} traces  ${String(out.errorTraceCount).padStart(4)} failed  ` +
-						`${String(spans).padStart(7)} spans  ${String(logs).padStart(6)} logs`,
+					`  ${clock(from)}  ${Str.padStart(6)(String(out.traceCount))} traces  ${Str.padStart(4)(String(out.errorTraceCount))} failed  ` +
+						`${Str.padStart(7)(String(spans))} spans  ${Str.padStart(6)(String(logs))} logs`,
 				)
 			})
 		const windows = Array.from({ length: hours }, (_, i) => anchor - hours * HOUR + i * HOUR)
@@ -412,18 +428,14 @@ const seed = Command.make(
 		const writeState = (followedThrough: number) =>
 			fs.writeFileString(
 				STATE_FILE,
-				`${JSON.stringify(
-					{
-						anchor: new Date(anchor).toISOString(),
-						start: new Date(world.start).toISOString(),
-						incidentAt: new Date(world.incidentAt).toISOString(),
-						followedThrough: new Date(followedThrough).toISOString(),
-						orgId: Option.getOrNull(orgId),
-						seed,
-					},
-					null,
-					"\t",
-				)}\n`,
+				`${encodeStateJson({
+					anchor: new Date(anchor).toISOString(),
+					start: new Date(world.start).toISOString(),
+					incidentAt: new Date(world.incidentAt).toISOString(),
+					followedThrough: new Date(followedThrough).toISOString(),
+					orgId: Option.getOrNull(orgId),
+					seed,
+				})}\n`,
 			)
 		let cursor = Option.match(previous, {
 			onSome: (state) => DateTime.toEpochMillis(state.followedThrough ?? state.anchor),
@@ -437,7 +449,8 @@ const seed = Command.make(
 
 		yield* Console.log(`\nfollowing from ${clock(cursor)}: one window per minute, Ctrl-C to stop`)
 		return yield* Effect.gen(function* () {
-			const end = Math.floor(Date.now() / MINUTE) * MINUTE
+			const now = yield* Clock.currentTimeMillis
+			const end = Math.floor(now / MINUTE) * MINUTE
 			const catchUp = Array.from(
 				{ length: Math.ceil((end - cursor) / HOUR) },
 				(_, i) => cursor + i * HOUR,
@@ -455,13 +468,13 @@ const seed = Command.make(
 					Console.warn(`  ! ${error.path}: ${error.message}; retrying next minute`),
 				),
 			)
-			yield* Effect.sleep(`${MINUTE - (Date.now() % MINUTE) + 2_000} millis`)
+			const sleepFrom = yield* Clock.currentTimeMillis
+			yield* Effect.sleep(`${MINUTE - (sleepFrom % MINUTE) + 2_000} millis`)
 		}).pipe(Effect.forever)
 	}),
 ).pipe(Command.withDescription("Seed the local stack with the Acme Shop demo world"))
 
 Command.run(seed, { version: "1.0.0" }).pipe(
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
-	Effect.provide(Layer.mergeAll(FetchHttpClient.layer, NodeServices.layer)),
+	Effect.provide([FetchHttpClient.layer, NodeServices.layer]),
 	NodeRuntime.runMain,
 )

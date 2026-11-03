@@ -1,12 +1,24 @@
 import { networkInterfaces } from "node:os"
-import { Cause, Duration, Effect, Layer, Option, Result, Stream } from "effect"
+import {
+	Cause,
+	Config,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Result,
+	Stream,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { defaultLocalUrl, isLoopbackHostname, isRemoteHttps } from "@maple/local-server/local-address"
 import { ACCESS_TOKEN_ENV } from "@maple/local-server/remote-auth"
 
-const bare = (hostname: string): string => hostname.replace(/^\[(.*)\]$/, "$1").toLowerCase()
+const bare = (hostname: string): string => Str.toLowerCase(Str.replace(/^\[(.*)\]$/, "$1")(hostname))
 
 /** Scheme and host of the configured target; any port, since a discovered server may not use the default. */
 const targetOf = (value: string): { readonly protocol: string; readonly host: string } | undefined => {
@@ -19,9 +31,10 @@ const targetOf = (value: string): { readonly protocol: string; readonly host: st
 /** This machine's own addresses: a server started with `--host <interface IP>` is found there. */
 const ownAddresses = (): ReadonlySet<string> =>
 	new Set(
-		Object.values(networkInterfaces())
-			.flatMap((entries) => entries ?? [])
-			.map((entry) => bare(entry.address)),
+		Arr.map(
+			Arr.flatMap(Rec.values(networkInterfaces()), (entries) => entries ?? []),
+			(entry) => bare(entry.address),
+		),
 	)
 
 /**
@@ -34,7 +47,7 @@ export const withLocalAccessToken =
 	(request: HttpClientRequest.HttpClientRequest): HttpClientRequest.HttpClientRequest => {
 		if (token === undefined || request.headers.authorization !== undefined) return request
 		const parsed = Result.try(() => new URL(request.url))
-		if (Result.isFailure(parsed) || !parsed.success.pathname.startsWith("/local/")) return request
+		if (Result.isFailure(parsed) || !Str.startsWith("/local/")(parsed.success.pathname)) return request
 		const url = parsed.success
 		const host = bare(url.hostname)
 		const target = targetOf(localUrl)
@@ -51,12 +64,12 @@ export const LOCAL_HEADERS_ENV = "MAPLE_LOCAL_HEADERS"
  * percent-decoded, the same format as `OTEL_EXPORTER_OTLP_HEADERS`.
  */
 export const parseLocalHeaders = (raw: string | undefined): Readonly<Record<string, string>> =>
-	Object.fromEntries(
-		(raw ?? "").split(",").flatMap((entry) => {
+	Rec.fromEntries(
+		Arr.flatMap(Str.split(",")(raw ?? ""), (entry) => {
 			const separator = entry.indexOf("=")
-			const name = entry.slice(0, separator).trim().toLowerCase()
+			const name = Str.toLowerCase(Str.trim(Str.slice(0, separator)(entry)))
 			if (separator < 0 || name === "") return []
-			const value = entry.slice(separator + 1).trim()
+			const value = Str.trim(Str.slice(separator + 1)(entry))
 			const decoded = Result.try(() => decodeURIComponent(value))
 			return [[name, Result.isSuccess(decoded) ? decoded.success : value]]
 		}),
@@ -81,10 +94,10 @@ export const withLocalHeaders =
 	(headers: Readonly<Record<string, string>>, localUrl: string) =>
 	(request: HttpClientRequest.HttpClientRequest): HttpClientRequest.HttpClientRequest => {
 		if (!isTargetRequest(request, localUrl)) return request
-		const missing = Object.entries(headers).filter(([name]) => request.headers[name] === undefined)
+		const missing = Arr.filter(Rec.toEntries(headers), ([name]) => request.headers[name] === undefined)
 		return missing.length === 0
 			? request
-			: HttpClientRequest.setHeaders(request, Object.fromEntries(missing))
+			: HttpClientRequest.setHeaders(request, Rec.fromEntries(missing))
 	}
 
 /** True when the CLI should ask `cloudflared` for a Cloudflare Access token: no Access credential is set. */
@@ -120,7 +133,7 @@ export const cloudflaredAccessToken = (
 			[handle.exitCode, Stream.mkString(Stream.decodeText(handle.stdout))],
 			{ concurrency: "unbounded" },
 		)
-		const token = stdout.trim()
+		const token = Str.trim(stdout)
 		if (exitCode === 0 && token !== "") {
 			yield* Effect.annotateCurrentSpan(OUTCOME, "found")
 			return Option.some(token)
@@ -141,7 +154,7 @@ export const cloudflaredAccessToken = (
 				Effect.andThen(
 					Effect.annotateCurrentSpan({
 						[OUTCOME]: "unavailable",
-						"maple.cli.cloudflared.error": Cause.pretty(cause).split("\n")[0] ?? "",
+						"maple.cli.cloudflared.error": Str.split("\n")(Cause.pretty(cause))[0] ?? "",
 					}),
 				),
 				Effect.as(Option.none<string>()),
@@ -178,9 +191,7 @@ export const localAccessClient =
 			// A followed redirect would carry the credentials added here to wherever
 			// it points, so the target's redirects are never followed while any are.
 			const noRedirects =
-				isRemoteHttps(localUrl) ||
-				Object.keys(headers).length > 0 ||
-				settings.accessToken !== undefined
+				isRemoteHttps(localUrl) || Rec.keys(headers).length > 0 || settings.accessToken !== undefined
 			return client.pipe(
 				HttpClient.mapRequest(withLocalAccessToken(settings.accessToken, localUrl)),
 				HttpClient.mapRequest(withLocalHeaders(headers, localUrl)),
@@ -205,17 +216,29 @@ export const localAccessClient =
 			)
 		})
 
+/** An unset env var reads as `undefined`; never fails. */
+const optionalEnvString = (key: string): Effect.Effect<string | undefined> =>
+	Config.String(key).pipe(
+		Config.option,
+		Effect.map(Option.getOrUndefined),
+		Effect.orElseSucceed(() => undefined),
+	)
+
 /** The CLI's HttpClient, configured from `MAPLE_LOCAL_URL`, `MAPLE_LOCAL_ACCESS_TOKEN` and `MAPLE_LOCAL_HEADERS`. */
 export const LocalAccessHttpClient = Layer.effect(
 	HttpClient.HttpClient,
 	Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
 		const spawner = yield* ChildProcessSpawner
-		const localUrl = process.env.MAPLE_LOCAL_URL ?? defaultLocalUrl(process.env.MAPLE_LOCAL_BIND_HOST)
+		const configuredUrl = yield* optionalEnvString("MAPLE_LOCAL_URL")
+		const bindHost = yield* optionalEnvString("MAPLE_LOCAL_BIND_HOST")
+		const localUrl = configuredUrl ?? defaultLocalUrl(bindHost)
+		const accessToken = yield* optionalEnvString(ACCESS_TOKEN_ENV)
+		const headers = yield* optionalEnvString(LOCAL_HEADERS_ENV)
 		return yield* localAccessClient({
 			localUrl,
-			accessToken: process.env[ACCESS_TOKEN_ENV]?.trim() || undefined,
-			headers: parseLocalHeaders(process.env[LOCAL_HEADERS_ENV]),
+			accessToken: accessToken?.trim() || undefined,
+			headers: parseLocalHeaders(headers),
 			// Only asked for when `localUrl` parses (`wantsCloudflaredToken`).
 			cloudflaredToken: cloudflaredAccessToken(originOf(localUrl) ?? localUrl).pipe(
 				Effect.provideService(ChildProcessSpawner, spawner),

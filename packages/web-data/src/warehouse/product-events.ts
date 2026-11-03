@@ -4,7 +4,7 @@
 // packages/query-engine/src/ch/queries/product-events.ts for the semantics of
 // `keyBy`, the session step, and the breakdown grouping.
 
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { TraceId } from "@maple/domain"
 import {
 	ProductEventNamesRequest,
@@ -294,7 +294,7 @@ const getProductEventsPathsWidgetEffect = Effect.fn("QueryEngine.getProductEvent
 	const input = yield* decodeInput(ProductEventsPathsWidgetInputSchema, data, "getProductEventsPathsWidget")
 	const anchorName = input.anchor.kind === "event" ? input.anchor.eventName : input.anchor.pagePath
 	// No anchor yet (the preset tile, a widget mid-edit): the empty state.
-	if (anchorName.trim() === "") return { data: [] satisfies ReadonlyArray<PathsWidgetRow> }
+	if (Str.trim(anchorName) === "") return { data: [] satisfies ReadonlyArray<PathsWidgetRow> }
 
 	const result = yield* runWarehouseQuery("productEventsPathsWidget", () =>
 		Effect.gen(function* () {
@@ -349,6 +349,6 @@ const getProductEventAttributeKeysEffect = Effect.fn("QueryEngine.getProductEven
 	const result = response.result
 	if (result.kind !== "attributeKeys") return { data: [] }
 	return {
-		data: result.data.map((row) => ({ attributeKey: row.key, usageCount: Number(row.count) })),
+		data: Arr.map(result.data, (row) => ({ attributeKey: row.key, usageCount: Number(row.count) })),
 	}
 })

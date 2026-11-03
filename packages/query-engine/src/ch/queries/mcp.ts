@@ -12,6 +12,7 @@ import {
 } from "@maple/domain/mcp-clients"
 import { ServiceOperationsHourly, Traces, orgIdParam, utcSecondsParam } from "../tables"
 import { finiteOrZero, isoBucket } from "./format"
+import { Array as Arr } from "effect"
 
 /** The toolbar's selection, applied in SQL so percentiles are measured over what is shown. */
 export interface McpCallFilter {
@@ -34,6 +35,27 @@ const toolName = ($: TracesRow) => $.SpanAttributes.get("gen_ai.tool.name")
 const errorType = ($: TracesRow) => $.SpanAttributes.get("error.type")
 const userAgent = ($: TracesRow) => $.SpanAttributes.get("user_agent.original")
 const failed = ($: TracesRow) => errorType($).neq("")
+/**
+ * Why a call failed: the status message, else `error.message`. An `isError` tool result is a
+ * successful JSON-RPC call with status Ok, so its reason can only ride on the attribute.
+ */
+const errorMessage = ($: TracesRow) =>
+	CH.if_($.StatusMessage.neq(""), $.StatusMessage, $.SpanAttributes.get("error.message"))
+
+/** The end user: OpenTelemetry `user.id`, else the deprecated `enduser.id`. */
+const userId = ($: TracesRow) =>
+	CH.if_(
+		$.SpanAttributes.get("user.id").neq(""),
+		$.SpanAttributes.get("user.id"),
+		$.SpanAttributes.get("enduser.id"),
+	)
+/** What the page calls the user: `user.name`, else `user.email`. */
+const userLabel = ($: TracesRow) =>
+	CH.if_(
+		$.SpanAttributes.get("user.name").neq(""),
+		$.SpanAttributes.get("user.name"),
+		$.SpanAttributes.get("user.email"),
+	)
 
 /** Any non-empty value in the group, `''` only when no span sent one. */
 const nonEmpty = (value: CH.Expr<string>) => CH.anyIf(value, value.neq(""))
@@ -46,7 +68,8 @@ export const mcpClientName = ($: TracesRow): CH.Expr<string> => {
 	const token = CH.extract_(userAgent($), MCP_CLIENT_TOKEN_PATTERN)
 	return CH.multiIf<string>(
 		[
-			...KNOWN_MCP_CLIENTS.map(
+			...Arr.map(
+				KNOWN_MCP_CLIENTS,
 				(client) => [knownClient($, client.prefix), CH.lit(client.name)] as const,
 			),
 			[token.eq(""), CH.lit(UNKNOWN_MCP_CLIENT)],
@@ -58,7 +81,8 @@ export const mcpClientName = ($: TracesRow): CH.Expr<string> => {
 /** `mcpClientOf(user agent).kind`, in SQL. */
 const mcpClientKind = ($: TracesRow): CH.Expr<string> =>
 	CH.multiIf<string>(
-		KNOWN_MCP_CLIENTS.map(
+		Arr.map(
+			KNOWN_MCP_CLIENTS,
 			(client) => [knownClient($, client.prefix), CH.lit(String(client.kind))] as const,
 		),
 		CH.lit("unknown"),
@@ -186,6 +210,32 @@ export function mcpClientsQuery(filter: McpCallFilter = {}) {
 		.format("JSON")
 }
 
+/**
+ * Per client family across every MCP request, not just tool calls: its connects (`initialize`),
+ * distinct `client.address` values and last request. Finds the clients that connect and never call.
+ */
+export function mcpClientReachQuery(filter: Pick<McpCallFilter, "client" | "kind"> = {}) {
+	return from(Traces)
+		.select(($) => ({
+			client: mcpClientName($),
+			kind: CH.any_(mcpClientKind($)),
+			calls: CH.countIf(method($).eq("tools/call")),
+			errors: CH.countIf(method($).eq("tools/call").and(failed($))),
+			connects: CH.countIf(method($).eq("initialize")),
+			sources: CH.uniqExact(CH.nullIf($.SpanAttributes.get("client.address"), "")),
+			lastSeen: CH.max_($.Timestamp),
+		}))
+		.where(($) => [
+			...serverSpans($),
+			CH.when(filter.client, (client) => mcpClientName($).eq(client)),
+			CH.when(filter.kind, (kind) => mcpClientKind($).eq(kind)),
+		])
+		.groupBy("client")
+		.orderBy(["connects", "desc"])
+		.limit(500)
+		.format("JSON")
+}
+
 /** One service's server spans per (method, error type): failures and the coverage checklist's counts. */
 export function mcpSpanSummaryQuery() {
 	return from(Traces)
@@ -196,9 +246,12 @@ export function mcpSpanSummaryQuery() {
 			withToolName: CH.countIf(toolName($).neq("")),
 			withUserAgent: CH.countIf(userAgent($).neq("")),
 			withSession: CH.countIf($.SpanAttributes.get("mcp.session.id").neq("")),
+			withUser: CH.countIf(userId($).neq("")),
+			// In a session either way: the two counts above overlap where a call carries both.
+			inSession: CH.countIf($.SpanAttributes.get("mcp.session.id").neq("").or(userId($).neq(""))),
 			// A call with a caller span from `params._meta` links the HTTP span instead of hanging off it.
 			withCallerTrace: CH.countIf(CH.arrayElement($.LinksTraceId, 1).neq("")),
-			withMessage: CH.countIf($.StatusMessage.neq("")),
+			withMessage: CH.countIf(errorMessage($).neq("")),
 			firstSpan: CH.min_($.Timestamp),
 			protocolVersion: nonEmpty($.SpanAttributes.get("mcp.protocol.version")),
 			transport: nonEmpty($.SpanAttributes.get("network.transport")),
@@ -209,15 +262,15 @@ export function mcpSpanSummaryQuery() {
 		.format("JSON")
 }
 
-/** `clientInfo.name` counts from `initialize` spans. */
-export function mcpInitializersQuery() {
+/** Requests per `clientInfo.name`: `initialize` sends it, a stateless request sends it in `_meta`. */
+export function mcpClientInfoQuery() {
 	return from(Traces)
-		.select(($) => ({ name: $.SpanAttributes.get("maple.mcp.client.name"), count: CH.count() }))
-		.where(($) => [
-			...serverSpans($),
-			method($).eq("initialize"),
-			$.SpanAttributes.get("maple.mcp.client.name").neq(""),
-		])
+		.select(($) => ({
+			name: $.SpanAttributes.get("maple.mcp.client.name"),
+			count: CH.count(),
+			connects: CH.countIf(method($).eq("initialize")),
+		}))
+		.where(($) => [...serverSpans($), $.SpanAttributes.get("maple.mcp.client.name").neq("")])
 		.groupBy("name")
 		.orderBy(["count", "desc"])
 		.limit(50)
@@ -313,7 +366,7 @@ export function mcpErrorGroupsQuery(filter: McpCallFilter) {
 	return from(Traces)
 		.select(($) => ({
 			errorType: errorType($),
-			message: $.StatusMessage,
+			message: errorMessage($),
 			count: CH.count(),
 			clients: CH.uniqExact(mcpClientName($)),
 			lastSeen: CH.max_($.Timestamp),
@@ -331,10 +384,10 @@ export function mcpErrorTrendQuery(filter: McpCallFilter, messages: ReadonlyArra
 		.select(($) => ({
 			bucket: isoBucket($.Timestamp),
 			errorType: errorType($),
-			message: $.StatusMessage,
+			message: errorMessage($),
 			count: CH.count(),
 		}))
-		.where(($) => [...calls($, filter), failed($), CH.inList($.StatusMessage, messages)])
+		.where(($) => [...calls($, filter), failed($), CH.inList(errorMessage($), messages)])
 		.groupBy("bucket", "errorType", "message")
 		.format("JSON")
 }
@@ -355,6 +408,183 @@ export function mcpCallListQuery(order: McpCallOrder, filter: McpCallFilter, lim
 		}))
 		.where(($) => [...calls($, filter), CH.when(order === "failed" ? true : undefined, () => failed($))])
 		.orderBy(order === "slowest" ? ["duration", "desc"] : ["timestamp", "desc"])
+		.limit(limit)
+		.format("JSON")
+}
+
+// Sessions: one server's requests grouped by `mcp.session.id`, which only a stateful transport
+// issues. A stateless server's requests carrying `user.id` join a user's sessions instead, split by
+// the backend at an idle gap. A session's client is read off its requests, which all carry the same one.
+
+const sessionId = ($: TracesRow) => $.SpanAttributes.get("mcp.session.id")
+const failedCall = ($: TracesRow) => method($).eq("tools/call").and(failed($))
+
+/** The sessions toolbar's selection. */
+export interface McpSessionFilter {
+	readonly client?: string
+	readonly kind?: McpClientKind
+	/** Case-insensitive substring of the session id or the user id. */
+	readonly search?: string
+	/** Sessions with at least one failed tool call. */
+	readonly failingOnly?: boolean
+	/** One user's requests, by exact `user.id`. */
+	readonly user?: string
+}
+
+const selected = ($: TracesRow, filter: McpSessionFilter) => [
+	CH.when(filter.client, (client) => mcpClientName($).eq(client)),
+	CH.when(filter.kind, (kind) => mcpClientKind($).eq(kind)),
+	CH.when(filter.user, (user) => userId($).eq(user)),
+	// Ids every request of a session carries, so a match keeps whole sessions.
+	CH.when(filter.search, (search) => {
+		const pattern = `%${likeLiteral(search)}%`
+		return sessionId($).ilike(pattern).or(userId($).ilike(pattern))
+	}),
+]
+
+/** Requests in a session the server issued. */
+const sessionRequests = ($: TracesRow, filter: McpSessionFilter) => [
+	...serverSpans($),
+	sessionId($).neq(""),
+	...selected($, filter),
+]
+
+/** A stateless server's requests from a known user: the stuff of user sessions. */
+const userRequests = ($: TracesRow, filter: McpSessionFilter) => [
+	...serverSpans($),
+	sessionId($).eq(""),
+	userId($).neq(""),
+	...selected($, filter),
+]
+
+/** One row per issued session under the selection, the latest first. */
+export function mcpSessionListQuery(filter: McpSessionFilter = {}, limit = 200) {
+	return from(Traces)
+		.select(($) => ({
+			sessionId: sessionId($),
+			client: CH.anyIf(mcpClientName($), userAgent($).neq("")),
+			kind: CH.anyIf(mcpClientKind($), userAgent($).neq("")),
+			user: nonEmpty(userId($)),
+			userName: nonEmpty(userLabel($)),
+			requests: CH.count(),
+			calls: CH.countIf(method($).eq("tools/call")),
+			errors: CH.countIf(failedCall($)),
+			tools: CH.uniqExact(CH.nullIf(toolName($), "")),
+			firstSeen: CH.min_($.Timestamp),
+			lastSeen: CH.max_($.Timestamp),
+		}))
+		.where(($) => sessionRequests($, filter))
+		.groupBy("sessionId")
+		.having(($) => [
+			CH.when(filter.failingOnly === true ? true : undefined, () => CH.countIf(failedCall($)).gt(0)),
+		])
+		.orderBy(["lastSeen", "desc"])
+		.limit(limit)
+		.format("JSON")
+}
+
+/**
+ * Totals over every request that belongs to a session, issued or a user's: the issued sessions, the
+ * users and the tool calls. User sessions are counted by the backend once it has split them.
+ */
+export function mcpSessionTotalsQuery(filter: McpSessionFilter = {}) {
+	return from(Traces)
+		.select(($) => ({
+			sessions: CH.uniqExact(CH.nullIf(sessionId($), "")),
+			failingSessions: CH.uniqExact(CH.nullIf(CH.if_(failedCall($), sessionId($), CH.lit("")), "")),
+			users: CH.uniqExact(CH.nullIf(userId($), "")),
+			calls: CH.countIf(method($).eq("tools/call")),
+			errors: CH.countIf(failedCall($)),
+		}))
+		.where(($) => [...serverSpans($), sessionId($).neq("").or(userId($).neq("")), ...selected($, filter)])
+		.format("JSON")
+}
+
+/**
+ * A stateless server's known users, per (user, client, minute), the latest first so a limit drops the
+ * oldest: the backend sorts them and splits each user and client's minutes into sessions at an idle gap.
+ */
+export function mcpUserActivityQuery(filter: McpSessionFilter = {}, limit = 50_000) {
+	return from(Traces)
+		.select(($) => ({
+			user: userId($),
+			client: mcpClientName($),
+			minute: CH.toStartOfMinute($.Timestamp),
+			kind: CH.any_(mcpClientKind($)),
+			userName: nonEmpty(userLabel($)),
+			requests: CH.count(),
+			calls: CH.countIf(method($).eq("tools/call")),
+			errors: CH.countIf(failedCall($)),
+			tools: CH.groupUniqArray(CH.nullIf(toolName($), "")),
+			firstSeen: CH.min_($.Timestamp),
+			lastSeen: CH.max_($.Timestamp),
+		}))
+		.where(($) => userRequests($, filter))
+		.groupBy("user", "client", "minute")
+		.orderBy(["minute", "desc"])
+		.limit(limit)
+		.format("JSON")
+}
+
+/** Sessions and users active per bucket; a user's stateless requests count once per client. */
+export function mcpSessionActivityQuery(filter: McpSessionFilter = {}) {
+	return from(Traces)
+		.select(($) => ({
+			bucket: isoBucket($.Timestamp),
+			sessions: CH.uniqExact(
+				CH.if_(sessionId($).neq(""), sessionId($), CH.concat(userId($), "|", mcpClientName($))),
+			),
+			users: CH.uniqExact(CH.nullIf(userId($), "")),
+		}))
+		.where(($) => [...serverSpans($), sessionId($).neq("").or(userId($).neq("")), ...selected($, filter)])
+		.groupBy("bucket")
+		.orderBy(["bucket", "asc"])
+		.format("JSON")
+}
+
+/** One request of a session, as the session page lists it. */
+const requestColumns = ($: TracesRow) => ({
+	timestamp: $.Timestamp,
+	method: method($),
+	tool: toolName($),
+	client: mcpClientName($),
+	kind: mcpClientKind($),
+	user: userId($),
+	userName: userLabel($),
+	requestId: $.SpanAttributes.get("jsonrpc.request.id"),
+	protocolVersion: $.SpanAttributes.get("mcp.protocol.version"),
+	duration: $.Duration,
+	errorType: errorType($),
+	message: errorMessage($),
+	traceId: $.TraceId,
+	spanId: $.SpanId,
+	linkTraceId: CH.arrayElement($.LinksTraceId, 1),
+})
+
+/**
+ * One issued session's requests in order, every method. A caller that sent `params._meta` is the
+ * span's own trace; the first link is the HTTP request's span, or the caller's on a server that only links.
+ */
+export function mcpSessionRequestsQuery(limit = 1_000) {
+	return from(Traces)
+		.select(requestColumns)
+		.where(($) => [...serverSpans($), sessionId($).eq(param.string("sessionId"))])
+		.orderBy(["timestamp", "asc"])
+		.limit(limit)
+		.format("JSON")
+}
+
+/** One user's stateless requests from one client in order; the session's own bounds are the window. */
+export function mcpUserSessionRequestsQuery(limit = 1_000) {
+	return from(Traces)
+		.select(requestColumns)
+		.where(($) => [
+			...serverSpans($),
+			sessionId($).eq(""),
+			userId($).eq(param.string("userId")),
+			mcpClientName($).eq(param.string("client")),
+		])
+		.orderBy(["timestamp", "asc"])
 		.limit(limit)
 		.format("JSON")
 }

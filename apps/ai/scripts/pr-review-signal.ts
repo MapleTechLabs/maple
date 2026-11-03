@@ -18,13 +18,13 @@ import {
 	ReviewSignalCase,
 	snapshotComment,
 } from "@maple/backend/services/pr-review/review-signal-corpus"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { run } from "./pr-review-local"
 
 const CORPUS_DIR = fileURLToPath(
 	new URL("../../../packages/backend/src/services/pr-review/__fixtures__/review-signal/", import.meta.url),
 )
-const encodeCase = Schema.encodeSync(ReviewSignalCase)
+const encodeCase = Schema.encodeSync(Schema.fromJsonString(ReviewSignalCase))
 
 const Comment = Schema.Struct({
 	body: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -32,7 +32,9 @@ const Comment = Schema.Struct({
 	user: Schema.NullOr(Schema.Struct({ login: Schema.String })),
 	in_reply_to_id: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 })
-const decodeComments = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Comment)))
+const decodeCommentPages = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Array(Schema.Array(Comment))),
+)
 const PullRequest = Schema.Struct({ title: Schema.String })
 const decodePullRequest = Schema.decodeUnknownOption(Schema.fromJsonString(PullRequest))
 
@@ -43,7 +45,10 @@ const REVIEWER = "maple-review-bot[bot]"
 const list = (path: string) => {
 	const result = run(["gh", "api", "--paginate", "--slurp", path])
 	if (!result.ok) return []
-	return Option.getOrElse(decodeComments(JSON.stringify(JSON.parse(result.stdout).flat())), () => [])
+	return Option.getOrElse(
+		Option.map(decodeCommentPages(result.stdout), (pages) => pages.flat()),
+		() => [],
+	)
 }
 
 const snapshot = (owner: string, repo: string, number: number): boolean => {
@@ -52,14 +57,16 @@ const snapshot = (owner: string, repo: string, number: number): boolean => {
 		? Option.match(decodePullRequest(pr.stdout), { onNone: () => "", onSome: (item) => item.title })
 		: ""
 	const byReviewer = (comments: ReturnType<typeof list>) =>
-		comments
-			.filter((comment) => comment.user?.login === REVIEWER)
-			.sort((a, b) => a.created_at.localeCompare(b.created_at))
-	const summaries = byReviewer(
-		list(`repos/${owner}/${repo}/issues/${number}/comments?per_page=100`),
-	).filter((comment) => isReviewSummary(comment.body ?? ""))
+		Arr.filter(comments, (comment) => comment.user?.login === REVIEWER).sort((a, b) =>
+			Str.localeCompare(b.created_at)(a.created_at),
+		)
+	const summaries = Arr.filter(
+		byReviewer(list(`repos/${owner}/${repo}/issues/${number}/comments?per_page=100`)),
+		(comment) => isReviewSummary(comment.body ?? ""),
+	)
 	if (summaries.length === 0) return false
-	const inline = byReviewer(list(`repos/${owner}/${repo}/pulls/${number}/comments?per_page=100`)).filter(
+	const inline = Arr.filter(
+		byReviewer(list(`repos/${owner}/${repo}/pulls/${number}/comments?per_page=100`)),
 		(comment) => comment.in_reply_to_id === undefined || comment.in_reply_to_id === null,
 	)
 	const item: ReviewSignalCase = {
@@ -67,19 +74,19 @@ const snapshot = (owner: string, repo: string, number: number): boolean => {
 		repo: `${owner}/${repo}`,
 		number,
 		title,
-		summaries: summaries.map((comment) => snapshotComment(comment.created_at, comment.body ?? "")),
-		inline: inline.map((comment) => snapshotComment(comment.created_at, comment.body ?? "")),
+		summaries: Arr.map(summaries, (comment) => snapshotComment(comment.created_at, comment.body ?? "")),
+		inline: Arr.map(inline, (comment) => snapshotComment(comment.created_at, comment.body ?? "")),
 	}
 	if (!existsSync(CORPUS_DIR)) mkdirSync(CORPUS_DIR, { recursive: true })
 	// Generated, so compact: the labels are the file people read and edit.
-	writeFileSync(join(CORPUS_DIR, `${item.id}.json`), `${JSON.stringify(encodeCase(item))}\n`)
+	writeFileSync(join(CORPUS_DIR, `${item.id}.json`), `${encodeCase(item)}\n`)
 	console.log(`${item.id}: ${summaries.length} reviews, ${inline.length} inline notes · ${title}`)
 	return true
 }
 
 export const snapshotRange = (argv: ReadonlyArray<string>) => {
 	const [slug = "", from = "", to = from] = argv
-	const [owner, repo] = slug.split("/")
+	const [owner, repo] = Str.split("/")(slug)
 	const first = Number(from)
 	const last = Number(to)
 	if (
@@ -92,8 +99,9 @@ export const snapshotRange = (argv: ReadonlyArray<string>) => {
 		console.error("usage: review:signal <owner/repo> <first pull request> [last pull request]")
 		return process.exit(1)
 	}
-	const written = Array.from({ length: last - first + 1 }, (_, i) => first + i).filter((number) =>
-		snapshot(owner, repo, number),
+	const written = Arr.filter(
+		Array.from({ length: last - first + 1 }, (_, i) => first + i),
+		(number) => snapshot(owner, repo, number),
 	)
 	console.log(`${written.length} cases in ${CORPUS_DIR}`)
 }

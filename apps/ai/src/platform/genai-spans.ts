@@ -18,7 +18,20 @@ import {
 	MAPLE_GENAI_INPUT_MESSAGES_DROPPED_ATTR,
 	MAPLE_GENAI_MODEL_DURATION_MS_ATTR,
 } from "@maple/domain/gen-ai"
-import { Duration, Effect, Exit, Layer, Option, Predicate, Stream, Tracer } from "effect"
+import {
+	Duration,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Predicate,
+	Schema,
+	Stream,
+	Tracer,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import * as AiError from "effect/ai/AiError"
 import type * as LanguageModel from "effect/ai/LanguageModel"
 import type * as Prompt from "effect/ai/Prompt"
@@ -55,11 +68,13 @@ interface SerializedMessage {
 const TRUNCATION_MARKER = "…[truncated]"
 
 const truncated = (text: string, cap: number): string =>
-	text.length > cap ? text.slice(0, cap) + TRUNCATION_MARKER : text
+	text.length > cap ? Str.slice(0, cap)(text) + TRUNCATION_MARKER : text
 
-/** `JSON.stringify` that reports an unserializable value (a cycle, a bigint) as nothing. */
-const stringify = (value: unknown): string | undefined =>
-	Option.getOrUndefined(Option.liftThrowable((input: unknown) => JSON.stringify(input))(value))
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+
+/** JSON that reports an unserializable value (a cycle, a bigint) as nothing. */
+const stringify = (value: unknown): string | undefined => Option.getOrUndefined(encodeJsonOption(value))
 
 /**
  * The convention's message part for one prompt part. Media is size and reasoning is
@@ -94,16 +109,16 @@ const inputMessages = (prompt: Prompt.Prompt): Array<SerializedMessage> => {
 
 /** `gen_ai.system_instructions`: an array of `{type, content}` parts, bounded like the messages. */
 const systemInstructionsJson = (prompt: Prompt.Prompt): string | undefined => {
-	const parts = prompt.content.flatMap((message) =>
+	const parts = Arr.flatMap(prompt.content, (message) =>
 		message.role === "system" && message.content !== ""
 			? [{ type: "text", content: message.content }]
 			: [],
 	)
 	if (parts.length === 0) return undefined
-	const json = JSON.stringify(parts)
+	const json = encodeJson(parts)
 	if (json.length <= SYSTEM_INSTRUCTIONS_BUDGET) return json
 	const cap = Math.max(256, Math.floor(SYSTEM_INSTRUCTIONS_BUDGET / parts.length))
-	return JSON.stringify(parts.map((part) => ({ ...part, content: truncated(part.content, cap) })))
+	return encodeJson(Arr.map(parts, (part) => ({ ...part, content: truncated(part.content, cap) })))
 }
 
 /**
@@ -167,7 +182,7 @@ const summarizeResponse = (response: ResponseParts) => {
 	}
 	const message: SerializedMessage = {
 		role: "assistant",
-		parts: parts.filter((part) => part.type !== "text" || part.content !== ""),
+		parts: Arr.filter(parts, (part) => part.type !== "text" || part.content !== ""),
 		...(finish === undefined ? undefined : { finish_reason: semconvFinishReason(finish.reason) }),
 	}
 	return { message, finish, failed: errored || finish?.reason === "error" }
@@ -180,7 +195,7 @@ const summarizeResponse = (response: ResponseParts) => {
 const oversizedPayloadPrefix = (value: unknown, cap: number): string | undefined => {
 	const json = stringify(value)
 	if (json === undefined) return truncated(String(value), cap)
-	return json.length > cap ? json.slice(0, cap) + TRUNCATION_MARKER : undefined
+	return json.length > cap ? Str.slice(0, cap)(json) + TRUNCATION_MARKER : undefined
 }
 
 const boundPart = (part: SerializedPart, cap: number): SerializedPart => {
@@ -200,7 +215,7 @@ const boundPart = (part: SerializedPart, cap: number): SerializedPart => {
 
 /** First message the encoded list can start at and still fit — the newest is never dropped. */
 const fitFrom = (encoded: ReadonlyArray<string>, budget: number): number => {
-	let total = encoded.reduce((sum, json) => sum + json.length + 1, 1)
+	let total = Arr.reduce(encoded, 1, (sum, json) => sum + json.length + 1)
 	let start = 0
 	while (total > budget && start < encoded.length - 1) {
 		total -= encoded[start]!.length + 1
@@ -211,7 +226,7 @@ const fitFrom = (encoded: ReadonlyArray<string>, budget: number): number => {
 
 const encodeMessage = (message: SerializedMessage): string =>
 	stringify(message) ??
-	JSON.stringify({ ...message, parts: message.parts.map((part) => boundPart(part, 256)) })
+	encodeJson({ ...message, parts: Arr.map(message.parts, (part) => boundPart(part, 256)) })
 
 /** Exported for tests. */
 export const messagesJson = (
@@ -221,23 +236,23 @@ export const messagesJson = (
 	let rendered = messages
 	// One serialization per message, so trimming to budget is a prefix-sum walk rather than a
 	// re-stringify of the whole array per dropped message.
-	let encoded = rendered.map(encodeMessage)
+	let encoded = Arr.map(rendered, encodeMessage)
 	let start = fitFrom(encoded, budget)
 	// A single message can outweigh the whole budget — routinely, since a tool result may run to 50k
 	// against the 20k input cap. Bound each surviving message's payloads, splitting its allowance
 	// across its parts so a batch of parallel tool results shares one, and re-fit. A soft budget: JSON
 	// escaping and the per-part floor can overshoot it, bounded, which beats losing the attribute.
-	if (encoded.slice(start).reduce((sum, json) => sum + json.length + 1, 1) > budget) {
+	if (Arr.reduce(encoded.slice(start), 1, (sum, json) => sum + json.length + 1) > budget) {
 		const perMessage = Math.floor(budget / 8)
-		rendered = rendered.map((message, index) => {
+		rendered = Arr.map(rendered, (message, index) => {
 			if (index < start) return message
 			const cap = Math.max(256, Math.floor(perMessage / Math.max(1, message.parts.length)))
-			return { ...message, parts: message.parts.map((part) => boundPart(part, cap)) }
+			return { ...message, parts: Arr.map(message.parts, (part) => boundPart(part, cap)) }
 		})
-		encoded = rendered.map(encodeMessage)
+		encoded = Arr.map(rendered, encodeMessage)
 		start = fitFrom(encoded, budget)
 	}
-	return { json: `[${encoded.slice(start).join(",")}]`, dropped: start }
+	return { json: `[${Arr.join(encoded.slice(start), ",")}]`, dropped: start }
 }
 
 /**
@@ -501,10 +516,10 @@ const retriedPastCap = <O, A, E, R>(
  * and never cutting to nothing because the text happened to be escape-heavy.
  */
 const withinToolBudget = (text: string, wrap: (prefix: string) => string): string => {
-	let prefix = text.slice(0, TOOL_JSON_BUDGET)
+	let prefix = Str.slice(0, TOOL_JSON_BUDGET)(text)
 	let out = wrap(prefix)
 	while (out.length > TOOL_JSON_BUDGET) {
-		prefix = prefix.slice(0, prefix.length - Math.ceil((out.length - TOOL_JSON_BUDGET) / 2))
+		prefix = Str.slice(0, prefix.length - Math.ceil((out.length - TOOL_JSON_BUDGET) / 2))(prefix)
 		out = wrap(prefix)
 	}
 	return out
@@ -513,7 +528,7 @@ const withinToolBudget = (text: string, wrap: (prefix: string) => string): strin
 /** `{result: text}`, truncated so an oversized string still reads as its text, not an escaped prefix. */
 const resultJson = (text: string): string =>
 	withinToolBudget(text, (prefix) =>
-		JSON.stringify({ result: prefix.length < text.length ? prefix + TRUNCATION_MARKER : prefix }),
+		encodeJson({ result: prefix.length < text.length ? prefix + TRUNCATION_MARKER : prefix }),
 	)
 
 /**
@@ -522,11 +537,11 @@ const resultJson = (text: string): string =>
  */
 export const toolCallJson = (value: unknown): string => {
 	if (Predicate.isString(value)) return resultJson(value)
-	if (!Predicate.isObjectOrArray(value)) return JSON.stringify({ result: value })
+	if (!Predicate.isObjectOrArray(value)) return encodeJson({ result: value })
 	const json = stringify(value)
 	if (json === undefined) return resultJson(String(value))
 	if (json.length <= TOOL_JSON_BUDGET) return json
-	return withinToolBudget(json, (prefix) => JSON.stringify({ truncated: true, prefix }))
+	return withinToolBudget(json, (prefix) => encodeJson({ truncated: true, prefix }))
 }
 
 /**
@@ -536,7 +551,7 @@ export const toolCallJson = (value: unknown): string => {
  */
 const toolDefinitionsJson = (tools: ReadonlyArray<Tool.Any>): string | undefined => {
 	if (tools.length === 0) return undefined
-	const described = tools.map((tool) => ({
+	const described = Arr.map(tools, (tool) => ({
 		type: "function",
 		name: tool.name,
 		description: Tool.getDescription(tool) ?? "",
@@ -544,14 +559,17 @@ const toolDefinitionsJson = (tools: ReadonlyArray<Tool.Any>): string | undefined
 	// A schema that cannot be expressed as JSON Schema throws here; it degrades to the compact form.
 	const full = Option.getOrUndefined(
 		Option.liftThrowable(() =>
-			JSON.stringify(
-				tools.map((tool, index) => ({ ...described[index], parameters: Tool.getJsonSchema(tool) })),
+			encodeJson(
+				Arr.map(tools, (tool, index) => ({
+					...described[index],
+					parameters: Tool.getJsonSchema(tool),
+				})),
 			),
 		)(),
 	)
 	if (full !== undefined && full.length <= TOOL_DEFINITIONS_BUDGET) return full
-	return JSON.stringify(
-		described.map((tool) => ({ ...tool, description: truncated(tool.description, 128) })),
+	return encodeJson(
+		Arr.map(described, (tool) => ({ ...tool, description: truncated(tool.description, 128) })),
 	)
 }
 
@@ -598,10 +616,10 @@ const EXECUTE_TOOL_SPAN_PREFIX = "execute_tool "
  * works the same.
  */
 const isExecuteToolSpan = (span: Tracer.AnySpan): span is Tracer.Span =>
-	span._tag === "Span" && span.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX)
+	span._tag === "Span" && Str.startsWith(EXECUTE_TOOL_SPAN_PREFIX)(span.name)
 
 const executeToolSpan = (span: Tracer.Span): Option.Option<Tracer.Span> =>
-	span.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX)
+	Str.startsWith(EXECUTE_TOOL_SPAN_PREFIX)(span.name)
 		? Option.some(span)
 		: Option.filter(span.parent, isExecuteToolSpan)
 
@@ -611,7 +629,7 @@ const RETURNED_FAILURES: ReadonlySet<unknown> = new Set(["returned-to-model", "r
 
 const isReturnedToolFailure = (span: Tracer.Span, exit: Exit.Exit<unknown, unknown>): boolean =>
 	Exit.isFailure(exit) &&
-	span.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX) &&
+	Str.startsWith(EXECUTE_TOOL_SPAN_PREFIX)(span.name) &&
 	RETURNED_FAILURES.has(span.attributes.get("effect_agent.tool.failure_handling"))
 
 /**
@@ -624,7 +642,7 @@ export const withReturnedToolFailuresOk = (tracer: Tracer.Tracer): Tracer.Tracer
 		...(tracer.context === undefined ? undefined : { context: tracer.context }),
 		span(options) {
 			const span = tracer.span(options)
-			if (!options.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX)) return span
+			if (!Str.startsWith(EXECUTE_TOOL_SPAN_PREFIX)(options.name)) return span
 			const end = span.end.bind(span)
 			return Object.assign(span, {
 				end: (endTime: bigint, exit: Exit.Exit<unknown, unknown>) => {
@@ -655,10 +673,10 @@ export const withRunSessionAttributes = (
 		span(options) {
 			const span = tracer.span(options)
 			if (
-				options.name.startsWith(INVOKE_AGENT_SPAN_PREFIX) ||
-				options.name.startsWith(EXECUTE_TOOL_SPAN_PREFIX)
+				Str.startsWith(INVOKE_AGENT_SPAN_PREFIX)(options.name) ||
+				Str.startsWith(EXECUTE_TOOL_SPAN_PREFIX)(options.name)
 			) {
-				for (const [key, value] of Object.entries(sessionAttributes)) span.attribute(key, value)
+				for (const [key, value] of Rec.toEntries(sessionAttributes)) span.attribute(key, value)
 			}
 			return span
 		},
@@ -675,9 +693,10 @@ export const ReturnedToolFailuresOkLive = Layer.effect(
  * `execute_tool` span this looks for.
  */
 const annotateExecuteToolSpan = Effect.fnUntraced(function* (attributes: Readonly<Record<string, string>>) {
-	const span = Option.flatMap(yield* Effect.option(Effect.currentSpan), executeToolSpan)
+	const currentSpan = yield* Effect.option(Effect.currentSpan)
+	const span = Option.flatMap(currentSpan, executeToolSpan)
 	if (Option.isNone(span)) return
-	for (const [key, value] of Object.entries(attributes)) span.value.attribute(key, value)
+	for (const [key, value] of Rec.toEntries(attributes)) span.value.attribute(key, value)
 })
 
 /**
@@ -742,11 +761,11 @@ export const toolHandlersWithContent = <
 	handlers: Handlers,
 	sessionAttributes?: Readonly<Record<string, string>>,
 ) => {
-	const entries = Object.entries(handlers) as ReadonlyArray<
+	const entries = Rec.toEntries(handlers) as ReadonlyArray<
 		readonly [string, (params: never, context: never) => Effect.Effect<unknown, unknown, unknown>]
 	>
-	const described = Object.fromEntries(
-		entries.map(([name, handler]) => [
+	const described = Rec.fromEntries(
+		Arr.map(entries, ([name, handler]) => [
 			name,
 			(params: never, context: never) =>
 				withToolCallContent(

@@ -25,7 +25,7 @@ import {
 import type { MapleDb } from "@maple/db/client"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
@@ -169,6 +169,9 @@ const toPersistenceError = makePersistenceErrorMapper(
 	"Dependency scan store operation failed",
 )
 
+// Byte-identical to `JSON.stringify`, which finding ids hash.
+const encodeJsonKey = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const newScanId = () => Schema.decodeSync(DependencyScanId)(crypto.randomUUID())
 
 /** Rows per statement: ~20 binds each keeps one insert far under Postgres's 65,535. */
@@ -193,14 +196,17 @@ const RELATION_RANK = {
 const sha256Hex = (text: string) =>
 	Effect.promise(() => crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))).pipe(
 		Effect.map((digest) =>
-			Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""),
+			Arr.join(
+				Array.from(new Uint8Array(digest), (byte) => Str.padStart(2, "0")(byte.toString(16))),
+				"",
+			),
 		),
 	)
 
 /** The finding's id from its key, so a replayed or concurrent scan lands on the same row. */
 const findingId = (orgId: OrgId, repositoryId: VcsRepositoryId, match: DependencyScanMatchInput) =>
 	sha256Hex(
-		JSON.stringify([
+		encodeJsonKey([
 			orgId,
 			repositoryId,
 			match.lockfilePath,
@@ -208,10 +214,10 @@ const findingId = (orgId: OrgId, repositoryId: VcsRepositoryId, match: Dependenc
 			match.packageName,
 			match.advisoryId,
 		]),
-	).pipe(Effect.map((hex) => Schema.decodeSync(DependencyFindingId)(hex.slice(0, 32))))
+	).pipe(Effect.map((hex) => Schema.decodeSync(DependencyFindingId)(Str.slice(0, 32)(hex))))
 
 const findingKey = (match: DependencyScanMatchInput) =>
-	JSON.stringify([match.lockfilePath, match.ecosystem, match.packageName, match.advisoryId])
+	encodeJsonKey([match.lockfilePath, match.ecosystem, match.packageName, match.advisoryId])
 
 /**
  * OSV can later link a new record to an advisory a finding already tracks (a GO- entry gains its
@@ -225,7 +231,8 @@ const keepKnownAdvisoryId = (
 	>,
 ): DependencyScanMatchInput => {
 	const names = new Set([match.advisoryId, ...match.aliases])
-	const samePackage = known.filter(
+	const samePackage = Arr.filter(
+		known,
 		(finding) =>
 			finding.lockfilePath === match.lockfilePath &&
 			finding.ecosystem === match.ecosystem &&
@@ -235,34 +242,34 @@ const keepKnownAdvisoryId = (
 	const same =
 		samePackage.find((finding) => finding.advisoryId === match.advisoryId) ??
 		samePackage.find((finding) =>
-			[finding.advisoryId, ...finding.aliases].some((name) => names.has(name)),
+			Arr.some([finding.advisoryId, ...finding.aliases], (name) => names.has(name)),
 		)
 	if (same === undefined || same.advisoryId === match.advisoryId) return match
 	return {
 		...match,
 		advisoryId: same.advisoryId,
-		aliases: [...names].filter((name) => name !== same.advisoryId).sort(),
+		aliases: Arr.filter([...names], (name) => name !== same.advisoryId).sort(),
 	}
 }
 
 const matchKey = (match: DependencyScanMatchInput) =>
-	JSON.stringify([match.lockfilePath, match.ecosystem, match.packageName, match.version, match.advisoryId])
+	encodeJsonKey([match.lockfilePath, match.ecosystem, match.packageName, match.version, match.advisoryId])
 
 const firstNonNull = (values: ReadonlyArray<string | null>) => values.find((value) => value !== null) ?? null
 
 /** One finding's fields from the matches that share its key: every version, the worst severity. */
 const aggregate = (matches: Arr.NonEmptyReadonlyArray<DependencyScanMatchInput>) => ({
 	head: matches[0],
-	aliases: Arr.sort(Arr.dedupe(matches.flatMap((match) => match.aliases)), Order.String),
-	versions: Arr.sort(Arr.dedupe(matches.map((match) => match.version)), Order.String),
+	aliases: Arr.sort(Arr.dedupe(Arr.flatMap(matches, (match) => match.aliases)), Order.String),
+	versions: Arr.sort(Arr.dedupe(Arr.map(matches, (match) => match.version)), Order.String),
 	severity: Arr.reduce(matches, matches[0].severity, (worst, match) =>
 		SEVERITY_RANK[match.severity] < SEVERITY_RANK[worst] ? match.severity : worst,
 	),
 	relation: Arr.reduce(matches, matches[0].relation, (strongest, match) =>
 		RELATION_RANK[match.relation] < RELATION_RANK[strongest] ? match.relation : strongest,
 	),
-	summary: firstNonNull(matches.map((match) => match.summary)),
-	fixedIn: firstNonNull(matches.map((match) => match.fixedIn)),
+	summary: firstNonNull(Arr.map(matches, (match) => match.summary)),
+	fixedIn: firstNonNull(Arr.map(matches, (match) => match.fixedIn)),
 })
 
 /** The org's scan, locked for the caller's transaction; fails when it is missing or already settled. */
@@ -323,7 +330,7 @@ const reconcileFindings = (
 			db.run(
 				PG.insertInto(DependencyFindings)
 					.values(
-						chunk.map((group) => ({
+						Arr.map(chunk, (group) => ({
 							id: group.id,
 							orgId,
 							repositoryId: scan.repositoryId,
@@ -393,28 +400,32 @@ const reconcileFindings = (
 			),
 		)
 		// A lockfile that failed, was too large or unsupported says nothing about its findings.
-		const lockfileStatus = new Map(lockfiles.map((lockfile) => [lockfile.path, lockfile.status]))
-		const matched = new Set(groups.map((group) => group.id))
+		const lockfileStatus = new Map(Arr.map(lockfiles, (lockfile) => [lockfile.path, lockfile.status]))
+		const matched = new Set(Arr.map(groups, (group) => group.id))
 		// A finding OSV now lists only as another advisory's alias is still matched, not fixed.
-		const matchedNames = groups.map((group) => ({
-			key: JSON.stringify([group.head.lockfilePath, group.head.ecosystem, group.head.packageName]),
+		const matchedNames = Arr.map(groups, (group) => ({
+			key: encodeJsonKey([group.head.lockfilePath, group.head.ecosystem, group.head.packageName]),
 			names: new Set([group.head.advisoryId, ...group.aliases]),
 		}))
 		const namedByMatch = (row: (typeof open)[number]) => {
-			const key = JSON.stringify([row.lockfilePath, row.ecosystem, row.packageName])
-			return matchedNames.some(
+			const key = encodeJsonKey([row.lockfilePath, row.ecosystem, row.packageName])
+			return Arr.some(
+				matchedNames,
 				(group) =>
 					group.key === key &&
-					[row.advisoryId, ...row.aliases].some((name) => group.names.has(name)),
+					Arr.some([row.advisoryId, ...row.aliases], (name) => group.names.has(name)),
 			)
 		}
-		const fixedIds = open
-			.filter((row) => !matched.has(row.id) && !namedByMatch(row))
-			.filter((row) => {
-				const status = lockfileStatus.get(row.lockfilePath)
-				return status === undefined || status === "parsed"
-			})
-			.map((row) => row.id)
+		const fixedIds = Arr.map(
+			Arr.filter(
+				Arr.filter(open, (row) => !matched.has(row.id) && !namedByMatch(row)),
+				(row) => {
+					const status = lockfileStatus.get(row.lockfilePath)
+					return status === undefined || status === "parsed"
+				},
+			),
+			(row) => row.id,
+		)
 		yield* Effect.forEach(Arr.chunksOf(fixedIds, WRITE_CHUNK), (chunk) =>
 			db.run(
 				PG.update(DependencyFindings)
@@ -501,7 +512,7 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 							)
 							const vulnerableCount = new Set(
 								matches.map((m) =>
-									JSON.stringify([m.lockfilePath, m.ecosystem, m.packageName, m.version]),
+									encodeJsonKey([m.lockfilePath, m.ecosystem, m.packageName, m.version]),
 								),
 							).size
 							yield* Effect.forEach(Arr.chunksOf(matches, WRITE_CHUNK), (chunk) =>

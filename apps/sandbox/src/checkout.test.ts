@@ -9,7 +9,7 @@ import {
 	shellCommand,
 	shellQuote,
 } from "@maple/domain/sandbox"
-import { Effect, Option } from "effect"
+import { Effect, Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	CLONE_TOKEN_ENV,
 	SandboxCallError,
@@ -28,7 +28,7 @@ import {
 	type SandboxContainer,
 } from "./checkout"
 
-const SHA = "a".repeat(40)
+const SHA = Str.repeat(40)("a")
 const TOKEN = "ghs_secret_token"
 
 const checkout = {
@@ -89,8 +89,8 @@ const fakeContainer = (options: FakeOptions, seen: string[] = []): SandboxContai
 			}),
 		spawn: (command, env) =>
 			Effect.suspend(() => {
-				seen.push(`spawn:${Object.keys(env).join(",")}`)
-				if (command.includes(TOKEN)) seen.push("TOKEN-IN-COMMAND")
+				seen.push(`spawn:${Arr.join(Rec.keys(env), ",")}`)
+				if (Str.includes(TOKEN)(command)) seen.push("TOKEN-IN-COMMAND")
 				return options.failSpawn
 					? Effect.fail(new SandboxCallError({ message: options.failSpawn }))
 					: Effect.void
@@ -135,11 +135,14 @@ describe("wrapCommand", () => {
 describe("wrapCommand's environment", () => {
 	// Stand-ins for the container's privilege and namespace tools, so the program's own
 	// environment handling runs as written on any host.
-	const stubs = [
-		'unshare() { if [ "$1" = -n ]; then shift; fi; "$@"; }',
-		'runuser() { shift 3; "$@"; }',
-		"chown() { :; }",
-	].join("\n")
+	const stubs = Arr.join(
+		[
+			'unshare() { if [ "$1" = -n ]; then shift; fi; "$@"; }',
+			'runuser() { shift 3; "$@"; }',
+			"chown() { :; }",
+		],
+		"\n",
+	)
 	const run = (command: string, args: ReadonlyArray<string> = []) => {
 		const wrapped = wrapCommand(request({ command, args }))
 		const result = spawnSync("bash", ["-c", `${stubs}\n${wrapped}`], { encoding: "utf8" })
@@ -147,10 +150,10 @@ describe("wrapCommand's environment", () => {
 	}
 	const envOf = (body: string) =>
 		new Map(
-			body
-				.split("\n")
-				.filter((line) => line.includes("="))
-				.map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
+			Arr.map(
+				Arr.filter(Str.split("\n")(body), (line) => Str.includes("=")(line)),
+				(line) => [Str.slice(0, line.indexOf("="))(line), Str.slice(line.indexOf("=") + 1)(line)],
+			),
 		)
 
 	it("gives each command its own empty HOME, removed afterwards, and no global git config", () => {
@@ -167,7 +170,7 @@ describe("wrapCommand's environment", () => {
 
 	it("starts each HOME empty, whatever the previous command left in its own", () => {
 		run("sh", ["-c", 'echo "[user] name = left" > "$HOME/.gitconfig"'])
-		assert.strictEqual(run("sh", ["-c", 'ls -A "$HOME" | wc -l | tr -d " "']).trim(), "0")
+		assert.strictEqual(Str.trim(run("sh", ["-c", 'ls -A "$HOME" | wc -l | tr -d " "'])), "0")
 	})
 })
 
@@ -374,7 +377,7 @@ describe("ensureCheckout", () => {
 			)
 			assert.isTrue(Option.isSome(result))
 			if (Option.isSome(result)) assert.strictEqual(result.value._tag, "SandboxRunCheckoutPending")
-			assert.notInclude(seen.join(" "), "spawn:")
+			assert.notInclude(Arr.join(seen, " "), "spawn:")
 		}),
 	)
 

@@ -13,6 +13,7 @@ import {
 	summarizePods,
 	summarizeRailway,
 } from "../components/infra/overview/summaries"
+import { String as Str } from "effect"
 
 /**
  * `/lab/infra`'s rows: a host fleet, Railway services in two environments, Cloudflare zones and
@@ -146,7 +147,7 @@ export function buildInfraLabFixture(nowMs: number): InfraLabFixture {
 	): HostRow => ({
 		hostName,
 		osType: "linux",
-		hostArch: hostName.startsWith("db") ? "arm64" : "amd64",
+		hostArch: Str.startsWith("db")(hostName) ? "arm64" : "amd64",
 		cloudProvider: "aws",
 		lastSeen: ago(seenMs),
 		cpuPct,

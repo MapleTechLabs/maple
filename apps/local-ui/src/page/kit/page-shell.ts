@@ -1,6 +1,7 @@
-import { button } from "@maple/web/ui/button"
-import { triggerId } from "@maple/web/ui/dialog"
-import { icon } from "@maple/web/ui/icon"
+import { button } from "@maple/views/ui/button"
+import { triggerId } from "@maple/views/ui/dialog"
+import { icon } from "@maple/views/ui/icon"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // The page shell: filter rail beside a toolbar over the scrolling
@@ -24,11 +25,13 @@ export const pageShell = <M>(h: HtmlBuilder<M>, options: PageShellOptions<M>, ch
 		[h.Class("flex h-full min-h-0"), h.DataAttribute("slot", "page-body")],
 		[
 			h.aside([h.Class("hidden h-full border-r py-1 md:block"), h.DataAttribute("slot", "page-filter-sidebar")], [options.sidebar]),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col")],
+			vstack(
+				h,
+				{ shrink: true, grow: true },
 				[
-					h.div(
-						[h.Class("flex items-center border-b px-4 py-2 md:hidden")],
+					hstack(
+						h,
+						{ className: "border-b px-4 py-2 md:hidden" },
 						[
 							button(
 								h,
@@ -43,7 +46,7 @@ export const pageShell = <M>(h: HtmlBuilder<M>, options: PageShellOptions<M>, ch
 									icon(h, "FilterIcon"),
 									"Filters",
 									...(count > 0
-										? [h.span([h.Class("rounded-sm bg-primary/15 px-1 text-[10px] tabular-nums text-primary")], [String(count)])]
+										? [h.span([h.Class("rounded-sm bg-primary-a2 px-1 text-3xs tabular-nums text-primary")], [String(count)])]
 										: []),
 								],
 							),

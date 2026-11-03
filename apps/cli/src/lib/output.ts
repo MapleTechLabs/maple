@@ -1,6 +1,7 @@
-import { Config, Effect, Option, Predicate } from "effect"
+import { Config, Effect, Option, Predicate, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import * as Flag from "effect/cli/Flag"
 import * as GlobalFlag from "effect/cli/GlobalFlag"
+import { encodeJson, encodeJsonPrettyEffect } from "@maple/local-server/json"
 import { bold, dim } from "./style"
 
 /**
@@ -24,7 +25,10 @@ export const OutputFormatSetting = GlobalFlag.Setting("format")({
 })
 
 export const printJson = (data: unknown) =>
-	Effect.sync(() => process.stdout.write(`${JSON.stringify(data, null, 2)}\n`))
+	encodeJsonPrettyEffect(data).pipe(
+		Effect.orDie,
+		Effect.flatMap((text) => Effect.sync(() => process.stdout.write(`${text}\n`))),
+	)
 
 const isFormat = (value: string | undefined): value is OutputFormat => value === "json" || value === "table"
 
@@ -35,7 +39,7 @@ export const argvFormat = (argv: ReadonlyArray<string>): OutputFormat | undefine
 		const arg = argv[i]
 		if (arg === "--") break
 		if (arg === "--format") found = argv[i + 1]
-		else if (arg?.startsWith("--format=")) found = arg.slice("--format=".length)
+		else if (arg?.startsWith("--format=")) found = Str.slice("--format=".length)(arg)
 	}
 	return isFormat(found) ? found : undefined
 }
@@ -128,10 +132,7 @@ export const utcTimestampReplacer = () => {
 
 /** An instant to epoch ms, reading a zoneless one as UTC; NaN when unparseable. */
 export const timestampMs = (value: string): number => {
-	const iso = value
-		.trim()
-		.replace(" ", "T")
-		.replace(/(\.\d{3})\d+/, "$1")
+	const iso = Str.replace(/(\.\d{3})\d+/, "$1")(Str.replace(" ", "T")(Str.trim(value)))
 	return Date.parse(/Z|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`)
 }
 
@@ -140,8 +141,8 @@ export const formatTimestamp = (value: string): string => {
 	if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(value)) return value
 	const ms = timestampMs(value)
 	return Number.isFinite(ms)
-		? `${new Date(ms).toISOString().slice(0, 19).replace("T", " ")}Z`
-		: value.slice(0, 19).replace("T", " ")
+		? `${Str.replace("T", " ")(Str.slice(0, 19)(new Date(ms).toISOString()))}Z`
+		: Str.replace("T", " ")(Str.slice(0, 19)(value))
 }
 
 const DURATION_KEY = /(Ms|Duration)$/
@@ -161,17 +162,19 @@ export const formatByKey = (key: string, value: unknown): string => {
 	}
 	if (typeof value === "string") return formatTimestamp(value)
 	if (typeof value === "boolean") return value ? "yes" : "no"
-	if (Array.isArray(value)) return value.map((v) => formatByKey(key, v)).join(", ")
-	return JSON.stringify(value)
+	if (Arr.isArray(value))
+		return Arr.join(
+			Arr.map(value, (v) => formatByKey(key, v)),
+			", ",
+		)
+	return encodeJson(value)
 }
 
 /** `p95Ms` -> `P95`, `avgDurationMs` -> `AVG DURATION`, `errorRate` -> `ERROR RATE`. */
 export const headerFor = (key: string): string =>
-	key
-		.replace(/Ms$/, "")
-		.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-		.replace(/_/g, " ")
-		.toUpperCase()
+	Str.toUpperCase(
+		Str.replace(/_/g, " ")(Str.replace(/([a-z0-9])([A-Z])/g, "$1 $2")(Str.replace(/Ms$/, "")(key))),
+	)
 
 // ---------------------------------------------------------------------------
 // Tables
@@ -185,59 +188,64 @@ export interface Column<R> {
 }
 
 const truncate = (s: string, max: number | undefined): string => {
-	const flat = s.replace(/\s*\n\s*/g, " ")
-	return max !== undefined && flat.length > max ? `${flat.slice(0, Math.max(1, max - 1))}…` : flat
+	const flat = Str.replace(/\s*\n\s*/g, " ")(s)
+	return max !== undefined && flat.length > max ? `${Str.slice(0, Math.max(1, max - 1))(flat)}…` : flat
 }
 
 export const renderTable = <R>(columns: ReadonlyArray<Column<R>>, rows: ReadonlyArray<R>): string => {
-	const cells = rows.map((row) => columns.map((c) => truncate(c.cell(row), c.maxWidth)))
-	const widths = columns.map((c, i) => Math.max(c.header.length, ...cells.map((r) => (r[i] ?? "").length)))
+	const cells = Arr.map(rows, (row) => Arr.map(columns, (c) => truncate(c.cell(row), c.maxWidth)))
+	const widths = Arr.map(columns, (c, i) =>
+		Math.max(c.header.length, ...Arr.map(cells, (r) => (r[i] ?? "").length)),
+	)
 	const pad = (s: string, i: number): string => {
-		const fill = " ".repeat(Math.max(0, (widths[i] ?? 0) - s.length))
+		const fill = Str.repeat(Math.max(0, (widths[i] ?? 0) - s.length))(" ")
 		return columns[i]?.align === "right" ? fill + s : s + fill
 	}
-	const line = (values: ReadonlyArray<string>) => values.map(pad).join("  ").trimEnd()
-	const header = bold(line(columns.map((c) => c.header)))
-	return [header, ...cells.map(line)].join("\n")
+	const line = (values: ReadonlyArray<string>) => Str.trimEnd(Arr.join(Arr.map(values, pad), "  "))
+	const header = bold(line(Arr.map(columns, (c) => c.header)))
+	return Arr.join([header, ...Arr.map(cells, line)], "\n")
 }
 
 /** Aligned `key  value` lines for a record of scalars. */
 export const renderFields = (fields: ReadonlyArray<readonly [string, string]>): string => {
-	const width = Math.max(0, ...fields.map(([k]) => k.length))
-	return fields.map(([k, v]) => `${dim(k.padEnd(width))}  ${v}`).join("\n")
+	const width = Math.max(0, ...Arr.map(fields, ([k]) => k.length))
+	return Arr.join(
+		Arr.map(fields, ([k, v]) => `${dim(Str.padEnd(width)(k))}  ${v}`),
+		"\n",
+	)
 }
 
 const isScalar = (v: unknown): boolean =>
 	v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean"
 
 const isRecord = (v: unknown): v is Readonly<Record<string, unknown>> =>
-	Predicate.isObject(v) && !Array.isArray(v)
+	Predicate.isObject(v) && !Arr.isArray(v)
 
 /** A cell-per-key table over rows, flattening one level of nesting and joining arrays. */
 export const autoTable = (
 	rows: ReadonlyArray<unknown>,
 	options?: { readonly raw?: boolean; readonly maxWidth?: number },
 ): string => {
-	const flat = rows.map((row): Record<string, unknown> => {
+	const flat = Arr.map(rows, (row): Record<string, unknown> => {
 		if (!isRecord(row)) return { value: row }
 		const out: Record<string, unknown> = {}
-		for (const [k, v] of Object.entries(row)) {
-			if (isRecord(v)) for (const [k2, v2] of Object.entries(v)) out[`${k}.${k2}`] = v2
+		for (const [k, v] of Rec.toEntries(row)) {
+			if (isRecord(v)) for (const [k2, v2] of Rec.toEntries(v)) out[`${k}.${k2}`] = v2
 			else out[k] = v
 		}
 		return out
 	})
 	const keys: Array<string> = []
-	for (const row of flat) for (const k of Object.keys(row)) if (!keys.includes(k)) keys.push(k)
+	for (const row of flat) for (const k of Rec.keys(row)) if (!keys.includes(k)) keys.push(k)
 	const raw = options?.raw === true
-	const columns = keys.map((key): Column<Record<string, unknown>> => ({
+	const columns = Arr.map(keys, (key): Column<Record<string, unknown>> => ({
 		header: raw ? key : headerFor(key),
 		cell: (row) => {
 			const v = row[key]
 			if (!raw) return formatByKey(key, v)
-			return v === null || v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v)
+			return v === null || v === undefined ? "" : typeof v === "string" ? v : encodeJson(v)
 		},
-		align: flat.some((row) => typeof row[key] === "number") ? "right" : "left",
+		align: Arr.some(flat, (row) => typeof row[key] === "number") ? "right" : "left",
 		maxWidth: options?.maxWidth ?? 80,
 	}))
 	return renderTable(columns, flat)
@@ -245,19 +253,19 @@ export const autoTable = (
 
 /** Generic rendering: scalars as fields, each array property as its own titled table. */
 export const autoSections = (data: unknown): ReadonlyArray<Section> => {
-	if (Array.isArray(data)) return [{ body: autoTable(data) }]
+	if (Arr.isArray(data)) return [{ body: autoTable(data) }]
 	if (!isRecord(data)) return [{ body: formatByKey("value", data) }]
 	const fields: Array<readonly [string, string]> = []
 	const sections: Array<Section> = []
-	for (const [key, value] of Object.entries(data)) {
-		if (Array.isArray(value)) {
+	for (const [key, value] of Rec.toEntries(data)) {
+		if (Arr.isArray(value)) {
 			if (value.length > 0) sections.push({ title: headerFor(key), body: autoTable(value) })
-		} else if (isRecord(value) && Object.values(value).every(isScalar)) {
-			for (const [k2, v2] of Object.entries(value)) fields.push([`${key}.${k2}`, formatByKey(k2, v2)])
+		} else if (isRecord(value) && Arr.every(Rec.values(value), isScalar)) {
+			for (const [k2, v2] of Rec.toEntries(value)) fields.push([`${key}.${k2}`, formatByKey(k2, v2)])
 		} else if (isScalar(value)) {
 			fields.push([key, formatByKey(key, value)])
 		} else {
-			fields.push([key, JSON.stringify(value)])
+			fields.push([key, encodeJson(value)])
 		}
 	}
 	return fields.length > 0 ? [{ body: renderFields(fields) }, ...sections] : sections
@@ -286,14 +294,17 @@ export interface View<A> {
 
 /** True when `data` is an empty array, or an object whose array properties are all empty. */
 export const isEmptyResult = (data: unknown): boolean => {
-	if (Array.isArray(data)) return data.length === 0
+	if (Arr.isArray(data)) return data.length === 0
 	if (!isRecord(data)) return false
-	const arrays = Object.values(data).filter(Array.isArray)
-	return arrays.length > 0 && arrays.every((a) => a.length === 0)
+	const arrays = Arr.filter(Rec.values(data), Array.isArray)
+	return arrays.length > 0 && Arr.every(arrays, (a) => a.length === 0)
 }
 
 export const renderSections = (sections: ReadonlyArray<Section>): string =>
-	sections.map((s) => (s.title === undefined ? s.body : `${bold(s.title)}\n${s.body}`)).join("\n\n")
+	Arr.join(
+		Arr.map(sections, (s) => (s.title === undefined ? s.body : `${bold(s.title)}\n${s.body}`)),
+		"\n\n",
+	)
 
 /** Format-aware result printer: JSON by default, `--format table` for humans. */
 export const printResult = <A>(data: A, view?: View<A>): Effect.Effect<void> =>
@@ -303,11 +314,14 @@ export const printResult = <A>(data: A, view?: View<A>): Effect.Effect<void> =>
 		if (format === "json") {
 			// Raw SQL rows stay as the query returned them.
 			const replacer = view?.raw ? undefined : utcTimestampReplacer()
-			process.stdout.write(`${JSON.stringify(data, replacer, 2)}\n`)
+			const text = yield* Schema.encodeEffect(
+				Schema.fromJsonString(Schema.Unknown, { replacer, space: 2 }),
+			)(data).pipe(Effect.orDie)
+			process.stdout.write(`${text}\n`)
 		} else if (!empty) {
 			const sections = view?.table
 				? view.table(data)
-				: Array.isArray(data)
+				: Arr.isArray(data)
 					? [{ body: autoTable(data, { raw: view?.raw === true }) }]
 					: autoSections(data)
 			process.stdout.write(`${renderSections(sections)}\n`)

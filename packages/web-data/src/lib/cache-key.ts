@@ -1,5 +1,9 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { snapTimestamp } from "./time-range"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 /** How a leaf string is treated: snapped to the 15s grid, or dropped entirely. */
 type TimestampMode = "snap" | "drop"
@@ -18,13 +22,17 @@ function normalize(value: unknown, mode: TimestampMode): unknown {
 		return value
 	}
 
-	if (Array.isArray(value)) {
-		return value.map((entry) => normalize(entry, mode)).filter((entry) => entry !== DROPPED)
+	if (Arr.isArray(value)) {
+		return Arr.filter(
+			Arr.map(value, (entry) => normalize(entry, mode)),
+			(entry) => entry !== DROPPED,
+		)
 	}
 
-	const entries = Object.entries(value as Record<string, unknown>)
-		.filter(([, entryValue]) => entryValue !== undefined)
-		.sort(([left], [right]) => left.localeCompare(right))
+	const entries = Arr.filter(
+		Rec.toEntries(value as Record<string, unknown>),
+		([, entryValue]) => entryValue !== undefined,
+	).sort(([left], [right]) => Str.localeCompare(right)(left))
 
 	const normalized: Record<string, unknown> = {}
 	for (const [key, entryValue] of entries) {
@@ -41,7 +49,7 @@ function normalizeForKey(value: unknown): unknown {
 
 export function encodeKey(value: unknown): string {
 	const normalized = normalizeForKey(value)
-	return JSON.stringify(normalized === undefined ? null : normalized)
+	return encodeJson(normalized === undefined ? null : normalized)
 }
 
 /**
@@ -69,7 +77,7 @@ export function encodeOrgScopedKey(orgId: string | null | undefined, value: unkn
 
 /** Recover just the encoded input from a key built by `encodeOrgScopedKey`. */
 export function orgScopedKeyPayload(key: string): string {
-	return key.slice(key.indexOf(ORG_KEY_SEPARATOR) + 1)
+	return Str.slice(key.indexOf(ORG_KEY_SEPARATOR) + 1)(key)
 }
 
 /**
@@ -91,18 +99,14 @@ export function orgScopedKeyPayload(key: string): string {
  */
 export function identityFromKey(key: string): string {
 	const separatorIndex = key.indexOf(ORG_KEY_SEPARATOR)
-	const orgPrefix = separatorIndex === -1 ? "" : key.slice(0, separatorIndex)
+	const orgPrefix = separatorIndex === -1 ? "" : Str.slice(0, separatorIndex)(key)
 	const payload = orgScopedKeyPayload(key)
 
-	let parsed: unknown
-	try {
-		parsed = JSON.parse(payload)
-	} catch {
-		// Not decodable — fall back to the key itself. Identity stays correct
-		// (never over-shares), it just can't match across windows.
-		return key
-	}
+	const parsed = decodeJson(payload)
+	// Not decodable: fall back to the key itself. Identity stays correct
+	// (never over-shares), it just can't match across windows.
+	if (Option.isNone(parsed)) return key
 
-	const stripped = normalize(parsed, "drop")
-	return `${orgPrefix}${ORG_KEY_SEPARATOR}${JSON.stringify(stripped === DROPPED ? null : stripped)}`
+	const stripped = normalize(parsed.value, "drop")
+	return `${orgPrefix}${ORG_KEY_SEPARATOR}${encodeJson(stripped === DROPPED ? null : stripped)}`
 }

@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec } from "effect"
 // Shared filter vocabulary for the Cloudflare pages.
 //
 // The poller stores dimensions as single-dimension slices, not one cube, so a
@@ -66,11 +67,12 @@ const SERVER_KEY_TO_FILTER: Record<string, CloudflareFilterKey> = {
 export const filterKeysFromServer = (
 	ignored: ReadonlyArray<string> | undefined,
 ): ReadonlyArray<CloudflareFilterKey> =>
-	(ignored ?? [])
-		.map((key) => SERVER_KEY_TO_FILTER[key])
-		.filter((key): key is CloudflareFilterKey => key !== undefined)
+	Arr.filter(
+		Arr.map(ignored ?? [], (key) => SERVER_KEY_TO_FILTER[key]),
+		(key): key is CloudflareFilterKey => key !== undefined,
+	)
 
-const FILTER_KEYS = Object.keys(FILTER_CHIP_LABEL) as ReadonlyArray<CloudflareFilterKey>
+const FILTER_KEYS = Rec.keys(FILTER_CHIP_LABEL) as ReadonlyArray<CloudflareFilterKey>
 
 /** Pull just the filter fields out of a route's search object. */
 export const filtersFromSearch = (search: Record<string, unknown>): CloudflareFilters => {
@@ -79,7 +81,7 @@ export const filtersFromSearch = (search: Record<string, unknown>): CloudflareFi
 		const value = search[key]
 		if (key === "pathContains") {
 			if (typeof value === "string" && value !== "") out.pathContains = value
-		} else if (Array.isArray(value) && value.length > 0) {
+		} else if (Arr.isArray(value) && value.length > 0) {
 			out[key] = value as ReadonlyArray<string>
 		}
 	}

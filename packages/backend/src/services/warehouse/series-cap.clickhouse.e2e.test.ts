@@ -1,6 +1,6 @@
 // SAFETY-FILE: JSON is emitted by the isolated ClickHouse fixture and decoded by the real query schema.
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { compileUnsafe, from, param, table } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { finalizeTimeseries } from "../../../../query-engine/src/ch/queries/series-cap"
@@ -108,7 +108,7 @@ describe.skipIf(!clickhouseE2eEnabled)("series cap result parity", () => {
 	it("caps a populated 5,000-group chart within the memory budget", async () => {
 		const rows = await run("large", 3)
 		assert.strictEqual(rows.length, 30)
-		assert.deepEqual([...new Set(rows.map((row) => row.groupName))].sort(), [
+		assert.deepEqual([...new Set(Arr.map(rows, (row) => row.groupName))].sort(), [
 			"service-4997",
 			"service-4998",
 			"service-4999",

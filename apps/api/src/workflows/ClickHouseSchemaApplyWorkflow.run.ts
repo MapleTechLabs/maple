@@ -32,7 +32,7 @@ import {
 } from "@maple/domain/clickhouse"
 import { OrgId } from "@maple/domain/http"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Cause, Clock, Config, Effect, Option, Redacted, Schema } from "effect"
+import { Cause, Clock, Config, Effect, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { EdgeCacheService } from "@maple/cache"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
@@ -144,7 +144,7 @@ export class ClickHouseExecError extends Schema.TaggedError<ClickHouseExecError>
 ) {}
 
 const toClickHouseExecError = (cause: unknown): ClickHouseExecError =>
-	cause instanceof ClickHouseExecError
+	Schema.is(ClickHouseExecError)(cause)
 		? cause
 		: new ClickHouseExecError({ message: cause instanceof Error ? cause.message : String(cause) })
 
@@ -155,7 +155,7 @@ const execClickHouse = (
 ): Effect.Effect<string, ClickHouseExecError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
-		const url = `${cfg.url.replace(/\/$/, "")}/?database=${encodeURIComponent(cfg.database)}`
+		const url = `${Str.replace(/\/$/, "")(cfg.url)}/?database=${encodeURIComponent(cfg.database)}`
 		const base = HttpClientRequest.post(url, {
 			headers: {
 				"Content-Type": "text/plain",
@@ -180,7 +180,7 @@ const execClickHouse = (
 		if (response.status < 200 || response.status >= 300) {
 			return yield* new ClickHouseExecError({
 				status: response.status,
-				message: `ClickHouse ${response.status}: ${text.split("\n")[0]?.slice(0, 500) ?? ""}`,
+				message: `ClickHouse ${response.status}: ${Str.split("\n")(text)[0]?.slice(0, 500) ?? ""}`,
 			})
 		}
 		return text
@@ -192,7 +192,8 @@ const planMigrationSteps = (
 	migration: (typeof clickHouseMigrations)[number],
 ): Effect.Effect<ReadonlyArray<ApplyStep>, ClickHouseExecError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
-		const run = Effect.runPromiseWith(yield* Effect.context<HttpClient.HttpClient>())
+		const context = yield* Effect.context<HttpClient.HttpClient>()
+		const run = Effect.runPromiseWith(context)
 		return yield* Effect.tryPromise({
 			try: (signal) =>
 				expandMigrationToSteps(migration, cfg.database, (sql) =>
@@ -210,8 +211,8 @@ const parseJsonEachRow = <S extends Schema.ConstraintDecoder<unknown>>(rowSchema
 	const decodeRow = Schema.decodeUnknownOption(Schema.fromJsonString(rowSchema))
 	return (text: string): ReadonlyArray<S["Type"]> => {
 		const out: Array<S["Type"]> = []
-		for (const line of text.split("\n")) {
-			const trimmed = line.trim()
+		for (const line of Str.split("\n")(text)) {
+			const trimmed = Str.trim(line)
 			if (trimmed.length === 0) continue
 			const row = decodeRow(trimmed)
 			if (Option.isSome(row)) out.push(row.value)
@@ -237,7 +238,7 @@ const parseSortingKeyRows = parseJsonEachRow(
 
 const MIGRATIONS_TABLE = "_maple_schema_migrations"
 const FEATURES_TABLE = "_maple_schema_features"
-const quote = (name: string): string => `\`${name.replace(/`/g, "``")}\``
+const quote = (name: string): string => `\`${Str.replace(/`/g, "``")(name)}\``
 
 const ensureMigrationsTable = (cfg: ChConfig) =>
 	execClickHouse(
@@ -260,13 +261,13 @@ const readAppliedVersions = (
 	cfg: ChConfig,
 ): Effect.Effect<ReadonlyArray<number>, ClickHouseExecError, HttpClient.HttpClient> =>
 	execClickHouse(cfg, `SELECT version FROM ${quote(MIGRATIONS_TABLE)} FORMAT JSONEachRow`).pipe(
-		Effect.map((text) => [...new Set(parseVersionRows(text).map((r) => r.version))]),
+		Effect.map((text) => [...new Set(Arr.map(parseVersionRows(text), (r) => r.version))]),
 	)
 
 const recordVersion = (cfg: ChConfig, version: number, description: string) =>
 	execClickHouse(
 		cfg,
-		`INSERT INTO ${quote(MIGRATIONS_TABLE)} (version, description) VALUES (${version}, '${description.replace(/'/g, "''")}')`,
+		`INSERT INTO ${quote(MIGRATIONS_TABLE)} (version, description) VALUES (${version}, '${Str.replace(/'/g, "''")(description)}')`,
 	).pipe(Effect.asVoid)
 
 /** Entries rather than a Map: a step's value must survive Cloudflare's JSON persistence. */
@@ -276,16 +277,20 @@ const readAppliedFeatureRevisions = (
 	execClickHouse(
 		cfg,
 		`SELECT id, max(revision) AS revision FROM ${quote(FEATURES_TABLE)} GROUP BY id FORMAT JSONEachRow`,
-	).pipe(Effect.map((text) => parseFeatureRevisionRows(text).map((row) => [row.id, row.revision] as const)))
+	).pipe(
+		Effect.map((text) =>
+			Arr.map(parseFeatureRevisionRows(text), (row) => [row.id, row.revision] as const),
+		),
+	)
 
 const recordFeature = (cfg: ChConfig, id: string, revision: number, description: string) =>
 	execClickHouse(
 		cfg,
-		`INSERT INTO ${quote(FEATURES_TABLE)} (id, revision, description) VALUES ('${id.replace(/'/g, "''")}', ${revision}, '${description.replace(/'/g, "''")}')`,
+		`INSERT INTO ${quote(FEATURES_TABLE)} (id, revision, description) VALUES ('${Str.replace(/'/g, "''")(id)}', ${revision}, '${Str.replace(/'/g, "''")(description)}')`,
 	).pipe(Effect.asVoid)
 
 const normalizeExpression = (value: string): string =>
-	value.replace(/`/g, "").replace(/\s+/g, "").toLowerCase()
+	Str.toLowerCase(Str.replace(/\s+/g, "")(Str.replace(/`/g, "")(value)))
 
 // --- config load + decrypt (mirror of the service helper) -------------------
 
@@ -414,7 +419,8 @@ const parseDesiredTables = (): ReadonlyArray<DesiredTable> => {
 			kind: parsed.kind,
 			columns:
 				parsed.kind === "table"
-					? parsed.columns.filter(
+					? Arr.filter(
+							parsed.columns,
 							(column) => !performanceOnlySearchColumns.has(`${parsed.name}.${column.name}`),
 						)
 					: [],
@@ -428,19 +434,17 @@ const fetchActualSchema = (
 	cfg: ChConfig,
 ): Effect.Effect<Map<string, ActualTable>, ClickHouseExecError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
-		const dbLit = cfg.database.replace(/'/g, "''")
-		const tableRows = parseTableRows(
-			yield* execClickHouse(
-				cfg,
-				`SELECT name, engine FROM system.tables WHERE database = '${dbLit}' FORMAT JSONEachRow`,
-			),
+		const dbLit = Str.replace(/'/g, "''")(cfg.database)
+		const tablesBody = yield* execClickHouse(
+			cfg,
+			`SELECT name, engine FROM system.tables WHERE database = '${dbLit}' FORMAT JSONEachRow`,
 		)
-		const columnRows = parseColumnRows(
-			yield* execClickHouse(
-				cfg,
-				`SELECT table, name, type FROM system.columns WHERE database = '${dbLit}' FORMAT JSONEachRow`,
-			),
+		const tableRows = parseTableRows(tablesBody)
+		const columnsBody = yield* execClickHouse(
+			cfg,
+			`SELECT table, name, type FROM system.columns WHERE database = '${dbLit}' FORMAT JSONEachRow`,
 		)
+		const columnRows = parseColumnRows(columnsBody)
 		const colsByTable = new Map<string, Array<{ name: string; type: string }>>()
 		for (const r of columnRows) {
 			const list = colsByTable.get(r.table) ?? []
@@ -463,25 +467,23 @@ const reconcileSchemaSnapshot = (
 ): Effect.Effect<void, ClickHouseExecError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const desired = parseDesiredTables()
-		const desiredByName = new Map(desired.map((t) => [t.name, t]))
+		const desiredByName = new Map(Arr.map(desired, (t) => [t.name, t]))
 		const actual = yield* fetchActualSchema(cfg)
-		const statements = computeSchemaDiff({ tables: desired }, actual).flatMap((entry) => {
+		const statements = Arr.flatMap(computeSchemaDiff({ tables: desired }, actual), (entry) => {
 			const table = desiredByName.get(entry.name)
 			if (!table) return []
 			if (entry.status === "missing") {
 				return [qualifyStatementForDatabase(table.createStatement, cfg.database)]
 			}
 			if (entry.status !== "drifted" || entry.kind !== "table") return []
-			return entry.columnDrifts
-				.filter((drift) => drift.kind === "missing")
-				.flatMap((drift) => {
-					const colDef = extractColumnDefinition(table.createStatement, drift.column)
-					return colDef
-						? [
-								`ALTER TABLE ${quote(cfg.database)}.${quote(entry.name)} ADD COLUMN IF NOT EXISTS ${colDef}`,
-							]
-						: []
-				})
+			return Arr.filter(entry.columnDrifts, (drift) => drift.kind === "missing").flatMap((drift) => {
+				const colDef = extractColumnDefinition(table.createStatement, drift.column)
+				return colDef
+					? [
+							`ALTER TABLE ${quote(cfg.database)}.${quote(entry.name)} ADD COLUMN IF NOT EXISTS ${colDef}`,
+						]
+					: []
+			})
 		})
 		yield* Effect.forEach(statements, (statement) => execClickHouse(cfg, statement), {
 			discard: true,
@@ -563,7 +565,7 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 					}),
 			),
 		)
-		const encryptionKey = Buffer.from(Redacted.value(encryptionKeyText).trim(), "base64")
+		const encryptionKey = Buffer.from(Str.trim(Redacted.value(encryptionKeyText)), "base64")
 		// AES-256-GCM: anything else fails later as a misleading password-decryption error.
 		if (encryptionKey.length !== 32) {
 			return yield* new SchemaApplyConfigError({
@@ -594,7 +596,8 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 		const appliedSet = new Set(applied)
 
 		yield* Effect.forEach(
-			clickHouseMigrations.filter(
+			Arr.filter(
+				clickHouseMigrations,
 				(migration) => migration.requiredForIngest !== false && !appliedSet.has(migration.version),
 			),
 			(migration) =>
@@ -720,7 +723,7 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 			readServerVersion: durableStep(
 				"read-clickhouse-version",
 				execClickHouse(cfg, "SELECT version() FORMAT TabSeparated").pipe(
-					Effect.map((value) => value.trim()),
+					Effect.map((value) => Str.trim(value)),
 				),
 				STEP,
 			),
@@ -754,7 +757,7 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 								? yield* durableStep(
 										`feature-${feature.id}:inspect`,
 										Effect.gen(function* () {
-											const table = sortingKeyRequirement.table.replace(/'/g, "''")
+											const table = Str.replace(/'/g, "''")(sortingKeyRequirement.table)
 											const result = yield* execClickHouse(
 												cfg,
 												`SELECT sorting_key FROM system.tables WHERE database = currentDatabase() AND name = '${table}' FORMAT JSONEachRow`,

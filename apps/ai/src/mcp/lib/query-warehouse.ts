@@ -1,5 +1,6 @@
 import { HttpServerRequest } from "effect/http"
 import type { WarehouseQueryName } from "@maple/domain"
+import { WarehouseQueryRequest } from "@maple/domain/http"
 import { Context, Effect } from "effect"
 import { resolveMcpTenantContext } from "./resolve-tenant"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -43,14 +44,17 @@ export const withTenantExecutor = Effect.fn("McpWarehouse.withTenantExecutor")(f
 	return yield* effect.pipe(provideWarehouseExecutorFromTenant(tenant))
 })
 
-export const queryWarehouse = Effect.fn("McpWarehouse.queryWarehouse")(function* <T = any>(
+export const queryWarehouse = Effect.fn("McpWarehouse.queryWarehouse")(function* <T = unknown>(
 	pipe: WarehouseQueryName,
 	params?: Record<string, unknown>,
 ) {
 	const tenant = yield* CurrentMcpTenant
 	const service = yield* WarehouseQueryService
 	const response = yield* service
-		.query(tenant, { pipeName: pipe, params })
+		.query(
+			tenant,
+			new WarehouseQueryRequest({ pipeName: pipe, ...(params === undefined ? undefined : { params }) }),
+		)
 		.pipe(Effect.mapError(toMcpQueryError(pipe)))
 
 	return { data: response.data as T[] }

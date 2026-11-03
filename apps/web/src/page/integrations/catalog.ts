@@ -1,8 +1,8 @@
 import { type ChatConnectorManifest, chatConnectorManifests } from "@maple/chat-platform/manifests"
 import { ChatConnectorId } from "@maple/domain/primitives"
 import { docsUrl } from "../../lib/docs"
-import { Array, Option, Schema } from "effect"
-import type { IconName } from "../../ui/icon"
+import { Array, Option, Schema, String as Str } from "effect"
+import type { IconName } from "@maple/views/ui/icon"
 import { PLANETSCALE_COLOR } from "../infra-integrations/planetscale/notices"
 import { SUPABASE_ACCENT } from "../infra-integrations/supabase/connect"
 
@@ -65,12 +65,12 @@ const decodeConnectorId = Schema.decodeUnknownOption(ChatConnectorId)
 
 /** The connector behind a chat catalog id, or `null` for every other entry. */
 export const chatConnectorOf = (id: IntegrationId): ChatConnectorId | null =>
-	id.startsWith("chat-") ? Option.getOrNull(decodeConnectorId(id.slice("chat-".length))) : null
+	Str.startsWith("chat-")(id) ? Option.getOrNull(decodeConnectorId(Str.slice("chat-".length)(id))) : null
 
 export const chatManifestOf = (connector: string): ChatConnectorManifest | undefined =>
 	chatConnectorManifests.find((manifest) => manifest.id === connector)
 
-const CHAT_ENTRIES: ReadonlyArray<CatalogEntry> = chatConnectorManifests.map((manifest) => ({
+const CHAT_ENTRIES: ReadonlyArray<CatalogEntry> = Array.map(chatConnectorManifests, (manifest) => ({
 	id: chatIntegrationId(manifest.id),
 	name: manifest.name,
 	description: manifest.description,
@@ -186,7 +186,8 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 ]
 
 /** What `/integrations` lists: chat and alert connectors. Data integrations live under Sources. */
-export const HUB_CATALOG: ReadonlyArray<CatalogEntry> = CATALOG.filter(
+export const HUB_CATALOG: ReadonlyArray<CatalogEntry> = Array.filter(
+	CATALOG,
 	(entry) => entry.category === "notifications",
 )
 
@@ -198,7 +199,7 @@ export const catalogEntry = (id: IntegrationId): CatalogEntry =>
 
 /** Whether a URL value names a catalog entry (the OAuth callbacks append `?integration=`). */
 export const isIntegrationId = (value: string): value is IntegrationId =>
-	CATALOG.some((entry) => entry.id === value)
+	Array.some(CATALOG, (entry) => entry.id === value)
 
 /** The `?integration=` the page shows: a known id, else the hub. */
 export const integrationOfSearch = (value: string | undefined): IntegrationId | null =>

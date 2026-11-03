@@ -207,7 +207,7 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 			Effect.flatMap(
 				Option.match({
 					onNone: () => Effect.fail(new RegionNotShared({ message: "No shared region answer" })),
-					onSome: (entry) => Effect.succeed(Option.some(answer(entry, "edge"))),
+					onSome: (entry) => Effect.succeedSome(answer(entry, "edge")),
 				}),
 			),
 		)
@@ -288,9 +288,8 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 	): Effect.fn.Return<DirectoryAnswer> {
 		if (Option.isNone(readOrganization)) return { _tag: "Unreachable" }
 		const nowMs = yield* Clock.currentTimeMillis
-		const local = Option.filter(HashMap.get(yield* Ref.get(remembered), orgId), (entry) =>
-			isFresh(entry, nowMs),
-		)
+		const rememberedMap = yield* Ref.get(remembered)
+		const local = Option.filter(HashMap.get(rememberedMap, orgId), (entry) => isFresh(entry, nowMs))
 		if (Option.isSome(local)) {
 			yield* Effect.annotateCurrentSpan({ "cache.hit": true, "cache.layer": "isolate" })
 			return found(local.value.metadata)
@@ -398,7 +397,7 @@ export class OrganizationRegionService extends Context.Service<
 						clerkRequest("Clerk.organizations.getOrganization", { orgId }, () =>
 							client.organizations.getOrganization({ organizationId: orgId }),
 						).pipe(
-							Effect.map(Option.some),
+							Effect.asSome,
 							Effect.catchIf(
 								(error) => error.status === 404,
 								() => Effect.succeedNone,

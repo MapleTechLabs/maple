@@ -1,10 +1,11 @@
 import { getServiceColor } from "@maple/ui/lib/colors"
-import { filterSection, singleCheckboxFilter } from "@maple/web/ui/filters/filter-section"
-import type * as FilterSections from "@maple/web/ui/filters/filter-sections"
-import { filterSidebarBody, filterSidebarFrame, filterSidebarHeader } from "@maple/web/ui/filters/filter-sidebar"
-import { Option } from "effect"
+import { filterSection, singleCheckboxFilter } from "@maple/views/ui/filters/filter-section"
+import type * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import { filterSidebarBody, filterSidebarHeader } from "@maple/views/ui/filters/filter-sidebar"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { filterRailFrame } from "../kit/filter-rail"
 import type { SessionFilters } from "./fetch"
 import { type FacetParam, Message } from "./message"
 import type { FacetOption, Model, SessionFacets } from "./model"
@@ -18,7 +19,9 @@ const EMPTY_FACETS: SessionFacets = { service: [], browser: [], device: [], erro
 
 /** `withSelected`: re-inject a selected value the server-side facet branch excluded. */
 const withSelected = (options: ReadonlyArray<FacetOption>, selected?: string): ReadonlyArray<FacetOption> =>
-	selected && !options.some((option) => option.name === selected) ? [{ name: selected, count: 0 }, ...options] : options
+	selected && !Arr.some(options, (option) => option.name === selected)
+		? [{ name: selected, count: 0 }, ...options]
+		: options
 
 const facet = (
 	h: HtmlBuilder<Message>,
@@ -40,7 +43,12 @@ const facet = (
 		onToggle: (name) => Message.ToggledFacetOption({ param, name }),
 	})
 
-export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: SessionFilters, hasActiveFilters: boolean): Html => {
+export const sidebar = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	filters: SessionFilters,
+	hasActiveFilters: boolean,
+): Html => {
 	const facets = AsyncData.isFailure(model.facets.data)
 		? null
 		: Option.getOrElse(AsyncData.getData(model.facets.data), () => EMPTY_FACETS)
@@ -52,21 +60,44 @@ export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: SessionF
 			onToggle: Message.ToggledErrorsOnly(),
 			count: facets?.errorCount,
 		}),
-		facet(h, model, "Service", "service", facets ? withSelected(facets.service, filters.service) : [], filters.service, {
-			isSearchable: true,
-			colorOf: getServiceColor,
-		}),
-		facet(h, model, "Browser", "browser", facets ? withSelected(facets.browser, filters.browser) : [], filters.browser, {
-			isSearchable: true,
-		}),
-		facet(h, model, "Device", "device", facets ? withSelected(facets.device, filters.device) : [], filters.device),
+		facet(
+			h,
+			model,
+			"Service",
+			"service",
+			facets ? withSelected(facets.service, filters.service) : [],
+			filters.service,
+			{
+				isSearchable: true,
+				colorOf: getServiceColor,
+			},
+		),
+		facet(
+			h,
+			model,
+			"Browser",
+			"browser",
+			facets ? withSelected(facets.browser, filters.browser) : [],
+			filters.browser,
+			{
+				isSearchable: true,
+			},
+		),
+		facet(
+			h,
+			model,
+			"Device",
+			"device",
+			facets ? withSelected(facets.device, filters.device) : [],
+			filters.device,
+		),
 	]
-	return filterSidebarFrame(h, { className: "w-56 shrink-0 px-4", isWaiting: isFetching }, [
+	return filterRailFrame(h, { isWaiting: isFetching }, [
 		filterSidebarHeader(h, hasActiveFilters ? { onClear: Message.ClickedClearFilters() } : {}),
 		...filterSidebarBody(
 			h,
 			"sessions-filters",
-			sections.filter((section) => section !== null),
+			Arr.filter(sections, (section) => section !== null),
 		),
 	])
 }

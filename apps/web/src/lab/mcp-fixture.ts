@@ -1,5 +1,6 @@
 import type { McpCallRow, McpServerOverview, McpServerRow, McpToolDetail } from "../page/mcp/data"
 import type { ToolSeriesPoint } from "../page/agent-sessions/tools-kit/model"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `/lab/mcp`: `maple-ai`'s MCP spans from Nov 1, 2026 09:33 to 12:35 UTC, as the warehouse holds them
 // (`mcp.method.name` SERVER spans, 15-minute buckets). The spec spans start at 09:33; there is nothing
@@ -49,7 +50,7 @@ const CLIENT_ERRORS = new Map<string, Readonly<Record<number, number>>>([
 const split = (
 	byClient: Readonly<Record<string, Readonly<Record<number, number>>>>,
 ): ReadonlyArray<ToolSeriesPoint> =>
-	Object.entries(byClient).flatMap(([client, buckets]) =>
+	Arr.flatMap(Rec.toEntries(byClient), ([client, buckets]) =>
 		Array.from({ length: BUCKETS }, (_, index) => ({
 			bucket: bucketAt(index),
 			seriesKey: client,
@@ -245,21 +246,88 @@ export const MCP_OVERVIEW: McpServerOverview = {
 		},
 	],
 	clients: [
-		{ name: "curl", kind: "script", calls: 279, errors: 2 },
-		{ name: "estate-console", kind: "unknown", calls: 50, errors: 0 },
-		{ name: "Node (undici)", kind: "script", calls: 20, errors: 0 },
-		{ name: "Bun", kind: "script", calls: 18, errors: 2 },
-		{ name: "Claude Code", kind: "agent", calls: 15, errors: 1 },
-		{ name: "preview-verifier", kind: "unknown", calls: 5, errors: 2 },
+		{
+			name: "curl",
+			kind: "script",
+			calls: 279,
+			errors: 2,
+			connects: 0,
+			sources: 3,
+			lastSeenMs: at(12, 31),
+		},
+		{
+			name: "estate-console",
+			kind: "internal",
+			calls: 50,
+			errors: 0,
+			connects: 10,
+			sources: 1,
+			lastSeenMs: at(12, 30),
+		},
+		{
+			name: "Node (undici)",
+			kind: "script",
+			calls: 20,
+			errors: 0,
+			connects: 2,
+			sources: 1,
+			lastSeenMs: at(12, 2),
+		},
+		{
+			name: "Bun",
+			kind: "script",
+			calls: 18,
+			errors: 2,
+			connects: 3,
+			sources: 2,
+			lastSeenMs: at(12, 20),
+		},
+		{
+			name: "Claude Code",
+			kind: "agent",
+			calls: 15,
+			errors: 1,
+			connects: 75,
+			sources: 9,
+			lastSeenMs: at(12, 34),
+		},
+		{
+			name: "preview-verifier",
+			kind: "internal",
+			calls: 5,
+			errors: 2,
+			connects: 1,
+			sources: 1,
+			lastSeenMs: at(9, 34),
+		},
+		{
+			name: "executor",
+			kind: "internal",
+			calls: 0,
+			errors: 0,
+			connects: 5,
+			sources: 1,
+			lastSeenMs: at(12, 15),
+		},
+		{
+			name: "Claude",
+			kind: "agent",
+			calls: 0,
+			errors: 0,
+			connects: 2,
+			sources: 2,
+			lastSeenMs: at(11, 40),
+		},
 	],
-	initializers: [
-		{ name: "Claude Code", count: 75 },
-		{ name: "estate-console", count: 10 },
-		{ name: "executor-mcp", count: 5 },
-		{ name: "factory-cli", count: 1 },
-		{ name: "preview-verifier", count: 1 },
-		{ name: "pi", count: 1 },
+	clientInfo: [
+		{ name: "Claude Code", count: 75, connects: 75 },
+		{ name: "estate-console", count: 10, connects: 10 },
+		{ name: "executor-mcp", count: 5, connects: 5 },
+		{ name: "factory-cli", count: 1, connects: 1 },
+		{ name: "preview-verifier", count: 1, connects: 1 },
+		{ name: "pi", count: 1, connects: 1 },
 	],
+	clientInfoUnit: "connect",
 	failures: [
 		{
 			label: "Tool errors",
@@ -304,7 +372,7 @@ export const MCP_OVERVIEW: McpServerOverview = {
 			isPresent: true,
 			label: "Client per call",
 			attributes: ["user_agent.original"],
-			detail: "On every call; clientInfo on initialize only.",
+			detail: "On every call.",
 		},
 		{
 			isPresent: true,
@@ -327,7 +395,7 @@ export const MCP_OVERVIEW: McpServerOverview = {
 		{
 			isPresent: false,
 			label: "Why a tool failed",
-			attributes: ["exception", "gen_ai.tool.call.result"],
+			attributes: ["error.message", "exception"],
 			detail: "Tool errors carry no message, so failures can't be grouped by cause.",
 		},
 	],
@@ -344,7 +412,7 @@ export const MCP_SERVERS: ReadonlyArray<McpServerRow> = [
 		topClient: "curl",
 		topClientShare: 279 / 387,
 		lastCallMs: at(12, 31),
-		spark: SERVER_SERIES.map((point) => point.calls),
+		spark: Arr.map(SERVER_SERIES, (point) => point.calls),
 	},
 ]
 

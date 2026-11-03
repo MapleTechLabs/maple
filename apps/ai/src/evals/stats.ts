@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /**
  * Eval statistics, after Anthropic's "A statistical approach to model evals" and tau-bench.
  *
@@ -21,13 +22,13 @@ const choose = (n: number, k: number): number => {
 }
 
 const mean = (values: ReadonlyArray<number>): number =>
-	values.length === 0 ? Number.NaN : values.reduce((sum, value) => sum + value, 0) / values.length
+	values.length === 0 ? Number.NaN : Arr.reduce(values, 0, (sum, value) => sum + value) / values.length
 
 /** Standard error of the mean; zero when there is one value, since there is no spread to measure. */
 const standardError = (values: ReadonlyArray<number>): number => {
 	if (values.length < 2) return 0
 	const m = mean(values)
-	const variance = values.reduce((sum, value) => sum + (value - m) ** 2, 0) / (values.length - 1)
+	const variance = Arr.reduce(values, 0, (sum, value) => sum + (value - m) ** 2) / (values.length - 1)
 	return Math.sqrt(variance / values.length)
 }
 
@@ -46,22 +47,29 @@ const estimate = (values: ReadonlyArray<number>): Estimate => {
 }
 
 export const passAt1 = (tallies: ReadonlyArray<TaskTally>): Estimate =>
-	estimate(tallies.filter((tally) => tally.trials > 0).map((tally) => tally.passes / tally.trials))
+	estimate(
+		Arr.map(
+			Arr.filter(tallies, (tally) => tally.trials > 0),
+			(tally) => tally.passes / tally.trials,
+		),
+	)
 
 /** Chance at least one of k trials passes (unbiased, from n ≥ k trials). */
 export const passAtK = (tallies: ReadonlyArray<TaskTally>, k: number): number =>
 	mean(
-		tallies
-			.filter((tally) => tally.trials >= k)
-			.map((tally) => 1 - choose(tally.trials - tally.passes, k) / choose(tally.trials, k)),
+		Arr.map(
+			Arr.filter(tallies, (tally) => tally.trials >= k),
+			(tally) => 1 - choose(tally.trials - tally.passes, k) / choose(tally.trials, k),
+		),
 	)
 
 /** Chance all of k trials pass: tau-bench's consistency measure (unbiased, from n ≥ k trials). */
 export const passHatK = (tallies: ReadonlyArray<TaskTally>, k: number): number =>
 	mean(
-		tallies
-			.filter((tally) => tally.trials >= k)
-			.map((tally) => choose(tally.passes, k) / choose(tally.trials, k)),
+		Arr.map(
+			Arr.filter(tallies, (tally) => tally.trials >= k),
+			(tally) => choose(tally.passes, k) / choose(tally.trials, k),
+		),
 	)
 
 export interface PairedComparison {
@@ -77,14 +85,19 @@ export interface PairedComparison {
 
 export const comparePaired = (a: ReadonlyArray<TaskTally>, b: ReadonlyArray<TaskTally>): PairedComparison => {
 	const rateOf = (tally: TaskTally) => tally.passes / tally.trials
-	const bByTask = new Map(b.filter((tally) => tally.trials > 0).map((tally) => [tally.task, rateOf(tally)]))
-	const pairs = a.flatMap((tally) => {
+	const bByTask = new Map(
+		Arr.map(
+			Arr.filter(b, (tally) => tally.trials > 0),
+			(tally) => [tally.task, rateOf(tally)],
+		),
+	)
+	const pairs = Arr.flatMap(a, (tally) => {
 		const other = bByTask.get(tally.task)
 		return tally.trials > 0 && other !== undefined
 			? [{ task: tally.task, diff: rateOf(tally) - other }]
 			: []
 	})
-	const diffs = pairs.map((pair) => pair.diff)
+	const diffs = Arr.map(pairs, (pair) => pair.diff)
 	const delta = mean(diffs)
 	const se = standardError(diffs)
 	return {
@@ -93,7 +106,13 @@ export const comparePaired = (a: ReadonlyArray<TaskTally>, b: ReadonlyArray<Task
 		se,
 		low: delta - 1.96 * se,
 		high: delta + 1.96 * se,
-		aBetter: pairs.filter((pair) => pair.diff > 0).map((pair) => pair.task),
-		bBetter: pairs.filter((pair) => pair.diff < 0).map((pair) => pair.task),
+		aBetter: Arr.map(
+			Arr.filter(pairs, (pair) => pair.diff > 0),
+			(pair) => pair.task,
+		),
+		bBetter: Arr.map(
+			Arr.filter(pairs, (pair) => pair.diff < 0),
+			(pair) => pair.task,
+		),
 	}
 }

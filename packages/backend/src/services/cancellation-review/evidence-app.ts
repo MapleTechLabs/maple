@@ -46,7 +46,7 @@ import {
 	type SourceHealthStatus,
 	worstSourceStatus,
 } from "@maple/domain/source-health"
-import { Cause, Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Cause, Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
@@ -148,10 +148,10 @@ export const integrationHealthOf = (
 	atMs: number,
 	now: number,
 ): ReadonlyArray<CancellationIntegrationHealth> => {
-	const integrations = inventory.integrations.map((entry): CancellationIntegrationHealth => ({
+	const integrations = Arr.map(inventory.integrations, (entry): CancellationIntegrationHealth => ({
 		kind: entry.provider,
 		status: entry.status,
-		lastSuccessDaysBeforeCancel: days(atMs, newest(entry.resources.map((r) => r.lastSuccessAt))),
+		lastSuccessDaysBeforeCancel: days(atMs, newest(Arr.map(entry.resources, (r) => r.lastSuccessAt))),
 		lastErrorDaysBeforeCancel: null,
 		errorClass: isBroken(entry.status) ? errorClassOf(entry.problem ?? "") : null,
 	}))
@@ -160,13 +160,15 @@ export const integrationHealthOf = (
 		if (PROVIDERS.has(source.platform)) continue
 		byPlatform.set(source.platform, [...(byPlatform.get(source.platform) ?? []), source])
 	}
-	const platforms = [...byPlatform].map(([platform, rows]): CancellationIntegrationHealth => {
-		const healths = rows.map((row) => sourceRowHealth(row, now))
-		const status = worstSourceStatus(healths.map((health) => health.status))
+	const platforms = Arr.map([...byPlatform], ([platform, rows]): CancellationIntegrationHealth => {
+		const healths = Arr.map(rows, (row) => sourceRowHealth(row, now))
+		const status = worstSourceStatus(Arr.map(healths, (health) => health.status))
 		const connectors = platform === "gcp" ? gcpConnectors : []
-		const connectorError = connectors
-			.flatMap((c) => [c.lastError, c.lastMetricsError, c.lastResourcesError])
-			.find((error) => error !== null)
+		const connectorError = Arr.flatMap(connectors, (c) => [
+			c.lastError,
+			c.lastMetricsError,
+			c.lastResourcesError,
+		]).find((error) => error !== null)
 		const problem = healths.find((health) => health.status === status)?.problem ?? null
 		return {
 			kind: platform,
@@ -174,14 +176,14 @@ export const integrationHealthOf = (
 			lastSuccessDaysBeforeCancel: days(
 				atMs,
 				newest([
-					...healths.map((health) => health.lastDataAt),
-					...connectors.flatMap((c) => [c.lastReceivedAt, c.lastMetricsReceivedAt]),
+					...Arr.map(healths, (health) => health.lastDataAt),
+					...Arr.flatMap(connectors, (c) => [c.lastReceivedAt, c.lastMetricsReceivedAt]),
 				]),
 			),
 			lastErrorDaysBeforeCancel: days(
 				atMs,
 				newest(
-					rows.map((row) =>
+					Arr.map(rows, (row) =>
 						row.lastRejectedAt !== null && knownAtCancel(atMs, row.lastRejectedAt)
 							? row.lastRejectedAt
 							: null,
@@ -195,7 +197,8 @@ export const integrationHealthOf = (
 					: errorClassOf(connectorError),
 		}
 	})
-	const shown = platforms.filter(
+	const shown = Arr.filter(
+		platforms,
 		(entry) =>
 			!SDK_PLATFORMS.has(entry.kind) ||
 			isBroken(entry.status) ||
@@ -250,10 +253,12 @@ export const onboardingOf = (row: OnboardingRow | null, atMs: number): Cancellat
 		firstDataDaysBeforeCancel: days(atMs, firstData),
 		signupToFirstDataDays:
 			firstData === null ? null : Math.max(0, Math.floor((firstData - row.createdAt) / DAY_MS)),
-		lifecycleEmailsSent: emails
-			.filter((email): email is readonly [CancellationLifecycleEmail, number] => known(email[1]))
-			.toSorted((a, b) => a[1] - b[1])
-			.map(([name]) => name),
+		lifecycleEmailsSent: Arr.map(
+			Arr.filter(emails, (email): email is readonly [CancellationLifecycleEmail, number] =>
+				known(email[1]),
+			).toSorted((a, b) => a[1] - b[1]),
+			([name]) => name,
+		),
 	}
 }
 
@@ -267,7 +272,7 @@ export interface DestinationRow {
 
 /** The destinations that existed at the cancellation. */
 export const destinationsAtCancel = (rows: ReadonlyArray<DestinationRow>, atMs: number) =>
-	rows.filter((row) => knownAtCancel(atMs, row.createdAt))
+	Arr.filter(rows, (row) => knownAtCancel(atMs, row.createdAt))
 
 /**
  * Auto-disabling stamps `disabledAt` and the failure, so one auto-disabled
@@ -278,10 +283,12 @@ export const disabledDestinationsOf = (
 	rows: ReadonlyArray<DestinationRow>,
 	atMs: number,
 ): CancellationAlertsEvidence["disabledDestinations"] =>
-	destinationsAtCancel(rows, atMs)
-		.filter((row) => !row.enabled && (row.disabledAt === null || knownAtCancel(atMs, row.disabledAt)))
-		.slice(0, DESTINATIONS_SHOWN)
-		.map((row) => ({
+	Arr.map(
+		Arr.filter(
+			destinationsAtCancel(rows, atMs),
+			(row) => !row.enabled && (row.disabledAt === null || knownAtCancel(atMs, row.disabledAt)),
+		).slice(0, DESTINATIONS_SHOWN),
+		(row) => ({
 			type: row.type,
 			reason:
 				row.disabledAt === null
@@ -289,7 +296,8 @@ export const disabledDestinationsOf = (
 					: row.disabledReason?.startsWith("Last recipient left")
 						? "recipient_left"
 						: errorClassOf(row.disabledReason ?? ""),
-		}))
+		}),
+	)
 
 export interface FeedbackRow {
 	readonly createdAt: number
@@ -320,19 +328,20 @@ export const priorReviewsOf = (
 	rows: ReadonlyArray<PriorReviewRow>,
 	atMs: number,
 ): ReadonlyArray<CancellationPriorReview> =>
-	rows
-		.map((row) => ({ row, at: row.canceledAt ?? row.createdAt }))
-		// Earlier ones only: this one, or a later one, is not part of why it left now.
-		.filter(({ at }) => at < atMs - SAME_CANCELLATION_MS)
-		.slice(0, PRIOR_REVIEWS_SHOWN)
-		.map(({ row, at }) => ({
+	Arr.map(
+		Arr.filter(
+			Arr.map(rows, (row) => ({ row, at: row.canceledAt ?? row.createdAt })),
+			({ at }) => at < atMs - SAME_CANCELLATION_MS,
+		).slice(0, PRIOR_REVIEWS_SHOWN),
+		({ row, at }) => ({
 			daysBeforeCancel: daysBeforeCancel(atMs, at),
 			ruleReason: row.ruleReason,
 			modelCategory: Option.match(decodeCategory(row.modelRead), {
 				onNone: () => null,
 				onSome: (read) => read.category,
 			}),
-		}))
+		}),
+	)
 
 export const scrapeEvidenceOf = (
 	targets: {
@@ -362,7 +371,7 @@ export const apiKeysOf = (
 	const active = (kind: string) => rows.find((row) => row.kind === kind)?.active ?? 0
 	return {
 		active: { standard: active("standard"), mcp: active("mcp"), device: active("device") },
-		lastUsedDaysBeforeCancel: days(atMs, newest(rows.map((row) => row.lastUsedAt))),
+		lastUsedDaysBeforeCancel: days(atMs, newest(Arr.map(rows, (row) => row.lastUsedAt))),
 	}
 }
 
@@ -421,7 +430,8 @@ export class CancellationAppEvidenceReader extends Context.Service<
 							.where(($) => [$.orgId.eq(orgId)]),
 					),
 				)
-				return integrationHealthOf(listed, sources, gcp, atMs, yield* Clock.currentTimeMillis)
+				const now = yield* Clock.currentTimeMillis
+				return integrationHealthOf(listed, sources, gcp, atMs, now)
 			})
 
 		const readOnboarding = ({ orgId, atMs }: CancellationEvidenceInput) =>
@@ -688,7 +698,8 @@ export class CancellationAppEvidenceReader extends Context.Service<
 					),
 				)
 				// Checks are kept 24 hours: a late review finds the day before the cancellation pruned.
-				const pruned = !knownAtCancel(atMs, yield* Clock.currentTimeMillis)
+				const now = yield* Clock.currentTimeMillis
+				const pruned = !knownAtCancel(atMs, now)
 				const checks = pruned
 					? null
 					: ids.length === 0

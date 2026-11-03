@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { datasources, pipes } from "../generated/tinybird-project-manifest"
+import { String as Str } from "effect"
 
 describe("Tinybird Events API schema compatibility", () => {
 	it("never combines JSONPaths with aggregate-state column types", () => {
 		for (const datasource of datasources) {
-			if (!datasource.content.includes("`json:$")) continue
+			if (!Str.includes("`json:$")(datasource.content)) continue
 
 			expect(datasource.content, datasource.name).not.toMatch(/\b(?:Simple)?AggregateFunction\s*\(/)
 		}

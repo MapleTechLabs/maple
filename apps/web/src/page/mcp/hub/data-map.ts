@@ -6,6 +6,7 @@ import type {
 } from "@maple/domain/http"
 import type { ToolSeriesPoint } from "../../agent-sessions/tools-kit/model"
 import type { McpCoverageRow, McpFailureKind, McpServerOverview, McpServerRow, McpToolDetail } from "../data"
+import { Array as Arr } from "effect"
 
 // The hub's reads in the shapes the MCP views draw. Counts arrive raw; the words are here.
 
@@ -17,25 +18,24 @@ const plural = (count: number, one: string, many = `${one}s`) =>
 
 const point = (row: McpSeriesPoint): ToolSeriesPoint => ({ ...row, sessions: 0 })
 
-export const serverRows = (response: McpServersResponse): ReadonlyArray<McpServerRow> =>
-	response.servers
+export const serverRows = (response: McpServersResponse): ReadonlyArray<McpServerRow> => response.servers
 
 /** The failure panel: tool errors, server-side JSON-RPC errors, and the caller mistakes the spec exempts. */
 export const failureKinds = (failures: Overview["failures"]): ReadonlyArray<McpFailureKind> => {
-	const toolErrors = failures.filter((row) => row.errorType === "tool_error")
-	const rpc = failures.filter((row) => row.errorType !== "tool_error")
+	const toolErrors = Arr.filter(failures, (row) => row.errorType === "tool_error")
+	const rpc = Arr.filter(failures, (row) => row.errorType !== "tool_error")
 	return [
 		{
 			label: "Tool errors",
 			codes: ["error.type = tool_error"],
 			detail: "The tool answered with isError: true.",
-			count: toolErrors.reduce((sum, row) => sum + row.count, 0),
+			count: Arr.reduce(toolErrors, 0, (sum, row) => sum + row.count),
 		},
 		{
 			label: "JSON-RPC errors",
-			codes: rpc.length === 0 ? ["-32603"] : rpc.map((row) => row.errorType),
+			codes: rpc.length === 0 ? ["-32603"] : Arr.map(rpc, (row) => row.errorType),
 			detail: "The server failed to answer the request.",
-			count: rpc.reduce((sum, row) => sum + row.count, 0),
+			count: Arr.reduce(rpc, 0, (sum, row) => sum + row.count),
 		},
 		{
 			label: "Caller mistakes",
@@ -70,7 +70,7 @@ export const coverageRows = (coverage: Overview["coverage"]): ReadonlyArray<McpC
 			isPresent: calls > 0 && coverage.withUserAgent === calls,
 			label: "Client per call",
 			attributes: ["user_agent.original"],
-			detail: `${every(coverage.withUserAgent, "tool call")} clientInfo rides on initialize only.`,
+			detail: every(coverage.withUserAgent, "tool call"),
 		},
 		{
 			isPresent: coverage.protocolVersion !== "",
@@ -82,13 +82,24 @@ export const coverageRows = (coverage: Overview["coverage"]): ReadonlyArray<McpC
 					: `${coverage.protocolVersion}${coverage.transport === "" ? "" : ` over ${coverage.transport}`}.`,
 		},
 		{
+			isPresent: coverage.withUser > 0,
+			label: "Users",
+			attributes: ["user.id"],
+			detail:
+				coverage.withUser > 0
+					? every(coverage.withUser, "tool call")
+					: "Not sent: calls can't be counted or grouped by who made them.",
+		},
+		{
 			isPresent: coverage.withSession > 0,
 			label: "Sessions",
 			attributes: ["mcp.session.id"],
 			detail:
 				coverage.withSession > 0
 					? every(coverage.withSession, "tool call")
-					: "Not sent: without a session id there is no sessions view.",
+					: coverage.withUser > 0
+						? "Not sent: sessions are built from each user's calls instead."
+						: "Only older, stateful servers have one: send user.id above for sessions.",
 		},
 		{
 			isPresent: coverage.withCallerTrace > 0,
@@ -99,7 +110,7 @@ export const coverageRows = (coverage: Overview["coverage"]): ReadonlyArray<McpC
 		{
 			isPresent: coverage.errorsWithMessage > 0,
 			label: "Why a tool failed",
-			attributes: ["exception", "gen_ai.tool.call.result"],
+			attributes: ["error.message", "exception"],
 			detail:
 				coverage.errorsWithMessage > 0
 					? `${coverage.errorsWithMessage.toLocaleString()} of ${plural(coverage.toolErrors, "failed call")} say why.`
@@ -108,18 +119,25 @@ export const coverageRows = (coverage: Overview["coverage"]): ReadonlyArray<McpC
 	]
 }
 
+/** What the clientInfo counts are: handshakes while every one came on `initialize`, else requests. */
+export const clientInfoUnit = (
+	entries: ReadonlyArray<Readonly<{ count: number; connects: number }>>,
+): "connect" | "request" =>
+	Arr.every(entries, (entry) => entry.count === entry.connects) ? "connect" : "request"
+
 export const overviewOf = (response: Overview, nowMs: number): McpServerOverview => ({
 	service: response.service,
 	protocolVersion: response.protocolVersion,
 	transport: response.transport === "tcp" ? "HTTP" : response.transport,
 	firstSpanMs: response.firstSpanMs,
 	nowMs,
-	series: response.series.map(point),
-	clientSeries: response.clientSeries.map(point),
+	series: Arr.map(response.series, point),
+	clientSeries: Arr.map(response.clientSeries, point),
 	totals: response.totals,
 	tools: response.tools,
 	clients: response.clients,
-	initializers: response.initializers,
+	clientInfo: response.clientInfo,
+	clientInfoUnit: clientInfoUnit(response.clientInfo),
 	failures: failureKinds(response.failures),
 	methods: response.methods,
 	coverage: coverageRows(response.coverage),
@@ -132,10 +150,29 @@ export const toolOf = (response: Tool): McpToolDetail => ({
 	clients: response.clients,
 	firstCallMs: response.firstCallMs,
 	lastCallMs: response.lastCallMs,
-	series: response.series.map(point),
-	clientSeries: response.clientSeries.map(point),
+	series: Arr.map(response.series, point),
+	clientSeries: Arr.map(response.clientSeries, point),
 	errorGroups: response.errorGroups,
 	slowest: response.slowest,
 	failed: response.failed,
 	recent: response.recent,
 })
+
+export type McpSessionsScreen = "quiet" | "noSessions" | "list"
+
+/** What the Sessions tab shows: any session lists, even one of only protocol requests. */
+export const sessionsScreen = (
+	response: Readonly<{
+		totals: Readonly<{ sessions: number }>
+		toolCalls: number
+		withSession: number
+		withUser: number
+	}>,
+): McpSessionsScreen =>
+	response.totals.sessions > 0
+		? "list"
+		: response.toolCalls === 0
+			? "quiet"
+			: response.withSession === 0 && response.withUser === 0
+				? "noSessions"
+				: "list"

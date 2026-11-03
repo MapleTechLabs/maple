@@ -16,7 +16,20 @@ import { IntegrationsPersistenceError, UserId } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { GcpConnectors, GcpResources, type GcpConnectorRow } from "@maple/db/tables"
-import { Cause, Clock, Context, Duration, Effect, Layer, Option, Redacted, Ref, Schema, Stream } from "effect"
+import {
+	Cause,
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Ref,
+	Schema,
+	Stream,
+	Array as Arr,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -84,7 +97,7 @@ const FLUSH_ROWS = 5_000
 const BILLING_HOLD_MS = 60 * MINUTE_MS
 const RESOURCE_SYNC_INTERVAL_MS = 60 * MINUTE_MS
 
-const METRIC_COUNT = GCP_METRIC_GROUPS.reduce((sum, group) => sum + group.metrics.length, 0)
+const METRIC_COUNT = Arr.reduce(GCP_METRIC_GROUPS, 0, (sum, group) => sum + group.metrics.length)
 
 /**
  * What a poll reads in turn: a metric on its own, or a top group as one, its ranking metric
@@ -93,17 +106,18 @@ const METRIC_COUNT = GCP_METRIC_GROUPS.reduce((sum, group) => sum + group.metric
 type MetricRead =
 	| { readonly group: GcpMetricGroup; readonly metric: GcpMetric }
 	| { readonly group: GcpTopGroup; readonly ranking: GcpMetric; readonly rest: ReadonlyArray<GcpMetric> }
-const READS = GCP_METRIC_GROUPS.flatMap((group): ReadonlyArray<MetricRead> => {
+const READS = Arr.flatMap(GCP_METRIC_GROUPS, (group): ReadonlyArray<MetricRead> => {
 	const top = group.top
 	return top === undefined
-		? group.metrics.map((metric) => ({ group, metric }))
-		: group.metrics
-				.filter((metric) => metric.name === top.by)
-				.map((ranking) => ({
+		? Arr.map(group.metrics, (metric) => ({ group, metric }))
+		: Arr.map(
+				Arr.filter(group.metrics, (metric) => metric.name === top.by),
+				(ranking) => ({
 					group: { ...group, top },
 					ranking,
-					rest: group.metrics.filter((metric) => metric !== ranking),
-				}))
+					rest: Arr.filter(group.metrics, (metric) => metric !== ranking),
+				}),
+			)
 })
 
 /** How one metric query went: answered in full or cut short, failed, or not run for a budget. */
@@ -112,7 +126,14 @@ type Read = readonly [GcpMetric, ReadOutcome]
 
 /** Queries answered in full, cut short at a budget, not started because of one, and the first failure. */
 const tallyReads = (reads: ReadonlyArray<Read>) =>
-	reads.reduce(
+	Arr.reduce(
+		reads,
+		{
+			complete: 0,
+			partial: 0,
+			skipped: 0,
+			firstFailure: undefined as { readonly type: string; readonly error: GcpApiError } | undefined,
+		},
 		(tally, [metric, outcome]) =>
 			outcome === "skipped"
 				? { ...tally, skipped: tally.skipped + 1 }
@@ -125,12 +146,6 @@ const tallyReads = (reads: ReadonlyArray<Read>) =>
 								...tally,
 								firstFailure: tally.firstFailure ?? { type: metric.type, error: outcome },
 							},
-		{
-			complete: 0,
-			partial: 0,
-			skipped: 0,
-			firstFailure: undefined as { readonly type: string; readonly error: GcpApiError } | undefined,
-		},
 	)
 
 /** No access, or out of quota: every remaining query would fail the same way. */
@@ -457,11 +472,10 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						),
 					)
 				}
-				const complete = readToEnd(
-					yield* pages(MAX_RESOURCE_PAGES, (pageToken) =>
-						searchResourcesPage(tick.httpClient, reader, scope, pageToken),
-					).pipe(Stream.tap(upsertPage), Stream.runLast),
-				)
+				const lastPage = yield* pages(MAX_RESOURCE_PAGES, (pageToken) =>
+					searchResourcesPage(tick.httpClient, reader, scope, pageToken),
+				).pipe(Stream.tap(upsertPage), Stream.runLast)
+				const complete = readToEnd(lastPage)
 				if (complete) {
 					yield* dbExecute((db) =>
 						db.run(
@@ -535,10 +549,8 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						connector.resourcesSyncedAt === null ||
 						tick.now - connector.resourcesSyncedAt >= RESOURCE_SYNC_INTERVAL_MS
 					) {
-						yield* updateConnector(
-							connector.id,
-							yield* resourceSyncOutcome(connector, tick, scope, reader),
-						)
+						const syncOutcome = yield* resourceSyncOutcome(connector, tick, scope, reader)
+						yield* updateConnector(connector.id, syncOutcome)
 					}
 					const ingestKey = (yield* ingestKeys.getOrCreate(connector.orgId, SYSTEM_USER_ID))
 						.publicKey
@@ -686,7 +698,8 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					if ((yield* Ref.get(rowsIngested)) === 0 && complete + partial === 0) {
 						return firstFailure === undefined ? NOTHING : yield* firstFailure.error
 					}
-					yield* ship(yield* Ref.getAndSet(buffer, emptyRows))
+					const remaining = yield* Ref.getAndSet(buffer, emptyRows)
+					yield* ship(remaining)
 					const rowsIngestedTotal = yield* Ref.get(rowsIngested)
 
 					const incomplete = partial + skipped

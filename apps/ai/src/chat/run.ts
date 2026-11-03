@@ -13,7 +13,19 @@ import type { RunBudgetHook } from "@yielded/agent/run-options"
 import type * as RunEvent from "@yielded/agent/run-event"
 import * as ThreadHistory from "@yielded/agent/thread-history"
 import { ThreadId } from "@yielded/agent/identifiers"
-import { Cause, Clock, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
+import {
+	Cause,
+	Clock,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Schema,
+	Stream,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { Prompt, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { ApprovalRequired, type ToolUiPayload } from "../mcp/tools/llm-tools"
@@ -47,6 +59,7 @@ import {
 	type RunCompletion,
 	SUBMIT_REVIEW,
 	type RunUsage,
+	type SessionPullRequest,
 	type SubmitDiagnosis,
 	type StageEdit,
 	type SubmitReply,
@@ -66,7 +79,7 @@ import {
  * that was already half-built.
  */
 export const promptFromHistory = (history: ReadonlyArray<ChatMessage>): ReadonlyArray<PromptMessage> => {
-	const spoken = history.filter((message) => message.text.trim() !== "")
+	const spoken = Arr.filter(history, (message) => Str.trim(message.text) !== "")
 
 	// Bounded here as well as by the policy's context limit. Compaction acts once a request crosses
 	// the limit; this keeps the *first* request of a long conversation from being the one that does.
@@ -82,14 +95,14 @@ export const promptFromHistory = (history: ReadonlyArray<ChatMessage>): Readonly
 	}
 	kept.reverse()
 
-	return kept.map((message) => ({
+	return Arr.map(kept, (message) => ({
 		role: message.role === "user" ? ("user" as const) : ("assistant" as const),
 		content: [{ type: "text" as const, text: message.text }],
 	}))
 }
 
 /** The `n` of a program call's `<program call id>#<n>`: the order the program made its calls in. */
-const programCallIndex = (callId: string): number => Number(callId.slice(callId.lastIndexOf("#") + 1))
+const programCallIndex = (callId: string): number => Number(Str.slice(callId.lastIndexOf("#") + 1)(callId))
 
 /** One replayed turn, in the shape `Prompt.make` accepts. */
 export interface PromptMessage {
@@ -121,6 +134,12 @@ export interface ChatRunInput {
 	 * findings saved so far. Absent, a review run makes its own coverage and offers no `record_finding`.
 	 */
 	readonly review?: ReviewTurnState
+	/**
+	 * The pull request a review session is about. Its diff tools read this one whatever
+	 * repository or number the model passes: a wrong guess there failed the call, and enough of
+	 * those stopped the review.
+	 */
+	readonly pullRequest?: SessionPullRequest
 	/** The agent to run as; defaults to the session's. The local review runner passes a variant. */
 	readonly agent?: AgentDefinition
 	/** Runs `run_code` programs for an agent that offers it; absent, the tool is not offered. */
@@ -201,9 +220,10 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		sessionAttributes,
 		coverage?.observe,
 		(toolCallId, ui, call) =>
-			toolCallId.includes("#")
+			Str.includes("#")(toolCallId)
 				? programCalls.set(toolCallId, { ...call, callId: toolCallId, ui })
 				: uiByCall.set(toolCallId, ui),
+		input.pullRequest,
 	)
 	// One completion per session kind. The session id decides which, so a review session can never
 	// be handed the diagnosis tool or the other way round.
@@ -247,8 +267,9 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 
 	// Read-only tools only: a program cannot hold a proposal for approval, and a write it made before
 	// failing could not be retried safely.
-	const codeTools = Object.fromEntries(
-		Object.entries(maple.toolkit.tools).filter(
+	const codeTools = Rec.fromEntries(
+		Arr.filter(
+			Rec.toEntries(maple.toolkit.tools),
 			([name]) =>
 				CODE_MODE_TOOLS.has(name) &&
 				evaluatePermission(profile.ruleset, name) === "allow" &&
@@ -262,7 +283,9 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 	// What the model is offered directly; the handlers still serve every Maple tool to programs.
 	const direct =
 		codeMode !== undefined && input.codeOnly === true
-			? Toolkit.make(...Object.values(maple.toolkit.tools).filter((tool) => !(tool.name in codeTools)))
+			? Toolkit.make(
+					...Arr.filter(Rec.values(maple.toolkit.tools), (tool) => !(tool.name in codeTools)),
+				)
 			: maple.toolkit
 
 	// A review's own pass may hand groups of a large pull request's files to child reviewers, who
@@ -275,7 +298,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 					input.usage,
 					startedAt + Duration.toMillis(Duration.fromInputUnsafe(agent.budget.maxDuration)),
 					codeMode === undefined ? undefined : CODE_MODE_GUIDANCE,
-					Object.keys(codeTools),
+					Rec.keys(codeTools),
 					childFindings,
 				)
 			: undefined
@@ -334,10 +357,10 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 			return ui
 		},
 		programCallsOf: (toolCallId: string) => {
-			const calls = [...programCalls.values()]
-				.filter((call) => call.callId.startsWith(`${toolCallId}#`))
-				.sort((a, b) => programCallIndex(a.callId) - programCallIndex(b.callId))
-			calls.forEach((call) => programCalls.delete(call.callId))
+			const calls = Arr.filter([...programCalls.values()], (call) =>
+				Str.startsWith(`${toolCallId}#`)(call.callId),
+			).sort((a, b) => programCallIndex(a.callId) - programCallIndex(b.callId))
+			Arr.forEach(calls, (call) => programCalls.delete(call.callId))
 			return calls
 		},
 		sanitizer,
@@ -442,8 +465,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		// which is why the engine's lives only for this provide. A run is an entry point: the Durable Object
 		// invocation owns this scope and nothing outside it composes these layers. The model's own
 		// client stays in the requirements channel, where the Durable Object's runtime answers it.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(Layer.mergeAll(handlers, ThreadHistory.layer)),
+		Effect.provide([handlers, ThreadHistory.layer]),
 		// The `review_files` children run on threads of their own; their spans still belong to this
 		// session, so one review is one session.
 		(run) =>

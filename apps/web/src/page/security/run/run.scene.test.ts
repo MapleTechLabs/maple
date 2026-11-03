@@ -5,10 +5,10 @@ import {
 	SecurityAuditRunNotInProgressError,
 } from "@maple/domain/http"
 import { SecurityAuditRunId } from "@maple/domain/security-audit"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import {
 	DEEP_RUN_IDS,
 	eventsOf,
@@ -35,28 +35,35 @@ const NOW = Date.UTC(2026, 9, 23, 14, 32)
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const routeOf = (runId: string) =>
 	AppRoute.SecurityRun({ runId: Schema.decodeSync(SecurityAuditRunId)(runId) })
 
 const loaded = (runId: string): Model => {
 	const entered = init(routeOf(runId), context).model
-	const withRun = [
-		Message.ReadClock({ nowMs: NOW }),
-		Message.CompletedFetchRun({
-			key: entered.run.key ?? "",
-			result: Result.succeed(runDetailOf(NOW, runId)),
-		}),
-		Message.CompletedFetchEvents({
-			key: entered.events.key ?? "",
-			result: Result.succeed(eventsOf(NOW, runId)),
-		}),
-		Message.CompletedFetchUnits({ key: entered.units.key ?? "", result: Result.succeed(unitsOf(runId)) }),
-		Message.CompletedFetchTargets({
-			key: entered.targets.key ?? "",
-			result: Result.succeed(labTargetsOf(NOW)),
-		}),
-	].reduce((model, message) => pageUpdate(model, message).model, entered)
+	const withRun = Arr.reduce(
+		[
+			Message.ReadClock({ nowMs: NOW }),
+			Message.CompletedFetchRun({
+				key: entered.run.key ?? "",
+				result: Result.succeed(runDetailOf(NOW, runId)),
+			}),
+			Message.CompletedFetchEvents({
+				key: entered.events.key ?? "",
+				result: Result.succeed(eventsOf(NOW, runId)),
+			}),
+			Message.CompletedFetchUnits({
+				key: entered.units.key ?? "",
+				result: Result.succeed(unitsOf(runId)),
+			}),
+			Message.CompletedFetchTargets({
+				key: entered.targets.key ?? "",
+				result: Result.succeed(labTargetsOf(NOW)),
+			}),
+		],
+		entered,
+		(model, message) => pageUpdate(model, message).model,
+	)
 	return pageUpdate(
 		withRun,
 		Message.CompletedFetchFindings({
@@ -70,7 +77,7 @@ const loaded = (runId: string): Model => {
 const unfolded = (runId: string): Model => pageUpdate(loaded(runId), Message.ToggledDetails()).model
 
 const note = (index: number): SecurityAuditEvent => ({
-	id: `n${String(index).padStart(5, "0")}`,
+	id: `n${Str.padStart(5, "0")(String(index))}`,
 	at: NOW + index * 1000,
 	kind: "Note",
 	role: null,
@@ -101,8 +108,8 @@ describe("security run", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(RUN_IDS.billing)),
-			expectView(role("tablist", { name: "Severity" })).toExist(),
-			expectView(role("tab", { name: /^Critical/ })).toHaveAttr("aria-selected", "false"),
+			expectView(role("group", { name: "Severity" })).toExist(),
+			expectView(role("button", { name: /^Critical/ })).toHaveAttr("aria-pressed", "false"),
 			expectView(text("Refund endpoint skips the invoice ownership check")).toExist(),
 			expectView(role("button", { name: /^How the run ran/ })).toHaveAttr("aria-expanded", "false"),
 			expectView(text("Gaps")).not.toExist(),
@@ -162,7 +169,7 @@ describe("security run", () => {
 	test("a live run shows hunting as the active phase", () => {
 		const model = loaded(RUN_IDS.dashboard)
 		const phases = phasesOf(runDetailOf(NOW, RUN_IDS.dashboard), eventsOf(NOW, RUN_IDS.dashboard).events)
-		expect(phases.map((phase) => phase.state)).toEqual([
+		expect(Arr.map(phases, (phase) => phase.state)).toEqual([
 			"done",
 			"active",
 			"pending",
@@ -179,7 +186,7 @@ describe("security run", () => {
 
 	test("a quick run stopped by the org's spend limit marks hunting with gaps and skips verification", () => {
 		const phases = phasesOf(runDetailOf(NOW, RUN_IDS.billing), eventsOf(NOW, RUN_IDS.billing).events)
-		expect(phases.map((phase) => phase.state)).toEqual(["done", "warn", "done", "skipped", "done"])
+		expect(Arr.map(phases, (phase) => phase.state)).toEqual(["done", "warn", "done", "skipped", "done"])
 		scene(
 			{ update: pageUpdate, view },
 			given(unfolded(RUN_IDS.billing)),
@@ -313,7 +320,7 @@ describe("security run", () => {
 
 	test("events polled after Load older are kept: a newer page that pushes old ones off leaves no gap", () => {
 		const event = (index: number): SecurityAuditEvent => ({
-			id: `e${String(index).padStart(4, "0")}`,
+			id: `e${Str.padStart(4, "0")(String(index))}`,
 			at: NOW + index * 1000,
 			kind: "Agent",
 			role: "hunter",
@@ -350,7 +357,7 @@ describe("security run", () => {
 				result: Result.succeed({ events: pageOf(300, 499) }),
 			}),
 		).model
-		const ids = eventLogOf(next).map((logged) => logged.id)
+		const ids = Arr.map(eventLogOf(next), (logged) => logged.id)
 		expect(ids).toHaveLength(500)
 		expect(ids[0]).toBe("e0499")
 		expect(ids.at(-1)).toBe("e0000")
@@ -358,7 +365,7 @@ describe("security run", () => {
 
 	test("a full newer page that does not reach the held events reads older pages until it does", () => {
 		const event = (index: number): SecurityAuditEvent => ({
-			id: `g${String(index).padStart(4, "0")}`,
+			id: `g${Str.padStart(4, "0")(String(index))}`,
 			at: NOW + index * 1000,
 			kind: "Note",
 			role: null,

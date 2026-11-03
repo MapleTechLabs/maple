@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Effect, Exit, Schema } from "effect"
+import { Effect, Exit, Schema, Array as Arr, String as Str } from "effect"
 import { mapleToolCatalog, mapleToolPhrase, toInputSchema } from "./registry"
 import * as P from "../lib/params"
 
@@ -27,7 +27,7 @@ describe("toInputSchema nullable-union collapse", () => {
 			}
 			for (const name of schema.required ?? []) {
 				const branches = schema.properties?.[name]?.anyOf ?? []
-				if (branches.some((branch) => branch.type === "null")) {
+				if (Arr.some(branches, (branch) => branch.type === "null")) {
 					nullableRequired.push(`${definition.name}.${name}`)
 				}
 			}
@@ -36,9 +36,12 @@ describe("toInputSchema nullable-union collapse", () => {
 	})
 
 	it("publishes no null branch on any tool", () => {
-		const withNull = mapleToolCatalog
-			.filter((d) => jsonOf(toInputSchema(d.schema)).includes('"type":"null"'))
-			.map((d) => d.name)
+		const withNull = Arr.map(
+			Arr.filter(mapleToolCatalog, (d) =>
+				Str.includes('"type":"null"')(jsonOf(toInputSchema(d.schema))),
+			),
+			(d) => d.name,
+		)
 		expect(withNull).toEqual([])
 	})
 
@@ -57,7 +60,7 @@ describe("toInputSchema nullable-union collapse", () => {
 	it("leaves a non-nullable union alone", () => {
 		const schema = toInputSchema(Schema.Struct({ a: Schema.Union([Schema.String, Schema.Number]) }))
 		const properties = schema.properties as Record<string, Record<string, unknown>>
-		const types = (properties.a?.anyOf as Array<{ type?: string }>).map((member) => member.type)
+		const types = Arr.map(properties.a!.anyOf as Array<{ type?: string }>, (member) => member.type)
 		expect(types).toContain("string")
 		expect(types).toContain("number")
 		expect(types).not.toContain("null")
@@ -68,7 +71,7 @@ describe("toInputSchema nullable-union collapse", () => {
 			Schema.Struct({ a: Schema.optional(Schema.Union([Schema.Literal("x"), Schema.Number])) }),
 		)
 		const properties = schema.properties as Record<string, Record<string, unknown>>
-		const types = (properties.a?.anyOf as Array<{ type?: string }>).map((member) => member.type)
+		const types = Arr.map(properties.a!.anyOf as Array<{ type?: string }>, (member) => member.type)
 		expect(types).toContain("number")
 		expect(types).not.toContain("null")
 	})
@@ -98,9 +101,10 @@ describe("P.optionalNumber", () => {
 	})
 
 	it("publishes no non-finite enum branch on any tool in the catalog", () => {
-		const withEnum = mapleToolCatalog
-			.filter((d) => jsonOf(toInputSchema(d.schema)).includes('"-Infinity"'))
-			.map((d) => d.name)
+		const withEnum = Arr.map(
+			Arr.filter(mapleToolCatalog, (d) => Str.includes('"-Infinity"')(jsonOf(toInputSchema(d.schema)))),
+			(d) => d.name,
+		)
 		expect(withEnum).toEqual([])
 	})
 

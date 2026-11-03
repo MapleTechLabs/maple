@@ -1,5 +1,6 @@
 import { Schema } from "effect"
-import { SlotSchema } from "../../data/slot"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { Copies } from "../kit/copies"
 
 // One session's detail, as Schemas: the columns the page reads.
@@ -58,9 +59,9 @@ export const Model = Schema.TaggedStruct("SessionDetailPage", {
 	/** The clock at the last read, for live-ness and "started 3m ago". */
 	nowMs: Schema.Number,
 	/** `null` once loaded: the session was not found. */
-	detail: SlotSchema(Schema.NullOr(SessionDetail)),
-	transcript: SlotSchema(Schema.Array(TranscriptEvent)),
-	traces: SlotSchema(Schema.Array(SessionTrace)),
+	detail: KeyedSchema(Schema.NullOr(SessionDetail), LoadFailure),
+	transcript: KeyedSchema(Schema.Array(TranscriptEvent), LoadFailure),
+	traces: KeyedSchema(Schema.Array(SessionTrace), LoadFailure),
 	/** `dataUpdatedAt` of the detail, for the "New data" pill. */
 	detailUpdatedAtMs: Schema.Number,
 	isRefreshing: Schema.Boolean,

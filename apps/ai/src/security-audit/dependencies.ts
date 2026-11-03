@@ -1,7 +1,7 @@
 /**
  * The run's execution label, read at prepare: the manifests the pinned commit tracks and the few
- * config files that can name a private registry, submodule or local module. Labelling only, so a
- * failed read never fails the run; it says so in the label instead.
+ * config files that can name a private registry, submodule or local module. A failed read never
+ * fails the run; the run is then source-only and the label says why.
  */
 import type { OrgId } from "@maple/domain/http"
 import type {
@@ -11,11 +11,12 @@ import type {
 import {
 	configFilesToRead,
 	DEPENDENCY_PATHSPECS,
+	type Ecosystem,
 	type ExecutionProfile,
 	executionProfile,
 	scanDependencies,
 } from "@maple/security-audit"
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 
 const GIT = ["--no-optional-locks", "-c", "core.quotePath=false"]
 
@@ -26,7 +27,7 @@ const uninspected = (why: string): ExecutionProfile => ({
 	privateDependencies: [],
 	reasons: [
 		"no execution sandbox for this repository's languages yet",
-		`its dependencies could not be inspected (${why.slice(0, 300)})`,
+		`its dependencies could not be inspected (${Str.slice(0, 300)(why)})`,
 	],
 })
 
@@ -35,14 +36,16 @@ export const inspectDependencies = (
 	orgId: OrgId,
 	/** `ref` is the full commit sha the run is pinned to. */
 	target: RepositoryTarget & { readonly ref: string },
+	/** Which ecosystems the execution sandbox can run; none when absent. */
+	hasSandbox?: (ecosystem: Ecosystem) => boolean,
 ): Effect.Effect<ExecutionProfile> =>
 	Effect.gen(function* () {
 		const listed = yield* sandbox.exec(orgId, target, {
 			command: "git",
 			args: [...GIT, "ls-files", "--cached", "--", ...DEPENDENCY_PATHSPECS],
 		})
-		if (listed.exitCode !== 0) return uninspected(`exit ${listed.exitCode}: ${listed.stderr.trim()}`)
-		const lines = listed.stdout.split("\n").filter((line) => line.length > 0)
+		if (listed.exitCode !== 0) return uninspected(`exit ${listed.exitCode}: ${Str.trim(listed.stderr)}`)
+		const lines = Arr.filter(Str.split("\n")(listed.stdout), (line) => line.length > 0)
 		// A cut listing's last line may be a partial path.
 		const paths = listed.truncated ? lines.slice(0, -1) : lines
 		const configs = yield* Effect.forEach(
@@ -60,21 +63,24 @@ export const inspectDependencies = (
 			{ concurrency: 4 },
 		)
 		const texts = new Map(
-			configs.flatMap((config): ReadonlyArray<readonly [string, string]> =>
+			Arr.flatMap(configs, (config): ReadonlyArray<readonly [string, string]> =>
 				config.text === undefined ? [] : [[config.path, config.text]],
 			),
 		)
-		// A cut read is a prefix, so its file is uninspected rather than scanned as whole.
-		const cut = configs.filter((config) => config.cut).map((config) => config.path)
-		const profile = executionProfile(scanDependencies(paths, texts))
+		// A cut read is a prefix, so its file is uninspected rather than scanned as whole. Like a private
+		// dependency, it only says an install may fail, not that nothing can run.
+		const cut = Arr.map(
+			Arr.filter(configs, (config) => config.cut),
+			(config) => config.path,
+		)
+		const profile = executionProfile(scanDependencies(paths, texts), hasSandbox)
 		return cut.length === 0
 			? profile
 			: {
 					...profile,
-					mode: "source_only" as const,
 					reasons: [
 						...profile.reasons,
-						`config files too large to inspect in full (${cut.join(", ").slice(0, 300)})`,
+						`config files too large to inspect in full (${Str.slice(0, 300)(Arr.join(cut, ", "))})`,
 					],
 				}
 	}).pipe(Effect.catch((error) => Effect.succeed(uninspected(error.message))))

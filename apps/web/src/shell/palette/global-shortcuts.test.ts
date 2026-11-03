@@ -1,6 +1,6 @@
 import { Option } from "effect"
 import { describe, expect, test } from "vitest"
-import * as Dialog from "../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { Message } from "../message"
 import { init, type Model } from "../model"
 import { update } from "../update"

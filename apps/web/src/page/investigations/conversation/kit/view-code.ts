@@ -1,7 +1,10 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { iconButton } from "@maple/views/ui/icon-button"
 import { COPY_PATH, DOWNLOAD_PATH, LINE_CLASS } from "../../../kit/message-response"
 import { type HighlightedCode, highlightKey } from "./code-highlight"
+import { typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr, String as Str } from "effect"
 
 // Streamdown's full code block, its lines coloured by `code-highlight.ts`.
 
@@ -32,9 +35,6 @@ const glyph = <M>(h: HtmlBuilder<M>, d: string, size: string): Html =>
 		],
 	)
 
-const ACTION_CLASS =
-	"cursor-pointer p-1 text-muted-foreground hover:text-foreground active:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-
 const action = <M>(
 	h: HtmlBuilder<M>,
 	label: string,
@@ -42,15 +42,22 @@ const action = <M>(
 	slot: string | null,
 	onClick: M | null,
 ): Html =>
-	h.button(
-		[
-			h.AriaLabel(label),
-			h.Class(ACTION_CLASS),
-			...(slot === null ? [] : [h.DataAttribute("streamdown", slot)]),
-			h.Title(label),
-			h.Type("button"),
-			...(onClick === null ? [] : [h.OnClick(onClick)]),
-		],
+	iconButton(
+		h,
+		{
+			label,
+			size: "icon-xs",
+			hasTooltip: false,
+			className: typographyClass({
+				tone: "muted",
+				hoverTone: "foreground",
+			}),
+			attributes: [
+				...(slot === null ? [] : [h.DataAttribute("streamdown", slot)]),
+				h.Title(label),
+				...(onClick === null ? [] : [h.OnClick(onClick)]),
+			],
+		},
 		[glyph(h, d, "14")],
 	)
 
@@ -76,13 +83,13 @@ const codeLines = <M>(
 	highlighted: HighlightedCode | null,
 ): ReadonlyArray<Html> =>
 	highlighted === null
-		? code.split("\n").map((line) => h.span([h.Class(LINE_CLASS)], [line === "" ? "\n" : line]))
-		: highlighted.lines.map((line) =>
+		? Arr.map(Str.split("\n")(code), (line) => h.span([h.Class(LINE_CLASS)], [line === "" ? "\n" : line]))
+		: Arr.map(highlighted.lines, (line) =>
 				h.span(
 					[h.Class(LINE_CLASS)],
 					line.length === 0
 						? ["\n"]
-						: line.map((token) =>
+						: Arr.map(line, (token) =>
 								h.span([h.Style({ color: `var(--sh-${token.slot})` })], [token.content]),
 							),
 				),
@@ -90,7 +97,7 @@ const codeLines = <M>(
 
 /** A fenced block: the language header, Download and Copy, numbered lines coloured. */
 export const codeBlock = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, value: string, language: string): Html => {
-	const code = value.replace(/\n+$/, "")
+	const code = Str.replace(/\n+$/, "")(value)
 	const highlighted = host.highlights[highlightKey(language, value)] ?? null
 	const languageClass = highlighted === null ? undefined : `language-${language}`
 	return h.div(

@@ -21,7 +21,7 @@ import {
 	withSourceHealth,
 } from "@maple/domain/integration-inventory"
 import type { OrgId } from "@maple/domain/primitives"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { readHealthOverrides } from "@maple/backend/services/org/integration-sources"
@@ -197,10 +197,9 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 				cloudflareLogpush: rows.cloudflareLogpush,
 				cloudflareHyperdrives: rows.cloudflareHyperdrives,
 				railwayConnection: rows.railwayConnections[0] ?? null,
-				railwayEnvironments: rows.railwayEnvironments.map(({ servicesJson, ...env }) => ({
+				railwayEnvironments: Arr.map(rows.railwayEnvironments, ({ servicesJson, ...env }) => ({
 					...env,
-					serviceCount: Object.keys(Option.getOrElse(decodeServices(servicesJson), () => ({})))
-						.length,
+					serviceCount: Rec.keys(Option.getOrElse(decodeServices(servicesJson), () => ({}))).length,
 				})),
 				planetscaleConnection:
 					planetscale === undefined
@@ -214,7 +213,10 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 							},
 				// The org-wide inventory anchor row (databaseId "") is reported by the connection itself.
 				planetscaleDatabases: rows.planetscaleDatabases,
-				planetscalePollStates: rows.planetscalePollStates.filter((state) => state.databaseId !== ""),
+				planetscalePollStates: Arr.filter(
+					rows.planetscalePollStates,
+					(state) => state.databaseId !== "",
+				),
 				scrapeTargets: rows.scrapeTargets,
 				chatWorkspaces: rows.chatWorkspaces,
 			},
@@ -223,7 +225,7 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 		const overrides = yield* dbExecute((db) => readHealthOverrides(db, orgId, now))
 		return withSourceHealth(
 			inventory,
-			rows.sources.map((source) => ({
+			Arr.map(rows.sources, (source) => ({
 				platform: source.platform,
 				health: sourceRowHealth(source, now, overrides.get(source.id)),
 			})),

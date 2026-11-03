@@ -14,7 +14,7 @@ import {
 	type MetricSumRow,
 } from "@maple/backend/services/warehouse/metric-rows"
 import { timestampMs } from "@maple/backend/platform/time"
-import { Predicate } from "effect"
+import { Predicate, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	gcpAlignmentMs,
 	type GcpBucketOptions,
@@ -87,7 +87,7 @@ export const gcpResourceAttributes = (
 	}
 	attributes["service.name"] = workload || `gcp/${service}`
 
-	for (const [label, value] of Object.entries(labels)) attributes[`gcp.resource.labels.${label}`] = value
+	for (const [label, value] of Rec.toEntries(labels)) attributes[`gcp.resource.labels.${label}`] = value
 	return attributes
 }
 
@@ -119,8 +119,8 @@ type GcpDistribution = NonNullable<NonNullable<GcpTimeSeries["points"]>[number][
 
 /** Quantile `q` by linear interpolation inside its bucket, as Cloud Monitoring's own percentile reducers do. */
 export const distributionQuantile = (distribution: GcpDistribution, q: number): number | undefined => {
-	const counts = (distribution.bucketCounts ?? []).map(Number)
-	const rank = q * counts.reduce((sum, count) => sum + count, 0)
+	const counts = Arr.map(distribution.bucketCounts ?? [], Number)
+	const rank = q * Arr.reduce(counts, 0, (sum, count) => sum + count)
 	if (rank === 0 || distribution.bucketOptions === undefined) return undefined
 	let seen = 0
 	for (const [index, count] of counts.entries()) {
@@ -146,7 +146,7 @@ export const mapGcpResource = (result: GcpResourceSearchResult) => {
 	if (projectId === undefined) return undefined
 	// Pub/Sub answers its full path (`projects/<p>/topics/<id>`) as the display name.
 	const displayName = result.displayName?.startsWith("projects/")
-		? result.displayName.slice(result.displayName.lastIndexOf("/") + 1)
+		? Str.slice(result.displayName.lastIndexOf("/") + 1)(result.displayName)
 		: result.displayName
 	return {
 		name: result.name,
@@ -164,14 +164,16 @@ export const mapGcpResource = (result: GcpResourceSearchResult) => {
 /** A group of more series than Maple keeps: see `GcpMetricGroup.top`. */
 export type GcpTopGroup = GcpMetricGroup & { readonly top: NonNullable<GcpMetricGroup["top"]> }
 
+const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const resourceKey = (group: GcpMetricGroup, series: GcpTimeSeries) => {
 	const labels = series.resource.labels ?? {}
-	return JSON.stringify([labels.project_id, ...group.resourceLabels.map((label) => labels[label])])
+	return encodeJsonSync([labels.project_id, ...Arr.map(group.resourceLabels, (label) => labels[label])])
 }
 
 /** A series of a top group by its resource and its item, whichever metric it is of. */
 export const gcpTopKey = (group: GcpTopGroup, series: GcpTimeSeries) =>
-	JSON.stringify([resourceKey(group, series), series.metric.labels?.[group.top.label]])
+	encodeJsonSync([resourceKey(group, series), series.metric.labels?.[group.top.label]])
 
 /**
  * The items a top group keeps, by `gcpTopKey`: per resource, the `limit` series of the ranking
@@ -183,9 +185,10 @@ export const gcpTopSeries = (
 ): ReadonlySet<string> => {
 	const byResource = new Map<string, Array<{ readonly key: string; readonly total: number }>>()
 	for (const item of series) {
-		const total = (item.points ?? []).reduce(
-			(sum, point) => sum + (point.value.doubleValue ?? Number(point.value.int64Value ?? 0)),
+		const total = Arr.reduce(
+			item.points ?? [],
 			0,
+			(sum, point) => sum + (point.value.doubleValue ?? Number(point.value.int64Value ?? 0)),
 		)
 		if (!(total > 0)) continue
 		const resource = resourceKey(group, item)
@@ -194,11 +197,11 @@ export const gcpTopSeries = (
 		byResource.set(resource, ranked)
 	}
 	return new Set(
-		[...byResource.values()].flatMap((ranked) =>
-			ranked
-				.toSorted((a, b) => b.total - a.total)
-				.slice(0, group.top.limit)
-				.map((item) => item.key),
+		Arr.flatMap([...byResource.values()], (ranked) =>
+			Arr.map(
+				ranked.toSorted((a, b) => b.total - a.total).slice(0, group.top.limit),
+				(item) => item.key,
+			),
 		),
 	)
 }

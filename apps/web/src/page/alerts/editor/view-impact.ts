@@ -5,8 +5,8 @@ import { displaySignalType, formatSignalValue } from "@maple/web-data/alerts/for
 import { diffRuleForms, incidentsClearedByDraft } from "@maple/web-data/alerts/preview-insights"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../../ui/eyebrow"
-import { skeleton } from "../../../ui/skeleton"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { previewIssue, previewStateOf } from "../shared/preview"
 import { isoMs } from "../shared/time"
 import { draftPreviewOf, openIncidentsOf, windowMsOf } from "./derive-rows"
@@ -14,6 +14,8 @@ import type { RuleForm } from "./form"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import { isEvaluationChanged } from "./plan"
+import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // `RuleEditImpact`: the saved rule and the draft replayed
 // over one window, every changed field, and the open incidents the draft would clear.
@@ -47,7 +49,7 @@ const figure = (
 					),
 				],
 			),
-			h.p([h.Class("text-xs text-muted-foreground")], [caption]),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [caption]),
 		],
 	)
 
@@ -115,7 +117,7 @@ export const editImpact = (h: H, model: ImpactView, form: RuleForm): Html => {
 			),
 			h.ul(
 				[h.Class("flex flex-wrap gap-1.5 text-xs")],
-				changes.map((change) =>
+				Arr.map(changes, (change) =>
 					h.li(
 						[h.Key(change.field), h.Class("rounded-sm border bg-surface-sunken px-2 py-1")],
 						[
@@ -159,24 +161,22 @@ const clearedBlock = (
 						h.ul(
 							[h.Class("mt-0.5 text-muted-foreground")],
 							[
-								...cleared
-									.slice(0, 3)
-									.map((incident) =>
-										h.li(
-											[h.Key(incident.id)],
-											[
-												incident.groupKey === null ||
-												incident.groupKey === UNGROUPED_GROUP_KEY
-													? incident.ruleName
-													: incident.groupKey,
-												...(incident.lastObservedValue === null
-													? []
-													: [
-															` at ${formatSignalValue(display, incident.lastObservedValue)}`,
-														]),
-											],
-										),
+								...Arr.map(cleared.slice(0, 3), (incident) =>
+									h.li(
+										[h.Key(incident.id)],
+										[
+											incident.groupKey === null ||
+											incident.groupKey === UNGROUPED_GROUP_KEY
+												? incident.ruleName
+												: incident.groupKey,
+											...(incident.lastObservedValue === null
+												? []
+												: [
+														` at ${formatSignalValue(display, incident.lastObservedValue)}`,
+													]),
+										],
 									),
+								),
 								...(cleared.length > 3
 									? [h.li([], ["and ", String(cleared.length - 3), " more"])]
 									: []),
@@ -199,7 +199,7 @@ const fireRail = (
 	tone: "muted" | "crit",
 ): Html => {
 	const span = Math.max(domain.max - domain.min, 1)
-	const marks = (preview?.wouldFire ?? []).flatMap((fire) => {
+	const marks = Arr.flatMap(preview?.wouldFire ?? [], (fire) => {
 		const start = isoMs(fire.start)
 		const end = isoMs(fire.end)
 		if (!Number.isFinite(start) || !Number.isFinite(end)) return []
@@ -216,7 +216,7 @@ const fireRail = (
 					h.Class("relative h-2 rounded-sm bg-surface-sunken"),
 					h.AriaLabel(`${label}: ${marks.length} alerts`),
 				],
-				marks.map((mark) =>
+				Arr.map(marks, (mark) =>
 					h.span([
 						h.Key(mark.key),
 						h.Class(

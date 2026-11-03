@@ -13,15 +13,24 @@ import {
 	SecurityAuditTargetId,
 	SecurityAuditValidationModel,
 } from "@maple/domain/security-audit"
-import { Effect, Option, Result, Schema, type Types } from "effect"
+import {
+	Effect,
+	Option,
+	Result,
+	Schema,
+	type Types,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import type { Resources } from "../../../platform/resources"
-import * as Dialog from "../../../ui/dialog"
-import * as Field from "../../../ui/field"
-import * as RadioGroup from "../../../ui/radio-group"
-import * as Select from "../../../ui/select"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as RadioGroup from "@maple/views/ui/radio-group"
+import * as Select from "@maple/views/ui/select"
 import { createTarget, INVALID_REQUEST_CODE, startRun } from "./api"
 import { modelIdsFor, type ModelStage } from "./model-picker"
 
@@ -138,7 +147,7 @@ const isValidationModel = Schema.is(SecurityAuditValidationModel)
 /** The draft path is a scope path once added; a bad one is reported on the draft. */
 /** The paths the request would send: the added ones and the draft, once. */
 const pathsOf = (model: Model): ReadonlyArray<string> => {
-	const draft = model.scopeDraft.value.trim()
+	const draft = Str.trim(model.scopeDraft.value)
 	return draft === "" || model.scopePaths.includes(draft) ? model.scopePaths : [...model.scopePaths, draft]
 }
 
@@ -153,12 +162,12 @@ const draftError = (draft: string): string | undefined =>
 
 /** The draft is checked as it would be sent, and it counts toward the cap like an added path. */
 const scopeError = (model: Model): string | undefined =>
-	draftError(model.scopeDraft.value.trim()) ??
+	draftError(Str.trim(model.scopeDraft.value)) ??
 	(pathsOf(model).length > MAX_SCOPE_PATHS ? `At most ${MAX_SCOPE_PATHS} scope paths.` : undefined)
 
 export const errorsOf = (model: Model): Errors => ({
 	repository: isRepository(model.repository.value) ? undefined : "Pick a repository.",
-	branch: isBranch(model.branch.value.trim()) ? undefined : "Enter a branch name git would accept.",
+	branch: isBranch(Str.trim(model.branch.value)) ? undefined : "Enter a branch name git would accept.",
 	scope: scopeError(model),
 	models:
 		model.discovery.value !== "" && model.discovery.value === model.validation.value
@@ -174,7 +183,7 @@ export const NO_ERRORS: Errors = {
 }
 
 export const hasErrors = (errors: Errors): boolean =>
-	Object.values(errors).some((error) => error !== undefined)
+	Arr.some(Rec.values(errors), (error) => error !== undefined)
 
 export const profileOf = (model: Model): ProfileChoice =>
 	Option.getOrElse(model.profile.maybeValue, () => "deep") === "quick" ? "quick" : "deep"
@@ -182,12 +191,12 @@ export const profileOf = (model: Model): ProfileChoice =>
 /** The request the form describes; the draft path counts as added. */
 export const requestOf = (model: Model): SecurityAuditCreateTargetRequest | null => {
 	if (hasErrors(errorsOf(model))) return null
-	const draft = model.scopeDraft.value.trim()
+	const draft = Str.trim(model.scopeDraft.value)
 	const scopePaths =
 		draft === "" || model.scopePaths.includes(draft) ? model.scopePaths : [...model.scopePaths, draft]
 	const request: Types.Mutable<SecurityAuditCreateTargetRequest> = {
 		repository: model.repository.value,
-		branch: model.branch.value.trim(),
+		branch: Str.trim(model.branch.value),
 		profile: profileOf(model),
 	}
 	// Only a pick that differs from the org's default is the target's own: the rest follow the org.
@@ -204,13 +213,13 @@ type FormField = "repository" | "branch" | "scope" | "models"
 
 /** Which form field a request path such as `scopePaths[0]` names. */
 const fieldOfParam = (param: string): FormField | null =>
-	param.startsWith("scopePaths")
+	Str.startsWith("scopePaths")(param)
 		? "scope"
-		: param.startsWith("branch")
+		: Str.startsWith("branch")(param)
 			? "branch"
-			: param.startsWith("repository")
+			: Str.startsWith("repository")(param)
 				? "repository"
-				: param.startsWith("discoveryModel") || param.startsWith("validationModel")
+				: Str.startsWith("discoveryModel")(param) || Str.startsWith("validationModel")(param)
 					? "models"
 					: null
 
@@ -277,7 +286,7 @@ const close = (model: Model): Return => {
 }
 
 const addDraft = (model: Model): Model => {
-	const draft = model.scopeDraft.value.trim()
+	const draft = Str.trim(model.scopeDraft.value)
 	if (draft === "" || draftError(draft) !== undefined || model.scopePaths.length >= MAX_SCOPE_PATHS)
 		return model
 	return {
@@ -343,7 +352,7 @@ export const update = (
 		}),
 		AddedScopePath: () => ({ model: addDraft(model) }),
 		RemovedScopePath: ({ path }) => ({
-			model: { ...model, scopePaths: model.scopePaths.filter((candidate) => candidate !== path) },
+			model: { ...model, scopePaths: Arr.filter(model.scopePaths, (candidate) => candidate !== path) },
 		}),
 		GotDiscoveryMessage: ({ message: inner }) => {
 			const step = Select.update(model.discovery, inner)

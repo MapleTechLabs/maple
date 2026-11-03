@@ -57,7 +57,16 @@ import {
 } from "@maple/backend/services/pr-review/merge-checklist"
 import { privacyFindings, withoutReviewerOverlap } from "@maple/backend/services/pr-review/telemetry/privacy"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { ConfigProvider, Effect, Option, References, Schema } from "effect"
+import {
+	ConfigProvider,
+	Effect,
+	Option,
+	References,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { AGENTS } from "@/chat/agents"
 import type { ChatTurnEvent } from "@/chat/events"
 import { withToolTranscript } from "@/chat/close-out"
@@ -124,16 +133,16 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 			arg === "--code-mode" ||
 			arg === "--code-only"
 		) {
-			flags.set(arg.slice(2), "true")
-		} else if (arg.startsWith("--")) {
+			flags.set(Str.slice(2)(arg), "true")
+		} else if (Str.startsWith("--")(arg)) {
 			const value = argv[i + 1]
 			if (value === undefined) usage()
-			flags.set(arg.slice(2), value ?? "")
+			flags.set(Str.slice(2)(arg), value ?? "")
 			i++
 		} else positional.push(arg)
 	}
 	const fromUrl = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(positional[0] ?? "")
-	const [owner, repo] = fromUrl ? [fromUrl[1], fromUrl[2]] : (positional[0] ?? "").split("/")
+	const [owner, repo] = fromUrl ? [fromUrl[1], fromUrl[2]] : Str.split("/")(positional[0] ?? "")
 	const range = flags.get("range")
 	const number =
 		range === undefined ? Number(fromUrl ? fromUrl[3] : positional[1]) : Number(flags.get("number") ?? 1)
@@ -217,7 +226,7 @@ const runScript = (cmd: ReadonlyArray<string>, cwd: string) => {
 export const must = (cmd: ReadonlyArray<string>, cwd?: string): string => {
 	const result = run(cmd, cwd)
 	if (!result.ok) {
-		console.error(`\n${cmd.join(" ")} failed:\n${result.stderr.trim()}`)
+		console.error(`\n${Arr.join(cmd, " ")} failed:\n${Str.trim(result.stderr)}`)
 		process.exit(1)
 	}
 	return result.stdout
@@ -290,7 +299,7 @@ export const fetchPullRequest = (args: Pick<Args, "owner" | "repo" | "number">) 
 		decodeFilePagesJson(must(["gh", "api", "--paginate", "--slurp", `${slug}/files?per_page=100`])),
 		"files",
 	)
-	const files: ReadonlyArray<PullRequestFile> = pages.flat().map((file) => ({
+	const files: ReadonlyArray<PullRequestFile> = Arr.map(pages.flat(), (file) => ({
 		path: file.filename,
 		previousPath: file.previous_filename ?? null,
 		status: isFileStatus(file.status) ? file.status : "changed",
@@ -323,30 +332,32 @@ const fileStatus = (code: string): PullRequestFile["status"] => {
  * For building review fixtures without opening a pull request anywhere.
  */
 const readRange = (args: Args, dir: string) => {
-	const [baseRef = "", headRef = ""] = (args.range ?? "").split("..")
-	const head = must(["git", "rev-parse", "--verify", `${headRef}^{commit}`], dir).trim()
-	const base = must(["git", "merge-base", baseRef, head], dir).trim()
+	const [baseRef, headRef = ""] = Str.split("..")(args.range ?? "")
+	const head = Str.trim(must(["git", "rev-parse", "--verify", `${headRef}^{commit}`], dir))
+	const base = Str.trim(must(["git", "merge-base", baseRef, head], dir))
 	const sha = (value: string) => orExit(Schema.decodeUnknownOption(GitCommitSha)(value), "commit")
-	const subject = must(["git", "log", "-1", "--format=%s", head], dir).trim()
-	const body = must(["git", "log", "-1", "--format=%b", head], dir).trim()
-	const author = must(["git", "log", "-1", "--format=%an", head], dir).trim()
+	const subject = Str.trim(must(["git", "log", "-1", "--format=%s", head], dir))
+	const body = Str.trim(must(["git", "log", "-1", "--format=%b", head], dir))
+	const author = Str.trim(must(["git", "log", "-1", "--format=%an", head], dir))
 	const statuses = new Map(
-		must(["git", "diff", "--no-renames", "--name-status", base, head], dir)
-			.split("\n")
-			.filter(Boolean)
-			.map((line) => {
-				const [status = "", path = ""] = line.split("\t")
+		Arr.map(
+			Arr.filter(
+				Str.split("\n")(must(["git", "diff", "--no-renames", "--name-status", base, head], dir)),
+				Boolean,
+			),
+			(line) => {
+				const [status, path = ""] = Str.split("\t")(line)
 				return [path, fileStatus(status.charAt(0))] as const
-			}),
+			},
+		),
 	)
-	const files: ReadonlyArray<PullRequestFile> = must(
-		["git", "diff", "--no-renames", "--numstat", base, head],
-		dir,
-	)
-		.split("\n")
-		.filter(Boolean)
-		.map((line) => {
-			const [added = "", deleted = "", path = ""] = line.split("\t")
+	const files: ReadonlyArray<PullRequestFile> = Arr.map(
+		Arr.filter(
+			Str.split("\n")(must(["git", "diff", "--no-renames", "--numstat", base, head], dir)),
+			Boolean,
+		),
+		(line) => {
+			const [added, deleted = "", path = ""] = Str.split("\t")(line)
 			const binary = added === "-"
 			const raw = binary
 				? ""
@@ -358,9 +369,10 @@ const readRange = (args: Args, dir: string) => {
 				status: statuses.get(path) ?? "changed",
 				additions: binary ? 0 : Number(added),
 				deletions: binary ? 0 : Number(deleted),
-				patch: binary || hunks < 0 ? null : raw.slice(hunks + 1).replace(/\n$/, ""),
+				patch: binary || hunks < 0 ? null : Str.replace(/\n$/, "")(Str.slice(hunks + 1)(raw)),
 			}
-		})
+		},
+	)
 	return {
 		pr: {
 			number: args.number,
@@ -381,25 +393,28 @@ const GITHUB_REMOTE = /github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?$/
 
 /** Parsed with a fixed pattern and compared as strings, so no argument ever becomes regex. */
 const remoteMatches = (url: string, owner: string, repo: string) => {
-	const match = GITHUB_REMOTE.exec(url.trim())
+	const match = GITHUB_REMOTE.exec(Str.trim(url))
 	return (
 		match !== null &&
-		match[1]?.toLowerCase() === owner.toLowerCase() &&
-		match[2]?.toLowerCase() === repo.toLowerCase()
+		match[1]?.toLowerCase() === Str.toLowerCase(owner) &&
+		match[2]?.toLowerCase() === Str.toLowerCase(repo)
 	)
 }
 
 /** The clone to read from, and the remote in it that is the pull request's repository. */
 const resolveClone = (args: Args): { readonly dir: string; readonly remote: string } => {
-	const candidates = [
-		args.repoDir,
-		run(["git", "rev-parse", "--show-toplevel"], SCRIPT_DIR).stdout.trim() || undefined,
-		join(homedir(), ".cache", "maple-pr-review", `${args.owner}__${args.repo}`),
-	].filter((dir): dir is string => dir !== undefined)
+	const candidates = Arr.filter(
+		[
+			args.repoDir,
+			Str.trim(run(["git", "rev-parse", "--show-toplevel"], SCRIPT_DIR).stdout) || undefined,
+			join(homedir(), ".cache", "maple-pr-review", `${args.owner}__${args.repo}`),
+		],
+		(dir): dir is string => dir !== undefined,
+	)
 	for (const dir of candidates) {
 		if (!existsSync(join(dir, ".git")) && !existsSync(join(dir, "HEAD"))) continue
-		for (const line of run(["git", "remote", "-v"], dir).stdout.split("\n")) {
-			const [name, url] = line.split(/\s+/)
+		for (const line of Str.split("\n")(run(["git", "remote", "-v"], dir).stdout)) {
+			const [name, url] = Str.split(/\s+/)(line)
 			if (name && url && remoteMatches(url, args.owner, args.repo)) return { dir, remote: name }
 		}
 		if (dir === args.repoDir) {
@@ -418,17 +433,17 @@ const hasCommit = (dir: string, sha: string) => run(["git", "cat-file", "-e", `$
 
 /** Fetch the head (and base) the way GitHub exposes them, which also covers a fork's head. */
 const ensureCommits = (dir: string, remote: string, number: number, shas: ReadonlyArray<string>) => {
-	if (shas.every((sha) => hasCommit(dir, sha))) return
+	if (Arr.every(shas, (sha) => hasCommit(dir, sha))) return
 	console.log(`Fetching pull request #${number} into ${dir}…`)
 	must(["git", "fetch", "--quiet", remote, `pull/${number}/head`], dir)
-	const missing = shas.filter((sha) => !hasCommit(dir, sha))
+	const missing = Arr.filter(shas, (sha) => !hasCommit(dir, sha))
 	if (missing.length > 0) must(["git", "fetch", "--quiet", remote, ...missing], dir)
 }
 
 // The local tool executor
 
 const text = (lines: ReadonlyArray<string>): McpToolResult => ({
-	content: [{ type: "text", text: lines.join("\n") }],
+	content: [{ type: "text", text: Arr.join(lines, "\n") }],
 })
 const failure = (message: string): McpToolResult => ({
 	content: [{ type: "text", text: message }],
@@ -458,7 +473,7 @@ type LocalToolParams = typeof LocalToolParams.Type
 const decodeParams = Schema.decodeUnknownOption(LocalToolParams)
 
 const str = (value: string | undefined): string | undefined =>
-	value !== undefined && value.trim() !== "" ? value.trim() : undefined
+	value !== undefined && Str.trim(value) !== "" ? Str.trim(value) : undefined
 const num = (value: number | string | undefined): number | undefined => {
 	const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN
 	return Number.isFinite(parsed) ? Math.floor(parsed) : undefined
@@ -467,19 +482,19 @@ const num = (value: number | string | undefined): number | undefined => {
 /** A pathspec glob as a regex over the full path: `**` crosses directories, `*` and `?` do not. */
 const globToRegex = (glob: string): RegExp =>
 	new RegExp(
-		`^${glob
-			.split("**")
-			.map((part) =>
-				part
-					.replace(/[.+^${}()|[\]\\]/g, "\\$&")
-					.replace(/\*/g, "[^/]*")
-					.replace(/\?/g, "[^/]"),
-			)
-			.join(".*")}$`,
+		`^${Arr.join(
+			Arr.map(Str.split("**")(glob), (part) =>
+				Str.replace(
+					/\?/g,
+					"[^/]",
+				)(Str.replace(/\*/g, "[^/]*")(Str.replace(/[.+^${}()|[\]\\]/g, "\\$&")(part))),
+			),
+			".*",
+		)}$`,
 	)
 
-const unsafePath = (path: string) => path.startsWith("/") || path.split("/").includes("..")
-const unsafeRef = (ref: string) => ref.startsWith("-") || /[\s~^:?*[\\]|\.\./.test(ref)
+const unsafePath = (path: string) => Str.startsWith("/")(path) || Str.split("/")(path).includes("..")
+const unsafeRef = (ref: string) => Str.startsWith("-")(ref) || /[\s~^:?*[\\]|\.\./.test(ref)
 
 /** Git subcommands `sandbox_exec` may run here: reads of history, never anything that writes. */
 const READ_ONLY_GIT = new Set([
@@ -519,14 +534,17 @@ const UNSAFE_GIT_ARG =
 	/^(--no-index|--contents|--ext-diff|--textconv|--open-files-in-pager|-O|--output|--exec|--upload-pack)/
 
 const unsafeGitArg = (arg: string): boolean =>
-	UNSAFE_GIT_ARG.test(arg) || arg.startsWith("/") || arg.startsWith("~") || arg.split(/[/:]/).includes("..")
+	UNSAFE_GIT_ARG.test(arg) ||
+	Str.startsWith("/")(arg) ||
+	Str.startsWith("~")(arg) ||
+	Str.split(/[/:]/)(arg).includes("..")
 
 /** The same answer `pr_context` gives in production, read with the caller's own `gh` login. */
 const fetchPullRequestContext = (args: Args, headSha: string): PullRequestContext => {
 	const slug = `repos/${args.owner}/${args.repo}`
 	// Decoded at the boundary, one schema per read.
 	const read = <A>(schema: Schema.Decoder<A>, path: string): A =>
-		Schema.decodeUnknownSync(schema)(JSON.parse(must(["gh", "api", path])))
+		Schema.decodeUnknownSync(Schema.fromJsonString(schema))(must(["gh", "api", path]))
 	const commits = read(GhContextCommits, `${slug}/pulls/${args.number}/commits?per_page=100`)
 	const comments = [
 		...read(
@@ -538,17 +556,18 @@ const fetchPullRequestContext = (args: Args, headSha: string): PullRequestContex
 	// The pull request's own head: the first page of commits stops at 100.
 	const checks = read(GhContextChecks, `${slug}/commits/${headSha}/check-runs?per_page=100`).check_runs
 	return {
-		commits: commits.map((commit) => ({ sha: commit.sha, message: commit.commit.message })),
+		commits: Arr.map(commits, (commit) => ({ sha: commit.sha, message: commit.commit.message })),
 		// Maple's own review comments (one per review) are left out, as the production tool leaves out the App's.
-		comments: comments
-			.filter((comment) => !(comment.body ?? "").includes("<!-- maple-pr-review"))
-			.map((comment) => ({
+		comments: Arr.map(
+			Arr.filter(comments, (comment) => !Str.includes("<!-- maple-pr-review")(comment.body ?? "")),
+			(comment) => ({
 				author: comment.user?.login ?? "(deleted user)",
 				path: comment.path ?? null,
 				line: comment.line ?? null,
 				body: comment.body ?? "",
-			})),
-		checks: checks.map((check) => ({
+			}),
+		),
+		checks: Arr.map(checks, (check) => ({
 			name: check.name,
 			status: check.status,
 			conclusion: check.conclusion,
@@ -588,18 +607,18 @@ export const makeExecutor = (input: {
 		if (
 			input.historical &&
 			resolved.ok &&
-			!git(["merge-base", "--is-ancestor", resolved.stdout.trim(), input.headSha]).ok
+			!git(["merge-base", "--is-ancestor", Str.trim(resolved.stdout), input.headSha]).ok
 		)
 			return failure("Historical replay cannot read commits after or outside this head.")
 		return resolved.ok
-			? resolved.stdout.trim()
+			? Str.trim(resolved.stdout)
 			: failure(`No ref '${ref}' exists in ${input.repository}.`)
 	}
 	const pathspec = (params: LocalToolParams): Array<string> => {
 		const path = str(params.path)
 		const glob = str(params.glob)
 		if (glob !== undefined)
-			return [`:(glob)${path === undefined ? "" : `${path.replace(/\/$/, "")}/`}${glob}`]
+			return [`:(glob)${path === undefined ? "" : `${Str.replace(/\/$/, "")(path)}/`}${glob}`]
 		return path === undefined ? [] : [path]
 	}
 	const readFile = (params: LocalToolParams): McpToolResult => {
@@ -609,14 +628,14 @@ export const makeExecutor = (input: {
 		if (typeof ref !== "string") return ref
 		const shown = git(["show", `${ref}:${path}`])
 		if (!shown.ok) return failure(`No file '${path}' exists in '${input.repository}' at '${ref}'.`)
-		const all = shown.stdout.split("\n")
+		const all = Str.split("\n")(shown.stdout)
 		const start = Math.max(1, num(params.start_line) ?? 1)
 		const end = Math.min(all.length, num(params.end_line) ?? start + 399, start + 399)
 		return text([
 			`## ${input.repository}/${path}`,
 			`Ref: \`${ref}\` · Lines: ${start}-${end}/${all.length}`,
 			"```",
-			...all.slice(start - 1, end).map((line, i) => `${start + i}: ${line}`),
+			...Arr.map(all.slice(start - 1, end), (line, i) => `${start + i}: ${line}`),
 			"```",
 		])
 	}
@@ -644,11 +663,10 @@ export const makeExecutor = (input: {
 			...pathspec(params),
 		])
 		if (result.code !== 0 && result.code !== 1)
-			return failure(`git grep failed: ${result.stderr.trim().slice(0, 500)}`)
-		const lines = result.stdout
-			.split("\n")
-			.filter(Boolean)
-			.map((line) => line.replace(`${ref}:`, ""))
+			return failure(`git grep failed: ${Str.slice(0, 500)(Str.trim(result.stderr))}`)
+		const lines = Arr.map(Arr.filter(Str.split("\n")(result.stdout), Boolean), (line) =>
+			Str.replace(`${ref}:`, "")(line),
+		)
 		return text([
 			`## grep: \`${pattern}\``,
 			`Repository: ${input.repository} · Ref: \`${ref}\``,
@@ -668,7 +686,7 @@ export const makeExecutor = (input: {
 		if (
 			name !== "list_source_repositories" &&
 			repository !== undefined &&
-			repository.toLowerCase() !== input.repository.toLowerCase()
+			Str.toLowerCase(repository) !== Str.toLowerCase(input.repository)
 		) {
 			return failure(
 				`Repository '${repository}' is not connected; only ${input.repository} is available in this run.`,
@@ -722,9 +740,10 @@ export const makeExecutor = (input: {
 					glob === undefined
 						? undefined
 						: globToRegex(path === undefined ? glob : `${path}/${glob}`)
-				const entries = listed.stdout
-					.split("\n")
-					.filter((entry) => entry !== "" && (matcher === undefined || matcher.test(entry)))
+				const entries = Arr.filter(
+					Str.split("\n")(listed.stdout),
+					(entry) => entry !== "" && (matcher === undefined || matcher.test(entry)),
+				)
 				return text([
 					`## Files at \`${ref}\` (${entries.length})`,
 					...entries.slice(0, 500),
@@ -745,14 +764,14 @@ export const makeExecutor = (input: {
 					return text([
 						`Exit: ${result.code ?? -1}`,
 						"```",
-						result.stdout.slice(0, 48_000),
-						result.stderr.slice(0, 2_000),
+						Str.slice(0, 48_000)(result.stdout),
+						Str.slice(0, 2_000)(result.stderr),
 						"```",
 					])
 				}
-				if (command !== "git" || !READ_ONLY_GIT.has(args[0] ?? "") || args.some(unsafeGitArg)) {
+				if (command !== "git" || !READ_ONLY_GIT.has(args[0] ?? "") || Arr.some(args, unsafeGitArg)) {
 					return failure(
-						`The local runner only executes read-only git (${[...READ_ONLY_GIT].join(", ")}).`,
+						`The local runner only executes read-only git (${Arr.join([...READ_ONLY_GIT], ", ")}).`,
 					)
 				}
 				const ref = refOf(params)
@@ -761,8 +780,8 @@ export const makeExecutor = (input: {
 				return text([
 					`Exit: ${result.code ?? -1}`,
 					"```",
-					result.stdout.slice(0, 48_000),
-					result.stderr.slice(0, 2_000),
+					Str.slice(0, 48_000)(result.stdout),
+					Str.slice(0, 2_000)(result.stderr),
 					"```",
 				])
 			}
@@ -776,7 +795,7 @@ export const makeExecutor = (input: {
 		prepareConnectedRepositories: () => Effect.void,
 		execute: (_tenant, name, raw) =>
 			Effect.sync(() => {
-				const normalized = normalizeArguments(raw, Object.keys(LocalToolParams.fields))
+				const normalized = normalizeArguments(raw, Rec.keys(LocalToolParams.fields))
 				const result = dispatch(
 					name,
 					Option.getOrElse(decodeParams(normalized.args), () => ({})),
@@ -820,7 +839,7 @@ const postSummaryComment = (
 	args: Args,
 	comment: { readonly marker: string; readonly body: string },
 ): string => {
-	const me = must(["gh", "api", "user", "--jq", ".login"]).trim()
+	const me = Str.trim(must(["gh", "api", "user", "--jq", ".login"]))
 	const slug = `repos/${args.owner}/${args.repo}`
 	const pages = orExit(
 		decodeCommentPagesJson(
@@ -834,10 +853,12 @@ const postSummaryComment = (
 		),
 		"comments",
 	)
-	const existing = pages.flat().find((c) => (c.body ?? "").includes(comment.marker) && c.user?.login === me)
+	const existing = pages
+		.flat()
+		.find((c) => Str.includes(comment.marker)(c.body ?? "") && c.user?.login === me)
 	mkdirSync(args.out, { recursive: true })
 	const bodyFile = join(args.out, `.comment-${randomUUID()}.json`)
-	writeFileSync(bodyFile, JSON.stringify({ body: comment.body }))
+	writeFileSync(bodyFile, encodeJson({ body: comment.body }))
 	const written = must(
 		existing === undefined
 			? ["gh", "api", "-X", "POST", `${slug}/issues/${args.number}/comments`, "--input", bodyFile]
@@ -857,8 +878,14 @@ interface ToolRecord {
 	isError?: boolean
 }
 
-const renderOutput = (value: unknown): string =>
-	typeof value === "string" ? value : JSON.stringify(value, null, 2)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+// `JSON.stringify(undefined)` is undefined rather than a throw; keep that for absent values.
+const prettyJson = (value: unknown): string | undefined =>
+	value === undefined ? undefined : encodePrettyJson(value)
+
+const renderOutput = (value: unknown): string | undefined =>
+	typeof value === "string" ? value : prettyJson(value)
 
 /** The new-side lines of a file's diff, keyed by number, as the agent saw them. */
 const newSideLines = (file: PullRequestFile | undefined): Map<number, string> => {
@@ -912,7 +939,7 @@ const childSummary = (child: SettledChild) => {
 
 /** One child reviewer, as a transcript section: why it ended, then each call and what came back. */
 const childTranscript = (child: SettledChild, index: number): ReadonlyArray<string> => {
-	const text = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value, null, 2))
+	const text = (value: unknown) => (typeof value === "string" ? value : (prettyJson(value) ?? ""))
 	const answer = (child.history?.content ?? [])
 		.filter((message) => message.role === "assistant")
 		.flatMap((message) => message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])))
@@ -974,8 +1001,6 @@ export const reviewLocally = async (
 	const env = { ...process.env }
 	if (args.model !== undefined) env.MAPLE_REVIEW_MODEL_OPENROUTER = args.model
 	const settings = await Effect.runPromise(
-		// A CLI script: this is its entry point.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		loadLlmSettings.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env)))),
 	)
 	const model =
@@ -991,7 +1016,8 @@ export const reviewLocally = async (
 		baseRef: pr.base.ref,
 		headSha: pr.head.sha,
 		baseSha: pr.base.sha,
-		fork: pr.head.repo !== null && pr.head.repo.full_name.toLowerCase() !== repository.toLowerCase(),
+		fork:
+			pr.head.repo !== null && Str.toLowerCase(pr.head.repo.full_name) !== Str.toLowerCase(repository),
 		body: pr.body,
 		rules: readRules(clone.dir, pr.base.sha),
 	})
@@ -1026,7 +1052,7 @@ export const reviewLocally = async (
 				const record: ToolRecord = { id: event.callId, name: event.name, input: event.input }
 				tools.push(record)
 				byCall.set(event.callId, record)
-				process.stdout.write(`\n→ ${event.name} ${JSON.stringify(event.input).slice(0, 160)}\n`)
+				process.stdout.write(`\n→ ${event.name} ${Str.slice(0, 160)(encodeJson(event.input))}\n`)
 				return
 			}
 			case "tool-result": {
@@ -1034,7 +1060,7 @@ export const reviewLocally = async (
 				if (record === undefined) return
 				record.output = renderOutput(event.output)
 				record.isError = event.isError === true
-				process.stdout.write(`  ${record.isError ? "✗" : "←"} ${record.output.length} chars\n`)
+				process.stdout.write(`  ${record.isError ? "✗" : "←"} ${record.output?.length ?? 0} chars\n`)
 				return
 			}
 			case "turn-end":
@@ -1071,6 +1097,7 @@ export const reviewLocally = async (
 				}),
 			...(turn.closeOut === true ? { closeOut: true } : undefined),
 			review: reviewState,
+			pullRequest: { repository, number: args.number },
 			...(promptOverride === undefined && args.historical !== true
 				? undefined
 				: {
@@ -1105,9 +1132,9 @@ export const reviewLocally = async (
 			Effect.catchCause((cause) =>
 				Effect.sync(() => {
 					const detail = String(cause)
-					endReason = detail.includes("requires more credits")
+					endReason = Str.includes("requires more credits")(detail)
 						? "run failed: the OpenRouter key in .env.local is out of credits"
-						: `run failed: ${detail.slice(0, 400)}`
+						: `run failed: ${Str.slice(0, 400)(detail)}`
 				}),
 			),
 		)
@@ -1144,7 +1171,8 @@ export const reviewLocally = async (
 						id: "pass",
 						role: "assistant",
 						text: prose,
-						toolCalls: tools.map(
+						toolCalls: Arr.map(
+							tools,
 							(tool) =>
 								new ChatToolCall({
 									id: tool.id,
@@ -1176,11 +1204,11 @@ export const reviewLocally = async (
 
 	// Output
 	const durationMs = Date.now() - started
-	const stamp = new Date(started).toISOString().replace(/[:.]/g, "-")
+	const stamp = Str.replace(/[:.]/g, "-")(new Date(started).toISOString())
 	const dir = join(args.out, `${args.owner}__${args.repo}__${args.number}__${stamp}`)
 	mkdirSync(dir, { recursive: true })
 	const header = [
-		`# Local review of ${repository}#${args.number} at \`${pr.head.sha.slice(0, 12)}\``,
+		`# Local review of ${repository}#${args.number} at \`${Str.slice(0, 12)(pr.head.sha)}\``,
 		"",
 		`${pr.title ?? "(untitled)"} · ${pr.html_url}`,
 		"",
@@ -1193,10 +1221,10 @@ export const reviewLocally = async (
 	const transcript = [
 		`# Transcript: ${repository}#${args.number}`,
 		"",
-		...tools.flatMap((tool, i) => [
+		...Arr.flatMap(tools, (tool, i) => [
 			`## ${i + 1}. ${tool.name}${tool.isError ? " (error)" : ""}`,
 			"```json",
-			JSON.stringify(tool.input, null, 2),
+			prettyJson(tool.input) ?? "",
 			"```",
 			"```",
 			tool.output ?? "(no result)",
@@ -1206,37 +1234,33 @@ export const reviewLocally = async (
 		"## Assistant prose",
 		"",
 		prose || "(none)",
-		...children.flatMap(childTranscript),
+		...Arr.flatMap(children, childTranscript),
 	]
-	writeFileSync(join(dir, "transcript.md"), transcript.join("\n"))
+	writeFileSync(join(dir, "transcript.md"), Arr.join(transcript, "\n"))
 
 	if (submitted === undefined) {
 		writeFileSync(
 			join(dir, "review.md"),
-			[...header, "**No review was submitted.** See `transcript.md`."].join("\n"),
+			Arr.join([...header, "**No review was submitted.** See `transcript.md`."], "\n"),
 		)
 		writeFileSync(
 			join(dir, "report.json"),
-			JSON.stringify(
-				{
-					pr: pr.html_url,
-					headSha: pr.head.sha,
-					model: model.name,
-					codeMode: args.codeOnly ? "only" : args.codeMode ? "on" : "off",
-					usage,
-					durationMs,
-					endReason,
-					children: children.map(childSummary),
-					tools: tools.map(({ name, input, isError, output }) => ({
-						name,
-						input,
-						isError,
-						outputChars: output?.length ?? 0,
-					})),
-				},
-				null,
-				2,
-			),
+			encodePrettyJson({
+				pr: pr.html_url,
+				headSha: pr.head.sha,
+				model: model.name,
+				codeMode: args.codeOnly ? "only" : args.codeMode ? "on" : "off",
+				usage,
+				durationMs,
+				endReason,
+				children: Arr.map(children, childSummary),
+				tools: Arr.map(tools, ({ name, input, isError, output }) => ({
+					name,
+					input,
+					isError,
+					outputChars: output?.length ?? 0,
+				})),
+			}),
 		)
 		console.log(`\n\nNo review submitted (${endReason}). Transcript: ${join(dir, "transcript.md")}`)
 		return dir
@@ -1245,7 +1269,7 @@ export const reviewLocally = async (
 	// The clone answers what the service asks code search: is the name already read at the base?
 	const detected = detectMergeSteps(files)
 	const verdicts = new Map(
-		detected.names.map(({ name }) => [name, nameAtBase(clone.dir, pr.base.sha, name)]),
+		Arr.map(detected.names, ({ name }) => [name, nameAtBase(clone.dir, pr.base.sha, name)]),
 	)
 	const { beforeMerge: reviewerSteps, ...submittedReport } = submitted.report
 	const { steps: beforeMerge } = buildChecklist({
@@ -1272,27 +1296,27 @@ export const reviewLocally = async (
 		report,
 		partial: submitted.partial === true,
 	})
-	const filesByPath = new Map(files.map((file) => [file.path, file]))
-	const anchored = publication.annotations.map((annotation) => {
+	const filesByPath = new Map(Arr.map(files, (file) => [file.path, file]))
+	const anchored = Arr.map(publication.annotations, (annotation) => {
 		const lines = newSideLines(filesByPath.get(annotation.path))
 		return {
 			annotation,
 			onDiff: lines.has(annotation.startLine),
-			context: [-2, -1, 0, 1, 2].flatMap((d) => {
+			context: Arr.flatMap([-2, -1, 0, 1, 2], (d) => {
 				const line = lines.get(annotation.startLine + d)
 				return line === undefined
 					? []
-					: [`${String(annotation.startLine + d).padStart(5)} ${d === 0 ? ">" : " "}${line}`]
+					: [`${Str.padStart(5)(String(annotation.startLine + d))} ${d === 0 ? ">" : " "}${line}`]
 			}),
 		}
 	})
-	const offDiff = anchored.filter((entry) => !entry.onDiff)
+	const offDiff = Arr.filter(anchored, (entry) => !entry.onDiff)
 
 	const review = [
 		...header,
 		"# The pull request comment",
 		"",
-		publication.summaryComment.body.replace(publication.summaryComment.marker, "").trim(),
+		Str.trim(Str.replace(publication.summaryComment.marker, "")(publication.summaryComment.body)),
 		"",
 		"---",
 		"",
@@ -1308,7 +1332,7 @@ export const reviewLocally = async (
 					"",
 				]
 			: []),
-		...anchored.flatMap(({ annotation, onDiff, context }) => [
+		...Arr.flatMap(anchored, ({ annotation, onDiff, context }) => [
 			`### ${annotation.path}:${annotation.startLine}${annotation.endLine !== annotation.startLine ? `-${annotation.endLine}` : ""} · ${annotation.level}${onDiff ? "" : " · **off the diff**"}`,
 			"",
 			`**${annotation.title}**`,
@@ -1321,34 +1345,30 @@ export const reviewLocally = async (
 		"",
 		publication.reviewBody ?? "",
 	]
-	writeFileSync(join(dir, "review.md"), review.join("\n"))
+	writeFileSync(join(dir, "review.md"), Arr.join(review, "\n"))
 	writeFileSync(
 		join(dir, "report.json"),
-		JSON.stringify(
-			{
-				pr: pr.html_url,
-				headSha: pr.head.sha,
-				model: model.name,
-				codeMode: args.codeOnly ? "only" : args.codeMode ? "on" : "off",
-				usage,
-				durationMs,
-				endReason,
-				closedOut,
-				promptFile: args.promptFile ?? null,
-				report,
-				publication,
-				offDiff: offDiff.map(({ annotation }) => `${annotation.path}:${annotation.startLine}`),
-				children: children.map(childSummary),
-				tools: tools.map(({ name, input, isError, output }) => ({
-					name,
-					input,
-					isError,
-					outputChars: output?.length ?? 0,
-				})),
-			},
-			null,
-			2,
-		),
+		encodePrettyJson({
+			pr: pr.html_url,
+			headSha: pr.head.sha,
+			model: model.name,
+			codeMode: args.codeOnly ? "only" : args.codeMode ? "on" : "off",
+			usage,
+			durationMs,
+			endReason,
+			closedOut,
+			promptFile: args.promptFile ?? null,
+			report,
+			publication,
+			offDiff: Arr.map(offDiff, ({ annotation }) => `${annotation.path}:${annotation.startLine}`),
+			children: Arr.map(children, childSummary),
+			tools: Arr.map(tools, ({ name, input, isError, output }) => ({
+				name,
+				input,
+				isError,
+				outputChars: output?.length ?? 0,
+			})),
+		}),
 	)
 
 	if (args.post && args.range === undefined) {
@@ -1356,7 +1376,7 @@ export const reviewLocally = async (
 		console.log(`\nPosted the summary comment: ${url}`)
 	}
 	console.log(
-		`\n\n${publication.title.split(" · ")[0]} · ${report.verdict} · ${report.findings.length} findings${offDiff.length > 0 ? ` (${offDiff.length} off the diff)` : ""} · ${tools.length} tool calls · ${Math.round(durationMs / 1000)} s`,
+		`\n\n${Str.split(" · ")(publication.title)[0]} · ${report.verdict} · ${report.findings.length} findings${offDiff.length > 0 ? ` (${offDiff.length} off the diff)` : ""} · ${tools.length} tool calls · ${Math.round(durationMs / 1000)} s`,
 	)
 	console.log(`Review:     ${join(dir, "review.md")}`)
 	console.log(`Transcript: ${join(dir, "transcript.md")}`)

@@ -14,7 +14,7 @@ import {
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { utilizationLevel, type UtilizationLevel } from "@maple/ui/lib/utilization"
 
-import { formatValueWithUnit, type ChartUnit } from "../chart-units"
+import { formatValueWithUnit, type ChartUnit } from "@maple/views/lib/infra-chart-units"
 import {
 	GCP_INFRA_CHARTS,
 	gcpBuckets,
@@ -28,6 +28,7 @@ import {
 } from "./charts"
 import { GCP_IDLE_IN_TRANSACTION, GCP_LIMIT_FRACTION } from "./list-model"
 import { gcpMetricReader, serverErrors, unhealthy, type GcpMetricReader } from "./tabs"
+import { Array as Arr } from "effect"
 
 const { mean, rate } = gcpSeries
 
@@ -71,7 +72,7 @@ export interface GcpStrip {
 const FAILED_COLORS = { failed: "var(--severity-error)" }
 
 const valuesOf = (rows: ReadonlyArray<StripRow>, name: string) =>
-	rows.flatMap((row) => (row.attributeValue === name ? [row.value] : []))
+	Arr.flatMap(rows, (row) => (row.attributeValue === name ? [row.value] : []))
 
 const peakOf = (rows: ReadonlyArray<StripRow>, name: string) => {
 	const values = valuesOf(rows, name)
@@ -220,7 +221,7 @@ function cloudSqlStrips(
 ): ReadonlyArray<GcpStrip> {
 	const read = gcpMetricReader(gcpWindowPoints(points))
 	// PostgreSQL splits its connections by state; MySQL reports the open ones only.
-	const byState = points.some((point) => point.metric === `${DATABASE}.postgresql.connection.count`)
+	const byState = Arr.some(points, (point) => point.metric === `${DATABASE}.postgresql.connection.count`)
 	const connectionRows = gcpLineRows(
 		byState
 			? [
@@ -237,7 +238,8 @@ function cloudSqlStrips(
 	)
 	const peakOpen = Math.max(
 		0,
-		...gcpLineRows([mean("open", `${DATABASE}.connection.count`)], points, window).map(
+		...Arr.map(
+			gcpLineRows([mean("open", `${DATABASE}.connection.count`)], points, window),
 			(row) => row.value,
 		),
 	)
@@ -313,7 +315,10 @@ function cloudSqlStrips(
 		),
 	]
 	// Query Insights is PostgreSQL's, when it is on; replica lag a read replica's.
-	return strips.filter((strip) => strip.id === "connections" || strip.id === "cpu" || strip.rows.length > 0)
+	return Arr.filter(
+		strips,
+		(strip) => strip.id === "connections" || strip.id === "cpu" || strip.rows.length > 0,
+	)
 }
 
 /**
@@ -404,7 +409,7 @@ export function gcpWorkloadStrips(
 		case "gke":
 		case "computeEngine":
 		case "loadBalancing":
-			return GCP_INFRA_CHARTS[service].slice(0, 4).map((chart): GcpStrip => {
+			return Arr.map(GCP_INFRA_CHARTS[service].slice(0, 4), (chart): GcpStrip => {
 				if (chart.kind === "classes") {
 					const read = gcpMetricReader(gcpWindowPoints(points))
 					return {
@@ -420,7 +425,10 @@ export function gcpWorkloadStrips(
 				return {
 					id: chart.title,
 					label: chart.title,
-					source: chart.series.map((series) => series.name).join(" · "),
+					source: Arr.join(
+						Arr.map(chart.series, (series) => series.name),
+						" · ",
+					),
 					unit: chart.unit,
 					rows,
 					threshold: chart.threshold,
@@ -437,7 +445,7 @@ export function gcpWorkloadStrips(
 export const gcpStripDomain = (
 	points: ReadonlyArray<GcpBucketPoint>,
 	bucketSeconds: number,
-): ReadonlyArray<string> => gcpBuckets(points, bucketSeconds).map(({ bucket }) => bucket)
+): ReadonlyArray<string> => Arr.map(gcpBuckets(points, bucketSeconds), ({ bucket }) => bucket)
 
 /**
  * The errors the traced service of this name recorded on its entry spans in the window,
@@ -448,9 +456,11 @@ export function gcpTracedErrors(
 	serviceName: string,
 	windowSeconds: number,
 ): number | null {
-	const matched = rows.filter((row) => row.serviceName === serviceName)
+	const matched = Arr.filter(rows, (row) => row.serviceName === serviceName)
 	if (matched.length === 0) return null
-	return Math.round(matched.reduce((sum, row) => sum + row.errorRate * row.throughput * windowSeconds, 0))
+	return Math.round(
+		Arr.reduce(matched, 0, (sum, row) => sum + row.errorRate * row.throughput * windowSeconds),
+	)
 }
 
 /** Server errors Google counted that the workload's own spans never recorded. */
@@ -488,7 +498,7 @@ export function gcpTraceGap(
 ): GcpTraceGap | null {
 	if (tracedErrors === null || (service !== "cloudRun" && service !== "cloudFunctions")) return null
 	const source = GAP_SOURCES[service]
-	const buckets = gcpBuckets(points, bucketSeconds).map(({ bucket, points: bucketPoints }) => {
+	const buckets = Arr.map(gcpBuckets(points, bucketSeconds), ({ bucket, points: bucketPoints }) => {
 		const read = gcpMetricReader(bucketPoints)
 		return {
 			at: toEpochMs(bucket),
@@ -496,14 +506,14 @@ export function gcpTraceGap(
 			instances: read.mean(source.instances, "active"),
 		}
 	})
-	const platformErrors = buckets.reduce((sum, bucket) => sum + bucket.failed, 0)
+	const platformErrors = Arr.reduce(buckets, 0, (sum, bucket) => sum + bucket.failed)
 	if (platformErrors < 2 * tracedErrors || platformErrors - tracedErrors < GAP_MIN_UNTRACED) return null
-	const worst = Math.max(...buckets.map((bucket) => bucket.failed))
-	const erroring = buckets.filter((bucket) => bucket.failed >= worst * ERROR_BUCKET_SHARE)
-	const peak = Math.max(0, ...buckets.map((bucket) => bucket.instances ?? 0))
+	const worst = Math.max(...Arr.map(buckets, (bucket) => bucket.failed))
+	const erroring = Arr.filter(buckets, (bucket) => bucket.failed >= worst * ERROR_BUCKET_SHARE)
+	const peak = Math.max(0, ...Arr.map(buckets, (bucket) => bucket.instances ?? 0))
 	const atPeak =
 		peak > 0 &&
-		erroring.every((bucket) => bucket.instances !== undefined && bucket.instances >= peak * AT_PEAK)
+		Arr.every(erroring, (bucket) => bucket.instances !== undefined && bucket.instances >= peak * AT_PEAK)
 	return {
 		platformErrors,
 		tracedErrors,
@@ -537,7 +547,7 @@ function latest(points: ReadonlyArray<GcpBucketPoint>, bucketSeconds: number, me
 const facts = (
 	entries: ReadonlyArray<readonly [label: string, value: string | undefined, tone?: UtilizationLevel]>,
 ) =>
-	entries.flatMap(([label, value, tone]): ReadonlyArray<GcpRailFact> =>
+	Arr.flatMap(entries, ([label, value, tone]): ReadonlyArray<GcpRailFact> =>
 		value === undefined ? [] : [{ label, value, tone }],
 	)
 

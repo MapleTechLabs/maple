@@ -12,7 +12,7 @@ import {
 import { AlertDestinationId, ErrorIssueId, IssueEscalationId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertDestinations, IssueEscalations } from "@maple/db/tables"
-import { Clock, Effect, Layer, Schema } from "effect"
+import { Clock, Effect, Layer, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ErrorPolicyService } from "./ErrorPolicyService"
@@ -297,7 +297,7 @@ describe("ErrorPolicyService", () => {
 			yield* database.execute((db) =>
 				db.run(
 					PG.insertInto(IssueEscalations).values(
-						rows.map((row) => ({
+						Arr.map(rows, (row) => ({
 							id: row.id,
 							orgId: row.orgId,
 							issueId: row.issueId,
@@ -316,10 +316,13 @@ describe("ErrorPolicyService", () => {
 			)
 
 			const issueAttempts = yield* policies.listIssueEscalations(ORG, issueId)
-			expect(issueAttempts.attempts.map((attempt) => attempt.id)).toEqual([rows[1]?.id, rows[0]?.id])
+			expect(Arr.map(issueAttempts.attempts, (attempt) => attempt.id)).toEqual([
+				rows[1]?.id,
+				rows[0]?.id,
+			])
 
 			const recent = yield* policies.listRecentEscalations(ORG, 2)
-			expect(recent.attempts.map((attempt) => attempt.id)).toEqual([rows[2]?.id, rows[1]?.id])
+			expect(Arr.map(recent.attempts, (attempt) => attempt.id)).toEqual([rows[2]?.id, rows[1]?.id])
 		}).pipe(Effect.provide(makeLayer())),
 	)
 })

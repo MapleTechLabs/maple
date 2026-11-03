@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { V2GcpConnector } from "@maple/domain/http/v2"
 import { GcpConnectorId } from "@maple/domain/primitives"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, type Command } from "foldkit"
 import type { PageContext } from "../page/contract"
 import type { Message as IntegrationsMessage } from "../page/integrations/message"
@@ -40,7 +40,7 @@ export const connectorOf = (
 export const withIndexId = (connector: V2GcpConnector, index: number): V2GcpConnector => ({
 	...connector,
 	id: Schema.decodeSync(GcpConnectorId)(
-		`018f2b3c-4d5e-4f70-8192-a3b4c5d6e7${String(index).padStart(2, "0")}`,
+		`018f2b3c-4d5e-4f70-8192-a3b4c5d6e7${Str.padStart(2, "0")(String(index))}`,
 	),
 })
 
@@ -81,6 +81,6 @@ export const hubStep = (hub: IntegrationsModel, message: IntegrationsMessage): H
 	const next = Integrations.update(hub, message, LAB_CONTEXT)
 	return {
 		hub: next.model,
-		commands: (next.commands ?? []).filter((command) => !PAGE_READS.test(command.name)),
+		commands: Arr.filter(next.commands ?? [], (command) => !PAGE_READS.test(command.name)),
 	}
 }

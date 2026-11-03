@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { AlertDestinationId, AlertRuleId } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
 	expect as expectView,
@@ -12,8 +12,8 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
-import * as Menu from "../../../ui/menu"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { destinationRow, incidentRow, NOW, ORG, ruleId, ruleRow, stateRow } from "../shared/test-rows"
 import { Message } from "./message"
@@ -26,7 +26,7 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const RULE_2 = Schema.decodeSync(AlertRuleId)(ruleId(2))
 const DESTINATION = Schema.decodeSync(AlertDestinationId)(destinationRow().id)
 
@@ -34,20 +34,31 @@ const entered = (search: Model["search"] = {}) => init({ _tag: "Alerts", search 
 
 /** The four shapes and the clock have answered: rule 2 is firing, rule 4 is off. */
 const loaded = (search: Model["search"] = {}): Model =>
-	[
-		Message.ReadClock({ nowMs: NOW }),
-		Message.UpdatedRules({
-			orgId: ORG,
-			rows: [ruleRow(1), ruleRow(2, { name: "Payment p95 latency" }), ruleRow(4, { enabled: false })],
-		}),
-		Message.UpdatedRuleStates({
-			orgId: ORG,
-			rows: [stateRow(1), stateRow(2, { last_status: "breached", last_value: 1840 })],
-		}),
-		Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow({ rule_name: "Payment p95 latency" })] }),
-		Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
-		Message.CompletedFetchSession({ orgId: ORG, isAdmin: true }),
-	].reduce((model, message) => pageUpdate(model, message).model, entered(search).model)
+	Arr.reduce(
+		[
+			Message.ReadClock({ nowMs: NOW }),
+			Message.UpdatedRules({
+				orgId: ORG,
+				rows: [
+					ruleRow(1),
+					ruleRow(2, { name: "Payment p95 latency" }),
+					ruleRow(4, { enabled: false }),
+				],
+			}),
+			Message.UpdatedRuleStates({
+				orgId: ORG,
+				rows: [stateRow(1), stateRow(2, { last_status: "breached", last_value: 1840 })],
+			}),
+			Message.UpdatedIncidents({
+				orgId: ORG,
+				rows: [incidentRow({ rule_name: "Payment p95 latency" })],
+			}),
+			Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
+			Message.CompletedFetchSession({ orgId: ORG, isAdmin: true }),
+		],
+		entered(search).model,
+		(model, message) => pageUpdate(model, message).model,
+	)
 
 describe("alerts hub", () => {
 	test("entry reads the clock, the session and the deliveries list; Routing adds its own read", () => {
@@ -108,10 +119,14 @@ describe("alerts hub", () => {
 	})
 
 	test("an org with only uptime monitors gets the empty state once their incidents are resolved", () => {
-		const noRules = [
-			Message.UpdatedRules({ orgId: ORG, rows: [] }),
-			Message.UpdatedDestinations({ orgId: ORG, rows: [] }),
-		].reduce((model, message) => pageUpdate(model, message).model, loaded())
+		const noRules = Arr.reduce(
+			[
+				Message.UpdatedRules({ orgId: ORG, rows: [] }),
+				Message.UpdatedDestinations({ orgId: ORG, rows: [] }),
+			],
+			loaded(),
+			(model, message) => pageUpdate(model, message).model,
+		)
 		const withIncident = (status: "open" | "resolved") =>
 			pageUpdate(
 				noRules,
@@ -233,7 +248,7 @@ describe("alerts hub", () => {
 				rows: [ruleRow(2, { tags_json: ["team:payments", "tier:p1"] })],
 			}),
 		).model
-		const menus = ["team:payments", "tier:p1"].map((tag) => ruleMenuId(RULE_2, tag))
+		const menus = Arr.map(["team:payments", "tier:p1"], (tag) => ruleMenuId(RULE_2, tag))
 		expect(new Set(menus).size).toBe(2)
 		const opened = pageUpdate(
 			tagged,

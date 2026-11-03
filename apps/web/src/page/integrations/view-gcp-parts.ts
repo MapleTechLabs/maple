@@ -2,15 +2,19 @@ import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { cloudShellUrl } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button, linkButton } from "../../ui/button"
-import * as CopyButton from "../../ui/copy-button"
-import { eyebrow } from "../../ui/eyebrow"
-import { icon } from "../../ui/icon"
-import { inlineCode } from "../../ui/inline-code"
-import { skeleton } from "../../ui/skeleton"
-import { spinner } from "../../ui/spinner"
+import { heading } from "@maple/views/ui/heading"
+import { button, linkButton } from "@maple/views/ui/button"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { spinner } from "@maple/views/ui/spinner"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `GcpCommand`, `GcpOpenCloudShellButton`, `GcpCopyScriptButton`, `Script` and `Step`.
 
@@ -42,12 +46,10 @@ export const gcpCommand = (h: H, model: Model, id: string, command: string): Htm
 			inlineCode(
 				h,
 				{ className: "min-w-0" },
-				command
-					.split(" ")
-					.flatMap((word, index) => [
-						...(index === 0 ? [] : [" "]),
-						h.span([h.Class("whitespace-nowrap")], [word]),
-					]),
+				Arr.flatMap(Str.split(" ")(command), (word, index) => [
+					...(index === 0 ? [] : [" "]),
+					h.span([h.Class("whitespace-nowrap")], [word]),
+				]),
 			),
 			copyOf(h, model, id, command, { label: "command", iconSize: 12, className: "size-5" }),
 		],
@@ -80,7 +82,7 @@ export const copyScriptButton = (
 		label,
 		idleLabel: `Copy ${label}`,
 		variant: "default",
-		className: "text-primary-foreground hover:text-primary-foreground active:text-primary-foreground",
+		keepsFillInk: true,
 		attributes: script === null ? [h.Disabled(true)] : [],
 	})
 
@@ -95,66 +97,64 @@ export const scriptBlock = (
 ): Html => {
 	const shown = model.gcpCard.isScriptShown
 	const text = options.script?.trimEnd() ?? null
-	return h.div(
-		[h.Class("flex flex-col gap-2")],
-		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-x-3 gap-y-2")],
-				[
-					...leading,
-					copyScriptButton(h, model, options.id, options.script, options.label),
-					button(
-						h,
-						{
-							variant: "link",
+	return vstack(h, { gap: "2" }, [
+		hstack(h, { wrap: true, className: "gap-x-3 gap-y-2" }, [
+			...leading,
+			copyScriptButton(h, model, options.id, options.script, options.label),
+			button(
+				h,
+				{
+					variant: "link",
+					size: "xs",
+					className: cn(
+						typographyClass({
 							size: "xs",
-							className: cn(
-								"h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground active:text-foreground",
-								GCP_LINK,
-							),
-							attributes: [h.AriaExpanded(shown), h.OnClick(Message.ClickedGcpScriptToggle())],
-						},
-						[shown ? "Hide the script" : "Read the script"],
+							tone: "muted",
+							weight: "normal",
+							hoverTone: "foreground",
+							className: "h-auto p-0",
+						}),
+						GCP_LINK,
 					),
-				],
+					attributes: [h.AriaExpanded(shown), h.OnClick(Message.ClickedGcpScriptToggle())],
+				},
+				[shown ? "Hide the script" : "Read the script"],
 			),
-			...(options.failure === null
-				? []
-				: [
-						h.div(
-							[h.Class("flex flex-wrap items-center gap-2")],
-							[
-								h.p(
-									[h.Class("text-xs text-severity-error"), h.Role("alert")],
-									[options.failure.message],
-								),
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "outline",
-										isLoading: options.failure.isRetrying,
-										attributes: [h.OnClick(Message.ClickedGcpScriptRetry())],
-									},
-									["Try again"],
-								),
-							],
+		]),
+		...(options.failure === null
+			? []
+			: [
+					hstack(h, { gap: "2", wrap: true }, [
+						typography(
+							h,
+							{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
+							[options.failure.message],
+						),
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
+								isLoading: options.failure.isRetrying,
+								attributes: [h.OnClick(Message.ClickedGcpScriptRetry())],
+							},
+							["Try again"],
 						),
 					]),
-			h.p(
-				[h.Class(cn(SMALL, "flex items-start gap-1.5"))],
-				[
-					icon(h, "LockIcon", { size: 12, className: "mt-1 shrink-0" }),
-					"Holds this connection's secret. Don't share or commit it.",
-				],
-			),
-			...(!shown || options.failure !== null
-				? []
-				: text === null
-					? [skeleton(h, "mt-1 h-72 w-full")]
-					: [scriptText(h, options.label, text)]),
-		],
-	)
+				]),
+		h.p(
+			[h.Class(cn(SMALL, hstackClass({ gap: "1.5", align: "start" })))],
+			[
+				icon(h, "LockIcon", { size: 12, className: "mt-1 shrink-0" }),
+				"Holds this connection's secret. Don't share or commit it.",
+			],
+		),
+		...(!shown || options.failure !== null
+			? []
+			: text === null
+				? [skeleton(h, "mt-1 h-72 w-full")]
+				: [scriptText(h, options.label, text)]),
+	])
 }
 
 const scriptText = (h: H, label: string, text: string): Html =>
@@ -165,10 +165,9 @@ const scriptText = (h: H, label: string, text: string): Html =>
 				[h.Class("flex items-center justify-between px-3 py-1.5")],
 				[
 					eyebrow(h, {}, ["Bash"]),
-					h.span(
-						[h.Class("text-2xs text-muted-foreground")],
-						[countLabel(text.split("\n").length, "line")],
-					),
+					typography(h, { size: "2xs", tone: "muted" }, [
+						countLabel(Str.split("\n")(text).length, "line"),
+					]),
 				],
 			),
 			h.pre(
@@ -229,20 +228,18 @@ export const step = (
 			h.div(
 				[h.Class("flex min-w-0 flex-1 flex-col gap-2.5")],
 				[
-					h.div(
-						[h.Class("flex flex-col gap-0.5")],
-						[
-							h.h4(
-								[
-									h.Class(
-										cn(GCP_TITLE, options.state === "pending" && "text-muted-foreground"),
-									),
-								],
-								[options.title],
-							),
-							...(options.detail === undefined ? [] : [h.p([h.Class(SMALL)], options.detail)]),
-						],
-					),
+					vstack(h, { gap: "0.5" }, [
+						heading(
+							h,
+							{
+								level: 4,
+								variant: "subsection",
+								className: options.state === "pending" ? "text-muted-foreground" : undefined,
+							},
+							[options.title],
+						),
+						...(options.detail === undefined ? [] : [h.p([h.Class(SMALL)], options.detail)]),
+					]),
 					...children,
 				],
 			),

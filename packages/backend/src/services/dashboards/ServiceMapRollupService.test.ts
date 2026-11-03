@@ -3,7 +3,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgClickHouseSettings, OrgIngestKeys } from "@maple/db/tables"
 import { OrgId } from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { EdgeCacheService, makeEdgeCacheService, makeMemoryBackend } from "@maple/cache"
@@ -55,7 +55,7 @@ const envLive = Env.layer.pipe(Layer.provide(configLive))
 
 const insertIngestKeys = (orgIds: ReadonlyArray<OrgId>) =>
 	PG.insertInto(OrgIngestKeys).values(
-		orgIds.map((orgId) => ({
+		Arr.map(orgIds, (orgId) => ({
 			orgId,
 			publicKey: `pk_${orgId}`,
 			publicKeyHash: `pkh_${orgId}`,
@@ -119,7 +119,7 @@ describe("ServiceMapRollupService", () => {
 						.pipe(Effect.orDie),
 				ingest: (tenant, _datasource, rows) =>
 					Effect.sync(
-						() => void ingested.push({ orgId: tenant.orgId, rowOrgIds: rows.map(rowOrgId) }),
+						() => void ingested.push({ orgId: tenant.orgId, rowOrgIds: Arr.map(rows, rowOrgId) }),
 					),
 			})
 
@@ -143,16 +143,16 @@ describe("ServiceMapRollupService", () => {
 				),
 			)
 
-			const writtenOrgs = new Set(ingested.flatMap((write) => write.rowOrgIds))
+			const writtenOrgs = new Set(Arr.flatMap(ingested, (write) => write.rowOrgIds))
 			assert.deepStrictEqual([...writtenOrgs], [MANAGED_ORG])
-			assert.deepStrictEqual([...new Set(ingested.map((write) => write.orgId))], [MANAGED_ORG])
+			assert.deepStrictEqual([...new Set(Arr.map(ingested, (write) => write.orgId))], [MANAGED_ORG])
 			assert.strictEqual(result.orgsProcessed, 1)
 			assert.strictEqual(result.orgFailures, 0)
 		}),
 	)
 
 	// Fresh org ids per run: the runtime-config memo is module-scoped.
-	const runId = Math.random().toString(36).slice(2, 10)
+	const runId = Str.slice(2, 10)(Math.random().toString(36))
 	it.effect("resolves every target org's warehouse config in one batched read", () =>
 		Effect.gen(function* () {
 			const testDb = createTestDb(createdDbs)
@@ -168,7 +168,7 @@ describe("ServiceMapRollupService", () => {
 						Effect.andThen(
 							resolveConfig(tenant.orgId),
 							compiledQueryOf(compiled)
-								.decodeRows(orgs.map((orgId) => ({ orgId })))
+								.decodeRows(Arr.map(orgs, (orgId) => ({ orgId })))
 								.pipe(Effect.orDie),
 						),
 					compiledQuery: (tenant, compiled) =>

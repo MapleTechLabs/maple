@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Array as Arr } from "effect"
 import { WarehouseUpstreamError } from "@maple/domain/http"
 import { findSlowTraces } from "./find-slow-traces"
 import { WarehouseExecutor } from "./WarehouseExecutor"
@@ -46,7 +46,7 @@ describe("findSlowTraces", () => {
 			// Confirm we are NOT calling the list_traces pipe (old behavior)
 			assert.isUndefined(captured.pipeCalls.find((c) => c.pipe === "list_traces"))
 			// Stats pipe is still called
-			assert.isTrue(captured.pipeCalls.some((c) => c.pipe === "traces_duration_stats"))
+			assert.isTrue(Arr.some(captured.pipeCalls, (c) => c.pipe === "traces_duration_stats"))
 		}),
 	)
 

@@ -9,7 +9,7 @@ import {
 } from "@maple/backend/platform/bindings"
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import type * as Cloudflare from "@alchemy.run/cloudflare"
-import { Cause, Effect, Predicate } from "effect"
+import { Cause, Effect, Predicate, Array as Arr, String as Str } from "effect"
 
 /** Statuses after which an instance runs no more steps. */
 const FINISHED = new Set(["complete", "errored", "terminated"])
@@ -19,7 +19,10 @@ const defectMessage = (defect: unknown): string => {
 	const own =
 		Predicate.hasProperty(defect, "message") && Predicate.isString(defect.message) ? defect.message : ""
 	const inner = Predicate.hasProperty(defect, "cause") ? defectMessage(defect.cause) : ""
-	return [own, inner].filter((m) => m.length > 0).join(": ")
+	return Arr.join(
+		Arr.filter([own, inner], (m) => m.length > 0),
+		": ",
+	)
 }
 
 /** The error the binding threw: alchemy's `tryPromise` wraps it in an `UnknownError`. */
@@ -32,7 +35,7 @@ const bindingError = (defect: unknown) => (Cause.isUnknownError(defect) ? defect
 const isInstanceNotFound = (defect: unknown) => {
 	const error = bindingError(defect)
 	if (!Predicate.hasProperty(error, "message") || !Predicate.isString(error.message)) return false
-	return error.message === "instance.not_found" || error.message.startsWith("(instance.not_found)")
+	return error.message === "instance.not_found" || Str.startsWith("(instance.not_found)")(error.message)
 }
 
 const cancelFailed = (runId: string, cause: unknown) =>

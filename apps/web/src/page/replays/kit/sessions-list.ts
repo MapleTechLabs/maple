@@ -2,13 +2,17 @@ import { countLabel, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { SESSION_TAG_DOTS, SESSION_TAG_LABELS } from "../../../components/replays/session-tags"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../ui/icon"
-import { skeleton } from "../../../ui/skeleton"
-import { statusDot } from "../../../ui/status-dot"
+import { icon } from "@maple/views/ui/icon"
+import { pressable } from "@maple/views/ui/pressable"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
 import type { SessionListItem } from "./session-row"
 import { sessionListRow } from "./session-list-row"
 import { COLUMNS, columnHeader, type SessionsListOptions } from "./sessions-parts"
 import { KEYS_ATTRIBUTE, keysValue, type VirtualWindow } from "./virtualize"
+import { hstack } from "@maple/views/ui/stack"
+import { spaced } from "@maple/views/ui/spaced"
+import { Array as Arr, String as Str } from "effect"
 
 // The sessions list. Rows render in flow: the virtualizer's
 // absolute rows stack to the same offsets once every row is in view.
@@ -27,34 +31,34 @@ const quietRunRow = <M>(
 	item: Extract<SessionListItem, { kind: "quiet" }>,
 	onToggle: M,
 ): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.OnClick(onToggle),
-			h.AriaExpanded(item.expanded),
-			h.Class(
+	pressable(
+		h,
+		{
+			onClick: onToggle,
+			className:
 				"flex w-full items-center gap-3 border-b border-border bg-surface-sunken px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring @2xl:gap-4",
-			),
-		],
+			attributes: [h.AriaExpanded(item.expanded)],
+		},
 		[
-			h.span([h.Class("shrink-0 whitespace-nowrap font-medium tabular-nums")], [
-				countLabel(item.count, "low-signal session"),
-			]),
+			h.span(
+				[h.Class("shrink-0 whitespace-nowrap font-medium tabular-nums")],
+				[countLabel(item.count, "low-signal session")],
+			),
 			h.span(
 				[h.Class("flex min-w-0 items-center gap-3 overflow-hidden"), h.Title(item.summary)],
-				item.tiers.map(({ tag, count }) =>
-					h.span([h.Class("flex shrink-0 items-center gap-1.5")], [
+				Arr.map(item.tiers, ({ tag, count }) =>
+					hstack(h, { gap: "1.5", as: "span", className: "shrink-0" }, [
 						statusDot(h, { tone: "custom", className: SESSION_TAG_DOTS[tag] }),
 						h.span([h.Class("tabular-nums")], [String(count)]),
 						" ",
-						pluralize(count, SESSION_TAG_LABELS[tag].toLowerCase()),
+						pluralize(count, Str.toLowerCase(SESSION_TAG_LABELS[tag])),
 					]),
 				),
 			),
-			h.span([h.Class("ml-auto flex shrink-0 items-center gap-1")], [
-				item.expanded ? "Hide" : "Show",
-				disclosureChevron(h, item.expanded, 14),
-			]),
+			h.span(
+				[h.Class("ml-auto flex shrink-0 items-center gap-1")],
+				[item.expanded ? "Hide" : "Show", disclosureChevron(h, item.expanded, 14)],
+			),
 		],
 	)
 
@@ -72,56 +76,67 @@ export const sessionsList = <M>(
 	virtual: Readonly<{ window: VirtualWindow; mount: Attribute<M> }>,
 	footer: ReadonlyArray<Html> = [],
 ): Html =>
-	h.div([h.Class("@container")], [
-		columnHeader(h),
-		h.div(
-			[
-				h.Class("relative w-full"),
-				h.DataAttribute(KEYS_ATTRIBUTE, keysValue(options.items.map(itemKey))),
-				h.Style({ height: `${virtual.window.totalSize}px` }),
-				virtual.mount,
-			],
-			virtual.window.rows.flatMap((row) => {
-				const item = options.items[row.index]
-				if (item === undefined) return []
-				return [
-					h.div(
-						[
-							h.Key(itemKey(item)),
-							h.DataAttribute("index", String(row.index)),
-							h.Class("absolute top-0 left-0 w-full"),
-							h.Style({ transform: `translateY(${row.start - virtual.window.scrollMargin}px)` }),
-						],
-						[
-							item.kind === "quiet"
-								? quietRunRow(h, item, options.onToggleRun(item.key))
-								: sessionListRow(h, options, item.session, item.lowSignal),
-						],
-					),
-				]
-			}),
-		),
-		...footer,
-	])
+	h.div(
+		[h.Class("@container")],
+		[
+			columnHeader(h),
+			h.div(
+				[
+					h.Class("relative w-full"),
+					h.DataAttribute(KEYS_ATTRIBUTE, keysValue(Arr.map(options.items, itemKey))),
+					h.Style({ height: `${virtual.window.totalSize}px` }),
+					virtual.mount,
+				],
+				Arr.flatMap(virtual.window.rows, (row) => {
+					const item = options.items[row.index]
+					if (item === undefined) return []
+					return [
+						h.div(
+							[
+								h.Key(itemKey(item)),
+								h.DataAttribute("index", String(row.index)),
+								h.Class("absolute top-0 left-0 w-full"),
+								h.Style({
+									transform: `translateY(${row.start - virtual.window.scrollMargin}px)`,
+								}),
+							],
+							[
+								item.kind === "quiet"
+									? quietRunRow(h, item, options.onToggleRun(item.key))
+									: sessionListRow(h, options, item.session, item.lowSignal),
+							],
+						),
+					]
+				}),
+			),
+			...footer,
+		],
+	)
 
 const SKELETON_NAME_WIDTHS = ["w-40", "w-28", "w-48", "w-32", "w-36", "w-24", "w-44", "w-32"]
 
 /** `SessionsListSkeleton`: same header, columns and row height. */
 export const sessionsListSkeleton = <M>(h: HtmlBuilder<M>, rows = 8): Html =>
-	h.div([h.Class("@container"), h.AriaBusy(true)], [
-		columnHeader(h),
-		...Array.from({ length: rows }, (_, i) =>
-			h.div([h.Class("flex h-[65px] items-center gap-3 border-b border-border px-3 @2xl:gap-4")], [
-				h.div([h.Class("min-w-0 flex-1 space-y-2")], [
-					skeleton(h, cn("h-3.5", SKELETON_NAME_WIDTHS[i % SKELETON_NAME_WIDTHS.length])),
-					skeleton(h, "h-3 w-56 max-w-full"),
-				]),
-				h.span([h.Class(COLUMNS.org)], [skeleton(h, "h-5 w-24 rounded-md")]),
-				h.span([h.Class(COLUMNS.tags)], [skeleton(h, "h-5 w-20 rounded-md")]),
-				h.span([h.Class(COLUMNS.activity)], [skeleton(h, "h-3 w-full")]),
-				h.span([h.Class(COLUMNS.device)], [skeleton(h, "h-3.5 w-14")]),
-				h.span([h.Class(COLUMNS.signals)], [skeleton(h, "h-3.5 w-20")]),
-				h.span([h.Class(COLUMNS.time)], [skeleton(h, "h-3 w-14")]),
-			]),
-		),
-	])
+	h.div(
+		[h.Class("@container"), h.AriaBusy(true)],
+		[
+			columnHeader(h),
+			...Array.from({ length: rows }, (_, i) =>
+				h.div(
+					[h.Class("flex h-[65px] items-center gap-3 border-b border-border px-3 @2xl:gap-4")],
+					[
+						spaced(h, { space: "2", fill: true }, [
+							skeleton(h, cn("h-3.5", SKELETON_NAME_WIDTHS[i % SKELETON_NAME_WIDTHS.length])),
+							skeleton(h, "h-3 w-56 max-w-full"),
+						]),
+						h.span([h.Class(COLUMNS.org)], [skeleton(h, "h-5 w-24 rounded-md")]),
+						h.span([h.Class(COLUMNS.tags)], [skeleton(h, "h-5 w-20 rounded-md")]),
+						h.span([h.Class(COLUMNS.activity)], [skeleton(h, "h-3 w-full")]),
+						h.span([h.Class(COLUMNS.device)], [skeleton(h, "h-3.5 w-14")]),
+						h.span([h.Class(COLUMNS.signals)], [skeleton(h, "h-3.5 w-20")]),
+						h.span([h.Class(COLUMNS.time)], [skeleton(h, "h-3 w-14")]),
+					],
+				),
+			),
+		],
+	)

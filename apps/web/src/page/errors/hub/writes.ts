@@ -8,8 +8,8 @@ import {
 	WorkflowState,
 } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
-import { Effect, Exit, Schema } from "effect"
-import { LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { Effect, Exit, Schema, Array as Arr } from "effect"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import { PageOutMessage } from "../../contract"
 import { WORKFLOW_LABEL } from "../kit/workflow"
@@ -66,7 +66,7 @@ export const runHubWrite = <M>(
 ) =>
 	Effect.forEach(ids, (id) => Effect.exit(writeOne(id, write)), { concurrency: 4 }).pipe(
 		Effect.map((exits) => {
-			const failures = exits.filter(Exit.isFailure)
+			const failures = Arr.filter(exits, Exit.isFailure)
 			const first = failures[0]
 			return toMessage({
 				succeeded: ids.length - failures.length,

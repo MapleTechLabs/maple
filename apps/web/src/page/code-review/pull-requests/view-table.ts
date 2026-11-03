@@ -1,16 +1,18 @@
 import type { CodeReviewListItem, CodeReviewSortDir, CodeReviewSortKey } from "@maple/domain/http"
-import { formatCount, outcomeOf, SKIP_LABELS } from "../../../components/code-review/code-review-format"
-import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { outcomeOf, SKIP_LABELS } from "../../../components/code-review/code-review-format"
+import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
-import { spinnerStyles } from "@maple/ui/styles/ui/spinner"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { icon, type IconName } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
+import { badge } from "@maple/views/ui/display"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { pressable } from "@maple/views/ui/pressable"
+import { spinner } from "@maple/views/ui/spinner"
 import {
 	ariaSort,
+	clickableRowClass,
+	laneTableCell,
 	sortButton,
 	table,
 	tableBody,
@@ -18,11 +20,14 @@ import {
 	tableHead,
 	tableHeader,
 	tableRow,
-} from "../../../ui/table"
-import { emptyValue } from "../../../ui/values"
+} from "@maple/views/ui/table"
+import { emptyValue } from "@maple/views/ui/values"
 import { authorLabel } from "../kit/author"
-import { relativeTime } from "../../kit/relative-time"
+import { listRelativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `ReviewTable`: the pull requests and their reviews.
 
@@ -50,24 +55,26 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 	return tableRow(
 		h,
 		[
-			tableCell(
+			laneTableCell(
 				h,
+				isSelected,
 				[
-					h.button(
-						[
-							h.Type("button"),
-							h.OnClick(open, { propagation: "Stop" }),
-							h.Class(
-								"flex w-full min-w-0 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:underline",
-							),
-						],
+					pressable(
+						h,
+						{
+							className:
+								"flex w-full min-w-0 items-center gap-1.5 text-left focus-visible:ring-0 focus-visible:underline",
+							attributes: [h.OnClick(open, { propagation: "Stop" })],
+						},
 						[
 							h.span([h.Class("shrink-0 text-muted-foreground")], ["#", String(review.number)]),
-							h.span(
-								[
-									h.Class("truncate font-medium"),
-									h.Title(review.title ?? "Untitled pull request"),
-								],
+							typography(
+								h,
+								{
+									weight: "medium",
+									truncate: true,
+									attributes: [h.Title(review.title ?? "Untitled pull request")],
+								},
 								[review.title ?? "Untitled pull request"],
 							),
 						],
@@ -89,34 +96,25 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 						],
 					),
 				],
-				cn(
-					"px-4 py-2.5 leading-normal",
-					ROW_LANE,
-					isSelected ? "before:bg-primary" : "before:bg-transparent",
-				),
+				"px-4 py-2.5 leading-normal",
 			),
 			tableCell(
 				h,
 				[
 					h.span(
-						[h.Class(cn("inline-flex items-center gap-1.5", outcome.tone))],
+						[h.Class(cn(hstackClass({ gap: "1.5", inline: true }), outcome.tone))],
 						[
 							outcome.kind === "running"
-								? icon(h, "LoaderIcon", {
-										size: 14,
-										className: spinnerStyles,
-										attributes: [h.AriaLabel("Loading"), h.Role("status")],
-									})
+								? spinner(h, undefined, 14)
 								: icon(h, OUTCOME_ICONS[outcome.kind], { size: 14 }),
 							outcome.label,
 						],
 					),
 					...(review.status === "skipped" && review.skipReason !== null
 						? [
-								h.div(
-									[h.Class("text-xs text-muted-foreground")],
-									[SKIP_LABELS[review.skipReason]],
-								),
+								typography(h, { size: "xs", tone: "muted", as: "div" }, [
+									SKIP_LABELS[review.skipReason],
+								]),
 							]
 						: []),
 				],
@@ -137,34 +135,30 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 				[
 					review.status !== "completed"
 						? h.span([h.Class("text-muted-foreground")], [EMPTY_VALUE])
-						: h.span(
-								[h.Class("inline-flex items-center gap-1.5")],
-								[
-									...(review.criticalFindings > 0
-										? [
-												badge(
-													h,
-													{
-														size: "xs",
-														mono: true,
-														className: TONE_SOFT.crit,
-														attributes: [h.Title("Critical")],
-													},
-													[String(review.criticalFindings)],
-												),
-											]
-										: []),
-									formatCount(review.findings),
-								],
-							),
+						: hstack(h, { gap: "1.5", inline: true, as: "span" }, [
+								...(review.criticalFindings > 0
+									? [
+											badge(
+												h,
+												{
+													size: "xs",
+													mono: true,
+													className: TONE_SOFT.crit,
+													attributes: [h.Title("Critical")],
+												},
+												[String(review.criticalFindings)],
+											),
+										]
+									: []),
+								formatNumber(review.findings),
+							]),
 				],
-				"px-3 text-right tabular-nums",
+				typographyClass({ numeric: true, className: "px-3 text-right" }),
 			),
 			tableCell(
 				h,
 				[
-					relativeTime(h, {
-						tooltip: "title",
+					listRelativeTime(h, {
 						value: review.createdAt,
 						nowMs: context.nowMs,
 						timeZone: context.timeZone,
@@ -173,10 +167,7 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 				"hidden px-4 text-right text-muted-foreground tabular-nums sm:table-cell",
 			),
 		],
-		cn(
-			"cursor-pointer hover:bg-surface-sunken active:bg-surface-sunken",
-			isSelected && "bg-surface-strong",
-		),
+		clickableRowClass(isSelected),
 		[h.Key(review.id), h.OnClick(open)],
 	)
 }
@@ -242,7 +233,7 @@ export const reviewTable = (
 			),
 			tableBody(
 				h,
-				reviews.map((review) => reviewRow(h, review, context)),
+				Arr.map(reviews, (review) => reviewRow(h, review, context)),
 			),
 		]),
 	])

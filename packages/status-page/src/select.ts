@@ -6,24 +6,27 @@ import {
 	worstStatus,
 } from "@maple/domain/status-page"
 import type { StatusPageComponentStatus } from "@maple/domain/primitives"
+import { Array as Arr } from "effect"
 
 /** Open incidents and maintenance underway, newest first. */
 export const activeIncidents = (snapshot: StatusPageSnapshot): ReadonlyArray<StatusPageSnapshotIncident> =>
-	snapshot.incidents.filter(isActiveIncident)
+	Arr.filter(snapshot.incidents, isActiveIncident)
 
 /** Maintenance announced but not started, soonest first. */
 export const upcomingMaintenance = (
 	snapshot: StatusPageSnapshot,
 ): ReadonlyArray<StatusPageSnapshotIncident> =>
-	snapshot.incidents
-		.filter((incident) => incident.kind === "maintenance" && incident.status === "scheduled")
-		.sort((a, b) => (a.scheduledStart ?? a.startedAt) - (b.scheduledStart ?? b.startedAt))
+	Arr.filter(
+		snapshot.incidents,
+		(incident) => incident.kind === "maintenance" && incident.status === "scheduled",
+	).sort((a, b) => (a.scheduledStart ?? a.startedAt) - (b.scheduledStart ?? b.startedAt))
 
 /** Resolved incidents and completed maintenance, newest first. */
 export const pastIncidents = (snapshot: StatusPageSnapshot): ReadonlyArray<StatusPageSnapshotIncident> =>
-	snapshot.incidents
-		.filter((incident) => incident.status === "resolved" || incident.status === "completed")
-		.sort((a, b) => (b.resolvedAt ?? b.startedAt) - (a.resolvedAt ?? a.startedAt))
+	Arr.filter(
+		snapshot.incidents,
+		(incident) => incident.status === "resolved" || incident.status === "completed",
+	).sort((a, b) => (b.resolvedAt ?? b.startedAt) - (a.resolvedAt ?? a.startedAt))
 
 export interface ComponentGroup {
 	readonly name: string | null
@@ -35,26 +38,25 @@ export interface ComponentGroup {
 export const groupComponents = (
 	components: ReadonlyArray<StatusPageSnapshotComponent>,
 ): ReadonlyArray<ComponentGroup> =>
-	components
-		.reduce<
+	Arr.map(
+		components.reduce<
 			ReadonlyArray<{ name: string | null; components: ReadonlyArray<StatusPageSnapshotComponent> }>
 		>(
 			(groups, component) =>
-				groups.some((group) => group.name === component.group)
-					? groups.map((group) =>
+				Arr.some(groups, (group) => group.name === component.group)
+					? Arr.map(groups, (group) =>
 							group.name === component.group
 								? { ...group, components: [...group.components, component] }
 								: group,
 						)
 					: [...groups, { name: component.group, components: [component] }],
 			[],
-		)
-		.map((group) => ({ ...group, status: worstStatus(group.components.map((c) => c.status)) }))
+		),
+		(group) => ({ ...group, status: worstStatus(Arr.map(group.components, (c) => c.status)) }),
+	)
 
 /** The newest moment anything on the page changed. */
 export const latestActivityAt = (snapshot: StatusPageSnapshot): number =>
-	snapshot.incidents.reduce(
-		(latest, incident) =>
-			Math.max(latest, incident.startedAt, ...incident.updates.map((update) => update.at)),
-		snapshot.generatedAt,
+	Arr.reduce(snapshot.incidents, snapshot.generatedAt, (latest, incident) =>
+		Math.max(latest, incident.startedAt, ...Arr.map(incident.updates, (update) => update.at)),
 	)

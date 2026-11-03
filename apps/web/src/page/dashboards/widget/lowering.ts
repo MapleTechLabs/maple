@@ -43,6 +43,7 @@ import {
 	pathsInitialState,
 	pathsValidationError,
 } from "./lowering-product"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // The editor state read out of a stored widget and lowered back (`toInitialState`,
 // `buildWidgetDataSource`, `buildWidgetDisplay`, `validateQueries`, with each type's halves).
@@ -69,12 +70,12 @@ const toStatAggregate = (value: unknown): EditorState["statAggregate"] =>
 
 /** `parsePositiveNumber` / `parseRowLimit` (capped at `ROW_LIMIT_MAX`). */
 const parseRowLimit = (raw: string): number | undefined => {
-	const parsed = Number.parseInt(raw.trim(), 10)
+	const parsed = Number.parseInt(Str.trim(raw), 10)
 	return !Number.isFinite(parsed) || parsed <= 0 ? undefined : Math.min(parsed, 1000)
 }
 
 const parseFiniteNumber = (raw: string): number | undefined => {
-	const trimmed = raw.trim()
+	const trimmed = Str.trim(raw)
 	if (trimmed === "") return undefined
 	const parsed = Number(trimmed)
 	return Number.isFinite(parsed) ? parsed : undefined
@@ -120,7 +121,7 @@ export const toInitialState = (widget: Widget): EditorState => {
 			presentation?.legend === undefined && panel === "pie" ? "right" : legendOf(presentation?.legend),
 		seriesStatsEnabled: presentation?.seriesStats ?? false,
 		pointsMode: pointsModeFromShowPoints(presentation?.showPoints),
-		thresholds: (widget.display.thresholds ?? []).map(({ value, color }) => ({ value, color })),
+		thresholds: Arr.map(widget.display.thresholds ?? [], ({ value, color }) => ({ value, color })),
 		statAggregate: isScalar ? toStatAggregate(transform?.reduceToValue?.aggregate) : "first",
 		statValueField: isScalar ? (transform?.reduceToValue?.field ?? "") : "",
 		sparklineEnabled: panel === "stat" && widget.display.sparkline?.enabled === true,
@@ -155,7 +156,7 @@ const breakdownOf = (state: EditorState, defaultLimit?: number): DataSource => {
 	const { sharedTransform } = timeseriesOf(state)
 	return makeQueryDataSource({
 		resultShape: "breakdown",
-		queries: state.queries.filter(isVisibleQuery),
+		queries: Arr.filter(state.queries, isVisibleQuery),
 		...(defaultLimit === undefined ? undefined : { defaultLimit }),
 		...(sharedTransform === undefined ? undefined : { transform: sharedTransform }),
 	})
@@ -174,8 +175,8 @@ const scalarOf = (state: EditorState): DataSource => {
 const tableOf = (state: EditorState): DataSource => {
 	const { base, sharedTransform } = timeseriesOf(state)
 	const limit = parseRowLimit(state.tableLimit)
-	const visible = state.queries.filter(isVisibleQuery)
-	if (visible.some(hasActiveGroupBy))
+	const visible = Arr.filter(state.queries, isVisibleQuery)
+	if (Arr.some(visible, hasActiveGroupBy))
 		return makeQueryDataSource({
 			resultShape: "breakdown",
 			queries: visible,
@@ -186,8 +187,8 @@ const tableOf = (state: EditorState): DataSource => {
 
 /** A histogram grouped is breakdown rows; ungrouped, raw values bucketized client-side. */
 const histogramOf = (state: EditorState): DataSource => {
-	const visible = state.queries.filter(isVisibleQuery)
-	if (visible.some(hasActiveGroupBy)) return breakdownOf(state)
+	const visible = Arr.filter(state.queries, isVisibleQuery)
+	if (Arr.some(visible, hasActiveGroupBy)) return breakdownOf(state)
 	const { sharedTransform } = timeseriesOf(state)
 	return makeQueryDataSource({
 		resultShape: "list",
@@ -238,17 +239,18 @@ export const buildDataSource = (state: EditorState): DataSource => {
 
 /** Display keys a panel type owns: cleared first so nothing leaks across a type switch. */
 const OWNED_DISPLAY_KEYS = new Set<string>(
-	Object.values(WIDGET_TYPES).flatMap((meta) => meta.ownedDisplayKeys),
+	Arr.flatMap(Rec.values(WIDGET_TYPES), (meta) => meta.ownedDisplayKeys),
 )
 
 const thresholdsOf = (state: EditorState) =>
-	state.thresholds.length > 0 ? state.thresholds.map((threshold) => ({ ...threshold })) : undefined
+	state.thresholds.length > 0 ? Arr.map(state.thresholds, (threshold) => ({ ...threshold })) : undefined
 
 /** A grouped table's columns come from its group-by; an ungrouped one infers them. */
 const tableColumnsOf = (state: EditorState): Display["columns"] => {
 	const grouped = state.queries.find((query) => isVisibleQuery(query) && hasActiveGroupBy(query))
 	if (grouped === undefined) return undefined
-	const label = grouped.groupBy.find((g) => g.trim() !== "" && g.trim().toLowerCase() !== "none") ?? "name"
+	const label =
+		grouped.groupBy.find((g) => Str.trim(g) !== "" && Str.toLowerCase(Str.trim(g)) !== "none") ?? "name"
 	return [
 		{ field: "name", header: label, align: "left" },
 		{
@@ -334,12 +336,12 @@ export const buildDisplay = (widget: Widget, state: EditorState): Display => {
 	if (panelOf(state) === "list") return listDisplayOf(state)
 	const showPoints = showPointsFromPointsMode(state.pointsMode)
 	const legend = state.legendPosition === "bottom" ? "visible" : state.legendPosition
-	const kept = Object.fromEntries(
-		Object.entries(widget.display).filter(([key]) => !OWNED_DISPLAY_KEYS.has(key)),
+	const kept = Rec.fromEntries(
+		Arr.filter(Object.entries(widget.display), ([key]) => !OWNED_DISPLAY_KEYS.has(key)),
 	)
 	const { chartId } = fromPanelType(panelOf(state), state.chartId)
-	const title = state.title.trim()
-	const description = state.description.trim()
+	const title = Str.trim(state.title)
+	const description = Str.trim(state.description)
 	// An absent preference is an `undefined` key here; the write's JSON round trip drops it.
 	return {
 		...kept,
@@ -369,18 +371,18 @@ export const validationErrorOf = (state: EditorState): string | null => {
 	// A list is configured by its own panel and a note never queries: neither has a query to check.
 	if (isNote(state) || panelType === "list") return null
 	if (isProductEventsFunnel(state)) return funnelValidationError(state.funnel)
-	const active = state.queries.filter((query) => query.enabled !== false)
+	const active = Arr.filter(state.queries, (query) => query.enabled !== false)
 	if (active.length === 0) return "Add at least one query"
-	const invalid = active
-		.map((query) => ({ query, built: buildTimeseriesQuerySpec(query) }))
-		.find(({ built }) => built.query === null)
+	const invalid = Arr.map(active, (query) => ({ query, built: buildTimeseriesQuerySpec(query) })).find(
+		({ built }) => built.query === null,
+	)
 	if (invalid !== undefined) return `${invalid.query.name}: ${invalid.built.error ?? "invalid query"}`
-	const visible = active.filter(isVisibleQuery)
+	const visible = Arr.filter(active, isVisibleQuery)
 	const panel = panelOf(state)
-	if (WIDGET_TYPES[panel].requiresGroupBy && !visible.some(hasActiveGroupBy))
+	if (WIDGET_TYPES[panel].requiresGroupBy && !Arr.some(visible, hasActiveGroupBy))
 		return "This visualization groups data into categories. Add a group-by field"
 	// An ungrouped histogram bucketizes a numeric column, and only traces have one.
-	if (panel === "histogram" && !visible.some(hasActiveGroupBy)) {
+	if (panel === "histogram" && !Arr.some(visible, hasActiveGroupBy)) {
 		const unsupported = visible.find((query) => query.dataSource !== "traces")
 		if (unsupported !== undefined)
 			return `${unsupported.name}: a ${unsupported.dataSource} histogram needs a group-by field`

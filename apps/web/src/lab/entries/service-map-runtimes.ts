@@ -1,6 +1,6 @@
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { OrgId } from "@maple/domain"
-import { Effect, Option, Result, Schema, Stream } from "effect"
+import { Effect, Option, Result, Schema, Stream, Array as Arr } from "effect"
 import { AsyncData, Command, Subscription, type Update } from "foldkit"
 import type { HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -16,8 +16,8 @@ import {
 import * as MapUpdate from "../../page/service-map/update"
 import { view as pageView } from "../../page/service-map/view"
 import type { Resources } from "../../platform/resources"
-import * as ServiceMap from "../../service-map/map/service-map"
-import * as Tabs from "../../ui/tabs"
+import * as ServiceMap from "@maple/views/service-map/map/service-map"
+import * as Tabs from "@maple/views/ui/tabs"
 import {
 	MAP_RUNTIMES_BUNDLE,
 	MAP_RUNTIMES_ENVIRONMENTS,
@@ -114,7 +114,8 @@ const ANSWERS: ReadonlyArray<Answer> = [
 			: [],
 ]
 
-const answers = (model: PageModel): ReadonlyArray<PageMessage> => ANSWERS.flatMap((answer) => answer(model))
+const answers = (model: PageModel): ReadonlyArray<PageMessage> =>
+	Arr.flatMap(ANSWERS, (answer) => answer(model))
 
 const merge = (acc: PageResult, next: PageResult): PageResult => ({
 	model: next.model,
@@ -155,7 +156,7 @@ const step = (result: PageResult, tab: Flags["tab"], isPrimed: boolean): Return 
 	return {
 		model: { page: primed.model, tab, isPrimed: isPrimed || shouldPrime },
 		commands: Command.mapMessages(
-			(primed.commands ?? []).filter((command) => !isRead(command.name)),
+			Arr.filter(primed.commands ?? [], (command) => !isRead(command.name)),
 			(message) => Message.GotPageMessage({ message }),
 		),
 	}
@@ -232,5 +233,5 @@ export const lab = defineShellLab("Service map runtimes", {
 	view,
 	subscriptions,
 	currentPath: "/lab/service-map-runtimes",
-	breadcrumbs: [{ label: "Service Map" }],
+	breadcrumbs: [{ label: "Service map" }],
 })

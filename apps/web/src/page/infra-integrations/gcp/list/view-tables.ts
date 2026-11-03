@@ -39,8 +39,9 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html } from "foldkit/html"
-import { meter, segmentedBar } from "../../../../ui/meter"
-import { skeleton } from "../../../../ui/skeleton"
+import { meter, segmentedBar } from "@maple/views/ui/meter"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { textLinkClass } from "@maple/views/ui/text-link"
 import {
 	columnHead,
 	dataTable,
@@ -70,6 +71,10 @@ import {
 	workloadHref,
 	workloadRow,
 } from "./view-rows"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstackClass } from "@maple/views/ui/stack"
+import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // `GcpServicesTable`, `GcpSubscriptionsTable`, `GcpDatabasesTable` and `GcpServiceTable`.
 
@@ -96,12 +101,12 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 		return GCP_SERVICE_RULES.inScope(row, "idle")
 			? h.div(
 					[
-						h.Class(cn("hidden w-44 md:block", SUB)),
+						h.Class(cn(columnClass({ width: "44", from: "md" }), SUB)),
 						h.Title("No requests, instance time billed"),
 					],
 					["idle, still billed"],
 				)
-			: h.div([h.Class(cn("hidden w-44 md:block", SUB))], ["no traffic"])
+			: h.div([h.Class(cn(columnClass({ width: "44", from: "md" }), SUB))], ["no traffic"])
 	const failedShare = row.failed / row.requests
 	const clientShare = row.clientErrors / row.requests
 	const rated = GCP_SERVICE_RULES.inScope(row, "serving5xx")
@@ -148,7 +153,8 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 /** The idle note rides inside the last item, separator included, so hiding it at `md` leaves no stray dot. */
 const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyArray<MetaItem> => {
 	// Only items metaLine will draw: the note joins the last shown one, never an empty slot.
-	const items = [SERVICE_KIND[row.service], ...placeItems(row, showProject)].filter(
+	const items = Arr.filter(
+		[SERVICE_KIND[row.service], ...placeItems(row, showProject)],
 		(item): item is Html | string => item !== null && item !== undefined && item !== false && item !== "",
 	)
 	if (!GCP_SERVICE_RULES.inScope(row, "idle")) return items
@@ -186,7 +192,7 @@ export const servicesTable = (
 		],
 		rowsOrEmpty(
 			h,
-			rows.map((row) => {
+			Arr.map(rows, (row) => {
 				const rate = gcpRatedShare(row.failed, row.requests)
 				const cpuLevel = utilizationLevel(row.cpuP95 ?? 0)
 				return workloadRow(
@@ -277,7 +283,7 @@ export const subscriptionsTable = (
 		],
 		rowsOrEmpty(
 			h,
-			rows.map((row) => {
+			Arr.map(rows, (row) => {
 				const growing = GCP_SUBSCRIPTION_RULES.inScope(row, "backlogGrowing")
 				const growth = gcpBacklogGrowth(row)
 				const pushRate = gcpRatedShare(row.pushFailed, row.pushRequests)
@@ -311,7 +317,11 @@ export const subscriptionsTable = (
 											[
 												h.Class(
 													cn(
-														"font-mono text-xs tabular-nums",
+														typographyClass({
+															size: "xs",
+															mono: true,
+															numeric: true,
+														}),
 														growing ? TONE_TEXT.crit : "text-foreground-soft",
 													),
 												),
@@ -408,7 +418,7 @@ const quotaCell = (h: H, value: number | undefined, hidden?: string): Html =>
 		[h.Class(cn("flex w-20 flex-col items-end gap-1", hidden))],
 		[
 			h.span(
-				[h.Class(cn("font-mono text-xs tabular-nums", quotaText(value)))],
+				[h.Class(cn(typographyClass({ size: "xs", mono: true, numeric: true }), quotaText(value)))],
 				[value === undefined ? EMPTY_VALUE : formatPercentColumn(value)],
 			),
 			meter(h, { value: value ?? 0, tone: quotaTone(value ?? 0), className: "w-14" }),
@@ -423,7 +433,7 @@ const replicasItem = (h: H, row: GcpDatabaseRow): MetaItem => {
 			seconds(row.replicaLagSeconds),
 		])
 	}
-	const lags = row.replicas.flatMap((replica) =>
+	const lags = Arr.flatMap(row.replicas, (replica) =>
 		replica.lagSeconds === undefined ? [] : [replica.lagSeconds],
 	)
 	const worst = lags.length === 0 ? undefined : Math.max(...lags)
@@ -510,8 +520,8 @@ const connectionsCell = (h: H, row: GcpDatabaseRow, locale: string): Html => {
 }
 
 const databasesFooter = (h: H, rows: ReadonlyArray<GcpDatabaseRow>): ReadonlyArray<Html> => {
-	const replicas = rows.flatMap((row) => row.replicas)
-	const off = rows.filter(gcpQueryInsightsOff)
+	const replicas = Arr.flatMap(rows, (row) => row.replicas)
+	const off = Arr.filter(rows, gcpQueryInsightsOff)
 	if (replicas.length === 0 && off.length === 0) return []
 	return [
 		h.div(
@@ -526,22 +536,25 @@ const databasesFooter = (h: H, rows: ReadonlyArray<GcpDatabaseRow>): ReadonlyArr
 					replicas.length === 0
 						? []
 						: [
-								[
-									"Read replicas fold into their primary",
-									...replicas.map((replica) =>
-										replica.lagSeconds === undefined
-											? replica.name
-											: `${replica.name} lags ${seconds(replica.lagSeconds)}`,
-									),
-								].join(" · "),
+								Arr.join(
+									[
+										"Read replicas fold into their primary",
+										...Arr.map(replicas, (replica) =>
+											replica.lagSeconds === undefined
+												? replica.name
+												: `${replica.name} lags ${seconds(replica.lagSeconds)}`,
+										),
+									],
+									" · ",
+								),
 							],
 				),
 				h.span(
 					[h.Class("flex flex-wrap gap-x-4")],
-					off.map((row) =>
+					Arr.map(off, (row) =>
 						h.a(
 							[
-								h.Class("text-primary hover:text-primary/80 active:text-primary/80"),
+								h.Class(textLinkClass()),
 								h.Href(gcpQueryInsightsConsoleUrl(row.project ?? "", row.name)),
 								h.Rel("noreferrer"),
 								h.Target("_blank"),
@@ -577,7 +590,7 @@ export const databasesTable = (
 		[
 			...rowsOrEmpty(
 				h,
-				rows.map((row) =>
+				Arr.map(rows, (row) =>
 					workloadRow(
 						h,
 						{
@@ -605,13 +618,13 @@ export const databasesTable = (
 
 // The other services (GKE, Compute Engine, Load Balancing) ---------------------------------------
 
-const GENERIC_NAME = "w-0 flex-1 min-w-60"
+const GENERIC_NAME = columnClass({ min: "60" })
 const VALUE_WIDTH = "w-28"
 
 const genericHead = (h: H, service: GcpInfraServiceId): ReadonlyArray<Html> => [
 	dotLane(h),
 	head(h, GCP_INFRA_SERVICES[service].identity[0]?.[0] ?? "", GENERIC_NAME),
-	...GCP_INFRA_COLUMNS[service].map((column) => head(h, column.label, VALUE_WIDTH, "right")),
+	...Arr.map(GCP_INFRA_COLUMNS[service], (column) => head(h, column.label, VALUE_WIDTH, "right")),
 ]
 
 /** `GcpServiceTableLoading`. */
@@ -623,13 +636,13 @@ export const serviceTableLoading = (h: H, service: GcpInfraServiceId): Html =>
 		skeletonRows(h, 5, () => [
 			dotLane(h),
 			h.div(
-				[h.Class(cn(GENERIC_NAME, "flex items-center gap-3"))],
+				[h.Class(cn(GENERIC_NAME, hstackClass({ gap: "3" })))],
 				[
 					skeleton(h, "size-7 shrink-0 rounded-md"),
 					h.div([], [skeleton(h, "h-4 w-40"), skeleton(h, "mt-1.5 h-3 w-28")]),
 				],
 			),
-			...GCP_INFRA_COLUMNS[service].map(() => skeleton(h, cn("h-3", VALUE_WIDTH))),
+			...Arr.map(GCP_INFRA_COLUMNS[service], () => skeleton(h, cn("h-3", VALUE_WIDTH))),
 		]),
 	)
 
@@ -658,30 +671,38 @@ export const serviceTable = (
 		genericHead(h, service),
 		rowsOrEmpty(
 			h,
-			rows.map((row) => {
+			Arr.map(rows, (row) => {
 				const line = metaLine(h, row.keys.slice(1), {
-					title: identity
-						.slice(1)
-						.map(([label], index) => `${label}: ${row.keys[index + 1] ?? ""}`)
-						.join(" · "),
+					title: Arr.join(
+						Arr.map(
+							identity.slice(1),
+							([label], index) => `${label}: ${row.keys[index + 1] ?? ""}`,
+						),
+						" · ",
+					),
 				})
 				return h.a(
 					[h.Class(ROW_LINK_CLASS), h.Href(workloadHref(service, row.keys, ctx.timeSearch))],
 					[
 						healthDot(h, spec, rowHealth(GCP_WORKLOAD_RULES, row)),
 						h.div(
-							[h.Class(cn(GENERIC_NAME, "flex items-center gap-3"))],
+							[h.Class(cn(GENERIC_NAME, hstackClass({ gap: "3" })))],
 							[
 								gcpServiceIcon(h, { service }),
 								h.div(
 									[h.Class("min-w-0 flex-1")],
 									[
-										h.div(
-											[
-												h.Class(
-													"truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
-												),
-											],
+										typography(
+											h,
+											{
+												size: "xs",
+												tone: "foreground",
+												weight: "medium",
+												mono: true,
+												truncate: true,
+												as: "div",
+												className: "transition-colors group-hover:text-primary",
+											},
 											[row.name],
 										),
 										...(line === null ? [] : [line]),
@@ -689,12 +710,17 @@ export const serviceTable = (
 								),
 							],
 						),
-						...columns.map((column, index) =>
+						...Arr.map(columns, (column, index) =>
 							h.div(
 								[
 									h.Class(
 										cn(
-											"text-right font-mono text-xs tabular-nums",
+											typographyClass({
+												size: "xs",
+												mono: true,
+												numeric: true,
+												className: "text-right",
+											}),
 											VALUE_WIDTH,
 											valueClass(column, row.workload.values[index]),
 										),

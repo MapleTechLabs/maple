@@ -3,18 +3,22 @@ import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../../charts/chart"
-import { CHART_EMPTY_MESSAGE } from "../../../../charts/infra-metric-chart"
-import * as PlotBoxChart from "../../../../charts/plot-box-chart"
-import { stackedBreakdown } from "../../../../charts/stacked-breakdown-chart"
-import type { ThemeColors } from "../../../../charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import { CHART_EMPTY_MESSAGE } from "@maple/views/charts/infra-metric-chart"
+import * as PlotBoxChart from "@maple/views/charts/plot-box-chart"
+import { stackedBreakdown } from "@maple/views/charts/stacked-breakdown-chart"
+import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../kit/chart-card"
 import { columnHead, dataTable, dataTableEmpty } from "../../../infra/kit/data-table"
 import { seriesLegend } from "../../../kit/series-legend"
-import type { LongRow } from "../../../../charts/infra-metric-series"
+import type { LongRow } from "@maple/views/charts/infra-metric-series"
 import type { ZoneDns, ZoneSecurity } from "../data"
 import { Message, type Model } from "./model"
 import { panelScope, type Trigger } from "./view-scope"
+import { hstackClass } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
+import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // `CloudflareZoneDnsSection`, `CloudflareZoneSecuritySection` and their `StackedBreakdownChart`.
 
@@ -30,8 +34,10 @@ export type SectionContext = Readonly<{
 /** Legend chips beyond this collapse into a `+N`, so the legend can never reflow the card header. */
 const MAX_LEGEND_CHIPS = 8
 
-const ROW_CLASS =
-	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken"
+const ROW_CLASS = hstackClass({
+	gap: "4",
+	className: stripClass("hoverRow"),
+})
 
 export const SCOPE_IDS = {
 	dns: "cf-scope-dns",
@@ -67,7 +73,7 @@ const stackedChart = (
 			scope: options.scope,
 			legend: seriesLegend(h, {
 				maxItems: MAX_LEGEND_CHIPS,
-				items: built.legend.map(({ name, label, color }) => ({
+				items: Arr.map(built.legend, ({ name, label, color }) => ({
 					key: name,
 					label,
 					title: label,
@@ -127,7 +133,7 @@ export const dnsSection = (
 			model,
 			{
 				title: "DNS queries by response code",
-				rows: data.buckets.map((bucket) => ({
+				rows: Arr.map(data.buckets, (bucket) => ({
 					bucket: bucket.bucket,
 					attributeValue: bucket.responseCode,
 					value: bucket.queries,
@@ -149,13 +155,13 @@ export const dnsSection = (
 			h,
 			{ ariaLabel: "Top DNS query names", isWaiting },
 			[
-				columnHead(h, { label: "Query name", width: "w-0 flex-1 min-w-56" }),
+				columnHead(h, { label: "Query name", width: columnClass({ min: "56" }) }),
 				columnHead(h, { label: "Queries", align: "right", width: "w-24" }),
 				columnHead(h, { label: "NXDOMAIN", align: "right", width: "w-28" }),
 			],
 			rows.length === 0
-				? [dataTableEmpty(h, ["No DNS queries in the selected window."])]
-				: rows.map((row) =>
+				? [dataTableEmpty(h, ["No DNS queries in this window"])]
+				: Arr.map(rows, (row) =>
 						h.div(
 							[h.Key(row.queryName), h.Class(ROW_CLASS)],
 							[
@@ -239,7 +245,7 @@ export const securitySection = (
 			model,
 			{
 				title: "Security events by action",
-				rows: data.buckets.map((bucket) => ({
+				rows: Arr.map(data.buckets, (bucket) => ({
 					bucket: bucket.bucket,
 					attributeValue: bucket.action,
 					value: bucket.events,
@@ -261,15 +267,15 @@ export const securitySection = (
 			h,
 			{ ariaLabel: "Top security rules", isWaiting },
 			[
-				columnHead(h, { label: "Rule", width: "w-0 flex-1 min-w-52" }),
+				columnHead(h, { label: "Rule", width: columnClass({ min: "52" }) }),
 				columnHead(h, { label: "Source", width: "w-32", hidden: "hidden md:flex" }),
 				columnHead(h, { label: "Action", width: "w-32" }),
 				columnHead(h, { label: "Host", width: "w-44", hidden: "hidden lg:flex" }),
 				columnHead(h, { label: "Events", align: "right", width: "w-24" }),
 			],
 			rows.length === 0
-				? [dataTableEmpty(h, ["No security events in the selected window."])]
-				: rows.map((row) =>
+				? [dataTableEmpty(h, ["No security events in this window"])]
+				: Arr.map(rows, (row) =>
 						h.div(
 							[
 								h.Key(`${row.source}:${row.action}:${row.ruleId}:${row.host}`),

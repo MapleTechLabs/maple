@@ -21,9 +21,8 @@ import {
 	parseArchiveActivePointer,
 	readArchiveGenerationManifest,
 	type ArchiveGenerationManifest,
-	type ArchiveShardRecord,
 } from "./manifest"
-import { archiveSignal, type ArchiveSignalName, ARCHIVE_SIGNALS } from "./signals"
+import { archiveSignal, ARCHIVE_SIGNALS } from "./signals"
 import {
 	archiveCompletedOperation,
 	operationDir,
@@ -35,6 +34,8 @@ import {
 } from "./journal"
 import { assertCatalogExact, rebuildCatalog } from "./listing"
 import { withMaintenanceLock } from "../checkpoints"
+import { decodeJsonSync } from "../json"
+import { Array as Arr } from "effect"
 
 // Garbage collection of superseded archive generations (Gate 3b).
 //
@@ -216,9 +217,7 @@ export const planArchiveGc = (archiveDir: string, keep: number): GcPlan => {
 		}
 		let ranges: string[]
 		try {
-			ranges = readdirSync(sRoot)
-				.filter((e) => /^\d{4}-\d{2}-\d{2}$/.test(e))
-				.sort()
+			ranges = Arr.filter(readdirSync(sRoot), (e) => /^\d{4}-\d{2}-\d{2}$/.test(e)).sort()
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error)
 			excludedSignals.push({ signal, reason: `signal root unreadable: ${reason}` })
@@ -290,7 +289,7 @@ export const planArchiveGc = (archiveDir: string, keep: number): GcPlan => {
 			// otherwise classify every real generation as superseded — and with
 			// keep=0 the whole range would enter the delete set while the pointer
 			// references nothing that survives. That is uncertain state: over-retain.
-			const pointerTargets = verified.filter((g) => g.generationId === activeGenerationId)
+			const pointerTargets = Arr.filter(verified, (g) => g.generationId === activeGenerationId)
 			if (pointerTargets.length !== 1) {
 				excludedRanges.push({
 					signal,
@@ -302,9 +301,8 @@ export const planArchiveGc = (archiveDir: string, keep: number): GcPlan => {
 				continue
 			}
 			// Partition: active (never deleted) vs superseded.
-			const superseded = verified
-				.filter((g) => g.generationId !== activeGenerationId)
-				.sort((a, b) =>
+			const superseded = Arr.filter(verified, (g) => g.generationId !== activeGenerationId).sort(
+				(a, b) =>
 					a.createdAt < b.createdAt
 						? 1
 						: a.createdAt > b.createdAt
@@ -312,8 +310,8 @@ export const planArchiveGc = (archiveDir: string, keep: number): GcPlan => {
 							: a.generationId < b.generationId
 								? 1
 								: -1,
-				)
-			for (const g of verified.filter((g) => g.generationId === activeGenerationId)) {
+			)
+			for (const g of Arr.filter(verified, (g) => g.generationId === activeGenerationId)) {
 				retained.push({
 					signal,
 					rangeStart,
@@ -368,7 +366,7 @@ const readActiveGenerationIdStrict = (
 	// Full pointer validation (id shape, selectedAt, signal/range binding) —
 	// the same parser every other pointer read uses, not a looser private one.
 	const pointer = parseArchiveActivePointer(
-		JSON.parse(readFileSync(pointerPath, "utf8")) as unknown,
+		decodeJsonSync(readFileSync(pointerPath, "utf8")),
 		signal,
 		rangeDate,
 	)
@@ -490,7 +488,7 @@ export const runArchiveGc = async (args: {
 			return { plan, deleted: [] }
 		}
 		if (plan.deleteSet.length === 0) return { plan, deleted: [] }
-		const targets: GcTarget[] = plan.deleteSet.map((c) => ({
+		const targets: GcTarget[] = Arr.map(plan.deleteSet, (c) => ({
 			signal: c.signal,
 			rangeStart: c.rangeStart,
 			generationId: c.generationId,
@@ -505,7 +503,7 @@ export const runArchiveGc = async (args: {
 		const deleted = await collectTargets(archiveDir, operationId, targets, args.faults)
 		// Recheck every affected pointer, rebuild affected catalogs, assert exact.
 		await args.faults?.afterAllRemovals?.()
-		const affectedSignals = new Set(targets.map((t) => t.signal))
+		const affectedSignals = new Set(Arr.map(targets, (t) => t.signal))
 		for (const signal of affectedSignals) {
 			const sigName = archiveSignal(signal).name
 			await rebuildCatalog(archiveDir, sigName)
@@ -650,7 +648,7 @@ export const resumeFrozenTargetsAndCompleteGc = async (
 		await persistGcProgress(archiveDir, intent.operationId, i + 1, "gc-collecting")
 	}
 	// Rebuild ALL affected catalogs + assert exact.
-	const affectedSignals = new Set(intent.targets.map((t) => t.signal))
+	const affectedSignals = new Set(Arr.map(intent.targets, (t) => t.signal))
 	for (const signal of affectedSignals) {
 		const sigName = archiveSignal(signal).name
 		await rebuildCatalog(archiveDir, sigName)
@@ -813,7 +811,7 @@ export const verifyCompletedGcInvariants = async (
 		}
 	}
 	// Every affected catalog must be exact.
-	const affectedSignals = new Set(intent.targets.map((t) => t.signal))
+	const affectedSignals = new Set(Arr.map(intent.targets, (t) => t.signal))
 	for (const signal of affectedSignals) {
 		const sigName = archiveSignal(signal).name
 		assertCatalogExact(archiveDir, sigName)

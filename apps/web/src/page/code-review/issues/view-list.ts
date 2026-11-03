@@ -5,30 +5,33 @@ import {
 	SEVERITY_LABELS,
 	SEVERITY_TONE,
 } from "../../../components/code-review/code-review-format"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { listRow } from "../../../ui/list-row"
-import { middleTruncate } from "../../../ui/middle-truncate"
-import { panel } from "../../../ui/panel"
-import * as Tooltip from "../../../ui/tooltip"
+import { badge } from "@maple/views/ui/display"
+import { listRow } from "@maple/views/ui/list-row"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
+import { panel } from "@maple/views/ui/panel"
+import * as Tooltip from "@maple/views/ui/tooltip"
+import { relativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `FindingRow` under one `RelativeTime` tooltip.
 
 type H = HtmlBuilder<Message>
 
 /** Last path segment: kept visible when a long path middle-truncates. */
-const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1)
+const basename = (path: string) => Str.slice(path.lastIndexOf("/") + 1)(path)
 
 const timeTriggerId = (finding: CodeReviewFinding) => `code-review-finding-time-${finding.id}`
 
 type RowContext = Readonly<{
 	selected: string | undefined
 	nowMs: number
+	timeZone: string
 	trigger: (id: string) => ReadonlyArray<ChildAttribute>
 }>
 
@@ -44,43 +47,33 @@ const findingRow = (h: H, finding: CodeReviewFinding, context: RowContext): Html
 					[SEVERITY_LABELS[finding.severity]],
 				),
 				title: finding.title,
-				meta: h.span(
-					[h.Class("flex min-w-0 items-center gap-1.5")],
-					[
-						middleTruncate(h, {
-							text: `${finding.path}:${finding.line}`,
-							tail: Math.min(
-								40,
-								Array.from(`${basename(finding.path)}:${finding.line}`).length,
-							),
-							mono: true,
-						}),
-						h.span(
-							[
-								h.Class("min-w-0 max-w-[45%] shrink-0 truncate"),
-								h.Title(`${finding.repositoryFullName}#${finding.number}`),
-							],
-							["· ", finding.repositoryFullName, "#", String(finding.number)],
-						),
-					],
-				),
+				meta: hstack(h, { gap: "1.5", shrink: true, as: "span" }, [
+					middleTruncate(h, {
+						text: `${finding.path}:${finding.line}`,
+						tail: Math.min(40, Array.from(`${basename(finding.path)}:${finding.line}`).length),
+						mono: true,
+					}),
+					h.span(
+						[
+							h.Class("min-w-0 max-w-[45%] shrink-0 truncate"),
+							h.Title(`${finding.repositoryFullName}#${finding.number}`),
+						],
+						["· ", finding.repositoryFullName, "#", String(finding.number)],
+					),
+				]),
 				trailing: [
 					h.span(
 						[h.Class("hidden text-xs text-muted-foreground sm:block")],
 						[CATEGORY_LABELS[finding.category]],
 					),
 					badge(h, { variant: "outline", size: "sm" }, [FINDING_STATUS_LABELS[finding.status]]),
-					h.time(
-						[
-							h.Class(
-								"cursor-default hidden w-20 text-right text-xs text-muted-foreground md:block",
-							),
-							h.DataAttribute("slot", "tooltip-trigger"),
-							h.Attribute("datetime", new Date(finding.createdAt).toISOString()),
-							...context.trigger(timeTriggerId(finding)),
-						],
-						[formatRelativeFrom(finding.createdAt, context.nowMs)],
-					),
+					relativeTime(h, {
+						value: finding.createdAt,
+						nowMs: context.nowMs,
+						timeZone: context.timeZone,
+						trigger: context.trigger(timeTriggerId(finding)),
+						className: "hidden w-20 text-right text-xs text-muted-foreground md:block",
+					}),
 				],
 			}),
 		],
@@ -98,7 +91,7 @@ export const findingsList = (
 		view: Tooltip.view,
 		toParentMessage: (message: Tooltip.Message) => Message.GotTimeTooltipMessage({ message }),
 		viewInputs: {
-			triggerIds: findings.map(timeTriggerId),
+			triggerIds: Arr.map(findings, timeTriggerId),
 			toContent: (triggerId) => {
 				const finding = findings.find((candidate) => timeTriggerId(candidate) === triggerId)
 				return finding === undefined
@@ -112,10 +105,11 @@ export const findingsList = (
 						panel(h, {}, [
 							h.ul(
 								[h.Class("divide-y")],
-								findings.map((finding) =>
+								Arr.map(findings, (finding) =>
 									findingRow(h, finding, {
 										selected: model.search.review,
 										nowMs: model.frame.nowMs,
+										timeZone,
 										trigger,
 									}),
 								),

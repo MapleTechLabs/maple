@@ -1,13 +1,14 @@
 import { Command, type Update } from "foldkit"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as TraceDetail from "../detail/update"
 import type { Message as DetailMessage } from "../detail/message"
 import { Message } from "./message"
 import type { Model, TraceRow } from "./model"
 import { allRows } from "./update"
+import { Array as Arr, String as Str } from "effect"
 
 // The trace peek sheet's wiring: the URL's
 // `peek*` params pick the trace; the trace page's Model runs inside the sheet.
@@ -58,9 +59,12 @@ export const traceHrefFrom = (
 ) => {
 	const list = hrefOf(AppRoute.Traces({ search: { ...search, ...PEEK_CLEARED } }))
 	const page = hrefOf(AppRoute.Trace({ traceId, search: { t, spanId } }))
-	const listQuery = list.includes("?") ? list.slice(list.indexOf("?") + 1) : ""
-	const [path = page, pageQuery = ""] = page.split("?")
-	const query = [listQuery, pageQuery].filter((part) => part !== "").join("&")
+	const listQuery = Str.includes("?")(list) ? Str.slice(list.indexOf("?") + 1)(list) : ""
+	const [path, pageQuery = ""] = Str.split("?")(page)
+	const query = Arr.join(
+		Arr.filter([listQuery, pageQuery], (part) => part !== ""),
+		"&",
+	)
 	return query === "" ? path : `${path}?${query}`
 }
 
@@ -87,8 +91,8 @@ const liftDetail = (
 	if (out === undefined) return { model: next, commands }
 	// The page writes its `spanId`/`view` to its own URL; in the sheet the span is `peekSpan` and
 	// the view stays local, as `TraceViewTabs` keeps it in the sheet.
-	if (out._tag === "RequestedNavigation" && out.url.startsWith(`/traces/${step.model.traceId}`)) {
-		const params = new URLSearchParams(out.url.split("?")[1] ?? "")
+	if (out._tag === "RequestedNavigation" && Str.startsWith(`/traces/${step.model.traceId}`)(out.url)) {
+		const params = new URLSearchParams(Str.split("?")(out.url)[1] ?? "")
 		const spanId = params.get("spanId") ?? undefined
 		if (spanId !== next.search.peekSpan)
 			return { ...navigate(next, { ...next.search, peekSpan: spanId }, true), commands }
@@ -125,6 +129,7 @@ const carried = (
 					logsCount: previous.logsCount,
 					replaySessionId: previous.replaySessionId,
 				},
+				commands: Arr.filter(step.commands ?? [], ({ name }) => name !== "FetchTraceReplays"),
 			}
 
 /** The search's peek, applied: a new trace starts the page over, a new span re-routes it. */

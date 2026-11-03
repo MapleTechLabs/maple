@@ -1,8 +1,8 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, String as Str } from "effect"
 import { expect as expectView, given, Mount, role, scene, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { MountPeekRows } from "./command"
 import { view as pageView } from "./view"
 import { VirtualizeTraces } from "./virtualize"
@@ -18,7 +18,7 @@ const window = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 
 const trace = (index: number): TraceRow => ({
-	traceId: index.toString(16).padStart(32, "0"),
+	traceId: Str.padStart(32, "0")(index.toString(16)),
 	spanId: `span-${index}`,
 	isRootSpan: true,
 	startTime: "2026-10-01 11:59:00",

@@ -1,9 +1,12 @@
-import { sidebarInset, sidebarTrigger, sidebarWrapper } from "@maple/web/ui/sidebar"
-import * as ToastView from "@maple/web/ui/toast-view"
+import { fillRegion } from "@maple/views/ui/scroll-region"
+import { sidebarInset, sidebarTrigger, sidebarWrapper } from "@maple/views/ui/sidebar"
+import { hstack } from "@maple/views/ui/stack"
+import * as ToastView from "@maple/views/ui/toast-view"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
-import { presenceOf } from "./data/signal-presence"
+import { presenceOf } from "@maple/views/data/signal-presence"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { rangeOf } from "./page/contract"
@@ -35,7 +38,7 @@ const pageView = (h: HtmlBuilder<Message>, model: Model): Html => {
 		model.page,
 		{
 			context: pageContextOf(model),
-			presenceOf: (signal) => presenceOf(presence, signal),
+			presenceOf: (signal) => presenceOf(AsyncData.map(model.presence, (result) => result.signals), signal),
 			presenceNowMs: Option.match(presence, { onNone: () => 0, onSome: (result) => result.nowMs }),
 			clockMs: Option.match(model.maybeServer, { onNone: () => 0, onSome: (server) => server.checkedAtMs }),
 			hasNewDataSince: (sinceMs) => sinceMs > 0 && Option.exists(lastIngest, (last) => last > sinceMs),
@@ -75,6 +78,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
 			[h.Id("app")],
 			[
 				...ToastView.regions(h, model.toasts, (message) => Message.GotToastMessage({ message })),
+				TooltipHost.view(h, model.tooltip, (message) => Message.GotTooltipMessage({ message })),
 				sidebarWrapper(
 					h,
 					[
@@ -82,8 +86,9 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
 						sidebarInset(
 							h,
 							[
-								h.header(
-									[h.Class("flex h-12 shrink-0 items-center gap-2 border-b px-4 md:hidden")],
+								hstack(
+									h,
+									{ as: "header", gap: "2", className: "h-12 shrink-0 border-b px-4 md:hidden" },
 									[
 										sidebarTrigger(h, {
 											state: model.isSidebarOpen ? "expanded" : "collapsed",
@@ -93,7 +98,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
 										localLockup(h),
 									],
 								),
-								h.div([h.Class("relative min-h-0 flex-1")], mainContent(h, model, page)),
+								fillRegion(h, {}, mainContent(h, model, page)),
 							],
 							"h-dvh text-foreground",
 						),

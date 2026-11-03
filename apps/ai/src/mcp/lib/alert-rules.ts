@@ -1,5 +1,5 @@
 /** Pieces the alert MCP tools share: parameter vocabularies, rule rows, and error mapping. */
-import { Effect, Option, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import type { AlertRuleFirstEvaluation, AlertRuleRow } from "@maple/domain/mcp-outputs"
 import {
 	AlertCheckStatus,
@@ -121,9 +121,9 @@ export const ruleServiceMatch = (
 	if (rule.serviceNames.includes(service)) return "scoped"
 	if (rule.excludeServiceNames.includes(service)) return undefined
 	if (rule.signalType === "raw_query") {
-		const needle = service.toLowerCase()
-		const haystack = `${rule.rawQuerySql ?? ""}\n${rule.name}`.toLowerCase()
-		return haystack.includes(needle) ? "raw_query_mention" : undefined
+		const needle = Str.toLowerCase(service)
+		const haystack = Str.toLowerCase(`${rule.rawQuerySql ?? ""}\n${rule.name}`)
+		return Str.includes(needle)(haystack) ? "raw_query_mention" : undefined
 	}
 	return rule.serviceNames.length === 0 ? "all_services" : undefined
 }
@@ -138,10 +138,7 @@ export const ruleNotFound = (ruleId: string) =>
 
 /** A caller-supplied rule id, as the branded id. One that does not parse cannot exist either. */
 export const parseRuleId = (ruleId: string) =>
-	Option.match(decodeAlertRuleId(ruleId), {
-		onNone: () => Effect.fail(ruleNotFound(ruleId)),
-		onSome: (id) => Effect.succeed(id),
-	})
+	Effect.fromOption(decodeAlertRuleId(ruleId), () => ruleNotFound(ruleId))
 
 /**
  * An invalid rule as the model reads it: the message and each detail once. A
@@ -150,12 +147,15 @@ export const parseRuleId = (ruleId: string) =>
  */
 export const invalidRuleInput = (error: AlertValidationError) => {
 	const repeatsDetails =
-		error.details.length > 0 && error.details.every((detail) => error.message.includes(detail))
+		error.details.length > 0 && Arr.every(error.details, (detail) => Str.includes(detail)(error.message))
 	return new McpInvalidInputError({
-		message: [
-			repeatsDetails ? "Invalid alert rule:" : `Invalid alert rule: ${error.message}`,
-			...error.details.map((detail) => `- ${detail}`),
-		].join("\n"),
+		message: Arr.join(
+			[
+				repeatsDetails ? "Invalid alert rule:" : `Invalid alert rule: ${error.message}`,
+				...Arr.map(error.details, (detail) => `- ${detail}`),
+			],
+			"\n",
+		),
 	})
 }
 
@@ -195,7 +195,7 @@ const evaluationBlocks = (
 	const when =
 		evaluation.nextEvaluationAt === null
 			? "The rule is disabled, so the scheduler will not evaluate it."
-			: `First scheduled evaluation by ${evaluation.nextEvaluationAt.slice(0, 19)}Z (every ${intervalMinutes}m after), no need to poll list_alert_checks before then.`
+			: `First scheduled evaluation by ${Str.slice(0, 19)(evaluation.nextEvaluationAt)}Z (every ${intervalMinutes}m after), no need to poll list_alert_checks before then.`
 	const now =
 		evaluation.previewError !== undefined
 			? `A preview of the latest window failed: ${evaluation.previewError}. Run preview_alert_rule to see what it observes.`
@@ -209,15 +209,13 @@ const evaluationBlocks = (
 			: [
 					doc.table(
 						["Group", "Latest window", "Verdict", "Value", "Samples"],
-						evaluation.current
-							.slice(0, 10)
-							.map((c) => [
-								c.groupKey,
-								c.window.slice(0, 19),
-								c.status === "skipped" ? `skipped (${c.skipReason ?? "?"})` : c.status,
-								c.value === null ? "-" : String(c.value),
-								String(c.sampleCount),
-							]),
+						Arr.map(evaluation.current.slice(0, 10), (c) => [
+							c.groupKey,
+							Str.slice(0, 19)(c.window),
+							c.status === "skipped" ? `skipped (${c.skipReason ?? "?"})` : c.status,
+							c.value === null ? "-" : String(c.value),
+							String(c.sampleCount),
+						]),
 					),
 				]),
 	]
@@ -233,12 +231,12 @@ export const renderBulkRuleWrite = (
 	blocks: [
 		doc.table(
 			["ID", "Name", "Enabled", "Destinations"],
-			rules.map((r) => [r.id, r.name, r.enabled ? "Yes" : "No", String(r.destinationIds.length)]),
+			Arr.map(rules, (r) => [r.id, r.name, r.enabled ? "Yes" : "No", String(r.destinationIds.length)]),
 		),
 	],
-	next: rules
-		.slice(0, 1)
-		.map((r) => doc.next("get_alert_rule", { rule_id: r.id }, "check one of the updated rules")),
+	next: Arr.map(rules.slice(0, 1), (r) =>
+		doc.next("get_alert_rule", { rule_id: r.id }, "check one of the updated rules"),
+	),
 })
 
 /** The text a create or update returns: the rule as saved. */
@@ -257,14 +255,20 @@ export const renderRuleWrite = (
 			doc.fields([
 				["ID", rule.id],
 				["Name", rule.name],
-				["Service Names", rule.serviceNames.length > 0 ? rule.serviceNames.join(", ") : undefined],
+				[
+					"Service Names",
+					rule.serviceNames.length > 0 ? Arr.join(rule.serviceNames, ", ") : undefined,
+				],
 				["Severity", rule.severity],
 				["Signal", rule.signalType],
 				["Condition", formatCondition(rule)],
 				["Window", `${rule.windowMinutes}m, checked ${formatCheckInterval(rule)}`],
 				["Enabled", rule.enabled ? "Yes" : "No"],
 				["Destinations", rule.destinationIds.length],
-				["Environments", rule.environments.length > 0 ? rule.environments.join(", ") : undefined],
+				[
+					"Environments",
+					rule.environments.length > 0 ? Arr.join(rule.environments, ", ") : undefined,
+				],
 			]),
 		],
 		next: [

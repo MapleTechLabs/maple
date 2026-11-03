@@ -5,9 +5,11 @@ import { initialsFrom } from "@maple/ui/lib/initials"
 import { gradientFor, isMobileDevice } from "@maple/ui/lib/replay"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
-import * as CopyButton from "@maple/web/ui/copy-button"
-import { icon } from "@maple/web/ui/icon"
-import { truncatedId } from "@maple/web/ui/truncated-id"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { hstack } from "@maple/views/ui/stack"
+import { truncatedId } from "@maple/views/ui/truncated-id"
 import { DateTime } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyOf } from "../kit/copies"
@@ -21,13 +23,14 @@ export const SESSION_ID_COPY = "session-id"
 
 export const hero = (h: HtmlBuilder<Message>, model: Model, session: SessionDetail, label: string, timeFormat: TimeFormat): Html => {
 	const copy = copyOf(model.copies, SESSION_ID_COPY)
-	return h.div(
-		[h.Class("flex flex-wrap items-center gap-4 border-b pb-5")],
+	return hstack(
+		h,
+		{ gap: "4", wrap: true, className: "border-b pb-5" },
 		[
 			h.div(
 				[
 					h.Class(
-						`grid size-12 shrink-0 place-items-center rounded-full bg-gradient-to-br ${gradientFor(model.sessionId)} text-base font-semibold text-white shadow-sm`,
+						`grid size-12 shrink-0 place-items-center rounded-full bg-gradient-to-br ${gradientFor(model.sessionId)} text-base font-semibold text-white shadow-raised`,
 					),
 				],
 				[initialsFrom(label)],
@@ -35,12 +38,13 @@ export const hero = (h: HtmlBuilder<Message>, model: Model, session: SessionDeta
 			h.div(
 				[h.Class("min-w-0 flex-1")],
 				[
-					h.div(
-						[h.Class("flex items-center gap-2")],
-						[h.h1([h.Class("truncate text-xl font-semibold tracking-tight")], [label]), statusBadge(h, isLocalSessionLive(session, model.nowMs))],
-					),
-					h.div(
-						[h.Class("mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground")],
+					hstack(h, { gap: "2" }, [
+						heading(h, { level: 1, variant: "title", className: "truncate" }, [label]),
+						statusBadge(h, isLocalSessionLive(session, model.nowMs)),
+					]),
+					hstack(
+						h,
+						{ gap: "3", wrap: true, className: "mt-1 text-sm text-muted-foreground" },
 						[
 							truncatedId(h, {
 								value: model.sessionId,
@@ -52,21 +56,21 @@ export const hero = (h: HtmlBuilder<Message>, model: Model, session: SessionDeta
 									onClick: Message.GotCopyMessage({ id: SESSION_ID_COPY, message: CopyButton.Message.ClickedCopy({ text: model.sessionId }) }),
 								},
 							}),
-							h.span(
-								[h.Class("inline-flex items-center gap-1.5")],
+							hstack(h, { as: "span", inline: true, gap: "1.5" }, [
+								icon(h, isMobileDevice(session.deviceType) ? "MobileIcon" : "ComputerIcon", { className: "size-3.5" }),
+								session.browserName || "Unknown",
+								...(session.osName ? [` · ${session.osName}`] : []),
+							]),
+							hstack(
+								h,
+								{
+									as: "span",
+									inline: true,
+									gap: "1.5",
+									attributes: [h.Title(`${formatDateTime(timeFormat, session.startTime)} (${formatUtcTitle(session.startTime)})`)],
+								},
 								[
-									icon(h, isMobileDevice(session.deviceType) ? "MobileIcon" : "ComputerIcon", { className: "size-3.5 opacity-60" }),
-									session.browserName || "Unknown",
-									...(session.osName ? [` · ${session.osName}`] : []),
-								],
-							),
-							h.span(
-								[
-									h.Class("inline-flex items-center gap-1.5"),
-									h.Title(`${formatDateTime(timeFormat, session.startTime)} (${formatUtcTitle(session.startTime)})`),
-								],
-								[
-									icon(h, "ClockIcon", { className: "size-3.5 opacity-60" }),
+									icon(h, "ClockIcon", { className: "size-3.5" }),
 									"started ",
 									formatRelativeFrom(DateTime.toEpochMillis(session.startTime), model.nowMs),
 								],

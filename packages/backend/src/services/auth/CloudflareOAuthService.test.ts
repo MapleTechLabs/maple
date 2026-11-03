@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -32,11 +32,11 @@ const mockCloudflareFetch =
 	): typeof globalThis.fetch =>
 	(input) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-		if (url.includes("/oauth2/revoke")) {
+		if (Str.includes("/oauth2/revoke")(url)) {
 			if (counters) counters.revoked += 1
 			return Promise.resolve(new Response(null, { status: 200 }))
 		}
-		if (url.includes("/oauth2/token")) {
+		if (Str.includes("/oauth2/token")(url)) {
 			return Promise.resolve(
 				jsonResponse({
 					access_token: "cf-access-token",
@@ -47,7 +47,7 @@ const mockCloudflareFetch =
 				}),
 			)
 		}
-		if (url.includes("/accounts")) {
+		if (Str.includes("/accounts")(url)) {
 			return Promise.resolve(
 				jsonResponse({
 					success: true,
@@ -213,7 +213,7 @@ describe("CloudflareOAuthService", () => {
 			assert.strictEqual(row?.external_user_email, null)
 			// Token is encrypted at rest, never stored verbatim.
 			assert.isTrue(!!row && row.access_token_ciphertext !== "cf-access-token")
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts)]))
 	})
 
 	it.effect("completeConnect refuses a valid state redeemed by a different Maple user or org", () => {
@@ -233,7 +233,7 @@ describe("CloudflareOAuthService", () => {
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			const status = yield* service.getStatus(asOrgId("org_a"))
 			assert.strictEqual(status.connected, false)
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts)]))
 	})
 
 	it.effect("completeConnect refuses the initiator's org redeemed by another member", () => {
@@ -250,7 +250,7 @@ describe("CloudflareOAuthService", () => {
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			const status = yield* service.getStatus(asOrgId("org_a"))
 			assert.strictEqual(status.connected, false)
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts)]))
 	})
 
 	it.effect("completeConnect rejects an unknown or expired state", () => {
@@ -268,7 +268,7 @@ describe("CloudflareOAuthService", () => {
 			// Nothing was connected as a side effect.
 			const status = yield* service.getStatus(asOrgId("org_a"))
 			assert.strictEqual(status.connected, false)
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch([]))))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch([])]))
 	})
 
 	it.effect("completeConnect accepts a grant spanning multiple accounts as one connection", () => {
@@ -289,7 +289,7 @@ describe("CloudflareOAuthService", () => {
 			const status = yield* service.getStatus(asOrgId("org_a"))
 			assert.strictEqual(status.connected, true)
 			assert.deepStrictEqual(
-				status.accounts.map((account) => account.accountId),
+				Arr.map(status.accounts, (account) => account.accountId),
 				["acc_1", "acc_2"],
 			)
 			assert.strictEqual(status.accounts[1]?.accountName, "Beta LLC")
@@ -314,7 +314,7 @@ describe("CloudflareOAuthService", () => {
 			assert.strictEqual(token.accountId, "acc_2")
 			const outside = yield* service.getValidAccessToken(asOrgId("org_a"), "acc_3").pipe(Effect.flip)
 			assert.strictEqual(outside._tag, "@maple/http/errors/IntegrationsValidationError")
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts)]))
 	})
 
 	it.effect("completeConnect refuses a token with no refresh token and revokes it", () => {
@@ -325,11 +325,11 @@ describe("CloudflareOAuthService", () => {
 		// refuse it up front instead of storing a doomed row.
 		const fetchImpl: typeof globalThis.fetch = (input) => {
 			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			if (url.includes("/oauth2/revoke")) {
+			if (Str.includes("/oauth2/revoke")(url)) {
 				counters.revoked += 1
 				return Promise.resolve(new Response(null, { status: 200 }))
 			}
-			if (url.includes("/oauth2/token")) {
+			if (Str.includes("/oauth2/token")(url)) {
 				return Promise.resolve(
 					jsonResponse({
 						access_token: "cf-access-token",
@@ -339,7 +339,7 @@ describe("CloudflareOAuthService", () => {
 					}),
 				)
 			}
-			if (url.includes("/accounts")) {
+			if (Str.includes("/accounts")(url)) {
 				return Promise.resolve(
 					jsonResponse({
 						success: true,
@@ -377,12 +377,10 @@ describe("CloudflareOAuthService", () => {
 			)
 			assert.isUndefined(row)
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					Layer.succeed(FetchHttpClient.Fetch, fetchImpl),
-				),
-			),
+			Effect.provide([
+				makeLayer(testDb, withOAuthApp),
+				Layer.succeed(FetchHttpClient.Fetch, fetchImpl),
+			]),
 		)
 	})
 
@@ -412,11 +410,7 @@ describe("CloudflareOAuthService", () => {
 				),
 			)
 			assert.isUndefined(row)
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts, counters)),
-			),
-		)
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts, counters)]))
 	})
 
 	it.effect("connects as one Cloudflare source that Logpush jobs send as, removed on disconnect", () => {
@@ -468,7 +462,7 @@ describe("CloudflareOAuthService", () => {
 				),
 			)
 			assert.deepStrictEqual(job, { source_id: null })
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts)]))
 	})
 
 	it.effect("disconnect on a non-connected org reports nothing removed", () => {
@@ -487,10 +481,10 @@ describe("CloudflareOAuthService", () => {
 		const granted = { current: [{ id: "acc_1", name: "Acme Inc", type: "standard" }] }
 		const fetchImpl: typeof globalThis.fetch = (input) => {
 			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			if (url.includes("/oauth2/revoke")) {
+			if (Str.includes("/oauth2/revoke")(url)) {
 				return Promise.resolve(new Response(null, { status: 200 }))
 			}
-			if (url.includes("/oauth2/token")) {
+			if (Str.includes("/oauth2/token")(url)) {
 				return Promise.resolve(
 					jsonResponse({
 						access_token: `cf-access-token-${granted.current[0]?.id}`,
@@ -501,7 +495,7 @@ describe("CloudflareOAuthService", () => {
 					}),
 				)
 			}
-			if (url.includes("/accounts")) {
+			if (Str.includes("/accounts")(url)) {
 				return Promise.resolve(
 					jsonResponse({
 						success: true,
@@ -543,7 +537,7 @@ describe("CloudflareOAuthService", () => {
 			const status = yield* service.getStatus(asOrgId("org_a"))
 			assert.strictEqual(status.connected, true)
 			assert.deepStrictEqual(
-				status.accounts.map((account) => account.accountId),
+				Arr.map(status.accounts, (account) => account.accountId),
 				["acc_2", "acc_3"],
 			)
 
@@ -563,12 +557,10 @@ describe("CloudflareOAuthService", () => {
 			const stale = yield* service.getValidAccessToken(asOrgId("org_a"), "acc_1").pipe(Effect.flip)
 			assert.strictEqual(stale._tag, "@maple/http/errors/IntegrationsValidationError")
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					Layer.succeed(FetchHttpClient.Fetch, fetchImpl),
-				),
-			),
+			Effect.provide([
+				makeLayer(testDb, withOAuthApp),
+				Layer.succeed(FetchHttpClient.Fetch, fetchImpl),
+			]),
 		)
 	})
 })

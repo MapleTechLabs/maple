@@ -1,18 +1,32 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Field from "../../../../ui/field"
-import { field, fieldDescription, type FieldIds, fieldError, fieldLabel, type FieldState } from "../../../../ui/field"
-import { input } from "../../../../ui/input"
-import * as SelectView from "../../../../ui/select-view"
-import type * as Select from "../../../../ui/select"
-import { textarea } from "../../../../ui/textarea"
+import * as Field from "@maple/views/ui/field"
+import {
+	field,
+	fieldDescription,
+	type FieldIds,
+	fieldError,
+	fieldLabel,
+	type FieldState,
+} from "@maple/views/ui/field"
+import { input } from "@maple/views/ui/input"
+import * as SelectView from "@maple/views/ui/select-view"
+import type * as Select from "@maple/views/ui/select"
+import { textarea } from "@maple/views/ui/textarea"
 import { type FormField, Message, type Model } from "./model"
+import { Array as Arr } from "effect"
 
 // The `<Field className="items-stretch gap-1.5">` cells of `VariableForm`.
 
 type H = HtmlBuilder<Message>
 
 export const FIELD_CLASS = "items-stretch gap-1.5"
-const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
+const IDLE: FieldState = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
 
 export const idsOf = (model: Model, name: string, withDescription = false): FieldIds => {
 	const base = `${model.dialog.id}-${name}`
@@ -37,7 +51,8 @@ export const textField = (h: H, model: Model, options: TextFieldOptions): Html =
 	const isInvalid = options.isInvalid ?? false
 	// Only the input is invalid (`aria-invalid`); the Base UI field root is not.
 	const state = Field.stateOf(fieldModel, false)
-	const hasDescription = options.error === null && options.description !== undefined && options.description !== null
+	const hasDescription =
+		options.error === null && options.description !== undefined && options.description !== null
 	const ids = idsOf(model, options.field, hasDescription)
 	const wrap = (message: Field.Message) => Message.GotFieldMessage({ field: options.field, message })
 	const control =
@@ -113,5 +128,6 @@ export const selectField = (
 	})
 }
 
-export const itemsOf = (items: ReadonlyArray<SelectView.SelectOption>): ReadonlyArray<SelectView.SelectEntry> =>
-	items.map((item) => ({ _tag: "Item", item }))
+export const itemsOf = (
+	items: ReadonlyArray<SelectView.SelectOption>,
+): ReadonlyArray<SelectView.SelectEntry> => Arr.map(items, (item) => ({ _tag: "Item", item }))

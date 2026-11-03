@@ -9,17 +9,17 @@ import {
 } from "@maple/domain/ingest-rules"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Autocomplete from "../../../ui/autocomplete"
-import { button } from "../../../ui/button"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { input } from "../../../ui/input"
-import { label } from "../../../ui/label"
-import { nativeOption, nativeSelect } from "../../../ui/native-select"
-import { multiSegmentedSelect } from "../../../ui/segmented-select"
-import { toggle } from "../../../ui/toggle"
-import * as Combobox from "../../../ui/combobox"
+import * as Autocomplete from "@maple/views/ui/autocomplete"
+import { button } from "@maple/views/ui/button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { input } from "@maple/views/ui/input"
+import { label } from "@maple/views/ui/label"
+import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
+import { multiSegmentedSelect } from "@maple/views/ui/segmented-select"
+import { toggle } from "@maple/views/ui/toggle"
+import * as Combobox from "@maple/views/ui/combobox"
 import {
 	type ConditionDraft,
 	FIELD_LABELS,
@@ -34,6 +34,9 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { SIGNAL_LABELS } from "./summary"
 import { keyBoxId } from "./update"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, Record as Rec } from "effect"
 
 // The "When ... where ..." half of the sentence: signals and conditions.
 
@@ -50,8 +53,8 @@ export const clause = (h: H, lead: string, children: ReadonlyArray<Html>): Html 
 	)
 
 const isField = (value: string): value is IngestRuleField =>
-	IngestRuleField.literals.some((field) => field === value)
-const isOp = (value: string): value is IngestRuleOp => IngestRuleOp.literals.some((op) => op === value)
+	Arr.some(IngestRuleField.literals, (field) => field === value)
+const isOp = (value: string): value is IngestRuleOp => Arr.some(IngestRuleOp.literals, (op) => op === value)
 
 export const signalsClause = (h: H, model: Model): Html =>
 	clause(h, "When", [
@@ -60,14 +63,14 @@ export const signalsClause = (h: H, model: Model): Html =>
 			ariaLabel: "Signals",
 			value: model.draft.signals,
 			onToggle: (signal) => Message.ToggledSignal({ signal }),
-			options: IngestRuleSignal.literals.map((signal) => ({
+			options: Arr.map(IngestRuleSignal.literals, (signal) => ({
 				value: signal,
 				label: SIGNAL_LABELS[signal],
 				ariaLabel: SIGNAL_LABELS[signal],
 			})),
 			className: "self-start",
 		}),
-		h.p([h.Class("text-muted-foreground text-xs")], ["arrive at Maple"]),
+		typography(h, { size: "xs", tone: "muted", as: "p" }, ["arrive at Maple"]),
 	])
 
 const select = (
@@ -84,8 +87,13 @@ const select = (
 	h.div(
 		// A new option set gets a new element, and `Value` keeps the shown choice on the model's.
 		[
-			h.Key(`${options.id}:${options.entries.map((entry) => entry.value).join(",")}`),
-			h.Class(cn("flex flex-col gap-1", options.className)),
+			h.Key(
+				`${options.id}:${Arr.join(
+					Arr.map(options.entries, (entry) => entry.value),
+					",",
+				)}`,
+			),
+			h.Class(cn(vstackClass({ gap: "1" }), options.className)),
 		],
 		[
 			label(h, { className: "sr-only", attributes: [h.For(options.id)] }, [options.label]),
@@ -95,7 +103,7 @@ const select = (
 					defaultValue: options.value,
 					attributes: [h.Id(options.id), h.Value(options.value), h.OnChange(options.onChange)],
 				},
-				options.entries.map((entry) => nativeOption(entry.value, entry.label)),
+				Arr.map(options.entries, (entry) => nativeOption(entry.value, entry.label)),
 			),
 		],
 	)
@@ -128,9 +136,15 @@ const keyInput = (h: H, model: Model, condition: ConditionDraft): Html => {
 
 const chips = (h: H, condition: ConditionDraft, choices: ReadonlyArray<string>): Html => {
 	const chosen = splitList(condition.values)
-	return h.div(
-		[h.Role("group"), h.AriaLabel(`Condition ${condition.id} values`), h.Class("flex flex-wrap gap-1")],
-		choices.map((choice) =>
+	return hstack(
+		h,
+		{
+			gap: "1",
+			align: "stretch",
+			wrap: true,
+			attributes: [h.Role("group"), h.AriaLabel(`Condition ${condition.id} values`)],
+		},
+		Arr.map(choices, (choice) =>
 			toggle(
 				h,
 				{
@@ -156,7 +170,7 @@ const operand = (h: H, condition: ConditionDraft): ReadonlyArray<Html> => {
 				id,
 				label: `Condition ${condition.id} level`,
 				value: condition.value,
-				entries: Object.keys(SEVERITY_LEVELS).map((level) => ({ value: level, label: level })),
+				entries: Arr.map(Rec.keys(SEVERITY_LEVELS), (level) => ({ value: level, label: level })),
 				onChange: (value) => Message.ChangedConditionValue({ id: condition.id, value }),
 			}),
 		]
@@ -180,55 +194,53 @@ const operand = (h: H, condition: ConditionDraft): ReadonlyArray<Html> => {
 }
 
 const conditionRow = (h: H, model: Model, condition: ConditionDraft, index: number): Html =>
-	h.div(
-		[h.Key(String(condition.id)), h.Class("flex flex-wrap items-center gap-2")],
-		[
-			h.span([h.Class("text-muted-foreground w-8 shrink-0 text-xs")], [index === 0 ? "" : "and"]),
-			select(h, {
-				id: `ingest-rule-field-${condition.id}`,
-				label: `Condition ${condition.id} field`,
-				value: condition.field,
-				entries: fieldsFor(model.draft.signals).map((field) => ({
-					value: field,
-					label: FIELD_LABELS[field],
-				})),
-				onChange: (value) =>
-					Message.ChangedConditionField({
-						id: condition.id,
-						field: isField(value) ? value : "service_name",
-					}),
-			}),
-			...(isKeyed(condition.field) ? [keyInput(h, model, condition)] : []),
-			select(h, {
-				id: `ingest-rule-op-${condition.id}`,
-				label: `Condition ${condition.id} operator`,
-				value: condition.op,
-				entries: opsForField(condition.field).map((op) => ({ value: op, label: OP_LABELS[op] })),
-				onChange: (value) =>
-					Message.ChangedConditionOp({ id: condition.id, op: isOp(value) ? value : "eq" }),
-			}),
-			...operand(h, condition),
-			iconButton(
-				h,
-				{
-					label: `Remove condition ${condition.id}`,
-					attributes: [h.OnClick(Message.RemovedCondition({ id: condition.id }))],
-				},
-				[icon(h, "XmarkIcon")],
-			),
-		],
-	)
+	hstack(h, { gap: "2", wrap: true, attributes: [h.Key(String(condition.id))] }, [
+		h.span([h.Class("text-muted-foreground w-8 shrink-0 text-xs")], [index === 0 ? "" : "and"]),
+		select(h, {
+			id: `ingest-rule-field-${condition.id}`,
+			label: `Condition ${condition.id} field`,
+			value: condition.field,
+			entries: Arr.map(fieldsFor(model.draft.signals), (field) => ({
+				value: field,
+				label: FIELD_LABELS[field],
+			})),
+			onChange: (value) =>
+				Message.ChangedConditionField({
+					id: condition.id,
+					field: isField(value) ? value : "service_name",
+				}),
+		}),
+		...(isKeyed(condition.field) ? [keyInput(h, model, condition)] : []),
+		select(h, {
+			id: `ingest-rule-op-${condition.id}`,
+			label: `Condition ${condition.id} operator`,
+			value: condition.op,
+			entries: Arr.map(opsForField(condition.field), (op) => ({ value: op, label: OP_LABELS[op] })),
+			onChange: (value) =>
+				Message.ChangedConditionOp({ id: condition.id, op: isOp(value) ? value : "eq" }),
+		}),
+		...operand(h, condition),
+		iconButton(
+			h,
+			{
+				label: `Remove condition ${condition.id}`,
+				attributes: [h.OnClick(Message.RemovedCondition({ id: condition.id }))],
+			},
+			[icon(h, "XmarkIcon")],
+		),
+	])
 
 export const conditionsClause = (h: H, model: Model): Html =>
 	clause(h, "Where", [
 		...(model.draft.conditions.length === 0
 			? [
-					h.p(
-						[h.Class("text-muted-foreground text-sm")],
-						["Every record matches. Add a condition to narrow it."],
-					),
+					typography(h, { size: "sm", tone: "muted", as: "p" }, [
+						"Every record matches. Add a condition to narrow it.",
+					]),
 				]
-			: model.draft.conditions.map((condition, index) => conditionRow(h, model, condition, index))),
+			: Arr.map(model.draft.conditions, (condition, index) =>
+					conditionRow(h, model, condition, index),
+				)),
 		h.div(
 			[],
 			[

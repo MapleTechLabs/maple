@@ -5,7 +5,7 @@ import { AsyncData } from "foldkit"
 import { MapleInternalApiClient } from "../platform/api-clients"
 import type { NavSurface } from "../shell/nav"
 import { readThrough } from "./read-cache"
-import { requestKey } from "./request-key"
+import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "./time-range"
 
 // The infra surfaces: the presence probe plus the four

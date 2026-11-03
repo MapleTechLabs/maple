@@ -2,14 +2,14 @@ import type { SupabaseIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeShortFrom, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { button, linkButton } from "../../ui/button"
-import { badge } from "../../ui/display"
-import { icon } from "../../ui/icon"
-import { switchControl } from "../../ui/switch"
+import { button, linkButton } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { switchControl } from "@maple/views/ui/switch"
 import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
 import { relativeTime } from "../kit/relative-time"
 import { healthPill, isReadPending, lifecycleOf, projectHealth } from "../infra-integrations/supabase/health"
@@ -26,6 +26,10 @@ import {
 	integrationErrorNotice,
 	integrationStatusCard,
 } from "./view-integration-card"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
+import { columnClass } from "@maple/views/ui/column"
 
 // The Supabase card: connect, then the organization's projects and their switches.
 
@@ -68,7 +72,7 @@ export const lastDataLabel = (
 				? ["logs waiting for first poll"]
 				: [`logs ${formatRelativeShortFrom(project.logsLastPolledAt, nowMs)}`]
 	const parts = [...metricsPart, ...logsPart]
-	return parts.length > 0 ? parts.join(" · ") : project.metricsEnabled ? "" : "not collected"
+	return parts.length > 0 ? Arr.join(parts, " · ") : project.metricsEnabled ? "" : "not collected"
 }
 
 const projectSwitch = (
@@ -173,7 +177,10 @@ export const supabaseProjectNotes = (h: H, project: Project): ReadonlyArray<Html
 		? [
 				noteLine(
 					h,
-					`Drains: ${project.logDrains.map((drain) => drainLabel(project, drain)).join(", ")}`,
+					`Drains: ${Arr.join(
+						Arr.map(project.logDrains, (drain) => drainLabel(project, drain)),
+						", ",
+					)}`,
 					"muted",
 				),
 			]
@@ -194,23 +201,25 @@ const projectRow = (h: H, model: Model, project: Project): Html => {
 			h.Key(project.ref),
 			h.Class(
 				cn(
-					"flex items-center gap-4 border-b border-border-subtle px-4 py-2.5 text-sm last:border-0",
+					hstackClass({
+						gap: "4",
+						className: typographyClass({
+							size: "sm",
+							className: stripClass("row"),
+						}),
+					}),
 					isPaused && "opacity-60",
 				),
 			),
 		],
 		[
-			h.span(
-				[h.Class("flex w-0 min-w-48 flex-1 flex-col")],
-				[
-					h.span([h.Class("truncate"), h.Title(project.name)], [project.name]),
-					h.span(
-						[h.Class("truncate font-mono text-2xs text-muted-foreground")],
-						[project.region === "" ? project.ref : `${project.ref} · ${project.region}`],
-					),
-					...supabaseProjectNotes(h, project),
-				],
-			),
+			vstack(h, { grow: true, as: "span", className: "w-0 min-w-48" }, [
+				h.span([h.Class("truncate"), h.Title(project.name)], [project.name]),
+				typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
+					project.region === "" ? project.ref : `${project.ref} · ${project.region}`,
+				]),
+				...supabaseProjectNotes(h, project),
+			]),
 			h.span(
 				[h.Class("flex w-24 shrink-0")],
 				[
@@ -234,7 +243,7 @@ const projectsTable = (h: H, model: Model, status: SupabaseIntegrationStatus): H
 		h,
 		{ ariaLabel: "Supabase projects" },
 		[
-			columnHead(h, { label: "Project", width: "w-0 min-w-48 flex-1" }),
+			columnHead(h, { label: "Project", width: columnClass({ min: "48" }) }),
 			columnHead(h, { label: "Status", width: "w-24" }),
 			columnHead(h, { label: "Last data", width: "w-48" }),
 			columnHead(h, { label: "Metrics", width: "w-20", align: "right" }),
@@ -243,7 +252,7 @@ const projectsTable = (h: H, model: Model, status: SupabaseIntegrationStatus): H
 		],
 		status.projects.length === 0
 			? [dataTableEmpty(h, ["No projects in this organization yet. Sync after creating one."])]
-			: status.projects.map((project) => projectRow(h, model, project)),
+			: Arr.map(status.projects, (project) => projectRow(h, model, project)),
 	)
 
 export const SUPABASE_LOGS_NOTE =
@@ -261,7 +270,7 @@ const footer = (h: H): Html =>
 			h.a(
 				[
 					h.Href(hrefOf(AppRoute.InfraSupabase({ search: {} }))),
-					h.Class("shrink-0 hover:text-foreground active:text-foreground"),
+					h.Class(typographyClass({ hoverTone: "foreground", className: "shrink-0" })),
 				],
 				["View in Infrastructure"],
 			),

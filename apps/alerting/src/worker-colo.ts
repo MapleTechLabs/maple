@@ -27,10 +27,10 @@ export const lookupColo = Effect.fn("alerting.lookup_colo")(
 		const body = yield* response.text.pipe(
 			Effect.mapError((cause) => new ColoLookupError({ message: "Trace body unreadable", cause })),
 		)
-		return yield* Option.match(parseTraceColo(body), {
-			onNone: () => Effect.fail(new ColoLookupError({ message: "Trace body has no colo" })),
-			onSome: Effect.succeed,
-		})
+		return yield* Effect.fromOption(
+			parseTraceColo(body),
+			() => new ColoLookupError({ message: "Trace body has no colo" }),
+		)
 	},
 	(effect) =>
 		effect.pipe(

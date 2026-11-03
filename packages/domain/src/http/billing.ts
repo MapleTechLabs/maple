@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { TAX_ID_TYPE_VALUES } from "../billing-tax-ids"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
@@ -291,8 +291,8 @@ export const mergeSpendLimits = (
 	readonly limitType?: BillingLimitType
 	readonly overageLimit?: number
 }> => {
-	const updated = new Set<string>(updates.map((limit) => limit.featureId))
-	const kept = existing.flatMap((limit) =>
+	const updated = new Set<string>(Arr.map(updates, (limit) => limit.featureId))
+	const kept = Arr.flatMap(existing, (limit) =>
 		limit.featureId === undefined || updated.has(limit.featureId)
 			? []
 			: [

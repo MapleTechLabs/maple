@@ -1,29 +1,32 @@
-import { formatDuration } from "@maple/ui/lib/format"
+import { countLabel, formatDuration } from "@maple/ui/lib/format"
 import { formatClock } from "@maple/ui/lib/replay-format"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { cn } from "@maple/ui/lib/utils"
 import { parseChTimestampMs, spanRange } from "../../../components/replays/replay-timeline"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { badge } from "../../../ui/display"
-import { emptyMessage } from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { eyebrow } from "../../../ui/eyebrow"
-import { httpSpanLabel } from "../../../ui/http-span-label"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { panel } from "../../../ui/panel"
-import { skeleton } from "../../../ui/skeleton"
+import { badge } from "@maple/views/ui/display"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { httpSpanLabel } from "@maple/views/ui/http-span-label"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { panel } from "@maple/views/ui/panel"
+import { pressable } from "@maple/views/ui/pressable"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { stableSlice } from "../../kit/stable-slice"
 import { MARKER_LABELS, MARKER_STYLES } from "../kit/replay-meta"
 import { Message } from "./message"
 import type { Model, SpanRow, TraceSummary } from "./model"
 import { bufferedTrack, idleBandsTrack, markersTrack, type Playhead, playheadOf } from "./view-player"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The replay editor timeline.
-// TODO(tooltip): the trace and span bars' hover tooltips.
 
 type H = HtmlBuilder<Message>
 
@@ -40,20 +43,17 @@ export const markerLegend = (h: H): Html =>
 			h.Class("flex flex-wrap items-center gap-x-3 gap-y-1 text-3xs text-muted-foreground"),
 			h.AriaLabel("Activity marker legend"),
 		],
-		KINDS.map((kind) =>
-			h.li(
-				[h.Class("flex items-center gap-1.5")],
-				[
-					h.span(
-						[
-							h.Class(cn("size-1.5 rounded-full ring-1 ring-card", MARKER_STYLES[kind])),
-							h.AriaHidden(true),
-						],
-						[],
-					),
-					MARKER_LABELS[kind],
-				],
-			),
+		Arr.map(KINDS, (kind) =>
+			hstack(h, { gap: "1.5", as: "li" }, [
+				h.span(
+					[
+						h.Class(cn("size-1.5 rounded-full ring-1 ring-card", MARKER_STYLES[kind])),
+						h.AriaHidden(true),
+					],
+					[],
+				),
+				MARKER_LABELS[kind],
+			]),
 		),
 	)
 
@@ -65,7 +65,7 @@ const timeRuler = (h: H, totalMs: number): Html => {
 			h.div([h.Class(cn(LANE_GUTTER, "shrink-0 border-r border-border-subtle"))], []),
 			h.div(
 				[h.Class("relative h-5 flex-1")],
-				ticks.map((ms, i) =>
+				Arr.map(ticks, (ms, i) =>
 					h.span(
 						[
 							h.Class(
@@ -203,6 +203,10 @@ const rangeOf = (view: TracesView, startTime: string, durationMs: number) =>
 		realTotalMs: view.totalMs,
 	})
 
+/** A bar's tooltip: what fired, when on the recording's clock, and for how long. */
+const firedAt = (name: string, range: ReturnType<typeof rangeOf>, durationMs: number): string =>
+	`${name}: fired at ${formatClock(range.startMs)} · ${Math.round(durationMs)}ms${range.outOfRange ? " · outside recording" : ""}`
+
 const spanRowItem = (h: H, view: TracesView, span: SpanRow): Html => {
 	const range = rangeOf(view, span.startTime, span.durationMs)
 	const leftPct = pct(range.startMs, view.totalMs)
@@ -223,16 +227,17 @@ const spanRowItem = (h: H, view: TracesView, span: SpanRow): Html => {
 						spanAttributes: span.spanAttributes,
 						spanKind: span.spanKind,
 						className: "text-3xs",
-						textClassName: "text-3xs text-muted-foreground",
+						textClassName: typographyClass({ size: "3xs", tone: "muted" }),
 					}),
 				],
 			),
-			h.button(
-				[
-					h.Type("button"),
-					h.OnClick(Message.RequestedSeek({ offsetMs: range.startMs })),
-					h.Class("relative h-5 flex-1 cursor-pointer"),
-				],
+			pressable(
+				h,
+				{
+					onClick: Message.RequestedSeek({ offsetMs: range.startMs }),
+					className: "relative h-5 flex-1 cursor-pointer",
+					attributes: tooltipTrigger(h, firedAt(span.spanName, range, span.durationMs)),
+				},
 				[
 					h.span(
 						[
@@ -267,13 +272,16 @@ const spanLane = (h: H, view: TracesView, traceId: string): Html => {
 		onData: (spans) =>
 			spans.length === 0
 				? emptyMessage(h, { className: "bg-surface-faint py-2 text-2xs" }, [
-						"No spans found for this trace.",
+						"No spans found for this trace",
 					])
 				: h.div(
 						[h.Class("max-h-56 space-y-px overflow-y-auto bg-surface-faint py-1")],
-						[...spans]
-							.sort((a, b) => parseChTimestampMs(a.startTime) - parseChTimestampMs(b.startTime))
-							.map((span) => spanRowItem(h, view, span)),
+						Arr.map(
+							[...spans].sort(
+								(a, b) => parseChTimestampMs(a.startTime) - parseChTimestampMs(b.startTime),
+							),
+							(span) => spanRowItem(h, view, span),
+						),
 					),
 	})
 }
@@ -333,53 +341,58 @@ const traceRow = (h: H, view: TracesView, summary: TraceSummary): Html => {
 									h.Class(
 										"group/trace flex min-w-0 flex-1 items-center rounded-sm px-1 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 									),
+									...tooltipTrigger(
+										h,
+										`Open trace in new tab · ${summary.rootServiceName} · ${countLabel(summary.spanCount, "span")}`,
+									),
 								],
 								[
-									h.span(
-										[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
-										[
-											h.span(
-												[
-													h.Class(
-														"flex items-center gap-1 truncate font-medium leading-tight text-foreground",
+									vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
+										h.span(
+											[
+												h.Class(
+													"flex items-center gap-1 truncate font-medium leading-tight text-foreground",
+												),
+											],
+											[
+												httpSpanLabel(h, {
+													spanName: summary.rootSpanName || "trace",
+													spanAttributes: parseAttributes(
+														summary.rootSpanAttributes,
 													),
-												],
-												[
-													httpSpanLabel(h, {
-														spanName: summary.rootSpanName || "trace",
-														spanAttributes: parseAttributes(
-															summary.rootSpanAttributes,
-														),
-														spanKind: summary.rootSpanKind,
-														className: "min-w-0",
-														textClassName: "truncate",
-													}),
-													icon(h, "ExternalLinkIcon", {
-														className:
-															"size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/trace:opacity-100",
-													}),
-												],
-											),
-											h.span(
-												[
-													h.Class(
-														"block truncate font-mono text-3xs leading-tight text-muted-foreground",
-													),
-												],
-												[summary.rootServiceName],
-											),
-										],
-									),
+													spanKind: summary.rootSpanKind,
+													className: "min-w-0",
+													textClassName: "truncate",
+												}),
+												icon(h, "ExternalLinkIcon", {
+													className:
+														"size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/trace:opacity-100",
+												}),
+											],
+										),
+										h.span(
+											[
+												h.Class(
+													"block truncate font-mono text-3xs leading-tight text-muted-foreground",
+												),
+											],
+											[summary.rootServiceName],
+										),
+									]),
 								],
 							),
 						],
 					),
-					h.button(
-						[
-							h.Type("button"),
-							h.OnClick(Message.RequestedSeek({ offsetMs: range.startMs })),
-							h.Class("relative h-11 flex-1 cursor-pointer"),
-						],
+					pressable(
+						h,
+						{
+							onClick: Message.RequestedSeek({ offsetMs: range.startMs }),
+							className: "relative h-11 flex-1 cursor-pointer",
+							attributes: tooltipTrigger(
+								h,
+								firedAt(summary.rootSpanName, range, summary.durationMs),
+							),
+						},
 						[
 							h.span(
 								[
@@ -447,7 +460,7 @@ const tracesTrack = (h: H, view: TracesView, traceIds: ReadonlyArray<string>): H
 						])
 					: h.ul(
 							[h.Class("max-h-72 overflow-y-auto")],
-							summaries.map((summary) => traceRow(h, view, summary)),
+							Arr.map(summaries, (summary) => traceRow(h, view, summary)),
 						),
 			],
 		}),

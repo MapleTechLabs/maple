@@ -9,7 +9,7 @@ import {
 	type AlertRuleId,
 } from "@maple/domain/http"
 import { projectAlertLifecycleEvent } from "@maple/alerting-core"
-import { Effect, Result } from "effect"
+import { Effect, Result, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import type { EmailServiceApi } from "@maple/backend/platform/EmailService"
@@ -228,7 +228,16 @@ export const makeAlertDestinationDelivery = (options: {
 			...context,
 		}
 		const payload = yield* buildPayload(fullContext, destinationRow.orgId)
-		return yield* dispatchDelivery(fullContext, JSON.stringify(payload))
+		const payloadJson = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(payload).pipe(
+			Effect.mapError(
+				(cause) =>
+					new AlertDeliveryError({
+						message: `Unable to encode the delivery payload for rule ${context.ruleId}`,
+						cause,
+					}),
+			),
+		)
+		return yield* dispatchDelivery(fullContext, payloadJson)
 	})
 
 	return {

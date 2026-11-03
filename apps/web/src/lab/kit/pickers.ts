@@ -1,10 +1,10 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Autocomplete from "../../ui/autocomplete"
-import * as Combobox from "../../ui/combobox"
-import { chipsView, view as comboboxView } from "../../ui/combobox-view"
-import { icon } from "../../ui/icon"
-import * as Select from "../../ui/select"
-import { type SelectEntry, selectedIndexOf, view as selectView } from "../../ui/select-view"
+import * as Autocomplete from "@maple/views/ui/autocomplete"
+import * as Combobox from "@maple/views/ui/combobox"
+import { chipsView, view as comboboxView } from "@maple/views/ui/combobox-view"
+import { icon } from "@maple/views/ui/icon"
+import * as Select from "@maple/views/ui/select"
+import { type SelectEntry, selectedIndexOf, view as selectView } from "@maple/views/ui/select-view"
 
 // apps/web/src/lab/kit/pickers.ts: the select, combobox and autocomplete fixtures shared by the
 // forms page (closed) and the overlays page (open). `place` positions each one's parts.

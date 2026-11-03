@@ -14,7 +14,19 @@
  */
 import { assert, describe, it } from "@effect/vitest"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
-import { Cause, Duration, Effect, Exit, Fiber, Layer, Option, Redacted, Schema, Stream } from "effect"
+import {
+	Cause,
+	Duration,
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Stream,
+	Array as Arr,
+} from "effect"
 import { TestClock } from "effect/testing"
 import type { Tracer } from "effect"
 import { AiError, LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
@@ -23,17 +35,24 @@ import { FetchHttpClient } from "effect/http"
 import { instrumentLanguageModel } from "./genai-spans"
 import { layerLlm, MODEL_ATTEMPT_CAP, MODEL_CALL_OUTPUT_TOKENS, resolveTriageModel } from "./Llm"
 
+/** A stubbed fetch body as text: the client sends the JSON as bytes. */
+const requestBodyText = (body: BodyInit | null | undefined): string =>
+	typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : "{}"
+
 /** Two frames, the first naming the response and the model that served it. */
-const SSE = [
-	": OPENROUTER PROCESSING",
-	"",
-	'data: {"id":"gen-1","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}]}',
-	"",
-	'data: {"id":"gen-1","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":1,"total_tokens":5}}',
-	"",
-	"data: [DONE]",
-	"",
-].join("\n")
+const SSE = Arr.join(
+	[
+		": OPENROUTER PROCESSING",
+		"",
+		'data: {"id":"gen-1","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}]}',
+		"",
+		'data: {"id":"gen-1","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":1,"total_tokens":5}}',
+		"",
+		"data: [DONE]",
+		"",
+	],
+	"\n",
+)
 
 const ENV = { OPENROUTER_API_KEY: Redacted.make("test-key") }
 
@@ -99,7 +118,10 @@ const runModelCall = <A extends { readonly type: string }, E, R>(
 ) =>
 	Effect.gen(function* () {
 		const recorder = recordingTracer()
-		const body = `${frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("")}data: [DONE]\n\n`
+		const body = `${Arr.join(
+			Arr.map(frames, (frame) => `data: ${JSON.stringify(frame)}\n\n`),
+			"",
+		)}data: [DONE]\n\n`
 		const delivered: Array<string> = []
 
 		const exit = yield* call.pipe(
@@ -257,7 +279,9 @@ describe("the model-call span", () => {
 			assert.strictEqual(modelCall?.endedWith.get(MAPLE_NATIVE_TURN_ID_ATTR), "inv_1_h1")
 			assert.strictEqual(modelCall?.endedWith.get("gen_ai.workflow.name"), "investigation")
 			// Only the model call: the gateway reads the key alone as an agent span.
-			const stamped = recorder.spans.filter((span) => span.attributes.has(MAPLE_NATIVE_SESSION_ID_ATTR))
+			const stamped = Arr.filter(recorder.spans, (span) =>
+				span.attributes.has(MAPLE_NATIVE_SESSION_ID_ATTR),
+			)
 			assert.deepStrictEqual(stamped, [modelCall])
 		}),
 	)
@@ -270,16 +294,19 @@ describe("the model-call span", () => {
 		Effect.gen(function* () {
 			const recorder = recordingTracer()
 			const env = { ...ENV, MAPLE_TRIAGE_REASONING_EFFORT: "high" }
-			const sse = [
-				'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"Look"},"finish_reason":null}]}',
-				"",
-				'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"content":"ing"},"finish_reason":null}]}',
-				"",
-				'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":40,"completion_tokens":12,"total_tokens":52,"cost":0.0042,"prompt_tokens_details":{"cached_tokens":30},"completion_tokens_details":{"reasoning_tokens":5}}}',
-				"",
-				"data: [DONE]",
-				"",
-			].join("\n")
+			const sse = Arr.join(
+				[
+					'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"Look"},"finish_reason":null}]}',
+					"",
+					'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"content":"ing"},"finish_reason":null}]}',
+					"",
+					'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":40,"completion_tokens":12,"total_tokens":52,"cost":0.0042,"prompt_tokens_details":{"cached_tokens":30},"completion_tokens_details":{"reasoning_tokens":5}}}',
+					"",
+					"data: [DONE]",
+					"",
+				],
+				"\n",
+			)
 
 			yield* LanguageModel.streamText({
 				prompt: [
@@ -615,10 +642,12 @@ describe("the model-call span", () => {
 			)
 
 			assert.isTrue(
-				recorder.spans.some((span) => span.attributes.get("gen_ai.operation.name") === "chat"),
+				Arr.some(recorder.spans, (span) => span.attributes.get("gen_ai.operation.name") === "chat"),
 				"no model-call span was opened",
 			)
-			assert.isFalse(recorder.spans.some((span) => span.attributes.has(MAPLE_NATIVE_SESSION_ID_ATTR)))
+			assert.isFalse(
+				Arr.some(recorder.spans, (span) => span.attributes.has(MAPLE_NATIVE_SESSION_ID_ATTR)),
+			)
 		}),
 	)
 })
@@ -649,7 +678,7 @@ describe("delta joining", () => {
 				Stream.runCollect,
 				Effect.provide(model),
 			)
-			return parts.filter((part) => part.type === "text-delta")
+			return Arr.filter(parts, (part) => part.type === "text-delta")
 		})
 
 	/** The request's own `options` once shadowed this setting, and nothing was ever joined. */
@@ -706,7 +735,7 @@ describe("runaway model calls", () => {
 		Effect.gen(function* () {
 			const bodies: Array<unknown> = []
 			const capture: typeof globalThis.fetch = (_input, init) => {
-				bodies.push(JSON.parse(String(init?.body)))
+				bodies.push(JSON.parse(requestBodyText(init?.body)))
 				return sseFetch(_input, init)
 			}
 			yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
@@ -781,7 +810,7 @@ describe("model calls cut at their attempt cap", () => {
 			assert.lengthOf(retried, 1)
 			// Nothing of the cut attempt reached the engine, so it may treat the retry as the only call.
 			assert.deepStrictEqual(
-				parts.map((part) => part.type),
+				Arr.map(parts, (part) => part.type),
 				["text-start", "text-delta", "text-end", "finish"],
 			)
 		}),
@@ -820,7 +849,7 @@ describe("model calls cut at their attempt cap", () => {
 	const stalledThenAnswered =
 		(bodies: Array<Record<string, unknown>>): typeof globalThis.fetch =>
 		(input, init) => {
-			bodies.push(JSON.parse(String(init?.body)))
+			bodies.push(JSON.parse(requestBodyText(init?.body)))
 			if (bodies.length > 1) return sseFetch(input, init)
 			const open = new ReadableStream<Uint8Array>({
 				start: (controller) =>
@@ -858,7 +887,7 @@ describe("model calls cut at their attempt cap", () => {
 			assert.lengthOf(bodies, 2)
 			assert.deepInclude(bodies[0], { reasoning: { effort: "high" } })
 			assert.deepInclude(bodies[1], { reasoning: { effort: "low" } })
-			assert.isTrue(parts.some((part) => part.type === "finish"))
+			assert.isTrue(Arr.some(parts, (part) => part.type === "finish"))
 		}),
 	)
 

@@ -1,5 +1,5 @@
 import type * as cf from "@cloudflare/workers-types"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { type CachedValue, type StatusStorage, StatusStorageError } from "./ports"
 
 /** How long the colo cache keeps a copy for the last-resort fallback; freshness is judged separately. */
@@ -28,7 +28,7 @@ export const nativeStorage = (bindings: StatusBindings): StatusStorage => {
 		kvPut: (key, value) => call("kv", key, () => bindings.kv.put(key, value)),
 		kvList: (prefix, limit) =>
 			call("kv", prefix, () => bindings.kv.list({ prefix, limit })).pipe(
-				Effect.map((page) => page.keys.map((key) => key.name)),
+				Effect.map((page) => Arr.map(page.keys, (key) => key.name)),
 			),
 		r2Get: (key) =>
 			call("r2", key, () => bindings.bucket.get(key)).pipe(

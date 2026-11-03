@@ -1,6 +1,6 @@
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, String as Str } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { load } from "foldkit/navigation"
@@ -10,7 +10,7 @@ import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
 import { leaveTargetOf, needsRegion, planOf, wrongRegionOf } from "./plan-gate"
 import * as OrgSwitcher from "../../shell/clerk-org-switcher"
-import * as Menu from "../../ui/menu"
+import * as Menu from "@maple/views/ui/menu"
 import type { PageContext, PageSubscriptionInput } from "../contract"
 import type * as SourcesFlow from "../sources/new/embed"
 import * as CliLogin from "./cli-login"
@@ -173,7 +173,7 @@ const fresh = <ScreenModel extends Screen, ScreenMessage>(
 	)
 
 export const init = (route: AppRoute, key: string, inputs: Inputs): Option.Option<Step> =>
-	key.startsWith("WrongRegion:")
+	Str.startsWith("WrongRegion:")(key)
 		? Option.flatMap(wrongRegionOf(inputs.maybeOrganization), (region) => {
 				const href = hrefOf(route)
 				const target = leaveTargetOf(region, href, inputs.memberships)

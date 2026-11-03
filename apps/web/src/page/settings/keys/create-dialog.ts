@@ -4,17 +4,17 @@ import {
 	type ApiKeyCreateOptions,
 	buildApiKeyCreatePayload,
 } from "../../../components/settings/api-key-create-payload"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { trackProduct } from "../../../data/analytics"
-import { LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Dialog from "../../../ui/dialog"
-import * as Field from "../../../ui/field"
-import * as Select from "../../../ui/select"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as Select from "@maple/views/ui/select"
 
 // `CreateApiKeyDialog`, as one Submodel shared by the Keys and MCP tabs.
 
@@ -91,7 +91,6 @@ export const Message = defineMessageUnion({
 	GotDialogMessage: { message: Dialog.Message },
 	GotNameMessage: { message: Field.Message },
 	GotDescriptionMessage: { message: Field.Message },
-	PressedNameKey: { key: Schema.String },
 	GotExpirationMessage: { message: Select.Message },
 	ClickedAccessMode: { mode: AccessMode },
 	ClickedAllScopes: { level: ScopeLevel },
@@ -148,10 +147,10 @@ export const TrackKeyCreated = Command.define("TrackApiKeyCreated", {
 const levelOf = (model: Model, family: string): ScopeLevel => model.scopeLevels[family] ?? "none"
 
 export const selectedFamilyCount = (model: Model): number =>
-	SCOPE_FAMILIES.filter((family) => levelOf(model, family.id) !== "none").length
+	Arr.filter(SCOPE_FAMILIES, (family) => levelOf(model, family.id) !== "none").length
 
 const scopesOf = (model: Model): ReadonlyArray<V2Scope> =>
-	SCOPE_FAMILIES.flatMap((family) => {
+	Arr.flatMap(SCOPE_FAMILIES, (family) => {
 		const level = levelOf(model, family.id)
 		return level === "read" || level === "write" ? [`${family.id}:${level}`] : []
 	})
@@ -162,11 +161,11 @@ const restrictedScopes = (model: Model): ReadonlyArray<V2Scope> | undefined =>
 const isMissingScopes = (model: Model): boolean => restrictedScopes(model)?.length === 0
 
 export const canCreate = (model: Model): boolean =>
-	model.name.value.trim().length > 0 && !isMissingScopes(model) && !model.isCreating
+	Str.trim(model.name.value).length > 0 && !isMissingScopes(model) && !model.isCreating
 
 /** A disabled Create says which field is missing. */
 export const blockedReason = (model: Model): string | null =>
-	model.name.value.trim().length === 0
+	Str.trim(model.name.value).length === 0
 		? "Name the key so you can tell it apart later."
 		: isMissingScopes(model)
 			? "Give at least one resource family read or write access."
@@ -224,7 +223,6 @@ export const update = (model: Model, message: Message): Return =>
 		GotDescriptionMessage: ({ message: child }) => ({
 			model: { ...model, description: field(model.description, child) },
 		}),
-		PressedNameKey: ({ key }) => (key === "Enter" ? create(model) : { model }),
 		GotExpirationMessage: ({ message: child }) => {
 			const step = Select.update(model.expiration, child)
 			return {
@@ -238,7 +236,7 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedAllScopes: ({ level }) => ({
 			model: {
 				...model,
-				scopeLevels: Object.fromEntries(SCOPE_FAMILIES.map((family) => [family.id, level])),
+				scopeLevels: Rec.fromEntries(Arr.map(SCOPE_FAMILIES, (family) => [family.id, level])),
 			},
 		}),
 		ClickedClearScopes: () => ({ model: { ...model, scopeLevels: {} } }),

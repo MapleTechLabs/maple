@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { exploreAttributeKeys } from "@maple/query-engine/observability"
 import { QuerySpec } from "@maple/query-engine"
@@ -25,7 +25,11 @@ const facets = (window: Window) =>
 		end_time: window.endTime,
 	}).pipe(
 		Effect.map(({ data }): KnownValues => {
-			const of = (type: string) => data.filter((r) => r.facetType === type).map((r) => r.name)
+			const of = (type: string) =>
+				Arr.map(
+					Arr.filter(data, (r) => r.facetType === type),
+					(r) => r.name,
+				)
 			const services = of("service")
 			const environments = of("environment")
 			return {
@@ -48,7 +52,7 @@ const attributeKeys = (window: Window, service: string | undefined) =>
 				limit: 500,
 			}),
 		),
-	).pipe(Effect.map((lists): KnownValues => ({ attributeKeys: lists.flat().map((k) => k.key) })))
+	).pipe(Effect.map((lists): KnownValues => ({ attributeKeys: Arr.map(lists.flat(), (k) => k.key) })))
 
 const spanNames = (window: Window, service: string | undefined) =>
 	Effect.gen(function* () {
@@ -63,7 +67,7 @@ const spanNames = (window: Window, service: string | undefined) =>
 		const tenant = yield* CurrentMcpTenant
 		const engine = yield* QueryEngineService
 		const response = yield* engine.execute(tenant, { ...window, query })
-		const names = response.result.kind === "breakdown" ? response.result.data.map((d) => d.name) : []
+		const names = response.result.kind === "breakdown" ? Arr.map(response.result.data, (d) => d.name) : []
 		return { spanNames: names } satisfies KnownValues
 	})
 
@@ -71,25 +75,27 @@ const spanNames = (window: Window, service: string | undefined) =>
  * Hints for the filters of an empty result whose value does not exist in the
  * window. Best effort: a lookup that fails contributes no hint, never an error.
  */
-export const emptyResultHints = (
+export const emptyResultHints = Effect.fn("McpTool.emptyResultHints")(function* (
 	requested: RequestedFilters,
 	window: Window,
 	options: { readonly traceKeys?: boolean } = {},
-) =>
-	Effect.gen(function* () {
-		const soft = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-			effect.pipe(Effect.orElseSucceed((): KnownValues => ({})))
-		const needsFacets = requested.service !== undefined || (requested.environments?.length ?? 0) > 0
-		const lookups = [
+) {
+	const soft = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+		effect.pipe(Effect.orElseSucceed((): KnownValues => ({})))
+	const needsFacets = requested.service !== undefined || (requested.environments?.length ?? 0) > 0
+	const lookups = Arr.filter(
+		[
 			needsFacets ? soft(facets(window)) : undefined,
 			requested.attributeKey !== undefined && options.traceKeys !== false
 				? soft(attributeKeys(window, undefined))
 				: undefined,
 			requested.spanName !== undefined ? soft(spanNames(window, requested.service)) : undefined,
-		].filter((lookup) => lookup !== undefined)
-		const known = yield* Effect.all(lookups, { concurrency: "unbounded" })
-		return missingFilterHints(
-			requested,
-			known.reduce<KnownValues>((acc, values) => ({ ...acc, ...values }), {}),
-		)
-	}).pipe(Effect.withSpan("McpTool.emptyResultHints"))
+		],
+		(lookup) => lookup !== undefined,
+	)
+	const known = yield* Effect.all(lookups, { concurrency: "unbounded" })
+	return missingFilterHints(
+		requested,
+		known.reduce<KnownValues>((acc, values) => ({ ...acc, ...values }), {}),
+	)
+})

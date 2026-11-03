@@ -1,4 +1,4 @@
-import { Match, Schema } from "effect"
+import { Match, Schema, Array as Arr, String as Str } from "effect"
 
 // Schemas
 
@@ -36,7 +36,7 @@ export class WhereClauseParseWarning extends Schema.TaggedError<WhereClauseParse
 // Key alias normalization (single source of truth)
 
 export const normalizeKey = (raw: string): string =>
-	Match.value(raw.trim().toLowerCase()).pipe(
+	Match.value(Str.toLowerCase(Str.trim(raw))).pipe(
 		Match.when("service", () => "service.name"),
 		Match.when("span", () => "span.name"),
 		// The stable semconv key is a resource attribute too; without this it fell
@@ -56,24 +56,24 @@ const TRUE_VALUES = new Set(["1", "true", "yes", "y"])
 const FALSE_VALUES = new Set(["0", "false", "no", "n"])
 
 export function parseBoolean(value: string): boolean | null {
-	const normalized = value.trim().toLowerCase()
+	const normalized = Str.toLowerCase(Str.trim(value))
 	if (TRUE_VALUES.has(normalized)) return true
 	if (FALSE_VALUES.has(normalized)) return false
 	return null
 }
 
 export function parseNumber(value: string): number | null {
-	if (!value.trim()) return null
+	if (!Str.trim(value)) return null
 	const parsed = Number(value)
 	if (!Number.isFinite(parsed)) return null
 	return parsed
 }
 
 export function splitCsv(input: string): string[] {
-	return input
-		.split(",")
-		.map((item) => item.trim())
-		.filter(Boolean)
+	return Arr.filter(
+		Arr.map(Str.split(",")(input), (item) => Str.trim(item)),
+		Boolean,
+	)
 }
 
 // Where-clause parser
@@ -102,16 +102,19 @@ function splitOnKeyword(expression: string, keyword: "AND" | "OR"): string[] {
 		if (char === "(") depth++
 		else if (char === ")") depth = Math.max(0, depth - 1)
 		else if (depth === 0 && (char === " " || char === "\t" || char === "\n" || char === "\r")) {
-			const separator = separatorPattern.exec(expression.slice(i))
+			const separator = separatorPattern.exec(Str.slice(i)(expression))
 			if (separator) {
-				parts.push(expression.slice(start, i))
+				parts.push(Str.slice(start, i)(expression))
 				i += separator[0].length - 1
 				start = i + 1
 			}
 		}
 	}
-	parts.push(expression.slice(start))
-	return parts.map((part) => part.trim()).filter(Boolean)
+	parts.push(Str.slice(start)(expression))
+	return Arr.filter(
+		Arr.map(parts, (part) => Str.trim(part)),
+		Boolean,
+	)
 }
 
 /**
@@ -130,8 +133,8 @@ export function splitWhereClause(expression: string): string[] {
  * value matching something else.
  */
 export function quoteWhereValue(value: string): string {
-	if (!value.includes('"')) return `"${value}"`
-	if (!value.includes("'")) return `'${value}'`
+	if (!Str.includes('"')(value)) return `"${value}"`
+	if (!Str.includes("'")(value)) return `'${value}'`
 	return `"${value}"`
 }
 
@@ -160,8 +163,8 @@ function parseSimpleClause(part: string): ParsedClause | WhereClauseParseWarning
 	const notExistsMatch = part.match(/^([a-zA-Z0-9_.-]+)\s+!\s*exists$/i)
 	if (notExistsMatch) {
 		return {
-			key: notExistsMatch[1].trim().toLowerCase(),
-			rawKey: notExistsMatch[1].trim(),
+			key: Str.toLowerCase(Str.trim(notExistsMatch[1])),
+			rawKey: Str.trim(notExistsMatch[1]),
 			operator: "!exists",
 			value: "",
 		}
@@ -170,8 +173,8 @@ function parseSimpleClause(part: string): ParsedClause | WhereClauseParseWarning
 	const existsMatch = part.match(/^([a-zA-Z0-9_.-]+)\s+exists$/i)
 	if (existsMatch) {
 		return {
-			key: existsMatch[1].trim().toLowerCase(),
-			rawKey: existsMatch[1].trim(),
+			key: Str.toLowerCase(Str.trim(existsMatch[1])),
+			rawKey: Str.trim(existsMatch[1]),
 			operator: "exists",
 			value: "",
 		}
@@ -182,34 +185,34 @@ function parseSimpleClause(part: string): ParsedClause | WhereClauseParseWarning
 	)
 	if (notContainsMatch) {
 		return {
-			key: notContainsMatch[1].trim().toLowerCase(),
-			rawKey: notContainsMatch[1].trim(),
+			key: Str.toLowerCase(Str.trim(notContainsMatch[1])),
+			rawKey: Str.trim(notContainsMatch[1]),
 			operator: "!contains",
-			value: (notContainsMatch[2] ?? notContainsMatch[3] ?? notContainsMatch[4] ?? "").trim(),
+			value: Str.trim(notContainsMatch[2] ?? notContainsMatch[3] ?? notContainsMatch[4] ?? ""),
 		}
 	}
 
 	const containsMatch = part.match(/^([a-zA-Z0-9_.-]+)\s+contains\s+(?:"([^"]*)"|'([^']*)'|([^\s]+))$/i)
 	if (containsMatch) {
 		return {
-			key: containsMatch[1].trim().toLowerCase(),
-			rawKey: containsMatch[1].trim(),
+			key: Str.toLowerCase(Str.trim(containsMatch[1])),
+			rawKey: Str.trim(containsMatch[1]),
 			operator: "contains",
-			value: (containsMatch[2] ?? containsMatch[3] ?? containsMatch[4] ?? "").trim(),
+			value: Str.trim(containsMatch[2] ?? containsMatch[3] ?? containsMatch[4] ?? ""),
 		}
 	}
 
 	const compMatch = part.match(/^([a-zA-Z0-9_.-]+)\s*(!=|<=|>=|<|>|=)\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))$/)
 	if (compMatch) {
 		const unquotedToken = compMatch[5]
-		if (unquotedToken && (unquotedToken.startsWith('"') || unquotedToken.startsWith("'"))) {
+		if (unquotedToken && (Str.startsWith('"')(unquotedToken) || Str.startsWith("'")(unquotedToken))) {
 			return new WhereClauseParseWarning({ message: `Unclosed quote in clause: ${part}`, clause: part })
 		}
 		return {
-			key: compMatch[1].trim().toLowerCase(),
-			rawKey: compMatch[1].trim(),
+			key: Str.toLowerCase(Str.trim(compMatch[1])),
+			rawKey: Str.trim(compMatch[1]),
 			operator: compMatch[2] as Operator,
-			value: (compMatch[3] ?? compMatch[4] ?? compMatch[5] ?? "").trim(),
+			value: Str.trim(compMatch[3] ?? compMatch[4] ?? compMatch[5] ?? ""),
 		}
 	}
 
@@ -218,7 +221,7 @@ function parseSimpleClause(part: string): ParsedClause | WhereClauseParseWarning
 
 /** The inside of `( ... )` when the parentheses wrap the whole part, else undefined. */
 function unwrapParentheses(part: string): string | undefined {
-	if (!part.startsWith("(") || !part.endsWith(")")) return undefined
+	if (!Str.startsWith("(")(part) || !Str.endsWith(")")(part)) return undefined
 	let depth = 0
 	let quote: '"' | "'" | null = null
 	for (let i = 0; i < part.length; i++) {
@@ -235,14 +238,14 @@ function unwrapParentheses(part: string): string | undefined {
 			if (depth === 0 && i !== part.length - 1) return undefined
 		}
 	}
-	return depth === 0 ? part.slice(1, -1).trim() : undefined
+	return depth === 0 ? Str.trim(Str.slice(1, -1)(part)) : undefined
 }
 
 export function parseWhereClause(
 	expression: string,
 	options: ParseWhereClauseOptions = {},
 ): ParseWhereClauseResult {
-	const trimmed = expression.trim()
+	const trimmed = Str.trim(expression)
 	if (!trimmed) {
 		return { clauses: [], groups: [], warnings: [] }
 	}
@@ -273,8 +276,11 @@ export function parseWhereClause(
 			warnings.push(unsupported(part))
 			continue
 		}
-		const parsedMembers = members.map(parseSimpleClause)
-		const valid = parsedMembers.filter((m): m is ParsedClause => !(m instanceof WhereClauseParseWarning))
+		const parsedMembers = Arr.map(members, parseSimpleClause)
+		const valid = Arr.filter(
+			parsedMembers,
+			(m): m is ParsedClause => !(m instanceof WhereClauseParseWarning),
+		)
 		if (valid.length !== parsedMembers.length) {
 			warnings.push(
 				new WhereClauseParseWarning({

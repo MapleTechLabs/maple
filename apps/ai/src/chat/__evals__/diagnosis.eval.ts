@@ -16,7 +16,7 @@
  * Gated like every other eval: skips without `OPENROUTER_API_KEY`, runs under
  * `bun run eval`, never as part of `bun run test`.
  */
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { LanguageModel, Prompt } from "effect/ai"
 import { INVESTIGATE_SYSTEM_PROMPT } from "../prompts"
 import { describeEval, type Scorer } from "../../mcp/__evals__/harness"
@@ -35,7 +35,7 @@ const modelLayer = () => {
 	return model.layer.pipe(Layer.provide(clients))
 }
 
-const byId = new Map(DIAGNOSIS_FIXTURES.map((fixture) => [fixture.id, fixture]))
+const byId = new Map(Arr.map(DIAGNOSIS_FIXTURES, (fixture) => [fixture.id, fixture]))
 
 const fixtureFor = (input: string): DiagnosisFixture => {
 	const fixture = byId.get(input)
@@ -79,15 +79,18 @@ const diagnose = (input: string) => {
 		{ role: "system", content: INVESTIGATE_SYSTEM_PROMPT },
 		{
 			role: "user",
-			content: [
-				"Your tool calls have already run. This is everything they returned:",
-				"",
-				fixture.context,
-				"",
-				`What your first calls established: ${fixture.scopeSummary}`,
-				"",
-				"Produce the diagnosis you would submit.",
-			].join("\n"),
+			content: Arr.join(
+				[
+					"Your tool calls have already run. This is everything they returned:",
+					"",
+					fixture.context,
+					"",
+					`What your first calls established: ${fixture.scopeSummary}`,
+					"",
+					"Produce the diagnosis you would submit.",
+				],
+				"\n",
+			),
 		},
 	])
 	return LanguageModel.generateObject({ prompt, schema: Report, objectName: "diagnosis" }).pipe(
@@ -110,7 +113,7 @@ const rule = (
 })
 
 describeEval("investigation diagnosis", {
-	data: DIAGNOSIS_FIXTURES.map((fixture) => ({ input: fixture.id })),
+	data: Arr.map(DIAGNOSIS_FIXTURES, (fixture) => ({ input: fixture.id })),
 	task: diagnose,
 	scorers: [
 		rule("cause match", scoreCauseMatch),

@@ -5,7 +5,7 @@ import {
 	type StatusPageOverlayEntry,
 	type StatusPagePublisherHeartbeat,
 } from "@maple/domain/status-page"
-import { Context, Effect, Layer, Option, Ref, Schema } from "effect"
+import { Context, Effect, Layer, Option, Ref, Schema, Array as Arr, String as Str } from "effect"
 
 // Edge storage for status pages: the snapshot (KV, mirrored to R2), routes, the publisher
 // heartbeat and the break-glass entries the status Worker writes while Maple is down.
@@ -98,18 +98,19 @@ export interface StatusPageStoreApi {
 export const STATUS_PAGE_KV_LIST_LIMIT = 1000
 
 const decodePageId = Schema.decodeUnknownOption(StatusPageId)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** The page and entry ids in an `overlay:<page>:<entry>` key. */
 export const parseOverlayKey = (
 	key: string,
 ): Option.Option<{ readonly pageId: StatusPageId; readonly entryId: string }> => {
-	if (!key.startsWith(StatusPageKeys.overlayAll)) return Option.none()
-	const rest = key.slice(StatusPageKeys.overlayAll.length)
+	if (!Str.startsWith(StatusPageKeys.overlayAll)(key)) return Option.none()
+	const rest = Str.slice(StatusPageKeys.overlayAll.length)(key)
 	const split = rest.indexOf(":")
 	if (split <= 0 || split === rest.length - 1) return Option.none()
-	return Option.map(decodePageId(rest.slice(0, split)), (pageId) => ({
+	return Option.map(decodePageId(Str.slice(0, split)(rest)), (pageId) => ({
 		pageId,
-		entryId: rest.slice(split + 1),
+		entryId: Str.slice(split + 1)(rest),
 	}))
 }
 
@@ -160,7 +161,7 @@ const makeApi = (backend: StoreBackend): StatusPageStoreApi => ({
 			[
 				backend.kvPut(StatusPageKeys.slug(routes.slug), pageId),
 				backend.objectPut(StatusPageKeys.slugObject(routes.slug), pageId),
-				...routes.hostnames.flatMap((hostname) => [
+				...Arr.flatMap(routes.hostnames, (hostname) => [
 					backend.kvPut(StatusPageKeys.host(hostname), pageId),
 					backend.objectPut(StatusPageKeys.hostObject(hostname), pageId),
 				]),
@@ -173,7 +174,7 @@ const makeApi = (backend: StoreBackend): StatusPageStoreApi => ({
 			[
 				backend.kvDelete(StatusPageKeys.slug(routes.slug)),
 				backend.objectDelete(StatusPageKeys.slugObject(routes.slug)),
-				...routes.hostnames.flatMap((hostname) => [
+				...Arr.flatMap(routes.hostnames, (hostname) => [
 					backend.kvDelete(StatusPageKeys.host(hostname)),
 					backend.objectDelete(StatusPageKeys.hostObject(hostname)),
 				]),
@@ -193,7 +194,7 @@ const makeApi = (backend: StoreBackend): StatusPageStoreApi => ({
 			],
 			{ concurrency: 3, discard: true },
 		),
-	putHeartbeat: (heartbeat) => backend.kvPut(StatusPageKeys.heartbeat, JSON.stringify(heartbeat)),
+	putHeartbeat: (heartbeat) => backend.kvPut(StatusPageKeys.heartbeat, encodeJson(heartbeat)),
 	listKeys: (prefix, maxPages) => listFrom(backend, prefix, null, [], maxPages),
 	readOverlayEntry: (key) =>
 		backend.kvGet(key).pipe(
@@ -227,7 +228,7 @@ const call = <A>(operation: string, key: string, run: () => Promise<A>) =>
 			kind: "client",
 			attributes: {
 				"maple.status_page.operation": operation,
-				"peer.service": operation.startsWith("r2.") ? "cloudflare-r2" : "cloudflare-kv",
+				"peer.service": Str.startsWith("r2.")(operation) ? "cloudflare-r2" : "cloudflare-kv",
 				"maple.status_page.key": key,
 			},
 		}),
@@ -274,7 +275,7 @@ export class StatusPageStore extends Context.Service<StatusPageStore, StatusPage
 						}),
 					).pipe(
 						Effect.map((page) => ({
-							keys: page.keys.map((key) => key.name),
+							keys: Arr.map(page.keys, (key) => key.name),
 							cursor: page.list_complete ? null : (page.cursor ?? null),
 						})),
 					),
@@ -312,7 +313,7 @@ export class StatusPageStore extends Context.Service<StatusPageStore, StatusPage
 			const set = (ref: Ref.Ref<ReadonlyMap<string, string>>, key: string, value: string) =>
 				Ref.update(ref, (map) => new Map([...map, [key, value]]))
 			const remove = (ref: Ref.Ref<ReadonlyMap<string, string>>, key: string) =>
-				Ref.update(ref, (map) => new Map([...map].filter(([k]) => k !== key)))
+				Ref.update(ref, (map) => new Map(Arr.filter([...map], ([k]) => k !== key)))
 			const api = makeApi({
 				kvGet: (key) => Ref.get(kv).pipe(Effect.map((map) => map.get(key) ?? null)),
 				kvPut: (key, value) => guardWrite("kv.put", key).pipe(Effect.andThen(set(kv, key, value))),
@@ -326,9 +327,9 @@ export class StatusPageStore extends Context.Service<StatusPageStore, StatusPage
 						Effect.map((map) => {
 							const size = options.listPageSize ?? STATUS_PAGE_KV_LIST_LIMIT
 							const offset = cursor === null ? 0 : Number(cursor)
-							const matching = [...map.keys()]
-								.filter((key) => key.startsWith(prefix))
-								.toSorted()
+							const matching = Arr.filter([...map.keys()], (key) =>
+								Str.startsWith(prefix)(key),
+							).toSorted()
 							const end = offset + size
 							return {
 								keys: matching.slice(offset, end),

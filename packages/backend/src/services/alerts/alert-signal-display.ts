@@ -17,6 +17,7 @@
 import type { AlertSignalType, QueryBuilderQueryDraftPayload } from "@maple/domain/http"
 import { AGGREGATIONS_BY_SOURCE } from "@maple/query-engine/query-builder"
 import type { ChartUnit } from "@maple/widgets/chart/static-chart"
+import { Array as Arr, String as Str } from "effect"
 
 export type SignalUnit = "ratio" | "ms" | "rpm" | "apdex" | "count" | "plain"
 
@@ -52,18 +53,19 @@ const PRESET_SIGNALS: Record<string, SignalDisplay> = {
  * in the UI.
  */
 const TRACES_AGGREGATION_LABELS = new Map(
-	AGGREGATIONS_BY_SOURCE.traces.map((option) => [option.value, option.label]),
+	Arr.map(AGGREGATIONS_BY_SOURCE.traces, (option) => [option.value, option.label]),
 )
 
 const PRODUCT_EVENTS_AGGREGATION_LABELS = new Map([
 	["count", "Event count"],
-	...AGGREGATIONS_BY_SOURCE.product_events
-		.filter((option) => option.value !== "count")
-		.map((option) => [option.value, option.label] as const),
+	...Arr.map(
+		Arr.filter(AGGREGATIONS_BY_SOURCE.product_events, (option) => option.value !== "count"),
+		(option) => [option.value, option.label] as const,
+	),
 ])
 
 const tracesAggregationUnit = (aggregation: string): SignalUnit => {
-	if (aggregation.endsWith("_duration")) return "ms"
+	if (Str.endsWith("_duration")(aggregation)) return "ms"
 	if (aggregation === "error_rate") return "ratio"
 	if (aggregation === "count") return "count"
 	return "plain"
@@ -71,18 +73,18 @@ const tracesAggregationUnit = (aggregation: string): SignalUnit => {
 
 /** `builder_query` → `Builder query`, so an unmapped enum never leaks verbatim. */
 const humanize = (value: string): string => {
-	const words = value.replace(/[_-]+/g, " ").trim()
+	const words = Str.trim(Str.replace(/[_-]+/g, " ")(value))
 	if (words.length === 0) return "Signal"
-	return words.charAt(0).toUpperCase() + words.slice(1)
+	return Str.toUpperCase(words.charAt(0)) + Str.slice(1)(words)
 }
 
 const call = (fn: string, arg: string | undefined): string =>
-	arg != null && arg.trim().length > 0 ? `${fn}(${arg.trim()})` : fn
+	arg != null && Str.trim(arg).length > 0 ? `${fn}(${Str.trim(arg)})` : fn
 
 const builderQueryDisplay = (draft: QueryBuilderQueryDraftPayload): SignalDisplay => {
-	const aggregation = draft.aggregation.trim()
+	const aggregation = Str.trim(draft.aggregation)
 	const named = (label: string, unit: SignalUnit): SignalDisplay =>
-		label.length > 0 ? { label, unit } : { label: draft.name.trim() || "Query", unit }
+		label.length > 0 ? { label, unit } : { label: Str.trim(draft.name) || "Query", unit }
 
 	if (draft.dataSource === "metrics") {
 		// The metric's unit is not carried on the draft, so the value stays plain.
@@ -96,7 +98,7 @@ const builderQueryDisplay = (draft: QueryBuilderQueryDraftPayload): SignalDispla
 	}
 	// Traces. A non-empty `valueField` switches the query into numeric-attribute
 	// aggregation, so the attribute — not "duration" — is what is being measured.
-	if (draft.valueField != null && draft.valueField.trim().length > 0) {
+	if (draft.valueField != null && Str.trim(draft.valueField).length > 0) {
 		return named(call(aggregation, draft.valueField), "plain")
 	}
 	return named(

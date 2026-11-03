@@ -4,12 +4,12 @@ import { docsUrl } from "../../../lib/docs"
 import { ingestUrl } from "../../../lib/services/common/ingest-url"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button, linkButton } from "../../../ui/button"
-import * as CopyButton from "../../../ui/copy-button"
-import { confirmDialog } from "../../../ui/confirm-dialog"
-import { icon } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
-import { statusDot } from "../../../ui/status-dot"
+import { button, linkButton } from "@maple/views/ui/button"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import { icon } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { INLINE_LINK_CLASS, settingsSection, settingsSections } from "../kit/section"
 import * as MappingDialogView from "./mapping-dialog-view"
 import { Message } from "./message"
@@ -18,6 +18,9 @@ import { credentialRow, ingestKeyRows } from "./view-keys"
 import { connectInstructions, frameworkIconStrip, frameworkPicker } from "./view-setup"
 import { deleteMappingDialog, mappingsSection, recommendationsSection } from "./view-rules"
 import { deleteRuleDialog, ingestRulesSection } from "./view-ingest-rules"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `IngestionSection`.
 
@@ -26,11 +29,11 @@ type H = HtmlBuilder<Message>
 /** `useIngestConnection`: the org's own (non-`demo-`) services and their span rate. */
 const connectionOf = (model: Model) => {
 	const rows = AsyncData.getOrElse(model.overview, () => [])
-	const real = rows.filter((row) => !row.serviceName.startsWith("demo-"))
+	const real = Arr.filter(rows, (row) => !Str.startsWith("demo-")(row.serviceName))
 	return {
 		isConnected: real.length > 0,
 		serviceCount: real.length,
-		spansPerMinute: real.reduce((sum, row) => sum + row.spanCount, 0) / 60,
+		spansPerMinute: Arr.reduce(real, 0, (sum, row) => sum + row.spanCount) / 60,
 		privateKey: AsyncData.getOrElse(
 			AsyncData.map(model.ingest, (keys) => keys.private_key),
 			() => "",
@@ -43,10 +46,9 @@ const unknownStatusBanner = (h: H): Html =>
 	panel(h, { className: "flex-row items-center gap-3 px-4 py-2.5" }, [
 		statusDot(h, { tone: "neutral", size: "lg" }),
 		h.span([h.Class("text-sm font-medium whitespace-nowrap")], ["Status unknown"]),
-		h.span(
-			[h.Class("truncate font-prose text-xs text-muted-foreground")],
-			["Couldn't check for incoming telemetry."],
-		),
+		typography(h, { size: "xs", tone: "muted", truncate: true, className: "font-prose" }, [
+			"Couldn't check for incoming telemetry.",
+		]),
 	])
 
 const statusBanner = (h: H, model: Model): Html => {
@@ -61,19 +63,20 @@ const statusBanner = (h: H, model: Model): Html => {
 			[h.Class("text-sm font-medium whitespace-nowrap")],
 			[connection.isConnected ? "Receiving telemetry" : "Waiting for telemetry"],
 		),
-		h.span(
-			[h.Class("text-muted-foreground truncate font-mono text-xs")],
-			[
-				connection.isConnected
-					? [
-							countLabel(connection.serviceCount, "service"),
-							spansPerMinute > 0 ? `${formatNumber(spansPerMinute)} spans/min` : null,
-						]
-							.filter((part) => part !== null)
-							.join(" · ")
-					: "watching for your first trace",
-			],
-		),
+		typography(h, { size: "xs", tone: "muted", mono: true, truncate: true }, [
+			connection.isConnected
+				? Arr.join(
+						Arr.filter(
+							[
+								countLabel(connection.serviceCount, "service"),
+								spansPerMinute > 0 ? `${formatNumber(spansPerMinute)} spans/min` : null,
+							],
+							(part) => part !== null,
+						),
+						" · ",
+					)
+				: "watching for your first trace",
+		]),
 		h.div([h.Class("grow")], []),
 		...(connection.isConnected
 			? [
@@ -82,7 +85,8 @@ const statusBanner = (h: H, model: Model): Html => {
 						{
 							variant: "ghost",
 							size: "sm",
-							className: "text-muted-foreground hover:text-foreground active:text-foreground gap-1.5",
+							className:
+								"text-muted-foreground hover:text-foreground active:text-foreground gap-1.5",
 							href: "/traces",
 						},
 						["Explore traces", icon(h, "ArrowRightIcon")],
@@ -196,30 +200,27 @@ const addServiceSection = (h: H, model: Model): Html => {
 							connectInstructions(h, model, connection.privateKey),
 						],
 					)
-				: h.div(
-						[h.Class("flex items-center gap-3 px-4 py-3")],
-						[
-							frameworkIconStrip(h),
-							h.span(
-								[h.Class("text-muted-foreground min-w-0 grow truncate text-xs")],
-								["Next.js, Node.js, Python, Go, Effect and more"],
-							),
-							button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									attributes: [h.OnClick(Message.ClickedShowSetup())],
-								},
-								[
-									"Show setup",
-									icon(h, "ChevronRightIcon", {
-										attributes: [h.DataAttribute("icon", "inline-end")],
-									}),
-								],
-							),
-						],
-					),
+				: hstack(h, { gap: "3", className: "px-4 py-3" }, [
+						frameworkIconStrip(h),
+						h.span(
+							[h.Class("text-muted-foreground min-w-0 grow truncate text-xs")],
+							["Next.js, Node.js, Python, Go, Effect and more"],
+						),
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								attributes: [h.OnClick(Message.ClickedShowSetup())],
+							},
+							[
+								"Show setup",
+								icon(h, "ChevronRightIcon", {
+									attributes: [h.DataAttribute("icon", "inline-end")],
+								}),
+							],
+						),
+					]),
 		],
 	)
 }

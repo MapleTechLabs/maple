@@ -11,7 +11,7 @@ import type {
 	SandboxCommandResult,
 } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { EVERYTHING_CHANGED } from "@maple/security-audit"
-import { Effect, Ref, Schema } from "effect"
+import { Effect, Ref, Schema, Array as Arr, String as Str } from "effect"
 
 export const MAX_CHANGED_PATHS = 20_000
 /** Sandbox calls one diff may spend splitting itself; past it the change counts as everything. */
@@ -24,11 +24,11 @@ class DiffUnreadError extends Schema.TaggedError<DiffUnreadError>()(
 
 const GIT = ["--no-optional-locks", "-c", "core.quotePath=false"]
 
-const lines = (result: SandboxCommandResult) => result.stdout.split("\n").filter(Boolean)
+const lines = (result: SandboxCommandResult) => Arr.filter(Str.split("\n")(result.stdout), Boolean)
 
 /** The files directly inside `dir`: glob `*` never crosses a `/`. */
 const directFiles = (dir: string) =>
-	dir === "" ? ":(glob)*" : `:(glob)${dir.replace(/[*?[\]\\]/g, "\\$&")}/*`
+	dir === "" ? ":(glob)*" : `:(glob)${Str.replace(/[*?[\]\\]/g, "\\$&")(dir)}/*`
 
 export const changedPaths = (
 	sandbox: RepoSandboxServiceApi,
@@ -47,7 +47,7 @@ export const changedPaths = (
 				const result = yield* sandbox.exec(orgId, target, { command: "git", args: [...GIT, ...args] })
 				// A failed diff (an unreachable prior commit) is evidence of nothing.
 				if (result.exitCode !== 0)
-					return yield* new DiffUnreadError({ message: result.stderr.trim().slice(0, 300) })
+					return yield* new DiffUnreadError({ message: Str.slice(0, 300)(Str.trim(result.stderr)) })
 				return result
 			})
 
@@ -92,7 +92,8 @@ export const changedPaths = (
 					Effect.flatMap(complete),
 					Effect.flatMap(counted),
 				)
-				const nested = yield* Effect.forEach(yield* subdirectories(dir), walk)
+				const children = yield* subdirectories(dir)
+				const nested = yield* Effect.forEach(children, walk)
 				return [...own, ...nested.flat()]
 			})
 

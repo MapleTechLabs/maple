@@ -1,3 +1,4 @@
+import { Schema, Array as Arr } from "effect"
 import { AWS_INFRA_KINDS, type AwsInfraKindId } from "@maple/domain/aws-infra"
 import {
 	EMPTY_VALUE,
@@ -13,10 +14,10 @@ import { formatUtilizationPercent } from "../../../../components/infra/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
-import { meter } from "../../../../ui/meter"
-import { inlineCode } from "../../../../ui/inline-code"
-import { skeleton } from "../../../../ui/skeleton"
-import { statusDot } from "../../../../ui/status-dot"
+import { meter } from "@maple/views/ui/meter"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { columnHead, dataTable, ROW_LINK_CLASS, skeletonRows } from "../../../infra/kit/data-table"
 import { type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
 import type { TracedService } from "../../kit/traced"
@@ -35,6 +36,10 @@ import {
 	tracedAs,
 } from "../derive"
 import type { Message } from "./message"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // One kind's resource table and its loading state.
 
@@ -57,8 +62,8 @@ type Column = Readonly<{
 	cell: (h: H, view: ResourceView, context: TableContext) => Html
 }>
 
-const MUTED = "font-mono text-2xs text-muted-foreground"
-const NUMBER = "font-mono text-xs tabular-nums text-foreground-soft"
+const MUTED = typographyClass({ size: "2xs", tone: "muted", mono: true })
+const NUMBER = typographyClass({ size: "xs", tone: "soft", mono: true, numeric: true })
 
 const reading = (view: ResourceView, key: string) => view.readings[key]?.value ?? null
 
@@ -79,58 +84,54 @@ const numberCell = (h: H, text: string | null, tone?: "crit" | "warn"): Html =>
 /** A utilisation bar and its percent; a resource without the metric shows an empty track. */
 const usageCell = (h: H, label: string, fraction: number | null): Html => {
 	const tone: Tone = fraction !== null && fraction >= HOT ? "warn" : "ok"
-	return h.div(
-		[h.Class("flex items-center gap-2")],
-		[
-			meter(h, {
-				value: Math.min(fraction ?? 0, 1),
-				tone,
-				className: "h-1 w-20 shrink-0",
-				label: fraction === null ? undefined : `${label} ${formatPercent(fraction)}`,
-			}),
-			// A fixed right-aligned slot, so "20%" and "1.7%" line up down the column.
-			h.span(
-				[h.Class("w-10 shrink-0 text-right")],
-				[
-					numberCell(
-						h,
-						fraction === null ? null : formatUtilizationPercent(fraction),
-						tone === "warn" ? "warn" : undefined,
-					),
-				],
-			),
-		],
-	)
+	return hstack(h, { gap: "2" }, [
+		meter(h, {
+			value: Math.min(fraction ?? 0, 1),
+			tone,
+			className: "h-1 w-20 shrink-0",
+			label: fraction === null ? undefined : `${label} ${formatPercent(fraction)}`,
+		}),
+		// A fixed right-aligned slot, so "20%" and "1.7%" line up down the column.
+		h.span(
+			[h.Class("w-10 shrink-0 text-right")],
+			[
+				numberCell(
+					h,
+					fraction === null ? null : formatUtilizationPercent(fraction),
+					tone === "warn" ? "warn" : undefined,
+				),
+			],
+		),
+	])
 }
 
 // A trend-only column passes no text; `null` is a figure that did not report.
 const sparkCell = (h: H, view: ResourceView, context: TableContext, text?: string | null): Html =>
-	h.div(
-		[h.Class("flex w-full items-center gap-2")],
-		[
-			h.div(
-				[h.Class(cn("shrink-0 text-chart-2", text === undefined ? "w-full" : "w-16"))],
-				[
-					windowSparkline(h, {
-						points: sparkPoints(context.sparks, view),
-						window: context.window,
-						color: "currentColor",
-						className: "h-5",
-						// Every AWS sparkline metric is a share or a count.
-						floor: 0,
-					}),
-				],
-			),
-			...(text === undefined ? [] : [numberCell(h, text)]),
-		],
-	)
+	hstack(h, { gap: "2", className: "w-full" }, [
+		h.div(
+			[h.Class(cn("shrink-0 text-chart-2", text === undefined ? "w-full" : "w-16"))],
+			[
+				windowSparkline(h, {
+					points: sparkPoints(context.sparks, view),
+					window: context.window,
+					color: "currentColor",
+					className: "h-5",
+					// Every AWS sparkline metric is a share or a count.
+					floor: 0,
+				}),
+			],
+		),
+		...(text === undefined ? [] : [numberCell(h, text)]),
+	])
 
 const tracedCell = (h: H, view: ResourceView, context: TableContext): Html => {
 	if (context.traced === null) return h.span([h.Class(MUTED)], [EMPTY_VALUE])
 	const service = tracedAs(context.traced, view)
 	return service === null
 		? h.span([h.Class(MUTED)], ["not traced"])
-		: inlineCode(h, { className: "truncate text-2xs" }, [service.serviceName])
+		: inlineCode(h, { className: typographyClass({ size: "2xs", truncate: true }) }, [
+				service.serviceName,
+			])
 }
 
 const perMinuteText = (view: ResourceView, key: string, context: TableContext) => {
@@ -337,18 +338,18 @@ const COLUMNS = {
 } satisfies Record<AwsInfraKindId, ReadonlyArray<Column>>
 
 const columnsOf = (kind: AwsInfraKindId, showTraced = true): ReadonlyArray<Column> =>
-	showTraced ? COLUMNS[kind] : COLUMNS[kind].filter((column: Column) => column.traced !== true)
+	showTraced ? COLUMNS[kind] : Arr.filter(COLUMNS[kind], (column: Column) => column.traced !== true)
 
 /** False once the traced services loaded and none of the rows matches one. */
 const anyTraced = (views: ReadonlyArray<ResourceView>, traced: TableContext["traced"]): boolean =>
-	traced === null || views.some((view) => tracedAs(traced, view) !== null)
+	traced === null || Arr.some(views, (view) => tracedAs(traced, view) !== null)
 
 // Grows far ahead of a CPU trend column, so it reaches its cap before the trend widens.
 const NAME_COLUMN = { label: "", width: "w-0 min-w-48 max-w-[480px] flex-[999_1_0%]" }
 
 const heads = (h: H, kind: AwsInfraKindId, nameLabel: string, showTraced = true): ReadonlyArray<Html> => [
 	columnHead(h, { label: nameLabel, width: NAME_COLUMN.width }),
-	...columnsOf(kind, showTraced).map((column) =>
+	...Arr.map(columnsOf(kind, showTraced), (column) =>
 		columnHead(h, {
 			label: column.label,
 			width: column.width,
@@ -368,18 +369,21 @@ export const awsTableLoading = (h: H, kind: AwsInfraKindId, nameLabel: string): 
 				[h.Class(cn(NAME_COLUMN.width, "space-y-1.5"))],
 				[skeleton(h, "h-3.5 w-36"), skeleton(h, "h-2.5 w-48")],
 			),
-			...columnsOf(kind).map((column) => skeleton(h, cn("h-3", column.width, column.hidden))),
+			...Arr.map(columnsOf(kind), (column) => skeleton(h, cn("h-3", column.width, column.hidden))),
 		]),
 	)
 
 /** "prod · us-east-1", or the reason it needs a look. */
-const subline = (view: ResourceView): Html | string =>
-	[view.cluster, view.region].filter((part) => part !== "").join(" · ")
+const subline = (view: ResourceView): string =>
+	Arr.join(
+		Arr.filter([view.cluster, view.region], (part) => part !== ""),
+		" · ",
+	)
 
 const row = (h: H, view: ResourceView, context: TableContext, showTraced: boolean): Html =>
 	h.a(
 		[
-			h.Key(JSON.stringify(view.keys)),
+			h.Key(encodeJson(view.keys)),
 			h.Class(ROW_LINK_CLASS),
 			h.Href(
 				hrefOf(
@@ -402,44 +406,46 @@ const row = (h: H, view: ResourceView, context: TableContext, showTraced: boolea
 								className: "mt-1.5 border border-foreground-subtle",
 							})
 						: statusDot(h, { tone: HEALTH_TONE[view.health], className: "mt-1.5" }),
-					h.div(
-						[h.Class("flex min-w-0 flex-col gap-0.5")],
-						[
-							h.span(
-								[
-									h.Class(
-										"truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+					vstack(h, { gap: "0.5", shrink: true }, [
+						typography(
+							h,
+							{
+								size: "xs",
+								tone: "foreground",
+								weight: "medium",
+								mono: true,
+								truncate: true,
+								className: "transition-colors group-hover:text-primary",
+								attributes: [h.Title(view.name)],
+							},
+							[view.name],
+						),
+						h.span(
+							[
+								h.Class(
+									cn(
+										typographyClass({ size: "xs", mono: true, truncate: true }),
+										view.health === "crit"
+											? "text-severity-error"
+											: view.health === "warn"
+												? "text-severity-warn"
+												: "text-muted-foreground",
 									),
-									h.Title(view.name),
-								],
-								[view.name],
-							),
-							h.span(
-								[
-									h.Class(
-										cn(
-											"truncate font-mono text-xs",
-											view.health === "crit"
-												? "text-severity-error"
-												: view.health === "warn"
-													? "text-severity-warn"
-													: "text-muted-foreground",
+								),
+							],
+							[
+								view.reason === null
+									? subline(view)
+									: Arr.join(
+											Arr.filter([subline(view), view.reason], (part) => part !== ""),
+											" · ",
 										),
-									),
-								],
-								[
-									view.reason === null
-										? subline(view)
-										: [subline(view), view.reason]
-												.filter((part) => part !== "")
-												.join(" · "),
-								],
-							),
-						],
-					),
+							],
+						),
+					]),
 				],
 			),
-			...columnsOf(view.kind, showTraced).map((column) =>
+			...Arr.map(columnsOf(view.kind, showTraced), (column) =>
 				h.div(
 					[
 						h.Class(
@@ -474,9 +480,9 @@ export const awsTable = (
 		h,
 		{ ariaLabel: `AWS ${options.nameLabel}`, isWaiting: options.isWaiting },
 		heads(h, options.kind, options.nameLabel, showTraced),
-		options.views.map((view) => row(h, view, options.context, showTraced)),
+		Arr.map(options.views, (view) => row(h, view, options.context, showTraced)),
 	)
-	const hasTracedColumn = COLUMNS[options.kind].some((column: Column) => column.traced === true)
+	const hasTracedColumn = Arr.some(COLUMNS[options.kind], (column: Column) => column.traced === true)
 	return showTraced || !hasTracedColumn
 		? table
 		: h.div(

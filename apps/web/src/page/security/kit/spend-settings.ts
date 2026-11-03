@@ -4,14 +4,14 @@ import {
 	SecurityAuditUpdateSettingsRequest,
 } from "@maple/domain/http"
 import { SecurityAuditDiscoveryModel, SecurityAuditValidationModel } from "@maple/domain/security-audit"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import type { Resources } from "../../../platform/resources"
-import * as Dialog from "../../../ui/dialog"
-import * as Field from "../../../ui/field"
-import * as Select from "../../../ui/select"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as Select from "@maple/views/ui/select"
 import { updateSettings } from "./api"
 import { modelIdsFor, type ModelStage } from "./model-picker"
 
@@ -80,8 +80,8 @@ const isValidationModel = Schema.is(SecurityAuditValidationModel)
 
 /** Whole dollars, with or without a thousands separator: `1,000` is 1000, `12,50` is refused. */
 const parseLimit = (value: string): number | null => {
-	const trimmed = value.trim()
-	const parsed = Number(/^\d{1,3}(,\d{3})+$/u.test(trimmed) ? trimmed.replaceAll(",", "") : trimmed)
+	const trimmed = Str.trim(value)
+	const parsed = Number(/^\d{1,3}(,\d{3})+$/u.test(trimmed) ? Str.replaceAll(",", "")(trimmed) : trimmed)
 	return trimmed !== "" &&
 		Number.isInteger(parsed) &&
 		parsed >= 1 &&

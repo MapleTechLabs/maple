@@ -1,5 +1,6 @@
 import type { SessionTag } from "@maple/domain/query-engine"
 import type { SessionRow } from "../../page/replays/kit/session-row"
+import { Array as Arr, String as Str } from "effect"
 
 // The replays list fixture: a real day of the
 // dogfood org: mostly bots, bounces and idle tabs, plus an errored bot and a live bounce.
@@ -174,8 +175,8 @@ const FIXTURES: ReadonlyArray<Fixture> = [
 
 /** `buildRows`: the fixture placed relative to the lab's clock. */
 export const labSessions = (nowMs: number): ReadonlyArray<SessionRow> => {
-	const iso = (ms: number) => new Date(ms).toISOString().replace("T", " ").replace("Z", "")
-	return FIXTURES.map(({ minutesAgo, ...fixture }, index) => {
+	const iso = (ms: number) => Str.replace("Z", "")(Str.replace("T", " ")(new Date(ms).toISOString()))
+	return Arr.map(FIXTURES, ({ minutesAgo, ...fixture }, index) => {
 		const start = nowMs - minutesAgo * 60_000
 		return {
 			...BASE,

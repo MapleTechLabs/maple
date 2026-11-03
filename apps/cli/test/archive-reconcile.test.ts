@@ -20,6 +20,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { runArchiveReconciliation } from "@maple/local-server/archives/generation"
 import type { ReconciliationDecision } from "@maple/local-server/archives/reconcile"
+import { Array as Arr } from "effect"
 
 const withRoots = async (
 	run: (archiveDir: string, dataDir: string, scratchRoot: string) => Promise<void> | void,
@@ -93,7 +94,7 @@ const durableStateSnapshot = (...roots: string[]): string => {
 		}
 	}
 	for (const [index, root] of roots.entries()) walk(root, `root-${index}`)
-	return createHash("sha256").update(records.join("\n")).digest("hex")
+	return createHash("sha256").update(Arr.join(records, "\n")).digest("hex")
 }
 const isFailClosed = (
 	d: ReconciliationDecision,
@@ -433,7 +434,7 @@ describe("dry-run/apply parity — GC multi-target hostile preflight", () => {
 		const opId = randomUUID()
 		const opDir = join(archiveDir, "operations", "active", `archive-${opId}`)
 		mkdirSync(opDir, { recursive: true })
-		const gcTargets = targets.map((t) => ({
+		const gcTargets = Arr.map(targets, (t) => ({
 			signal: t.signal,
 			rangeStart: t.rangeStart,
 			generationId: t.generationId,
@@ -1130,7 +1131,7 @@ function seedGcOpWithEvidence(
 	const opId = randomUUID()
 	const opDir = join(archiveDir, "operations", "active", `archive-${opId}`)
 	mkdirSync(opDir, { recursive: true })
-	const gcTargets = targets.map((t) => {
+	const gcTargets = Arr.map(targets, (t) => {
 		const { manifestSha, shardSha } = seedGeneration2(
 			archiveDir,
 			t.signal,

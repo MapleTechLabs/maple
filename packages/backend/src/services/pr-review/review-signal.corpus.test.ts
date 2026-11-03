@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { confidencePrReview } from "@maple/domain/http"
-import { Array as Arr, Record as Rec, Schema } from "effect"
+import { Array as Arr, Record as Rec, Schema, String as Str } from "effect"
 import { assert, describe, it } from "vitest"
 import {
 	parseSummary,
@@ -19,11 +19,25 @@ const labels = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewSignalLabelF
 )
 const decodeCase = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewSignalCase))
 const cases = Arr.map(
-	Arr.filter(readdirSync(DIR), (name) => name.endsWith(".json") && name !== "labels.json"),
+	Arr.filter(readdirSync(DIR), (name) => Str.endsWith(".json")(name) && name !== "labels.json"),
 	(name) => decodeCase(readFileSync(join(DIR, name), "utf8")),
 )
 const scored = Arr.map(cases, (item) => scoreCase(item, labels[item.id]))
 const score = scoreCorpus(scored)
+
+/**
+ * A published factors line in today's rules. Before #2149 high risk cost its point on its own, so a
+ * summary whose only deduction was `risk high −1` now prints plain `risk high`.
+ */
+const asCurrentRules = (factors: ReadonlyArray<string>): string => {
+	const deductions = Arr.filter(factors, (factor) => /−\d+$/.test(factor))
+	return Arr.join(
+		Arr.map(factors, (factor) =>
+			deductions.length === 1 && factor === "risk high −1" ? "risk high" : factor,
+		),
+		" · ",
+	)
+}
 
 /** Raise these as the renderer and the confidence improve; lower one only with a reason. */
 const MAX_VISIBLE_SHARE = 0.4
@@ -31,11 +45,15 @@ const MAX_NEXT_FOUND_AT_9_10 = 0.1
 
 describe("the review comment on real pull requests", () => {
 	it("labels only pull requests and heads the corpus has", () => {
-		const unknown = Rec.toEntries(labels).flatMap(([id, label]) => {
+		const unknown = Arr.flatMap(Rec.toEntries(labels), ([id, label]) => {
 			const item = scored.find((candidate) => candidate.id === id)
-			return label.missed
-				.filter((miss) => item?.reviews.some((review) => review.head === miss.head) !== true)
-				.map((miss) => `${id}@${miss.head}`)
+			return Arr.map(
+				Arr.filter(
+					label.missed,
+					(miss) => item?.reviews.some((review) => review.head === miss.head) !== true,
+				),
+				(miss) => `${id}@${miss.head}`,
+			)
 		})
 		assert.deepEqual(unknown, [])
 	})
@@ -43,26 +61,28 @@ describe("the review comment on real pull requests", () => {
 	// The corpus measures nothing if the summaries are not read back into what rendered them: the
 	// factors line is recomputed from the parsed report and must match what was published.
 	it("reads every published summary back into the report it was rendered from", () => {
-		const unread = cases.flatMap((item) =>
-			item.summaries
-				.filter(
+		const unread = Arr.flatMap(cases, (item) =>
+			Arr.map(
+				Arr.filter(
+					item.summaries,
 					(summary) =>
 						/\*\*Confidence \d+\/10\*\*/.test(summary.body) &&
 						parseSummary(summary.body) === undefined,
-				)
-				.map((summary) => `${item.id} ${summary.createdAt}`),
+				),
+				(summary) => `${item.id} ${summary.createdAt}`,
+			),
 		)
 		assert.deepEqual(unread, [])
-		const drifted = scored.flatMap((item) =>
-			item.reviews.flatMap((review) => {
+		const drifted = Arr.flatMap(scored, (item) =>
+			Arr.flatMap(item.reviews, (review) => {
 				const factors =
 					confidencePrReview(review.parsed.report, review.open, review.parsed.partial)?.factors ??
 					[]
 				// Published factors predate the history factor; compare what both versions print.
-				return factors.join(" · ") === review.parsed.factors.join(" · ")
+				return Arr.join(factors, " · ") === asCurrentRules(review.parsed.factors)
 					? []
 					: [
-							`${item.id}@${review.head}: ${review.parsed.factors.join(" · ")} ≠ ${factors.join(" · ")}`,
+							`${item.id}@${review.head}: ${Arr.join(review.parsed.factors, " · ")} ≠ ${Arr.join(factors, " · ")}`,
 						]
 			}),
 		)
@@ -76,16 +96,17 @@ describe("the review comment on real pull requests", () => {
 	})
 
 	it("never reads safe to merge while a defect is open at the head", () => {
-		const offenders = scored.flatMap((item) =>
-			item.reviews
-				.filter((review) => review.openDefect && (review.confidence ?? 0) >= 7)
-				.map((review) => `${item.id}@${review.head} reads ${review.confidence}`),
+		const offenders = Arr.flatMap(scored, (item) =>
+			Arr.map(
+				Arr.filter(item.reviews, (review) => review.openDefect && (review.confidence ?? 0) >= 7),
+				(review) => `${item.id}@${review.head} reads ${review.confidence}`,
+			),
 		)
 		assert.deepEqual(offenders, [])
 	})
 
 	it("holds every labelled miss below safe to merge", () => {
-		const unheld = score.missed.filter((miss) => miss.after === undefined || miss.after > 8)
+		const unheld = Arr.filter(score.missed, (miss) => miss.after === undefined || miss.after > 8)
 		assert.deepEqual(unheld, [])
 	})
 

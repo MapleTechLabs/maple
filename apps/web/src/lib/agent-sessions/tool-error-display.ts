@@ -10,6 +10,13 @@
 // span of text the grouping really did ignore.
 
 import { MSG_TEXT_REDACTIONS } from "@maple/domain/tinybird/fingerprint"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+
+/** `JSON.stringify` that falls back to `String` for a value JSON cannot hold. */
+const stringify = (value: unknown): string => Option.getOrElse(encodeJson(value), () => String(value))
 
 /* -------------------------------------------------------------------------------------------------
  * The message
@@ -27,17 +34,10 @@ export type JsonValue =
 	| ReadonlyArray<JsonValue>
 	| { readonly [key: string]: JsonValue }
 
-const parseJson = (text: string): JsonValue | undefined => {
-	try {
-		const value: JsonValue = JSON.parse(text)
-		return value
-	} catch {
-		return undefined
-	}
-}
+const parseJson = (text: string): JsonValue | undefined => Option.getOrUndefined(decodeJson(text))
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 /**
  * The message inside a tool result's JSON envelope — `{"result": "…"}`, and the
@@ -46,7 +46,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  * `source` names where it was read from, for the note under the result block.
  */
 export function unwrapToolErrorText(raw: string): { readonly text: string; readonly source?: string } {
-	if (!raw.trimStart().startsWith("{")) return { text: raw }
+	if (!Str.startsWith("{")(Str.trimStart(raw))) return { text: raw }
 	const parsed = parseJson(raw)
 	if (!isRecord(parsed)) return { text: raw }
 	for (const key of ENVELOPE_KEYS) {
@@ -75,10 +75,10 @@ export function commonErrorPrefix(texts: ReadonlyArray<string>): string {
 		while (index < length && index < text.length && first[index] === text[index]) index++
 		length = index
 	}
-	const cut = first.slice(0, length).lastIndexOf(": ")
+	const cut = Str.slice(0, length)(first).lastIndexOf(": ")
 	if (cut <= 0) return ""
-	const prefix = first.slice(0, cut + 2)
-	return texts.every((text) => text.length > prefix.length) ? prefix : ""
+	const prefix = Str.slice(0, cut + 2)(first)
+	return Arr.every(texts, (text) => text.length > prefix.length) ? prefix : ""
 }
 
 /** One run of a message, as a row draws it. */
@@ -146,7 +146,7 @@ interface Claim {
  * to the redactions and one timestamp to a reader.
  */
 function redactedRanges(text: string): ReadonlyArray<Claim> {
-	const claims: Claim[] = [...text.matchAll(TIMESTAMPS)].map((match) => ({
+	const claims: Claim[] = Arr.map([...text.matchAll(TIMESTAMPS)], (match) => ({
 		start: match.index,
 		end: match.index + match[0].length,
 		label: "<ts>",
@@ -155,7 +155,7 @@ function redactedRanges(text: string): ReadonlyArray<Claim> {
 		for (const match of text.matchAll(new RegExp(pattern, "g"))) {
 			const start = match.index
 			const end = start + match[0].length
-			if (end === start || claims.some((claim) => start < claim.end && end > claim.start)) continue
+			if (end === start || Arr.some(claims, (claim) => start < claim.end && end > claim.start)) continue
 			const label = maskLabel(match[0], replacement, text[start - 1] ?? "", text[end] ?? "")
 			if (label !== undefined) claims.push({ start, end, label })
 		}
@@ -165,7 +165,7 @@ function redactedRanges(text: string): ReadonlyArray<Claim> {
 
 /** An index inside brackets is the same bug at another position: `[*]`. */
 function withIndexMasks(text: string, claims: ReadonlyArray<Claim>): ReadonlyArray<Claim> {
-	return claims.map((claim) =>
+	return Arr.map(claims, (claim) =>
 		claim.label === "<n>" && text[claim.start - 1] === "[" && text[claim.end] === "]"
 			? { start: claim.start - 1, end: claim.end + 1, label: "[*]" }
 			: claim,
@@ -179,17 +179,18 @@ function plainTokens(text: string, emphasizeQuoted: { value: boolean }): ErrorTe
 	const tokens: ErrorTextToken[] = []
 	let cursor = 0
 	for (const match of text.matchAll(EMPHASIS)) {
-		if (match.index > cursor) tokens.push({ kind: "text", text: text.slice(cursor, match.index) })
+		if (match.index > cursor) tokens.push({ kind: "text", text: Str.slice(cursor, match.index)(text) })
 		const value = match[0]
 		if (value === "\n") tokens.push({ kind: "break" })
-		else if (value.startsWith('"') && !emphasizeQuoted.value) tokens.push({ kind: "text", text: value })
+		else if (Str.startsWith('"')(value) && !emphasizeQuoted.value)
+			tokens.push({ kind: "text", text: value })
 		else {
-			if (value.startsWith('"')) emphasizeQuoted.value = false
+			if (Str.startsWith('"')(value)) emphasizeQuoted.value = false
 			tokens.push({ kind: "value", text: value })
 		}
 		cursor = match.index + value.length
 	}
-	if (cursor < text.length) tokens.push({ kind: "text", text: text.slice(cursor) })
+	if (cursor < text.length) tokens.push({ kind: "text", text: Str.slice(cursor)(text) })
 	return tokens
 }
 
@@ -197,11 +198,11 @@ function outsideTokens(text: string, emphasizeQuoted: { value: boolean }): Error
 	const tokens: ErrorTextToken[] = []
 	let cursor = 0
 	for (const claim of withIndexMasks(text, redactedRanges(text))) {
-		tokens.push(...plainTokens(text.slice(cursor, claim.start), emphasizeQuoted))
-		tokens.push({ kind: "mask", label: claim.label, raw: text.slice(claim.start, claim.end) })
+		tokens.push(...plainTokens(Str.slice(cursor, claim.start)(text), emphasizeQuoted))
+		tokens.push({ kind: "mask", label: claim.label, raw: Str.slice(claim.start, claim.end)(text) })
 		cursor = claim.end
 	}
-	tokens.push(...plainTokens(text.slice(cursor), emphasizeQuoted))
+	tokens.push(...plainTokens(Str.slice(cursor)(text), emphasizeQuoted))
 	return tokens
 }
 
@@ -220,12 +221,12 @@ export function errorTextTokens(text: string): ReadonlyArray<ErrorTextToken> {
 	const emphasizeQuoted = { value: !new RegExp(AT_PATH.source).test(text) }
 	let cursor = 0
 	for (const match of text.matchAll(AT_PATH)) {
-		tokens.push(...outsideTokens(text.slice(cursor, match.index), emphasizeQuoted))
+		tokens.push(...outsideTokens(Str.slice(cursor, match.index)(text), emphasizeQuoted))
 		tokens.push({ kind: "at" })
 		const path = match[1]!
 		tokens.push({
 			kind: "path",
-			parts: [...path.matchAll(PATH_SEGMENT)].map((segment) =>
+			parts: Arr.map([...path.matchAll(PATH_SEGMENT)], (segment) =>
 				segment[2] === undefined
 					? { kind: "key" as const, text: segment[0] }
 					: { kind: "mask" as const, label: "[*]", raw: segment[0] },
@@ -233,17 +234,18 @@ export function errorTextTokens(text: string): ReadonlyArray<ErrorTextToken> {
 		})
 		cursor = match.index + match[0].length
 	}
-	tokens.push(...outsideTokens(text.slice(cursor), emphasizeQuoted))
+	tokens.push(...outsideTokens(Str.slice(cursor)(text), emphasizeQuoted))
 
 	const firstBreak = tokens.findIndex((token) => token.kind === "break")
-	if (firstBreak <= 0) return tokens.filter((token) => !(token.kind === "text" && token.text === ""))
-	return tokens
-		.map((token, index) =>
+	if (firstBreak <= 0) return Arr.filter(tokens, (token) => !(token.kind === "text" && token.text === ""))
+	return Arr.filter(
+		Arr.map(tokens, (token, index) =>
 			index < firstBreak && token.kind === "text"
 				? { kind: "value" as const, text: token.text }
 				: token,
-		)
-		.filter((token) => !((token.kind === "text" || token.kind === "value") && token.text.trim() === ""))
+		),
+		(token) => !((token.kind === "text" || token.kind === "value") && Str.trim(token.text) === ""),
+	)
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -257,18 +259,21 @@ export function parseErrorPath(text: string): ErrorPath | undefined {
 	const matches = [...text.matchAll(AT_PATH)]
 	const last = matches[matches.length - 1]
 	if (last === undefined) return undefined
-	return [...last[1]!.matchAll(PATH_SEGMENT)].map((segment) =>
-		segment[2] === undefined ? String(parseJson(`"${segment[1]}"`) ?? segment[1]) : Number(segment[2]),
-	)
+	return Arr.map([...last[1]!.matchAll(PATH_SEGMENT)], (segment) => {
+		if (segment[2] !== undefined) return Number(segment[2])
+		const unescaped = parseJson(`"${segment[1]}"`)
+		return typeof unescaped === "string" ? unescaped : segment[1]
+	})
 }
 
 /** `evidence[0].traceIds` — a path as the hint writes it. */
 export function formatErrorPath(path: ErrorPath): string {
-	return path
-		.map((segment, index) =>
+	return Arr.join(
+		Arr.map(path, (segment, index) =>
 			typeof segment === "number" ? `[${segment}]` : index === 0 ? segment : `.${segment}`,
-		)
-		.join("")
+		),
+		"",
+	)
 }
 
 /** The value at a path, and whether the path exists at all. */
@@ -279,10 +284,10 @@ export function resolveErrorPath(
 	let current = value
 	for (const segment of path) {
 		if (typeof segment === "number") {
-			if (!Array.isArray(current) || segment >= current.length) return { found: false }
+			if (!Arr.isArray(current) || segment >= current.length) return { found: false }
 			current = current[segment]
 		} else {
-			if (!isRecord(current) || !Object.hasOwn(current, segment)) return { found: false }
+			if (!isRecord(current) || !Rec.has(current, segment)) return { found: false }
 			current = current[segment]
 		}
 	}
@@ -316,7 +321,7 @@ export function whatsWrong(text: string, args: unknown): WhatsWrongHint | undefi
 		const resolved = resolveErrorPath(args, path)
 		if (!resolved.found || typeof resolved.value !== "string") return undefined
 		const inner = parseJson(resolved.value)
-		const holds = expected === "array" ? Array.isArray(inner) : isRecord(inner)
+		const holds = expected === "array" ? Arr.isArray(inner) : isRecord(inner)
 		if (!holds) return undefined
 		return {
 			subject: formatErrorPath(path),
@@ -332,7 +337,7 @@ export function whatsWrong(text: string, args: unknown): WhatsWrongHint | undefi
 			typeof key !== "string" ||
 			!parent.found ||
 			!isRecord(parent.value) ||
-			Object.hasOwn(parent.value, key)
+			Rec.has(parent.value, key)
 		) {
 			return undefined
 		}
@@ -368,18 +373,18 @@ const VARIANT_CONTEXT = 10
  * path it sits in, or a few characters either side.
  */
 export function variantDifferences(texts: ReadonlyArray<string>): ReadonlyArray<VariantDifference> {
-	if (texts.length < 2) return texts.map((text) => ({ before: "", middle: text, after: "" }))
-	const shortest = Math.min(...texts.map((text) => text.length))
+	if (texts.length < 2) return Arr.map(texts, (text) => ({ before: "", middle: text, after: "" }))
+	const shortest = Math.min(...Arr.map(texts, (text) => text.length))
 	let start = 0
-	while (start < shortest && texts.every((text) => text[start] === texts[0]![start])) start++
+	while (start < shortest && Arr.every(texts, (text) => text[start] === texts[0]![start])) start++
 	let end = 0
 	while (
 		end < shortest - start &&
-		texts.every((text) => text[text.length - 1 - end] === texts[0]![texts[0]!.length - 1 - end])
+		Arr.every(texts, (text) => text[text.length - 1 - end] === texts[0]![texts[0]!.length - 1 - end])
 	) {
 		end++
 	}
-	return texts.map((text) => {
+	return Arr.map(texts, (text) => {
 		let from = start
 		let to = text.length - end
 		// An index reads as `[0]`, not `0`.
@@ -387,22 +392,22 @@ export function variantDifferences(texts: ReadonlyArray<string>): ReadonlyArray<
 			from -= 1
 			to += 1
 		}
-		const prefix = text.slice(0, from).replace(/\s+/g, " ")
+		const prefix = Str.replace(/\s+/g, " ")(Str.slice(0, from)(text))
 		const at = prefix.lastIndexOf(" at ")
-		const suffix = text.slice(to).replace(/\s+/g, " ")
+		const suffix = Str.replace(/\s+/g, " ")(Str.slice(to)(text))
 		// The rest of a path the difference sits in reads to its end, whole.
 		const pathTail = /^(?:\[(?:"(?:[^"\\]|\\.)*"|\d+)\])+/.exec(suffix)?.[0]
 		return {
 			before:
 				at >= 0
-					? prefix.slice(at + 4)
+					? Str.slice(at + 4)(prefix)
 					: prefix.length > VARIANT_CONTEXT
-						? `…${prefix.slice(-VARIANT_CONTEXT)}`
+						? `…${Str.slice(-VARIANT_CONTEXT)(prefix)}`
 						: prefix,
-			middle: text.slice(from, to),
+			middle: Str.slice(from, to)(text),
 			after:
 				pathTail ??
-				(suffix.length > VARIANT_CONTEXT ? `${suffix.slice(0, VARIANT_CONTEXT)}…` : suffix),
+				(suffix.length > VARIANT_CONTEXT ? `${Str.slice(0, VARIANT_CONTEXT)(suffix)}…` : suffix),
 		}
 	})
 }
@@ -433,30 +438,31 @@ const PATH_STRING_MAX = 160
 const utf8Bytes = (text: string): number => new TextEncoder().encode(text).length
 
 const shorten = (value: string, max: number): { readonly text: string; readonly hiddenBytes: number } => {
-	const json = JSON.stringify(value)
+	const json = stringify(value)
 	if (value.length <= max) return { text: json, hiddenBytes: 0 }
-	const kept = JSON.stringify(value.slice(0, max))
-	return { text: `${kept.slice(0, -1)} …"`, hiddenBytes: utf8Bytes(json) - utf8Bytes(kept) }
+	const kept = stringify(Str.slice(0, max)(value))
+	return { text: `${Str.slice(0, -1)(kept)} …"`, hiddenBytes: utf8Bytes(json) - utf8Bytes(kept) }
 }
 
 const describeType = (value: unknown): string =>
-	value === null ? "null" : Array.isArray(value) ? "array" : typeof value
+	value === null ? "null" : Arr.isArray(value) ? "array" : typeof value
 
 /** `{ "logPatterns": […], "note": "…" }` — a value's shape without its contents. */
 const outlineOf = (value: unknown): string => {
-	if (Array.isArray(value)) return "[…]"
+	if (Arr.isArray(value)) return "[…]"
 	if (isRecord(value)) {
-		return `{ ${Object.entries(value)
-			.map(([key, inner]) => `${JSON.stringify(key)}: ${outlineOf(inner)}`)
-			.join(", ")} }`
+		return `{ ${Arr.join(
+			Arr.map(Rec.toEntries(value), ([key, inner]) => `${stringify(key)}: ${outlineOf(inner)}`),
+			", ",
+		)} }`
 	}
-	return typeof value === "string" ? '"…"' : JSON.stringify(value)
+	return typeof value === "string" ? '"…"' : stringify(value)
 }
 
 const samePath = (a: ErrorPath, b: ErrorPath) =>
-	a.length === b.length && a.every((segment, i) => segment === b[i])
+	a.length === b.length && Arr.every(a, (segment, i) => segment === b[i])
 const isPrefix = (prefix: ErrorPath, path: ErrorPath) =>
-	prefix.length <= path.length && prefix.every((segment, i) => segment === path[i])
+	prefix.length <= path.length && Arr.every(prefix, (segment, i) => segment === path[i])
 
 /**
  * A parsed payload as lines, shortened around the error path.
@@ -486,26 +492,26 @@ export function payloadLines(value: unknown, message: string): ReadonlyArray<Pay
 		const highlight = lit || isTarget
 		const onPath = path.length > 0 && isPrefix(at, path)
 
-		if (Array.isArray(node) || isRecord(node)) {
-			const [open, close] = Array.isArray(node) ? ["[", "]"] : ["{", "}"]
-			const entries: ReadonlyArray<readonly [string | number, unknown]> = Array.isArray(node)
-				? node.map((item, index) => [index, item] as const)
-				: Object.entries(node)
+		if (Arr.isArray(node) || isRecord(node)) {
+			const [open, close] = Arr.isArray(node) ? ["[", "]"] : ["{", "}"]
+			const entries: ReadonlyArray<readonly [string | number, unknown]> = Arr.isArray(node)
+				? Arr.map(node, (item, index) => [index, item] as const)
+				: Rec.toEntries(node)
 			lines.push({ depth, text: `${label}${open}`, highlight })
-			entries.forEach(([key, inner], index) => {
+			Arr.forEach(entries, ([key, inner], index) => {
 				const innerComma = index < entries.length - 1 ? "," : ""
 				const innerAt = [...at, key]
 				// A sibling item of an array the path runs through: its shape alone.
-				if (Array.isArray(node) && onPath && !isPrefix(innerAt, path) && !highlight) {
+				if (Arr.isArray(node) && onPath && !isPrefix(innerAt, path) && !highlight) {
 					lines.push({
 						depth: depth + 1,
 						text: `${outlineOf(inner)}${innerComma}`,
 						highlight: false,
-						folded: `item [${key}] · ${utf8Bytes(JSON.stringify(inner)).toLocaleString()} B`,
+						folded: `item [${key}] · ${utf8Bytes(stringify(inner)).toLocaleString()} B`,
 					})
 					return
 				}
-				const innerLabel = Array.isArray(node) ? "" : `${JSON.stringify(key)}: `
+				const innerLabel = Arr.isArray(node) ? "" : `${stringify(key)}: `
 				walk(inner, innerAt, depth + 1, innerLabel, innerComma, highlight)
 			})
 			if (isTarget && missing) {
@@ -539,7 +545,7 @@ export function payloadLines(value: unknown, message: string): ReadonlyArray<Pay
 
 		lines.push({
 			depth,
-			text: `${label}${JSON.stringify(node)}${comma}`,
+			text: `${label}${stringify(node)}${comma}`,
 			highlight,
 			...(isTarget &&
 				!missing &&
@@ -555,13 +561,13 @@ export function payloadLines(value: unknown, message: string): ReadonlyArray<Pay
 
 /** The bytes a set of lines shows, for "Showing 412 of 2,753 B". */
 export const payloadLinesBytes = (lines: ReadonlyArray<PayloadLine>): number =>
-	lines.reduce((sum, line) => sum + utf8Bytes(line.text) + line.depth * 2, 0)
+	Arr.reduce(lines, 0, (sum, line) => sum + utf8Bytes(line.text) + line.depth * 2)
 
 /** A payload that parses as JSON, or `undefined` for one that does not — which
  *  includes one the read truncated. */
 export function parsePayload(text: string): JsonValue | undefined {
-	const trimmed = text.trim()
-	if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return undefined
+	const trimmed = Str.trim(text)
+	if (!Str.startsWith("{")(trimmed) && !Str.startsWith("[")(trimmed)) return undefined
 	return parseJson(trimmed)
 }
 
@@ -648,7 +654,7 @@ export function fillTrend(
 ): ReadonlyArray<number> {
 	const step = seconds * 1000
 	const first = Math.floor(startMs / step) * step
-	const counts = new Map(trend.map((point) => [point.bucket, point.calls]))
+	const counts = new Map(Arr.map(trend, (point) => [point.bucket, point.calls]))
 	const out: number[] = []
 	for (let bucket = first; bucket <= endMs; bucket += step) out.push(counts.get(bucket) ?? 0)
 	return out

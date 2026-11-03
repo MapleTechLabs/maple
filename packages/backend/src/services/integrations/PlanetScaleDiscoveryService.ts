@@ -23,6 +23,9 @@ import {
 	Ref,
 	Result,
 	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
@@ -123,9 +126,9 @@ export const subTargetsFromGroup = (group: {
 	// `403 invalid signature`.
 	const labels: Record<string, string> = {}
 	const authParams = new URLSearchParams()
-	for (const [key, value] of Object.entries(sdLabels)) {
-		if (key.startsWith("__param_")) authParams.set(key.slice("__param_".length), value)
-		else if (!key.startsWith("__")) labels[key] = value
+	for (const [key, value] of Rec.toEntries(sdLabels)) {
+		if (Str.startsWith("__param_")(key)) authParams.set(Str.slice("__param_".length)(key), value)
+		else if (!Str.startsWith("__")(key)) labels[key] = value
 	}
 	// PlanetScale's current http_sd payload names the human-readable identity
 	// labels with a `_name` suffix. Keep those canonical upstream keys and emit
@@ -202,8 +205,11 @@ export const parseBranchFilters = (discoveryConfigJson: unknown): BranchFilters 
 
 /** exclude wins over include; an empty include list means "all branches". */
 export const branchPassesFilters = (name: string, filters: BranchFilters): boolean => {
-	if (filters.exclude.some((pattern) => globToRegExp(pattern).test(name))) return false
-	if (filters.include.length > 0 && !filters.include.some((pattern) => globToRegExp(pattern).test(name)))
+	if (Arr.some(filters.exclude, (pattern) => globToRegExp(pattern).test(name))) return false
+	if (
+		filters.include.length > 0 &&
+		!Arr.some(filters.include, (pattern) => globToRegExp(pattern).test(name))
+	)
 		return false
 	return true
 }
@@ -287,20 +293,19 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			// Preserve the OAuth grant's exact public failure. A manual service token
 			// has no integration grant, so it keeps the scrape-target auth tag.
 			if (response.status === 401 || response.status === 403) {
-				return yield* Effect.fail(
-					row.authType === "planetscale_oauth"
-						? new IntegrationsRevokedError({
-								message: `PlanetScale discovery rejected the OAuth token (HTTP ${response.status}). Check the OAuth app's read_metrics_endpoints scope and reconnect.`,
-							})
-						: new ScrapeTargetAuthError({
-								reason: "config",
-								message: `PlanetScale discovery rejected the service token (HTTP ${response.status}). Check the token id/secret and its read_metrics_endpoints permission.`,
-							}),
-				)
+				return yield* row.authType === "planetscale_oauth"
+					? new IntegrationsRevokedError({
+							message: `PlanetScale discovery rejected the OAuth token (HTTP ${response.status}). Check the OAuth app's read_metrics_endpoints scope and reconnect.`,
+						})
+					: new ScrapeTargetAuthError({
+							reason: "config",
+							message: `PlanetScale discovery rejected the service token (HTTP ${response.status}). Check the token id/secret and its read_metrics_endpoints permission.`,
+						})
 			}
 			if (response.status < 200 || response.status >= 300) {
-				return yield* Effect.fail(
-					toUpstreamError(`PlanetScale discovery failed: HTTP ${response.status}`, response.status),
+				return yield* toUpstreamError(
+					`PlanetScale discovery failed: HTTP ${response.status}`,
+					response.status,
 				)
 			}
 
@@ -392,7 +397,8 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 				}
 			}
 			const now = yield* Clock.currentTimeMillis
-			const cached = Option.getOrUndefined(HashMap.get(yield* Ref.get(cache), row.id))
+			const cacheMap = yield* Ref.get(cache)
+			const cached = Option.getOrUndefined(HashMap.get(cacheMap, row.id))
 			if (cached && now - cached.fetchedAt < DISCOVERY_TTL_MS) {
 				return cached.entries
 			}
@@ -438,7 +444,7 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 					return cached.entries
 				}
 
-				return yield* Effect.fail(fresh.failure)
+				return yield* fresh.failure
 			}).pipe(
 				Effect.withSpan("PlanetScaleDiscoveryService.fetchSubTargets", {
 					attributes: { orgId: row.orgId, "maple.scraper.target_id": row.id },

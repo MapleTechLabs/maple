@@ -1,4 +1,4 @@
-import { Effect, Result, Schema, Stream } from "effect"
+import { Effect, Result, Schema, Stream, String as Str } from "effect"
 import { ClickHouseLimitError, ClickHouseProtocolError, ClickHouseServerError, serverError } from "./errors"
 
 export interface Limits {
@@ -17,6 +17,7 @@ export type ProtocolFailure = ClickHouseLimitError | ClickHouseProtocolError | C
 const ERROR_BYTES = 16 * 1024
 const encoder = new TextEncoder()
 const isRow = Schema.is(Schema.Record(Schema.String, Schema.Unknown))
+const decodeJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
 
 /** Synchronous framing state with typed Result failures; the stream lifts them into Effect. */
 class Decoder {
@@ -87,9 +88,9 @@ class Decoder {
 		if (this.invalidBytes > 0) {
 			return this.addInvalid(text, ended)
 		}
-		if (text.trim() === "") return Result.succeed(undefined)
-		// BOUNDARY: JSON.parse returns untrusted wire data, validated as an object row below.
-		const parsed = Result.try((): unknown => JSON.parse(text))
+		if (Str.trim(text) === "") return Result.succeed(undefined)
+		// BOUNDARY: untrusted wire data, validated as an object row below.
+		const parsed = decodeJson(text)
 		if (Result.isFailure(parsed)) {
 			return this.addInvalid(text, ended)
 		}
@@ -133,13 +134,13 @@ class Decoder {
 			// writing an exception. Recognize a complete exception before awaiting EOF,
 			// otherwise the ensuing transport failure would hide the server error.
 			if (
-				this.invalid.endsWith("\r\n__exception__\r\n") &&
+				Str.endsWith("\r\n__exception__\r\n")(this.invalid) &&
 				this.invalid.indexOf("__exception__\r\n") !== this.invalid.lastIndexOf("__exception__\r\n")
 			)
 				return yield* this.finish()
 			if (
 				this.invalidBytes > 0 &&
-				!this.invalid.includes("__exception__") &&
+				!Str.includes("__exception__")(this.invalid) &&
 				/\b(?:Code|Error):\s*\d+[^\n]*Exception:[\s\S]*\([A-Z][A-Z0-9_]{2,}\)[^\n]*\n$/.test(
 					this.invalid,
 				)
@@ -158,19 +159,19 @@ class Decoder {
 			if (marker >= 0) {
 				// A server exception may follow an unfinished JSON row. Validate the frame,
 				// its echoed header tag, and its UTF-8 byte length before extracting it.
-				const frame = text.slice(marker)
-				const lines = frame.split("\r\n")
+				const frame = Str.slice(marker)(text)
+				const lines = Str.split("\r\n")(frame)
 				const tag = lines[1]
 				if (!tag || !/^[A-Za-z0-9_-]{1,128}$/.test(tag) || tag !== this.info.exceptionTag)
 					return yield* this.protocol("invalid exception tag")
-				if (!frame.endsWith("\r\n__exception__\r\n"))
+				if (!Str.endsWith("\r\n__exception__\r\n")(frame))
 					return yield* this.protocol("truncated exception frame")
 				const footerEnd = frame.length - "\r\n__exception__\r\n".length
 				const footerStart = frame.lastIndexOf("\n", footerEnd - 1) + 1
-				const footer = frame.slice(footerStart, footerEnd)
+				const footer = Str.slice(footerStart, footerEnd)(frame)
 				const match = /^(\d+) ([A-Za-z0-9_-]+)$/.exec(footer)
 				if (!match || match[2] !== tag) return yield* this.protocol("invalid exception footer")
-				const message = frame.slice("__exception__\r\n".length + tag.length + 2, footerStart)
+				const message = Str.slice("__exception__\r\n".length + tag.length + 2, footerStart)(frame)
 				if (encoder.encode(message).length !== Number(match[1]))
 					return yield* this.protocol("invalid exception byte length")
 				return yield* Result.fail(serverError(message, this.info.status, this.info.queryId))

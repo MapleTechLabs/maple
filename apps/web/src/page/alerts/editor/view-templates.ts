@@ -1,13 +1,16 @@
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button } from "../../../ui/button"
-import { cardButton } from "../../../ui/card-button"
-import * as DialogView from "../../../ui/dialog-view"
-import { icon, type IconName } from "../../../ui/icon"
-import { inlineCode } from "../../../ui/inline-code"
+import { button } from "@maple/views/ui/button"
+import { cardButton } from "@maple/views/ui/card-button"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
 import { ALERT_TEMPLATES } from "../shared/templates"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `RuleTemplatesOverlay`: the first-touch picker.
 
@@ -19,20 +22,17 @@ const tileHead = (h: H, iconName: IconName, title: string, subtitle: string): Ht
 	h.div(
 		[h.Class("space-y-1")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					h.span(
-						[
-							h.Class(
-								"flex size-7 items-center justify-center rounded-md bg-primary-a2 text-primary",
-							),
-						],
-						[icon(h, iconName, { size: 18 })],
-					),
-					h.span([h.Class("font-prose font-medium text-sm")], [title]),
-				],
-			),
+			hstack(h, { gap: "2" }, [
+				h.span(
+					[
+						h.Class(
+							"flex size-7 items-center justify-center rounded-md bg-primary-a2 text-primary",
+						),
+					],
+					[icon(h, iconName, { size: 18 })],
+				),
+				h.span([h.Class("font-prose font-medium text-sm")], [title]),
+			]),
 			h.p([h.Class("font-prose text-muted-foreground text-xs leading-snug")], [subtitle]),
 		],
 	)
@@ -44,7 +44,7 @@ const chevron = (h: H): Html =>
 	})
 
 const tiles = (h: H): ReadonlyArray<Html> => [
-	...ALERT_TEMPLATES.map((template) =>
+	...Arr.map(ALERT_TEMPLATES, (template) =>
 		cardButton(h, { onClick: Message.ClickedTemplate({ id: template.id }), className: TILE_LAYOUT }, [
 			tileHead(h, template.icon, template.title, template.description),
 			h.div(
@@ -88,7 +88,12 @@ const tiles = (h: H): ReadonlyArray<Html> => [
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.Dashboards({ search: {} }))),
-							h.Class("text-foreground underline underline-offset-2"),
+							h.Class(
+								typographyClass({
+									tone: "foreground",
+									className: "underline underline-offset-2",
+								}),
+							),
 						],
 						["Dashboards"],
 					),

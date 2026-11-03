@@ -18,9 +18,9 @@ import {
 	getCloudflareZoneTimeseries,
 } from "@maple/web-data/warehouse/cloudflare-infra"
 import { getReleases } from "@maple/web-data/warehouse/releases"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 
 // Row schemas and loaders shared by the Cloudflare pages: `@maple/web-data/warehouse/cloudflare-infra`.
@@ -134,29 +134,34 @@ export const loadUsage = () =>
 
 export const loadZones = (data: WindowInput) =>
 	getCloudflareZones({ data }).pipe(
-		Effect.map((response): ReadonlyArray<ZoneRow> => response.zones),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<ZoneRow> => response.zones,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
 export const loadZoneTimeseries = (data: TimeseriesInput) =>
 	getCloudflareZoneTimeseries({ data }).pipe(
-		Effect.map((response): ReadonlyArray<ZoneBucket> => response.buckets),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<ZoneBucket> => response.buckets,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
 export const loadWorkers = (data: WindowInput) =>
 	getCloudflareWorkers({ data }).pipe(
-		Effect.map((response): ReadonlyArray<WorkerRow> => response.workers),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<WorkerRow> => response.workers,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
 export const loadPlatform = (data: WindowInput) =>
 	getCloudflarePlatformResources({ data }).pipe(
-		Effect.map((response): PlatformResources => response),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({ onSuccess: (response): PlatformResources => response, onFailure: toLoadFailure }),
 		Effect.result,
 	)
 
@@ -193,8 +198,7 @@ export type WorkerDetailInput = typeof WorkerDetailInput.Type
 /** `cloudflareWorkerDetailResultAtom`. */
 export const loadWorkerDetail = (data: WorkerDetailInput) =>
 	getCloudflareWorkerDetail({ data }).pipe(
-		Effect.map((detail): WorkerDetail => detail),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({ onSuccess: (detail): WorkerDetail => detail, onFailure: toLoadFailure }),
 		Effect.result,
 	)
 
@@ -218,16 +222,17 @@ export type ReleasesInput = typeof ReleasesInput.Type
 /** `getReleasesResultAtom`. */
 export const loadReleases = (input: ReleasesInput) =>
 	getReleases({ data: { ...input, services: [...input.services] } }).pipe(
-		Effect.map((result): ReadonlyArray<Release> =>
-			result.releases.map((release) => ({
-				serviceName: release.serviceName,
-				commitSha: release.commitSha,
-				firstSeen: release.firstSeen,
-				spanCount: release.spanCount,
-				errorCount: release.errorCount,
-			})),
-		),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (result): ReadonlyArray<Release> =>
+				Arr.map(result.releases, (release) => ({
+					serviceName: release.serviceName,
+					commitSha: release.commitSha,
+					firstSeen: release.firstSeen,
+					spanCount: release.spanCount,
+					errorCount: release.errorCount,
+				})),
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -378,24 +383,21 @@ export type TopTraffic = typeof TopTraffic.Type
 /** `cloudflareZoneDetailResultAtom`. */
 export const loadZoneDetail = (data: ZoneDetailInput) =>
 	getCloudflareZoneDetail({ data }).pipe(
-		Effect.map((detail): ZoneDetail => detail),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({ onSuccess: (detail): ZoneDetail => detail, onFailure: toLoadFailure }),
 		Effect.result,
 	)
 
 /** `cloudflareZoneDnsResultAtom`. */
 export const loadZoneDns = (data: ZoneDetailInput) =>
 	getCloudflareZoneDns({ data }).pipe(
-		Effect.map((dns): ZoneDns => dns),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({ onSuccess: (dns): ZoneDns => dns, onFailure: toLoadFailure }),
 		Effect.result,
 	)
 
 /** `cloudflareZoneSecurityResultAtom`. */
 export const loadZoneSecurity = (data: ZoneDetailInput) =>
 	getCloudflareZoneSecurity({ data }).pipe(
-		Effect.map((security): ZoneSecurity => security),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({ onSuccess: (security): ZoneSecurity => security, onFailure: toLoadFailure }),
 		Effect.result,
 	)
 
@@ -406,28 +408,31 @@ export const loadZoneFacets = (data: ZoneFacetsInput) =>
 /** `cloudflareZonesResultAtom` with the zone page's filters. */
 export const loadFilteredZones = (data: ZonesInput) =>
 	getCloudflareZones({ data }).pipe(
-		Effect.map((response): ReadonlyArray<ZoneRow> => response.zones),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<ZoneRow> => response.zones,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
 /** `cloudflareZoneBreakdownResultAtom`. */
 export const loadZoneBreakdown = (data: BreakdownInput) =>
 	getCloudflareZoneBreakdown({ data }).pipe(
-		Effect.map((breakdown): ZoneBreakdown => ({
-			totals: breakdown.totals,
-			coverage: breakdown.coverage,
-			coverageStart: breakdown.coverageStart,
-			ignoredFilters: breakdown.ignoredFilters,
-		})),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (breakdown): ZoneBreakdown => ({
+				totals: breakdown.totals,
+				coverage: breakdown.coverage,
+				coverageStart: breakdown.coverageStart,
+				ignoredFilters: breakdown.ignoredFilters,
+			}),
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
 /** `cloudflareTopTrafficResultAtom`: the live long-tail lookup. */
 export const loadTopTraffic = (data: TopTrafficInput) =>
 	getCloudflareTopTraffic({ data }).pipe(
-		Effect.map((traffic): TopTraffic => traffic),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({ onSuccess: (traffic): TopTraffic => traffic, onFailure: toLoadFailure }),
 		Effect.result,
 	)

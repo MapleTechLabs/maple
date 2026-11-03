@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -20,8 +20,8 @@ import { init as listInit } from "../../page/agent-sessions/list/update"
 import { sessionsTable } from "../../page/agent-sessions/list/view-table"
 import { toolbar } from "../../page/agent-sessions/list/view-toolbar"
 import type { Resources } from "../../platform/resources"
-import * as Toast from "../../ui/toast"
-import { ViewerFlags, viewerFlags } from "../../ui/logs/viewer"
+import * as Toast from "@maple/views/ui/toast"
+import { ViewerFlags, viewerFlags } from "@maple/views/ui/logs/viewer"
 import { buildToolAnalyticsFixture, buildToolCells } from "../agent-tools-fixture"
 import { defineLabWithFlags } from "../define"
 import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
@@ -65,14 +65,14 @@ const contextOf = (timeZone: string): PageContext => ({
 const toLab = (message: ListMessage) => Message.GotListMessage({ message })
 
 const rowsOf = (model: Model): ReadonlyArray<DisplayRow> =>
-	buildRows(model.list.nowMs).map((row) => ({ ...row, hasDetails: false }))
+	Arr.map(buildRows(model.list.nowMs), (row) => ({ ...row, hasDetails: false }))
 
 /** The rows' model marks, as the page asks for them. */
 const detect = (model: Model): Return =>
 	Option.match(
 		missingDetection(
 			model.list.detections,
-			rowsOf(model).flatMap((row) => row.models),
+			Arr.flatMap(rowsOf(model), (row) => row.models),
 		),
 		{
 			onNone: () => ({ model }),
@@ -168,7 +168,6 @@ const listPage = Submodel.defineView<ListModel, ListMessage, ListInputs>((list, 
 									agentSessionsTabs(h, {
 										active: "sessions",
 										counts: inputs.tabCounts,
-										className: "border-b border-border",
 										isOnRoute: false,
 									}),
 									toolbar(h, list, {
@@ -227,7 +226,7 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 		[
 			h.div(
 				[h.Class("flex items-center gap-2")],
-				WIDTHS.map((option) =>
+				Arr.map(WIDTHS, (option) =>
 					labButton(
 						h,
 						option.label,

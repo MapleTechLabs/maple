@@ -4,7 +4,7 @@
  * that it always destroys the container. The Durable Object in `executor.ts` implements both ports
  * over `ctx.container` and `ctx.storage`, so everything here tests without a Workers runtime.
  */
-import { Duration, Effect } from "effect"
+import { Duration, Effect, Schema, Array as Arr } from "effect"
 import {
 	type AssessedCheck,
 	EXECUTOR_PROBE_VERSION,
@@ -12,6 +12,8 @@ import {
 	parseProbe,
 	probeScript,
 } from "./executor-probe"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** One step of the probe: what it took, or why it failed. */
 export interface ProbeStep {
@@ -131,20 +133,26 @@ export const runProbe = (
 
 /** A report that answers every check; anything less is retried on the next tick, not stored. */
 export const isComplete = (report: ExecutorProbeReport): boolean =>
-	report.start.ok && report.script.ok && report.checks.every((check) => check.verdict !== "missing")
+	report.start.ok && report.script.ok && Arr.every(report.checks, (check) => check.verdict !== "missing")
 
 /** The report as log lines: a summary, then one per check. */
 export const logReport = (report: ExecutorProbeReport): Effect.Effect<void> => {
-	const failed = report.checks.filter((check) => check.verdict === "fail" || check.verdict === "missing")
+	const failed = Arr.filter(
+		report.checks,
+		(check) => check.verdict === "fail" || check.verdict === "missing",
+	)
 	const summary = Effect.logInfo("executor probe finished").pipe(
 		Effect.annotateLogs({
 			"maple.executor.probe.version": report.version,
-			"maple.executor.probe.start": JSON.stringify(report.start),
-			"maple.executor.probe.intercept_http": JSON.stringify(report.interceptHttp),
-			"maple.executor.probe.intercept_https": JSON.stringify(report.interceptHttps),
-			"maple.executor.probe.script": JSON.stringify(report.script),
-			"maple.executor.probe.container_snapshot": JSON.stringify(report.containerSnapshot),
-			"maple.executor.probe.failed": failed.map((check) => check.id).join(","),
+			"maple.executor.probe.start": encodeJson(report.start),
+			"maple.executor.probe.intercept_http": encodeJson(report.interceptHttp),
+			"maple.executor.probe.intercept_https": encodeJson(report.interceptHttps),
+			"maple.executor.probe.script": encodeJson(report.script),
+			"maple.executor.probe.container_snapshot": encodeJson(report.containerSnapshot),
+			"maple.executor.probe.failed": Arr.join(
+				Arr.map(failed, (check) => check.id),
+				",",
+			),
 		}),
 	)
 	const lines = Effect.forEach(

@@ -58,7 +58,18 @@ import {
 } from "@maple/domain/http"
 import { OrgId, SourceId, UserId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Clock, Config, Console, DateTime, Effect, Layer, Redacted, Schema } from "effect"
+import {
+	Clock,
+	Config,
+	Console,
+	DateTime,
+	Effect,
+	Layer,
+	Redacted,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { Rng } from "./rng"
 
@@ -89,7 +100,7 @@ const encodePostMerge = Schema.encodeSync(PrReviewPostMerge)
 const uuid = (rng: Rng) => {
 	const h = rng.hex(16)
 	const variant = rng.pick(["8", "9", "a", "b"])
-	return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${variant}${h.slice(17, 20)}-${h.slice(20, 32)}`
+	return `${Str.slice(0, 8)(h)}-${Str.slice(8, 12)(h)}-4${Str.slice(13, 16)(h)}-${variant}${Str.slice(17, 20)(h)}-${Str.slice(20, 32)(h)}`
 }
 
 type RepoKey = "web" | "checkout" | "payments" | "infra"
@@ -1215,7 +1226,7 @@ const buildWorld = (now: number) => {
 		settle({
 			verdict: spec.notApplicable
 				? "not_applicable"
-				: (spec.findings ?? []).some((finding) => finding.severity !== "info")
+				: Arr.some(spec.findings ?? [], (finding) => finding.severity !== "info")
 					? "issues"
 					: "clean",
 			summary: spec.summary ?? "",
@@ -1224,11 +1235,12 @@ const buildWorld = (now: number) => {
 			...(spec.checked === undefined ? undefined : { checked: spec.checked }),
 			...(spec.tests === undefined ? undefined : { tests: spec.tests }),
 			...(spec.risk === undefined ? undefined : { risk: spec.risk }),
-			coverage: (spec.coverage ?? []).map(
+			coverage: Arr.map(
+				spec.coverage ?? [],
 				([unit, kind, instrumented, evidence]) =>
 					new PrReviewCoverageUnit({ unit, kind, instrumented, evidence }),
 			),
-			findings: (spec.findings ?? []).map((finding, index) => toFinding(finding, `F${index + 1}`)),
+			findings: Arr.map(spec.findings ?? [], (finding, index) => toFinding(finding, `F${index + 1}`)),
 		})
 
 	/** Every review and finding one spec produces. */
@@ -1280,10 +1292,13 @@ const buildWorld = (now: number) => {
 						report: settle(
 							{
 								verdict: "clean",
-								summary: `This push fixes ${report.findings
-									.filter((finding) => finding.severity !== "info")
-									.map((finding) => finding.handle ?? "")
-									.join(" and ")} from the earlier review. Nothing new to flag.`,
+								summary: `This push fixes ${Arr.join(
+									Arr.map(
+										Arr.filter(report.findings, (finding) => finding.severity !== "info"),
+										(finding) => finding.handle ?? "",
+									),
+									" and ",
+								)} from the earlier review. Nothing new to flag.`,
 								...(spec.tests === undefined ? undefined : { tests: spec.tests }),
 								...(spec.risk === undefined ? undefined : { risk: spec.risk }),
 								coverage: [],
@@ -1295,7 +1310,7 @@ const buildWorld = (now: number) => {
 				: undefined
 		return {
 			reviews: [...supersededRow, first, ...(fix === undefined ? [] : [fix])],
-			findings: (spec.findings ?? []).map((finding, index) =>
+			findings: Arr.map(spec.findings ?? [], (finding, index) =>
 				findingRow({
 					review: first,
 					handle: `F${index + 1}`,
@@ -1453,11 +1468,14 @@ const buildWorld = (now: number) => {
 			title: "Point the Checkout retry backlog alert at checkout.retry.consume",
 			source: "reviewer",
 		})
-		const steps = [
-			{ step: migration, done: true, doneBy: "priya-dev" },
-			{ step: env, done: true, doneBy: "mkowalski" },
-			{ step: alert, done: false, doneBy: undefined },
-		].map(({ step, done, doneBy }) => ({ step, done, doneBy, key: mergeStepKey(step) }))
+		const steps = Arr.map(
+			[
+				{ step: migration, done: true, doneBy: "priya-dev" },
+				{ step: env, done: true, doneBy: "mkowalski" },
+				{ step: alert, done: false, doneBy: undefined },
+			],
+			({ step, done, doneBy }) => ({ step, done, doneBy, key: mergeStepKey(step) }),
+		)
 
 		const report = settle(
 			{
@@ -1500,9 +1518,10 @@ const buildWorld = (now: number) => {
 							"Increments checkout.retry.dead_lettered with the failure reason before publishing to checkout.retries.dlq",
 					}),
 				],
-				findings: FEATURED_FINDINGS.map((finding, index) => toFinding(finding, `F${index + 1}`)),
+				findings: Arr.map(FEATURED_FINDINGS, (finding, index) => toFinding(finding, `F${index + 1}`)),
 				telemetry,
-				beforeMerge: steps.map(
+				beforeMerge: Arr.map(
+					steps,
 					({ step, done, doneBy, key }) =>
 						new PrReviewMergeStep({
 							...step,
@@ -1584,7 +1603,7 @@ const buildWorld = (now: number) => {
 					updatedAt: firstSeen + 61 * MIN,
 				},
 			],
-			findings: FEATURED_FINDINGS.map((finding, index) =>
+			findings: Arr.map(FEATURED_FINDINGS, (finding, index) =>
 				findingRow({
 					review,
 					handle: `F${index + 1}`,
@@ -1593,7 +1612,7 @@ const buildWorld = (now: number) => {
 					resolvedSha: null,
 				}),
 			),
-			mergeSteps: steps.map(({ step, done, doneBy, key }) => ({
+			mergeSteps: Arr.map(steps, ({ step, done, doneBy, key }) => ({
 				id: uuid(rng),
 				orgId,
 				repositoryId: repo.id,
@@ -1615,7 +1634,7 @@ const buildWorld = (now: number) => {
 		}
 	}
 
-	const built = SPECS.map(fromSpec)
+	const built = Arr.map(SPECS, fromSpec)
 	const featured = buildFeatured(repoOf(FEATURED.repo))
 
 	return {
@@ -1636,7 +1655,7 @@ const buildWorld = (now: number) => {
 			createdAt: now - 41 * DAY,
 			updatedAt: now - 41 * DAY,
 		},
-		repositories: repos.map((repo) => ({
+		repositories: Arr.map(repos, (repo) => ({
 			id: repo.id,
 			orgId,
 			provider: "github" as const,
@@ -1659,8 +1678,8 @@ const buildWorld = (now: number) => {
 			createdAt: now - 41 * DAY,
 			updatedAt: now - 2 * DAY,
 		})),
-		branches: repos.flatMap((repo) =>
-			["main", ...(repo.key === "web" ? ["release/2026.10"] : [])].map((name) => ({
+		branches: Arr.flatMap(repos, (repo) =>
+			Arr.map(["main", ...(repo.key === "web" ? ["release/2026.10"] : [])], (name) => ({
 				id: toBranchId(uuid(ids)),
 				orgId,
 				provider: "github" as const,
@@ -1672,8 +1691,8 @@ const buildWorld = (now: number) => {
 				updatedAt: now - rng.int(1, 30) * HOUR,
 			})),
 		),
-		reviews: [...built.flatMap((item) => item.reviews), ...featured.reviews],
-		findings: [...built.flatMap((item) => item.findings), ...featured.findings],
+		reviews: [...Arr.flatMap(built, (item) => item.reviews), ...featured.reviews],
+		findings: [...Arr.flatMap(built, (item) => item.findings), ...featured.findings],
 		mergeSteps: featured.mergeSteps,
 		featured: featured.review,
 	}
@@ -1722,7 +1741,7 @@ const screenshotUrl = Effect.gen(function* () {
 		),
 	)
 	const database = yield* Effect.try({
-		try: () => decodeURIComponent(new URL(raw).pathname.replace(/^\//, "")),
+		try: () => decodeURIComponent(Str.replace(/^\//, "")(new URL(raw).pathname)),
 		catch: () => new SeedCodeReviewError({ message: "MAPLE_PG_URL is not a valid URL" }),
 	})
 	if (database !== SCREENSHOT_DATABASE)
@@ -1733,8 +1752,10 @@ const screenshotUrl = Effect.gen(function* () {
 })
 
 const program = Effect.gen(function* () {
-	const db = makeMapleDb(yield* SqlClient.SqlClient)
-	const world = buildWorld(yield* Clock.currentTimeMillis)
+	const sqlClient = yield* SqlClient.SqlClient
+	const db = makeMapleDb(sqlClient)
+	const now = yield* Clock.currentTimeMillis
+	const world = buildWorld(now)
 	const byOrg = <T extends { readonly orgId: PG.Expr<OrgId> }>($: T) => [$.orgId.eq(orgId)]
 
 	yield* db.transaction(
@@ -1764,7 +1785,9 @@ const program = Effect.gen(function* () {
 				}),
 			)
 			yield* db.run(
-				PG.insertInto(VcsInstallations).values([{ ...world.installation, sourceId: DEMO_GITHUB_SOURCE }]),
+				PG.insertInto(VcsInstallations).values([
+					{ ...world.installation, sourceId: DEMO_GITHUB_SOURCE },
+				]),
 			)
 			yield* db.run(PG.insertInto(VcsRepositories).values(world.repositories))
 			yield* db.run(PG.insertInto(VcsRepositoryBranches).values(world.branches))
@@ -1790,12 +1813,15 @@ const program = Effect.gen(function* () {
 
 	const repo = world.repositories.find((row) => row.id === world.featured.repositoryId)
 	yield* Console.log(
-		[
-			`seeded code review for ${DEMO_ORG}: 1 installation, ${world.repositories.length} repositories, ${world.reviews.length} reviews, ${world.findings.length} findings, ${world.mergeSteps.length} merge steps`,
-			`featured: ${repo?.fullName ?? ""} #${world.featured.number} "${FEATURED.title}"`,
-			`  review id ${world.featured.id}`,
-			`  /code-review/pull-requests?review=${world.featured.id}`,
-		].join("\n"),
+		Arr.join(
+			[
+				`seeded code review for ${DEMO_ORG}: 1 installation, ${world.repositories.length} repositories, ${world.reviews.length} reviews, ${world.findings.length} findings, ${world.mergeSteps.length} merge steps`,
+				`featured: ${repo?.fullName ?? ""} #${world.featured.number} "${FEATURED.title}"`,
+				`  review id ${world.featured.id}`,
+				`  /code-review/pull-requests?review=${world.featured.id}`,
+			],
+			"\n",
+		),
 	)
 })
 
@@ -1805,5 +1831,4 @@ const Driver = Layer.unwrap(
 	),
 )
 
-// oxlint-disable-next-line effecttsgo/strict-effect-provide
 program.pipe(Effect.provide(Driver), NodeRuntime.runMain)

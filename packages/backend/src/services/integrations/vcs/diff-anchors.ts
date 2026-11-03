@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 /**
  * Which new-side lines of a unified diff an inline review comment may anchor to.
  *
@@ -12,14 +13,14 @@ export const commentableLines = (patch: string): ReadonlyMap<number, number> => 
 	const lines = new Map<number, number>()
 	let hunk = -1
 	let next: number | undefined
-	for (const line of patch.split("\n")) {
+	for (const line of Str.split("\n")(patch)) {
 		const header = HUNK_HEADER.exec(line)
 		if (header !== null) {
 			hunk++
 			next = Number(header[1])
 			continue
 		}
-		if (next === undefined || line.startsWith("-") || line.startsWith("\\")) continue
+		if (next === undefined || Str.startsWith("-")(line) || Str.startsWith("\\")(line)) continue
 		// An added line (`+`) or a context line (` `, or empty where a tool trimmed the space).
 		lines.set(next, hunk)
 		next++
