@@ -103,7 +103,7 @@ export const validateMapleCloudEvent = (
 		const event = yield* Schema.decodeUnknownResult(MapleCloudEventSchema)(candidate)
 		const eventJson = yield* Schema.encodeResult(UnknownJson)(canonicalizeJson(event))
 		const byteLength = Buffer.byteLength(eventJson, "utf8")
-		yield* Schema.decodeUnknownResult(
+		yield* Schema.decodeResult(
 			Schema.Number.check(
 				Schema.isLessThanOrEqualTo(MAX_CLOUD_EVENT_BYTES, {
 					message: `CloudEvent exceeds ${MAX_CLOUD_EVENT_BYTES} UTF-8 bytes`,
@@ -141,7 +141,7 @@ export const makeCloudEvent = (input: {
 		)
 		const subject = input.subject === undefined ? input.signal.subject : input.subject
 		const time = input.time ?? input.signal.occurredAt
-		yield* Schema.decodeUnknownResult(
+		yield* Schema.decodeResult(
 			Schema.String.check(
 				Schema.makeFilter((value) => timestampToEpochNanos(value) !== null, {
 					expected: "a valid event instant",

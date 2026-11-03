@@ -11,8 +11,8 @@ import type { QueryEngineServiceApi } from "@maple/backend/services/warehouse/Qu
 import { makeQueryRunners } from "./query-runner"
 
 const tenant: TenantContext = {
-	orgId: Schema.decodeUnknownSync(OrgId)("org_query_runner"),
-	userId: Schema.decodeUnknownSync(UserId)("user_query_runner"),
+	orgId: Schema.decodeSync(OrgId)("org_query_runner"),
+	userId: Schema.decodeSync(UserId)("user_query_runner"),
 	roles: [],
 	authMode: "self_hosted",
 }
@@ -64,7 +64,7 @@ describe("makeQueryRunners", () => {
 			// SAFETY: the runner only calls `cachedDirect`.
 			const queryEngine = jsonCache as unknown as QueryEngineServiceApi
 			const { runQuery } = makeQueryRunners({ warehouse, queryEngine })
-			const payload = Schema.decodeUnknownSync(ErrorsByTypeRequest)({
+			const payload = Schema.decodeSync(ErrorsByTypeRequest)({
 				startTime: "2024-01-01 00:00:00",
 				endTime: "2024-01-02 00:00:00",
 			})
@@ -80,7 +80,9 @@ describe("makeQueryRunners", () => {
 				compiledQueryWithCapabilities: ((_tenant: unknown, compile: unknown) =>
 					Effect.gen(function* () {
 						// SAFETY: a capability-aware definition hands the stub its compile function.
-						const build = compile as (capabilities: WarehouseCapabilities) => Effect.Effect<CompiledQuery<unknown>>
+						const build = compile as (
+							capabilities: WarehouseCapabilities,
+						) => Effect.Effect<CompiledQuery<unknown>>
 						const query = yield* build(baselineWarehouseCapabilities())
 						return yield* query.decodeRows([
 							{

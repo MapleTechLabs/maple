@@ -133,7 +133,7 @@ export const ToggleTarget = Command.define("ToggleScrapeTarget", {
 	execute: ({ id, enabled }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const payload = yield* Schema.decodeUnknownEffect(V2ScrapeTargetUpdateParams)({ enabled })
+			const payload = yield* Schema.decodeEffect(V2ScrapeTargetUpdateParams)({ enabled })
 			yield* client.scrapeTargets.update({ params: { id }, payload })
 		}).pipe(
 			Effect.match({
@@ -179,11 +179,11 @@ export const SaveTarget = Command.define("SaveScrapeTarget", {
 			const { auth_credentials: credentials, ...base } = payload
 			const raw = credentials === undefined ? base : { ...base, auth_credentials: credentials }
 			if (editingId !== null) {
-				const update = yield* Schema.decodeUnknownEffect(V2ScrapeTargetUpdateParams)(raw)
+				const update = yield* Schema.decodeEffect(V2ScrapeTargetUpdateParams)(raw)
 				yield* client.scrapeTargets.update({ params: { id: editingId }, payload: update })
 				return editingId
 			}
-			const create = yield* Schema.decodeUnknownEffect(V2ScrapeTargetCreateParams)(raw)
+			const create = yield* Schema.decodeEffect(V2ScrapeTargetCreateParams)(raw)
 			const created = yield* client.scrapeTargets.create({ payload: create })
 			return created.id
 		}).pipe(

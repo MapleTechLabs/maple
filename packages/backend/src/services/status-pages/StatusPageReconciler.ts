@@ -58,9 +58,9 @@ export interface StatusPageReconcilerApi {
 		pageId: StatusPageId,
 	) => Effect.Effect<StatusPageReconcileResult, StatusPageReconcileError>
 	/** Reconciles every page with break-glass entries in KV; a failing page is logged and skipped. */
-	readonly reconcileAll: () => Effect.Effect<StatusPageReconcileAllResult, StatusPageReconcileError>
+	readonly reconcileAll: Effect.Effect<StatusPageReconcileAllResult, StatusPageReconcileError>
 	/** Resolves auto incidents whose alert incident is resolved or gone; returns how many. */
-	readonly repairAutoIncidents: () => Effect.Effect<number, StatusPagePublishDbError>
+	readonly repairAutoIncidents: Effect.Effect<number, StatusPagePublishDbError>
 }
 
 /** A concurrent import inserted the entry's update first; rolls this attempt back. */
@@ -343,7 +343,7 @@ export class StatusPageReconciler extends Context.Service<StatusPageReconciler, 
 				return yield* reconcileEntries(pageId, entryIds)
 			})
 
-			const reconcileAll = Effect.fn("StatusPageReconciler.reconcileAll")(function* () {
+			const reconcileAll = Effect.gen(function* () {
 				// Whether or not the page still has a token: entries posted before a revoke still count.
 				const listing = yield* store.listKeys(StatusPageKeys.overlayAll, RECONCILE_LIST_PAGES)
 				const pages = [...groupByPage(listing.keys)]
@@ -380,9 +380,9 @@ export class StatusPageReconciler extends Context.Service<StatusPageReconciler, 
 					"maple.status_page.listing_complete": listing.complete,
 				})
 				return result
-			})
+			}).pipe(Effect.withSpan("StatusPageReconciler.reconcileAll"))
 
-			const repairAutoIncidents = Effect.fn("StatusPageReconciler.repairAutoIncidents")(function* () {
+			const repairAutoIncidents = Effect.gen(function* () {
 				const nowMs = yield* Clock.currentTimeMillis
 				// Opens what the open hook missed, then resolves what the resolve hook missed.
 				const opened = yield* dbExecute((db) => repairMissingAutoIncidents(db, nowMs))
@@ -390,7 +390,7 @@ export class StatusPageReconciler extends Context.Service<StatusPageReconciler, 
 				const repaired = opened + resolved
 				yield* Effect.annotateCurrentSpan({ "maple.status_page.repaired_count": repaired })
 				return repaired
-			})
+			}).pipe(Effect.withSpan("StatusPageReconciler.repairAutoIncidents"))
 
 			return { reconcile, reconcileAll, repairAutoIncidents }
 		}),

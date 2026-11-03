@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { deepStrictEqual, ok, strictEqual } from "node:assert"
-import { Effect, Result, Array as Arr, String as Str } from "effect"
+import { Clock, Effect, Result, Array as Arr, String as Str } from "effect"
 import { HttpClientRequest } from "effect/http"
 import { withLocalAccessToken } from "../src/core/local-access"
 import {
@@ -184,11 +184,12 @@ describe("sign-in", () => {
 					Str.includes("SameSite=Lax")(setCookie),
 			)
 			const cookie = Str.split(";")(setCookie)[0] ?? ""
+			const nowMs = yield* Clock.currentTimeMillis
 			ok(
 				hasValidSession(
 					BOTH,
 					new Request("http://maple.example.com/", { headers: { cookie } }),
-					Date.now(),
+					nowMs,
 				),
 			)
 		}),

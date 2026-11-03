@@ -41,7 +41,7 @@ afterAll(async () => {
 })
 
 const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S, result: McpToolResult) =>
-	Schema.decodeUnknownSync(schema)(result.structuredContent)
+	Schema.decodeSync(schema)(result.structuredContent)
 
 describe("status page tools", () => {
 	it("lists the org's pages with their REST ids", async () => {
@@ -254,7 +254,7 @@ describe("status page tools", () => {
 		const PAGE = "7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1e01"
 		const admin = () => ({
 			...rt,
-			tenant: { ...rt.tenant, roles: [Schema.decodeUnknownSync(RoleName)("org:admin")] },
+			tenant: { ...rt.tenant, roles: [Schema.decodeSync(RoleName)("org:admin")] },
 		})
 		beforeAll(async () => {
 			const now = Date.now()

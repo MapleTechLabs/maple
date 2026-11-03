@@ -67,8 +67,8 @@ const loaded =
 	<A, B>(toMessage: (result: Result.Result<A, ReturnType<typeof toLoadFailure>>) => B) =>
 	<E, R>(effect: Effect.Effect<A, E, R>) =>
 		effect.pipe(
-			Effect.catchDefect((defect) => Effect.fail(defect)),
 			Effect.mapError(toLoadFailure),
+			Effect.catchDefect((defect) => Effect.fail(toLoadFailure(defect))),
 			Effect.result,
 			Effect.map(toMessage),
 		)
@@ -122,16 +122,18 @@ const FetchInvoices = Command.define("FetchBillingInvoices", {
 
 const isNotConfigured = Schema.is(BillingNotConfiguredError)
 
+const toProfileFailure = (error: unknown) => ({
+	isNotConfigured: isNotConfigured(error),
+	failure: toLoadFailure(error),
+})
+
 /** A self-hosted API without Stripe answers every profile read with `BillingNotConfiguredError`. */
 const FetchProfile = Command.define("FetchBillingProfile", {
 	messages: [Message.CompletedFetchProfile],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.billing.getBillingProfile()).pipe(
 		// Like `loaded`: a defect must still settle the read, or the details shimmer forever.
-		Effect.catchDefect((defect) => Effect.fail(defect)),
-		Effect.mapError((error) => ({
-			isNotConfigured: isNotConfigured(error),
-			failure: toLoadFailure(error),
-		})),
+		Effect.mapError(toProfileFailure),
+		Effect.catchDefect((defect) => Effect.fail(toProfileFailure(defect))),
 		Effect.result,
 		Effect.map((result) => Message.CompletedFetchProfile({ result })),
 	),
@@ -218,8 +220,8 @@ const Link = Command.define("LinkBillingOrg", {
 			client.billing.linkBillingOrg({ payload: new LinkBillingOrgRequest({ billingOrgId }) }),
 		).pipe(
 			withinLinkDeadline,
-			Effect.catchDefect((defect) => Effect.fail(defect)),
 			Effect.mapError(toLinkFailure),
+			Effect.catchDefect((defect) => Effect.fail(toLinkFailure(defect))),
 			Effect.result,
 			Effect.map((result) => Message.CompletedLink({ orgName, result })),
 		),
@@ -233,8 +235,8 @@ const Unlink = Command.define("UnlinkBillingOrg", {
 			client.billing.unlinkBillingOrg({ params: { orgId } }),
 		).pipe(
 			withinLinkDeadline,
-			Effect.catchDefect((defect) => Effect.fail(defect)),
 			Effect.mapError(toLinkFailure),
+			Effect.catchDefect((defect) => Effect.fail(toLinkFailure(defect))),
 			Effect.result,
 			Effect.map((result) => Message.CompletedUnlink({ isSelf, result })),
 		),
@@ -632,7 +634,7 @@ export const update = (
 			const opened =
 				first === undefined
 					? { ...model, editingCap: null }
-					: openCap(model, Schema.decodeUnknownSync(SpendFeatureId)(first.featureId), customer)
+					: openCap(model, Schema.decodeSync(SpendFeatureId)(first.featureId), customer)
 			return same({
 				model: opened,
 				commands: [ScrollToUsage(), ...(opened.editingCap === null ? [] : [FocusCap()])],

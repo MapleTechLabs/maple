@@ -379,7 +379,7 @@ function decodeOtlp(
 	if (Str.includes("json")(contentType))
 		return Result.try({
 			try: (): unknown =>
-				Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(
+				Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))(
 					new TextDecoder().decode(decodedBytes),
 				),
 			catch: (error) => new OtlpDecodeFailed({ message: describeThrown(error) }),

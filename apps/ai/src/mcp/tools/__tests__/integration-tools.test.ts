@@ -36,7 +36,7 @@ afterAll(async () => {
 })
 
 const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S, result: McpToolResult) =>
-	Schema.decodeUnknownSync(schema)(result.structuredContent)
+	Schema.decodeSync(schema)(result.structuredContent)
 
 describe("list_integrations", () => {
 	it("names every broken resource in one call, with unhealthy of total per provider", async () => {

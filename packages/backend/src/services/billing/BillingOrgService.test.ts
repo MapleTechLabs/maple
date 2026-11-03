@@ -24,9 +24,9 @@ const orgId = Schema.decodeUnknownSync(OrgId)
 const PAYER = orgId("org_payer")
 const MEMBER = orgId("org_member")
 const OTHER = orgId("org_other")
-const USER = Schema.decodeUnknownSync(UserId)("user_admin")
-const ADMIN = [Schema.decodeUnknownSync(RoleName)("org:admin")]
-const MEMBER_ROLE = [Schema.decodeUnknownSync(RoleName)("org:member")]
+const USER = Schema.decodeSync(UserId)("user_admin")
+const ADMIN = [Schema.decodeSync(RoleName)("org:admin")]
+const MEMBER_ROLE = [Schema.decodeSync(RoleName)("org:member")]
 
 interface World {
 	/** Orgs whose Autumn customer holds the `billing_sub_orgs` flag. */
@@ -111,7 +111,7 @@ const layerFor = (testDb: TestDb, world: World) =>
 							const role = world.roles.get(org)
 							return role === undefined
 								? Option.none()
-								: Option.some({ orgId: org, role: Schema.decodeUnknownSync(RoleName)(role) })
+								: Option.some({ orgId: org, role: Schema.decodeSync(RoleName)(role) })
 						}),
 				}),
 				Layer.succeed(OrganizationRegionService, {

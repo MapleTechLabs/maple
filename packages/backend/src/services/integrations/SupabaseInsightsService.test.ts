@@ -36,7 +36,7 @@ const config = {
 
 const minute = 60_000
 const NOW = Date.UTC(2026, 9, 21, 18, 0, 0)
-const ORG = Schema.decodeUnknownSync(OrgId)("org_a")
+const ORG = Schema.decodeSync(OrgId)("org_a")
 const asRef = Schema.decodeUnknownSync(SupabaseProjectRef)
 const REF_A = "abcdefghijklmnopqrst"
 const REF_PAUSED = "bcdefghijklmnopqrstu"
@@ -107,17 +107,13 @@ const connect = (world: World) =>
 		yield* TestClock.setTime(NOW)
 		const oauth = yield* SupabaseOAuthService
 		const connection = yield* SupabaseConnectionService
-		const { redirectUrl, state } = yield* oauth.startConnect(
-			ORG,
-			Schema.decodeUnknownSync(UserId)("user_a"),
-			{
-				callbackUrl: "https://api.example.com/api/integrations/supabase/callback",
-			},
-		)
+		const { redirectUrl, state } = yield* oauth.startConnect(ORG, Schema.decodeSync(UserId)("user_a"), {
+			callbackUrl: "https://api.example.com/api/integrations/supabase/callback",
+		})
 		world.state.codeChallenge = new URL(redirectUrl).searchParams.get("code_challenge")
 		const granted = yield* oauth.completeConnect("code", state, {
 			orgId: ORG,
-			userId: Schema.decodeUnknownSync(UserId)("user_a"),
+			userId: Schema.decodeSync(UserId)("user_a"),
 		})
 		yield* connection.finalizeConnect(granted.orgId, granted.connectedByUserId, granted.organization)
 		yield* connection.sync(granted.orgId)
@@ -145,7 +141,7 @@ describe("SupabaseInsightsService", () => {
 			Effect.gen(function* () {
 				yield* connect(world)
 				const insights = yield* SupabaseInsightsService
-				const summary = yield* insights.pollAllOrgs()
+				const summary = yield* insights.pollAllOrgs
 				assert.deepStrictEqual(summary, {
 					orgs: 1,
 					advisorsRead: 1,
@@ -204,19 +200,19 @@ describe("SupabaseInsightsService", () => {
 			Effect.gen(function* () {
 				yield* connect(world)
 				const insights = yield* SupabaseInsightsService
-				yield* insights.pollAllOrgs()
+				yield* insights.pollAllOrgs
 				const callsAfter = (count: number) => insightCalls(world).slice(count)
 
 				yield* TestClock.setTime(NOW + 5 * minute)
-				yield* insights.pollAllOrgs()
+				yield* insights.pollAllOrgs
 				assert.deepStrictEqual(callsAfter(3), [])
 
 				yield* TestClock.setTime(NOW + 15 * minute)
-				yield* insights.pollAllOrgs()
+				yield* insights.pollAllOrgs
 				assert.deepStrictEqual(callsAfter(3), [`${REF_A}/database/query/read-only`])
 
 				yield* TestClock.setTime(NOW + 60 * minute)
-				yield* insights.pollAllOrgs()
+				yield* insights.pollAllOrgs
 				assert.deepStrictEqual(callsAfter(4), [
 					`${REF_A}/advisors/performance`,
 					`${REF_A}/advisors/security`,
@@ -235,11 +231,11 @@ describe("SupabaseInsightsService", () => {
 			Effect.gen(function* () {
 				yield* connect(world)
 				const insights = yield* SupabaseInsightsService
-				yield* insights.pollAllOrgs()
+				yield* insights.pollAllOrgs
 
 				world.state.readOnlyError = "permission denied for view pg_stat_statements"
 				yield* TestClock.setTime(NOW + 15 * minute)
-				const summary = yield* insights.pollAllOrgs()
+				const summary = yield* insights.pollAllOrgs
 				assert.strictEqual(summary.failures, 1)
 
 				const result = yield* insights.getInsights(ORG, asRef(REF_A))
@@ -250,7 +246,7 @@ describe("SupabaseInsightsService", () => {
 
 				world.state.readOnlyError = null
 				yield* TestClock.setTime(NOW + 30 * minute)
-				yield* insights.pollAllOrgs()
+				yield* insights.pollAllOrgs
 				assert.strictEqual((yield* insights.getInsights(ORG, asRef(REF_A))).queriesError, null)
 			}),
 		)
@@ -266,7 +262,7 @@ describe("SupabaseInsightsService", () => {
 			Effect.gen(function* () {
 				yield* connect(world)
 				const insights = yield* SupabaseInsightsService
-				const summary = yield* insights.pollAllOrgs()
+				const summary = yield* insights.pollAllOrgs
 				assert.strictEqual(summary.failures, 0)
 				// Rate limited on the first advisor: nothing else is called this tick.
 				assert.deepStrictEqual(insightCalls(world), [`${REF_A}/advisors/performance`])

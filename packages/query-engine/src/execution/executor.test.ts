@@ -17,8 +17,8 @@ import type {
 } from "./ports"
 
 const tenant: ExecutionTenant = {
-	orgId: Schema.decodeUnknownSync(OrgId)("org_test"),
-	userId: Schema.decodeUnknownSync(UserId)("user_test"),
+	orgId: Schema.decodeSync(OrgId)("org_test"),
+	userId: Schema.decodeSync(UserId)("user_test"),
 	authMode: "system",
 }
 

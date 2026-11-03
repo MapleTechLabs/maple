@@ -38,6 +38,7 @@ import {
 import type { ChatSessionClient } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, ExternalUserId, type OrgId, type UserId } from "@maple/domain/primitives"
 import { Clock, Duration, Effect, Exit, Option, Schema, Array as Arr, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { settledMessageBlocks } from "./approval.ts"
 import {
@@ -49,6 +50,8 @@ import {
 } from "./conversation.ts"
 import { chatTurnEvents, sessionUnreachable } from "./events.ts"
 import type { RelayTurnCheckpoint } from "./settle.ts"
+
+const secureRandom = SecureRandom.make(SecureRandom.randomBytesUnsafe)
 
 /** The org behind a workspace, and who the person acting is in Maple, when one was asked about. */
 export interface RelayWorkspace {
@@ -385,7 +388,7 @@ const relayMessage = Effect.fn("ChatBotRelay.relayTurn")(function* <R>(
 	const claimed = yield* session
 		.beginTurn({
 			sessionId,
-			messageId: crypto.randomUUID(),
+			messageId: yield* secureRandom.uuidV4(),
 			text: chatTurnText(message, { now, recent, seenUpTo }),
 			tenant: connectorTurnTenant(orgId),
 			origin: {
@@ -619,12 +622,16 @@ const showDecision = Effect.fn("ChatBotRelay.showDecision")(function* <R>(
 	)
 })
 
+/** What relaying one event can fail with; every failure is caught below. */
+type RelayedError<R> =
+	| Effect.Error<ReturnType<typeof relayMessage<R>>>
+	| Effect.Error<ReturnType<typeof settleAction<R>>>
+
 /**
  * A switch rather than a chain of ternaries: an event kind added to the contract has to be answered
- * here rather than quietly taking the last branch. The error channel is erased because every
- * failure is caught below — nothing above this can do anything with one.
+ * here rather than quietly taking the last branch.
  */
-const relayed = <R>(event: InboundEvent, ports: RelayPorts<R>): Effect.Effect<void, unknown, R> => {
+const relayed = <R>(event: InboundEvent, ports: RelayPorts<R>): Effect.Effect<void, RelayedError<R>, R> => {
 	switch (event.type) {
 		case "message":
 			return relayMessage(event, ports)

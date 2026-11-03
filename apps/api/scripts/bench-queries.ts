@@ -19,7 +19,7 @@ import { Command, Flag } from "effect/cli"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BunRuntime, BunServices } from "@effect/platform-bun"
 import { OrgId } from "@maple/domain"
-import { CH } from "@maple/query-engine"
+import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import * as Bench from "@maple/query-engine/benchmark"
 import { collectWarehouseQueryCatalog } from "./query-bench/catalog"
@@ -202,7 +202,7 @@ export class Tinybird extends Context.Service<Tinybird, TinybirdApi>()("bench/Ti
 // File IO via the core FileSystem service
 
 const decodeJson = <A>(text: string, schema: Schema.Decoder<A>) =>
-	Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(text).pipe(
+	Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(text).pipe(
 		Effect.flatMap(Schema.decodeUnknownEffect(schema)),
 		Effect.mapError((cause) => new Bench.BenchmarkError({ message: String(cause) })),
 	)
@@ -241,14 +241,6 @@ const parseRelativeDuration = (input: string): Effect.Effect<number, InvalidDura
 	}
 	const unit = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 }[match[2]!.toLowerCase()]!
 	return Effect.succeed(Number(match[1]) * unit)
-}
-
-const formatCHDateTime = (d: Date): string => {
-	const pad = (n: number) => String(n).padStart(2, "0")
-	return (
-		`${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
-		`${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
-	)
 }
 
 const formatMs = (ms: number | null | undefined): string => {
@@ -317,8 +309,8 @@ const fetchHandler = Effect.fn("bench.fetch")(function* (config: FetchConfig) {
 	const tinybird = yield* Tinybird
 	const sinceMs = yield* parseRelativeDuration(config.since)
 	const nowMs = yield* Clock.currentTimeMillis
-	const startTime = formatCHDateTime(new Date(nowMs - sinceMs))
-	const endTime = formatCHDateTime(new Date(nowMs))
+	const startTime = formatWarehouseDateTime(nowMs - sinceMs)
+	const endTime = formatWarehouseDateTime(nowMs)
 	const topN = config.top
 	const orgId = yield* Option.match(config.org, {
 		onNone: () => tinybird.internalOrgId,
@@ -431,7 +423,7 @@ const catalogHandler = Effect.fn("bench.catalog")(function* (config: {
 				),
 				Effect.flatMap(Schema.decodeUnknownEffect(Bench.Suite)),
 			),
-		onNone: () => collectWarehouseQueryCatalog().pipe(Effect.flatMap(Bench.suiteFromCatalog)),
+		onNone: () => collectWarehouseQueryCatalog.pipe(Effect.flatMap(Bench.suiteFromCatalog)),
 	})
 	const selected = yield* filterSuite(suite, config.match)
 	const path = Option.getOrElse(config.out, () => defaultOutput("catalog"))

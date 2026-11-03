@@ -392,7 +392,7 @@ const fnv1a = (text: string): string =>
 const titleSlug = (title: string): string => {
 	const slug = Arr.join(Arr.filter(Str.split(/[^a-z0-9]+/)(Str.toLowerCase(title)), Str.isNonEmpty), "-")
 	if (slug.length === 0) return fnv1a(Str.trim(title))
-	if (slug.length <= SLUG_MAX && !/[^\x00-\x7f]/.test(title)) return slug
+	if (slug.length <= SLUG_MAX && !/\P{ASCII}/u.test(title)) return slug
 	return `${Str.slice(0, SLUG_MAX - 9)(slug)}-${fnv1a(Str.trim(title))}`
 }
 

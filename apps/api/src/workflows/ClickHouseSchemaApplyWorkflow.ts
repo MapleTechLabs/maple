@@ -33,6 +33,7 @@ export default class ClickHouseSchemaApplyWorkflow extends Cloudflare.Workflow<C
 			payload: SchemaApplyWorkflowPayload,
 		) {
 			const env = yield* Cloudflare.WorkerEnvironment
+			const envLayer = workerEnvLayer(env)
 			return yield* withPgConnectionScope(runClickHouseSchemaApply(payload)).pipe(
 				// `Database` over one Postgres connection for the run, released with it,
 				// and the run's own telemetry, flushed when alchemy closes the run's scope.
@@ -42,8 +43,8 @@ export default class ClickHouseSchemaApplyWorkflow extends Cloudflare.Workflow<C
 				Effect.provide(
 					Layer.mergeAll(
 						DatabasePgLive,
-						schemaApplyTelemetry,
-						workerEnvLayer(env),
+						schemaApplyTelemetry.pipe(Layer.provide(envLayer)),
+						envLayer,
 						FetchHttpClient.layer,
 					).pipe(Layer.provideMerge(layerMapleDbConnection(env))),
 				),

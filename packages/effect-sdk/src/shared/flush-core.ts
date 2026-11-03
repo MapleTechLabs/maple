@@ -6,7 +6,7 @@
 // resolution (env-lazy on Workers, env-auto-detect on Node, programmatic in the
 // browser) and its transport (plain `fetch` vs `fetch(keepalive)`); everything
 // downstream of a resolved endpoint lives here.
-import { Effect, Redacted, Result, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Cause, Effect, Redacted, Result, Array as Arr, Record as Rec, String as Str } from "effect"
 import { isMapleIngestEndpoint } from "@maple/browser-session/region"
 import type { LogBuffer, LogRecord } from "./flushable-logger.js"
 import type { MetricBuffer } from "./flushable-metrics.js"
@@ -170,7 +170,7 @@ const post = (url: string, headers: Record<string, string>, body: unknown): Prom
 	Effect.runPromise(
 		Effect.tryPromise({
 			try: (signal) => send(url, headers, body, signal),
-			catch: (cause) => cause,
+			catch: (cause) => new Cause.UnknownError(cause),
 		}).pipe(Effect.timeout(EXPORT_TIMEOUT_MS)),
 	)
 
@@ -210,7 +210,9 @@ const flushSignal = async <A>(args: {
 				Effect.result(
 					Effect.tryPromise({
 						try: () => transport.post(url, headers, body(chunk)),
-						catch: (cause) => cause,
+						// The fetch transport already rejects with one; the log prints what it wraps.
+						catch: (cause) =>
+							Cause.isUnknownError(cause) ? cause : new Cause.UnknownError(cause),
 					}),
 				),
 			),
@@ -224,7 +226,7 @@ const flushSignal = async <A>(args: {
 		// One restore, back in drain order.
 		buffer.restore(Arr.flatMap(failed.reverse(), ({ chunk }) => chunk))
 		state.disabledUntil = Date.now() + COOLDOWN_MS
-		console.error(`${logPrefix} ${signal} flush failed; cooldown 60s:`, first.cause)
+		console.error(`${logPrefix} ${signal} flush failed; cooldown 60s:`, first.cause.cause)
 	}
 }
 
@@ -269,9 +271,14 @@ export const guardFlush =
 	<Args extends ReadonlyArray<unknown>>(logPrefix: string, run: (...args: Args) => Promise<void>) =>
 	async (...args: Args): Promise<void> => {
 		const outcome = await Effect.runPromise(
-			Effect.result(Effect.tryPromise({ try: () => run(...args), catch: (cause) => cause })),
+			Effect.result(
+				Effect.tryPromise({
+					try: () => run(...args),
+					catch: (cause) => new Cause.UnknownError(cause),
+				}),
+			),
 		)
-		if (Result.isFailure(outcome)) console.error(`${logPrefix} flush failed:`, outcome.failure)
+		if (Result.isFailure(outcome)) console.error(`${logPrefix} flush failed:`, outcome.failure.cause)
 	}
 
 /**

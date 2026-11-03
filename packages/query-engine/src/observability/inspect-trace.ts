@@ -40,7 +40,7 @@ const SKIP_ATTR_KEYS = HashSet.fromIterable([
 const StringRecordFromJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String))
 
 const extractKeyAttributes = (raw: string, keepAll: boolean): Effect.Effect<Record<string, string>> =>
-	Schema.decodeUnknownEffect(StringRecordFromJson)(raw).pipe(
+	Schema.decodeEffect(StringRecordFromJson)(raw).pipe(
 		Effect.map((parsed) =>
 			pipe(
 				Rec.toEntries(parsed),
@@ -58,7 +58,7 @@ const extractKeyAttributes = (raw: string, keepAll: boolean): Effect.Effect<Reco
 	)
 
 const parseJsonAttributes = (raw: string): Effect.Effect<Record<string, string>> =>
-	Schema.decodeUnknownEffect(StringRecordFromJson)(raw).pipe(
+	Schema.decodeEffect(StringRecordFromJson)(raw).pipe(
 		Effect.map((parsed) =>
 			pipe(
 				Rec.toEntries(parsed),
@@ -225,11 +225,9 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 					): Effect.Effect<Option.Option<CH.TraceTimeProbeOutput>, WarehouseExecutorError> => {
 						const [head, ...rest] = windows
 						return head === undefined
-							? Effect.succeed(Option.none())
+							? Effect.succeedNone
 							: probeWindow(head).pipe(
-									Effect.flatMap((found) =>
-										Option.isSome(found) ? Effect.succeed(found) : probeTiers(rest),
-									),
+									Effect.filterOrElse(Option.isSome, () => probeTiers(rest)),
 								)
 					}
 					// The default lookback just read the last day in full, so the tiers start below it.

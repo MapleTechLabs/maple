@@ -3,7 +3,7 @@ import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgOnboardingState } from "@maple/db/tables"
 import { OrgId } from "@maple/domain/primitives"
-import { Cause, Effect, Exit, Schema, Tracer, Array as Arr, String as Str } from "effect"
+import { Cause, Effect, Exit, Schema, Tracer, Array as Arr, String as Str, Clock } from "effect"
 import { ConnectionError, SqlError, UniqueViolation } from "effect/sql/SqlError"
 import { Database, DatabaseError, executeWithSpan } from "./DatabaseLive"
 import { PGLITE_DB_NAMESPACE } from "./DatabasePgliteLive"
@@ -206,7 +206,7 @@ describe("Database execute span instrumentation", () => {
 		Effect.gen(function* () {
 			const { spans, tracer } = makeRecordingTracer()
 			const database = yield* Database
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 
 			yield* database
 				.execute((db) =>

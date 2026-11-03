@@ -35,9 +35,9 @@ import {
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_aws_e2e")
-const USER = Schema.decodeUnknownSync(UserId)("user_aws_e2e")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_aws_e2e_other")
+const ORG = Schema.decodeSync(OrgId)("org_aws_e2e")
+const USER = Schema.decodeSync(UserId)("user_aws_e2e")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_aws_e2e_other")
 const BASE = "/v2/integrations/aws"
 
 const testConfig = (awsAvailable: boolean) =>

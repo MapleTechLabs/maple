@@ -16,7 +16,7 @@ const source = (exitCode: number) =>
 			listFiles: () => result(exitCode, "a.ts\n"),
 			readFile: () => result(exitCode, "1\tx", "fatal: path 'b.ts' does not exist"),
 		} satisfies RepoSandboxServiceApi,
-		Schema.decodeUnknownSync(OrgId)("org_a"),
+		Schema.decodeSync(OrgId)("org_a"),
 		{ repository: "acme/api", ref: Str.repeat(40)("a") },
 	)
 

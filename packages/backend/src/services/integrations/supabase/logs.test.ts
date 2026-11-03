@@ -14,7 +14,7 @@ import {
 } from "./logs"
 import { SupabaseProjectRef } from "@maple/domain/primitives"
 
-const REF = Schema.decodeUnknownSync(SupabaseProjectRef)("abcdefghijklmnopqrst")
+const REF = Schema.decodeSync(SupabaseProjectRef)("abcdefghijklmnopqrst")
 const minute = 60_000
 const now = Date.UTC(2026, 9, 21, 18, 0, 30, 500)
 

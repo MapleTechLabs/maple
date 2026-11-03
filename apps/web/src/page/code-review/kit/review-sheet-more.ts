@@ -36,32 +36,29 @@ export const productionSection = (h: H, telemetry: PrReviewTelemetry): ReadonlyA
 							h,
 							{ gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) },
 							Arr.map(breaks, (item) =>
-								h.li(
-									[...(item.dismissed ? [h.Class("text-muted-foreground")] : [])],
-									[
-										h.span(
-											[
-												h.Class(
-													cn(
-														"font-medium",
-														item.dismissed ? undefined : TONE_TEXT.crit,
-													),
+								h.li(item.dismissed ? [h.Class("text-muted-foreground")] : [], [
+									h.span(
+										[
+											h.Class(
+												cn(
+													"font-medium",
+													item.dismissed ? undefined : TONE_TEXT.crit,
 												),
-											],
-											[item.dismissed ? "Still emitted elsewhere" : "Stops arriving"],
-										),
-										" ",
-										h.code(
-											[h.Class(typographyClass({ size: "xs", mono: true }))],
-											[item.name],
-										),
-										" · ",
-										Arr.join(
-											Arr.map(item.references, (ref) => `${ref.kind} “${ref.name}”`),
-											", ",
-										),
-									],
-								),
+											),
+										],
+										[item.dismissed ? "Still emitted elsewhere" : "Stops arriving"],
+									),
+									" ",
+									h.code(
+										[h.Class(typographyClass({ size: "xs", mono: true }))],
+										[item.name],
+									),
+									" · ",
+									Arr.join(
+										Arr.map(item.references, (ref) => `${ref.kind} “${ref.name}”`),
+										", ",
+									),
+								]),
 							),
 						),
 					]),

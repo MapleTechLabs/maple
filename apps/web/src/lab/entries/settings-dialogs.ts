@@ -83,7 +83,7 @@ const dashboards = (isDeleting: boolean): DashboardListModel.Model => {
 	}
 }
 
-const createdKey = Schema.decodeUnknownSync(V2ApiKeyWithSecret)({
+const createdKey = Schema.decodeSync(V2ApiKeyWithSecret)({
 	id: "key_aXwpxqBkqtYwtBtmsGbR41",
 	object: "api_key",
 	name: "ci-pipeline",
@@ -145,7 +145,7 @@ const profile = (isDirty: boolean) => {
 }
 
 const SOURCE_ID = encodePublicId(PublicIdPrefixes.source, "0199a0e1-0000-7000-8000-000000000002")
-const source = Schema.decodeUnknownSync(V2Source)({
+const source = Schema.decodeSync(V2Source)({
 	id: SOURCE_ID,
 	object: "source",
 	name: "Railway production",

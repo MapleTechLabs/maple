@@ -16,7 +16,7 @@ import {
 	type ReadDirectoryOrganization,
 } from "./OrganizationRegionService"
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_region_cache")
+const orgId = Schema.decodeSync(OrgId)("org_region_cache")
 
 const chosen = (region: MapleRegion): DirectoryOrganization => ({
 	publicMetadata: { regions: [region] },

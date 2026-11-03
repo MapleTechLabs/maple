@@ -5,7 +5,7 @@ import { EVERYTHING_CHANGED } from "@maple/security-audit"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { changedPaths, MAX_CHANGED_PATHS } from "./changed-paths"
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_a")
+const orgId = Schema.decodeSync(OrgId)("org_a")
 const target = { repository: "acme/api", ref: Str.repeat(40)("b") }
 
 const parent = (path: string) => Str.slice(0, Math.max(0, path.lastIndexOf("/")))(path)

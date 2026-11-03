@@ -152,8 +152,11 @@ export const previewDocument = (options: PreviewDocumentOptions): string => {
 
 export const PREVIEW_FRAME_ID = "status-page-preview-frame"
 
-/** The selections the editor's preview frame posts; other windows and shapes are dropped. */
-export const previewSelections = (): Stream.Stream<PreviewSelection> =>
+/**
+ * The selections the editor's preview frame posts; other windows and shapes are dropped.
+ * Suspended so importing this module never touches `window` (scene tests run in node).
+ */
+export const previewSelections: Stream.Stream<PreviewSelection> = Stream.suspend(() =>
 	Stream.fromEventListener<MessageEvent>(window, "message").pipe(
 		Stream.filter((event) => {
 			const frame = document.getElementById(PREVIEW_FRAME_ID)
@@ -170,7 +173,8 @@ export const previewSelections = (): Stream.Stream<PreviewSelection> =>
 				onSome: (selection) => Stream.make(selection),
 			}),
 		),
-	)
+	),
+)
 
 /** The sandboxed frame: scripts run so the page pages its bars, but it can reach nothing of ours. */
 export const previewFrame = <M>(

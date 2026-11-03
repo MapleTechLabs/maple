@@ -167,8 +167,8 @@ const makeHarness = () => {
 		return { status: response.status, body: text.length > 0 ? JSON.parse(text) : null }
 	}
 
-	const ORG = Schema.decodeUnknownSync(OrgId)("org_config_e2e")
-	const USER = Schema.decodeUnknownSync(UserId)("user_config_e2e")
+	const ORG = Schema.decodeSync(OrgId)("org_config_e2e")
+	const USER = Schema.decodeSync(UserId)("user_config_e2e")
 
 	const bootstrapKey = (scopes?: ReadonlyArray<string>) =>
 		runtime.runPromise(
@@ -191,7 +191,7 @@ const makeHarness = () => {
 	const seedScrapeChecks = (publicId: string, count: number) => {
 		const internalId = decodePublicId("scrp", publicId)
 		if (internalId === null) throw new Error(`Invalid scrape target public ID: ${publicId}`)
-		const targetId = Schema.decodeUnknownSync(ScrapeTargetId)(internalId)
+		const targetId = Schema.decodeSync(ScrapeTargetId)(internalId)
 		const now = Date.now()
 		return runtime.runPromise(
 			Effect.gen(function* () {

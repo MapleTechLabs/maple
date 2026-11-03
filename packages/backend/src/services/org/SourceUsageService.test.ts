@@ -8,8 +8,8 @@ import { SourceUsageService } from "@maple/backend/services/org/SourceUsageServi
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_source_usage")
-const USER = Schema.decodeUnknownSync(UserId)("user_source_usage")
+const ORG = Schema.decodeSync(OrgId)("org_source_usage")
+const USER = Schema.decodeSync(UserId)("user_source_usage")
 const tenant: TenantContext = { orgId: ORG, userId: USER, roles: ["org:admin"], authMode: "self_hosted" }
 
 const NOW = Date.UTC(2026, 6, 15, 9, 42, 17)

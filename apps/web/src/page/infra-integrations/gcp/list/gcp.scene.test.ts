@@ -21,7 +21,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const status = (connected: boolean, overrides: Readonly<Record<string, unknown>> = {}) =>
-	Schema.decodeUnknownSync(V2GcpIntegration)({
+	Schema.decodeSync(V2GcpIntegration)({
 		object: "gcp_integration",
 		metrics_available: true,
 		connectors: connected

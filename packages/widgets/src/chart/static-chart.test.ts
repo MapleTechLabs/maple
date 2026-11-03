@@ -10,7 +10,7 @@ import {
 	sparkline,
 	type ChartPoint,
 } from "./static-chart"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Order, String as Str } from "effect"
 
 const at = (minutesAgo: number): number => Date.UTC(2026, 7, 18, 14, 32) - minutesAgo * 60_000
 
@@ -133,9 +133,8 @@ describe("the axes, which the caller draws and this only places", () => {
 					)
 					// Distinct is not enough on its own: the labels also have to run
 					// the way the axis does, largest at the top.
-					expect(Arr.map(yAxis, (tick) => tick.yFraction)).toEqual(
-						[...Arr.map(yAxis, (tick) => tick.yFraction)].sort((a, b) => a - b),
-					)
+					const fractions = Arr.map(yAxis, (tick) => tick.yFraction)
+					expect(fractions).toEqual(Arr.sort(fractions, Order.Number))
 				}
 			}
 		}

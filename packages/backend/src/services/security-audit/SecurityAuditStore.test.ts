@@ -12,6 +12,7 @@ import type {
 	RunMetadata,
 } from "@maple/security-audit"
 import { Effect, Layer, Option, Schema, Array as Arr, Record as Rec } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { SecurityAuditStore, type SecurityAuditStoreApi } from "./SecurityAuditStore"
@@ -21,9 +22,9 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 /** Saves whose findings carry no estimated severity. */
 const NO_ESTIMATES: ReadonlyMap<string, EstimatedSeverity> = new Map()
 
-const orgA = Schema.decodeUnknownSync(OrgId)("org_a")
-const orgB = Schema.decodeUnknownSync(OrgId)("org_b")
-const user = Schema.decodeUnknownSync(UserId)("user_a")
+const orgA = Schema.decodeSync(OrgId)("org_a")
+const orgB = Schema.decodeSync(OrgId)("org_b")
+const user = Schema.decodeSync(UserId)("user_a")
 /** A spend check no test reaches, for tests about the plan's invocations. */
 const NO_SPEND_LIMIT = { since: 0, limitUsd: Number.MAX_SAFE_INTEGER, sandboxFeeUsd: 0 }
 
@@ -670,7 +671,7 @@ describe("SecurityAuditStore runs and events", () => {
 	it.effect("refuses a target that names another org's repository", () =>
 		withStore((store) =>
 			Effect.gen(function* () {
-				const repositoryId = Schema.decodeUnknownSync(VcsRepositoryId)(crypto.randomUUID())
+				const repositoryId = Schema.decodeSync(VcsRepositoryId)(SecureRandom.uuidV4Unsafe())
 				const refused = yield* Effect.flip(
 					store.forOrg(orgA).createTarget({
 						repository: "acme/api",
@@ -862,7 +863,7 @@ describe("SecurityAuditStore triage", () => {
 					targetId: done.targetId,
 					statuses: ["complete", "incomplete"],
 				})
-				const targets = yield* scoped.listTargets()
+				const targets = yield* scoped.listTargets
 				const foreignTarget = yield* scoped.getTarget(other.targetId)
 
 				assert.deepStrictEqual(
@@ -1254,7 +1255,7 @@ describe("SecurityAuditStore cancellation", () => {
 				yield* scoped.finishRun(runId, { status: "complete" })
 				yield* scoped.finishRun(runId, { status: "failed", error: "interrupted" })
 				const missing = yield* Effect.flip(
-					scoped.finishRun(crypto.randomUUID(), { status: "complete" }),
+					scoped.finishRun(SecureRandom.uuidV4Unsafe(), { status: "complete" }),
 				)
 
 				const run = Option.getOrThrow(yield* scoped.getRun(runId))
@@ -1558,7 +1559,7 @@ describe("SecurityAuditStore org spend limit", () => {
 		withStore((store) =>
 			Effect.gen(function* () {
 				const a = store.forOrg(orgA)
-				const before = yield* a.getSettings()
+				const before = yield* a.getSettings
 				yield* a.saveSettings({
 					monthlySpendLimitUsd: 50,
 					discoveryModel: "deepseek/deepseek-v4.1-flash-1017:nitro",
@@ -1571,8 +1572,8 @@ describe("SecurityAuditStore org spend limit", () => {
 					validationModel: "anthropic/claude-sonnet-5.5",
 					updatedBy: user,
 				})
-				const read = yield* a.getSettings()
-				const otherOrg = yield* store.forOrg(orgB).getSettings()
+				const read = yield* a.getSettings
+				const otherOrg = yield* store.forOrg(orgB).getSettings
 				assert.deepStrictEqual(
 					[
 						Option.isNone(before),

@@ -112,7 +112,7 @@ describe("email addresses tab", () => {
 })
 
 describe("email preferences tab", () => {
-	const subscription = Schema.decodeUnknownSync(DigestSubscriptionResponse)({
+	const subscription = Schema.decodeSync(DigestSubscriptionResponse)({
 		id: "0199a0d6-0000-7000-8000-000000000001",
 		email: "ada@acme.test",
 		enabled: true,

@@ -423,10 +423,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 			),
 		),
 		// The gate's refusal is how a run stops on a proposal: the turn finished, it did not fail.
-		Effect.catchIf(
-			(error) => error instanceof ApprovalRequired,
-			() => Effect.void,
-		),
+		Effect.catchIf(Schema.is(ApprovalRequired), () => Effect.void),
 		// A landed submission makes any later failure moot, defects included; only an abort stays one.
 		Effect.catchCause((cause) =>
 			!submitted() || !input.holdsTurn()

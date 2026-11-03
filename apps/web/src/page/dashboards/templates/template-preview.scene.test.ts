@@ -27,7 +27,7 @@ const template = Schema.decodeUnknownSync(Schema.toType(V2DashboardTemplate))({
 	preview: [],
 })
 
-const preview = Schema.decodeUnknownSync(Schema.toType(V2DashboardTemplatePreview))({
+const preview = Schema.decodeSync(Schema.toType(V2DashboardTemplatePreview))({
 	object: "dashboard_template_preview",
 	name: "Google Cloud",
 	timeRange: { type: "relative", value: "6h" },

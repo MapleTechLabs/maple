@@ -177,7 +177,7 @@ export const followLimits = (
 ): string =>
 	raw === null || raw === applied
 		? applied
-		: Option.match(Schema.decodeUnknownOption(FlowLimitsJson)(raw), {
+		: Option.match(Schema.decodeOption(FlowLimitsJson)(raw), {
 				onNone: () => applied,
 				onSome: (limits) => {
 					apply(limits)

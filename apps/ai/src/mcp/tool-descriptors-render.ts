@@ -6,7 +6,7 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 /** JSON with every non-ASCII character escaped: the generated module stays plain ASCII. */
 const asciiJson = (value: unknown): string =>
 	encodeJson(value).replace(
-		/[^\x00-\x7f]/g,
+		/[\u0080-\uffff]/g,
 		(char) => `\\u${Str.padStart(4, "0")(char.charCodeAt(0).toString(16))}`,
 	)
 

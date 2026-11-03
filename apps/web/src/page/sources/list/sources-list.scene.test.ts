@@ -31,7 +31,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const source = (index: number, fields: Readonly<Record<string, unknown>> = {}) =>
-	Schema.decodeUnknownSync(V2Source)({
+	Schema.decodeSync(V2Source)({
 		id: encodePublicId(PublicIdPrefixes.source, `0199a0e1-0000-7000-8000-00000000000${index}`),
 		object: "source",
 		name: `Source ${index}`,
@@ -181,7 +181,7 @@ describe("integrations on the sources list", () => {
 			...rows,
 			source(5, { name: "PlanetScale acme", platform: "planetscale", key_prefix: null }),
 		])
-		const summary = Schema.decodeUnknownSync(V2SourceUsageSummary)({
+		const summary = Schema.decodeSync(V2SourceUsageSummary)({
 			object: "source_usage_summary",
 			window_start: "2026-09-30T13:00:00.000Z",
 			window_end: "2026-10-01T12:00:00.000Z",

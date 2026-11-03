@@ -43,6 +43,21 @@
 		"effecttsgo/return-effect-in-gen": "error",
 		"effecttsgo/run-effect-inside-effect": "error",
 		"effecttsgo/service-not-as-class": "warn",
+		// The repo builds on `effect/unstable/*` (HttpApi, HttpClient, RPC) and `@effect/vitest`; ~10k
+		// hits with nothing to change. Version bumps are where breakage shows up.
+		"effecttsgo/unstable-api-usage": "off",
+		// JSON can't carry NaN/Infinity, and a blanket `Schema.Finite` turns a computed NaN into a decode failure.
+		"effecttsgo/schema-number": "off",
+		// Schema classes are told apart by their fields and `_tag`; a brand on every class is noise.
+		"effecttsgo/schema-class-missing-brand": "off",
+		// `new Date(ts)` to parse or format is pure; `global-date-in-effect` covers clock reads in Effect code.
+		"effecttsgo/global-date": "off",
+		// Durable Object methods, Worker handlers and Promise-based library hooks have to be async.
+		"effecttsgo/async-function": "off",
+		// node:crypto HMAC/hashes in Workers and node:fs/path in the local server are the intended APIs.
+		"effecttsgo/node-builtin-import": "off",
+		// Fires on `new X({ ...x })`, which rebuilds the instance and is how Schema classes are copied.
+		"typescript/no-misused-spread": "off",
 		// New in the effect-native preset: flags every sync decode, ~1k hits mostly in tests and non-Effect
 		// boundaries. `schema-sync-in-effect` already covers the case that matters.
 		"effecttsgo/schema-sync": "off",
@@ -86,6 +101,42 @@
 				"effecttsgo/global-json": "off"
 			}
 		},
+		// Not Effect programs: packages without an `effect` dependency, the Astro site, and ops scripts,
+		// benches and build configs that run as plain async Node/Bun.
+		{
+			"files": [
+				"alchemy.run.ts",
+				"examples/**",
+				"scripts/**",
+				"**/scripts/**",
+				"**/bench/**",
+				"**/tools/**",
+				"**/*.config.ts",
+				"apps/ingest/**",
+				"apps/landing/**",
+				"packages/browser/**",
+				"packages/browser-session/**",
+				"packages/clickhouse-cli/**",
+				"packages/otel-collector-maple-exporter/**",
+				"packages/sdk-core/**",
+				"lib/ai-model-catalog/**",
+				"lib/grid-engine/**",
+				"lib/prometheus-otlp/**",
+				"lib/semconv/**"
+			],
+			"rules": {
+				"effecttsgo/crypto-random-uuid": "off",
+				"effecttsgo/global-console": "off",
+				"effecttsgo/global-fetch": "off",
+				"effecttsgo/global-random": "off",
+				"effecttsgo/global-timers": "off",
+				"effecttsgo/new-promise": "off",
+				"effecttsgo/process-env": "off",
+				"effecttsgo/prefer-effect-array": "off",
+				"effecttsgo/prefer-effect-record": "off",
+				"effecttsgo/prefer-effect-string": "off"
+			}
+		},
 		// Tests may use host globals and intentionally incomplete layers; production code may not.
 		{
 			"files": [
@@ -100,10 +151,8 @@
 			],
 			"rules": {
 				"effecttsgo/any-unknown-in-error-context": "off",
-				"effecttsgo/async-function": "off",
 				"effecttsgo/crypto-random-uuid": "off",
 				"effecttsgo/global-console": "off",
-				"effecttsgo/global-date": "off",
 				"effecttsgo/global-fetch": "off",
 				// Tests build JSON fixtures and assert on `yield*` results inline.
 				"effecttsgo/global-json": "off",
@@ -111,8 +160,11 @@
 				"effecttsgo/global-random": "off",
 				"effecttsgo/global-timers": "off",
 				"effecttsgo/new-promise": "off",
-				"effecttsgo/node-builtin-import": "off",
 				"effecttsgo/process-env": "off",
+				// Fixtures and assertions read better with native array/string calls.
+				"effecttsgo/prefer-effect-array": "off",
+				"effecttsgo/prefer-effect-record": "off",
+				"effecttsgo/prefer-effect-string": "off",
 				// Tests decode fixtures inline and cast partial layers on purpose.
 				"effecttsgo/schema-sync-in-effect": "off",
 				"effecttsgo/unsafe-effect-type-assertion": "off",

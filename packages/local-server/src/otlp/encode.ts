@@ -67,7 +67,7 @@ export function bytesHex(b64: string | undefined): string {
 // `ignoreBOM` keeps a leading U+FEFF, as Rust's `from_utf8` does.
 const UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
 // Rust's `char::is_control` (C0, DEL, C1) less tab, LF and CR.
-const BINARY_CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/
+const BINARY_CONTROL = /(?![\t\n\r])\p{Cc}/u
 
 /**
  * Port of the Rust `BytesValue` arm of `any_value_string`: the bytes as text

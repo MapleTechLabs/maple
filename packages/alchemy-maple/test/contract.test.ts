@@ -91,11 +91,9 @@ describe("provider request bodies decode against the real v2 create-param schema
 			],
 			variables: [{ name: "service", type: "query", source: { kind: "facet", facet: "service" } }],
 		}
-		expect(Schema.decodeUnknownSync(DashboardData)(data)).toEqual(data)
+		expect(Schema.decodeSync(DashboardData)(data)).toEqual(data)
 		expect(
-			Schema.encodeSync(V2DashboardCreateParams)(
-				Schema.decodeUnknownSync(V2DashboardCreateParams)(data),
-			),
+			Schema.encodeSync(V2DashboardCreateParams)(Schema.decodeSync(V2DashboardCreateParams)(data)),
 		).toEqual(data)
 		expect(Schema.is(DashboardWidget)({ ...data.widgets?.[0], visualization: "timeseries" })).toBe(false)
 		expect(

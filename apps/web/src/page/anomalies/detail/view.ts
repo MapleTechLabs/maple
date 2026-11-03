@@ -41,8 +41,10 @@ const headerActions = (h: H, model: Model, incident: AnomalyIncidentDocument, ti
 	const tone = severityToneFor(incident)
 	const isBusy = model.busy !== null
 	return hstack(h, { gap: "2" }, [
-		badge(h, { variant: "outline", className: isStale ? SEVERITY_TONE.resolved.badge : tone.badge }, [
-			...(isOpen && !isStale
+		badge(
+			h,
+			{ variant: "outline", className: isStale ? SEVERITY_TONE.resolved.badge : tone.badge },
+			isOpen && !isStale
 				? [
 						hstack(h, { gap: "1.5", as: "span" }, [
 							statusDot(h, { tone: tone.tone }),
@@ -62,8 +64,8 @@ const headerActions = (h: H, model: Model, incident: AnomalyIncidentDocument, ti
 							incident.resolveReason !== null
 								? RESOLVE_REASON_LABEL[incident.resolveReason]
 								: "Resolved",
-						]),
-		]),
+						],
+		),
 		button(
 			h,
 			{

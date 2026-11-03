@@ -126,11 +126,10 @@ export const loadStatus = (refresh: boolean) =>
 	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
 
 /** `retainedInternalQuery("integrations", "cloudflareUsage")`. */
-export const loadUsage = () =>
-	Effect.gen(function* () {
-		const client = yield* MapleInternalApiClient
-		return yield* client.integrations.cloudflareUsage()
-	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+export const loadUsage = Effect.gen(function* () {
+	const client = yield* MapleInternalApiClient
+	return yield* client.integrations.cloudflareUsage()
+}).pipe(Effect.mapError(toLoadFailure), Effect.result)
 
 export const loadZones = (data: WindowInput) =>
 	getCloudflareZones({ data }).pipe(

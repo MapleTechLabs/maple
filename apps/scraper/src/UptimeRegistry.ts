@@ -21,7 +21,7 @@ export class UptimeRegistry extends Context.Service<UptimeRegistry, UptimeRegist
 			const lastRefreshAt = yield* Ref.make<number | null>(null)
 
 			const refresh = Effect.gen(function* () {
-				const list = yield* api.listUptimeTargets()
+				const list = yield* api.listUptimeTargets
 				const byId = new Map(list.map((target): [string, UptimeProbeTarget] => [target.id, target]))
 				yield* Ref.set(monitors, byId)
 				const refreshedAt = yield* Clock.currentTimeMillis
