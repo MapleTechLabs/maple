@@ -64,6 +64,7 @@ export interface CancellationReport {
 }
 
 const REASON_LABELS = {
+	same_day_cancel: "Cancelled the day they subscribed",
 	never_activated: "Never got going",
 	stopped_sending: "Stopped sending telemetry",
 	not_engaged: "Nobody was using it",
