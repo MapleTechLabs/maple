@@ -51,7 +51,7 @@ const noArbitraryRadius = tokenRule(
 	({ utility }) =>
 		/^rounded(-[a-z]{1,2})?-\[/.test(utility) &&
 		utility !== "rounded-[inherit]" &&
-		!/-\[inherit\]$/.test(utility),
+		!utility.endsWith("-[inherit]"),
 )
 
 const noRawShadow = tokenRule(

@@ -164,7 +164,7 @@ export function paddedWindowArgs(window: { readonly startTime: string; readonly 
 }
 
 /** The sentinel a caught 413 hands back: retry this page smaller. */
-const HALVE: "halve" = "halve"
+const HALVE = "halve" as const
 
 type ReadSpansPage = ReturnType<typeof readAiSessionSpans>
 

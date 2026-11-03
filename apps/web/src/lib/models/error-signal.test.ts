@@ -108,14 +108,14 @@ describe("surgeRatio", () => {
 	})
 
 	it("reads ~1 for volume spread evenly across the window", () => {
-		const flat = new Array<number>(10).fill(10)
+		const flat = Array.from({ length: 10 }, () => 10)
 		const ratio = surgeRatio(flat)
 		expect(ratio).not.toBeNull()
 		expect(ratio ?? 0).toBeCloseTo(1, 5)
 	})
 
 	it("reads high when the same volume lands entirely at the end", () => {
-		const burst = [...new Array<number>(9).fill(0), 100]
+		const burst = [...Array.from({ length: 9 }, () => 0), 100]
 		// All 100 events in the last tenth of a window whose expected tail share
 		// is a fifth: 100 / (100 * 0.2) = 5.
 		expect(surgeRatio(burst) ?? 0).toBeGreaterThan(2.5)
