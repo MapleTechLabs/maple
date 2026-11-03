@@ -252,6 +252,22 @@ describe("ingest rule MCP tools", () => {
 			[{ ...log("a", 9), attributes: { user: { email: "a@b.co" } } }],
 		)
 		assert.deepEqual(nested.examples[0]?.changes, ['user -> {"email":"[REDACTED:email]"}'])
+		const structuredBody = previewOver(
+			{
+				signals: ["logs"],
+				conditions: [],
+				action: {
+					_tag: "redact",
+					keys: [],
+					detectors: ["email"],
+					patterns: [],
+					scopes: ["body"],
+					method: "mask",
+				},
+			},
+			[{ ...log("a", 9), body: { user: { email: "a@b.co" } } }],
+		)
+		assert.deepEqual(structuredBody.examples[0]?.changes, ['body: {"user":{"email":"[REDACTED:email]"}}'])
 	})
 
 	it("names the argument a validation problem is about", () => {
