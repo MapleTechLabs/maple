@@ -64,6 +64,8 @@ export const Model = Schema.Struct({
 	committed: Schema.String,
 	/** Bumped by each typed edit; only the last one's pause commits. */
 	typingVersion: Schema.Number,
+	/** The URL this page last asked for: a route change to anything else came from outside. */
+	navigatedTo: Schema.NullOr(Schema.String),
 	stepCombos: Schema.Record(Schema.String, Combobox.Model),
 	selects: Schema.Record(Schema.String, Select.Model),
 	eventsQuery: Schema.String,

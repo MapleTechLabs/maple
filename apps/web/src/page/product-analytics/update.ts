@@ -78,7 +78,12 @@ const navigate = (model: Model, search: Search, isReplace = false): Return => {
 	const committed = committedOf(search)
 	const drafts = committed === committedOf(withDrafts(model)) ? { committed } : draftsOf(search)
 	return {
-		model: { ...model, ...drafts, typingVersion: model.typingVersion + 1 },
+		model: {
+			...model,
+			...drafts,
+			typingVersion: model.typingVersion + 1,
+			navigatedTo: searchHref(search),
+		},
 		outMessage: PageOutMessage.RequestedNavigation({ url: searchHref(search), isReplace }),
 	}
 }
@@ -158,6 +163,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		paths: Keyed.idle(),
 		...draftsOf(route.search),
 		typingVersion: 0,
+		navigatedTo: null,
 		stepCombos: {},
 		selects: {},
 		eventsQuery: "",
@@ -186,11 +192,15 @@ export const routeChanged = (
 	context: PageContext,
 ): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
-	// A definition this page did not write (Back, a row's Funnel button) replaces the drafts.
+	// A definition this page did not write (Back, a row's Funnel button) replaces the drafts. Any
+	// route change the page did not ask for (Back to another window) cancels a pending typing pause.
+	const isOwn = searchHref(route.search) === model.navigatedTo
 	const drafts =
-		committedOf(route.search) === model.committed
-			? {}
-			: { ...draftsOf(route.search), typingVersion: model.typingVersion + 1 }
+		committedOf(route.search) !== model.committed
+			? { ...draftsOf(route.search), typingVersion: model.typingVersion + 1 }
+			: isOwn
+				? {}
+				: { typingVersion: model.typingVersion + 1 }
 	const next: Model = { ...model, ...drafts, search: route.search }
 	return routeWindowStep(model.search, route.search, {
 		resolve: (): Return => ({

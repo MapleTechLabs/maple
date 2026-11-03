@@ -195,6 +195,34 @@ describe("product analytics", () => {
 		)
 	})
 
+	test("Back to another window mid-typing cancels the pause; the page's own write does not", () => {
+		const start = resolved({ tab: "funnels", steps: [{ kind: "event", eventName: "" }] }).model
+		const typed = typing(start, "sig")
+		const back = routeChanged(
+			typed.model,
+			{ search: { tab: "funnels", steps: [{ kind: "event", eventName: "" }], timePreset: "24h" } },
+			context,
+		)
+		expect(back.model.steps).toEqual([{ kind: "event", eventName: "sig" }])
+		expect(
+			pageUpdate(back.model, Message.PausedTyping({ version: typed.model.typingVersion })).outMessage,
+		).toBeUndefined()
+
+		const committed = pageUpdate(
+			typed.model,
+			Message.PausedTyping({ version: typed.model.typingVersion }),
+		)
+		const more = typing(committed.model, "signup")
+		const landed = routeChanged(
+			more.model,
+			{ search: { tab: "funnels", steps: [{ kind: "event", eventName: "sig" }] } },
+			context,
+		)
+		expect(
+			pageUpdate(landed.model, Message.PausedTyping({ version: more.model.typingVersion })).outMessage,
+		).toBeDefined()
+	})
+
 	test("a Page anchor with no path yet stays a Page anchor", () => {
 		const picked = pageUpdate(
 			resolved({ tab: "paths" }).model,
