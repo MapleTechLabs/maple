@@ -53,6 +53,22 @@ export interface ResourceConfigInput {
 	readonly repositoryUrl?: string | undefined
 }
 
+/** An explicit `attributes` entry beats one from OTEL_RESOURCE_ATTRIBUTES. */
+const identityAttribute = (
+	configAttributes: Record<string, unknown> | undefined,
+	envAttributes: Record<string, unknown>,
+	key: "service.name" | "service.version",
+): string | undefined => stringOrUndefined(configAttributes?.[key]) ?? stringOrUndefined(envAttributes[key])
+
+/**
+ * `serviceName`/`serviceVersion` are the only source of these keys, so both exporters
+ * emit one value each instead of the generic entry and the dedicated field disagreeing.
+ */
+const dropIdentityAttributes = (attributes: Record<string, unknown>): void => {
+	delete attributes["service.name"]
+	delete attributes["service.version"]
+}
+
 export interface ResolvedResource {
 	/**
 	 * Always resolves — the region's endpoint is the final fallback, so this
@@ -105,7 +121,7 @@ export const resolveResource = Effect.fn("resolveResource")(function* (config: R
 	const envServiceVersion = yield* EnvConfig.serviceVersion
 	const serviceVersion =
 		config.serviceVersion ??
-		stringOrUndefined(envResourceAttributes["service.version"]) ??
+		identityAttribute(config.attributes, envResourceAttributes, "service.version") ??
 		Option.getOrUndefined(envServiceVersion)
 
 	const envRepositoryUrl = yield* EnvConfig.repositoryUrl
@@ -122,7 +138,7 @@ export const resolveResource = Effect.fn("resolveResource")(function* (config: R
 	const serviceName =
 		config.serviceName ??
 		Option.getOrUndefined(envOtelServiceName) ??
-		stringOrUndefined(envResourceAttributes["service.name"]) ??
+		identityAttribute(config.attributes, envResourceAttributes, "service.name") ??
 		"unknown"
 
 	const attributes: Record<string, unknown> = {}
@@ -147,6 +163,7 @@ export const resolveResource = Effect.fn("resolveResource")(function* (config: R
 	if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace
 	Object.assign(attributes, envResourceAttributes)
 	if (config.attributes) Object.assign(attributes, config.attributes)
+	dropIdentityAttributes(attributes)
 
 	return {
 		endpoint,
@@ -199,7 +216,9 @@ export const resolveResourceFromEnv = (
 		: {}
 
 	const serviceVersion =
-		config.serviceVersion ?? stringOrUndefined(envResourceAttributes["service.version"]) ?? envCommitSha
+		config.serviceVersion ??
+		identityAttribute(config.attributes, envResourceAttributes, "service.version") ??
+		envCommitSha
 
 	const repositoryUrl =
 		config.repositoryUrl ?? EnvConfig.resolveRepositoryUrl((key) => stringOrUndefined(env[key]))
@@ -217,7 +236,7 @@ export const resolveResourceFromEnv = (
 	const serviceName =
 		config.serviceName ??
 		stringOrUndefined(env.OTEL_SERVICE_NAME) ??
-		stringOrUndefined(envResourceAttributes["service.name"]) ??
+		identityAttribute(config.attributes, envResourceAttributes, "service.name") ??
 		"unknown"
 
 	const attributes: Record<string, unknown> = {}
@@ -234,6 +253,7 @@ export const resolveResourceFromEnv = (
 	if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace
 	Object.assign(attributes, envResourceAttributes)
 	if (config.attributes) Object.assign(attributes, config.attributes)
+	dropIdentityAttributes(attributes)
 
 	return {
 		endpoint,

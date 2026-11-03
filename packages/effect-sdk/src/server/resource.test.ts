@@ -69,6 +69,21 @@ describe("service identity from OTEL_RESOURCE_ATTRIBUTES", () => {
 		expect((await resolved(env)).resource.serviceName).toBe("payments")
 		expect(resolveResourceFromEnv(env, {}).resource.serviceName).toBe("payments")
 	})
+
+	it("lets explicit attributes beat the env and emits each identity key once", async () => {
+		const env = { OTEL_RESOURCE_ATTRIBUTES: "service.name=checkout,service.version=1.0" }
+		const attributes = { "service.name": "billing", "service.version": "2.0" }
+		const fromConfig = await Effect.runPromise(
+			resolveResource({ attributes }).pipe(
+				Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromEnv({ env })),
+			),
+		)
+		for (const { resource } of [fromConfig, resolveResourceFromEnv(env, { attributes })]) {
+			expect(resource).toMatchObject({ serviceName: "billing", serviceVersion: "2.0" })
+			expect(resource.attributes["service.name"]).toBeUndefined()
+			expect(resource.attributes["service.version"]).toBeUndefined()
+		}
+	})
 })
 
 describe("vcs.ref.head.revision from serviceVersion", () => {
