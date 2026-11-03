@@ -21,5 +21,8 @@ export const authorAvatar = <M>(h: HtmlBuilder<M>, login: string, className?: st
 export const authorLabel = <M>(h: HtmlBuilder<M>, login: string, className?: string, wrap = false): Html =>
 	h.span(
 		[h.Class(cn("inline-flex min-w-0 items-center gap-1.5", className))],
-		[authorAvatar(h, login), h.span([h.Class(wrap ? "break-all" : "truncate"), h.Title(login)], [login])],
+		[
+			authorAvatar(h, login),
+			h.span([h.Class(wrap ? "wrap-anywhere" : "truncate"), h.Title(login)], [login]),
+		],
 	)
