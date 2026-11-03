@@ -348,7 +348,7 @@ const plansGrid = (h: H, plans: ReadonlyArray<CatalogPlan>, model: Model): Html 
  * `Compliance`: one quiet line under the plans, in the cards' own footnote style. Only the DPA
  * reads as held; SOC 2 and ISO 27001 are audits in progress.
  */
-export const compliance = (h: H): Html =>
+export const compliance = <M>(h: HtmlBuilder<M>): Html =>
 	hstack(h, { gap: "1.5", justify: "center", wrap: true, className: "text-xs text-muted-foreground" }, [
 		icon(h, "ShieldCheckIcon", { className: "size-3.5" }),
 		h.span([], [COMPLIANCE_LINE]),
