@@ -7,6 +7,7 @@ import {
 import { pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Schema } from "effect"
+import { revealIcon } from "@maple/views/ui/reveal-icon"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button } from "@maple/views/ui/button"
@@ -108,11 +109,7 @@ const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: R
 						],
 						[
 							repositoryName(h, repo.fullName),
-							icon(h, "ExternalLinkIcon", {
-								size: 12,
-								className:
-									"shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100",
-							}),
+							revealIcon(h, "ExternalLinkIcon", { size: 12 }),
 						],
 					),
 					...(repo.isPrivate

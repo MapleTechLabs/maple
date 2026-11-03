@@ -2,6 +2,7 @@ import { formatErrorRate } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
+import { typography } from "@maple/views/ui/typography"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
@@ -77,14 +78,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					[
 						toolbarStat(h, { value: Math.round(stats?.totalErrors ?? 0), label: "errors", isDanger: true }),
 						toolbarStat(h, { value: Math.round(stats?.affectedTracesCount ?? 0), label: "affected traces" }),
-						h.span(
-							[h.Class("text-sm whitespace-nowrap text-muted-foreground")],
-							[
-								h.span([h.Class("font-medium tabular-nums text-foreground")], [formatErrorRate(stats?.errorRate ?? 0)]),
-								" ",
-								"error rate",
-							],
-						),
+						typography(h, { size: "sm", tone: "muted", className: "whitespace-nowrap" }, [
+							typography(h, { tone: "foreground", weight: "medium", numeric: true }, [formatErrorRate(stats?.errorRate ?? 0)]),
+							" ",
+							"error rate",
+						]),
 					],
 					"flex-wrap",
 				),

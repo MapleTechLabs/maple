@@ -44,7 +44,7 @@ export const staleNotice = <M>(h: HtmlBuilder<M>, notice: Notice, onRetry: M): H
 				[
 					h.Class(
 						cn(
-							"stale-notice pointer-events-auto flex max-w-full items-center gap-2 rounded-full border bg-popover py-1 pr-1 pl-3 text-xs text-popover-foreground shadow-sm",
+							"stale-notice pointer-events-auto flex max-w-full items-center gap-2 rounded-full border bg-popover py-1 pr-1 pl-3 text-xs text-popover-foreground shadow-popup",
 							TONE_BORDER[notice.tone],
 							!notice.isRetrying && "pr-3",
 						),

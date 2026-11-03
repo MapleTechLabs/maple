@@ -1,4 +1,6 @@
+import { fillRegion } from "@maple/views/ui/scroll-region"
 import { sidebarInset, sidebarTrigger, sidebarWrapper } from "@maple/views/ui/sidebar"
+import { hstack } from "@maple/views/ui/stack"
 import * as ToastView from "@maple/views/ui/toast-view"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
@@ -82,8 +84,9 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
 						sidebarInset(
 							h,
 							[
-								h.header(
-									[h.Class("flex h-12 shrink-0 items-center gap-2 border-b px-4 md:hidden")],
+								hstack(
+									h,
+									{ as: "header", gap: "2", className: "h-12 shrink-0 border-b px-4 md:hidden" },
 									[
 										sidebarTrigger(h, {
 											state: model.isSidebarOpen ? "expanded" : "collapsed",
@@ -93,7 +96,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
 										localLockup(h),
 									],
 								),
-								h.div([h.Class("relative min-h-0 flex-1")], mainContent(h, model, page)),
+								fillRegion(h, {}, mainContent(h, model, page)),
 							],
 							"h-dvh text-foreground",
 						),

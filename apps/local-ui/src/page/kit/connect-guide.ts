@@ -1,6 +1,8 @@
 import { DOCS_LOCAL_MODE_SEND_TELEMETRY } from "../../lib/links"
 import { copyableField } from "@maple/views/ui/copyable-field"
 import * as CopyButton from "@maple/views/ui/copy-button"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { type Copies, copyOf } from "./copies"
 
@@ -27,8 +29,9 @@ export const connectGuide = <M>(h: HtmlBuilder<M>, options: ConnectGuideOptions<
 	const env = otelEnvBlock(options.endpoint)
 	const endpointId = `${options.id}-endpoint`
 	const envId = `${options.id}-env`
-	return h.div(
-		[h.Class("w-full space-y-3 text-left")],
+	return vstack(
+		h,
+		{ gap: "3", className: "w-full text-left" },
 		[
 			copyableField(h, {
 				id: endpointId,
@@ -37,13 +40,15 @@ export const connectGuide = <M>(h: HtmlBuilder<M>, options: ConnectGuideOptions<
 				copy: copyOf(options.copies, endpointId),
 				toCopyMessage: (message) => options.toCopyMessage(endpointId, message),
 			}),
-			h.div(
-				[h.Class("space-y-1")],
+			vstack(
+				h,
+				{ gap: "1" },
 				[
-					h.div(
-						[h.Class("flex items-center justify-between")],
+					hstack(
+						h,
+						{ justify: "between" },
 						[
-							h.span([h.Class("text-xs text-muted-foreground")], ["Exporter environment"]),
+							typography(h, { size: "xs", tone: "muted" }, ["Exporter environment"]),
 							CopyButton.view(h, {
 								model: copyOf(options.copies, envId),
 								toParentMessage: (message) => options.toCopyMessage(envId, message),
@@ -57,15 +62,16 @@ export const connectGuide = <M>(h: HtmlBuilder<M>, options: ConnectGuideOptions<
 					h.pre(
 						[
 							h.Class(
-								"overflow-x-auto rounded-md border bg-muted/40 px-3 py-2 font-mono text-[11px] leading-relaxed",
+								"overflow-x-auto rounded-md border bg-muted/40 px-3 py-2 font-mono text-2xs leading-relaxed",
 							),
 						],
 						[env],
 					),
 				],
 			),
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
+			typography(
+				h,
+				{ as: "p", size: "xs", tone: "muted" },
 				[
 					"No API key needed. Local Maple takes OTLP over HTTP only, so keep the protocol line: .NET and the Python distro default to gRPC.",
 				],
@@ -77,7 +83,7 @@ export const connectGuide = <M>(h: HtmlBuilder<M>, options: ConnectGuideOptions<
 					h.Target("_blank"),
 					h.Rel("noopener noreferrer"),
 					h.Class(
-						"inline-block text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground",
+						"inline-block self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground active:text-foreground",
 					),
 				],
 				["OTLP setup docs"],

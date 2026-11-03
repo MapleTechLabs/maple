@@ -1,13 +1,14 @@
 # Design rules
 
-The rules the dashboard (`apps/web`) and its kit (`packages/ui`) follow. Tokens live in
+The rules the dashboard (`apps/web`), Maple Local (`apps/local-ui`) and their kit (`packages/views`,
+`packages/ui`) follow. Tokens live in
 `packages/ui/src/styles/tokens.css`; the `maple/*` lint rules named below enforce them in CI
 (`scripts/oxlint-plugins/design-rules.mjs`). A rule you need to break gets a new token, not an
 exception at the call site.
 
 ## Build from the kit
 
-Pages compose the kit (`packages/views/src/ui`, `apps/web/src/page/kit`; index in
+Pages compose the kit (`packages/views/src/ui`, each app's `src/page/kit`; index in
 `packages/views/src/ui/INDEX.md`). A control, heading or pattern a page needs and the kit lacks is built
 in the kit, and the pages that already hand-roll it move onto it. Outside the kit, lint bans raw
 controls (`maple/no-raw-control`), raw headings (`maple/no-raw-heading`) and building a component

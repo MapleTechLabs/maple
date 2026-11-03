@@ -6,7 +6,11 @@ import * as TabsView from "@maple/views/ui/tabs-view"
 import { copyOf } from "../page/kit/copies"
 import { button } from "@maple/views/ui/button"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { hstack } from "@maple/views/ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "../message"
 import type { Model } from "../model"
@@ -18,18 +22,17 @@ import type { Rejection } from "../server/state"
 const startCommand = (port: string): string =>
 	port === DEFAULT_LOCAL_PORT ? "maple start" : `maple start --port ${port}`
 
-const inlineCode = (h: HtmlBuilder<Message>, text: string) => h.code([h.Class("rounded bg-muted px-1")], [text])
-
 /** A hosted page (local.maple.dev) reaches the binary across the local-network gate. */
 const hostedHint = (h: HtmlBuilder<Message>): Html =>
-	h.p(
-		[h.Class("text-left text-xs text-muted-foreground")],
+	typography(
+		h,
+		{ as: "p", size: "xs", tone: "muted", className: "text-left" },
 		[
 			"This page runs on local.maple.dev and talks to your machine directly, so your browser may ask to allow access to devices on your local network: allow it. Running on another port? Add ",
-			inlineCode(h, "?port=<n>"),
+			inlineCode(h, {}, ["?port=<n>"]),
 			" to the URL. To skip the prompt, run",
 			" ",
-			inlineCode(h, "maple start --offline"),
+			inlineCode(h, {}, ["maple start --offline"]),
 			" and open the URL it prints.",
 		],
 	)
@@ -61,7 +64,7 @@ export const rejectedState = (h: HtmlBuilder<Message>, rejection: Rejection): Ht
 								h.pre(
 									[
 										h.Class(
-											"whitespace-pre-wrap break-all rounded-md border bg-muted/40 px-3 py-2 text-left font-mono text-[11px]",
+											"whitespace-pre-wrap break-all rounded-md border bg-muted/40 px-3 py-2 text-left font-mono text-2xs",
 										),
 									],
 									[rejection.detail],
@@ -88,7 +91,7 @@ const field = (h: HtmlBuilder<Message>, model: Model, id: string, label: string,
 
 const docsLink = (h: HtmlBuilder<Message>, href: string, label: string) =>
 	h.a(
-		[h.Href(href), h.Target("_blank"), h.Rel("noopener noreferrer"), h.Class("underline underline-offset-2 hover:no-underline")],
+		[h.Href(href), h.Target("_blank"), h.Rel("noopener noreferrer"), h.Class("underline underline-offset-2 hover:no-underline active:no-underline")],
 		[label],
 	)
 
@@ -131,27 +134,18 @@ export const disconnectedState = (h: HtmlBuilder<Message>, model: Model): Html =
 				[
 					installCommands(h, model),
 					separator(h, "horizontal", undefined),
-					h.span(
-						[h.Class("text-left text-[11px] font-semibold uppercase tracking-widest text-muted-foreground")],
-						["Already installed?"],
-					),
+					eyebrow(h, { variant: "label", className: "text-left" }, ["Already installed?"]),
 					field(h, model, "start-maple", "Start Maple", startCommand(model.env.port)),
 					field(h, model, "expecting", "Expecting", model.env.otlpEndpoint),
 					...(model.env.isHosted ? [hostedHint(h)] : []),
-					h.div(
-						[h.Class("flex items-center justify-between gap-2")],
-						[
-							retry(h),
-							h.span(
-								[h.Class("flex items-center gap-2 text-xs text-muted-foreground")],
-								[
-									docsLink(h, DOCS_LOCAL_MODE_INSTALL, "Local mode"),
-									h.span([h.AriaHidden(true)], ["·"]),
-									docsLink(h, DOCS_CLI_REFERENCE, "CLI reference"),
-								],
-							),
-						],
-					),
+					hstack(h, { justify: "between", gap: "2" }, [
+						retry(h),
+						hstack(h, { as: "span", gap: "2", className: typographyClass({ size: "xs", tone: "muted" }) }, [
+							docsLink(h, DOCS_LOCAL_MODE_INSTALL, "Local mode"),
+							h.span([h.AriaHidden(true)], ["·"]),
+							docsLink(h, DOCS_CLI_REFERENCE, "CLI reference"),
+						]),
+					]),
 				],
 				"w-full max-w-md items-stretch gap-3 text-left",
 			),

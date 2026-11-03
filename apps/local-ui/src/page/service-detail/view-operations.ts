@@ -2,16 +2,27 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { errorState } from "@maple/views/ui/error-state"
 import { spinner } from "@maple/views/ui/spinner"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import {
+	table,
+	tableBody,
+	numericTableCell,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "@maple/views/ui/table"
 import { errorRateValue, latencyValue } from "@maple/views/ui/values"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
+import { heading } from "@maple/views/ui/heading"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
 import { linkRow, rowLink } from "../kit/row-link"
 import { Message } from "./message"
 import type { Model, OperationRow } from "./model"
 import { tracesHref } from "./view-parts"
+import { hstack } from "@maple/views/ui/stack"
+import { typographyClass } from "@maple/views/ui/typography"
 
 // The "Top operations" section of `ServiceDetailView`.
 
@@ -21,16 +32,25 @@ const operationRow = (h: HtmlBuilder<Message>, serviceName: string, range: strin
 	linkRow(h, undefined, [
 		tableCell(
 			h,
-			[rowLink(h, { href: tracesHref(serviceName, range, op.spanName), label: `Traces with ${op.spanName}` }, [op.spanName])],
+			[
+				rowLink(
+					h,
+					{
+						href: tracesHref(serviceName, range, op.spanName),
+						label: `Traces with ${op.spanName}`,
+					},
+					[op.spanName],
+				),
+			],
 			"max-w-96 truncate font-mono text-xs",
 		),
-		tableCell(h, [formatNumber(op.estimatedSpanCount || op.spanCount)], "text-right tabular-nums"),
-		tableCell(
+		numericTableCell(h, [formatNumber(op.estimatedSpanCount || op.spanCount)]),
+		numericTableCell(
 			h,
 			[formatNumber(op.estimatedErrorCount || op.errorCount)],
-			cn("text-right tabular-nums", op.errorCount > 0 && "text-severity-error"),
+			cn(op.errorCount > 0 && "text-severity-error"),
 		),
-		tableCell(h, [errorRateValue(h, { rate: op.errorRate })], "text-right tabular-nums"),
+		numericTableCell(h, [errorRateValue(h, { rate: op.errorRate })]),
 		tableCell(h, [latencyValue(h, { ms: op.avgDurationMs, scale: "avg" })], "text-right"),
 		tableCell(h, [latencyValue(h, { ms: op.p50DurationMs, scale: "p50" })], "text-right"),
 		tableCell(h, [latencyValue(h, { ms: op.p95DurationMs, scale: "p95" })], "text-right"),
@@ -42,21 +62,34 @@ const operationsBody = (h: HtmlBuilder<Message>, model: Model, range: string): H
 	const failure = failureWithoutData(model.operations)
 	if (Option.isSome(failure))
 		return errorState(h, {
-			failure: failure.value, title: "Couldn’t load operations",
+			failure: failure.value,
+			title: "Couldn’t load operations",
 			onRetry: Message.ClickedRetryOperations(),
 		})
 	const operations = Option.getOrElse(AsyncData.getData(model.operations.data), () => [])
 	if (operations.length === 0)
-		return h.div(
-			[h.Class("flex h-24 items-center justify-center rounded-md border text-sm text-muted-foreground")],
+		return hstack(
+			h,
+			{
+				justify: "center",
+				className: cn("h-24 rounded-md border", typographyClass({ size: "sm", tone: "muted" })),
+			},
 			["No operations recorded in this range."],
 		)
 	return h.div(
 		[h.Class("rounded-md border")],
 		[
 			table(h, {}, [
-				tableHeader(h, [tableRow(h, [tableHead(h, ["Operation"]), ...HEADERS.map((header) => tableHead(h, [header], "text-right"))])]),
-				tableBody(h, operations.map((op) => operationRow(h, model.serviceName, range, op))),
+				tableHeader(h, [
+					tableRow(h, [
+						tableHead(h, ["Operation"]),
+						...HEADERS.map((header) => tableHead(h, [header], "text-right")),
+					]),
+				]),
+				tableBody(
+					h,
+					operations.map((op) => operationRow(h, model.serviceName, range, op)),
+				),
 			]),
 		],
 	)
@@ -65,5 +98,8 @@ const operationsBody = (h: HtmlBuilder<Message>, model: Model, range: string): H
 export const topOperations = (h: HtmlBuilder<Message>, model: Model, range: string): Html =>
 	h.section(
 		[h.Class("space-y-2")],
-		[h.h3([h.Class("text-sm font-medium")], ["Top operations"]), operationsBody(h, model, range)],
+		[
+			heading(h, { level: 3, variant: "subsection" }, ["Top operations"]),
+			operationsBody(h, model, range),
+		],
 	)

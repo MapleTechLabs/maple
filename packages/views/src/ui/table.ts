@@ -150,6 +150,14 @@ export const truncatedTableCell = <M>(
 	attributes: ReadonlyArray<Attribute<M>> = [],
 ): Html => tableCell(h, children, cn(truncatedCellStyles, className), attributes)
 
+/** A figure column's cell: right-aligned, tabular figures so the digits line up down the column. */
+export const numericTableCell = <M>(
+	h: HtmlBuilder<M>,
+	children: Children,
+	className?: string,
+	attributes: ReadonlyArray<Attribute<M>> = [],
+): Html => tableCell(h, children, cn("text-right tabular-nums", className), attributes)
+
 /** A selectable row's first cell: it draws `listRow`'s selection lane (left bar and tint). */
 export const laneTableCell = <M>(
 	h: HtmlBuilder<M>,

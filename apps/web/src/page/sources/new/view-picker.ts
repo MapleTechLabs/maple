@@ -1,5 +1,6 @@
 import type { PushSourcePlatform } from "@maple/domain/primitives"
 import { cardButton } from "@maple/views/ui/card-button"
+import { revealIcon } from "@maple/views/ui/reveal-icon"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
@@ -55,10 +56,7 @@ const card = (
 				]),
 			]),
 			...(badge === null ? [] : [badge]),
-			icon(h, "ChevronRightIcon", {
-				size: 14,
-				className: "text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100",
-			}),
+			revealIcon(h, "ChevronRightIcon"),
 		],
 	)
 

@@ -14,13 +14,16 @@ export const traceDetailLoading = (h: HtmlBuilder<Message>): Html =>
 				[
 					skeleton(h, "h-8 w-32"),
 					skeleton(h, "h-1.5 w-full rounded-full"),
-					h.div([h.Class("flex gap-4")], [skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24")]),
+					h.div(
+						[h.Class("flex gap-4")],
+						[skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24")],
+					),
 				],
 			),
 			skeletonList(h, {
 				rows: 8,
-				gap: "px",
-				className: "gap-0 rounded-md border",
+				gap: "0",
+				className: "rounded-md border",
 				renderRow: () =>
 					h.div(
 						[h.Class("flex items-center gap-2 border-b p-3")],

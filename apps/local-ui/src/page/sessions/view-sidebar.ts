@@ -1,10 +1,11 @@
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { filterSection, singleCheckboxFilter } from "@maple/views/ui/filters/filter-section"
 import type * as FilterSections from "@maple/views/ui/filters/filter-sections"
-import { filterSidebarBody, filterSidebarFrame, filterSidebarHeader } from "@maple/views/ui/filters/filter-sidebar"
+import { filterSidebarBody, filterSidebarHeader } from "@maple/views/ui/filters/filter-sidebar"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { filterRailFrame } from "../kit/filter-rail"
 import type { SessionFilters } from "./fetch"
 import { type FacetParam, Message } from "./message"
 import type { FacetOption, Model, SessionFacets } from "./model"
@@ -61,7 +62,7 @@ export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: SessionF
 		}),
 		facet(h, model, "Device", "device", facets ? withSelected(facets.device, filters.device) : [], filters.device),
 	]
-	return filterSidebarFrame(h, { className: "w-56 shrink-0 px-4", isWaiting: isFetching }, [
+	return filterRailFrame(h, { isWaiting: isFetching }, [
 		filterSidebarHeader(h, hasActiveFilters ? { onClear: Message.ClickedClearFilters() } : {}),
 		...filterSidebarBody(
 			h,

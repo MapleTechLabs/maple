@@ -2,6 +2,9 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
+import { pressable } from "@maple/views/ui/pressable"
+import { hstackClass } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 import { serviceDot } from "@maple/views/ui/values"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { ErrorTypeRow } from "./fetch"
@@ -24,29 +27,22 @@ const services = (h: H, row: ErrorTypeRow): ReadonlyArray<Html> =>
 				),
 				...(row.affectedServicesCount > row.serviceNames.length
 					? [
-							h.span(
-								[h.Class("shrink-0 text-xs text-muted-foreground")],
-								["+", String(row.affectedServicesCount - row.serviceNames.length), " more"],
-							),
+							typography(h, { size: "xs", tone: "muted", className: "shrink-0" }, ["+", String(row.affectedServicesCount - row.serviceNames.length), " more"]),
 						]
 					: []),
 			]
 		: [
-				h.span(
-					[h.Class("shrink-0 text-xs text-muted-foreground")],
-					[row.affectedServicesCount === 1 ? "1 service" : `${row.affectedServicesCount} services`],
-				),
+				typography(h, { size: "xs", tone: "muted", className: "shrink-0" }, [row.affectedServicesCount === 1 ? "1 service" : `${row.affectedServicesCount} services`]),
 			]
 
 const header = (h: H, row: ErrorTypeRow, card: Card, panelId: string, nowMs: number): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.OnClick(Message.ClickedErrorType({ fingerprintHash: row.fingerprintHash })),
-			h.AriaExpanded(card.isExpanded),
-			h.AriaControls(panelId),
-			h.Class("flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"),
-		],
+	pressable(
+		h,
+		{
+			onClick: Message.ClickedErrorType({ fingerprintHash: row.fingerprintHash }),
+			className: hstackClass({ gap: "3", className: "w-full px-4 py-3 text-left hover:bg-accent/40 active:bg-accent/40" }),
+			attributes: [h.AriaExpanded(card.isExpanded), h.AriaControls(panelId)],
+		},
 		[
 			icon(h, "CircleWarningIcon", { className: "size-4 shrink-0 text-severity-error" }),
 			h.span(
@@ -54,18 +50,18 @@ const header = (h: H, row: ErrorTypeRow, card: Card, panelId: string, nowMs: num
 				[
 					h.span(
 						[h.Class("flex flex-wrap items-baseline gap-x-2 gap-y-1")],
-						[h.span([h.Class("truncate text-sm font-medium")], [row.errorLabel || "Unknown Error"]), ...services(h, row)],
+						[typography(h, { size: "sm", weight: "medium", truncate: true }, [row.errorLabel || "Unknown Error"]), ...services(h, row)],
 					),
 					...(row.sampleMessage
-						? [h.span([h.Class("block truncate font-mono text-xs text-muted-foreground")], [row.sampleMessage])]
+						? [typography(h, { size: "xs", tone: "muted", mono: true, truncate: true, className: "block" }, [row.sampleMessage])]
 						: []),
 				],
 			),
 			h.span(
 				[h.Class("shrink-0 text-right")],
 				[
-					h.span([h.Class("block text-sm font-semibold tabular-nums text-severity-error")], [formatNumber(row.count)]),
-					h.span([h.Class("block text-[10px] text-muted-foreground")], ["last seen ", relativeTime(row.lastSeen, nowMs)]),
+					typography(h, { size: "sm", tone: "error", weight: "semibold", numeric: true, className: "block" }, [formatNumber(row.count)]),
+					typography(h, { size: "3xs", tone: "muted", className: "block" }, ["last seen ", relativeTime(row.lastSeen, nowMs)]),
 				],
 			),
 			icon(h, "ChevronDownIcon", {

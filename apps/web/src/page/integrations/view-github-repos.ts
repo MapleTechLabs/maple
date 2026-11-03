@@ -1,5 +1,6 @@
 import type { GithubIntegrationStatus, GithubRepoSummary, VcsRepoSyncStatus } from "@maple/domain/http"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { revealIcon } from "@maple/views/ui/reveal-icon"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { listRow } from "@maple/views/ui/list-row"
 import { heading } from "@maple/views/ui/heading"
@@ -48,11 +49,7 @@ const repoLink = (h: H, repo: GithubRepoSummary): Html =>
 				],
 				[
 					h.span([h.Class("truncate"), h.Title(repo.fullName)], [repo.fullName]),
-					icon(h, "ExternalLinkIcon", {
-						size: 12,
-						className:
-							"shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100",
-					}),
+					revealIcon(h, "ExternalLinkIcon", { size: 12 }),
 				],
 			),
 			...(repo.isPrivate

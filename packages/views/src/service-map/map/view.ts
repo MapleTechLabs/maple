@@ -2,6 +2,7 @@ import { Option } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
 import * as Resizable from "../../ui/resizable"
+import { fillRegion } from "../../ui/scroll-region"
 import type * as Canvas from "../xyflow/canvas"
 import { edgesLayer, flowCanvas, nodesLayer } from "../xyflow/view"
 import { miniMapNodes, miniMapRectsLayer, particleLayer, renderEdges, renderNodes } from "./layers"
@@ -120,10 +121,7 @@ const mapColumn = <M>(
 			onShowAllTraffic: toMessage(Message.ClickedShowAllTraffic()),
 			onResort: toMessage(Message.ClickedResort()),
 		}),
-		h.div(
-			[h.Class("flex-1 min-h-0 relative")],
-			[is3d ? (options.render3D?.() ?? h.div([], [])) : canvasArea(h, model, toMessage)],
-		),
+		fillRegion(h, {}, [is3d ? (options.render3D?.() ?? h.div([], [])) : canvasArea(h, model, toMessage)]),
 		...(is3d
 			? []
 			: [

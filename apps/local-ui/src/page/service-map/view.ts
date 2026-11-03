@@ -1,3 +1,4 @@
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { serviceMapLoading } from "@maple/views/service-map/map/loading"
 import { errorState } from "@maple/views/ui/error-state"
@@ -20,7 +21,8 @@ const content = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs):
 	const failure = failureWithoutData(model.data)
 	if (Option.isSome(failure))
 		return errorState(h, {
-			failure: failure.value, title: "Couldn’t load the service map",
+			failure: failure.value,
+			title: "Couldn’t load the service map",
 			onRetry: Message.ClickedRetry(),
 		})
 	return Option.match(AsyncData.getData(model.data.data), {
@@ -35,7 +37,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const serviceCount = Option.match(source, { onNone: () => 0, onSome: (graph) => graph.services.length })
 	const nodeCount = Option.match(source, { onNone: () => 0, onSome: (graph) => graph.rawNodes.length })
 	const edgeCount = Option.match(maybeData, { onNone: () => 0, onSome: (data) => data.edges.length })
-	const isEdgeless = Option.exists(maybeData, (data) => data.overviews.length > 0 && data.edges.length === 0)
+	const isEdgeless = Option.exists(
+		maybeData,
+		(data) => data.overviews.length > 0 && data.edges.length === 0,
+	)
 	const body = content(h, model, inputs)
 	return h.div(
 		[h.Class("flex h-full flex-col")],
@@ -57,7 +62,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			]),
 			...(isEdgeless ? [noEdgesNotice(h)] : []),
 			h.div(
-				[h.Class(cn("min-h-0 flex-1", model.data.retained === true && "opacity-60 transition-opacity"))],
+				[h.Class(cn("min-h-0 flex-1", refreshingClass(model.data.retained === true)))],
 				body === null ? [] : [body],
 			),
 		],

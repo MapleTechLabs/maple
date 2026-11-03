@@ -3,10 +3,17 @@ import { Option } from "effect"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { Message } from "./chart"
 import { CHART_LABEL_ATTRIBUTE, CHART_SPEC_ATTRIBUTE, type ChartSpec, encodeChartSpec } from "./chart-spec"
-import { type ChartHostName, type ChartRenderer, MountChart, PLOT_BOX_ATTRIBUTE, PortalTooltipBody } from "./chart-mounts"
+import {
+	type ChartHostName,
+	type ChartRenderer,
+	MountChart,
+	PLOT_BOX_ATTRIBUTE,
+	PortalTooltipBody,
+} from "./chart-mounts"
 // The tooltip shell theming, imported here because every chart goes through the frame.
 import "@maple/ui/components/plot/plot-tooltip.css"
 import { layer } from "../ui/layer"
+import { fillRegion } from "../ui/scroll-region"
 
 // Port of `PlotFrame` (packages/ui/src/components/plot/plot-frame.tsx). The markup and class
 // composition are the React component's; the chart itself is mounted by `MountChart`.
@@ -47,22 +54,25 @@ const plotBox = (
 	renderer: ChartRenderer,
 	sideLegend: boolean,
 ): Html =>
-	h.div(
-		[
-			h.Class(cn("relative min-h-0 flex-1", sideLegend && "min-w-0")),
-			h.Attribute(PLOT_BOX_ATTRIBUTE, ""),
-			h.Attribute(CHART_SPEC_ATTRIBUTE, encodeChartSpec(inputs.spec)),
-			h.Attribute(CHART_LABEL_ATTRIBUTE, inputs.ariaLabel),
-			h.OnMount(
-				MountChart({
-					chartId: inputs.chartId,
-					ariaLabel: inputs.ariaLabel,
-					renderer,
-					reportPlot: inputs.reportPlot ?? false,
-					...(inputs.host === undefined ? undefined : { host: inputs.host }),
-				}),
-			),
-		],
+	fillRegion(
+		h,
+		{
+			className: cn(sideLegend && "min-w-0"),
+			attributes: [
+				h.Attribute(PLOT_BOX_ATTRIBUTE, ""),
+				h.Attribute(CHART_SPEC_ATTRIBUTE, encodeChartSpec(inputs.spec)),
+				h.Attribute(CHART_LABEL_ATTRIBUTE, inputs.ariaLabel),
+				h.OnMount(
+					MountChart({
+						chartId: inputs.chartId,
+						ariaLabel: inputs.ariaLabel,
+						renderer,
+						reportPlot: inputs.reportPlot ?? false,
+						...(inputs.host === undefined ? undefined : { host: inputs.host }),
+					}),
+				),
+			],
+		},
 		[
 			h.div(
 				[h.Class("ts-chart-host"), h.Style({ position: "relative", width: "100%" })],
@@ -75,9 +85,7 @@ const plotBox = (
 			]),
 			...(inputs.overlay === undefined
 				? []
-				: [
-						layer(h, { attributes: [h.DataAttribute("chart-overlay", "")] }, [inputs.overlay]),
-					]),
+				: [layer(h, { attributes: [h.DataAttribute("chart-overlay", "")] }, [inputs.overlay])]),
 			tooltipHolder(h, inputs),
 		],
 	)
