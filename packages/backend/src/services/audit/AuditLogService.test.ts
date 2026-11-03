@@ -31,15 +31,23 @@ const API_KEY = Schema.decodeUnknownSync(ApiKeyId)("7b2e4c10-55aa-4d3e-9f21-1a2b
  * filters the listing bound.
  */
 const recordingWarehouse = (rows: ReadonlyArray<Record<string, unknown>> = []) => {
-	const ingested: Array<{ datasource: string; rows: ReadonlyArray<AuditLogRow> }> = []
+	const ingested: Array<{
+		datasource: string
+		rows: ReadonlyArray<AuditLogRow>
+		bestEffort: boolean
+	}> = []
 	const sql: Array<string> = []
 	const layer = Layer.succeed(
 		WarehouseQueryService,
 		makeWarehouseServiceStub({
-			ingest: (_tenant, datasource, batch) =>
+			ingest: (_tenant, datasource, batch, options) =>
 				Effect.sync(() => {
-					// SAFETY: this stub only ever receives the audit datasource's rows.
-					ingested.push({ datasource, rows: batch as ReadonlyArray<AuditLogRow> })
+					ingested.push({
+						datasource,
+						// SAFETY: this stub only ever receives the audit datasource's rows.
+						rows: batch as ReadonlyArray<AuditLogRow>,
+						bestEffort: options?.bestEffort === true,
+					})
 				}),
 			compiledQuery: ((_tenant: unknown, compiled: unknown) =>
 				Effect.gen(function* () {
@@ -103,6 +111,8 @@ describe("AuditLogService (warehouse-backed)", () => {
 
 			expect(warehouse.ingested).toHaveLength(1)
 			expect(warehouse.ingested[0]!.datasource).toBe(AUDIT_LOG_DATASOURCE)
+			// A lost audit row is a Warn, never an Error span that opens an issue.
+			expect(warehouse.ingested[0]!.bestEffort).toBe(true)
 			const row = warehouse.ingested[0]!.rows[0]!
 			expect(row.OrgId).toBe(ORG)
 			expect(row.ActorType).toBe("user")
