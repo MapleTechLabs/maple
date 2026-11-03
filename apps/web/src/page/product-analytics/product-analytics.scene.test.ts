@@ -170,6 +170,31 @@ describe("product analytics", () => {
 		).toEqual(SIGNUP)
 	})
 
+	test("walking back from the anchor, a sequence that runs out is where it started", () => {
+		const model = settled(
+			resolved({
+				tab: "paths",
+				direction: "before",
+				anchor: { kind: "event", eventName: "plan_started" },
+			}).model,
+			"paths",
+			[
+				{ hop: 1, fromNode: "plan_started", toNode: "/pricing", count: 40 },
+				{ hop: 2, fromNode: "/pricing", toNode: "", count: 40 },
+			],
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			Mount.resolve(
+				MeasureChartContainer,
+				Chart.Message.ResizedChartContainer({ width: 800, height: 320 }),
+			),
+			expectView(text("Where sequences started")).toExist(),
+			expectView(text("Where sequences ended")).not.toExist(),
+		)
+	})
+
 	test("a Page anchor with no path yet stays a Page anchor", () => {
 		const picked = pageUpdate(
 			resolved({ tab: "paths" }).model,

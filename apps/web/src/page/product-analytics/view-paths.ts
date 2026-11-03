@@ -277,13 +277,23 @@ const results = (h: H, model: Model): Html => {
 								label: "Event or page",
 								rows: nextSteps(rows),
 								total,
-								empty: "Nothing followed",
+								empty:
+									paths.direction === "after" ? "Nothing followed" : "Nothing came before",
 							}),
 						]),
 						panel(h, {}, [
-							panelHeader(h, { title: "Where sequences ended" }),
+							// Walking back from the anchor, a sequence that runs out is where it began.
+							panelHeader(h, {
+								title:
+									paths.direction === "after"
+										? "Where sequences ended"
+										: "Where sequences started",
+							}),
 							tallyTable(h, model, {
-								label: "Last event or page",
+								label:
+									paths.direction === "after"
+										? "Last event or page"
+										: "First event or page",
 								rows: endings(rows),
 								total,
 								empty: "Every sequence ran the full number of steps",
