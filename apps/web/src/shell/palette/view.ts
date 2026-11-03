@@ -1,0 +1,128 @@
+import { Mount } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import * as Combobox from "@maple/views/ui/combobox"
+import {
+	type CommandGroup,
+	commandEmpty,
+	commandFooter,
+	commandHiddenInput,
+	commandInput,
+	commandList,
+	MeasureCommandList,
+} from "@maple/views/ui/command"
+import type * as Dialog from "@maple/views/ui/dialog"
+import { view as dialogView } from "@maple/views/ui/dialog-view"
+import { kbd } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { manifestGlyph } from "@maple/views/ui/manifest-glyph"
+import { serviceDot } from "@maple/views/ui/values"
+import { type Glyph, groupEntries, type PaletteEntry } from "./entries"
+import { Message, type Model } from "./model"
+import { type Context, shownEntries } from "./update"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
+
+/**
+ * Layout-free wrapper: group labels take the sidebar's uppercase tracked style, and a short scroll
+ * fade keeps the last visible row from reading as disabled.
+ */
+const PALETTE_LIST_CLASS =
+	"contents [&_[data-slot=command-group-label]]:text-2xs [&_[data-slot=command-group-label]]:font-semibold [&_[data-slot=command-group-label]]:uppercase [&_[data-slot=command-group-label]]:tracking-widest [&_[data-slot=scroll-area-viewport]]:[--fade-size:0.5rem]"
+
+// `CommandPalette`'s popup: the input, the grouped entries (or "No results"), the footer hints.
+
+export type ViewInputs = Readonly<{ context: Context; visibleFlagged: ReadonlyArray<string> }>
+
+const GLYPH_CLASS = "shrink-0 text-muted-foreground"
+
+const glyph = <M>(h: HtmlBuilder<M>, value: Glyph): Html => {
+	switch (value._tag) {
+		case "Icon":
+			return icon(h, value.name, { size: 16, className: GLYPH_CLASS })
+		case "Manifest":
+			return manifestGlyph(h, value.icon, 16, { className: GLYPH_CLASS, monochrome: true })
+		case "Service":
+			return serviceDot(h, { serviceName: value.serviceName })
+	}
+}
+
+const groupsOf = <M>(h: HtmlBuilder<M>, entries: ReadonlyArray<PaletteEntry>): ReadonlyArray<CommandGroup> =>
+	Arr.map(groupEntries(entries), (section) => ({
+		label: section.group,
+		items: Arr.map(section.entries, (entry) => ({
+			title: entry.title,
+			value: entry.id,
+			leading: glyph(h, entry.glyph),
+			shortcut: entry.shortcut,
+			href: entry.target._tag === "Href" ? entry.target.href : undefined,
+		})),
+	}))
+
+const hint = <M>(h: HtmlBuilder<M>, key: string, text: string): Html =>
+	hstack(h, { gap: "1.5", as: "span", className: typographyClass({ tone: "muted" }) }, [
+		kbd(h, "text-muted-foreground", [key]),
+		text,
+	])
+
+/** `CommandEmpty`: `No results for “{query}”.`, the query its own text run. */
+const empty = <M>(h: HtmlBuilder<M>, query: string): Html =>
+	commandEmpty(h, {}, ["No results for “", query, "”."])
+
+const PLACEHOLDER = "Search pages, dashboards, actions…"
+
+/** The palette's dialog portal, placed by the shell's overlay layer. */
+export const paletteView = <M>(
+	h: HtmlBuilder<M>,
+	model: Model,
+	inputs: ViewInputs,
+	toMessage: (message: Message) => M,
+): Html => {
+	const toList = (message: Combobox.Message) =>
+		toMessage(
+			message._tag === "PressedInputKey" && message.key === "Enter"
+				? Message.PressedEnter({ visibleFlagged: inputs.visibleFlagged })
+				: Message.GotListMessage({ message }),
+		)
+	const shown = shownEntries(model, inputs.context, inputs.visibleFlagged)
+	const groups = groupsOf(h, shown.entries)
+	return h.submodel({
+		slotId: "command-palette",
+		model: model.dialog,
+		view: dialogView,
+		viewInputs: {
+			hasTrigger: false,
+			toView: ({ portal }) => portal,
+			toContent: () => [
+				commandInput(
+					h,
+					model.list,
+					{ placeholder: PLACEHOLDER, groups, hasDismissButton: true, isUnfiltered: true },
+					toList,
+				),
+				h.div(
+					[h.Class(PALETTE_LIST_CLASS)],
+					[
+						commandList(h, model.list, groups, toList, {
+							isUnfiltered: true,
+							itemClassName: hstackClass({ gap: "2" }),
+							onClickItem: (id) => toMessage(Message.ClickedEntry({ id })),
+							empty: shown.isSearch ? empty(h, model.list.inputValue) : undefined,
+							viewportAttributes: [
+								h.OnMount(
+									Mount.mapMessage(MeasureCommandList(), () =>
+										toMessage(Message.CompletedMeasureList()),
+									),
+								),
+							],
+							hasMeasuredScrollbar: true,
+						}),
+					],
+				),
+				commandFooter(h, [hint(h, "↵", " to open"), hint(h, "Esc", " to close")]),
+				commandHiddenInput(h, model.list),
+			],
+		},
+		toParentMessage: (message: Dialog.Message) => toMessage(Message.GotDialogMessage({ message })),
+	})
+}

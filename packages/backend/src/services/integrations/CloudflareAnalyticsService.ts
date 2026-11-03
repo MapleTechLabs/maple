@@ -39,6 +39,7 @@ import {
 	IntegrationsPersistenceError,
 	IntegrationsRevokedError,
 	IntegrationsUpstreamError,
+	IntegrationsValidationError,
 	OrgId,
 	RoleName,
 	UserId as UserIdSchema,
@@ -48,6 +49,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	CloudflareAnalyticsState,
 	CloudflareHyperdriveConfigs,
+	CloudflareZoneSettings,
 	OAuthConnections,
 	type CloudflareAnalyticsStateRow as StoredStateRow,
 	type CloudflareHyperdriveConfigRow,
@@ -65,8 +67,9 @@ import {
 	Ref,
 	Result,
 	Schema,
+	Record as Rec,
+	String as Str,
 } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import * as CloudflareAnalyticsMetrics from "@maple/backend/observability/CloudflareAnalyticsMetrics"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import {
@@ -78,6 +81,9 @@ import {
 	type CloudflareHyperdriveConfig,
 	type CloudflareZone,
 } from "@maple/backend/services/integrations/CloudflareApi"
+import type { SourceId, UserId } from "@maple/domain/primitives"
+import { pollStatus } from "@maple/domain/integration-inventory"
+import type { SourceResourceCount } from "@maple/domain/source-health"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -85,6 +91,13 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import { isRefusal, makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
+import {
+	isSourcePaused,
+	type PollOutcome as SourcePollOutcome,
+	reportPoll,
+	stampedSourceId,
+} from "@maple/backend/services/org/integration-sources"
 import {
 	mapDnsGroups,
 	mapDurableObjectsGroups,
@@ -98,7 +111,6 @@ import {
 	type CloudflareMetricRows,
 } from "./cloudflare-analytics/mapping"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
-import { isIngestRefusal, summarizeUpstreamBody } from "./upstream-body"
 import {
 	accountAnalyticsDocument,
 	DatasetSettings,
@@ -164,13 +176,19 @@ type StateRowSet = PG.UpdateSetOf<typeof CloudflareAnalyticsState>
 const CLOUDFLARE_ANALYTICS_SCOPES = ["account-analytics.read", "analytics.read", "zone.read"] as const
 
 export const hasAnalyticsScopes = (scope: string): boolean => {
-	const granted = new Set(scope.split(/[\s,]+/).filter((s) => s.length > 0))
-	return CLOUDFLARE_ANALYTICS_SCOPES.every((required) => granted.has(required))
+	const granted = new Set(Arr.filter(Str.split(/[\s,]+/)(scope), (s) => s.length > 0))
+	return Arr.every(CLOUDFLARE_ANALYTICS_SCOPES, (required) => granted.has(required))
 }
 
 const BUCKET_MS = 5 * 60_000
 /** Never query buckets younger than this — ABR data needs a few minutes to become complete. */
 const SAFETY_LAG_MS = 10 * 60_000
+/**
+ * A caught-up row waits until this much is pending before its next head poll. Cloudflare's
+ * limiter charges per zone x dataset, not per time span, so a 15-min window costs the same as a
+ * 5-min one: polling every third tick cuts steady-state spend 3x.
+ */
+const MIN_HEAD_WINDOW_MS = 15 * 60_000
 /** How far back the first poll reaches (further bounded by the plan's `notOlderThan`). */
 const BACKFILL_MS = 24 * 60 * 60_000
 /**
@@ -212,11 +230,17 @@ const ORG_CONCURRENCY = 3
 const MISSING_SCOPES_ERROR =
 	"Cloudflare connection lacks the analytics scopes — reconnect the integration to update permissions"
 
+/** A dataset with no good poll in this long reads stale, the same window as the inventory. */
+const DATASET_STALE_MS = 30 * 60_000
+
+const GRANT_REVOKED_REASON = "The Cloudflare grant was revoked. Reconnect Cloudflare."
+
 const floorToBucket = (ms: number) => ms - (ms % BUCKET_MS)
 
 const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 const decodeOrgId = Schema.decodeUnknownSync(OrgId)
+const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** Synthetic actor stamped on rows the poller writes on the org's behalf (ingest keys, state). */
 const SYSTEM_USER_ID = decodeUserIdSync("system-cloudflare-analytics")
@@ -236,7 +260,7 @@ const ZONE_SERVICE_PREFIX = "cloudflare/"
 /** Epoch ms → warehouse DateTime64 literal (`YYYY-MM-DD HH:MM:SS.mmm`, UTC). */
 const toWarehouseDateTime64 = (ms: number) => {
 	const d = new Date(ms)
-	const pad = (n: number, w = 2) => n.toString().padStart(w, "0")
+	const pad = (n: number, w = 2) => Str.padStart(w, "0")(n.toString())
 	return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}.${pad(d.getUTCMilliseconds(), 3)}`
 }
 
@@ -312,16 +336,17 @@ const httpDataset: DatasetDef = {
 	selection: httpSelection,
 	mapNode: (node, target) =>
 		decodeHttpZoneNode(node).pipe(
-			Effect.mapError(() => decodeError("HTTP")),
-			Effect.map((decoded) =>
-				mapHttpGroups({
-					orgId: target.orgId,
-					zoneId: target.row.zoneId,
-					zoneName: target.row.zoneName ?? target.row.zoneId,
-					groups: decoded.groups ?? [],
-					latency: decoded.latency ?? [],
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("HTTP"),
+				onSuccess: (decoded) =>
+					mapHttpGroups({
+						orgId: target.orgId,
+						zoneId: target.row.zoneId,
+						zoneName: target.row.zoneName ?? target.row.zoneId,
+						groups: decoded.groups ?? [],
+						latency: decoded.latency ?? [],
+					}),
+			}),
 		),
 	settingsNode: httpZoneSettingsNode,
 }
@@ -344,16 +369,17 @@ const httpPathsDataset: DatasetDef = {
 	selection: httpPathsSelection,
 	mapNode: (node, target) =>
 		decodeHttpPathsZoneNode(node).pipe(
-			Effect.mapError(() => decodeError("HTTP paths")),
-			Effect.map((decoded) =>
-				mapHttpPathGroups({
-					orgId: target.orgId,
-					zoneId: target.row.zoneId,
-					zoneName: target.row.zoneName ?? target.row.zoneId,
-					groups: decoded.paths ?? [],
-					errors: decoded.pathErrors ?? [],
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("HTTP paths"),
+				onSuccess: (decoded) =>
+					mapHttpPathGroups({
+						orgId: target.orgId,
+						zoneId: target.row.zoneId,
+						zoneName: target.row.zoneName ?? target.row.zoneId,
+						groups: decoded.paths ?? [],
+						errors: decoded.pathErrors ?? [],
+					}),
+			}),
 		),
 	settingsNode: httpZoneSettingsNode,
 }
@@ -368,16 +394,17 @@ const httpDimensionsDataset: DatasetDef = {
 	selection: httpDimensionsSelection,
 	mapNode: (node, target) =>
 		decodeHttpDimensionsZoneNode(node).pipe(
-			Effect.mapError(() => decodeError("HTTP dimensions")),
-			Effect.map((decoded) =>
-				mapHttpDimensionGroups({
-					orgId: target.orgId,
-					zoneId: target.row.zoneId,
-					zoneName: target.row.zoneName ?? target.row.zoneId,
-					countries: decoded.countryAgg ?? [],
-					clients: decoded.clientAgg ?? [],
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("HTTP dimensions"),
+				onSuccess: (decoded) =>
+					mapHttpDimensionGroups({
+						orgId: target.orgId,
+						zoneId: target.row.zoneId,
+						zoneName: target.row.zoneName ?? target.row.zoneId,
+						countries: decoded.countryAgg ?? [],
+						clients: decoded.clientAgg ?? [],
+					}),
+			}),
 		),
 	settingsNode: httpZoneSettingsNode,
 }
@@ -391,15 +418,16 @@ const workersDataset: DatasetDef = {
 	selection: workersSelection,
 	mapNode: (node, target) =>
 		decodeWorkersAccountNode(node).pipe(
-			Effect.mapError(() => decodeError("workers")),
-			Effect.map((decoded) =>
-				mapWorkersGroups({
-					orgId: target.orgId,
-					accountId: target.accountId,
-					groups: decoded.invocations ?? [],
-					liveScripts: target.liveScripts,
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("workers"),
+				onSuccess: (decoded) =>
+					mapWorkersGroups({
+						orgId: target.orgId,
+						accountId: target.accountId,
+						groups: decoded.invocations ?? [],
+						liveScripts: target.liveScripts,
+					}),
+			}),
 		),
 	settingsNode: (decoded) => decoded.viewer.accounts?.[0]?.settings?.workersInvocationsAdaptive ?? null,
 }
@@ -415,15 +443,16 @@ const firewallDataset: DatasetDef = {
 	selection: firewallSelection,
 	mapNode: (node, target) =>
 		decodeFirewallZoneNode(node).pipe(
-			Effect.mapError(() => decodeError("firewall")),
-			Effect.map((decoded) =>
-				mapFirewallGroups({
-					orgId: target.orgId,
-					zoneId: target.row.zoneId,
-					zoneName: target.row.zoneName ?? target.row.zoneId,
-					groups: decoded.firewall ?? [],
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("firewall"),
+				onSuccess: (decoded) =>
+					mapFirewallGroups({
+						orgId: target.orgId,
+						zoneId: target.row.zoneId,
+						zoneName: target.row.zoneName ?? target.row.zoneId,
+						groups: decoded.firewall ?? [],
+					}),
+			}),
 		),
 	settingsNode: (decoded, row) => {
 		const zone = (decoded.viewer.zones ?? []).find((entry) => entry.zoneTag === row.zoneId)
@@ -440,15 +469,16 @@ const dnsDataset: DatasetDef = {
 	selection: dnsSelection,
 	mapNode: (node, target) =>
 		decodeDnsZoneNode(node).pipe(
-			Effect.mapError(() => decodeError("DNS")),
-			Effect.map((decoded) =>
-				mapDnsGroups({
-					orgId: target.orgId,
-					zoneId: target.row.zoneId,
-					zoneName: target.row.zoneName ?? target.row.zoneId,
-					groups: decoded.dns ?? [],
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("DNS"),
+				onSuccess: (decoded) =>
+					mapDnsGroups({
+						orgId: target.orgId,
+						zoneId: target.row.zoneId,
+						zoneName: target.row.zoneName ?? target.row.zoneId,
+						groups: decoded.dns ?? [],
+					}),
+			}),
 		),
 	settingsNode: (decoded, row) => {
 		const zone = (decoded.viewer.zones ?? []).find((entry) => entry.zoneTag === row.zoneId)
@@ -465,14 +495,15 @@ const queueBacklogDataset: DatasetDef = {
 	selection: queueBacklogSelection,
 	mapNode: (node, target) =>
 		decodeQueueBacklogAccountNode(node).pipe(
-			Effect.mapError(() => decodeError("queue backlog")),
-			Effect.map((decoded) =>
-				mapQueueBacklogGroups({
-					orgId: target.orgId,
-					accountId: target.accountId,
-					groups: decoded.queueBacklog ?? [],
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("queue backlog"),
+				onSuccess: (decoded) =>
+					mapQueueBacklogGroups({
+						orgId: target.orgId,
+						accountId: target.accountId,
+						groups: decoded.queueBacklog ?? [],
+					}),
+			}),
 		),
 	settingsNode: (decoded) => decoded.viewer.accounts?.[0]?.settings?.queueBacklogAdaptiveGroups ?? null,
 }
@@ -486,14 +517,15 @@ const queueConsumersDataset: DatasetDef = {
 	selection: queueConsumersSelection,
 	mapNode: (node, target) =>
 		decodeQueueConsumersAccountNode(node).pipe(
-			Effect.mapError(() => decodeError("queue consumers")),
-			Effect.map((decoded) =>
-				mapQueueConsumersGroups({
-					orgId: target.orgId,
-					accountId: target.accountId,
-					groups: decoded.queueConsumers ?? [],
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("queue consumers"),
+				onSuccess: (decoded) =>
+					mapQueueConsumersGroups({
+						orgId: target.orgId,
+						accountId: target.accountId,
+						groups: decoded.queueConsumers ?? [],
+					}),
+			}),
 		),
 	settingsNode: (decoded) =>
 		decoded.viewer.accounts?.[0]?.settings?.queueConsumerMetricsAdaptiveGroups ?? null,
@@ -508,15 +540,16 @@ const durableObjectsDataset: DatasetDef = {
 	selection: durableObjectsSelection,
 	mapNode: (node, target) =>
 		decodeDurableObjectsAccountNode(node).pipe(
-			Effect.mapError(() => decodeError("durable objects")),
-			Effect.map((decoded) =>
-				mapDurableObjectsGroups({
-					orgId: target.orgId,
-					accountId: target.accountId,
-					groups: decoded.durableObjects ?? [],
-					liveScripts: target.liveScripts,
-				}),
-			),
+			Effect.mapBoth({
+				onFailure: () => decodeError("durable objects"),
+				onSuccess: (decoded) =>
+					mapDurableObjectsGroups({
+						orgId: target.orgId,
+						accountId: target.accountId,
+						groups: decoded.durableObjects ?? [],
+						liveScripts: target.liveScripts,
+					}),
+			}),
 		),
 	settingsNode: (decoded) =>
 		decoded.viewer.accounts?.[0]?.settings?.durableObjectsInvocationsAdaptiveGroups ?? null,
@@ -533,9 +566,9 @@ const DATASETS: ReadonlyArray<DatasetDef> = [
 	queueConsumersDataset,
 	durableObjectsDataset,
 ]
-const DATASET_BY_ID = new Map(DATASETS.map((dataset) => [dataset.id, dataset]))
-const ZONE_DATASETS = DATASETS.filter((dataset) => dataset.scope === "zone")
-const ACCOUNT_DATASETS = DATASETS.filter((dataset) => dataset.scope === "account")
+const DATASET_BY_ID = new Map(Arr.map(DATASETS, (dataset) => [dataset.id, dataset]))
+const ZONE_DATASETS = Arr.filter(DATASETS, (dataset) => dataset.scope === "zone")
+const ACCOUNT_DATASETS = Arr.filter(DATASETS, (dataset) => dataset.scope === "account")
 
 // GraphQL error classification
 
@@ -557,11 +590,11 @@ const graphqlErrorCode = (error: CloudflareGraphqlError): string | null => {
 // per-plan degradations, not incidents — they must route to the quiet `disabled` /
 // `quantiles-unavailable` paths rather than raising `AnalyticsPollError`.
 const isPlanGatedMessage = (message: string): boolean => {
-	const lower = message.toLowerCase()
+	const lower = Str.toLowerCase(message)
 	return (
-		lower.includes("does not have access to the path") ||
-		lower.includes("does not have access to the field") ||
-		lower.includes("access controls")
+		Str.includes("does not have access to the path")(lower) ||
+		Str.includes("does not have access to the field")(lower) ||
+		Str.includes("access controls")(lower)
 	)
 }
 
@@ -573,12 +606,12 @@ const isPlanGatedMessage = (message: string): boolean => {
  * become a per-dataset failure event.
  */
 const isRateLimitedMessage = (message: string): boolean => {
-	const lower = message.toLowerCase()
+	const lower = Str.toLowerCase(message)
 	return (
-		lower.includes("rate limiter budget depleted") ||
-		lower.includes("rate limit") ||
-		lower.includes("limit exceeded") ||
-		lower.includes("too many requests")
+		Str.includes("rate limiter budget depleted")(lower) ||
+		Str.includes("rate limit")(lower) ||
+		Str.includes("limit exceeded")(lower) ||
+		Str.includes("too many requests")(lower)
 	)
 }
 
@@ -592,23 +625,25 @@ const classifyGraphqlErrors = (
 	// Checked first: a depleted budget voids the whole document, so any other classification of the
 	// same payload would be an artifact of which selection Cloudflare happened to name.
 	if (
-		errors.some(
+		Arr.some(
+			errors,
 			(error) => isRateLimitedMessage(error.message) || isRateLimitedCode(graphqlErrorCode(error)),
 		)
 	) {
 		return "rate-limited"
 	}
-	const messages = errors.map((error) => error.message.toLowerCase())
+	const messages = Arr.map(errors, (error) => Str.toLowerCase(error.message))
 	// Plan lacks the dataset's timing-quantile fields → the query referenced an "unknown"/"cannot
 	// query" field, or Cloudflare reports the plan "does not have access to the field". Degrade to
 	// counters-only instead of erroring forever.
 	if (
-		messages.some(
+		Arr.some(
+			messages,
 			(message) =>
-				(message.includes("unknown") ||
-					message.includes("cannot query") ||
-					message.includes("does not have access to the field")) &&
-				quantileNeedles.some((needle) => message.includes(needle)),
+				(Str.includes("unknown")(message) ||
+					Str.includes("cannot query")(message) ||
+					Str.includes("does not have access to the field")(message)) &&
+				Arr.some(quantileNeedles, (needle) => Str.includes(needle)(message)),
 		)
 	) {
 		return "quantiles-unavailable"
@@ -617,33 +652,44 @@ const classifyGraphqlErrors = (
 	// error. Expected per-plan gating: quietly disable the dataset (stops polling until a settings
 	// change / reconnect re-enables it) rather than raising. Checked BEFORE the authz-code branch
 	// because Cloudflare tags some plan-gating errors with extensions.code:"authz".
-	if (messages.some(isPlanGatedMessage)) {
+	if (Arr.some(messages, isPlanGatedMessage)) {
 		return "disabled"
 	}
 	// extensions.code carries Cloudflare's machine-readable classification ("authz" on permission
 	// failures); the message substrings are only a fallback for errors that omit it.
-	if (errors.some((error) => graphqlErrorCode(error) === "authz")) return "authz"
+	if (Arr.some(errors, (error) => graphqlErrorCode(error) === "authz")) return "authz"
 	if (
-		messages.some(
+		Arr.some(
+			messages,
 			(message) =>
-				message.includes("not authorized") ||
-				message.includes("unauthorized") ||
-				message.includes("access denied"),
+				Str.includes("not authorized")(message) ||
+				Str.includes("unauthorized")(message) ||
+				Str.includes("access denied")(message),
 		)
 	) {
 		return "authz"
 	}
-	if (messages.some((message) => message.includes("not enabled") || message.includes("disabled"))) {
+	if (
+		Arr.some(
+			messages,
+			(message) => Str.includes("not enabled")(message) || Str.includes("disabled")(message),
+		)
+	) {
 		return "disabled"
 	}
 	return "other"
 }
 
 const graphqlErrorMessage = (errors: ReadonlyArray<CloudflareGraphqlError>): string =>
-	errors
-		.map((e) => e.message)
-		.join("; ")
-		.slice(0, 500)
+	Str.slice(
+		0,
+		500,
+	)(
+		Arr.join(
+			Arr.map(errors, (e) => e.message),
+			"; ",
+		),
+	)
 
 // Window math
 
@@ -683,7 +729,7 @@ const quantilesFromAvailableFields = (
 ): boolean => {
 	const fields = settings?.availableFields
 	if (fields == null) return true
-	return fields.some((field) => field.toLowerCase().includes(needle))
+	return Arr.some(fields, (field) => Str.includes(needle)(Str.toLowerCase(field)))
 }
 
 /** Per-query window cap: never exceed {@link MAX_WINDOW_MS}, and honor the plan's `maxDuration`. */
@@ -704,8 +750,8 @@ const backfillFloor = (row: CloudflareAnalyticsStateRow, now: number): number =>
 /**
  * HEAD window — the newest un-ingested slice, fetched FIRST every tick so a freshly-connected
  * integration surfaces near-live data within one tick. The first poll (null watermark) grabs just
- * the newest window; steady state is the small `[watermark, horizon]` delta. Null once caught up to
- * the safety-lag horizon.
+ * the newest window; steady state is the `[watermark, horizon]` delta once it reaches
+ * {@link MIN_HEAD_WINDOW_MS}. Null until then.
  */
 const headWindow = (row: CloudflareAnalyticsStateRow, now: number): PollWindow | null => {
 	const effectiveEnd = floorToBucket(now - SAFETY_LAG_MS)
@@ -716,7 +762,7 @@ const headWindow = (row: CloudflareAnalyticsStateRow, now: number): PollWindow |
 	if (start < floor) start = floor
 	start = floorToBucket(start)
 	const end = Math.min(start + window, effectiveEnd)
-	if (end <= start) return null
+	if (end - start < Math.min(MIN_HEAD_WINDOW_MS, window)) return null
 	return { start, end }
 }
 
@@ -798,7 +844,7 @@ const buildWorkItems = (rows: ReadonlyArray<CloudflareAnalyticsStateRow>, now: n
 			const scopeDatasets = scope === "zone" ? ZONE_DATASETS : ACCOUNT_DATASETS
 			for (const group of groups.values()) {
 				if (scope === "account") {
-					const parts = scopeDatasets.flatMap((dataset) => {
+					const parts = Arr.flatMap(scopeDatasets, (dataset) => {
 						const datasetRows = group.byDataset.get(dataset.id)
 						return datasetRows ? [{ dataset, rows: datasetRows }] : []
 					})
@@ -814,16 +860,18 @@ const buildWorkItems = (rows: ReadonlyArray<CloudflareAnalyticsStateRow>, now: n
 					continue
 				}
 				const zoneIds = [
-					...new Set([...group.byDataset.values()].flat().map((row) => row.zoneId)),
+					...new Set(Arr.map([...group.byDataset.values()].flat(), (row) => row.zoneId)),
 				].sort()
 				// Every dataset in this group contributes its own node to the shared `zones`
 				// selection, and Cloudflare rejects the document on `zones × nodes`, not on zones
 				// alone — so the chunk has to shrink as datasets batch together.
-				const nodeCount = scopeDatasets.filter((dataset) => group.byDataset.has(dataset.id)).length
+				const nodeCount = Arr.filter(scopeDatasets, (dataset) =>
+					group.byDataset.has(dataset.id),
+				).length
 				for (const chunk of Arr.chunksOf(zoneIds, zoneChunkSizeFor(nodeCount))) {
 					const chunkSet = new Set(chunk)
-					const parts = scopeDatasets.flatMap((dataset) => {
-						const datasetRows = (group.byDataset.get(dataset.id) ?? []).filter((row) =>
+					const parts = Arr.flatMap(scopeDatasets, (dataset) => {
+						const datasetRows = Arr.filter(group.byDataset.get(dataset.id) ?? [], (row) =>
 							chunkSet.has(row.zoneId),
 						)
 						return datasetRows.length > 0 ? [{ dataset, rows: datasetRows }] : []
@@ -868,30 +916,30 @@ const planAccountBudgets = (
 ): Array<AccountBudget> => {
 	// Zero once accounts outnumber the budget: then the oldest-first order alone rotates them.
 	const fairShare = Math.floor(grantCap / Math.max(1, accountIds.length))
-	const planned = accountIds
-		.map((accountId) => {
-			const accountRows = rows.filter((row) => row.accountId === accountId)
-			const head = buildWorkItems(accountRows, now).filter((item) => item.phase === "head")
-			// A caught-up account reserves nothing, so its idle share stays with the busy siblings.
-			// First discovery or a stale settings probe still needs a call even without head work.
-			const needsCall =
-				accountRows.length === 0 ||
-				head.length > 0 ||
-				accountRows.some(
-					(row) =>
-						row.enabled &&
-						(row.settingsFetchedAt == null || now - row.settingsFetchedAt > SETTINGS_TTL_MS),
-				)
-			return {
-				accountId,
-				oldest: head.reduce((min, item) => Math.min(min, item.window.start), Infinity),
-				reserve: needsCall ? Math.min(fairShare, Math.max(1, head.length)) : 0,
-			}
-		})
-		.sort((a, b) => (a.oldest === b.oldest ? 0 : a.oldest < b.oldest ? -1 : 1))
-	return planned.map(({ accountId }, index) => ({
+	const planned = Arr.map(accountIds, (accountId) => {
+		const accountRows = Arr.filter(rows, (row) => row.accountId === accountId)
+		const head = Arr.filter(buildWorkItems(accountRows, now), (item) => item.phase === "head")
+		// A caught-up account reserves nothing, so its idle share stays with the busy siblings.
+		// First discovery or a stale settings probe still needs a call even without head work.
+		const needsCall =
+			accountRows.length === 0 ||
+			head.length > 0 ||
+			Arr.some(
+				accountRows,
+				(row) =>
+					row.enabled &&
+					(row.settingsFetchedAt == null || now - row.settingsFetchedAt > SETTINGS_TTL_MS),
+			)
+		return {
+			accountId,
+			oldest: Arr.reduce(head, Infinity, (min, item) => Math.min(min, item.window.start)),
+			reserve: needsCall ? Math.min(fairShare, Math.max(1, head.length)) : 0,
+		}
+	}).sort((a, b) => (a.oldest === b.oldest ? 0 : a.oldest < b.oldest ? -1 : 1))
+	return Arr.map(planned, ({ accountId }, index) => ({
 		accountId,
-		callLimit: grantCap - planned.slice(index + 1).reduce((sum, account) => sum + account.reserve, 0),
+		callLimit:
+			grantCap - Arr.reduce(planned.slice(index + 1), 0, (sum, account) => sum + account.reserve),
 	}))
 }
 
@@ -899,7 +947,7 @@ const clampGrantCap = (cap: number) => Math.min(GRANT_CAP_CEILING, Math.max(GRAN
 
 /** The org's current cap: the lowest one stored on its workers anchor rows, else the start value. */
 const grantCapOf = (rows: ReadonlyArray<CloudflareAnalyticsStateRow>): number => {
-	const stored = rows.flatMap((row) =>
+	const stored = Arr.flatMap(rows, (row) =>
 		row.dataset === WORKERS_DATASET && row.zoneId === "" && row.grantCallCap !== null
 			? [row.grantCallCap]
 			: [],
@@ -922,17 +970,17 @@ const nextGrantCap = (cap: number, tick: { readonly rateLimited: boolean; readon
  * the dataset's quantile needles against the message. Null → unattributable, applies to every part.
  */
 const partForError = (error: CloudflareGraphqlError, parts: ReadonlyArray<WorkPart>): WorkPart | null => {
-	if (Array.isArray(error.path)) {
+	if (Arr.isArray(error.path)) {
 		for (const segment of error.path) {
 			if (typeof segment !== "string") continue
 			const part = parts.find((candidate) => candidate.dataset.aliases.includes(segment))
 			if (part) return part
 		}
 	}
-	const message = error.message.toLowerCase()
+	const message = Str.toLowerCase(error.message)
 	return (
 		parts.find((candidate) =>
-			candidate.dataset.quantileNeedles.some((needle) => message.includes(needle)),
+			Arr.some(candidate.dataset.quantileNeedles, (needle) => Str.includes(needle)(message)),
 		) ?? null
 	)
 }
@@ -997,14 +1045,14 @@ const allPartsFailed = (
 	message: string,
 	options?: { readonly orgWide?: boolean; readonly disable?: boolean },
 ): Array<PartResult> =>
-	item.parts.map((part) => ({
+	Arr.map(item.parts, (part) => ({
 		part,
 		outcome: failedOutcome({
 			scope: part.dataset.scope,
 			datasetId: part.dataset.id,
 			kind,
 			message,
-			rowIds: part.rows.map((row) => row.id),
+			rowIds: Arr.map(part.rows, (row) => row.id),
 			...options,
 		}),
 	}))
@@ -1024,16 +1072,21 @@ const documentRateLimited = (item: WorkItem, message: string): Array<PartResult>
 
 /** What one chunk polled, so a stalled dataset or zone is one span query away. */
 const chunkSpanAttributes = (item: WorkItem, accountId: string, now: number) => {
-	const rows = item.parts.flatMap((part) => part.rows)
-	const zoneNames = Arr.dedupe(rows.flatMap((row) => (row.zoneName === null ? [] : [row.zoneName]))).sort()
+	const rows = Arr.flatMap(item.parts, (part) => part.rows)
+	const zoneNames = Arr.dedupe(
+		Arr.flatMap(rows, (row) => (row.zoneName === null ? [] : [row.zoneName])),
+	).sort()
 	return {
 		"maple.cloudflare.account_id": accountId,
 		"maple.cloudflare.scope": item.scope,
 		"maple.cloudflare.phase": item.phase,
-		"maple.cloudflare.datasets": item.parts.map((part) => part.dataset.id).join(","),
+		"maple.cloudflare.datasets": Arr.join(
+			Arr.map(item.parts, (part) => part.dataset.id),
+			",",
+		),
 		"maple.cloudflare.zone_count":
-			item.scope === "zone" ? Arr.dedupe(rows.map((row) => row.zoneId)).length : 0,
-		"maple.cloudflare.zones": zoneNames.join(","),
+			item.scope === "zone" ? Arr.dedupe(Arr.map(rows, (row) => row.zoneId)).length : 0,
+		"maple.cloudflare.zones": Arr.join(zoneNames, ","),
 		"maple.cloudflare.window.start": toGraphqlTime(item.window.start),
 		"maple.cloudflare.window.end": toGraphqlTime(item.window.end),
 		"maple.cloudflare.window.lag_ms": now - item.window.end,
@@ -1042,10 +1095,9 @@ const chunkSpanAttributes = (item: WorkItem, accountId: string, now: number) => 
 
 /** A chunk's result for its span: the distinct outcome kinds and the rows it shipped. */
 const chunkOutcomeAttributes = (results: ReadonlyArray<PartResult>) => ({
-	"maple.cloudflare.outcome": Arr.dedupe(results.map(({ outcome }) => outcome.kind)).join(","),
-	"maple.cloudflare.rows_ingested": results.reduce(
-		(sum, { outcome }) => (outcome.kind === "advanced" ? sum + outcome.ingested : sum),
-		0,
+	"maple.cloudflare.outcome": Arr.join(Arr.dedupe(Arr.map(results, ({ outcome }) => outcome.kind)), ","),
+	"maple.cloudflare.rows_ingested": Arr.reduce(results, 0, (sum, { outcome }) =>
+		outcome.kind === "advanced" ? sum + outcome.ingested : sum,
 	),
 })
 
@@ -1111,14 +1163,12 @@ const observeDatasetFailure = (orgId: OrgId, failure: DatasetPollFailure) =>
 		// Failing inside the span below is what records the exception event that error_events /
 		// find_errors unwrap. Caught immediately after the span boundary so a single bad dataset
 		// never fails the org poll.
-		return yield* Effect.fail(
-			new CloudflareAnalyticsPollError({
-				message: failure.message,
-				orgId,
-				dataset: failure.datasetId,
-				kind: failure.kind,
-			}),
-		)
+		return yield* new CloudflareAnalyticsPollError({
+			message: failure.message,
+			orgId,
+			dataset: failure.datasetId,
+			kind: failure.kind,
+		})
 	}).pipe(
 		Effect.withSpan("CloudflareAnalyticsService.datasetPollFailed", {
 			attributes: {
@@ -1133,10 +1183,28 @@ const observeDatasetFailure = (orgId: OrgId, failure: DatasetPollFailure) =>
 		Effect.ignore,
 	)
 
+/** The customer's zone choice for one account. An account without a stored row watches everything. */
+interface ZoneWatchSettings {
+	readonly watchNewZones: boolean
+	readonly zoneOverrides: Readonly<Record<string, boolean>>
+}
+
+const WATCH_ALL_ZONES: ZoneWatchSettings = { watchNewZones: true, zoneOverrides: {} }
+
+const isZoneWatched = (settings: ZoneWatchSettings, zoneId: string): boolean =>
+	Rec.has(settings.zoneOverrides, zoneId) ? settings.zoneOverrides[zoneId] : settings.watchNewZones
+
+interface ZoneSettingsUpdate {
+	readonly accountId: string
+	readonly watchNewZones: boolean
+	readonly zones: ReadonlyArray<{ readonly zoneId: string; readonly watched: boolean }>
+}
+
 interface CloudflareAnalyticsZoneStatusFields {
 	readonly id: string
 	readonly name: string
 	readonly enabled: boolean
+	readonly watched: boolean
 	readonly lastSyncedAt: number | null
 	readonly lastError: string | null
 	readonly watermarkAt: number | null
@@ -1156,6 +1224,7 @@ interface CloudflareAnalyticsAccountStatus {
 	readonly accountId: string
 	readonly zones: ReadonlyArray<CloudflareAnalyticsZoneStatusFields>
 	readonly workers: CloudflareAnalyticsWorkersStatusFields | null
+	readonly watchNewZones: boolean
 }
 
 interface CloudflareAnalyticsStatus {
@@ -1211,6 +1280,12 @@ export interface CloudflareAnalyticsServiceApi {
 		orgId: OrgId,
 		accountId?: string,
 	) => Effect.Effect<void, IntegrationsPersistenceError>
+	/** Replace one account's zone selection; paused zones stop polling on the next tick. */
+	readonly setZoneSettings: (
+		orgId: OrgId,
+		userId: UserId,
+		update: ZoneSettingsUpdate,
+	) => Effect.Effect<void, IntegrationsValidationError | IntegrationsPersistenceError>
 	/** The enabled HTTP-dataset zone row by name, naming the account that owns it; null when unknown. */
 	readonly findHttpZone: (
 		orgId: OrgId,
@@ -1224,11 +1299,10 @@ export interface CloudflareAnalyticsServiceApi {
 export class CloudflareAnalyticsService extends Context.Service<
 	CloudflareAnalyticsService,
 	CloudflareAnalyticsServiceApi
->()("@maple/api/services/CloudflareAnalyticsService", {
+>()("@maple/backend/services/CloudflareAnalyticsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
-		const httpClient = yield* HttpClient.HttpClient
 		const warehouse = yield* WarehouseQueryService
 		const oauth = yield* CloudflareOAuthService
 		const ingestKeys = yield* OrgIngestKeysService
@@ -1236,7 +1310,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 
 		const apiBaseUrl = env.MAPLE_CLOUDFLARE_API_BASE_URL
 		/** The ingest gateway's OTLP metrics endpoint — poller metrics flow through it like all telemetry. */
-		const ingestMetricsUrl = `${env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")}/v1/metrics`
+		const ingest = yield* makeIngestSender
 
 		const dbExecute = makeDbExecute(database, "CloudflareAnalyticsService", toPersistenceError)
 
@@ -1258,6 +1332,29 @@ export class CloudflareAnalyticsService extends Context.Service<
 						]),
 				),
 			).pipe(Effect.map((rows) => Arr.copy(rows)))
+
+		/** The org's stored zone choices by account; accounts missing from the map watch every zone. */
+		const loadZoneSettings = (orgId: OrgId, accountId?: string) =>
+			dbExecute((db) =>
+				db.run(
+					PG.from(CloudflareZoneSettings)
+						.select("accountId", "watchNewZones", "zoneOverrides")
+						.where(($) => [
+							$.orgId.eq(orgId),
+							accountId === undefined ? undefined : $.accountId.eq(accountId),
+						]),
+				),
+			).pipe(
+				Effect.map(
+					(rows) =>
+						new Map(
+							rows.map((row): [string, ZoneWatchSettings] => [
+								row.accountId,
+								{ watchNewZones: row.watchNewZones, zoneOverrides: row.zoneOverrides },
+							]),
+						),
+				),
+			)
 
 		/** One IN-list UPDATE over the given state rows; no-op on an empty id list. */
 		const updateRows = (rowIds: ReadonlyArray<string>, set: StateRowSet) => {
@@ -1453,6 +1550,11 @@ export class CloudflareAnalyticsService extends Context.Service<
 			zonesTruncated: boolean,
 		) {
 			const rows = yield* loadStateRows(orgId, accountId)
+			const settings = (yield* loadZoneSettings(orgId, accountId)).get(accountId) ?? WATCH_ALL_ZONES
+			yield* Effect.annotateCurrentSpan(
+				"maple.cloudflare.zones_unwatched",
+				zones.filter((zone) => !isZoneWatched(settings, zone.id)).length,
+			)
 			// Every zone-scoped dataset gets one state row per discovered zone — reconcile them all.
 			const byDatasetZone = new Map<string, CloudflareAnalyticsStateRow>()
 			for (const row of rows) {
@@ -1471,6 +1573,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 						dataset: dataset.id,
 						zoneId: zone.id,
 						zoneName: zone.name,
+						enabled: isZoneWatched(settings, zone.id),
 						createdAt: now,
 						updatedAt: now,
 					})),
@@ -1488,23 +1591,39 @@ export class CloudflareAnalyticsService extends Context.Service<
 								),
 						)
 
-			const reappeared = ZONE_DATASETS.flatMap((dataset) =>
+			// Pause every unwatched row, listed or not: this repairs a reconnect's blanket re-enable
+			// even when the zone fell past a truncated listing.
+			const paused = rows.filter(
+				(row) =>
+					DATASET_BY_ID.get(row.dataset)?.scope === "zone" &&
+					row.enabled &&
+					!isZoneWatched(settings, row.zoneId),
+			)
+			yield* updateRows(
+				paused.map((row) => row.id),
+				{ enabled: false, updatedAt: now },
+			)
+			for (const row of paused) row.enabled = false
+
+			const drifted = ZONE_DATASETS.flatMap((dataset) =>
 				zones.flatMap((zone) => {
 					const existing = byDatasetZone.get(`${dataset.id}:${zone.id}`)
-					if (!existing || (existing.zoneName === zone.name && existing.enabled)) return []
-					return [{ existing, zone }]
+					const watched = isZoneWatched(settings, zone.id)
+					if (!existing || (existing.zoneName === zone.name && existing.enabled === watched))
+						return []
+					return [{ existing, zone, watched }]
 				}),
 			)
 			yield* Effect.forEach(
-				reappeared,
-				({ existing, zone }) =>
+				drifted,
+				({ existing, zone, watched }) =>
 					// Re-enable on reappearance; a dataset-level disable re-asserts itself on the
 					// next settings check, so this errs on the side of collecting again.
 					Effect.andThen(
-						updateRows([existing.id], { zoneName: zone.name, enabled: true, updatedAt: now }),
+						updateRows([existing.id], { zoneName: zone.name, enabled: watched, updatedAt: now }),
 						Effect.sync(() => {
 							existing.zoneName = zone.name
-							existing.enabled = true
+							existing.enabled = watched
 						}),
 					),
 				{ discard: true },
@@ -1649,17 +1768,20 @@ export class CloudflareAnalyticsService extends Context.Service<
 									if (!dataset) continue
 									const settings = dataset.settingsNode(decoded, row)
 									if (settings === undefined) continue
+									const settingsJson = settings == null ? null : encodeJsonSync(settings)
+									const quantilesAvailable = quantilesFromAvailableFields(
+										settings,
+										dataset.availableFieldsNeedle,
+									)
+									const disabled = settings?.enabled === false
 									const set: StateRowSet = {
-										settingsJson: settings == null ? null : JSON.stringify(settings),
+										settingsJson,
 										settingsFetchedAt: now,
-										quantilesAvailable: quantilesFromAvailableFields(
-											settings,
-											dataset.availableFieldsNeedle,
-										),
-										...(settings?.enabled === false ? { enabled: false } : undefined),
+										quantilesAvailable,
+										...(disabled ? { enabled: false } : undefined),
 										updatedAt: now,
 									}
-									const key = `${set.settingsJson}|${set.quantilesAvailable}|${set.enabled ?? ""}`
+									const key = `${settingsJson}|${quantilesAvailable}|${disabled ? "false" : ""}`
 									const group = updates.get(key)
 									if (group) group.ids.push(row.id)
 									else updates.set(key, { ids: [row.id], set })
@@ -1694,46 +1816,30 @@ export class CloudflareAnalyticsService extends Context.Service<
 		 * them and retries next tick (the watermark only advances on success). Returns the row count,
 		 * or {@link IngestRefused} when the gateway refuses the org (billing or a refused key).
 		 */
-		const emitMetrics = Effect.fn("CloudflareAnalyticsService.emitMetrics")(
-			function* (ingestKey: string, rows: CloudflareMetricRows) {
-				const total = rows.sumRows.length + rows.gaugeRows.length
-				if (total === 0) return 0
-				const payload = metricRowsToOtlp(rows.sumRows, rows.gaugeRows)
-				const request = HttpClientRequest.post(ingestMetricsUrl, {
-					headers: { authorization: `Bearer ${ingestKey}`, "content-type": "application/json" },
-				}).pipe(HttpClientRequest.bodyJsonUnsafe(payload))
-				const response = yield* httpClient
-					.execute(request)
-					.pipe(Effect.annotateSpans("peer.service", "ingest"))
-				if (response.status >= 300) {
-					const body = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
-					const message = `Cloudflare metrics ingest returned ${response.status}: ${summarizeUpstreamBody(body, response.headers)}`
-					// 402 is billing; 401/403 is the org's key refused (an edge block on a revoked key).
-					if (isIngestRefusal(response.status)) {
-						yield* Effect.annotateCurrentSpan("maple.cloudflare.ingest_refused", true)
-						return { refused: message } satisfies IngestRefused
-					}
-					return yield* Effect.fail(
-						new IntegrationsUpstreamError({
-							message,
-							status: response.status,
-						}),
-					)
-				}
-				return total
-			},
-			(effect) =>
-				effect.pipe(
-					Effect.mapError((error) =>
-						error instanceof IntegrationsUpstreamError
-							? error
-							: new IntegrationsUpstreamError({
-									message: `Cloudflare metrics ingest request failed: ${error instanceof Error ? error.message : String(error)}`,
-									cause: error,
-								}),
+		const emitMetrics = Effect.fnUntraced(function* (
+			ingestKey: string,
+			rows: CloudflareMetricRows,
+			sourceId: string | undefined,
+		) {
+			const total = rows.sumRows.length + rows.gaugeRows.length
+			if (total === 0) return 0
+			const payload = metricRowsToOtlp(rows.sumRows, rows.gaugeRows, { sourceId })
+			return yield* ingest
+				.send({ signal: "metrics", ingestKey, payload, label: "Cloudflare metrics" })
+				.pipe(
+					Effect.as(total),
+					Effect.catchTag("@maple/backend/ingest/IngestSendError", (error) =>
+						// 402 is billing; 401/403 is the org's key refused (an edge block on a revoked key).
+						isRefusal(error)
+							? Effect.annotateCurrentSpan("maple.cloudflare.ingest_refused", true).pipe(
+									Effect.as({ refused: error.message } satisfies IngestRefused),
+								)
+							: Effect.fail(
+									new IntegrationsUpstreamError({ message: error.message, cause: error }),
+								),
 					),
-				),
-		)
+				)
+		})
 
 		/**
 		 * One poll step: query a batched document's window, attribute GraphQL-level errors to their
@@ -1748,6 +1854,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 				readonly accountId: string
 				readonly accessToken: string
 				readonly ingestKey: string
+				readonly sourceId: string | undefined
 				readonly liveScripts: ReadonlySet<string> | null
 			},
 			now: number,
@@ -1880,7 +1987,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 				// Errors typically null the whole `data` — clean parts simply didn't advance; retry
 				// next round. A null data with NO errors is an upstream contract break.
 				if (result.errors.length === 0) {
-					return yield* Effect.fail(decodeError("batched"))
+					return yield* decodeError("batched")
 				}
 				// When every error that nulled `data` is expected per-plan gating, the clean sibling
 				// parts weren't the problem — Cloudflare just voids the whole batch when one selection
@@ -1959,7 +2066,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					.filter((entry) => entry.part === part)
 					.reduce((sum, { rows }) => sum + rows.sumRows.length + rows.gaugeRows.length, 0)
 
-			const emitted = yield* emitMetrics(context.ingestKey, combined)
+			const emitted = yield* emitMetrics(context.ingestKey, combined, context.sourceId)
 			if (typeof emitted !== "number") return documentPlanBlocked(item, emitted.refused)
 			// Frontiers only advance after the gateway accepted the batch above.
 			const advanced = yield* Effect.forEach(cleanParts, (part) => {
@@ -2105,6 +2212,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 			readonly failures: ReadonlyArray<DatasetPollFailure>
 			/** Cloudflare's rate limiter refused this account this tick; the org's cap halves. */
 			readonly rateLimited: boolean
+			/** Why the account could not be read at all; `revoked` means the grant is gone. */
+			readonly issue: { readonly message: string; readonly revoked: boolean } | null
 		}
 
 		const pollConnection = Effect.fn("CloudflareAnalyticsService.pollConnection")(function* (
@@ -2119,6 +2228,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 			// The org's ingest refusal this tick: every account posts with the same org key, so
 			// one refusal holds the siblings too instead of re-posting with a refused key.
 			orgRefusal: Ref.Ref<string | null>,
+			// The grant's pull source, stamped on every resource as `maple_source_id`.
+			sourceId: string | undefined,
 		) {
 			yield* Effect.annotateCurrentSpan({
 				orgId,
@@ -2131,7 +2242,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			// A skip used to be silent — the reason only ever landed in the returned summary, which
 			// nothing read for a plain tick. Annotating the poll span means every skip is now
 			// visible on the trace even when the tick rollup below doesn't (yet) escalate it.
-			const skip = (reason: string) =>
+			const skip = (reason: string, issue: PollConnectionSummary["issue"] = null) =>
 				Effect.annotateCurrentSpan({
 					"maple.cloudflare.skip_reason": reason,
 					"maple.cloudflare.calls": 0,
@@ -2144,6 +2255,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 						rowsIngested: 0,
 						failures: [],
 						rateLimited: false,
+						issue,
 					} satisfies PollConnectionSummary),
 				)
 
@@ -2153,7 +2265,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const tokenResult = yield* Effect.result(oauth.getValidAccessToken(orgId, accountId))
 			if (
 				Result.isFailure(tokenResult) &&
-				tokenResult.failure instanceof IntegrationsNotConnectedError
+				Schema.is(IntegrationsNotConnectedError)(tokenResult.failure)
 			) {
 				return yield* skip("not connected")
 			}
@@ -2187,19 +2299,26 @@ export class CloudflareAnalyticsService extends Context.Service<
 				// transient upstream failures record and retry next tick.
 				if (Result.isFailure(tokenResult)) {
 					const error = tokenResult.failure
-					if (error instanceof IntegrationsRevokedError) {
+					if (Schema.is(IntegrationsRevokedError)(error)) {
 						yield* oauth.markConnectionRevoked(orgId, accountId)
 					}
 					yield* recordConnectionError(orgId, accountId, error.message, now, {
-						disable: error instanceof IntegrationsRevokedError,
+						disable: Schema.is(IntegrationsRevokedError)(error),
 					})
-					return yield* skip(`token unavailable: ${error._tag}`)
+					const revoked = Schema.is(IntegrationsRevokedError)(error)
+					return yield* skip(`token unavailable: ${error._tag}`, {
+						message: revoked ? GRANT_REVOKED_REASON : error.message,
+						revoked,
+					})
 				}
 				const { accessToken, scope } = tokenResult.success
 
 				if (!hasAnalyticsScopes(scope)) {
 					yield* recordConnectionError(orgId, accountId, MISSING_SCOPES_ERROR, now)
-					return yield* skip("missing analytics scopes")
+					return yield* skip("missing analytics scopes", {
+						message: MISSING_SCOPES_ERROR,
+						revoked: false,
+					})
 				}
 
 				// Zone discovery (REST pagination) is hourly-TTL'd on the anchor row; ticks in
@@ -2216,9 +2335,12 @@ export class CloudflareAnalyticsService extends Context.Service<
 						// this account's rows is what stops it being re-polled; only a failed token
 						// refresh (above) is grant-wide.
 						yield* recordConnectionError(orgId, accountId, error.message, now, {
-							disable: error instanceof IntegrationsRevokedError,
+							disable: Schema.is(IntegrationsRevokedError)(error),
 						})
-						return yield* skip(`zone discovery failed: ${error._tag}`)
+						return yield* skip(`zone discovery failed: ${error._tag}`, {
+							message: error.message,
+							revoked: false,
+						})
 					}
 					// Newly-registered account datasets get their rows on the discovery cadence —
 					// before reconcileZones, whose loadStateRows picks them up for this tick.
@@ -2257,7 +2379,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					} else {
 						liveScripts = new Set(scriptsResult.success.items)
 						yield* updateRows([anchor.id], {
-							liveScriptsJson: JSON.stringify(scriptsResult.success.items),
+							liveScriptsJson: encodeJsonSync(scriptsResult.success.items),
 							updatedAt: now,
 						})
 					}
@@ -2340,7 +2462,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 								budget.calls += 1
 								const partResults = yield* pollDatasetChunk(
 									item,
-									{ orgId, accountId, accessToken, ingestKey, liveScripts },
+									{ orgId, accountId, accessToken, ingestKey, sourceId, liveScripts },
 									now,
 								).pipe(
 									Effect.catchTags({
@@ -2567,6 +2689,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					rowsIngested,
 					failures: datasetFailures,
 					rateLimited,
+					issue: null,
 				} satisfies PollConnectionSummary
 			}).pipe(
 				Effect.ensuring(
@@ -2608,6 +2731,75 @@ export class CloudflareAnalyticsService extends Context.Service<
 			)
 		})
 
+		// The grant's source; null while the connection is not linked yet.
+		const loadSourceId = (orgId: OrgId) =>
+			dbExecute((db) =>
+				db.run(
+					PG.from(OAuthConnections)
+						.select("sourceId")
+						.where(($) => [$.orgId.eq(orgId), $.provider.eq("cloudflare")])
+						.limit(1),
+				),
+			).pipe(Effect.map(([connection]) => connection?.sourceId ?? null))
+
+		// A paused source reads nothing; its head windows follow the clock so a resume starts at now.
+		const skipPausedWindows = (orgId: OrgId, now: number) => {
+			const horizon = floorToBucket(now - SAFETY_LAG_MS)
+			return dbExecute((db) =>
+				db.run(
+					PG.update(CloudflareAnalyticsState)
+						.set({ watermarkAt: horizon, updatedAt: now })
+						.where(($) => [$.orgId.eq(orgId), $.watermarkAt.lt(horizon)]),
+				),
+			)
+		}
+
+		/**
+		 * What a tick tells the grant's source; null when no account read anything (lease held,
+		 * backoff), so a skipped tick leaves the source's last report standing.
+		 */
+		const sourcePollOutcome = (
+			summaries: ReadonlyArray<PollConnectionSummary>,
+			refusal: string | null,
+			resources: SourceResourceCount | undefined,
+		): SourcePollOutcome | null => {
+			if (summaries.some((summary) => summary.issue?.revoked === true)) {
+				return { _tag: "Disconnected", reason: GRANT_REVOKED_REASON }
+			}
+			const failures = summaries.flatMap((summary) => summary.failures)
+			const error =
+				refusal ??
+				summaries.find((summary) => summary.issue !== null)?.issue?.message ??
+				failures[0]?.message
+			if (error !== undefined) return { _tag: "Failed", error, resources }
+			return summaries.some((summary) => summary.skipped === null) ? { _tag: "Ok", resources } : null
+		}
+
+		/** The polled accounts' enabled datasets, and how many failed or fell behind, as the inventory counts them. */
+		const datasetHealth = (orgId: OrgId, accountIds: ReadonlySet<string>, now: number) =>
+			loadStateRows(orgId).pipe(
+				Effect.map((rows): SourceResourceCount | undefined => {
+					const enabled = rows.filter((row) => row.enabled && accountIds.has(row.accountId))
+					const unhealthy = enabled.filter((row) => {
+						const status = pollStatus(row, now, DATASET_STALE_MS)
+						return status === "failing" || status === "stale"
+					})
+					return enabled.length >= 2
+						? { total: enabled.length, unhealthy: unhealthy.length }
+						: undefined
+				}),
+			)
+
+		/** Best effort: a failed health report must not fail the tick it describes. */
+		const reportTick = (sourceId: SourceId | null, outcome: SourcePollOutcome, now: number) =>
+			dbExecute((db) => reportPoll(db, sourceId, outcome, now)).pipe(
+				Effect.catchTag("@maple/http/errors/IntegrationsPersistenceError", (error) =>
+					Effect.logWarning("cloudflare-analytics source health report failed").pipe(
+						Effect.annotateLogs({ sourceId, error: error.message }),
+					),
+				),
+			)
+
 		/**
 		 * Poll every connected account of one org, sequentially, sharing ONE call budget —
 		 * Cloudflare meters the grant's holder, not the individual accounts, so a per-account
@@ -2618,6 +2810,19 @@ export class CloudflareAnalyticsService extends Context.Service<
 		 */
 		const pollOrg = Effect.fn("CloudflareAnalyticsService.pollOrg")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
+			const linkedSource = yield* loadSourceId(orgId)
+			const startedAt = yield* Clock.currentTimeMillis
+			if (yield* dbExecute((db) => isSourcePaused(db, linkedSource, startedAt))) {
+				yield* skipPausedWindows(orgId, startedAt)
+				yield* Effect.annotateCurrentSpan("maple.cloudflare.skip_reason", "source paused")
+				return {
+					orgId,
+					skipped: "source paused",
+					callsMade: 0,
+					rowsIngested: 0,
+					failures: [],
+				} satisfies PollOrgSummary
+			}
 			const status = yield* oauth.getStatus(orgId)
 			// One budget for the whole grant, spent by the accounts in planned order.
 			const budget = { calls: 0 }
@@ -2635,20 +2840,25 @@ export class CloudflareAnalyticsService extends Context.Service<
 				rowsIngested: 0,
 				failures: [],
 				rateLimited: false,
+				issue: account.revoked
+					? { message: GRANT_REVOKED_REASON, revoked: true }
+					: { message: MISSING_SCOPES_ERROR, revoked: false },
 			}))
 			const stateRows = pollable.length === 0 ? [] : yield* loadStateRows(orgId)
 			const grantCap = grantCapOf(stateRows)
+			const planNow = pollable.length === 0 ? 0 : yield* Clock.currentTimeMillis
 			const plan =
 				pollable.length === 0
 					? []
 					: planAccountBudgets(
 							pollable.map((account) => account.accountId),
 							stateRows,
-							yield* Clock.currentTimeMillis,
+							planNow,
 							grantCap,
 						)
+			const sourceId = stampedSourceId(linkedSource)
 			const polled = yield* Effect.forEach(plan, ({ accountId, callLimit }) =>
-				pollConnection(orgId, accountId, budget, callLimit, orgRefusal),
+				pollConnection(orgId, accountId, budget, callLimit, orgRefusal, sourceId),
 			)
 			// A tick where every account skipped (e.g. still sitting out a backoff) says nothing
 			// about the limit, so the cap only moves after a tick that actually polled.
@@ -2664,6 +2874,17 @@ export class CloudflareAnalyticsService extends Context.Service<
 				if (nextCap !== grantCap) yield* storeGrantCap(orgId, nextCap)
 			}
 			const summaries = [...skipped, ...polled]
+			const reportedAt = yield* Clock.currentTimeMillis
+			const resources = polled.some((summary) => summary.skipped === null)
+				? yield* datasetHealth(
+						orgId,
+						new Set(pollable.map((account) => account.accountId)),
+						reportedAt,
+					)
+				: undefined
+			const refusal = yield* Ref.get(orgRefusal)
+			const outcome = sourcePollOutcome(summaries, refusal, resources)
+			if (outcome !== null) yield* reportTick(linkedSource, outcome, reportedAt)
 			if (summaries.length === 0) {
 				yield* Effect.annotateCurrentSpan("maple.cloudflare.skip_reason", "not connected")
 				return {
@@ -2813,10 +3034,13 @@ export class CloudflareAnalyticsService extends Context.Service<
 
 		const getStatus = Effect.fn("CloudflareAnalyticsService.getStatus")(function* (orgId: OrgId) {
 			const rows = yield* loadStateRows(orgId)
+			const zoneSettings = yield* loadZoneSettings(orgId)
+			const settingsOf = (accountId: string) => zoneSettings.get(accountId) ?? WATCH_ALL_ZONES
 			const toZone = (row: CloudflareAnalyticsStateRow): CloudflareAnalyticsZoneStatusFields => ({
 				id: row.zoneId,
 				name: row.zoneName ?? row.zoneId,
 				enabled: row.enabled,
+				watched: isZoneWatched(settingsOf(row.accountId), row.zoneId),
 				lastSyncedAt: row.lastSuccessAt,
 				lastError: row.lastError,
 				watermarkAt: row.watermarkAt,
@@ -2840,6 +3064,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 						.map(toZone)
 						.sort((a, b) => a.name.localeCompare(b.name)),
 					workers: workersRow ? toWorkers(workersRow) : null,
+					watchNewZones: settingsOf(accountId).watchNewZones,
 				}
 			})
 			// Merged legacy view: all accounts' zones (zone ids are globally unique), and the
@@ -3046,6 +3271,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					workers: accountAnalytics?.workers
 						? new CloudflareAnalyticsWorkersStatus(accountAnalytics.workers)
 						: null,
+					watchNewZones: accountAnalytics?.watchNewZones ?? WATCH_ALL_ZONES.watchNewZones,
 				})
 			})
 			// Legacy top-level view: first (oldest) connection's identity + every CONNECTED
@@ -3120,6 +3346,88 @@ export class CloudflareAnalyticsService extends Context.Service<
 			)
 		})
 
+		/**
+		 * Store one account's zone choice and pause or resume the zones whose choice changed. Drift
+		 * from a failed write or a racing tick is repaired by the next discovery pass.
+		 */
+		const setZoneSettings = Effect.fn("CloudflareAnalyticsService.setZoneSettings")(function* (
+			orgId: OrgId,
+			userId: UserId,
+			update: ZoneSettingsUpdate,
+		) {
+			yield* Effect.annotateCurrentSpan({ orgId, "maple.cloudflare.account_id": update.accountId })
+			const accountRows = yield* loadStateRows(orgId, update.accountId)
+			if (accountRows.length === 0) {
+				return yield* new IntegrationsValidationError({
+					message: `Cloudflare account ${update.accountId} is not connected`,
+				})
+			}
+			const zoneRows = accountRows.filter((row) => DATASET_BY_ID.get(row.dataset)?.scope === "zone")
+			const known = new Set(zoneRows.map((row) => row.zoneId))
+			const unknown = update.zones.find((zone) => !known.has(zone.zoneId))
+			if (unknown !== undefined) {
+				return yield* new IntegrationsValidationError({
+					message: `Zone ${unknown.zoneId} is not on Cloudflare account ${update.accountId}`,
+				})
+			}
+			const previous =
+				(yield* loadZoneSettings(orgId, update.accountId)).get(update.accountId) ?? WATCH_ALL_ZONES
+			const next: ZoneWatchSettings = {
+				watchNewZones: update.watchNewZones,
+				zoneOverrides: Object.fromEntries(update.zones.map((zone) => [zone.zoneId, zone.watched])),
+			}
+			const now = yield* Clock.currentTimeMillis
+			yield* dbExecute((db) =>
+				db.run(
+					PG.insertInto(CloudflareZoneSettings)
+						.values({
+							orgId,
+							accountId: update.accountId,
+							watchNewZones: next.watchNewZones,
+							zoneOverrides: next.zoneOverrides,
+							createdAt: now,
+							updatedAt: now,
+							updatedBy: userId,
+						})
+						.onConflictDoUpdate({
+							target: ["orgId", "accountId"],
+							set: () => ({
+								watchNewZones: next.watchNewZones,
+								zoneOverrides: next.zoneOverrides,
+								updatedAt: now,
+								updatedBy: userId,
+							}),
+						}),
+				),
+			)
+			const changed = zoneRows.filter(
+				(row) => isZoneWatched(previous, row.zoneId) !== isZoneWatched(next, row.zoneId),
+			)
+			const paused = changed.filter((row) => !isZoneWatched(next, row.zoneId))
+			const resumed = changed.filter((row) => isZoneWatched(next, row.zoneId))
+			yield* updateRows(
+				paused.map((row) => row.id),
+				{ enabled: false, updatedAt: now },
+			)
+			yield* updateRows(
+				resumed.map((row) => row.id),
+				{ enabled: true, updatedAt: now },
+			)
+			// A resumed zone may have left Cloudflare while paused; rediscover before polling it.
+			if (resumed.length > 0) {
+				yield* updateRows(
+					accountRows
+						.filter((row) => row.dataset === WORKERS_DATASET && row.zoneId === "")
+						.map((row) => row.id),
+					{ discoveredAt: null, updatedAt: now },
+				)
+			}
+			yield* Effect.annotateCurrentSpan({
+				"maple.cloudflare.rows_paused": paused.length,
+				"maple.cloudflare.rows_resumed": resumed.length,
+			})
+		})
+
 		const findHttpZone = Effect.fn("CloudflareAnalyticsService.findHttpZone")(function* (
 			orgId: OrgId,
 			zoneName: string,
@@ -3154,12 +3462,12 @@ export class CloudflareAnalyticsService extends Context.Service<
 			getUsage,
 			listHyperdriveConfigs: listHyperdriveConfigsForOrg,
 			resetOrgState,
+			setZoneSettings,
 			findHttpZone,
 		} satisfies CloudflareAnalyticsServiceApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(
 			Layer.mergeAll(
 				OrgClickHouseSettingsService.layer,

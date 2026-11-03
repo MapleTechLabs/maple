@@ -1,34 +1,45 @@
 /**
  * `bun scripts/preview-seed-smoke.ts [--skip-seed]`: seed and smoke-test a PR preview.
  *
- * Mints a Clerk session for the dev test user (development instance only), seeds
- * demo telemetry through the API, then hits read endpoints that touch Postgres and
- * the warehouse. Any 5xx or network error exits 1. Tokens are never printed.
+ * With PREVIEW_SIGNIN_KEY set, first exercises the preview sign-in endpoint, which
+ * creates the shared preview reviewer and its org, and seeds that org so reviewers land
+ * on data. Otherwise seeds the dev test user's org. Mints a Clerk session (development
+ * instance only), seeds demo telemetry through the API, then hits read endpoints that
+ * touch Postgres and the warehouse. Any non-2xx or network error exits 1. Tokens are never
+ * printed.
  *
- * Env: API_URL, WEB_URL, CLERK_SECRET_KEY, optional PREVIEW_SEED_ORG_ID and
- * PREVIEW_SEED_EMAIL.
+ * Env: API_URL, WEB_URL, CLERK_SECRET_KEY, optional PREVIEW_SIGNIN_KEY,
+ * PREVIEW_SEED_ORG_ID and PREVIEW_SEED_EMAIL.
  */
+import { Schema, Array as Arr, String as Str } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const CLERK_API = "https://api.clerk.com/v1"
 const DEFAULT_EMAIL = "david+clerk_test@gmail.com"
+// Keep in step with `PREVIEW_REVIEWER_EMAIL` / `_ORG_NAME` in `PreviewSignInService.ts`.
+const PREVIEW_REVIEWER_EMAIL = "preview-reviewer+clerk_test@maple.dev"
+const PREVIEW_REVIEWER_ORG_NAME = "Preview"
 const TOKEN_TTL_SECONDS = 1800
 const HEALTH_DEADLINE_MS = 180_000
 const REQUEST_TIMEOUT_MS = 60_000
 
 const skipSeed = process.argv.includes("--skip-seed")
 
-const missing = ["API_URL", "WEB_URL", "CLERK_SECRET_KEY"].filter((name) => !process.env[name])
+const missing = Arr.filter(["API_URL", "WEB_URL", "CLERK_SECRET_KEY"], (name) => !process.env[name])
 if (missing.length > 0) {
-	console.error(`Missing required env: ${missing.join(", ")}`)
+	console.error(`Missing required env: ${Arr.join(missing, ", ")}`)
 	process.exit(2)
 }
-const apiUrl = process.env.API_URL!.replace(/\/+$/, "")
-const webUrl = process.env.WEB_URL!.replace(/\/+$/, "")
+const apiUrl = Str.replace(/\/+$/, "")(process.env.API_URL!)
+const webUrl = Str.replace(/\/+$/, "")(process.env.WEB_URL!)
 const secretKey = process.env.CLERK_SECRET_KEY!
-if (!secretKey.startsWith("sk_test_")) {
+if (!Str.startsWith("sk_test_")(secretKey)) {
 	console.error("CLERK_SECRET_KEY is not a development key (sk_test_...). Refusing to mint a session.")
 	process.exit(2)
 }
-const email = process.env.PREVIEW_SEED_EMAIL ?? DEFAULT_EMAIL
+const previewSignInKey = process.env.PREVIEW_SIGNIN_KEY?.trim() || undefined
+const email = process.env.PREVIEW_SEED_EMAIL ?? (previewSignInKey ? PREVIEW_REVIEWER_EMAIL : DEFAULT_EMAIL)
 
 const fail = (message: string): never => {
 	console.error(`::error::${message}`)
@@ -71,15 +82,35 @@ const waitForHealth = async () => {
 await waitForHealth()
 console.log(`API healthy: ${apiUrl}`)
 
-// 2. A session with an active org: the internal API takes the tenant from the token's org claim.
+// 2. Preview sign-in: the ticket is discarded, the call provisions the reviewer and its org.
+if (previewSignInKey) {
+	const response = await timedFetch(`${apiUrl}/api/auth/preview/sign-in`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: encodeJson({ key: previewSignInKey }),
+	})
+	if (response.status !== 200) {
+		fail(`Preview sign-in returned ${response.status}: ${Str.slice(0, 500)(await response.text())}`)
+	}
+	console.log(`Preview sign-in ready for ${PREVIEW_REVIEWER_EMAIL}`)
+}
+
+// 3. A session with an active org: the internal API takes the tenant from the token's org claim.
 const users = await clerkFetch<Array<{ id: string }>>(`/users?email_address=${encodeURIComponent(email)}`)
 const user = users[0] ?? fail(`No user with email ${email} on this Clerk instance.`)
 
 const resolveOrgId = async (): Promise<string> => {
 	if (process.env.PREVIEW_SEED_ORG_ID) return process.env.PREVIEW_SEED_ORG_ID
-	const memberships = await clerkFetch<{ data: Array<{ organization: { id: string } }> }>(
-		`/users/${user.id}/organization_memberships?limit=1`,
+	const memberships = await clerkFetch<{ data: Array<{ organization: { id: string; name: string } }> }>(
+		`/users/${user.id}/organization_memberships?limit=100`,
 	)
+	// The reviewer is what preview visitors sign in as, so seed the org they land in.
+	if (email === PREVIEW_REVIEWER_EMAIL) {
+		const preview = memberships.data.find((m) => m.organization.name === PREVIEW_REVIEWER_ORG_NAME)
+		return (
+			preview?.organization.id ?? fail(`${email} has no "${PREVIEW_REVIEWER_ORG_NAME}" organization.`)
+		)
+	}
 	return memberships.data[0]?.organization.id ?? fail(`${email} is not a member of any organization.`)
 }
 const orgId = await resolveOrgId()
@@ -87,11 +118,11 @@ const orgId = await resolveOrgId()
 // `POST /sessions` is testing-only on Clerk and unavailable on production instances.
 const session = await clerkFetch<{ id: string }>("/sessions", {
 	method: "POST",
-	body: JSON.stringify({ user_id: user.id, active_organization_id: orgId }),
+	body: encodeJson({ user_id: user.id, active_organization_id: orgId }),
 })
 const { jwt: token } = await clerkFetch<{ jwt: string }>(`/sessions/${session.id}/tokens`, {
 	method: "POST",
-	body: JSON.stringify({ expires_in_seconds: TOKEN_TTL_SECONDS }),
+	body: encodeJson({ expires_in_seconds: TOKEN_TTL_SECONDS }),
 })
 console.log(`Session minted for ${email} in org ${orgId}`)
 
@@ -103,12 +134,12 @@ const call = async (name: string, method: "GET" | "POST", path: string, body?: u
 	const outcome = await timedFetch(`${apiUrl}${path}`, {
 		method,
 		headers,
-		body: body === undefined ? undefined : JSON.stringify(body),
+		body: body === undefined ? undefined : encodeJson(body),
 	}).then(
-		// 401 means the session never reached a tenant, which would mask every other check.
+		// Every call is a known-good request from an org admin, so any 4xx is a regression too.
 		async (response) => ({
 			status: String(response.status),
-			ok: response.status < 500 && response.status !== 401,
+			ok: response.status >= 200 && response.status < 300,
 			text: await response.text(),
 		}),
 		(error: unknown) => ({ status: `network error: ${String(error)}`, ok: false, text: "" }),
@@ -117,14 +148,15 @@ const call = async (name: string, method: "GET" | "POST", path: string, body?: u
 	return outcome
 }
 
-// 3. Seed. Ingest keys are created on first read, so the GET below provisions them.
+// 4. Seed. Ingest keys are created on first read, so the GET below provisions them.
 if (!skipSeed) {
 	const seeded = await call("/internal/demo/seed", "POST", "/internal/demo/seed", { hours: 6 })
-	if (seeded.status !== "200") fail(`Demo seed returned ${seeded.status}: ${seeded.text.slice(0, 500)}`)
+	if (seeded.status !== "200")
+		fail(`Demo seed returned ${seeded.status}: ${Str.slice(0, 500)(seeded.text)}`)
 	console.log(`Seed: ${seeded.text}`)
 }
 
-// 4. Smoke reads across Postgres (keys, dashboards, alerts) and the warehouse.
+// 5. Smoke reads across Postgres (keys, dashboards, alerts) and the warehouse.
 const endTime = new Date()
 const startTime = new Date(endTime.getTime() - 24 * 60 * 60 * 1000)
 const window = { start_time: startTime.toISOString(), end_time: endTime.toISOString() }
@@ -132,7 +164,11 @@ const window = { start_time: startTime.toISOString(), end_time: endTime.toISOStr
 await call("/v2/ingest_keys", "GET", "/v2/ingest_keys")
 await call("/v2/dashboards", "GET", "/v2/dashboards?limit=10")
 await call("/v2/alerts/rules", "GET", "/v2/alerts/rules?limit=10")
-await call("/v2/services", "GET", `/v2/services?${new URLSearchParams({ ...window, limit: "10" })}`)
+await call(
+	"/v2/services",
+	"GET",
+	`/v2/services?${new URLSearchParams({ ...window, limit: "10" }).toString()}`,
+)
 await call("/v2/traces/search", "POST", "/v2/traces/search", { ...window, limit: 10 })
 await call("/v2/logs/search", "POST", "/v2/logs/search", { ...window, limit: 10 })
 
@@ -148,10 +184,10 @@ await fetch(`${CLERK_API}/sessions/${session.id}/revoke`, {
 	headers: { authorization: `Bearer ${secretKey}` },
 }).catch(() => undefined)
 
-const width = Math.max(...results.map((r) => r.name.length))
-console.log(`\n     ${"Endpoint".padEnd(width)}  Status`)
-for (const r of results) console.log(`${r.ok ? "ok  " : "FAIL"} ${r.name.padEnd(width)}  ${r.status}`)
+const width = Math.max(...Arr.map(results, (r) => r.name.length))
+console.log(`\n     ${Str.padEnd(width)("Endpoint")}  Status`)
+for (const r of results) console.log(`${r.ok ? "ok  " : "FAIL"} ${Str.padEnd(width)(r.name)}  ${r.status}`)
 
-const failed = results.filter((r) => !r.ok)
+const failed = Arr.filter(results, (r) => !r.ok)
 if (failed.length > 0) fail(`${failed.length} preview smoke check(s) failed`)
 console.log("\nPreview smoke test passed.")

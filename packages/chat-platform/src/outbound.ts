@@ -143,6 +143,17 @@ export interface ChatOutboundLimits {
 	readonly minEditInterval: Duration.Duration
 }
 
+/**
+ * Where a write stands in the turn it belongs to: `streaming` while the driver will write the
+ * message again, `final` for the last write of a finished turn. Absent for a write that belongs to
+ * no turn — a notice, a whisper, an alert, a settled approval — which is read as finished.
+ *
+ * A platform that only edits can ignore it. One that streams a message natively (see
+ * {@link ChatOutbound.liveMessages}) opens the stream on a `streaming` post and closes it on the
+ * `final` write.
+ */
+export type ChatWritePhase = "streaming" | "final"
+
 export interface ChatOutboundTransport {
 	/**
 	 * Post a message and answer with a handle to it.
@@ -154,10 +165,12 @@ export interface ChatOutboundTransport {
 	readonly post: (
 		target: ChatTarget,
 		blocks: ReadonlyArray<ChatBlock>,
+		phase?: ChatWritePhase,
 	) => Effect.Effect<ChatMessageRef, ChatOutboundError>
 	readonly edit: (
 		ref: ChatMessageRef,
 		blocks: ReadonlyArray<ChatBlock>,
+		phase?: ChatWritePhase,
 	) => Effect.Effect<void, ChatOutboundError>
 	/**
 	 * Say something only the person who pressed a control can see: a notice about them rather
@@ -235,6 +248,13 @@ export interface ChatOutbound<R = never> {
 	/** Whose outbound this is — what a failure and a driver span name, without naming a vendor. */
 	readonly connectorId: ChatConnectorId
 	readonly limits: ChatOutboundLimits
+	/**
+	 * Whether the platform shows a streamed message as still being written until it is told the turn
+	 * is over — a native live message rather than one edited in place. The driver then closes every
+	 * message it streamed with a `final` write, even one the last render left unchanged, where it
+	 * would otherwise spend no write on a message that already says the right thing.
+	 */
+	readonly liveMessages?: boolean
 	/**
 	 * The deployment-wide configuration `transport` reads out of {@link ConnectorCredentials}.
 	 *

@@ -1,7 +1,8 @@
-import { Context, Effect, Layer, Option } from "effect"
+import { Context, Effect, Layer, Option, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import type { InternalScrapeTarget } from "@maple/domain/http"
-import { describeHttpClientError, guard } from "@maple/safe-fetch"
+import { describeHttpClientError, guardPinned, readTextWithin } from "@maple/safe-fetch"
+import { HostResolver } from "@maple/safe-fetch/dns"
 import { classifyTargetStatus } from "./policy"
 import { scrapeError, type ScrapeError } from "./ScrapeError"
 
@@ -31,9 +32,20 @@ export const scrapeTimeoutMs = (scrapeIntervalSeconds: number): number =>
 /** Parse a `Retry-After` header value, honoring only the delta-seconds form. */
 export const parseRetryAfterSeconds = (value: string | null): number | null => {
 	if (value === null) return null
-	const seconds = Number(value.trim())
+	const seconds = Number(Str.trim(value))
 	return Number.isFinite(seconds) && seconds >= 0 ? seconds : null
 }
+
+/** Managed providers get their own service-map node; user-configured targets share one. */
+const peerServiceOf = (targetType: InternalScrapeTarget["targetType"]): string =>
+	targetType === "planetscale"
+		? "planetscale-metrics"
+		: targetType === "supabase"
+			? "supabase-metrics"
+			: "scrape-target"
+
+/** Largest exposition body a scrape reads; past it the scrape fails instead of buffering on. */
+export const MAX_SCRAPE_RESPONSE_BYTES = 32 * 1024 * 1024
 
 const DEFAULT_HEADERS = {
 	accept: "application/openmetrics-text;version=1.0.0,text/plain;version=0.0.4;q=0.5,*/*;q=0.1",
@@ -44,17 +56,20 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 	"@maple/scraper/TargetFetcher",
 	{
 		make: Effect.gen(function* () {
-			// `guard` supplies the SSRF protection + per-hop redirect re-validation.
-			// `Effect.timeout` interrupts the request, which aborts the in-flight fetch.
-			const client = guard(yield* HttpClient.HttpClient)
+			// SSRF protection with per-hop redirect re-validation, and each hop dials the
+			// address it validated: this runs inside a VPC, so a re-resolved name could
+			// otherwise reach it. `Effect.timeout` aborts the in-flight fetch.
+			const httpClient = yield* HttpClient.HttpClient
+			const hostResolver = yield* HostResolver
+			const client = guardPinned(httpClient, hostResolver)
 
 			// `server.address` + `url.path`, never `url.full`: PlanetScale authenticates
 			// its metrics data plane with `?sig=&exp=` query params, i.e. credentials.
 			// `pathname` drops the query, so the signed URL cannot leak into telemetry.
 			//
-			// `peer.service` is deliberately low-cardinality (two values, not one per
-			// target) — a per-target name would fragment the service map into a node
-			// per scrape target.
+			// `peer.service` is deliberately low-cardinality (one per managed provider plus
+			// `scrape-target`, never per target): a per-target name would fragment the
+			// service map into a node per scrape target.
 			const fetchTarget = Effect.fn("TargetFetcher.fetchTarget", { kind: "client" })(function* (
 				target: InternalScrapeTarget,
 			) {
@@ -62,8 +77,7 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 				// Annotated before the fetch so a failed or timed-out scrape still
 				// draws its service-map edge.
 				yield* Effect.annotateCurrentSpan({
-					"peer.service":
-						target.targetType === "planetscale" ? "planetscale-metrics" : "scrape-target",
+					"peer.service": peerServiceOf(target.targetType),
 					"http.request.method": "GET",
 					"maple.scrape.target_type": target.targetType,
 					...(Option.isSome(parsed)
@@ -79,13 +93,16 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 					)
 					.pipe(
 						Effect.flatMap((response) =>
-							Effect.map(response.text, (body): TargetResponse => ({
-								status: response.status,
-								body,
-								retryAfterSeconds: parseRetryAfterSeconds(
-									response.headers["retry-after"] ?? null,
-								),
-							})),
+							Effect.map(
+								readTextWithin(response, MAX_SCRAPE_RESPONSE_BYTES),
+								(body): TargetResponse => ({
+									status: response.status,
+									body,
+									retryAfterSeconds: parseRetryAfterSeconds(
+										response.headers["retry-after"] ?? null,
+									),
+								}),
+							),
 						),
 						Effect.timeout(scrapeTimeoutMs(target.scrapeIntervalSeconds)),
 						// A URL failing SSRF validation is a config fault no cadence clears; an
@@ -96,6 +113,20 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 									scrapeError({
 										message: `url rejected: ${cause.message}`,
 										reason: "scrape_failed",
+									}),
+								),
+							"@maple/safe-fetch/ResponseTooLargeError": () =>
+								Effect.fail(
+									scrapeError({
+										message: `response exceeded ${MAX_SCRAPE_RESPONSE_BYTES / (1024 * 1024)} MiB`,
+										reason: "scrape_failed",
+									}),
+								),
+							"@maple/safe-fetch/HostResolutionError": (cause) =>
+								Effect.fail(
+									scrapeError({
+										message: `dns failed: ${cause.message}`,
+										reason: "target_error",
 									}),
 								),
 							HttpClientError: (cause) =>

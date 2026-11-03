@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /**
  * Helpers for keeping high-cardinality charts readable by collapsing the
  * long tail of small series/categories into a single "Other" bucket.
@@ -44,7 +45,7 @@ export function bucketCategorical(
 
 	const head = sorted.slice(0, max - 1)
 	const tail = sorted.slice(max - 1)
-	const otherValue = tail.reduce((sum, r) => sum + r.value, 0)
+	const otherValue = Arr.reduce(tail, 0, (sum, r) => sum + r.value)
 	return [...head, { name: OTHER_LABEL, value: otherValue, collapsedCount: tail.length }]
 }
 
@@ -91,7 +92,7 @@ export function bucketTimeseries<Row extends Record<string, unknown>>(
 	const tailKeys = new Set(ranked.slice(max - 1))
 
 	const topSet = new Set(topKeys)
-	const newRows = rows.map((row) => {
+	const newRows = Arr.map(rows, (row) => {
 		const next: Record<string, unknown> = {}
 		next[bucketField] = row[bucketField]
 		let other = 0

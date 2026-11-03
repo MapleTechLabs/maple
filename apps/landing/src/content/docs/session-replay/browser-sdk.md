@@ -87,6 +87,7 @@ Every field accepted by `MapleBrowser.init`:
 | `privacy.maskAllText`                  | `boolean`                                                | `false`                                   | Mask all text in the recording, and omit captured click-target text from session events.                                                                                   |
 | `privacy.sanitizeUrl`                  | `(url: string) => string`                                | none                                      | Rewrite every URL before it leaves the page. See [Redacting URLs](#redacting-urls).                                                                                        |
 | `privacy.persistVisitorId`             | `boolean`                                                | `true`                                    | Store a persistent visitor id (localStorage and cookie) so unique and returning visitors can be counted. Turning it off also deletes any id already stored.                |
+| `privacy.persistence`                  | `"browser" \| "memory"`                                  | `"browser"`                               | `"memory"` keeps everything in memory: no cookies, Web Storage or IndexedDB, and no visitor id. See [Memory-only mode](#memory-only-mode).                                 |
 | `privacy.crossSubdomainCookie`         | `boolean`                                                | `true`                                    | Scope the visitor-id cookie to the registered domain so sibling subdomains share it. See [Linking a marketing site to your app](#linking-a-marketing-site-to-your-app).    |
 | `privacy.cookieDomain`                 | `string`                                                 | probed                                    | Explicit cookie `Domain=` (no leading dot). `""` forces a host-only cookie.                                                                                                |
 | `privacy.requireConsent`               | `boolean`                                                | `false`                                   | Capture nothing until `MapleBrowser.setConsent(true)`. See [Consent](#consent).                                                                                            |
@@ -249,7 +250,7 @@ Errors thrown by browser extensions and the harmless `ResizeObserver loop` notic
 
 ### Failed HTTP requests
 
-`fetch` and `XMLHttpRequest` spans follow the OpenTelemetry HTTP conventions for client requests: a response with a 4xx or 5xx status marks the span as an error, with `error.type` set to the status code (`"404"`, `"503"`), so it opens an issue. Issues group by status code.
+`fetch` and `XMLHttpRequest` spans follow the OpenTelemetry HTTP conventions for client requests: a response with a 4xx or 5xx status marks the span as an error, with `error.type` set to the status code (`"404"`, `"503"`). A 5xx opens an issue, grouped by status code. A 4xx with no exception attached is marked `Error` on the trace but does not open an issue.
 
 To count fewer statuses, narrow the list (the default is `[[400, 599]]`). A status left out is not an error:
 
@@ -339,7 +340,7 @@ Content Security Policy violations are sent as `maple.browser.csp_violation` war
 
 ## Navigation and data-loading spans
 
-Three calls turn one click into one trace: a navigation span, the data-loading spans under it, the `fetch()` spans those make, and the backend spans behind them. Call them from your router's hooks. The [frontend guides](/docs/frontend) show where for each framework.
+Three calls turn one click into one trace: a navigation span, the data-loading spans under it, the `fetch()` spans those make, and the backend spans behind them. Call them from your router's hooks. The [framework examples](#framework-examples) show where for React and Next.js.
 
 ```ts
 // the router starts a navigation
@@ -354,7 +355,7 @@ const project = await MapleBrowser.traced("loader /projects/:id", () => fetchPro
 MapleBrowser.endNavigation("/projects/:id")
 ```
 
-- `startNavigation(path)` opens a `pageload` span on the first call and a `navigate` span on every later one, with the path as `url.path`. A navigation still open is ended with `app.navigation.interrupted: true`. The page load joins the server render's trace when the document response has a `Server-Timing: traceparent;desc="…"` entry or the page a `<meta name="traceparent">` tag.
+- `startNavigation(path)` opens a `pageload` span on the first call and a `navigate` span on every later one, with the path as `url.path`. A navigation still open is ended with `maple.navigation.interrupted: true`. The page load joins the server render's trace when the document response has a `Server-Timing: traceparent;desc="…"` entry or the page a `<meta name="traceparent">` tag.
 - The page load starts at the browser's navigation start, and once the page has loaded it gets child spans for fetching the HTML (`documentFetch`, with `dns`, `connect`, `request` and `response` under it), `domProcessing` and `loadEvent`.
 - `endNavigation(route?)` renames the span to `navigate <route>` (or `pageload <route>`) and ends it. It does nothing when no navigation is open.
 - `traced(name, fn, options?)` runs `fn` in a span under the open navigation and returns its result unchanged. A throw is recorded on the span, marks it `Error`, and is rethrown; `isFailure` returning `false` leaves the span `Ok`. An error `traced` recorded isn't reported again by `captureException` or the global handlers.
@@ -407,6 +408,22 @@ MapleBrowser.setConsent(true)
 ```
 
 Revoking stops capture without uploading what is buffered, and a later grant starts a new session. Global Privacy Control is honored regardless of `requireConsent`. It suppresses the persistent visitor id (the one cross-session identifier the SDK stores) and leaves session-scoped capture alone. `doNotTrack` is ignored unless you set `privacy.respectDoNotTrack`. `privacy.persistVisitorId: false` turns the visitor id off entirely and deletes any already stored. `privacy.captureUserEmail: false` keeps the email from `identify()` out of Maple.
+
+### Memory-only mode
+
+For sites that must not store anything on the device, set `privacy.persistence: "memory"`:
+
+```ts
+MapleBrowser.init({ ingestKey, serviceName, privacy: { persistence: "memory" } })
+```
+
+The SDK then writes no cookies, localStorage, sessionStorage or IndexedDB. Sessions, replays, traces, errors and `track()` events still work within a page load. What you give up:
+
+- **Each page load is a new session.** A reload or a full-page navigation starts a new session and a new replay. Single-page apps keep one session across client-side navigation.
+- **No visitor id.** Unique, new and returning visitors are not counted, and an anonymous visit cannot be linked to the account it becomes. `identify()` still attaches the user to the current session.
+- **Nothing is kept for later.** `transport.offline` stores no failed batches, and the last replay chunk of a closing page is sent only if the upload finishes before the page unloads.
+
+Turning it on also deletes the visitor id and visit cookies from an earlier configuration. The setting only tightens: if two SDKs on a page disagree, memory-only wins.
 
 ## Privacy and masking
 

@@ -1,8 +1,8 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, it } from "@effect/vitest"
 import { createHash } from "node:crypto"
-import { sha256File } from "../src/server/checkpoint-digest"
-import { Clock, Duration, Effect, Exit, Option } from "effect"
+import { sha256File } from "@maple/local-server/checkpoint-digest"
+import { Clock, Duration, Effect, Exit, Option, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { deepStrictEqual, match, ok, rejects, strictEqual, throws } from "node:assert"
 import {
@@ -56,17 +56,17 @@ import {
 	retireCheckpointIfEligible,
 	validateCheckpointDataDir,
 	writeBackupConfig,
-} from "../src/server/checkpoints"
+} from "@maple/local-server/checkpoints"
 import {
 	durableWrite,
 	isUnsupportedDirectorySyncError,
 	syncDirectory,
 	syncTree,
-} from "../src/server/durable-files"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
-import { storeMarkerPath, storeOpenMarkerPath } from "../src/server/store-version"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { eventingControlSnapshotPath } from "../src/server/eventing/control-store"
+} from "@maple/local-server/durable-files"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
+import { storeMarkerPath, storeOpenMarkerPath } from "@maple/local-server/store-version"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { eventingControlSnapshotPath } from "@maple/local-server/eventing/control-store"
 import { openStore, runAsync } from "./eventing-test-support"
 
 const withDataDir = async (run: (dataDir: string) => Promise<void> | void): Promise<void> => {
@@ -230,15 +230,15 @@ describe("writeBackupConfig", () => {
 			const runtimePath = join(dataDir, "runtime.xml")
 			writeBackupConfig(runtimePath)
 			const runtime = readFileSync(runtimePath, "utf8")
-			ok(runtime.includes("<allowed_disk>default</allowed_disk>"))
-			ok(runtime.includes("<allowed_path>backups</allowed_path>"))
+			ok(Str.includes("<allowed_disk>default</allowed_disk>")(runtime))
+			ok(Str.includes("<allowed_path>backups</allowed_path>")(runtime))
 			strictEqual(lstatSync(runtimePath).mode & 0o777, 0o600)
 
 			const restorePath = join(dataDir, "restore.xml")
 			writeBackupConfig(restorePath, join(dataDir, "source & <store>"))
 			const restore = readFileSync(restorePath, "utf8")
-			ok(restore.includes("<allowed_disk>src</allowed_disk>"))
-			ok(restore.includes("source &amp; &lt;store&gt;"))
+			ok(Str.includes("<allowed_disk>src</allowed_disk>")(restore))
+			ok(Str.includes("source &amp; &lt;store&gt;")(restore))
 		})
 	})
 })
@@ -420,18 +420,32 @@ describe("checkpoint state resolution", () => {
 		})
 	})
 
-	it("reports a current checkpoint from an older build as unusable, not as absent", async () => {
+	it("reports a current checkpoint from another build as that, not as absent or corrupt", async () => {
 		await withDataDir(async (dataDir) => {
 			const stale = newCheckpointId()
 			writeSnapshot(dataDir, stale, undefined, OLDER_BUILD_SCHEMA)
 			writeState(dataDir, stale)
 			const availability = await checkpointAvailability(dataDir)
 			strictEqual(availability.available, false)
+			strictEqual(availability.available === false && availability.reason, "other_build")
+			strictEqual(
+				availability.available === false &&
+					availability.reason === "other_build" &&
+					availability.checkpointId,
+				stale,
+			)
 			match(
-				availability.available === false && availability.reason === "unusable"
+				availability.available === false && availability.reason === "other_build"
 					? availability.detail
 					: "",
 				/checkpoint schema mismatch/,
+			)
+			// Same release, different schema: no version to send the user to.
+			strictEqual(
+				availability.available === false &&
+					availability.reason === "other_build" &&
+					availability.restoreWith,
+				null,
 			)
 		})
 	})
@@ -494,7 +508,7 @@ describe("checkpoint state resolution", () => {
 			mkdirSync(outside)
 			writeFileSync(
 				join(outside, "manifest.json"),
-				`${JSON.stringify(manifest(checkpointId, newCheckpointId(), dataDir))}\n`,
+				`${JSON.stringify(manifest(checkpointId, newCheckpointOperationId(), dataDir))}\n`,
 			)
 			mkdirSync(join(outside, "backup"))
 			mkdirSync(snapshot, { recursive: true })
@@ -941,7 +955,7 @@ describe("live-store reset safety", () => {
 				})}\n`,
 			)
 
-			const exit = await Effect.runPromise(Effect.exit(reconcileCheckpointRecovery(dataDir)))
+			const exit = await Effect.runPromiseExit(reconcileCheckpointRecovery(dataDir))
 			ok(Exit.isFailure(exit))
 			const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
 			ok(failure)
@@ -979,13 +993,13 @@ describe("live restore transaction reconciliation", () => {
 			ok(!existsSync(restoreTransactionPath(dataDir)))
 			const siblingNames = readdirSync(dirname(dataDir))
 			ok(
-				siblingNames.some((name) =>
-					name.startsWith(`${basename(dataDir)}.restore-${operationId}.quarantine-`),
+				Arr.some(siblingNames, (name) =>
+					Str.startsWith(`${basename(dataDir)}.restore-${operationId}.quarantine-`)(name),
 				),
 			)
 			ok(
-				siblingNames.some((name) =>
-					name.startsWith(`${basename(dataDir)}.restore-transaction.json.quarantine-`),
+				Arr.some(siblingNames, (name) =>
+					Str.startsWith(`${basename(dataDir)}.restore-transaction.json.quarantine-`)(name),
 				),
 			)
 		})

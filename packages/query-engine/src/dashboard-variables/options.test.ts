@@ -84,6 +84,27 @@ describe("dashboardVariableOptionsQuery", () => {
 		).toEqual({ kind: "attributeValues", source: "traces", scope: "resource", attributeKey: "k8s.pod" })
 	})
 
+	it("maps a metric variable onto a metrics attribute-values scan of its named metrics", () => {
+		expect(
+			dashboardVariableOptionsQuery(
+				query({
+					kind: "metric",
+					metricType: "gauge",
+					metricNames: ["gcp.cloud_run.cpu.utilization", "gcp.cloud_run.memory.utilization"],
+					scope: "resource",
+					attributeKey: "cloud.region",
+				}),
+			),
+		).toEqual({
+			kind: "attributeValues",
+			source: "metrics",
+			scope: "resource",
+			attributeKey: "cloud.region",
+			metricNames: ["gcp.cloud_run.cpu.utilization", "gcp.cloud_run.memory.utilization"],
+			metricType: "gauge",
+		})
+	})
+
 	it("has nothing to run for custom and textbox variables", () => {
 		expect(
 			dashboardVariableOptionsQuery({

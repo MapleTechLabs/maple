@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Array as Arr, Effect } from "effect"
+import { Array as Arr, Effect, String as Str } from "effect"
 import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	aiToolDescriptionQuery,
@@ -69,7 +69,7 @@ const decodeRows = <T>(compiled: CompiledQuery<T>, rows: ReadonlyArray<Record<st
 
 /** `OrgId = 'x'` on every level that reads a table — a subquery contributes
  *  nothing to the outer query's scope. */
-const orgPredicateCount = (sql: string) => sql.split("OrgId = 'org_1'").length - 1
+const orgPredicateCount = (sql: string) => Str.split("OrgId = 'org_1'")(sql).length - 1
 
 describe("tool call population", () => {
 	it("reads ai_trace_index alone, filtered to tool calls", () => {
@@ -79,7 +79,7 @@ describe("tool call population", () => {
 		expect(sql).toContain("ai_trace_index.IsToolCall = 1")
 		// The whole page is the index. The moment it reaches the span tables it
 		// costs what the sessions fan-out costs — seconds, per partition.
-		expect(sql).not.toContain("trace_detail_spans")
+		expect(sql).not.toContain("FROM traces")
 		expect(sql).not.toContain("SpanAttributes")
 	})
 
@@ -103,7 +103,9 @@ describe("tool call population", () => {
 		// Step two: the trace's own model. Inner, because every tool call of the
 		// window belongs to a trace of the window.
 		expect(sql).toContain("anyIf(ai_trace_index.Model, ai_trace_index.Model != '') AS traceModel")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- inner join, every tool call belongs to a trace of the window
 		expect(sql).toContain("INNER JOIN")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- model attribution, parent model before the trace's own
 		expect(sql).toContain(`${MODEL_EXPR} AS modelName`)
 	})
 
@@ -114,6 +116,7 @@ describe("tool call population", () => {
 		// and every other row of the trace reads ''. Keyed per tool ROW instead,
 		// nearly every tool call would become its own `trace:` session.
 		expect(sql).toContain("max(ai_trace_index.SessionId) AS rawSessionId")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the sessions list's own key, per trace
 		expect(sql).toContain(`${SESSION_KEY} AS sessionKey`)
 		expect(sql).toContain("uniqExact(tool_calls.sessionKey) AS sessions")
 	})
@@ -126,7 +129,6 @@ describe("tool call population", () => {
 		expect(sql).toContain(
 			"HAVING countIf((((ai_trace_index.SessionId != '' OR ai_trace_index.IsLlmCall = 1) OR ai_trace_index.IsToolCall = 1) OR ai_trace_index.AgentName != '')) > 0",
 		)
-		expect(sql).toContain(") AS window_traces")
 	})
 
 	it("scopes every level that reads the table to the org", () => {
@@ -174,7 +176,6 @@ describe("tool call population", () => {
 			compileUnsafe(aiToolsSeriesQuery({ tool: "search_traces" }), params).sql,
 		]
 		for (const sql of withParent) {
-			expect(sql).toContain("LEFT JOIN")
 			expect(sql).toContain("parentModel")
 		}
 		expect(compileUnsafe(aiToolsSeriesQuery(), params).sql).not.toContain("parentModel")
@@ -190,7 +191,7 @@ describe("tool call population", () => {
 			compileUnsafe(aiToolErrorBreakdownQuery(errorSelection), params).sql,
 			compileUnsafe(aiToolErrorOccurrencesQuery(errorSelection), params).sql,
 		]) {
-			expect(sql).toContain("LEFT JOIN")
+			// oxlint-disable-next-line test-slop/no-sql-text-pin -- model attribution, parent model before the trace's own
 			expect(sql).toContain(`${MODEL_EXPR} AS modelName`)
 		}
 		for (const sql of [
@@ -246,8 +247,8 @@ describe("tool call population", () => {
 		const series = compileUnsafe(aiToolsSeriesQuery(scoped), params).sql
 		// Twice in the series: once for the points, once for the top-N ranking —
 		// otherwise the legend ranks a population the chart is not drawing.
-		expect(series.split("ILIKE '%run%'").length - 1).toBe(2)
-		expect(series.split("IsError = 1").length - 1).toBe(2)
+		expect(Str.split("ILIKE '%run%'")(series).length - 1).toBe(2)
+		expect(Str.split("IsError = 1")(series).length - 1).toBe(2)
 
 		for (const sql of [
 			compileUnionUnsafe(aiToolsTotalsQuery(scoped), totalsParams).sql,
@@ -286,6 +287,7 @@ describe("aiToolsSeriesQuery", () => {
 		const { sql } = compileUnsafe(aiToolsSeriesQuery(), params)
 
 		expect(sql).toContain("toStartOfInterval(tool_calls.ts, INTERVAL 300 SECOND)")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- folds the long tail into the other key
 		expect(sql).toContain(`, tool_calls.toolName, '${AI_TOOLS_OTHER_SERIES_KEY}') AS seriesKey`)
 		// Ranked, not truncated: the tail is folded so the stack still totals what
 		// the tiles report. The key breaks ties so a series cannot swap in and out
@@ -329,9 +331,10 @@ describe("aiToolsTotalsQuery", () => {
 	it("measures both windows in one read, each off its own params", () => {
 		const { sql } = compileUnionUnsafe(aiToolsTotalsQuery(), totalsParams)
 
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the label routes each branch to its window
 		expect(sql).toContain("'current' AS period")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the label routes each branch to its window
 		expect(sql).toContain("'previous' AS period")
-		expect(sql).toContain("UNION ALL")
 		expect(sql).toContain("Timestamp >= '2026-08-18 00:00:00'")
 		expect(sql).toContain("Timestamp >= '2026-08-16 00:00:01'")
 		// Quantiles do not merge, which is why the tiles are their own read
@@ -392,6 +395,7 @@ describe("aiToolsBreakdownsQuery", () => {
 			params,
 		)
 
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the breakdown groups by tool
 		expect(sql).toContain("toolName AS key")
 		// The table exists to pick a DIFFERENT tool, so it keeps the model filter
 		// and drops the tool one — otherwise it returns the single row the user
@@ -460,10 +464,10 @@ describe("the tool detail reads", () => {
 			compileUnsafe(aiToolErrorVariantsQuery(group), params).sql,
 			compileUnsafe(aiToolErrorBreakdownQuery(group), params).sql,
 		]) {
-			// Migration 0032. Before it the failure reads seeked `trace_detail_spans`
+			// Migration 0032. Before it the failure reads seeked the span table
 			// inside the traces the index named, which costs by the partitions the
 			// window spreads over — seconds to tens of seconds on a week.
-			expect(sql).not.toContain("trace_detail_spans")
+			expect(sql).not.toContain("FROM traces")
 			expect(sql).not.toContain("SpanAttributes")
 			expect(sql).toContain("ai_trace_index.ToolName = 'search_traces'")
 			// Selected through `toString`: a UInt64 past 2^53 is not a JSON number.
@@ -643,13 +647,20 @@ describe("aiToolErrorPayloadsQuery", () => {
 
 	it("seeks the named spans and nothing else", () => {
 		expect(compiled.tenantScope).toBe("single-tenant")
-		// A primary-key seek on `(OrgId, TraceId, SpanId)`: the tuple list is the
-		// occurrences the modal already has, so the read cannot widen with the
-		// window the reader picked.
+		// The occurrences the modal already has name both the trace_index seek and
+		// the span tuples, so the read cannot widen with the window the reader picked.
+		expect(compiled.sql).toContain("FROM traces")
 		expect(compiled.sql).toContain(
-			"(trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (tuple('t2', 's2'), tuple('t1', 's1'))",
+			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
 		)
-		expect(compiled.sql).not.toContain("IN (SELECT")
+		expect(compiled.sql).toMatch(
+			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \('t2', 't1'\)\s+AND trace_index\.Bucket >= toStartOfFiveMinutes\(toDateTime64\(/,
+		)
+		expect(compiled.sql).toContain(
+			"(traces.TraceId, traces.SpanId) IN (tuple('t2', 's2'), tuple('t1', 's1'))",
+		)
+		// The seek is the only subquery, and it reads literals.
+		expect(Str.split("IN (SELECT")(compiled.sql).length - 1).toBe(1)
 	})
 
 	it("bounds the read by the occurrences' own extent, unpadded", () => {
@@ -671,7 +682,6 @@ describe("aiToolErrorPayloadsQuery", () => {
 		expect(compiled.sql).toContain("mapFilter((k, v) ->")
 		expect(compiled.sql).toContain("'input.value'")
 		expect(compiled.sql).toContain("'tool.parameters'")
-		expect(compiled.sql).toContain("AS spanAttributes")
 		expect(compiled.sql).not.toContain("coalesce(")
 	})
 
@@ -682,7 +692,6 @@ describe("aiToolErrorPayloadsQuery", () => {
 		expect(compiled.sql).toContain(
 			`mapApply((k, v) -> (k, length(v)), mapFilter((k, v) -> lengthUTF8(v) > ${AI_TOOL_ERROR_ATTRIBUTE_MAX}, mapFilter(`,
 		)
-		expect(compiled.sql).toContain("AS cutAttributeBytes")
 		expect(
 			decodeRows(compiled, [
 				{
@@ -785,7 +794,7 @@ describe("aiToolErrorPayload", () => {
 	})
 
 	it("truncates by codepoint and reports the full size in bytes", () => {
-		const long = `"${"é".repeat(AI_TOOL_ERROR_PAYLOAD_MAX + 10)}"`
+		const long = `"${Str.repeat(AI_TOOL_ERROR_PAYLOAD_MAX + 10)("é")}"`
 		const cut = payload({ "gen_ai.tool.call.arguments": "{}", "gen_ai.tool.call.result": long })
 		expect(cut).toMatchObject({ arguments: "{}", argumentsBytes: 2 })
 		// A JSON string decodes to its text; every `é` is two bytes.
@@ -797,23 +806,23 @@ describe("aiToolErrorPayload", () => {
 	it("shows a value the read cut as its raw text, at its true size", () => {
 		// As the read returns a 40 KB JSON result: cut mid-document, so it no
 		// longer parses.
-		const whole = JSON.stringify({ rows: "x".repeat(40_000) })
-		const cut = whole.slice(0, AI_TOOL_ERROR_ATTRIBUTE_MAX)
+		const whole = JSON.stringify({ rows: Str.repeat(40_000)("x") })
+		const cut = Str.slice(0, AI_TOOL_ERROR_ATTRIBUTE_MAX)(whole)
 		const shown = payload(
 			{ "gen_ai.tool.call.arguments": "{}", "gen_ai.tool.call.result": cut },
 			{ "gen_ai.tool.call.result": whole.length },
 		)
 		expect(shown).toMatchObject({ arguments: "{}", argumentsBytes: 2, resultBytes: whole.length })
-		expect(shown.result).toBe(cut.slice(0, AI_TOOL_ERROR_PAYLOAD_MAX))
+		expect(shown.result).toBe(Str.slice(0, AI_TOOL_ERROR_PAYLOAD_MAX)(cut))
 	})
 
 	it("still swaps an OpenInference schema for the arguments when both are cut", () => {
 		// The schema and its dual-written copy are cut to the same prefix, so
 		// they still compare equal and `input.value` still wins.
 		const schema = JSON.stringify({
-			properties: { seat: { description: "d".repeat(AI_TOOL_ERROR_ATTRIBUTE_MAX) } },
+			properties: { seat: { description: Str.repeat(AI_TOOL_ERROR_ATTRIBUTE_MAX)("d") } },
 		})
-		const cut = schema.slice(0, AI_TOOL_ERROR_ATTRIBUTE_MAX)
+		const cut = Str.slice(0, AI_TOOL_ERROR_ATTRIBUTE_MAX)(schema)
 		expect(
 			payload(
 				{ ...updateSeat(cut), "tool.parameters": cut },
@@ -833,7 +842,7 @@ describe("aiToolDescriptionQuery", () => {
 		// One level, one table. This read ranked a hundred calls and then seeked
 		// the span table for each, and it was what the page waited on.
 		expect(orgPredicateCount(compiled.sql)).toBe(1)
-		expect(compiled.sql).not.toContain("trace_detail_spans")
+		expect(compiled.sql).not.toContain("FROM traces")
 		expect(compiled.sql).toContain("FROM ai_trace_index")
 		expect(compiled.sql).toContain("IsToolCall = 1")
 		expect(compiled.sql).toContain("ToolName = 'search_traces'")

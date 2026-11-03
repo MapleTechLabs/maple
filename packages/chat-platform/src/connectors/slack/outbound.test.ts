@@ -3,7 +3,7 @@
  * demand: a 429, a 200 that means failure, and a workspace with no stored token at all.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Fiber, Layer } from "effect"
+import { Effect, Fiber, Layer, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import type { InboundAction, InboundMessage } from "../../ingress"
@@ -374,7 +374,7 @@ describe("slack transport", () => {
 			const history = yield* transport.history(target, { limit: 2, before: "1700000004.000000" })
 
 			// The bound still cuts to two — at the right end.
-			expect(history.map((message) => message.text)).toEqual(["newest", "newer"])
+			expect(Arr.map(history, (message) => message.text)).toEqual(["newest", "newer"])
 			expect(sentBody(http.seen[0]!)).toMatchObject({ limit: 200 })
 		}).pipe(Effect.provide(http.layer))
 	})
@@ -428,7 +428,7 @@ describe("slack transport", () => {
 		return Effect.gen(function* () {
 			const transport = yield* slackOutbound.transport
 			const history = yield* transport.history(target, { limit: 10, before: "1700000000.000500" })
-			expect(history.map((message) => message.text)).toEqual(["", "kept"])
+			expect(Arr.map(history, (message) => message.text)).toEqual(["", "kept"])
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -519,6 +519,7 @@ describe("slack transport", () => {
 			{ status: 200, body: '{"ok":false,"error":"token_revoked"}' },
 			{ status: 200, body: '{"ok":false,"error":"not_in_channel"}' },
 			{ status: 200, body: '{"ok":false,"error":"invalid_blocks"}' },
+			{ status: 200, body: '{"ok":false,"error":"invalid_attachments"}' },
 			{ status: 200, body: '{"ok":false,"error":"fatal_error"}' },
 		])
 		return Effect.gen(function* () {
@@ -526,6 +527,8 @@ describe("slack transport", () => {
 			const post = () => Effect.flip(transport.post(target, [{ kind: "prose", markdown: "x" }]))
 			expect(yield* post()).toMatchObject({ reason: "auth" })
 			expect(yield* post()).toMatchObject({ reason: "not_found" })
+			expect(yield* post()).toMatchObject({ reason: "rejected" })
+			// An alert card's image Slack could not fetch: the same message is refused every time.
 			expect(yield* post()).toMatchObject({ reason: "rejected" })
 			// Nothing the caller can act on: no reason, so it is retried like an outage.
 			expect("reason" in (yield* post())).toBe(false)

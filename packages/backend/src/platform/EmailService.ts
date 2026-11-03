@@ -26,14 +26,15 @@ export interface EmailServiceApi {
 const EMAIL_TIMEOUT = Duration.seconds(15)
 
 export class EmailService extends Context.Service<EmailService, EmailServiceApi>()(
-	"@maple/api/lib/EmailService",
+	"@maple/backend/lib/EmailService",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
 			const fromEmail = env.EMAIL_FROM
 
 			// The prd-only `send_email` binding, as the Worker's init bound it.
-			const sender = Option.flatten(yield* Effect.serviceOption(EmailSender))
+			const senderOption = yield* Effect.serviceOption(EmailSender)
+			const sender = Option.flatten(senderOption)
 
 			// Real sends are production-only: non-prod stages share real user data
 			// (branched DBs, Clerk members), so a live binding there would deliver
@@ -54,19 +55,15 @@ export class EmailService extends Context.Service<EmailService, EmailServiceApi>
 				yield* Effect.annotateCurrentSpan("maple.email.provider", "cloudflare")
 
 				if (Option.isNone(sender)) {
-					return yield* Effect.fail(
-						new EmailDeliveryError({
-							message: "Email not configured: EMAIL binding is missing",
-						}),
-					)
+					return yield* new EmailDeliveryError({
+						message: "Email not configured: EMAIL binding is missing",
+					})
 				}
 
 				if (!emailAllowed) {
-					return yield* Effect.fail(
-						new EmailDeliveryError({
-							message: `Email suppressed: sends are disabled in ${env.MAPLE_ENVIRONMENT} (set MAPLE_EMAIL_ALLOW_NONPROD=true to override)`,
-						}),
-					)
+					return yield* new EmailDeliveryError({
+						message: `Email suppressed: sends are disabled in ${env.MAPLE_ENVIRONMENT} (set MAPLE_EMAIL_ALLOW_NONPROD=true to override)`,
+					})
 				}
 
 				const result = yield* sender.value

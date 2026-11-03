@@ -2,7 +2,7 @@
 // the exporters send, and sent again when the browser is back online or on the
 // next page load. Best-effort: a private window or blocked storage just means
 // nothing is kept.
-import { consentRevokedAt, hasConsent, onConsentChange } from "@maple/browser-session"
+import { consentRevokedAt, hasConsent, mayUseStorage, onConsentChange } from "@maple/browser-session"
 
 const DB_NAME = "maple-offline"
 const STORE = "batches"
@@ -79,6 +79,8 @@ export interface OfflineQueue {
 }
 
 export function startOfflineQueue(config: OfflineQueueOptions): OfflineQueue {
+	// Memory-only mode keeps nothing for later: a failed batch is dropped.
+	if (!mayUseStorage()) return { stash: () => {}, resend: () => Promise.resolve(), stop: () => {} }
 	const db = openDb()
 	const headers = { ...config.headers, "Content-Type": "application/json" }
 	const auth = Object.entries(config.headers).find(([name]) => name.toLowerCase() === "authorization")

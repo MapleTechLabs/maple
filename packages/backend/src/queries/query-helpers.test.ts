@@ -11,7 +11,8 @@ const hostGaugeSql = (metric: "cpu" | "memory" | "filesystem") => {
 			hostName: "h",
 			metricName: spec.metricName,
 			groupByAttributeKey: spec.groupByAttributeKey,
-			attributeEquals: spec.attributeEquals,
+			attributeIn: spec.attributeIn,
+			attributeNotIn: spec.attributeNotIn,
 		}),
 		{
 			orgId: OrgId.make("org_1"),
@@ -23,12 +24,14 @@ const hostGaugeSql = (metric: "cpu" | "memory" | "filesystem") => {
 }
 
 describe("hostMetricSpec", () => {
-	// Every mountpoint reports used, free and reserved rows; averaging them
-	// shows each disk about a third full.
-	it("reads filesystem utilization from the used state only", () => {
+	// The hostmetrics receiver sends no state; shippers that split by state send
+	// used/free/reserved rows, and averaging those shows each disk a third full.
+	it("reads filesystem utilization without a state or from the used state", () => {
 		const sql = hostGaugeSql("filesystem")
-		expect(sql).toContain("Attributes['state'] = 'used'")
-		expect(sql).toContain("Attributes['mountpoint']")
+		expect(sql).toContain("Attributes['state'] IN ('used', '')")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the per-disk grain
+		expect(sql).toContain("Attributes['mountpoint'] AS attributeValue")
+		expect(sql).toContain("GROUP BY bucket, attributeValue")
 	})
 
 	// CPU and memory chart every state as a stacked breakdown.

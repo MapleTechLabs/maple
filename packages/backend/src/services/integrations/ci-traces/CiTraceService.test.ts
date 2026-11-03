@@ -1,13 +1,37 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import type { WorkflowJobAnnotation, WorkflowJobJob, WorkflowRunJob } from "@maple/domain/http"
-import { OrgId } from "@maple/domain/http"
-import { ConfigProvider, Effect, Exit, Layer, Schema, Tracer } from "effect"
+import { OrgId, UserId } from "@maple/domain/http"
+import type { OrgIngestKeyRow } from "@maple/db/tables"
+import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
+import { SharedIngestKeysMemo } from "@maple/backend/services/org/shared-ingest-keys-memo"
+import {
+	ConfigProvider,
+	Effect,
+	Exit,
+	Layer,
+	Schema,
+	Stream,
+	Tracer,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	insertTestSource,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
+import { publicSourceId } from "@maple/backend/services/org/integration-sources"
+import { SourceId } from "@maple/domain/primitives"
 import { WorkflowEventSink } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { CiTraceSinkWith } from "./CiTraceService"
+import { type IngestRefusal, SharedIngestRefusals } from "./ingest-refusals"
+import { MAX_JOB_LOG_CHARS } from "./logs"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -71,18 +95,53 @@ const OtlpRequest = Schema.Struct({
 const decodeRequest = Schema.decodeUnknownSync(Schema.fromJsonString(OtlpRequest))
 type OtlpRequest = typeof OtlpRequest.Type
 
+const OtlpLogsRequest = Schema.Struct({
+	resourceLogs: Schema.Array(
+		Schema.Struct({
+			resource: Schema.Struct({ attributes: Schema.Array(OtlpKeyValue) }),
+			scopeLogs: Schema.Array(
+				Schema.Struct({
+					logRecords: Schema.Array(
+						Schema.Struct({
+							timeUnixNano: Schema.String,
+							severityText: Schema.String,
+							body: Schema.Struct({ stringValue: Schema.String }),
+							attributes: Schema.Array(OtlpKeyValue),
+							traceId: Schema.String,
+							spanId: Schema.String,
+						}),
+					),
+				}),
+			),
+		}),
+	),
+})
+const decodeLogsRequest = Schema.decodeUnknownSync(Schema.fromJsonString(OtlpLogsRequest))
+type OtlpLogsRequest = typeof OtlpLogsRequest.Type
+
 interface IngestCall {
 	readonly url: string
 	readonly authorization: string | null
 	readonly body: OtlpRequest
 }
 
-/** Records every ingest POST and answers with the next status in `statuses` (the last one repeats). */
+/**
+ * Records every ingest POST and answers with the next status in `statuses` (the last one repeats).
+ * Log batches go to `logCalls` instead of `calls`.
+ */
 const recordingFetch =
-	(calls: Array<IngestCall>, statuses: ReadonlyArray<number> = [200]): typeof fetch =>
+	(
+		calls: Array<IngestCall>,
+		statuses: ReadonlyArray<number> = [200],
+		logCalls: Array<OtlpLogsRequest> = [],
+	): typeof fetch =>
 	async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
 		const text = await new Response(init?.body ?? null).text()
+		if (Str.endsWith("/v1/logs")(url)) {
+			logCalls.push(decodeLogsRequest(text))
+			return new Response("{}", { status: 200 })
+		}
 		calls.push({
 			url,
 			authorization: new Headers(init?.headers).get("authorization"),
@@ -96,6 +155,13 @@ const sinkLayer = (testDb: TestDb, fetchStub: typeof fetch) =>
 	CiTraceSinkWith.pipe(
 		Layer.provide(Layer.mergeAll(FetchHttpClient.layer, OrgIngestKeysService.layer)),
 		Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchStub)),
+		Layer.provide(testDb.layer),
+		Layer.provide(Env.layer),
+		Layer.provide(makeConfig()),
+	)
+
+const keysLayer = (testDb: TestDb) =>
+	OrgIngestKeysService.layer.pipe(
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(makeConfig()),
@@ -161,14 +227,98 @@ const job: WorkflowJobJob = {
 	],
 }
 
+const recordsOf = (calls: ReadonlyArray<OtlpLogsRequest>) =>
+	Arr.flatMap(calls, (call) =>
+		Arr.flatMap(call.resourceLogs, (rl) => Arr.flatMap(rl.scopeLogs, (sl) => sl.logRecords)),
+	)
+
+/** Stamps a log line at `ms` after the job started, the way the runner does. */
+const stamped = (ms: number, text: string) =>
+	`${Str.replace("Z", "0000Z")(new Date(job.startedAtMs + ms).toISOString())} ${text}`
+
 const spansOf = (call: IngestCall) =>
-	call.body.resourceSpans.flatMap((rs) => rs.scopeSpans.flatMap((ss) => ss.spans))
+	Arr.flatMap(call.body.resourceSpans, (rs) => Arr.flatMap(rs.scopeSpans, (ss) => ss.spans))
 const attr = (attributes: OtlpRequest["resourceSpans"][number]["resource"]["attributes"], key: string) => {
 	const value = attributes.find((kv) => kv.key === key)?.value
 	return value?.stringValue ?? value?.intValue
 }
 
+// Installation 42 of `org_ci` with its source, as VcsRepository.upsertInstallation writes it.
+const seedInstallation = (testDb: TestDb, options: { readonly paused?: boolean } = {}) =>
+	Effect.promise(async () => {
+		const sourceId = await insertTestSource(testDb, {
+			orgId: "org_ci",
+			platform: "github",
+			name: "GitHub octo",
+		})
+		if (options.paused === true) {
+			await executeSql(testDb, "UPDATE sources SET paused_at = now() WHERE id = $1", [sourceId])
+		}
+		await executeSql(
+			testDb,
+			`INSERT INTO vcs_installations (id, org_id, provider, external_installation_id, account_login,
+				account_type, external_account_id, installed_by_user_id, created_at, updated_at, source_id)
+			VALUES ('00000000-0000-4000-8000-000000000042', 'org_ci', 'github', '42', 'octo', 'Organization',
+				'1', 'user_1', now(), now(), $1)`,
+			[sourceId],
+		)
+	})
+
 describe("CiTraceService", () => {
+	it.live("stamps the installation's pull source on CI spans and logs", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		const logCalls: Array<OtlpLogsRequest> = []
+		return Effect.gen(function* () {
+			yield* seedInstallation(testDb)
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowRun(orgId, run)
+			yield* sink.onWorkflowJobLog(orgId, job, Stream.fromIterable([stamped(123, "hello")]))
+
+			const source = yield* Effect.promise(() =>
+				queryFirstRow<{ id: string; name: string }>(
+					testDb,
+					"SELECT id, name FROM sources WHERE platform = 'github'",
+				),
+			)
+			assert.strictEqual(source!.name, "GitHub octo")
+			const expected = publicSourceId(Schema.decodeUnknownSync(SourceId)(source!.id))
+			assert.strictEqual(
+				attr(calls[0]!.body.resourceSpans[0]!.resource.attributes, "maple_source_id"),
+				expected,
+			)
+			assert.strictEqual(
+				logCalls[0]!.resourceLogs[0]!.resource.attributes.find((kv) => kv.key === "maple_source_id")
+					?.value.stringValue,
+				expected,
+			)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [200], logCalls))))
+	})
+
+	it.live("drops CI spans and logs while the installation's source is paused", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		const logCalls: Array<OtlpLogsRequest> = []
+		return Effect.gen(function* () {
+			yield* seedInstallation(testDb, { paused: true })
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowRun(orgId, run)
+			yield* sink.onWorkflowJobLog(orgId, job, Stream.fromIterable([stamped(123, "hello")]))
+			assert.deepStrictEqual([calls.length, logCalls.length], [0, 0])
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [200], logCalls))))
+	})
+
+	it.live("sends CI spans without a source when the installation is unknown", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowRun(orgId, run)
+			assert.lengthOf(calls, 1)
+			assert.isUndefined(attr(calls[0]!.body.resourceSpans[0]!.resource.attributes, "maple_source_id"))
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
+	})
+
 	it.live("writes a run and its job into one trace: run → job → steps", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls: Array<IngestCall> = []
@@ -264,7 +414,7 @@ describe("CiTraceService", () => {
 				"src/math.test.ts:12: adds: expected 2 to be 3",
 			)
 			assert.deepStrictEqual(
-				(jobSpan!.events ?? []).map((event) =>
+				Arr.map(jobSpan!.events ?? [], (event) =>
 					attr(event.attributes, "maple.cicd.annotation.message"),
 				),
 				// Failures first, then the rest.
@@ -349,7 +499,7 @@ describe("CiTraceService", () => {
 			assert.strictEqual(attr(runSpan!.attributes, "cicd.pipeline.action.name"), "RUN")
 			// `error.type` on a failed run or task, never on one that passed.
 			assert.deepStrictEqual(
-				[runSpan!, jobSpan!, installStep!, testStep!].map((span) =>
+				Arr.map([runSpan!, jobSpan!, installStep!, testStep!], (span) =>
 					attr(span.attributes, "error.type"),
 				),
 				["failure", "failure", undefined, "failure"],
@@ -422,12 +572,270 @@ describe("CiTraceService", () => {
 			const sink = yield* WorkflowEventSink
 			yield* sink.onWorkflowRun(orgId, run).pipe(Effect.provideService(Tracer.Tracer, tracer))
 			assert.strictEqual(calls.length, 1)
-			// The webhook job succeeds, but the emit span itself records the lost write.
-			const emit = spans.find((span) => span.name === "CiTraceService.emit")
-			assert.strictEqual(emit?.status._tag, "Ended")
-			if (emit?.status._tag !== "Ended") return
-			assert.isTrue(Exit.isFailure(emit.status.exit))
-			assert.strictEqual(emit.attributes.get("maple.cicd.outcome"), "ingest_failed")
+			// A refusal is the org's state, not a fault: no span on the path ends as Error.
+			const ended = Arr.filter(
+				spans,
+				(span) => span.name === "CiTraceService.emit" || span.name === "IngestSender.send",
+			)
+			assert.deepStrictEqual(
+				Arr.map(ended, (span) => [
+					span.name,
+					span.status._tag === "Ended" && Exit.isSuccess(span.status.exit),
+				]),
+				[
+					["CiTraceService.emit", true],
+					["IngestSender.send", true],
+				],
+			)
+			assert.strictEqual(ended[0]!.attributes.get("maple.cicd.outcome"), "ingest_refused")
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [402]))))
+	})
+
+	it.live("holds a refused org: later CI spans are not posted and its job log is not read", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		let logReads = 0
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowRun(orgId, run)
+			yield* sink.onWorkflowJob(orgId, job, [])
+			yield* sink.onWorkflowJobLog(
+				orgId,
+				job,
+				Stream.fromEffect(
+					Effect.sync(() => {
+						logReads += 1
+						return stamped(0, "ok")
+					}),
+				),
+			)
+			assert.deepStrictEqual([calls.length, logReads], [1, 0])
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [403]))))
+	})
+
+	it.live("after a key rotation elsewhere, drops the stale memoized key and sends once more", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			// The isolate memo the queue consumer shares across batches.
+			const memo = Layer.succeed(SharedIngestKeysMemo, yield* makeExpiringStore<OrgIngestKeyRow>())
+			const batch = sinkLayer(testDb, recordingFetch(calls, [200, 401, 200])).pipe(Layer.provide(memo))
+			const emitJob = WorkflowEventSink.use((sink) => sink.onWorkflowJob(orgId, job, []))
+			yield* emitJob.pipe(Effect.provide(batch))
+			// The rotation runs in another graph with its own memo, as the HTTP route does.
+			const rotated = yield* OrgIngestKeysService.use((keys) =>
+				keys.rerollPublic(orgId, Schema.decodeUnknownSync(UserId)("user_rotates")),
+			).pipe(Effect.provide(keysLayer(testDb)))
+			yield* emitJob.pipe(Effect.provide(batch))
+			assert.deepStrictEqual(
+				Arr.map(calls, (call) => call.authorization),
+				[calls[0]!.authorization, calls[0]!.authorization, `Bearer ${rotated.publicKey}`],
+			)
+			assert.notStrictEqual(rotated.publicKey, calls[0]!.authorization?.slice("Bearer ".length))
+		})
+	})
+
+	it.live("ends the hold once the refused key is rotated, and sends with the new key", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			// The isolate caches the queue consumer shares across batches.
+			const caches = Layer.mergeAll(
+				Layer.succeed(SharedIngestKeysMemo, yield* makeExpiringStore<OrgIngestKeyRow>()),
+				Layer.succeed(SharedIngestRefusals, yield* makeExpiringStore<IngestRefusal>()),
+			)
+			const batch = sinkLayer(testDb, recordingFetch(calls, [403, 200])).pipe(Layer.provide(caches))
+			const emitJob = WorkflowEventSink.use((sink) => sink.onWorkflowJob(orgId, job, []))
+			yield* emitJob.pipe(Effect.provide(batch))
+			const rotated = yield* OrgIngestKeysService.use((keys) =>
+				keys.rerollPublic(orgId, Schema.decodeUnknownSync(UserId)("user_rotates")),
+			).pipe(Effect.provide(keysLayer(testDb)))
+			yield* emitJob.pipe(Effect.provide(batch))
+			assert.deepStrictEqual(
+				Arr.map(calls, (call) => call.authorization),
+				[calls[0]!.authorization, `Bearer ${rotated.publicKey}`],
+			)
+		})
+	})
+
+	it.live("does not re-read the key or resend after a 403", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			yield* WorkflowEventSink.use((sink) => sink.onWorkflowJob(orgId, job, []))
+			assert.strictEqual(calls.length, 1)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [403, 200]))))
+	})
+
+	it.live("writes a job's log as records on the step span that was running at each line", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		const logCalls: Array<OtlpLogsRequest> = []
+		const lines = [
+			// The runner writes before the first step starts; that line belongs to the job.
+			`\uFEFF${stamped(-123, "Current runner version: '2.320.0'")}`,
+			stamped(123, "##[group]Run bun install"),
+			stamped(500, "##[endgroup]"),
+			// The second step starts 20s in.
+			stamped(30_000, "\u001b[31mFAIL\u001b[0m src/math.test.ts"),
+			"  expected 2 to be 3",
+			stamped(31_000, "##[error]Process completed with exit code 1."),
+			stamped(31_500, ""),
+		]
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowJob(orgId, job, [])
+			yield* sink.onWorkflowJobLog(orgId, job, Stream.fromIterable(lines))
+
+			const [jobSpan, , installStep, testStep] = spansOf(calls[0]!)
+			const records = recordsOf(logCalls).slice(1)
+			const [beforeSteps] = recordsOf(logCalls)
+			assert.strictEqual(beforeSteps!.spanId, jobSpan!.spanId)
+			assert.strictEqual(attr(beforeSteps!.attributes, "cicd.pipeline.task.run.id"), job.jobId)
+			assert.deepStrictEqual(
+				Arr.map(records, (record) => [record.body.stringValue, record.severityText, record.spanId]),
+				[
+					["Run bun install", "INFO", installStep!.spanId],
+					["FAIL src/math.test.ts", "INFO", testStep!.spanId],
+					["  expected 2 to be 3", "INFO", testStep!.spanId],
+					["Process completed with exit code 1.", "ERROR", testStep!.spanId],
+				],
+			)
+			assert.isTrue(Arr.every(records, (record) => record.traceId === testStep!.traceId))
+			assert.strictEqual(records[0]!.timeUnixNano, `${job.startedAtMs + 123}000000`)
+			// A line without a stamp takes the one before it.
+			assert.strictEqual(records[2]!.timeUnixNano, records[1]!.timeUnixNano)
+			assert.strictEqual(
+				attr(records[1]!.attributes, "cicd.pipeline.task.run.id"),
+				attr(testStep!.attributes, "cicd.pipeline.task.run.id"),
+			)
+			assert.strictEqual(attr(records[1]!.attributes, "cicd.pipeline.task.name"), "Test")
+			assert.strictEqual(
+				attr(logCalls[0]!.resourceLogs[0]!.resource.attributes, "service.name"),
+				"github-actions",
+			)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [200], logCalls))))
+	})
+
+	it.live("places lines on the step that printed them when steps share a second", () => {
+		const testDb = createTestDb(trackedDbs)
+		const logCalls: Array<OtlpLogsRequest> = []
+		// The step layout of a real Maple CI job: the API gives whole seconds, skipped steps take the
+		// next step's start, and the post steps all start and end in one second.
+		const at = (seconds: number) => job.startedAtMs + seconds * 1000
+		const step = (number: number, name: string, start: number, end: number, conclusion = "success") => ({
+			number,
+			name,
+			conclusion,
+			startedAtMs: at(start),
+			completedAtMs: at(end),
+		})
+		const tied: WorkflowJobJob = {
+			...job,
+			steps: [
+				step(2, "Run actions/checkout", 0, 0),
+				step(3, "Run ./.github/actions/setup", 0, 20),
+				step(4, "Read Playwright version", 20, 20, "skipped"),
+				step(5, "Cache Chromium", 20, 20, "skipped"),
+				step(7, "Run bounded test lane", 20, 151),
+				// Named "Post …" but not a post step: only a step's own header opens it.
+				step(8, "Post the PR comment", 151, 152),
+				step(13, "Post Run ./.github/actions/setup", 152, 152),
+				step(14, "Post Run actions/checkout", 152, 152),
+				step(15, "Complete job", 152, 152),
+			],
+		}
+		const lines = [
+			stamped(10, "##[group]Run actions/checkout@v5"),
+			stamped(100, "##[group]Run ./.github/actions/setup"),
+			stamped(20_348, "Cache restored"),
+			stamped(20_359, "##[group]Run bun run test"),
+			stamped(90_000, "RUN v4 /home/runner/work/maple"),
+			stamped(151_010, "Test Files  12 passed (12)"),
+			stamped(151_900, "##[group]Run actions/github-script@v8"),
+			stamped(152_010, "Comment updated"),
+			stamped(152_059, "Post job cleanup."),
+			stamped(152_282, "Cache hit for: turbogha"),
+			stamped(152_470, "Post job cleanup."),
+			stamped(152_520, "[command]/usr/bin/git version"),
+			stamped(152_760, "Cleaning up orphan processes"),
+		]
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowJobLog(orgId, tied, Stream.fromIterable(lines))
+
+			assert.deepStrictEqual(
+				Arr.map(recordsOf(logCalls), (record) => [
+					record.body.stringValue,
+					attr(record.attributes, "cicd.pipeline.task.name"),
+				]),
+				[
+					["Run actions/checkout@v5", "Run actions/checkout"],
+					["Run ./.github/actions/setup", "Run ./.github/actions/setup"],
+					["Cache restored", "Run ./.github/actions/setup"],
+					["Run bun run test", "Run bounded test lane"],
+					["RUN v4 /home/runner/work/maple", "Run bounded test lane"],
+					["Test Files  12 passed (12)", "Run bounded test lane"],
+					["Run actions/github-script@v8", "Post the PR comment"],
+					["Comment updated", "Post the PR comment"],
+					["Post job cleanup.", "Post Run ./.github/actions/setup"],
+					["Cache hit for: turbogha", "Post Run ./.github/actions/setup"],
+					["Post job cleanup.", "Post Run actions/checkout"],
+					["[command]/usr/bin/git version", "Post Run actions/checkout"],
+					["Cleaning up orphan processes", "Complete job"],
+				],
+			)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch([], [200], logCalls))))
+	})
+
+	it.live("stops reading a long log at the cap and says where the rest is", () => {
+		const testDb = createTestDb(trackedDbs)
+		const logCalls: Array<OtlpLogsRequest> = []
+		const line = Str.repeat(1000)("x")
+		const kept = MAX_JOB_LOG_CHARS / line.length
+		let pulled = 0
+		const lines = Stream.fromIterable({
+			*[Symbol.iterator]() {
+				for (;;) {
+					pulled++
+					yield stamped(30_000, line)
+				}
+			},
+		})
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowJobLog(orgId, job, lines)
+
+			const records = recordsOf(logCalls)
+			assert.lengthOf(records, kept + 1)
+			assert.match(records.at(-1)!.body.stringValue, /^Log truncated: .*actions\/runs\/9001\/job\/555$/)
+			assert.strictEqual(records.at(-1)!.severityText, "WARN")
+			assert.isTrue(Arr.every(logCalls, (call) => recordsOf([call]).length <= 1000))
+			// Reading stops within a chunk of the cap, not at the end of an endless log.
+			assert.isBelow(pulled, kept * 2)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch([], [200], logCalls))))
+	})
+
+	it.live("records a log that cannot be read on its span, without failing the webhook job", () => {
+		const testDb = createTestDb(trackedDbs)
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink
+				.onWorkflowJobLog(orgId, job, Stream.fail("log download reset"))
+				.pipe(Effect.provideService(Tracer.Tracer, tracer))
+			const emitLog = spans.find((span) => span.name === "CiTraceService.emitLog")
+			assert.strictEqual(emitLog?.status._tag, "Ended")
+			if (emitLog?.status._tag !== "Ended") return
+			assert.isTrue(Exit.isFailure(emitLog.status.exit))
+			assert.strictEqual(emitLog.attributes.get("maple.cicd.outcome"), "log_failed")
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch([]))))
 	})
 })

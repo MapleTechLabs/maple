@@ -1,0 +1,392 @@
+{
+	"bench": "local-ingest-http",
+	"environment": {
+		"date": "2026-10-28T18:25:13.426Z",
+		"git": "f9ee36cb8",
+		"bun": "1.4.3",
+		"platform": "darwin 25.6.0",
+		"cpu": "Apple M5 Max",
+		"cores": 18,
+		"memoryGb": 128,
+		"loadavgAtStart": [
+			5.03,
+			7.24,
+			7.96
+		]
+	},
+	"options": {
+		"signals": [
+			"traces",
+			"logs",
+			"metrics"
+		],
+		"sizes": [
+			1,
+			50,
+			500
+		],
+		"concurrencies": [
+			1,
+			5,
+			10
+		],
+		"exportsPerCell": 40,
+		"warmup": 5,
+		"burn": 0
+	},
+	"bootMs": 708,
+	"firstExportMs": 97,
+	"cells": [
+		{
+			"signal": "traces",
+			"records": 1,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 112.15,
+				"p95": 146.67,
+				"max": 191.33,
+				"mean": 114.73
+			},
+			"recordsPerSecond": 9
+		},
+		{
+			"signal": "traces",
+			"records": 1,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 342.75,
+				"p95": 648.57,
+				"max": 709,
+				"mean": 359.61
+			},
+			"recordsPerSecond": 8
+		},
+		{
+			"signal": "traces",
+			"records": 1,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 757.24,
+				"p95": 1386.61,
+				"max": 1515.68,
+				"mean": 723.59
+			},
+			"recordsPerSecond": 8
+		},
+		{
+			"signal": "traces",
+			"records": 50,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 120.03,
+				"p95": 145.9,
+				"max": 165.35,
+				"mean": 123.06
+			},
+			"recordsPerSecond": 406
+		},
+		{
+			"signal": "traces",
+			"records": 50,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 372.95,
+				"p95": 667.76,
+				"max": 727.3,
+				"mean": 379.05
+			},
+			"recordsPerSecond": 390
+		},
+		{
+			"signal": "traces",
+			"records": 50,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 820.56,
+				"p95": 18305.05,
+				"max": 18425.91,
+				"mean": 3145.17
+			},
+			"recordsPerSecond": 91
+		},
+		{
+			"signal": "traces",
+			"records": 500,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 356.12,
+				"p95": 698.2,
+				"max": 770.49,
+				"mean": 384.37
+			},
+			"recordsPerSecond": 1300
+		},
+		{
+			"signal": "traces",
+			"records": 500,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 1385.63,
+				"p95": 3795.08,
+				"max": 6089.32,
+				"mean": 1639.16
+			},
+			"recordsPerSecond": 874
+		},
+		{
+			"signal": "traces",
+			"records": 500,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 2350.57,
+				"p95": 20894,
+				"max": 21525.45,
+				"mean": 3635.98
+			},
+			"recordsPerSecond": 585
+		},
+		{
+			"signal": "logs",
+			"records": 1,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 18.25,
+				"p95": 85.55,
+				"max": 268.16,
+				"mean": 25.99
+			},
+			"recordsPerSecond": 38
+		},
+		{
+			"signal": "logs",
+			"records": 1,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 64.9,
+				"p95": 444.19,
+				"max": 461.68,
+				"mean": 109.07
+			},
+			"recordsPerSecond": 31
+		},
+		{
+			"signal": "logs",
+			"records": 1,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 92.24,
+				"p95": 172.36,
+				"max": 178.35,
+				"mean": 89.86
+			},
+			"recordsPerSecond": 60
+		},
+		{
+			"signal": "logs",
+			"records": 50,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 15.17,
+				"p95": 20.45,
+				"max": 20.86,
+				"mean": 15.61
+			},
+			"recordsPerSecond": 3193
+		},
+		{
+			"signal": "logs",
+			"records": 50,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 48.51,
+				"p95": 84.55,
+				"max": 89.45,
+				"mean": 48.45
+			},
+			"recordsPerSecond": 3036
+		},
+		{
+			"signal": "logs",
+			"records": 50,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 142.87,
+				"p95": 2004.13,
+				"max": 2177.28,
+				"mean": 365.75
+			},
+			"recordsPerSecond": 632
+		},
+		{
+			"signal": "logs",
+			"records": 500,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 41.25,
+				"p95": 59.42,
+				"max": 61.35,
+				"mean": 42.88
+			},
+			"recordsPerSecond": 11601
+		},
+		{
+			"signal": "logs",
+			"records": 500,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 127.81,
+				"p95": 877.87,
+				"max": 922.93,
+				"mean": 172.52
+			},
+			"recordsPerSecond": 8401
+		},
+		{
+			"signal": "logs",
+			"records": 500,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 215.84,
+				"p95": 530.03,
+				"max": 571.55,
+				"mean": 227.17
+			},
+			"recordsPerSecond": 11298
+		},
+		{
+			"signal": "metrics",
+			"records": 1,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 8.62,
+				"p95": 10.33,
+				"max": 10.79,
+				"mean": 8.78
+			},
+			"recordsPerSecond": 114
+		},
+		{
+			"signal": "metrics",
+			"records": 1,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 27.01,
+				"p95": 57.92,
+				"max": 67.3,
+				"mean": 28.84
+			},
+			"recordsPerSecond": 102
+		},
+		{
+			"signal": "metrics",
+			"records": 1,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 59.15,
+				"p95": 106.34,
+				"max": 118.38,
+				"mean": 55.5
+			},
+			"recordsPerSecond": 99
+		},
+		{
+			"signal": "metrics",
+			"records": 50,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 34.07,
+				"p95": 165.56,
+				"max": 340.3,
+				"mean": 46.25
+			},
+			"recordsPerSecond": 1080
+		},
+		{
+			"signal": "metrics",
+			"records": 50,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 94.31,
+				"p95": 165.56,
+				"max": 178.31,
+				"mean": 94.19
+			},
+			"recordsPerSecond": 1571
+		},
+		{
+			"signal": "metrics",
+			"records": 50,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 204.98,
+				"p95": 733.89,
+				"max": 767.91,
+				"mean": 243.97
+			},
+			"recordsPerSecond": 1091
+		},
+		{
+			"signal": "metrics",
+			"records": 500,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 33.97,
+				"p95": 45.43,
+				"max": 53.85,
+				"mean": 35.18
+			},
+			"recordsPerSecond": 14171
+		},
+		{
+			"signal": "metrics",
+			"records": 500,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 123.35,
+				"p95": 217.5,
+				"max": 226.67,
+				"mean": 119.37
+			},
+			"recordsPerSecond": 12545
+		},
+		{
+			"signal": "metrics",
+			"records": 500,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 252.67,
+				"p95": 1774.68,
+				"max": 1814.17,
+				"mean": 428.94
+			},
+			"recordsPerSecond": 6293
+		}
+	]
+}

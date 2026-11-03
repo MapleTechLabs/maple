@@ -1,26 +1,31 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 
-import type { BillingCustomer } from "@maple/domain/http"
-import { UpdateBillingControlsRequest } from "@maple/domain/http"
+import {
+	BillingControls,
+	BillingCustomer,
+	BillingSpendLimit,
+	UpdateBillingControlsRequest,
+} from "@maple/domain/http"
 
-import { maximumInvoiceCents, updateFeatureControls } from "./controls"
+import { maximumInvoiceCents, parseCapInput, uncappedFeatures, updateFeatureControls } from "./controls"
 import type { SpendModel } from "./spend"
 
-const customer = {
-	id: "org_test",
-	subscriptions: [],
-	billingControls: {
-		spendLimits: [
-			{
-				featureId: "traces",
-				enabled: true,
-				limitType: "absolute",
-				overageLimit: 75,
-			},
-		],
-	},
-} as BillingCustomer
+const customerWithLimits = (spendLimits: ReadonlyArray<BillingSpendLimit>) =>
+	new BillingCustomer({
+		id: "org_test",
+		subscriptions: [],
+		billingControls: new BillingControls({ spendLimits }),
+	})
+
+const customer = customerWithLimits([
+	new BillingSpendLimit({
+		featureId: "traces",
+		enabled: true,
+		limitType: "absolute",
+		overageLimit: 75,
+	}),
+])
 
 describe("updateFeatureControls", () => {
 	// The endpoint payload is a Schema.Class, so the HttpApi client encoder checks
@@ -71,19 +76,56 @@ describe("maximumInvoiceCents", () => {
 
 	it("adds every billable feature cap to the base invoice", () => {
 		expect(
-			maximumInvoiceCents(model, {
-				...customer,
-				billingControls: {
-					spendLimits: [
-						{ featureId: "logs", enabled: true, limitType: "absolute", overageLimit: 100 },
-						{ featureId: "traces", enabled: true, limitType: "absolute", overageLimit: 50 },
-					],
-				},
-			} as BillingCustomer),
+			maximumInvoiceCents(
+				model,
+				customerWithLimits([
+					new BillingSpendLimit({
+						featureId: "logs",
+						enabled: true,
+						limitType: "absolute",
+						overageLimit: 100,
+					}),
+					new BillingSpendLimit({
+						featureId: "traces",
+						enabled: true,
+						limitType: "absolute",
+						overageLimit: 50,
+					}),
+				]),
+			),
 		).toBe(8_400)
 	})
 
 	it("is unbounded when any billable feature is uncapped", () => {
 		expect(maximumInvoiceCents(model, customer)).toBeNull()
+	})
+
+	it("counts only billable features without a cap as uncapped", () => {
+		// Metrics is unlimited and sessions are hard-capped: no cap can bound either.
+		expect(Arr.map(uncappedFeatures(model, customer), (feature) => feature.featureId)).toEqual(["logs"])
+	})
+})
+
+describe("parseCapInput", () => {
+	it("reads an empty field as removing the cap", () => {
+		expect(parseCapInput("  ")).toEqual({ valid: true, cap: null })
+	})
+
+	it("accepts zero and decimals", () => {
+		expect(parseCapInput("0")).toEqual({ valid: true, cap: 0 })
+		expect(parseCapInput("12.5")).toEqual({ valid: true, cap: 12.5 })
+	})
+
+	it("rejects negative and non-numeric input", () => {
+		expect(parseCapInput("-1")).toEqual({ valid: false })
+		expect(parseCapInput("abc")).toEqual({ valid: false })
+	})
+
+	it("rejects half-typed and non-decimal numbers instead of reading them as no cap", () => {
+		expect(parseCapInput("1e")).toEqual({ valid: false })
+		expect(parseCapInput("1e3")).toEqual({ valid: false })
+		expect(parseCapInput("0x10")).toEqual({ valid: false })
+		expect(parseCapInput("Infinity")).toEqual({ valid: false })
+		expect(parseCapInput(" 7. ")).toEqual({ valid: true, cap: 7 })
 	})
 })

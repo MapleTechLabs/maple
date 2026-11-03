@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest"
 
 import { isolatedPointIndexes, MIN_PX_PER_POINT_FOR_DOTS, pointsFit } from "../sparse-series"
+import { Array as Arr } from "effect"
 
-const rows = (values: ReadonlyArray<number>) => values.map((s1) => ({ s1 }))
+const rows = (values: ReadonlyArray<number>) => Arr.map(values, (s1) => ({ s1 }))
 
 describe("isolatedPointIndexes", () => {
 	it("picks only the non-zero points whose neighbours are both zero", () => {

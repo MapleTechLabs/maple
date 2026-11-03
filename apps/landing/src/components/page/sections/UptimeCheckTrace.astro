@@ -1,0 +1,158 @@
+---
+/**
+ * Uptime · the failed check as a trace. The check sends a `traceparent`, so the
+ * target's own spans land under the check span; the waterfall on the left is that
+ * join. Media-left so it alternates with the copy-left ledger below.
+ */
+import * as m from "../../../paraglide/messages.js";
+
+interface Span {
+	service: string;
+	name: string;
+	depth: number;
+	/** Start and width as % of the trace. */
+	start: number;
+	width: number;
+	duration: string;
+	error?: boolean;
+}
+
+const SPANS: Span[] = [
+	{ service: "maple-uptime", name: "GET /health", depth: 0, start: 0, width: 100, duration: "5.02 s", error: true },
+	{ service: "checkout", name: "GET /health", depth: 1, start: 1.2, width: 98.4, duration: "4.94 s", error: true },
+	{ service: "checkout", name: "pg.pool.acquire", depth: 2, start: 1.6, width: 97.6, duration: "4.90 s", error: true },
+	{ service: "checkout", name: "redis GET flags", depth: 2, start: 1.4, width: 0.6, duration: "3 ms" },
+];
+
+const rules = [
+	{ title: m.uptime_trace_rule_1_title(), body: m.uptime_trace_rule_1_body() },
+	{ title: m.uptime_trace_rule_2_title(), body: m.uptime_trace_rule_2_body() },
+	{ title: m.uptime_trace_rule_3_title(), body: m.uptime_trace_rule_3_body() },
+];
+---
+
+<section class="border-t border-border bg-bg">
+	<div class="shell py-16 md:py-32">
+		<div class="grid gap-12 lg:grid-cols-[1.15fr_0.85fr] lg:gap-20">
+			<div class="live-frame min-w-0 self-start">
+				<div class="live-frame__head">
+					<span>trace 7c1e40a9…e21f</span>
+					<span>503 · 5.02 s</span>
+				</div>
+				<div class="uct-spans">
+					{
+						SPANS.map((span) => (
+							<div class="uct-row">
+								<span class="uct-label" style={`--depth: ${span.depth};`}>
+									<span class="uct-service">{span.service}</span>
+									<span class="uct-name">{span.name}</span>
+								</span>
+								<span class="uct-track">
+									<span
+										class:list={["uct-bar", span.error && "uct-bar--error"]}
+										style={`left: ${span.start}%; width: max(${span.width}%, 2px);`}
+									/>
+								</span>
+								<span class="uct-dur">{span.duration}</span>
+							</div>
+						))
+					}
+				</div>
+				<div class="uct-attrs">
+					<div><span>maple.uptime.failure</span><span>Status 503, expected 2xx</span></div>
+					<div><span>http.response.status_code</span><span>503</span></div>
+					<div><span>maple.uptime.monitor_name</span><span>checkout-api</span></div>
+					<div><span>url.full</span><span>https://checkout.acme.dev/health</span></div>
+				</div>
+			</div>
+
+			<div class="flex min-w-0 flex-col">
+				<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.uptime_trace_eyebrow()}</p>
+				<h2
+					class="mt-4 max-w-[16ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+				>
+					{m.uptime_trace_title()}
+				</h2>
+				<p class="mt-5 max-w-[52ch] text-sm leading-relaxed text-fg-muted">{m.uptime_trace_lede()}</p>
+				<dl class="mt-auto pt-8">
+					{
+						rules.map((rule) => (
+							<div class="border-t border-border py-4">
+								<dt class="text-[13px] font-medium text-fg">{rule.title}</dt>
+								<dd class="mt-1.5 max-w-[52ch] text-[13px] leading-relaxed text-fg-muted">{rule.body}</dd>
+							</div>
+						))
+					}
+				</dl>
+			</div>
+		</div>
+	</div>
+</section>
+
+<style>
+	.uct-spans {
+		padding: 8px 0;
+	}
+	.uct-row {
+		display: grid;
+		grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr) 52px;
+		align-items: center;
+		gap: 12px;
+		padding: 7px 14px;
+		font-size: 11px;
+	}
+	.uct-label {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		min-width: 0;
+		padding-left: calc(var(--depth) * 12px);
+	}
+	.uct-service {
+		flex-shrink: 0;
+		font-size: 10px;
+		color: var(--muted-foreground);
+	}
+	.uct-name {
+		color: var(--foreground);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.uct-track {
+		position: relative;
+		height: 10px;
+	}
+	.uct-bar {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		border-radius: 2px;
+		background: color-mix(in oklab, var(--foreground) 28%, transparent);
+	}
+	.uct-bar--error {
+		background: color-mix(in oklab, var(--severity-error) 75%, transparent);
+	}
+	.uct-dur {
+		text-align: right;
+		font-size: 10px;
+		font-variant-numeric: tabular-nums;
+		color: var(--muted-foreground);
+	}
+	.uct-attrs {
+		border-top: 1px solid var(--border);
+		padding: 10px 14px 12px;
+		font-size: 10.5px;
+	}
+	.uct-attrs > div {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 4px 0;
+		color: var(--muted-foreground);
+	}
+	.uct-attrs > div > span:last-child {
+		color: var(--foreground);
+		text-align: right;
+	}
+</style>

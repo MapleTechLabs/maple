@@ -1,7 +1,22 @@
-import type { WidgetDataState, WidgetDisplayConfig } from "@/components/dashboard-builder/types"
-import { chartRegistry } from "@maple/ui/components/charts/registry"
+import type { WidgetDisplayConfigSchema } from "@maple/domain/http"
 import { funnelDropoffSampleData, pathsSampleData } from "@maple/ui/components/charts/_shared/sample-data"
 import { HEATMAP_COLOR_SCALES } from "@maple/domain/http"
+import { CHART_GALLERY, sampleDataOf } from "../../page/dashboards/kit/chart-registry"
+import { Array as Arr, String as Str } from "effect"
+
+// Copied from apps/web/src/lab/widget-lab/scenarios.ts; the registry is `CHART_GALLERY` here.
+
+type WidgetDisplayConfig = typeof WidgetDisplayConfigSchema.Type
+
+export type WidgetDataState =
+	| { status: "loading" }
+	| {
+			status: "error"
+			title?: string
+			message?: string
+			kind?: "decode" | "runtime" | "range" | "config" | "empty"
+	  }
+	| { status: "ready"; data: unknown }
 
 export interface WidgetScenario {
 	label: string
@@ -21,7 +36,7 @@ const loadingState: WidgetDataState = { status: "loading" }
 
 const emptyState: WidgetDataState = {
 	status: "error",
-	message: "No query data found in selected time range",
+	message: "No data in this window",
 }
 
 const runtimeErrorState: WidgetDataState = {
@@ -79,7 +94,7 @@ export const statScenarios: WidgetScenario[] = [
 		display: { title: "Ingest volume", unit: "bytes" },
 	},
 	{
-		label: "Threshold — green",
+		label: "Threshold: green",
 		dataState: ready(0.4),
 		display: {
 			title: "Error rate",
@@ -94,7 +109,7 @@ export const statScenarios: WidgetScenario[] = [
 		},
 	},
 	{
-		label: "Threshold — amber",
+		label: "Threshold: amber",
 		dataState: ready(2.6),
 		display: {
 			title: "Error rate",
@@ -107,7 +122,7 @@ export const statScenarios: WidgetScenario[] = [
 		},
 	},
 	{
-		label: "Threshold — red",
+		label: "Threshold: red",
 		dataState: ready(8.1),
 		display: {
 			title: "Error rate",
@@ -153,12 +168,12 @@ export const statScenarios: WidgetScenario[] = [
 		display: { title: "Active spans", unit: "number" },
 	},
 	{
-		label: "Error — runtime",
+		label: "Error: runtime",
 		dataState: runtimeErrorState,
 		display: { title: "Active spans", unit: "number" },
 	},
 	{
-		label: "Error — decode (Fix with AI)",
+		label: "Error: decode",
 		dataState: decodeErrorState,
 		display: { title: "Active spans", unit: "number" },
 	},
@@ -279,8 +294,8 @@ export const gaugeScenarios: WidgetScenario[] = [
 // timeseries shapes (the full stat-widget sparkline needs a live data source).
 
 const makeSeries = (values: number[]): Record<string, unknown>[] =>
-	values.map((value, index) => ({
-		bucket: `2026-05-13T${String(index).padStart(2, "0")}:00:00Z`,
+	Arr.map(values, (value, index) => ({
+		bucket: `2026-05-13T${Str.padStart(2, "0")(String(index))}:00:00Z`,
 		value,
 	}))
 
@@ -328,25 +343,25 @@ const statSparklineThresholds = [
 
 export const statSparklineScenarios: StatSparklineScenario[] = [
 	{
-		label: "Sparkline — upward",
+		label: "Sparkline: upward",
 		value: 44,
 		display: { title: "Active spans", unit: "number" },
 		sparklineData: makeSeries([12, 18, 15, 24, 31, 29, 38, 44]),
 	},
 	{
-		label: "Sparkline — downward",
+		label: "Sparkline: downward",
 		value: 33,
 		display: { title: "Throughput", unit: "number" },
 		sparklineData: makeSeries([88, 81, 84, 70, 62, 55, 41, 33]),
 	},
 	{
-		label: "Sparkline — duration",
+		label: "Sparkline: duration",
 		value: 184.7,
 		display: { title: "p99 latency", unit: "duration_ms" },
 		sparklineData: makeSeries([120, 142, 138, 165, 151, 178, 169, 185]),
 	},
 	{
-		label: "Sparkline — threshold (red)",
+		label: "Sparkline: threshold (red)",
 		value: 8.1,
 		display: { title: "Error rate", unit: "percent_100", thresholds: statSparklineThresholds },
 		sparklineData: makeSeries([1, 1.2, 0.9, 2, 1.8, 6.4, 7.2, 8.1]),
@@ -356,8 +371,7 @@ export const statSparklineScenarios: StatSparklineScenario[] = [
 // Chart — iterate every registry entry with its built-in sampleData
 
 // Threshold + legend scenarios reuse a registry chart's bundled sample data.
-const sampleFor = (chartId: string): Record<string, unknown>[] =>
-	chartRegistry.find((entry) => entry.id === chartId)?.sampleData ?? []
+const sampleFor = sampleDataOf
 
 const latencyThresholds = [
 	{ value: 200, color: "var(--color-amber-500)", label: "Warn" },
@@ -365,7 +379,7 @@ const latencyThresholds = [
 ]
 
 export const chartScenarios: ChartScenario[] = [
-	...chartRegistry.map((entry): ChartScenario => ({
+	...Arr.map(CHART_GALLERY, (entry): ChartScenario => ({
 		label: entry.name,
 		chartId: entry.id,
 		chartName: entry.name,
@@ -416,7 +430,7 @@ export const chartScenarios: ChartScenario[] = [
 		},
 	},
 	{
-		label: "Legend — right (stats table)",
+		label: "Legend: right (stats table)",
 		chartId: "query-builder-line",
 		chartName: "Line",
 		category: "line",
@@ -485,7 +499,7 @@ function makePieSlices(count: number, namePrefix = "service"): { name: string; v
 	}))
 }
 
-const longNameSeries: Record<string, unknown>[] = makeManySeries(3, 12).map((row, i) => {
+const longNameSeries: Record<string, unknown>[] = Arr.map(makeManySeries(3, 12), (row, i) => {
 	const base = new Date("2026-01-01T00:00:00Z").getTime()
 	return {
 		bucket: new Date(base + i * 3_600_000).toISOString(),
@@ -571,7 +585,7 @@ const trailingPartialBucketSeries: Record<string, unknown>[] = makeTrailingBucke
 
 export const stressScenarios: ChartScenario[] = [
 	{
-		label: "Area — trailing empty bucket (no cliff)",
+		label: "Area: trailing empty bucket (no cliff)",
 		chartId: "query-builder-area",
 		chartName: "Area",
 		category: "area",
@@ -584,7 +598,7 @@ export const stressScenarios: ChartScenario[] = [
 		},
 	},
 	{
-		label: "Area — trailing partial bucket (dashed)",
+		label: "Area: trailing partial bucket (dashed)",
 		chartId: "query-builder-area",
 		chartName: "Area",
 		category: "area",
@@ -597,7 +611,7 @@ export const stressScenarios: ChartScenario[] = [
 		},
 	},
 	{
-		label: "Line — 25 series (compact legend)",
+		label: "Line: 25 series (compact legend)",
 		chartId: "query-builder-line",
 		chartName: "Line",
 		category: "line",
@@ -610,7 +624,7 @@ export const stressScenarios: ChartScenario[] = [
 		},
 	},
 	{
-		label: "Line — 50 series (stats legend)",
+		label: "Line: 50 series (stats legend)",
 		chartId: "query-builder-line",
 		chartName: "Line",
 		category: "line",
@@ -623,7 +637,7 @@ export const stressScenarios: ChartScenario[] = [
 		},
 	},
 	{
-		label: "Area — 25 series (stacked)",
+		label: "Area: 25 series (stacked)",
 		chartId: "query-builder-area",
 		chartName: "Area",
 		category: "area",
@@ -636,7 +650,7 @@ export const stressScenarios: ChartScenario[] = [
 		},
 	},
 	{
-		label: "Bar — 25 series → Other (stacked)",
+		label: "Bar: 25 series → Other (stacked)",
 		chartId: "query-builder-bar",
 		chartName: "Bar",
 		category: "bar",
@@ -649,7 +663,7 @@ export const stressScenarios: ChartScenario[] = [
 		},
 	},
 	{
-		label: "Bar — 50 series → Other (right legend)",
+		label: "Bar: 50 series → Other (right legend)",
 		chartId: "query-builder-bar",
 		chartName: "Bar",
 		category: "bar",
@@ -664,7 +678,7 @@ export const stressScenarios: ChartScenario[] = [
 	{
 		// Line keeps every series (no "Other" bucketing), so the right legend is
 		// genuinely tall — confirms it scrolls within the card instead of overflowing.
-		label: "Line — 50 series (right legend, scrolls)",
+		label: "Line: 50 series (right legend, scrolls)",
 		chartId: "query-builder-line",
 		chartName: "Line",
 		category: "line",
@@ -677,7 +691,7 @@ export const stressScenarios: ChartScenario[] = [
 		},
 	},
 	{
-		label: "Pie — 20 slices → Other",
+		label: "Pie: 20 slices → Other",
 		chartId: "query-builder-pie",
 		chartName: "Pie",
 		category: "pie",
@@ -685,7 +699,7 @@ export const stressScenarios: ChartScenario[] = [
 		display: { title: "Traffic by service (20 → Other)", chartId: "query-builder-pie", pie: {} },
 	},
 	{
-		label: "Pie — 50 slices → Other",
+		label: "Pie: 50 slices → Other",
 		chartId: "query-builder-pie",
 		chartName: "Pie",
 		category: "pie",
@@ -697,7 +711,7 @@ export const stressScenarios: ChartScenario[] = [
 		},
 	},
 	{
-		label: "Line — long series names",
+		label: "Line: long series names",
 		chartId: "query-builder-line",
 		chartName: "Line",
 		category: "line",
@@ -710,7 +724,7 @@ export const stressScenarios: ChartScenario[] = [
 		},
 	},
 	{
-		label: "Line — null / NaN values",
+		label: "Line: null / NaN values",
 		chartId: "query-builder-line",
 		chartName: "Line",
 		category: "line",
@@ -722,7 +736,7 @@ export const stressScenarios: ChartScenario[] = [
 		},
 	},
 	{
-		label: "Area — all-zero series",
+		label: "Area: all-zero series",
 		chartId: "query-builder-area",
 		chartName: "Area",
 		category: "area",
@@ -734,7 +748,7 @@ export const stressScenarios: ChartScenario[] = [
 		},
 	},
 	{
-		label: "Pie — all-zero (No data)",
+		label: "Pie: all-zero (No data)",
 		chartId: "query-builder-pie",
 		chartName: "Pie",
 		category: "pie",
@@ -745,7 +759,7 @@ export const stressScenarios: ChartScenario[] = [
 		display: { title: "Empty distribution", chartId: "query-builder-pie", pie: {} },
 	},
 	{
-		label: "Area — sparse rate (isolated points)",
+		label: "Area: sparse rate (isolated points)",
 		chartId: "query-builder-area",
 		chartName: "Area",
 		category: "area",
@@ -757,7 +771,7 @@ export const stressScenarios: ChartScenario[] = [
 		},
 	},
 	{
-		label: "Bar — sparse rate (isolated points)",
+		label: "Bar: sparse rate (isolated points)",
 		chartId: "query-builder-bar",
 		chartName: "Bar",
 		category: "bar",
@@ -769,7 +783,7 @@ export const stressScenarios: ChartScenario[] = [
 		},
 	},
 	{
-		label: "Line — sparse rate (isolated points)",
+		label: "Line: sparse rate (isolated points)",
 		chartId: "query-builder-line",
 		chartName: "Line",
 		category: "line",
@@ -781,7 +795,7 @@ export const stressScenarios: ChartScenario[] = [
 		},
 	},
 	{
-		label: "Area — single point",
+		label: "Area: single point",
 		chartId: "query-builder-area",
 		chartName: "Area",
 		category: "area",
@@ -793,7 +807,7 @@ export const stressScenarios: ChartScenario[] = [
 		},
 	},
 	{
-		label: "Bar — all-zero series",
+		label: "Bar: all-zero series",
 		chartId: "query-builder-bar",
 		chartName: "Bar",
 		category: "bar",
@@ -817,7 +831,7 @@ const serviceRows = [
 	{ service: "notification-service", p99: 76, throughput: 1502, errorRate: 0.7 },
 ]
 
-const wideRows = Array.from({ length: 6 }).map((_, i) => ({
+const wideRows = Arr.map(Array.from({ length: 6 }), (_, i) => ({
 	service: `svc-${i + 1}`,
 	region: ["us-east-1", "us-west-2", "eu-west-1", "ap-south-1"][i % 4],
 	version: `v1.${i}.${i + 2}`,
@@ -906,7 +920,7 @@ export const tableScenarios: WidgetScenario[] = [
 		// Sort QA: `calls` arrives as a string, the way 64-bit counts do from
 		// BYO-ClickHouse — sorting it must be numeric, not lexicographic. Row
 		// count equals `rowLimit`, so the truncation footer shows.
-		label: "Sortable — truncated, string counts",
+		label: "Sortable: truncated, string counts",
 		dataState: ready([
 			{ service: "api-gateway", calls: "1820", p99: 245 },
 			{ service: "billing-service", calls: "240", p99: 412 },
@@ -955,7 +969,7 @@ export const tableScenarios: WidgetScenario[] = [
 		display: { title: "Service overview" },
 	},
 	{
-		label: "Error — decode",
+		label: "Error: decode",
 		dataState: decodeErrorState,
 		display: { title: "Service overview" },
 	},
@@ -1153,7 +1167,7 @@ export const pieScenarios: WidgetScenario[] = [
 		},
 	},
 	{
-		label: "Table legend — long tail (+N others)",
+		label: "Table legend: long tail (+N others)",
 		dataState: ready(makePieSlices(50)),
 		display: {
 			title: "Traffic by service (50 groups)",
@@ -1556,7 +1570,7 @@ const longTail = [
 	{ name: "10k+", value: 3 },
 ]
 
-const narrowBuckets = Array.from({ length: 30 }).map((_, i) => ({
+const narrowBuckets = Arr.map(Array.from({ length: 30 }), (_, i) => ({
 	name: `${i * 10}-${(i + 1) * 10}`,
 	value: Math.round(Math.exp(-((i - 14) ** 2) / 30) * 240 + Math.random() * 8),
 }))
@@ -1630,36 +1644,36 @@ export const histogramScenarios: WidgetScenario[] = [
 const hours = ["00", "03", "06", "09", "12", "15", "18", "21"]
 const buckets = ["0-50ms", "50-100ms", "100-200ms", "200-500ms", "500ms+"]
 
-const denseHeatmap = hours.flatMap((h, hi) =>
-	buckets.map((b, bi) => ({
+const denseHeatmap = Arr.flatMap(hours, (h, hi) =>
+	Arr.map(buckets, (b, bi) => ({
 		x: `${h}:00`,
 		y: b,
 		value: Math.round(20 + Math.sin(hi / 2) * 40 + (buckets.length - bi) * 8 + Math.random() * 5),
 	})),
 )
 
-const sparseHeatmap = denseHeatmap.filter((_, i) => i % 3 === 0)
+const sparseHeatmap = Arr.filter(denseHeatmap, (_, i) => i % 3 === 0)
 
 export const heatmapScenarios: WidgetScenario[] = [
 	{
 		// No `heatmap` config at all — exercises the amber default that an
 		// unconfigured widget lands on.
-		label: "Dense — default (no config)",
+		label: "Dense: default (no config)",
 		dataState: ready(denseHeatmap),
 		display: { title: "Latency × hour" },
 	},
-	...HEATMAP_COLOR_SCALES.map((scale): WidgetScenario => ({
-		label: `Dense — ${scale}`,
+	...Arr.map(HEATMAP_COLOR_SCALES, (scale): WidgetScenario => ({
+		label: `Dense: ${scale}`,
 		dataState: ready(denseHeatmap),
 		display: { title: `Latency × hour (${scale})`, heatmap: { colorScale: scale } },
 	})),
 	{
-		label: "Sparse — viridis",
+		label: "Sparse: viridis",
 		dataState: ready(sparseHeatmap),
 		display: { title: "Sparse data", heatmap: { colorScale: "viridis" } },
 	},
 	{
-		label: "Log scale — viridis",
+		label: "Log scale: viridis",
 		dataState: ready(denseHeatmap),
 		display: {
 			title: "Log scale",
@@ -1671,12 +1685,14 @@ export const heatmapScenarios: WidgetScenario[] = [
 		// the last two colliding.
 		label: "24 time rows (y-label stride)",
 		dataState: ready(
-			Array.from({ length: 24 }, (_, hi) => hi).flatMap((hi) =>
-				["Errors", "OK"].map((x, xi) => ({
-					x,
-					y: `2026-01-01T${String(hi).padStart(2, "0")}:30:00Z`,
-					value: xi === 0 ? (hi % 7 === 0 ? 12 : 0) : 90 + Math.round(Math.sin(hi / 3) * 30),
-				})),
+			Arr.flatMap(
+				Array.from({ length: 24 }, (_, hi) => hi),
+				(hi) =>
+					Arr.map(["Errors", "OK"], (x, xi) => ({
+						x,
+						y: `2026-01-01T${Str.padStart(2, "0")(String(hi))}:30:00Z`,
+						value: xi === 0 ? (hi % 7 === 0 ? 12 : 0) : 90 + Math.round(Math.sin(hi / 3) * 30),
+					})),
 			),
 		),
 		display: { title: "Errors vs OK over time", heatmap: { colorScale: "blues" } },
@@ -1687,26 +1703,28 @@ export const heatmapScenarios: WidgetScenario[] = [
 		// gap. Exercises axis pruning + the hidden-count footnote.
 		label: "Long tail + dead rows/cols",
 		dataState: ready(
-			[
-				"admin-api",
-				"artifact-scan",
-				"kafka-consumers",
-				"mail-dispatch",
-				"query-gateway",
-				"webhook-fanout",
-			].flatMap((service, si) =>
-				hours.map((h, hi) => ({
-					x: service,
-					y: `${h}:00`,
-					// artifact-scan / mail-dispatch / webhook-fanout are silent, and
-					// the 09:00 bucket is empty for everyone.
-					value:
-						si === 1 || si === 3 || si === 5 || h === "09"
-							? 0
-							: si === 0 || si === 4
-								? 18000 + hi * 900
-								: 40 + hi * 12,
-				})),
+			Arr.flatMap(
+				[
+					"admin-api",
+					"artifact-scan",
+					"kafka-consumers",
+					"mail-dispatch",
+					"query-gateway",
+					"webhook-fanout",
+				],
+				(service, si) =>
+					Arr.map(hours, (h, hi) => ({
+						x: service,
+						y: `${h}:00`,
+						// artifact-scan / mail-dispatch / webhook-fanout are silent, and
+						// the 09:00 bucket is empty for everyone.
+						value:
+							si === 1 || si === 3 || si === 5 || h === "09"
+								? 0
+								: si === 0 || si === 4
+									? 18000 + hi * 900
+									: 40 + hi * 12,
+					})),
 			),
 		),
 		display: { title: "Spans by service", heatmap: { scaleType: "log" } },
@@ -1740,23 +1758,26 @@ export const markdownScenarios: WidgetScenario[] = [
 		display: {
 			title: "Runbook",
 			markdown: {
-				content: [
-					"# Incident response",
-					"",
-					"Follow these steps **in order**:",
-					"",
-					"1. Check the [status page](https://status.example.com)",
-					"2. Look at recent deploys",
-					"3. Inspect `error_rate` by service",
-					"",
-					"## Common causes",
-					"",
-					"- Database connection pool exhaustion",
-					"- Upstream provider 5xx",
-					"- *Cache stampede* after a deploy",
-					"",
-					"> If unsure, page the on-call engineer.",
-				].join("\n"),
+				content: Arr.join(
+					[
+						"# Incident response",
+						"",
+						"Follow these steps **in order**:",
+						"",
+						"1. Check the [status page](https://status.example.com)",
+						"2. Look at recent deploys",
+						"3. Inspect `error_rate` by service",
+						"",
+						"## Common causes",
+						"",
+						"- Database connection pool exhaustion",
+						"- Upstream provider 5xx",
+						"- *Cache stampede* after a deploy",
+						"",
+						"> If unsure, page the on-call engineer.",
+					],
+					"\n",
+				),
 			},
 		},
 	},

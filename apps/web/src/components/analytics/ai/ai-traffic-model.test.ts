@@ -7,6 +7,7 @@ import {
 	summarizeReferrals,
 	totalReferrals,
 } from "./ai-traffic-model"
+import { Array as Arr } from "effect"
 
 const WEEK = { startTime: "2026-09-19 00:00:00", endTime: "2026-09-26 00:00:00" }
 
@@ -50,7 +51,7 @@ describe("rankReferrals", () => {
 			{ bucket: "2026-09-13 00:00:00", product: "perplexity", sessions: 5 },
 		])
 		const ranks = rankReferrals(current, previous)
-		expect(ranks.map((rank) => rank.product.id)).toEqual(["chatgpt", "perplexity", "claude"])
+		expect(Arr.map(ranks, (rank) => rank.product.id)).toEqual(["chatgpt", "perplexity", "claude"])
 		expect(ranks[0]?.share).toBeCloseTo(0.6)
 		expect(ranks[0]?.shareDeltaPoints).toBeCloseTo(10)
 		expect(ranks[1]?.shareDeltaPoints).toBeCloseTo(-30)

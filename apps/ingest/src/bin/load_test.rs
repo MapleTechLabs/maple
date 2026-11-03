@@ -12,7 +12,6 @@
 )]
 
 use std::collections::HashMap;
-use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -25,7 +24,6 @@ use axum::http::header::CONTENT_ENCODING;
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::Router;
-use flate2::read::GzDecoder;
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, InstrumentationScope, KeyValue};
 use opentelemetry_proto::tonic::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
@@ -367,9 +365,8 @@ fn decode_body(headers: &HeaderMap, body: &[u8]) -> Option<String> {
         .and_then(|value| value.to_str().ok())
         .map(|value| value.trim().to_ascii_lowercase());
     if content_encoding.as_deref() == Some("gzip") {
-        let mut decoded = String::new();
-        GzDecoder::new(body).read_to_string(&mut decoded).ok()?;
-        Some(decoded)
+        let bytes = maple_ingest::decompress::gunzip_bounded(body, usize::MAX).ok()?;
+        String::from_utf8(bytes).ok()
     } else {
         String::from_utf8(body.to_vec()).ok()
     }

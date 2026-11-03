@@ -4,11 +4,12 @@ import type { Node } from "@takumi-rs/helpers"
 import { chartCard, rankedCard, CHART_CARD_WIDTH, legendRows, xAxisRow, yAxisGutter } from "./chart-card"
 import { chartRequestFromPath } from "./chart-image"
 import { ogIdFromPath } from "./share-links"
+import { Array as Arr, String as Str } from "effect"
 
 const at = (i: number): number => Date.UTC(2026, 8, 11, 10, 0) + i * 60_000
 const series = (name: string, values: ReadonlyArray<number>) => ({
 	name,
-	points: values.map((v, i) => [at(i), v] as ChartPoint),
+	points: Arr.map(values, (v, i) => [at(i), v] as ChartPoint),
 })
 
 describe("chartRequestFromPath", () => {
@@ -118,20 +119,20 @@ describe("axis placement", () => {
 		readonly color?: string
 	}
 	const placed = (node: Node): ReadonlyArray<Placed> =>
-		((node as { children?: ReadonlyArray<Record<string, unknown>> }).children ?? []).map((child) => {
+		Arr.map((node as { children?: ReadonlyArray<Record<string, unknown>> }).children ?? [], (child) => {
 			const inner = (child.children as ReadonlyArray<Record<string, unknown>>)[0] ?? {}
 			return {
 				style: (child.style ?? {}) as Placed["style"],
-				text: String(inner.text ?? ""),
+				text: typeof inner.text === "string" ? inner.text : "",
 				color: (inner.style as { color?: string } | undefined)?.color,
 			}
 		})
-	const boxes = (node: Node): ReadonlyArray<Placed["style"]> => placed(node).map((one) => one.style)
+	const boxes = (node: Node): ReadonlyArray<Placed["style"]> => Arr.map(placed(node), (one) => one.style)
 
 	const PLOT_BOX = PLOT_HEIGHT - PLOT_PAD * 2
 
 	it("puts a value label's centre on the plot fraction it was given", () => {
-		const tops = boxes(yAxisGutter([{ text: "4%", yFraction: 0.25 }], null)).map((box) => box.top)
+		const tops = Arr.map(boxes(yAxisGutter([{ text: "4%", yFraction: 0.25 }], null)), (box) => box.top)
 		// Centre of a 15px row on the line, not its top corner.
 		expect(tops[0]).toBeCloseTo(PLOT_PAD + 0.25 * PLOT_BOX - 7.5, 5)
 	})
@@ -149,12 +150,12 @@ describe("axis placement", () => {
 		const ticks = [{ text: "4%", yFraction: 0 }, crowded, { text: "0%", yFraction: 1 }]
 
 		const withLimit = placed(yAxisGutter(ticks, limit))
-		expect(withLimit.map((one) => one.text)).toEqual(["4%", "0%", "2%"])
+		expect(Arr.map(withLimit, (one) => one.text)).toEqual(["4%", "0%", "2%"])
 		// The limit reads in the rule's colour; the scale around it does not.
 		expect(withLimit.at(-1)?.color).not.toBe(withLimit[0]?.color)
 
 		// Without a limit the crowded tick has nothing to yield to and stays.
-		expect(placed(yAxisGutter(ticks, null)).map((one) => one.text)).toContain("2.1%")
+		expect(Arr.map(placed(yAxisGutter(ticks, null)), (one) => one.text)).toContain("2.1%")
 	})
 
 	it("centres a time label on its tick and keeps the ends on the image", () => {
@@ -174,7 +175,7 @@ describe("axis placement", () => {
 })
 
 describe("legendRows", () => {
-	const entry = (length: number) => ({ color: "#4a9eff", text: "x".repeat(length) })
+	const entry = (length: number) => ({ color: "#4a9eff", text: Str.repeat(length)("x") })
 
 	it("keeps a legend that fits on one row", () => {
 		expect(legendRows([entry(12), entry(12), entry(12)])).toBe(1)

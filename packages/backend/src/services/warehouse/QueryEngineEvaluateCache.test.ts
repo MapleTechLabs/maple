@@ -1,6 +1,7 @@
 import { describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Ref, Schema, Array as Arr } from "effect"
 import { strict as assert } from "node:assert"
+import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 import { OrgId, UserId } from "@maple/domain"
 import { baselineWarehouseCapabilities, type QueryEngineEvaluateRequest } from "@maple/query-engine"
 import type { CompiledQuery } from "@maple/query-engine/ch"
@@ -150,7 +151,7 @@ describe("makeQueryEngineEvaluateSeries (per-bucket preview core)", () => {
 
 			// The reduced evaluate path must agree with the sum of the series.
 			const reduced = yield* makeQueryEngineEvaluate(evalStub(COUNT_ROWS))(tenant, countRequest("sum"))
-			const total = series.reduce((sum, obs) => sum + (obs.value ?? 0), 0)
+			const total = Arr.reduce(series, 0, (sum, obs) => sum + (obs.value ?? 0))
 			assert.equal(reduced[0]?.value, total)
 		}),
 	)
@@ -302,7 +303,7 @@ const makeRecordingEdge = (
 	},
 	invalidate: () => Effect.void,
 	rawGetDetailed: () => Effect.succeed({ status: "miss" as const, value: Option.none(), readMs: 0 }),
-	rawGet: () => Effect.succeed(Option.none()),
+	rawGet: () => Effect.succeedNone,
 	rawPut: () => Effect.void,
 	rawDelete: () => Effect.void,
 })
@@ -333,7 +334,7 @@ describe("QueryEngineService.cachedDirect TTL", () => {
 			yield* qe.cachedDirect(tenant, "serviceOverview", { a: 1 }, Effect.succeed([{ ok: true }]))
 
 			assert.deepStrictEqual(
-				calls.map(({ bucket, ttlSeconds }) => ({ bucket, ttlSeconds })),
+				Arr.map(calls, ({ bucket, ttlSeconds }) => ({ bucket, ttlSeconds })),
 				[
 					{ bucket: "qe-direct", ttlSeconds: 3600 },
 					{ bucket: "qe-direct", ttlSeconds: 15 },
@@ -433,11 +434,77 @@ describe("QueryEngineService.cachedDirect TTL", () => {
 			assert.strictEqual(calls[0]?.key, calls[1]?.key)
 			assert.match(calls[0]?.key ?? "", /^direct:v2:/)
 			assert.deepStrictEqual(
-				calls.map(({ ttlSeconds }) => ttlSeconds),
+				Arr.map(calls, ({ ttlSeconds }) => ttlSeconds),
 				[300, 300],
 			)
 		}).pipe(Effect.provide(layer))
 	})
+})
+
+describe("QueryEngineService.evaluate", () => {
+	it.effect("runs every alert evaluation against the warehouse without touching the edge cache", () =>
+		Effect.gen(function* () {
+			const edgeOps = yield* Ref.make<ReadonlyArray<string>>([])
+			const queries = yield* Ref.make(0)
+			const recordEdge = (op: string) => Ref.update(edgeOps, (ops) => [...ops, op])
+			const countQuery = Ref.update(queries, (n) => n + 1)
+			const base = makeFullStub(COUNT_ROWS, { n: 0 })
+			const warehouse: WarehouseQueryServiceApi = {
+				...base,
+				compiledQuery: (tenant, compiled, options) =>
+					countQuery.pipe(Effect.andThen(base.compiledQuery(tenant, compiled, options))),
+				compiledQueryWithCapabilities: (tenant, compile, options) =>
+					countQuery.pipe(
+						Effect.andThen(base.compiledQueryWithCapabilities(tenant, compile, options)),
+					),
+			}
+			const edge: EdgeCacheServiceApi = {
+				getOrCompute: (_options, compute) =>
+					recordEdge("getOrCompute").pipe(
+						Effect.andThen(Effect.map(compute, (value) => ({ value, hit: false }))),
+					),
+				invalidate: () => recordEdge("invalidate"),
+				rawGetDetailed: () =>
+					recordEdge("rawGetDetailed").pipe(
+						Effect.as({ status: "miss" as const, value: Option.none(), readMs: 0 }),
+					),
+				rawGet: () => recordEdge("rawGet").pipe(Effect.as(Option.none())),
+				rawPut: () => recordEdge("rawPut"),
+				rawDelete: () => recordEdge("rawDelete"),
+			}
+			const edgeLayer = Layer.succeed(EdgeCacheService, edge)
+			const layer = Layer.effect(QueryEngineService, QueryEngineService.make).pipe(
+				Layer.provide(Layer.succeed(WarehouseQueryService, warehouse)),
+				Layer.provide(edgeLayer),
+				Layer.provide(BucketCacheService.layer.pipe(Layer.provide(edgeLayer))),
+				Layer.provide(makeConfig()),
+			)
+
+			const { spans, tracer } = makeRecordingTracer()
+			const [first, second] = yield* Effect.gen(function* () {
+				const qe = yield* QueryEngineService
+				const request = countRequest("sum")
+				return [yield* qe.evaluate(tenant, request), yield* qe.evaluate(tenant, request)] as const
+			}).pipe(Effect.provide(layer), Effect.withTracer(tracer))
+
+			const expected = yield* makeQueryEngineEvaluate(evalStub(COUNT_ROWS))(tenant, countRequest("sum"))
+			assert.deepStrictEqual(first, expected)
+			assert.deepStrictEqual(second, expected)
+			assert.deepStrictEqual(yield* Ref.get(edgeOps), [])
+			assert.strictEqual(yield* Ref.get(queries), 2)
+			// The "Query Engine Cache" dashboard reads this span; every evaluation is now a miss.
+			assert.deepStrictEqual(
+				Arr.map(spansNamed(spans, "QueryEngineService.cachedEvaluate"), (span) => [
+					span.attributes.get("cache.hit"),
+					span.attributes.get("cache.path"),
+				]),
+				[
+					[false, "none"],
+					[false, "none"],
+				],
+			)
+		}),
+	)
 })
 
 describe("traceCacheTtlSeconds", () => {

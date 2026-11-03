@@ -144,6 +144,21 @@ function widgets(database?: string): WidgetDef[] {
 			aggregation: "min",
 			layout: { x: 6, y: 18, w: 6, h: 6 },
 		}),
+		{
+			id: "connections-api",
+			visualization: "chart",
+			dataSource: metricsTimeseries({
+				id: "connections-api",
+				name: "Connections",
+				metricName: "planetscale_api_connections",
+				metricType: "gauge",
+				aggregation: "sum",
+				whereClause: where,
+				groupBy: ["attr.planetscale_database_name"],
+			}),
+			display: { title: "Connections (metrics API)", ...CHART_DISPLAY_AREA, unit: "number" },
+			layout: { x: 0, y: 24, w: 12, h: 6 },
+		},
 	]
 }
 
@@ -151,13 +166,12 @@ export const planetscaleTemplate: TemplateDefinition = {
 	id: templateId("planetscale"),
 	name: "PlanetScale Databases",
 	description:
-		"Database health from the PlanetScale integration — active connections, pod CPU/memory utilization, replication lag, and per-branch breakdowns from the scraped branch metrics.",
+		"Database health from the PlanetScale integration: active connections, pod CPU/memory utilization, replication lag, and per-branch breakdowns from the branch metrics.",
 	category: "infrastructure",
 	tags: ["planetscale", "database", "mysql", "postgres"],
 	requirement: {
 		kind: "integration",
 		label: "PlanetScale integration connected (or a planetscale scrape target)",
-		missing: "not connected",
 		collector: "the PlanetScale integration, or a planetscale scrape target",
 		setupLabel: "the PlanetScale integration",
 		hint: "Connect it and every widget fills in on its own.",

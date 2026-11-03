@@ -2,14 +2,15 @@
  * Infrastructure reads for the MCP tools: the queries behind the web app's Infrastructure pages,
  * flattened onto one row shape so an agent reads hosts, pods and containers the same way.
  */
-import { Array as Arr, DateTime, Effect } from "effect"
+import { Array as Arr, DateTime, Effect, Record as Rec, String as Str } from "effect"
 import type { OrgId } from "@maple/domain"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
-import type { InfraEntityRow, InfraKind, InfraKindSection, InfraSeriesStats } from "@maple/domain/mcp-outputs"
+import type { InfraEntityRow, InfraKindSection, InfraSeriesStats } from "@maple/domain/mcp-outputs"
+import type { CollectorKind } from "./infra-params"
 
-export type WorkloadKind = "deployment" | "statefulset" | "daemonset"
-export const WORKLOAD_KINDS: ReadonlyArray<WorkloadKind> = ["deployment", "statefulset", "daemonset"]
+export type WorkloadKind = "deployment" | "statefulset" | "daemonset" | "job"
+export const WORKLOAD_KINDS: ReadonlyArray<WorkloadKind> = ["deployment", "statefulset", "daemonset", "job"]
 
 export interface InfraWindow {
 	readonly startTime: string
@@ -39,7 +40,6 @@ export type InfraSort = "saturation" | "cpu" | "memory" | "name" | "last_seen"
 export const iso = (value: DateTime.Utc): string => formatWarehouseDateTime(DateTime.toEpochMillis(value))
 const list = (value: string | undefined): ReadonlyArray<string> | undefined =>
 	value === undefined ? undefined : [value]
-const nonEmpty = (value: string): string | undefined => (value === "" ? undefined : value)
 
 const compileParams = (orgId: OrgId, window: InfraWindow) => ({
 	orgId,
@@ -55,8 +55,8 @@ export const infraPresence = (window: InfraWindow) =>
 			CH.compileUnion(CH.infraPresenceQuery(), compileParams(executor.orgId, window)),
 			{ profile: "discovery", context: "infraPresence" },
 		)
-		const surfaces = new Set(rows.map((row) => row.surface))
-		const kinds: Array<InfraKind> = []
+		const surfaces = new Set(Arr.map(rows, (row) => row.surface))
+		const kinds: Array<CollectorKind> = []
 		if (surfaces.has("hosts")) kinds.push("hosts")
 		if (surfaces.has("k8sPods")) kinds.push("pods")
 		if (surfaces.has("k8sNodes")) kinds.push("nodes")
@@ -75,9 +75,9 @@ export const sortRows = (rows: ReadonlyArray<InfraEntityRow>, sort: InfraSort): 
 	const copy = [...rows]
 	switch (sort) {
 		case "name":
-			return copy.sort((a, b) => a.name.localeCompare(b.name))
+			return copy.sort((a, b) => Str.localeCompare(b.name)(a.name))
 		case "last_seen":
-			return copy.sort((a, b) => b.lastSeen.localeCompare(a.lastSeen))
+			return copy.sort((a, b) => Str.localeCompare(a.lastSeen ?? "")(b.lastSeen ?? ""))
 		case "cpu":
 			return copy.sort(byNumberDesc((r) => r.cpuPeak ?? r.cpu ?? r.cpuCores))
 		case "memory":
@@ -113,7 +113,7 @@ export const pressure = (row: InfraEntityRow): { readonly resource: string; read
 	)
 }
 
-const keep =
+export const matchesStatus =
 	(status: InfraStatusFilter | undefined) =>
 	(row: InfraEntityRow): boolean => {
 		switch (status) {
@@ -225,11 +225,11 @@ const workloadRow = (kind: WorkloadKind, row: CH.ListWorkloadsOutput): InfraEnti
 	workloadKind: kind,
 	...placement(row),
 	podCount: row.podCount,
-	cpuCores: row.avgCpuUsage,
-	cpu: row.avgCpuLimitPct,
-	memory: row.avgMemoryLimitPct,
-	saturation: Math.max(row.avgCpuLimitPct, row.avgMemoryLimitPct),
-	...(row.avgCpuLimitPct === 0 && row.avgMemoryLimitPct === 0 ? { unbounded: true } : undefined),
+	cpuCores: row.cpuUsage,
+	cpu: row.peakCpuLimitPct,
+	memory: row.peakMemoryLimitPct,
+	saturation: row.saturation,
+	...(row.peakCpuLimitPct === 0 && row.peakMemoryLimitPct === 0 ? { unbounded: true } : undefined),
 })
 
 const containerRow = (row: CH.ListContainersOutput): InfraEntityRow => ({
@@ -259,8 +259,9 @@ const podRestarts = (podNames: ReadonlyArray<string>, params: ReturnType<typeof 
 			{ profile: "aggregation", context: "podRestarts" },
 		)
 		return new Map(
-			Object.entries(Arr.groupBy(rows, (row) => podKey(row.namespace, row.podName))).map(
-				([pod, containers]) => [pod, containers.reduce((sum, row) => sum + row.restarts, 0)],
+			Arr.map(
+				Rec.toEntries(Arr.groupBy(rows, (row) => podKey(row.namespace, row.podName))),
+				([pod, containers]) => [pod, Arr.reduce(containers, 0, (sum, row) => sum + row.restarts)],
 			),
 		)
 	})
@@ -276,13 +277,13 @@ export interface ListKindOptions {
  * One page of a kind, ready to render. A status page over-fetches and filters, since those
  * thresholds are not scopes every warehouse query takes.
  */
-export const listInfraKind = (kind: InfraKind, options: ListKindOptions) =>
+export const listInfraKind = (kind: CollectorKind, options: ListKindOptions) =>
 	Effect.gen(function* () {
 		const { filters, limit } = options
 		const filtering = filters.status !== undefined
 		const fetchLimit = filtering ? 500 : limit + 1
 		const { rows, summary } = yield* fetchKind(kind, { ...options, limit: fetchLimit })
-		const filtered = rows.filter(keep(filters.status))
+		const filtered = Arr.filter(rows, matchesStatus(filters.status))
 		const sorted = kind === "pods" || kind === "containers" ? filtered : sortRows(filtered, options.sort)
 		return {
 			kind,
@@ -292,7 +293,7 @@ export const listInfraKind = (kind: InfraKind, options: ListKindOptions) =>
 		} satisfies InfraKindSection
 	})
 
-const fetchKind = (kind: InfraKind, options: ListKindOptions) =>
+const fetchKind = (kind: CollectorKind, options: ListKindOptions) =>
 	Effect.gen(function* () {
 		const executor = yield* WarehouseExecutor
 		const params = compileParams(executor.orgId, options.window)
@@ -303,7 +304,7 @@ const fetchKind = (kind: InfraKind, options: ListKindOptions) =>
 					CH.compile(CH.listHostsQuery({ search: filters.search ?? filters.host, limit }), params),
 					{ profile: "list", context: "listHosts" },
 				)
-				return { rows: rows.map(hostRow), summary: undefined }
+				return { rows: Arr.map(rows, hostRow), summary: undefined }
 			}
 			case "pods": {
 				const podFilters = {
@@ -343,11 +344,11 @@ const fetchKind = (kind: InfraKind, options: ListKindOptions) =>
 				)
 				const count = counts[0]
 				const restarts = yield* podRestarts(
-					rows.map((row) => row.podName),
+					Arr.map(rows, (row) => row.podName),
 					params,
 				)
 				return {
-					rows: rows.map((row) => {
+					rows: Arr.map(rows, (row) => {
 						const pod = podRow(row)
 						const restarted = restarts.get(podKey(row.namespace, row.podName))
 						return restarted === undefined ? pod : { ...pod, restarts: restarted }
@@ -377,7 +378,7 @@ const fetchKind = (kind: InfraKind, options: ListKindOptions) =>
 					),
 					{ profile: "list", context: "listNodes" },
 				)
-				return { rows: rows.map(nodeRow), summary: undefined }
+				return { rows: Arr.map(rows, nodeRow), summary: undefined }
 			}
 			case "workloads": {
 				const kinds = filters.workloadKind === undefined ? WORKLOAD_KINDS : [filters.workloadKind]
@@ -399,7 +400,9 @@ const fetchKind = (kind: InfraKind, options: ListKindOptions) =>
 								),
 								{ profile: "list", context: "listWorkloads" },
 							)
-							.pipe(Effect.map((rows) => rows.map((row) => workloadRow(workloadKind, row)))),
+							.pipe(
+								Effect.map((rows) => Arr.map(rows, (row) => workloadRow(workloadKind, row))),
+							),
 					{ concurrency: 3 },
 				)
 				return { rows: perKind.flat(), summary: undefined }
@@ -437,7 +440,7 @@ const fetchKind = (kind: InfraKind, options: ListKindOptions) =>
 				)
 				const count = counts[0]
 				return {
-					rows: rows.map(containerRow),
+					rows: Arr.map(rows, containerRow),
 					summary:
 						count === undefined
 							? undefined
@@ -460,7 +463,7 @@ interface SeriesRow {
 	readonly avgValue: number | null
 }
 
-interface SeriesSpec {
+export interface SeriesSpec {
 	readonly label: string
 	readonly unit: InfraSeriesStats["unit"]
 }
@@ -473,17 +476,18 @@ export const seriesStats = (
 ): ReadonlyArray<InfraSeriesStats> => {
 	const last = points.at(-1)
 	if (last === undefined) return []
-	const peak = points.reduce((best, point) => (point.value > best.value ? point : best), last)
-	const values = points.map((point) => point.value)
+	const peak = Arr.reduce(points, last, (best, point) => (point.value > best.value ? point : best))
+	const values = Arr.map(points, (point) => point.value)
 	const third = Math.max(1, Math.floor(values.length / 3))
-	const mean = (slice: ReadonlyArray<number>) => slice.reduce((sum, value) => sum + value, 0) / slice.length
+	const mean = (slice: ReadonlyArray<number>) =>
+		Arr.reduce(slice, 0, (sum, value) => sum + value) / slice.length
 	return [
 		{
 			label: spec.label,
 			unit: spec.unit,
 			...(group === undefined ? undefined : { group }),
 			min: Math.min(...values),
-			avg: values.reduce((sum, value) => sum + value, 0) / values.length,
+			avg: Arr.reduce(values, 0, (sum, value) => sum + value) / values.length,
 			max: peak.value,
 			last: last.value,
 			maxAt: iso(peak.bucket),
@@ -495,7 +499,7 @@ export const seriesStats = (
 
 /** A bucket with no samples averages to null: it is a gap, not a zero. */
 export const ungrouped = (rows: ReadonlyArray<SeriesRow>) =>
-	rows.flatMap((row) => (row.avgValue === null ? [] : [{ bucket: row.bucket, value: row.avgValue }]))
+	Arr.flatMap(rows, (row) => (row.avgValue === null ? [] : [{ bucket: row.bucket, value: row.avgValue }]))
 
 /**
  * Host CPU arrives per state, each a share of the CPU, so busy is 1 - idle per bucket.
@@ -503,21 +507,21 @@ export const ungrouped = (rows: ReadonlyArray<SeriesRow>) =>
  */
 export const busyFraction = (rows: ReadonlyArray<SeriesRow>) => {
 	const byBucket = Arr.groupBy(ungroupedWithState(rows), (row) => iso(row.bucket))
-	return Object.values(byBucket).map((states) => {
+	return Arr.map(Rec.values(byBucket), (states) => {
 		const first = states[0]
 		const idle = states.find((state) => state.state === "idle")
-		const busy = states.reduce((sum, state) => (state.state === "idle" ? sum : sum + state.value), 0)
+		const busy = Arr.reduce(states, 0, (sum, state) => (state.state === "idle" ? sum : sum + state.value))
 		return { bucket: first.bucket, value: idle === undefined ? busy : Math.max(0, 1 - idle.value) }
 	})
 }
 
 const ungroupedWithState = (rows: ReadonlyArray<SeriesRow>) =>
-	rows.flatMap((row) =>
+	Arr.flatMap(rows, (row) =>
 		row.avgValue === null ? [] : [{ bucket: row.bucket, state: row.attributeValue, value: row.avgValue }],
 	)
 
 export const onlyGroup = (rows: ReadonlyArray<SeriesRow>, value: string) =>
-	ungrouped(rows.filter((row) => row.attributeValue === value))
+	ungrouped(Arr.filter(rows, (row) => row.attributeValue === value))
 
 /** About 60 points across the window, on whole minutes. */
 export const bucketSecondsFor = (window: InfraWindow): number => {
@@ -540,7 +544,7 @@ export const serviceInfrastructure = (service: string, window: InfraWindow) =>
 			CH.serviceWorkloadsSQL({ services: [service] }, compileParams(executor.orgId, window)),
 			{ profile: "aggregation", context: "serviceWorkloads" },
 		)
-		const workloads = rows.filter((row) => row.workloadName !== "")
+		const workloads = Arr.filter(rows, (row) => row.workloadName !== "")
 		const dominant = workloads.find((row) => row.workloadKind !== "unknown")
 		if (workloads.length === 0) return undefined
 		const pods =
@@ -557,7 +561,7 @@ export const serviceInfrastructure = (service: string, window: InfraWindow) =>
 						limit: SERVICE_POD_LIMIT,
 					})).rows
 		return {
-			workloads: workloads.map((row) => ({
+			workloads: Arr.map(workloads, (row) => ({
 				kind: row.workloadKind,
 				name: row.workloadName,
 				namespace: row.namespace,

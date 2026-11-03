@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { visibleRepositories } from "./repository-filter"
+import { Array as Arr } from "effect"
 
 const repo = (fullName: string, prReviewEnabled = false) => ({ id: fullName, fullName, prReviewEnabled })
-const names = (rows: ReadonlyArray<{ fullName: string }>) => rows.map((row) => row.fullName)
+const names = (rows: ReadonlyArray<{ fullName: string }>) => Arr.map(rows, (row) => row.fullName)
 
 const MANY = [
 	repo("acme/web", true),
@@ -37,10 +38,22 @@ describe("visibleRepositories", () => {
 	})
 
 	it("orders by the pinned set, not the live review state, so toggling never moves a row", () => {
-		const toggledOn = MANY.map((r) => (r.fullName === "acme/api" ? { ...r, prReviewEnabled: true } : r))
+		const toggledOn = Arr.map(MANY, (r) =>
+			r.fullName === "acme/api" ? { ...r, prReviewEnabled: true } : r,
+		)
 		const rows = visibleRepositories(toggledOn, { search: "", filter: "all", pinned: NONE })
 		expect(names(rows)[0]).toBe("acme/api")
 		expect(names(rows)[1]).toBe("acme/billing")
+	})
+
+	it("orders numbered names by number, not character by character", () => {
+		const numbered = Arr.map([10, 2, 1, 11, 3], (n) => repo(`acme/pipeline-${n}`))
+		const rows = visibleRepositories([...numbered, ...MANY], {
+			search: "pipeline",
+			filter: "all",
+			pinned: NONE,
+		})
+		expect(names(rows)).toEqual(Arr.map([1, 2, 3, 10, 11], (n) => `acme/pipeline-${n}`))
 	})
 
 	it("ignores a stale search and filter once the list is short enough to hide the toolbar", () => {

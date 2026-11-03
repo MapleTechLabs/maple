@@ -1,27 +1,23 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { existsSync, mkdtempSync, rmSync } from "node:fs"
-import { homedir, tmpdir } from "node:os"
+import { afterAll, beforeAll, expect, test } from "bun:test"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as CH from "@maple/query-engine/ch"
-import { Effect, Schema } from "effect"
-import schemaSql from "../src/server/schema/local-schema.sql" with { type: "text" }
-import { Chdb } from "../src/server/chdb"
-import { decodeJsonEachRow } from "../src/server/chdb-rows"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
+import { Chdb } from "@maple/local-server/chdb"
+import { LOCAL_ORG_ID } from "../src/core/executor"
+import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
+import { describeWithChdb } from "./libchdb-test-support"
 import {
 	type LocalServiceMapRollupDeps,
 	type LocalServiceMapRollupState,
 	ROLLUP_SETTLE_MS,
 	runLocalServiceMapRollupTick,
-} from "../src/server/service-map-rollup"
-
-// Needs a real libchdb; skipped where none is installed.
-const libchdbAvailable =
-	(process.env.MAPLE_LIBCHDB !== undefined && existsSync(process.env.MAPLE_LIBCHDB)) ||
-	existsSync(join(homedir(), ".maple", "bin", "libchdb.so")) ||
-	existsSync(join(homedir(), ".maple", "bin", "libchdb.dylib"))
+} from "@maple/local-server/service-map-rollup"
 
 const HOUR_MS = 3_600_000
-const iso = (ms: number) => new Date(ms).toISOString().replace("T", " ").replace("Z", "")
+const iso = (ms: number) => Str.replace("Z", "")(Str.replace("T", " ")(new Date(ms).toISOString()))
 
 /** One `frontend` Client span calling a child `api` Server span at `atMs`. */
 const callRows = (atMs: number, n: number): string => {
@@ -37,7 +33,7 @@ const decodeEdges = decodeJsonEachRow(
 	Schema.Struct({ sourceService: Schema.String, targetService: Schema.String, callCount: CH.CHNumber }),
 )
 
-describe.skipIf(!libchdbAvailable)("local service map rollup", () => {
+describeWithChdb("local service map rollup", () => {
 	let root = ""
 	let db: Chdb
 	const nowMs = Date.now()
@@ -52,7 +48,7 @@ describe.skipIf(!libchdbAvailable)("local service map rollup", () => {
 		db = Chdb.open({ dataDir: join(root, "data"), schemaSql })
 		const rows = [callRows(twoHoursBack, 1), callRows(twoHoursBack, 2), callRows(oneHourBack, 3)]
 		db.exec(
-			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, SpanAttributes) VALUES ${rows.join(", ")}`,
+			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, SpanAttributes) VALUES ${Arr.join(rows, ", ")}`,
 		)
 	})
 
@@ -91,14 +87,14 @@ describe.skipIf(!libchdbAvailable)("local service map rollup", () => {
 			CH.serviceDependenciesSQL(
 				{},
 				{
-					orgId: "local",
-					startTime: iso(currentHourMs - 3 * HOUR_MS).slice(0, 19),
-					endTime: iso(nowMs).slice(0, 19),
+					orgId: LOCAL_ORG_ID,
+					startTime: Str.slice(0, 19)(iso(currentHourMs - 3 * HOUR_MS)),
+					endTime: Str.slice(0, 19)(iso(nowMs)),
 				},
 			),
 		)
 		const rows = decodeEdges(
-			db.query(compiled.sql.replace(/\s+FORMAT\s+\w+\s*$/, "\nFORMAT JSONEachRow")),
+			db.query(Str.replace(/\s+FORMAT\s+\w+\s*$/, "\nFORMAT JSONEachRow")(compiled.sql)),
 		)
 		const edge = rows.find((row) => row.sourceService === "frontend" && row.targetService === "api")
 		expect(Number(edge?.callCount)).toBe(3)

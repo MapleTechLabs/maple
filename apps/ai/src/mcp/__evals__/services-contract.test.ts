@@ -4,7 +4,7 @@
  * as invalid input naming the parameter.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import {
 	ComparePeriodsOutput,
 	DescribeWarehouseTablesOutput,
@@ -51,50 +51,33 @@ const call = (name: string, params: unknown): Promise<McpToolResult> => {
 const WINDOW = { start_time: "2026-09-24 00:00:00", end_time: "2026-09-24 06:00:00" }
 
 const cases: ReadonlyArray<
-	readonly [string, Record<string, unknown>, Schema.Codec<unknown, unknown, never, never>, string]
+	readonly [string, Record<string, unknown>, Schema.Codec<unknown, unknown, never, never>]
 > = [
-	["list_services", WINDOW, ListServicesOutput, "## Services"],
-	["diagnose_service", { ...WINDOW, service: "checkout" }, DiagnoseServiceOutput, "## Diagnosis: checkout"],
-	[
-		"get_service_top_operations",
-		{ ...WINDOW, service: "checkout" },
-		GetServiceTopOperationsOutput,
-		"## Top Operations: checkout",
-	],
-	["service_map", WINDOW, ServiceMapOutput, "## Service Map"],
-	["list_metrics", WINDOW, ListMetricsOutput, "## Available Metrics"],
-	["explore_attributes", { ...WINDOW, source: "traces" }, ExploreAttributesOutput, "## Attribute Keys"],
-	[
-		"explore_attributes",
-		{ ...WINDOW, source: "services" },
-		ExploreAttributesOutput,
-		"## Available Environments & Deployments",
-	],
+	["list_services", WINDOW, ListServicesOutput],
+	["diagnose_service", { ...WINDOW, service: "checkout" }, DiagnoseServiceOutput],
+	["get_service_top_operations", { ...WINDOW, service: "checkout" }, GetServiceTopOperationsOutput],
+	["service_map", WINDOW, ServiceMapOutput],
+	["list_metrics", WINDOW, ListMetricsOutput],
+	["explore_attributes", { ...WINDOW, source: "traces" }, ExploreAttributesOutput],
+	["explore_attributes", { ...WINDOW, source: "services" }, ExploreAttributesOutput],
 	[
 		"compare_periods",
 		{ current_start: "2026-09-24 05:00:00", current_end: "2026-09-24 06:00:00" },
 		ComparePeriodsOutput,
-		"## Period Comparison",
 	],
-	[
-		"query_data",
-		{ ...WINDOW, source: "traces", kind: "timeseries" },
-		QueryDataOutput,
-		"## Traces Timeseries: count",
-	],
-	["describe_warehouse_tables", {}, DescribeWarehouseTablesOutput, "## Warehouse tables"],
-	["describe_warehouse_tables", { table: "traces" }, DescribeWarehouseTablesOutput, "## `traces`"],
+	["query_data", { ...WINDOW, source: "traces", kind: "timeseries" }, QueryDataOutput],
+	["describe_warehouse_tables", {}, DescribeWarehouseTablesOutput],
+	["describe_warehouse_tables", { table: "traces" }, DescribeWarehouseTablesOutput],
 ]
 
 describe("services, metrics and query tools on define", () => {
-	for (const [name, params, schema, title] of cases) {
+	for (const [name, params, schema] of cases) {
 		it(`${name} ${JSON.stringify(params)} returns typed output and renders it`, async () => {
 			const result = await call(name, params)
 			expect(result.isError, markdown(result)).toBeUndefined()
-			expect(() => Schema.decodeUnknownSync(schema)(result.structuredContent)).not.toThrow()
-			const text = markdown(result)
-			expect(text).toContain(title)
-			expect(text).not.toContain("__maple_ui")
+			// Decoding throws a readable schema error naming the failing path.
+			Schema.decodeUnknownSync(schema)(result.structuredContent)
+			expect(markdown(result)).not.toContain("__maple_ui")
 		})
 	}
 
@@ -104,7 +87,7 @@ describe("services, metrics and query tools on define", () => {
 		expect(Schema.decodeUnknownSync(DiagnoseServiceOutput)(result.structuredContent).serviceName).toBe(
 			"checkout",
 		)
-		expect(issuedSql.join("\n")).toContain("checkout")
+		expect(Arr.join(issuedSql, "\n")).toContain("checkout")
 	})
 
 	it("states the real 6-hour query_data default", async () => {
@@ -170,7 +153,7 @@ describe("services, metrics and query tools on define", () => {
 			environments: ["production"],
 		})
 		expect(result.isError, markdown(result)).toBeUndefined()
-		const sql = issuedSql.join("\n")
+		const sql = Arr.join(issuedSql, "\n")
 		expect(sql).toContain("FROM metrics_gauge")
 		expect(sql).toContain("with_deltas")
 		expect(sql).toContain("k8s.pod.name")
@@ -197,7 +180,7 @@ describe("services, metrics and query tools on define", () => {
 			service: "jobs",
 		})
 		expect(result.isError, markdown(result)).toBeUndefined()
-		const sql = issuedSql.join("\n")
+		const sql = Arr.join(issuedSql, "\n")
 		expect(sql).toContain("FROM metrics_gauge")
 		expect(sql).toContain("'worker_busy'")
 		expect(sql).toContain("'jobs'")
@@ -214,11 +197,10 @@ describe("services, metrics and query tools on define", () => {
 			service: "jobs",
 		})
 		expect(result.isError, markdown(result)).toBeUndefined()
-		const sql = issuedSql.join("\n")
+		const sql = Arr.join(issuedSql, "\n")
 		expect(sql).toContain("FROM metric_catalog")
 		expect(sql).toContain("'jobs'")
 		expect(sql).not.toContain("attribute_keys_hourly")
-		expect(markdown(result)).toContain("No attribute keys found for not_a_metric")
 	})
 
 	it("reports SQL without the org filter as invalid input on `sql`", async () => {

@@ -3,13 +3,17 @@ import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { ISOLATE_AGE_HEADER, ISOLATE_ORDINAL_HEADER, IsolateAge } from "@maple/infra/isolate-age"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { HttpEffect } from "alchemy/Http"
 import { Effect, Exit, Layer, Option, Schema, Scope } from "effect"
 import { HttpServerResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { MapleDbConnection } from "@maple/backend/platform/bindings"
 import { makeFetch } from "./http"
+
+/** A stubbed fetch body as text: the client sends the JSON as bytes. */
+const requestBodyText = (body: BodyInit | null | undefined): string =>
+	typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : "{}"
 
 /**
  * Requests the way alchemy's bridge runs them, with the SDK telemetry built into each event's
@@ -56,10 +60,12 @@ const capturedServerSpans = Effect.acquireRelease(
 	Effect.map(
 		(spy) => () =>
 			spy.mock.calls
-				.filter(([input]) => String(input).endsWith("/v1/traces"))
+				.filter(([input]) =>
+					(input instanceof Request ? input.url : input.toString()).endsWith("/v1/traces"),
+				)
 				.flatMap(
 					([, init]) =>
-						decodeExportedTraces(JSON.parse(String(init?.body ?? "{}"))).resourceSpans ?? [],
+						decodeExportedTraces(JSON.parse(requestBodyText(init?.body))).resourceSpans ?? [],
 				)
 				.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
 				.filter((span) => span.kind === SERVER_KIND),

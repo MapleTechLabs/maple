@@ -9,6 +9,7 @@
  */
 import type { APIRoute } from "astro"
 import { absolute, blocks, docHeader, markdown, table } from "../lib/page-markdown"
+import { Array as Arr } from "effect"
 
 export const GET: APIRoute = ({ site }) => {
 	const url = (path: string) => absolute(site, path)
@@ -47,7 +48,7 @@ export const GET: APIRoute = ({ site }) => {
 			"## Assets",
 			table(
 				["Asset", "Use", "URL"],
-				assets.map(([name, use, path]) => [name!, use!, url(path!)]),
+				Arr.map(assets, ([name, use, path]) => [name!, use!, url(path!)]),
 			),
 			"Each `.svg` has PNG siblings: append `-256`, `-512`, or `-1024` before the extension.",
 

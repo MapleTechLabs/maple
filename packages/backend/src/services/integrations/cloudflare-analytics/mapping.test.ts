@@ -57,6 +57,7 @@ import {
 	workersSelection,
 	zoneAnalyticsDocument,
 } from "./queries"
+import { Array as Arr, String as Str } from "effect"
 
 const BUCKET = "2026-07-02T12:00:00Z"
 const BUCKET_TS = "2026-07-02 12:00:00.000"
@@ -130,24 +131,24 @@ describe("mapHttpGroups", () => {
 
 	it("emits quantile gauges keyed by the quantile attribute", () => {
 		const { gaugeRows } = mapHttpGroups(input)
-		const ttfb = gaugeRows.filter((row) => row.metric_name === METRIC_HTTP_EDGE_TTFB)
+		const ttfb = Arr.filter(gaugeRows, (row) => row.metric_name === METRIC_HTTP_EDGE_TTFB)
 		assert.strictEqual(ttfb.length, 3)
 		assert.deepStrictEqual(
-			ttfb.map((row) => [row.metric_attributes.quantile, row.value]),
+			Arr.map(ttfb, (row) => [row.metric_attributes.quantile, row.value]),
 			[
 				["0.5", 42],
 				["0.95", 180],
 				["0.99", 400],
 			],
 		)
-		const origin = gaugeRows.filter((row) => row.metric_name === METRIC_HTTP_ORIGIN_DURATION)
+		const origin = Arr.filter(gaugeRows, (row) => row.metric_name === METRIC_HTTP_ORIGIN_DURATION)
 		assert.strictEqual(origin.length, 3)
 		assert.strictEqual(origin[0]!.metric_unit, "ms")
 	})
 
 	it('keeps the top-N hosts and folds the tail into "other"', () => {
 		const hosts = Array.from({ length: 25 }, (_, i) => `h${i}.example.com`)
-		const groups = hosts.map((host, i) => ({
+		const groups = Arr.map(hosts, (host, i) => ({
 			// h0 heaviest → h24 lightest, so exactly h20..h24 fold into "other".
 			count: 100 - i,
 			avg: { sampleInterval: 10 },
@@ -160,17 +161,17 @@ describe("mapHttpGroups", () => {
 			},
 		}))
 		const { sumRows } = mapHttpGroups({ ...input, groups, latency: [] })
-		const requestRows = sumRows.filter((row) => row.metric_name === METRIC_HTTP_REQUESTS)
-		const emittedHosts = new Set(requestRows.map((row) => row.metric_attributes["server.address"]))
+		const requestRows = Arr.filter(sumRows, (row) => row.metric_name === METRIC_HTTP_REQUESTS)
+		const emittedHosts = new Set(Arr.map(requestRows, (row) => row.metric_attributes["server.address"]))
 		assert.strictEqual(emittedHosts.size, MAX_HTTP_HOSTS + 1)
 		assert.isTrue(emittedHosts.has("other"))
 		assert.isTrue(emittedHosts.has("h0.example.com"))
 		assert.isFalse(emittedHosts.has("h24.example.com"))
 		// Folding relabels, never drops: total ABR-adjusted requests are preserved.
-		const total = requestRows.reduce((sum, row) => sum + row.value, 0)
+		const total = Arr.reduce(requestRows, 0, (sum, row) => sum + row.value)
 		assert.strictEqual(
 			total,
-			groups.reduce((sum, g) => sum + g.count * 10, 0),
+			Arr.reduce(groups, 0, (sum, g) => sum + g.count * 10),
 		)
 	})
 
@@ -200,9 +201,9 @@ describe("normalizePath", () => {
 		assert.strictEqual(normalizePath(""), "unknown")
 		// A path that is nothing but a query string has no path to keep.
 		assert.strictEqual(normalizePath("?a=1"), "unknown")
-		const long = `/${"x".repeat(500)}`
+		const long = `/${Str.repeat(500)("x")}`
 		assert.strictEqual(normalizePath(long).length, 201)
-		assert.isTrue(normalizePath(long).endsWith("…"))
+		assert.isTrue(Str.endsWith("…")(normalizePath(long)))
 	})
 })
 
@@ -233,7 +234,7 @@ describe("mapHttpPathGroups", () => {
 			errors: [group("/api/users", 2)],
 		})
 		assert.strictEqual(gaugeRows.length, 0)
-		const byMetric = new Map(sumRows.map((row) => [row.metric_name, row]))
+		const byMetric = new Map(Arr.map(sumRows, (row) => [row.metric_name, row]))
 		assert.strictEqual(byMetric.get(METRIC_HTTP_REQUESTS_BY_PATH)?.value, 100)
 		assert.strictEqual(byMetric.get(METRIC_HTTP_BYTES_BY_PATH)?.value, 5000)
 		assert.strictEqual(byMetric.get(METRIC_HTTP_ERRORS_BY_PATH)?.value, 20)
@@ -247,16 +248,16 @@ describe("mapHttpPathGroups", () => {
 	it('keeps the top-N paths and folds the tail into "other"', () => {
 		const groups = Array.from({ length: MAX_HTTP_PATHS + 5 }, (_, i) => group(`/p${i}`, 100 - i))
 		const { sumRows } = mapHttpPathGroups({ ...base, groups, errors: [] })
-		const requestRows = sumRows.filter((row) => row.metric_name === METRIC_HTTP_REQUESTS_BY_PATH)
-		const paths = new Set(requestRows.map((row) => row.metric_attributes["url.path"]))
+		const requestRows = Arr.filter(sumRows, (row) => row.metric_name === METRIC_HTTP_REQUESTS_BY_PATH)
+		const paths = new Set(Arr.map(requestRows, (row) => row.metric_attributes["url.path"]))
 		assert.strictEqual(paths.size, MAX_HTTP_PATHS + 1)
 		assert.isTrue(paths.has("other"))
 		assert.isTrue(paths.has("/p0"))
 		assert.isFalse(paths.has(`/p${MAX_HTTP_PATHS + 4}`))
 		// Folding relabels, never drops.
 		assert.strictEqual(
-			requestRows.reduce((sum, row) => sum + row.value, 0),
-			groups.reduce((sum, g) => sum + g.count * 10, 0),
+			Arr.reduce(requestRows, 0, (sum, row) => sum + row.value),
+			Arr.reduce(groups, 0, (sum, g) => sum + g.count * 10),
 		)
 	})
 
@@ -274,9 +275,10 @@ describe("mapHttpPathGroups", () => {
 		assert.strictEqual(errorRow?.metric_attributes["url.path"], "/rare")
 		// Ranking by combined weight pushes the lightest traffic path out instead.
 		const paths = new Set(
-			sumRows
-				.filter((row) => row.metric_name === METRIC_HTTP_REQUESTS_BY_PATH)
-				.map((row) => row.metric_attributes["url.path"]),
+			Arr.map(
+				Arr.filter(sumRows, (row) => row.metric_name === METRIC_HTTP_REQUESTS_BY_PATH),
+				(row) => row.metric_attributes["url.path"],
+			),
 		)
 		assert.isTrue(paths.has("other"))
 	})
@@ -415,27 +417,27 @@ describe("mapWorkersGroups", () => {
 			liveScripts: new Set(["my-worker"]),
 		})
 		assert.isTrue(sumRows.length > 0)
-		assert.isTrue(sumRows.every((row) => row.service_name === "cloudflare-worker/my-worker"))
+		assert.isTrue(Arr.every(sumRows, (row) => row.service_name === "cloudflare-worker/my-worker"))
 	})
 
 	it("emits everything when the live-script set is unavailable", () => {
 		const { sumRows } = mapWorkersGroups({ ...input, liveScripts: null })
-		assert.isTrue(sumRows.some((row) => row.service_name === "cloudflare-worker/my-worker"))
+		assert.isTrue(Arr.some(sumRows, (row) => row.service_name === "cloudflare-worker/my-worker"))
 	})
 
 	it("normalizes cpuTime µs→ms and duration s→ms", () => {
 		const { gaugeRows } = mapWorkersGroups(input)
-		const cpu = gaugeRows.filter((row) => row.metric_name === METRIC_WORKER_CPU_TIME)
+		const cpu = Arr.filter(gaugeRows, (row) => row.metric_name === METRIC_WORKER_CPU_TIME)
 		assert.deepStrictEqual(
-			cpu.map((row) => [row.metric_attributes.quantile, row.value]),
+			Arr.map(cpu, (row) => [row.metric_attributes.quantile, row.value]),
 			[
 				["0.5", 1.5],
 				["0.99", 9],
 			],
 		)
-		const duration = gaugeRows.filter((row) => row.metric_name === METRIC_WORKER_DURATION)
+		const duration = Arr.filter(gaugeRows, (row) => row.metric_name === METRIC_WORKER_DURATION)
 		assert.deepStrictEqual(
-			duration.map((row) => [row.metric_attributes.quantile, row.value]),
+			Arr.map(duration, (row) => [row.metric_attributes.quantile, row.value]),
 			[
 				["0.5", 2],
 				["0.99", 50],
@@ -496,11 +498,11 @@ describe("mapDnsGroups", () => {
 			zoneName: "example.com",
 			groups,
 		})
-		const names = new Set(sumRows.map((row) => row.metric_attributes["dns.query_name"]))
+		const names = new Set(Arr.map(sumRows, (row) => row.metric_attributes["dns.query_name"]))
 		assert.strictEqual(names.size, MAX_DNS_QUERY_NAMES + 1)
 		assert.isTrue(names.has("other"))
-		assert.isTrue(sumRows.every((row) => row.metric_name === METRIC_DNS_QUERIES))
-		assert.isTrue(sumRows.every((row) => row.metric_attributes["dns.response_code"] === "NOERROR"))
+		assert.isTrue(Arr.every(sumRows, (row) => row.metric_name === METRIC_DNS_QUERIES))
+		assert.isTrue(Arr.every(sumRows, (row) => row.metric_attributes["dns.response_code"] === "NOERROR"))
 	})
 })
 
@@ -557,12 +559,12 @@ describe("queue + durable object mappers", () => {
 			],
 			liveScripts: new Set(["my-worker"]),
 		})
-		assert.isTrue(sumRows.every((row) => row.service_name === "cloudflare-worker/my-worker"))
+		assert.isTrue(Arr.every(sumRows, (row) => row.service_name === "cloudflare-worker/my-worker"))
 		assert.strictEqual(sumRows.find((row) => row.metric_name === METRIC_DO_REQUESTS)!.value, 10)
 		assert.strictEqual(sumRows.find((row) => row.metric_name === METRIC_DO_ERRORS)!.value, 1)
-		const wallTimes = gaugeRows.filter((row) => row.metric_name === METRIC_DO_WALL_TIME)
+		const wallTimes = Arr.filter(gaugeRows, (row) => row.metric_name === METRIC_DO_WALL_TIME)
 		assert.deepStrictEqual(
-			wallTimes.map((row) => [row.metric_attributes.quantile, row.value]),
+			Arr.map(wallTimes, (row) => [row.metric_attributes.quantile, row.value]),
 			[
 				["0.5", 2],
 				["0.99", 50],
@@ -574,7 +576,7 @@ describe("queue + durable object mappers", () => {
 describe("query documents", () => {
 	it("http latency selection stays dimension-light (no host dimension)", () => {
 		const doc = httpSelection({ withQuantiles: true })
-		const latency = doc.slice(doc.indexOf("latency:"))
+		const latency = Str.slice(doc.indexOf("latency:"))(doc)
 		assert.notInclude(latency, "clientRequestHTTPHost")
 	})
 
@@ -593,8 +595,8 @@ describe("query documents", () => {
 
 	it("dimension selection keeps country separate from the bounded client dimensions", () => {
 		const doc = httpDimensionsSelection({ withQuantiles: true })
-		const country = doc.slice(doc.indexOf("countryAgg:"), doc.indexOf("clientAgg:"))
-		const client = doc.slice(doc.indexOf("clientAgg:"))
+		const country = Str.slice(doc.indexOf("countryAgg:"), doc.indexOf("clientAgg:"))(doc)
+		const client = Str.slice(doc.indexOf("clientAgg:"))(doc)
 		assert.include(country, "clientCountryName")
 		assert.notInclude(country, "clientDeviceType")
 		assert.include(client, "clientRequestHTTPMethodName")

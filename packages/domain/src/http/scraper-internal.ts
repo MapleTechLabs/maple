@@ -50,6 +50,8 @@ export class InternalScrapeTarget extends Schema.Class<InternalScrapeTarget>("In
 	 * OTLP traffic.
 	 */
 	ingestKey: Schema.String,
+	/** Public `src_` id of the target's pull source; the scraper stamps it as `maple_source_id`. */
+	sourceId: Schema.optionalKey(Schema.String),
 }) {}
 
 export const InternalScrapeTargetList = Schema.Array(InternalScrapeTarget)

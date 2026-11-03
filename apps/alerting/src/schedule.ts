@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec } from "effect"
 /**
  * The alerting schedule: each cron fans out to independent lanes, and each lane
  * runs as its own placed invocation (`./tick-dispatch.ts`) with its own Postgres
@@ -21,13 +22,29 @@ export const ALERTING_SCHEDULE = {
 	// `error` also runs fix verification, chained after it (see `./scheduled.ts`).
 	// Under two periods, not one: the alert tick drains deliveries after it
 	// evaluates, so a one-minute bound would starve the drain on a slow minute.
-	"* * * * *": { lanes: ["alert", "error", "escalation"], deadline: "110 seconds" },
+	// `supabase_logs` reads each opted-in project's last minute (Supabase allows 10 queries a minute).
+	// `alert_long_query` runs the raw SQL rules allowed a longer query (see `alertSchedulerLaneOf`).
+	"* * * * *": {
+		lanes: ["alert", "alert_long_query", "error", "escalation", "supabase_logs"],
+		deadline: "110 seconds",
+	},
 	"*/5 * * * *": {
-		lanes: ["anomaly", "cloudflare_analytics", "planetscale", "railway_metrics", "pr_review_post_merge"],
+		lanes: [
+			"anomaly",
+			"cloudflare_analytics",
+			"gcp_metrics",
+			"planetscale",
+			"railway_metrics",
+			"pr_review_post_merge",
+		],
 		deadline: "270 seconds",
 	},
-	"*/15 * * * *": { lanes: ["digest"], deadline: "10 minutes" },
-	"0 * * * *": { lanes: ["service_map_rollup"], deadline: "15 minutes" },
+	// `supabase_insights` reads top queries every tick and advisors hourly (it tracks the hour itself).
+	"*/15 * * * *": { lanes: ["digest", "supabase_insights"], deadline: "10 minutes" },
+	"0 * * * *": {
+		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections"],
+		deadline: "15 minutes",
+	},
 } as const satisfies Record<string, CronSchedule>
 
 export type AlertingCron = keyof typeof ALERTING_SCHEDULE
@@ -35,8 +52,10 @@ export type TickLane = (typeof ALERTING_SCHEDULE)[AlertingCron]["lanes"][number]
 
 const isAlertingCron = (cron: string): cron is AlertingCron => Object.hasOwn(ALERTING_SCHEDULE, cron)
 
-export const ALERTING_CRONS: ReadonlyArray<AlertingCron> =
-	Object.keys(ALERTING_SCHEDULE).filter(isAlertingCron)
+export const ALERTING_CRONS: ReadonlyArray<AlertingCron> = Arr.filter(
+	Rec.keys(ALERTING_SCHEDULE),
+	isAlertingCron,
+)
 
 /** `cron`'s schedule, or `undefined` for a cron this Worker does not know. */
 export const scheduleFor = (cron: string): CronSchedule | undefined =>

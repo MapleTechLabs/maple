@@ -1,0 +1,435 @@
+import type { V2AttributeMapping, V2Recommendation } from "@maple/domain/http/v2"
+import { formatNumber } from "@maple/ui/lib/format"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { cn } from "@maple/ui/lib/utils"
+import { AsyncData } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { button, linkButton } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import { badge } from "@maple/views/ui/display"
+import {
+	empty,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyMessage,
+	emptyTitle,
+} from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import * as Menu from "@maple/views/ui/menu"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton, skeletonList, skeletonSwitch } from "@maple/views/ui/skeleton"
+import { switchControl } from "@maple/views/ui/switch"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { docsLink } from "../../kit/signal-empty-state"
+import { emptyActions } from "@maple/views/ui/signal-empty-state"
+import { settingsSection } from "../kit/section"
+import { Message } from "./message"
+import type { Model, RecommendationTab } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { spaced } from "@maple/views/ui/spaced"
+import { Array as Arr } from "effect"
+
+// `RecommendedMappingsSection` and `AttributeMappingsSection`.
+
+type H = HtmlBuilder<Message>
+
+const KIND_TAG = {
+	rename: { label: "Rename", className: TONE_TEXT.info },
+	"double-emission": { label: "Duplicate", className: TONE_TEXT.warn },
+	naming: { label: "Naming", className: TONE_TEXT.warn },
+} as const
+const STATUS_BADGE = {
+	open: { label: "Open", variant: "secondary" },
+	dismissed: { label: "Dismissed", variant: "secondary" },
+	applied: { label: "Applied", variant: "ok" },
+	resolved: { label: "Resolved", variant: "done" },
+} as const
+
+const code = (h: H, text: string) => inlineCode(h, { variant: "plain" }, [text])
+const strong = (h: H, text: string) => typography(h, { tone: "foreground", weight: "medium" }, [text])
+const muted = (h: H, text: string) => h.span([h.Class("text-muted-foreground")], [text])
+
+const sentence = (h: H, issue: V2Recommendation): ReadonlyArray<Html | string> => {
+	if (issue.kind === "double-emission")
+		return [
+			strong(h, "Standardize on"),
+			" ",
+			code(h, issue.canonical_key ?? ""),
+			muted(h, "; spans also emit "),
+			code(h, issue.source_key),
+		]
+	if (issue.kind === "naming")
+		return [strong(h, "Rename non-conforming key"), " ", code(h, issue.source_key)]
+	return [
+		strong(h, "Rename"),
+		" ",
+		code(h, issue.source_key),
+		" ",
+		muted(h, "→"),
+		" ",
+		code(h, issue.canonical_key ?? ""),
+	]
+}
+
+const recommendationActions = (h: H, model: Model, issue: V2Recommendation): ReadonlyArray<Html> => {
+	const isPending = model.pendingRecommendations.includes(issue.id)
+	const status = STATUS_BADGE[issue.status]
+	const href = `/recommendations/${encodeURIComponent(issue.id)}`
+	if (issue.status === "dismissed")
+		return [
+			badge(h, { variant: status.variant }, [status.label]),
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					isLoading: isPending,
+					attributes: [h.OnClick(Message.ClickedReopenRecommendation({ id: issue.id }))],
+				},
+				[icon(h, "ArrowRotateAnticlockwiseIcon"), "Reopen"],
+			),
+		]
+	if (issue.status !== "open") return [badge(h, { variant: status.variant }, [status.label])]
+	const primary =
+		issue.kind === "rename"
+			? model.isAdmin
+				? [
+						button(
+							h,
+							{
+								size: "sm",
+								isLoading: isPending,
+								attributes: [h.OnClick(Message.ClickedApplyRecommendation({ id: issue.id }))],
+							},
+							[icon(h, "CheckIcon"), "Apply fix"],
+						),
+					]
+				: []
+			: [linkButton(h, { variant: "outline", size: "sm", href }, [icon(h, "CodeIcon"), "How to fix"])]
+	return [
+		...primary,
+		button(
+			h,
+			{
+				variant: "ghost",
+				size: "sm",
+				className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
+				isLoading: isPending,
+				attributes: [h.OnClick(Message.ClickedDismissRecommendation({ id: issue.id }))],
+			},
+			["Dismiss"],
+		),
+	]
+}
+
+const recommendationRow = (h: H, model: Model, issue: V2Recommendation): Html => {
+	const kind = KIND_TAG[issue.kind]
+	return h.div(
+		[
+			h.Key(issue.id),
+			h.Class("hover:bg-surface-sunken active:bg-surface-sunken flex items-start gap-3 px-4 py-3"),
+		],
+		[
+			eyebrow(h, { variant: "mono", className: cn("w-20 shrink-0 pt-0.5", kind.className) }, [
+				kind.label,
+			]),
+			spaced(h, { space: "1", fill: true }, [
+				h.a(
+					[
+						h.Href(`/recommendations/${encodeURIComponent(issue.id)}`),
+						h.Class(
+							"block text-sm break-words underline-offset-4 decoration-muted-foreground/40 hover:underline active:underline",
+						),
+					],
+					sentence(h, issue),
+				),
+				typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+					formatNumber(issue.usage_count),
+					" spans in 24h ·",
+					" ",
+					issue.kind === "rename" ? "fixed at ingest, no code change" : "needs a code change",
+				]),
+			]),
+			hstack(h, { gap: "1.5", className: "shrink-0" }, recommendationActions(h, model, issue)),
+		],
+	)
+}
+
+const RECOMMENDATIONS_DESCRIPTION =
+	"Deprecated or non-conforming attribute keys found on your spans in the last 24 hours."
+
+export const recommendationsSection = (h: H, model: Model): ReadonlyArray<Html> => {
+	// `/recommendations` lands here, so a failed read still names the section rather than hiding it.
+	if (AsyncData.isFailure(model.recommendations))
+		return [
+			settingsSection(
+				h,
+				{
+					id: "ingestion-recommendations-heading",
+					title: "Recommendations",
+					description: [RECOMMENDATIONS_DESCRIPTION],
+					framed: false,
+				},
+				[
+					errorState(h, {
+						variant: "row",
+						failure: model.recommendations.error,
+						title: "Couldn't check for recommendations",
+					}),
+				],
+			),
+		]
+	if (!AsyncData.isSuccess(model.recommendations) && !AsyncData.isRefreshing(model.recommendations))
+		return []
+	const issues = AsyncData.getOrElse(model.recommendations, () => [])
+	if (!Arr.some(issues, (issue) => issue.status === "open" || issue.status === "dismissed")) return []
+	const open = Arr.filter(issues, (issue) => issue.status === "open")
+	const closed = Arr.filter(issues, (issue) => issue.status !== "open")
+	const rows = model.recommendationTab === "open" ? open : closed
+	return [
+		settingsSection(
+			h,
+			{
+				id: "ingestion-recommendations-heading",
+				title: "Recommendations",
+				description: [RECOMMENDATIONS_DESCRIPTION],
+				padded: false,
+				actions: segmentedSelect<RecommendationTab, Message>(h, {
+					size: "sm",
+					ariaLabel: "Recommendation status",
+					value: model.recommendationTab,
+					onChange: (tab) => Message.ClickedRecommendationTab({ tab }),
+					options: [
+						{ value: "open", label: `Open · ${open.length}` },
+						{ value: "closed", label: `Closed · ${closed.length}` },
+					],
+				}),
+			},
+			[
+				rows.length === 0
+					? emptyMessage(h, { className: "flex flex-col items-center gap-2 text-sm" }, [
+							h.p(
+								[],
+								[
+									model.recommendationTab === "open"
+										? "No open recommendations. Your span attributes look healthy."
+										: "Applied and dismissed recommendations show up here.",
+								],
+							),
+							...(model.recommendationTab === "open" ? [docsLink(h, "otelConventions")] : []),
+						])
+					: h.div(
+							[h.Class("divide-y")],
+							Arr.map(rows, (issue) => recommendationRow(h, model, issue)),
+						),
+			],
+		),
+	]
+}
+
+// MAPPINGS
+
+const OPERATION_BADGE = { copy: "info", move: "warn" } as const
+const OPERATION_LABELS = { copy: "Copy", move: "Move" } as const
+const APPLIES_TO = { span: "Span attributes", resource: "Resource attributes" } as const
+
+const addMappingButton = (h: H) =>
+	button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedAddMapping())] }, [
+		icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
+		"Add mapping",
+	])
+
+const mappingRow = (h: H, model: Model, mapping: V2AttributeMapping): Html => {
+	const menuId = `mapping-row-${mapping.id}`
+	return h.div(
+		[
+			h.Key(mapping.id),
+			h.Class(
+				cn(
+					"hover:bg-surface-sunken active:bg-surface-sunken flex items-center gap-3 border-t px-4 py-2.5",
+					!mapping.enabled && "text-muted-foreground",
+				),
+			),
+		],
+		[
+			truncatedText(h, { text: mapping.name, className: "w-28 shrink-0 text-sm md:w-40" }),
+			h.div(
+				[h.Class("flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm")],
+				[
+					badge(h, { variant: OPERATION_BADGE[mapping.operation], size: "sm" }, [
+						OPERATION_LABELS[mapping.operation],
+					]),
+					inlineCode(
+						h,
+						{ variant: "plain", className: "text-muted-foreground min-w-0 break-all" },
+						[mapping.source_key],
+					),
+					icon(h, "ArrowRightIcon", { size: 12, className: "text-muted-foreground shrink-0" }),
+					inlineCode(h, { variant: "plain", className: "text-foreground min-w-0 break-all" }, [
+						mapping.target_key,
+					]),
+				],
+			),
+			h.span(
+				[h.Class("text-muted-foreground hidden w-36 shrink-0 text-xs md:block")],
+				[APPLIES_TO[mapping.source_context]],
+			),
+			h.div(
+				[h.Class("flex w-10 shrink-0 items-center")],
+				model.isAdmin
+					? switchControl(h, {
+							id: `${menuId}-switch`,
+							inputId: `${menuId}-switch-input`,
+							isChecked: mapping.enabled,
+							isDisabled: model.pendingToggles.includes(mapping.id),
+							ariaLabel: `${mapping.enabled ? "Turn off" : "Turn on"} ${mapping.name}`,
+							onToggle: Message.ToggledMapping({ id: mapping.id }),
+						})
+					: [h.span([h.Class("text-xs")], [mapping.enabled ? "On" : "Off"])],
+			),
+			...(model.isAdmin
+				? [
+						h.div(
+							[h.Class("flex w-7 shrink-0 justify-end")],
+							[
+								rowActionsMenu(h, {
+									slotId: menuId,
+									model: model.rowMenus[menuId] ?? Menu.init(menuId),
+									entries: [
+										{
+											_tag: "Item",
+											value: "edit",
+											label: "Edit mapping",
+											icon: "PencilIcon",
+										},
+										{
+											_tag: "Item",
+											value: "delete",
+											label: "Delete mapping",
+											icon: "TrashIcon",
+											variant: "destructive",
+										},
+									],
+									label: `Actions for ${mapping.name}`,
+									toParentMessage: (message) =>
+										Message.GotRowMenuMessage({ menuId, message }),
+								}),
+							],
+						),
+					]
+				: []),
+		],
+	)
+}
+
+const mappingsTable = (h: H, model: Model, mappings: ReadonlyArray<V2AttributeMapping>): Html =>
+	h.div(
+		[],
+		[
+			h.div(
+				[h.Class("flex items-center gap-3 px-4 py-1.5")],
+				[
+					eyebrow(h, { variant: "mono", className: "w-28 shrink-0 md:w-40", as: "div" }, ["Name"]),
+					eyebrow(h, { variant: "mono", className: "min-w-0 flex-1", as: "div" }, ["Rule"]),
+					eyebrow(h, { variant: "mono", className: "hidden w-36 shrink-0 md:block", as: "div" }, [
+						"Applies to",
+					]),
+					eyebrow(h, { variant: "mono", className: "w-10 shrink-0", as: "div" }, ["On"]),
+					...(model.isAdmin ? [h.div([h.Class("w-7 shrink-0")], [])] : []),
+				],
+			),
+			...Arr.map(mappings, (mapping) => mappingRow(h, model, mapping)),
+		],
+	)
+
+const mappingsEmpty = (h: H, model: Model): Html =>
+	empty(
+		h,
+		[
+			emptyHeader(h, [
+				emptyMedia(h, { variant: "icon" }, [icon(h, "ArrowUpDownIcon", { size: 16 })]),
+				emptyTitle(h, ["No attribute mappings yet"]),
+				emptyDescription(h, [
+					"Mappings rename span attribute keys that do not follow OpenTelemetry names, so dashboards and alerts find them. Rules apply to new spans only.",
+				]),
+			]),
+			emptyActions(h, [
+				...(model.isAdmin ? [addMappingButton(h)] : []),
+				docsLink(h, "otelConventions"),
+			]),
+		],
+		"py-10",
+	)
+
+const mappingsSkeleton = (h: H): Html =>
+	skeletonList(h, {
+		rows: 2,
+		className: "px-4",
+		renderRow: () =>
+			h.div(
+				[h.Class("flex items-center gap-4 py-3")],
+				[
+					h.div(
+						[h.Class("flex-1 space-y-2")],
+						[skeleton(h, "h-4 w-40"), skeleton(h, "h-3.5 w-64")],
+					),
+					skeletonSwitch(h),
+				],
+			),
+	})
+
+export const mappingsSection = (h: H, model: Model): Html =>
+	settingsSection(
+		h,
+		{
+			id: "ingestion-mappings-heading",
+			title: "Attribute mappings",
+			description: ["Copy or move attribute keys as data arrives. Applies to new data only."],
+			padded: false,
+			actions: model.isAdmin ? addMappingButton(h) : undefined,
+		},
+		[
+			h.div(
+				[],
+				[
+					AsyncData.matchData(model.mappings, {
+						onEmpty: () => mappingsSkeleton(h),
+						onFailure: (error) =>
+							errorState(h, {
+								failure: error,
+								title: "Couldn't load mappings",
+								onRetry: Message.ClickedRetryMappings(),
+								className: "border-0",
+							}),
+						onData: (mappings) =>
+							mappings.length === 0
+								? mappingsEmpty(h, model)
+								: mappingsTable(h, model, mappings),
+					}),
+				],
+			),
+		],
+	)
+
+export const deleteMappingDialog = (h: H, model: Model): Html =>
+	confirmDialog(h, {
+		slotId: "mapping-delete-dialog",
+		model: model.deleteDialog,
+		toParentMessage: (message) => Message.GotDeleteDialogMessage({ message }),
+		title: "Delete attribute mapping?",
+		description: [
+			"Are you sure you want to delete",
+			" ",
+			typography(h, { tone: "foreground", weight: "medium" }, [model.deleting?.name ?? ""]),
+			"? This action cannot be undone.",
+		],
+		confirmLabel: "Delete mapping",
+		onConfirm: Message.ClickedConfirmDelete(),
+		isPending: model.isDeleting,
+	})

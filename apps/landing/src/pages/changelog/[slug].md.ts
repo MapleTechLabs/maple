@@ -7,10 +7,11 @@ import { CATEGORY_LABELS } from "../../lib/changelog-meta"
 import { blocks, docHeader, markdown } from "../../lib/page-markdown"
 import { isoDate } from "../../lib/blog"
 import type { Release } from "../../lib/changelog"
+import { Array as Arr } from "effect"
 
 export const getStaticPaths: GetStaticPaths = async () => {
 	const releases = await getSortedReleases()
-	return releases.map((release) => ({ params: { slug: release.id }, props: { release } }))
+	return Arr.map(releases, (release) => ({ params: { slug: release.id }, props: { release } }))
 }
 
 export const GET: APIRoute = ({ props }) => {

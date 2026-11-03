@@ -3,7 +3,7 @@ import type { AgentToolSelection } from "@maple/domain/mcp-outputs"
 import { formatDurationFromMs, tableCell, truncate } from "./format"
 import { MCP_SEARCH_MAX_HOURS } from "./time"
 import * as P from "./params"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 
 // What `get_agent_tools_overview` and `get_agent_tool_error` share: the window,
@@ -76,14 +76,17 @@ export const scopeArgs = (selection: typeof AgentToolSelection.Type) => ({
 /** One line describing what the numbers below it cover. Every value is the
  *  caller's own free text, so it is collapsed like any other rendered cell. */
 export const describeSelection = (selection: typeof AgentToolSelection.Type): string =>
-	[
-		`tool: ${selection.tool === undefined ? "all tools" : tableCell(selection.tool)}`,
-		...(selection.model === undefined ? [] : [`model: ${tableCell(selection.model)}`]),
-		...(selection.service === undefined ? [] : [`service: ${tableCell(selection.service)}`]),
-		...(selection.toolContains === undefined
-			? []
-			: [`name contains: ${tableCell(selection.toolContains)}`]),
-	].join(" · ")
+	Arr.join(
+		[
+			`tool: ${selection.tool === undefined ? "all tools" : tableCell(selection.tool)}`,
+			...(selection.model === undefined ? [] : [`model: ${tableCell(selection.model)}`]),
+			...(selection.service === undefined ? [] : [`service: ${tableCell(selection.service)}`]),
+			...(selection.toolContains === undefined
+				? []
+				: [`name contains: ${tableCell(selection.toolContains)}`]),
+		],
+		" · ",
+	)
 
 /** A fingerprint reaches a UInt64 column comparison; anything else is a 400. */
 export const decodeFingerprint = Schema.decodeUnknownOption(AiToolErrorFingerprint)
@@ -101,7 +104,7 @@ export const cellOrDash = (value: string, max?: number): string =>
 
 /** `2026-09-12 10:11:12` from a warehouse literal or an ISO bucket; `—` for `''`. */
 export const formatSeen = (value: string): string =>
-	value === "" ? "—" : value.replace("T", " ").slice(0, 19)
+	value === "" ? "—" : Str.slice(0, 19)(Str.replace("T", " ")(value))
 
 /** A capped list states which of the two its count is: the group's total, or
  *  the page the read returned. The totals are the overview's group row. */

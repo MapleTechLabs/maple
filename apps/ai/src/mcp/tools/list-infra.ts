@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { ListInfraOutput } from "@maple/domain/mcp-outputs"
 import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
@@ -7,7 +7,15 @@ import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import * as P from "../lib/params"
 import { doc, type DocBlock, type NextCall } from "../lib/tool-doc"
 import { infraPresence, listInfraKind, WORKLOAD_KINDS, type InfraFilters } from "../lib/infra"
-import { INFRA_KINDS, optionalInfraKind } from "../lib/infra-params"
+import {
+	INFRA_KINDS,
+	PROVIDER_KINDS,
+	isProviderKind,
+	optionalInfraKind,
+	type ProviderKind,
+} from "../lib/infra-params"
+import { PROVIDER_OF, listProviderKind } from "../lib/infra-providers"
+import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import {
 	ENTITY_KIND,
 	KIND_METRICS,
@@ -47,6 +55,10 @@ const KIND_FILTERS = {
 		"environment",
 	]),
 	containers: new Set<keyof InfraFilters>(["host", "workload", "environment"]),
+	cloudflare_zones: new Set<keyof InfraFilters>(),
+	cloudflare_workers: new Set<keyof InfraFilters>(),
+	railway_services: new Set<keyof InfraFilters>(["environment"]),
+	planetscale_databases: new Set<keyof InfraFilters>(),
 } satisfies Record<(typeof INFRA_KINDS)[number], ReadonlySet<keyof InfraFilters>>
 const SCOPING_FILTERS: ReadonlyArray<keyof InfraFilters> = [
 	"host",
@@ -62,18 +74,33 @@ const SCOPING_FILTERS: ReadonlyArray<keyof InfraFilters> = [
 const supports =
 	(filters: InfraFilters) =>
 	(kind: (typeof INFRA_KINDS)[number]): boolean =>
-		SCOPING_FILTERS.every((key) => filters[key] === undefined || KIND_FILTERS[kind].has(key))
+		Arr.every(SCOPING_FILTERS, (key) => filters[key] === undefined || KIND_FILTERS[kind].has(key))
+
+/** The provider kinds whose integration is connected. Postgres only; a failed read just skips them. */
+const connectedProviderKinds = (orgId: Parameters<IntegrationInventoryService["Service"]["list"]>[0]) =>
+	Effect.gen(function* () {
+		const inventory = yield* IntegrationInventoryService
+		const connected = yield* inventory.list(orgId).pipe(
+			Effect.map(
+				(result) =>
+					new Set<string>(Arr.map(result.integrations, (integration) => integration.provider)),
+			),
+			Effect.tapError((error) =>
+				Effect.logWarning("list_infra could not read integrations", error.message),
+			),
+			Effect.orElseSucceed(() => new Set<string>()),
+		)
+		return Arr.filter(PROVIDER_KINDS, (kind) => connected.has(PROVIDER_OF[kind]))
+	})
 
 export function registerListInfraTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
 		title: "List Infrastructure",
 		description:
-			"Hosts, Kubernetes pods/nodes/workloads and Docker containers reporting resource metrics, closest to a limit first: CPU, memory and disk use, CPU/memory against limits, pod counts. " +
-			"Without `kind` it returns an overview of every kind that reports, with fleet counts and the top 5 of each. " +
-			"Filter with search, namespace, node, host, workload, and status (hot, at_limit, no_limits). " +
-			"Use it to answer 'is anything running hot?', 'which pods have no limits?', 'what runs on this node?', then inspect_infra for one entity over time. " +
-			"Status reflects the window peak, not the latest sample.",
+			"Hosts, Kubernetes pods/nodes/workloads, Docker containers and connected-integration infrastructure (Cloudflare, Railway, PlanetScale), " +
+			"closest to a limit first: CPU, memory and disk use against limits. Without `kind`, an overview of every kind that reports with the top 5 of each. " +
+			"Status reflects the window peak, not the latest sample. Then inspect_infra for one entity over time.",
 		parameters: Schema.Struct({
 			kind: optionalInfraKind("Which kind to list. Omit for an overview of every kind that reports"),
 			search: P.optionalText("Case-insensitive substring of the entity name"),
@@ -89,11 +116,11 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 				"Kubernetes workload kind (workloads, and pods with `workload`)",
 			),
 			environment: P.environment(
-				"Only this deployment environment (pods, nodes, workloads, containers)",
+				"Only this deployment environment (pods, nodes, workloads, containers), or Railway environment name",
 			),
 			status: P.optionalOneOf(
 				STATUSES,
-				"hot: peak at 60% or more of a limit (hosts: average CPU/memory or fullest disk); at_limit: 90% or more; no_limits: pods and workloads with no CPU or memory limit",
+				"hot: peak at 60% or more of a limit (hosts: average CPU/memory or fullest disk); at_limit: 90% or more; no_limits: pods and workloads with no CPU or memory limit. Cloudflare kinds: hot is a 1% error rate, at_limit 5%",
 			),
 			include_ended: P.optionalFlag(
 				"Pods only: also list pods that stopped reporting during the window (rollouts, OOM kills)",
@@ -104,7 +131,7 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 		}),
 		output: ListInfraOutput,
 		hints: { readOnly: true },
-		phrases: ["Listing infrastructure", "Checking hosts, pods and containers"],
+		phrases: ["Listing infrastructure", "Checking hosts, pods, containers and providers"],
 		handler: Effect.fn("McpTool.listInfra")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
 			const tenant = yield* CurrentMcpTenant
@@ -124,24 +151,54 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 				includeEnded: params.include_ended,
 			}
 
+			// Provider kinds cost a fleet rollup each, so the overview only reads the connected ones.
+			const providerKinds: ReadonlyArray<ProviderKind> =
+				params.kind === undefined
+					? yield* connectedProviderKinds(tenant.orgId)
+					: isProviderKind(params.kind)
+						? [params.kind]
+						: []
 			const { reporting, sections } = yield* withTenantExecutor(
 				Effect.gen(function* () {
-					const reporting = yield* infraPresence(window)
-					const kinds =
-						params.kind === undefined ? reporting.filter(supports(filters)) : [params.kind]
+					const collectorReporting =
+						params.kind !== undefined && isProviderKind(params.kind)
+							? []
+							: yield* infraPresence(window)
 					const limit =
 						params.kind === undefined ? Math.min(params.limit, OVERVIEW_ROWS) : params.limit
-					const sections = yield* Effect.forEach(
-						kinds,
+					const collectorKinds =
+						params.kind === undefined
+							? Arr.filter(collectorReporting, supports(filters))
+							: isProviderKind(params.kind)
+								? []
+								: [params.kind]
+					const collectorSections = yield* Effect.forEach(
+						collectorKinds,
 						(kind) => listInfraKind(kind, { window, filters, sort, limit }),
 						{ concurrency: 3 },
 					)
-					return { reporting, sections }
+					const providerResults = yield* Effect.forEach(
+						params.kind === undefined
+							? Arr.filter(providerKinds, supports(filters))
+							: providerKinds,
+						(kind) => listProviderKind(kind, { window, filters, sort, limit }),
+						{ concurrency: 3 },
+					)
+					return {
+						reporting: [
+							...collectorReporting,
+							...Arr.map(
+								Arr.filter(providerResults, (r) => r.reported),
+								(r) => r.section.kind,
+							),
+						],
+						sections: [...collectorSections, ...Arr.map(providerResults, (r) => r.section)],
+					}
 				}),
 			).pipe(Effect.catchTags(warehouseToMcpHandlers(TOOL)))
 			yield* Effect.annotateCurrentSpan(
 				"result.rowCount",
-				sections.reduce((sum, section) => sum + section.rows.length, 0),
+				Arr.reduce(sections, 0, (sum, section) => sum + section.rows.length),
 			)
 
 			return {
@@ -160,12 +217,12 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 				notices.push(
 					output.reporting.length === 0
 						? `No ${KIND_NOUN[output.kind]} report metrics in this window, and neither does any other kind.`
-						: `No ${KIND_NOUN[output.kind]} report metrics in this window. Reporting: ${output.reporting.join(", ")}.`,
+						: `No ${KIND_NOUN[output.kind]} report metrics in this window. Reporting: ${Arr.join(output.reporting, ", ")}.`,
 				)
 			}
-			const nonEmpty = output.sections.filter((section) => section.rows.length > 0)
+			const nonEmpty = Arr.filter(output.sections, (section) => section.rows.length > 0)
 			const window = { start_time: output.timeRange.start, end_time: output.timeRange.end }
-			const blocks: Array<DocBlock> = nonEmpty.flatMap((section) => {
+			const blocks: Array<DocBlock> = Arr.flatMap(nonEmpty, (section) => {
 				return [
 					doc.heading(KIND_NOUN[section.kind]),
 					doc.text(summaryLine(section, output.status)),
@@ -177,10 +234,13 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 				]
 			})
 			// A search that names one entity exactly is a request to look at that entity.
-			const exact = nonEmpty.flatMap((section) =>
-				section.rows.filter((row) => row.name === output.search).map((row) => ({ section, row })),
+			const exact = Arr.flatMap(nonEmpty, (section) =>
+				Arr.map(
+					Arr.filter(section.rows, (row) => row.name === output.search),
+					(row) => ({ section, row }),
+				),
 			)
-			const exactNext: Array<NextCall> = exact.map(({ section, row }) =>
+			const exactNext: Array<NextCall> = Arr.map(exact, ({ section, row }) =>
 				doc.next(
 					"inspect_infra",
 					{
@@ -188,6 +248,7 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 						name: row.name,
 						namespace: row.namespace,
 						host: section.kind === "containers" ? row.host : undefined,
+						environment: section.kind === "railway_services" ? row.environment : undefined,
 						...window,
 					},
 					section.kind === "nodes"
@@ -195,7 +256,7 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 						: `${row.name} over the window`,
 				),
 			)
-			const next: Array<NextCall> = nonEmpty.flatMap((section) => {
+			const next: Array<NextCall> = Arr.flatMap(nonEmpty, (section) => {
 				const hot = hottest(section)
 				const target = hot ?? section.rows[0]
 				if (target === undefined) return []
@@ -207,15 +268,18 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 							name: target.name,
 							namespace: target.namespace,
 							host: section.kind === "containers" ? target.host : undefined,
+							environment: section.kind === "railway_services" ? target.environment : undefined,
 							workload_kind:
 								section.kind === "workloads" && target.workloadKind !== undefined
 									? target.workloadKind
 									: undefined,
 							...window,
 						},
-						hot === undefined
-							? `see ${target.name} over the same window`
-							: `${target.name} (${statusOf(hot, section.kind)}): see when it peaked`,
+						hot !== undefined
+							? `${target.name} (${statusOf(hot, section.kind)}): see when it peaked`
+							: statusOf(target, section.kind) !== ""
+								? `${target.name} (${statusOf(target, section.kind)}): see when it started`
+								: `see ${target.name} over the same window`,
 					),
 				]
 			})
@@ -227,7 +291,10 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 						: `Infrastructure: ${KIND_NOUN[output.kind]}`,
 				scope: [
 					["Window", `${windowText(output.timeRange)}; start_time widens it`],
-					["Reporting", output.reporting.length === 0 ? "nothing" : output.reporting.join(", ")],
+					[
+						"Reporting",
+						output.reporting.length === 0 ? "nothing" : Arr.join(output.reporting, ", "),
+					],
 					["Search", output.search],
 					["Sort", output.sort],
 				],
@@ -236,13 +303,13 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 							empty: {
 								message:
 									output.reporting.length === 0
-										? "No infrastructure metrics in this window: no hostmetrics, kubeletstats or docker stats receivers are reporting."
+										? "No infrastructure metrics in this window: no hostmetrics, kubeletstats or docker stats receivers are reporting, and no connected Cloudflare, Railway or PlanetScale integration wrote metrics."
 										: "Nothing matched these filters.",
 								hints:
 									output.reporting.length === 0
 										? [
 												"Widen start_time/end_time if the collector was down.",
-												"Infra pages need an OpenTelemetry Collector with the hostmetrics, kubeletstats or docker_stats receiver; audit_setup checks what is configured.",
+												"Infra pages need an OpenTelemetry Collector with the hostmetrics, kubeletstats or docker_stats receiver, or a connected integration; list_integrations shows which are connected and healthy.",
 											]
 										: ["Drop search/namespace/status, or pick a kind from Reporting."],
 							},
@@ -260,9 +327,18 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 					: undefined),
 				next: [
 					...exactNext,
-					...next.filter((call) => !exactNext.some((e) => e.args.name === call.args.name)),
+					...Arr.filter(
+						next,
+						(call) => !Arr.some(exactNext, (e) => e.args.name === call.args.name),
+					),
 					...(output.reporting.length === 0
-						? [doc.next("audit_setup", {}, "check which collectors report")]
+						? [
+								doc.next(
+									"list_integrations",
+									{},
+									"check which integrations are connected and polling",
+								),
+							]
 						: []),
 				],
 			}

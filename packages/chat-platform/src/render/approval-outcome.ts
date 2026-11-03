@@ -6,7 +6,7 @@
  * verbatim put a report's headings and a dashboard's validation table into a thread. The record
  * stays as it is — the model reads it on its next turn — and a channel gets one sentence and a link.
  */
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import { MAX_APPROVAL_OUTCOME_CHARS, type ChatApprovalOutcome, type ChatRenderContext } from "./blocks"
 
 /** A decision line longer than this is not a name any more. */
@@ -14,15 +14,18 @@ const MAX_DECISION_CHARS = 80
 /** What a sentence is never cut below, even next to a long link. */
 const MIN_TEXT_CHARS = 40
 
+const encodeJsonOption = Schema.encodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+
 export const approvalOutcome = (
 	output: unknown,
 	isError: boolean,
 	context: ChatRenderContext,
 ): ChatApprovalOutcome => {
-	const recorded = typeof output === "string" ? output : (JSON.stringify(output) ?? "")
+	const recorded =
+		typeof output === "string" ? output : Option.getOrElse(encodeJsonOption(output), () => "")
 	// `ChatSession.settleProposal` and `applyChatProposal` both open the result with the decision.
-	const [first = "", ...rest] = recorded.split("\n")
-	const decision = truncate(first.trim(), MAX_DECISION_CHARS)
+	const [first, ...rest] = Str.split("\n")(recorded)
+	const decision = truncate(Str.trim(first), MAX_DECISION_CHARS)
 
 	const described = isError ? null : structuredOf(rest, context.appBaseUrl)
 	const url = described?.url ?? null
@@ -34,8 +37,8 @@ export const approvalOutcome = (
 /** A refusal's reason: the report's first line of prose — not a heading, not the payload. */
 const firstReportLine = (lines: ReadonlyArray<string>): string => {
 	for (const line of lines) {
-		const text = line.trim()
-		if (text.length > 0 && !text.startsWith("#") && !text.startsWith("{")) return text
+		const text = Str.trim(line)
+		if (text.length > 0 && !Str.startsWith("#")(text) && !Str.startsWith("{")(text)) return text
 	}
 	return ""
 }
@@ -93,8 +96,8 @@ const decodePayload = Schema.decodeUnknownOption(Schema.fromJsonString(MutationP
 /** `createDualContent` writes the payload as one line of its own, after the report. */
 const structuredOf = (lines: ReadonlyArray<string>, app: string): Described | null => {
 	for (const line of lines) {
-		const trimmed = line.trim()
-		if (!trimmed.startsWith("{")) continue
+		const trimmed = Str.trim(line)
+		if (!Str.startsWith("{")(trimmed)) continue
 		const payload = decodePayload(trimmed)
 		if (Option.isSome(payload)) return describe(payload.value, app)
 	}
@@ -201,4 +204,4 @@ const describe = (output: MutationPayload, app: string): Described => {
 }
 
 const truncate = (text: string, max: number): string =>
-	text.length <= max ? text : `${text.slice(0, max - 1)}…`
+	text.length <= max ? text : `${Str.slice(0, max - 1)(text)}…`

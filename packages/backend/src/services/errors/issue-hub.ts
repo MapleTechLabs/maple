@@ -9,10 +9,9 @@ import {
 } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Actors, AlertIncidents, ErrorIssueEvents, ErrorIssues, type ErrorIssueRow } from "@maple/db/tables"
-import { Clock, Effect, Schema } from "effect"
-import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
+import { DateTime, Clock, Effect, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { maybeEnqueueTriage } from "./ai-triage-enqueue"
+import type { MaybeEnqueueTriageInput } from "./ai-triage-enqueue"
 import { issueSeverityFromAlert } from "./severity-map"
 import { SYSTEM_ALERTS_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -55,16 +54,23 @@ export interface UpsertAlertIssueInput {
 	readonly incidentId: AlertIncidentId
 	readonly serviceName: string
 	readonly timestamp: number
-	/** The `ChatSession` port the investigation agent runs on. */
-	readonly chatSessions?: ChatSessionsApi
 }
 
 export interface UpsertAlertIssueResult {
 	readonly issueId: ErrorIssueId | null
 	readonly action: "created" | "reopened" | "refreshed" | "skipped" | "error"
+	/**
+	 * The investigation start this incident asks for, or null. The caller runs it once its
+	 * own writes are done: a start awaits a model call, which a scheduler tick cannot hold.
+	 */
+	readonly triage: MaybeEnqueueTriageInput | null
 }
 
 const describeIncident = (input: UpsertAlertIssueInput): string => {
+	// An uptime rule's 1 >= 1 says nothing; its monitor being down does.
+	if (input.signalType === "uptime") {
+		return `Uptime monitor ${input.ruleName} is down${input.groupKey === "__total__" ? "" : ` (service ${input.groupKey})`}`
+	}
 	const observed = input.observedValue == null ? "no data" : `observed ${input.observedValue}`
 	const bound =
 		input.thresholdUpper == null ? `${input.threshold}` : `${input.threshold}..${input.thresholdUpper}`
@@ -250,7 +256,7 @@ export const upsertAlertIssue: (
 			if (snoozeActive) {
 				// Mirrors the errors tick: a wontfix issue with an active (or
 				// indefinite) snooze is left alone entirely.
-				return { issueId, action: "skipped" as const }
+				return { issueId, action: "skipped" as const, triage: null }
 			}
 
 			yield* database.execute((db) =>
@@ -278,7 +284,6 @@ export const upsertAlertIssue: (
 						.where(($) => [$.orgId.eq(input.orgId), $.id.eq(prior.id), $.severity.isNull()]),
 				),
 			)
-
 			const reopenFrom: WorkflowState | null =
 				prior.workflowState === "done" || prior.workflowState === "wontfix"
 					? prior.workflowState
@@ -312,6 +317,9 @@ export const upsertAlertIssue: (
 			} else {
 				action = "refreshed"
 			}
+			// After the reopen, which takes a wontfix issue out of the raise's exclusion.
+			if (input.severity === "critical")
+				yield* raiseDetectorSeverity(input.orgId, fingerprintHash, input.timestamp)
 		}
 
 		yield* database.execute((db) =>
@@ -322,7 +330,7 @@ export const upsertAlertIssue: (
 			),
 		)
 
-		yield* maybeEnqueueTriage({
+		const triage: MaybeEnqueueTriageInput = {
 			orgId: input.orgId,
 			incidentKind: "alert",
 			incidentId: input.incidentId,
@@ -343,14 +351,13 @@ export const upsertAlertIssue: (
 				serviceName: input.serviceName,
 				observedValue: input.observedValue,
 				sampleCount: input.sampleCount,
-				firstTriggeredAt: new Date(input.timestamp).toISOString(),
-				lastTriggeredAt: new Date(input.timestamp).toISOString(),
+				firstTriggeredAt: DateTime.formatIso(DateTime.makeUnsafe(input.timestamp)),
+				lastTriggeredAt: DateTime.formatIso(DateTime.makeUnsafe(input.timestamp)),
 				issueId,
 			},
-			chatSessions: input.chatSessions,
-		})
+		}
 
-		return { issueId, action }
+		return { issueId, action, triage }
 	},
 	(effect, input) =>
 		Effect.catchCause(effect, (cause) =>
@@ -363,10 +370,62 @@ export const upsertAlertIssue: (
 						error: summarizeCause(cause),
 					}),
 				)
-				return { issueId: null, action: "error" as const }
+				return { issueId: null, action: "error" as const, triage: null }
 			}),
 		),
 )
+
+/**
+ * Raise an alert issue's severity when its incident escalates, while the severity is still the
+ * detector's (manual > ai > detector). Never fails, like `upsertAlertIssue`.
+ */
+export const escalateAlertIssue = Effect.fn("IssueHub.escalateAlertIssue")(
+	function* (input: {
+		readonly orgId: OrgId
+		readonly ruleId: AlertRuleId
+		readonly groupKey: string
+		readonly timestamp: number
+	}) {
+		yield* raiseDetectorSeverity(
+			input.orgId,
+			alertIssueFingerprint(input.ruleId, input.groupKey),
+			input.timestamp,
+		)
+	},
+	(effect, input) =>
+		Effect.catchCause(effect, (cause) =>
+			Effect.logError("Alert issue escalation failed").pipe(
+				Effect.annotateLogs({
+					orgId: input.orgId,
+					ruleId: input.ruleId,
+					error: summarizeCause(cause),
+				}),
+			),
+		),
+)
+
+/** Raise a detector-set alert issue to critical; manual and AI severities and wontfix issues stay. */
+const raiseDetectorSeverity = Effect.fn("IssueHub.raiseDetectorSeverity")(function* (
+	orgId: OrgId,
+	fingerprintHash: string,
+	timestamp: number,
+) {
+	const database = yield* Database
+	const critical = detectorSeverityFor("critical")
+	yield* database.execute((db) =>
+		db.run(
+			PG.update(ErrorIssues)
+				.set({ severity: critical, updatedAt: timestamp })
+				.where(($) => [
+					$.orgId.eq(orgId),
+					$.fingerprintHash.eq(fingerprintHash),
+					$.severitySource.eq("detector"),
+					$.severity.neq(critical),
+					$.workflowState.neq("wontfix"),
+				]),
+		),
+	)
+})
 
 const recordIssueEvent = Effect.fn("IssueHub.recordIssueEvent")(function* (
 	orgId: OrgId,

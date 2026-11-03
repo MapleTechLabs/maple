@@ -34,7 +34,6 @@ import {
 	ShareSignInRequiredError,
 	ShareWidgetDataResponse,
 	SharedDashboardResponse,
-	type ShareWidgetDataOutcome,
 	ShareWrongOrgError,
 } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
@@ -42,8 +41,8 @@ import type { DashboardId } from "@maple/domain/primitives"
 import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS } from "@maple/query-engine"
 import { hashShareToken, shareOgId, verifyAlertChartId, verifyChatChartId, verifyShareOgId } from "@maple/db"
 import { ChatSessions } from "@maple/backend/platform/bindings"
-import { redactForShare } from "@maple/widgets/dashboard"
-import { Effect, Option, Redacted, Schema } from "effect"
+import { DashboardDocument, redactForShare, variablesForWidget } from "@maple/widgets/dashboard"
+import { Effect, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import {
@@ -62,8 +61,6 @@ import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/D
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { ogDescription, ogSubtitle, ogTiles, ogTitle } from "@maple/backend/services/dashboards/share-og-card"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
-import { resolveShareVariables } from "@maple/backend/services/dashboards/share-variables"
-import { resolveShareWindow } from "@maple/backend/services/dashboards/share-window"
 
 const decodeOrgId = Schema.decodeUnknownEffect(OrgId)
 const decodeAlertRuleId = Schema.decodeUnknownEffect(AlertRuleId)
@@ -109,15 +106,13 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 			// person could rate-limit everyone. Skip the IP limit there; the per-token
 			// limit still applies, and it is the one that bounds a leaked link.
 			const outcomes = yield* Effect.all([
-				rateLimiter.check(shareTokenRateLimitKey(tokenHash.slice(0, 24))),
+				rateLimiter.check(shareTokenRateLimitKey(Str.slice(0, 24)(tokenHash))),
 				...(ip === undefined ? [] : [rateLimiter.check(shareIpRateLimitKey(ip))]),
 			])
-			if (outcomes.some((outcome) => outcome === "limited")) {
-				return yield* Effect.fail(
-					new ShareRateLimitedError({
-						message: "This shared dashboard is receiving too many requests. Try again shortly.",
-					}),
-				)
+			if (Arr.some(outcomes, (outcome) => outcome === "limited")) {
+				return yield* new ShareRateLimitedError({
+					message: "This shared dashboard is receiving too many requests. Try again shortly.",
+				})
 			}
 		})
 
@@ -133,13 +128,11 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		 * board.
 		 */
 		const enforceOgRateLimit = Effect.fn("HttpV2SharePublic.ogRateLimit")(function* (shareKey: string) {
-			const outcome = yield* rateLimiter.check(shareOgRateLimitKey(shareKey.slice(0, 24)))
+			const outcome = yield* rateLimiter.check(shareOgRateLimitKey(Str.slice(0, 24)(shareKey)))
 			if (outcome === "limited") {
-				return yield* Effect.fail(
-					new ShareRateLimitedError({
-						message: "This shared dashboard is receiving too many requests. Try again shortly.",
-					}),
-				)
+				return yield* new ShareRateLimitedError({
+					message: "This shared dashboard is receiving too many requests. Try again shortly.",
+				})
 			}
 		})
 
@@ -156,14 +149,12 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		const enforceChartRateLimit = Effect.fn("HttpV2SharePublic.chartRateLimit")(function* (
 			chartId: string,
 		) {
-			const signature = chartId.slice(chartId.indexOf(".") + 1)
-			const outcome = yield* rateLimiter.check(shareOgRateLimitKey(signature.slice(0, 24)))
+			const signature = Str.slice(chartId.indexOf(".") + 1)(chartId)
+			const outcome = yield* rateLimiter.check(shareOgRateLimitKey(Str.slice(0, 24)(signature)))
 			if (outcome === "limited") {
-				return yield* Effect.fail(
-					new ShareRateLimitedError({
-						message: "This shared dashboard is receiving too many requests. Try again shortly.",
-					}),
-				)
+				return yield* new ShareRateLimitedError({
+					message: "This shared dashboard is receiving too many requests. Try again shortly.",
+				})
 			}
 		})
 
@@ -232,11 +223,9 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 				if (Option.isNone(tenant)) {
 					// No org name here: the caller is anonymous, and naming the owning
 					// org would tell them something the link itself does not.
-					return yield* Effect.fail(
-						new ShareSignInRequiredError({
-							message: "This dashboard is shared with its organization only.",
-						}),
-					)
+					return yield* new ShareSignInRequiredError({
+						message: "This dashboard is shared with its organization only.",
+					})
 				}
 
 				// Only the org that owns the board. Note an API key cannot reach this
@@ -245,11 +234,9 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 				// sign in — which is right, since "a member of the org" is a statement
 				// about a person, not about an org-scoped key.
 				if (tenant.value.orgId !== orgId) {
-					return yield* Effect.fail(
-						new ShareWrongOrgError({
-							message: "This dashboard belongs to a different organization.",
-						}),
-					)
+					return yield* new ShareWrongOrgError({
+						message: "This dashboard belongs to a different organization.",
+					})
 				}
 			}
 
@@ -289,106 +276,39 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 			.handle("widgetData", ({ payload }) =>
 				Effect.gen(function* () {
 					const { share, orgId, document } = yield* openShare(payload.token)
-					const window = yield* resolveShareWindow(payload.timeRange)
-
-					// Every where-clause the board could interpolate into, so a free-text
-					// value is checked against the actual templates rather than in the
-					// abstract.
-					const whereClauses = document.widgets.flatMap((widget) => {
-						const source = widget.dataSource as { readonly queries?: ReadonlyArray<unknown> }
-						return (source.queries ?? []).flatMap((query) => {
-							const clause = (query as { readonly whereClause?: unknown }).whereClause
-							return typeof clause === "string" ? [clause] : []
-						})
+					// A widget-scoped link answers for its own widget and nothing else.
+					// Without that, a chart share would be a board share with extra steps.
+					// That includes the board's variables: only the widget's own resolve.
+					const sharedWidget =
+						share.widgetId === undefined
+							? undefined
+							: document.widgets.find((widget) => widget.id === share.widgetId)
+					// A chart link whose widget is gone gets no variables, not the board's.
+					const scoped =
+						share.widgetId === undefined || document.variables === undefined
+							? document
+							: new DashboardDocument({
+									...document,
+									variables:
+										sharedWidget === undefined
+											? []
+											: variablesForWidget(document.variables, sharedWidget),
+								})
+					const { results, variables } = yield* widgetData.resolveBatch(orgId, scoped, {
+						requests: Arr.map(payload.requests, (request) => ({
+							widgetId: request.widgetId,
+							source: request.source ?? "primary",
+							...(request.maxDataPoints === undefined
+								? undefined
+								: { maxDataPoints: request.maxDataPoints }),
+						})),
+						window: payload.timeRange,
+						variableValues: payload.variableValues ?? {},
+						...(share.widgetId === undefined ? undefined : { onlyWidgetId: share.widgetId }),
+						// Stored SQL is only ever written by a caller that can read the telemetry
+						// (see the dashboards write routes), the same bar as minting the share.
+						rawSqlAllowed: true,
 					})
-
-					// Query-variable options are listed server-side over the same window,
-					// so the board's ladder (selection → default → All → first option)
-					// and its "All" expansion resolve to the same values here.
-					const definitions = document.variables ?? []
-					const queryOptions = yield* widgetData.variableOptions(orgId, definitions, window)
-					const variableValues = yield* resolveShareVariables(
-						definitions,
-						payload.variableValues ?? {},
-						queryOptions,
-						whereClauses,
-					)
-
-					const results: Array<ShareWidgetDataOutcome> = []
-					for (const request of payload.requests) {
-						// A widget-scoped link answers for its own widget and nothing
-						// else. Without this, a chart share would be a board share with
-						// extra steps.
-						if (share.widgetId !== undefined && request.widgetId !== share.widgetId) {
-							results.push({
-								widgetId: request.widgetId,
-								ok: false,
-								reason: "not_found",
-								message: "That widget is not on this dashboard.",
-							})
-							continue
-						}
-
-						const outcome = yield* widgetData
-							.resolve(
-								orgId,
-								document,
-								{
-									widgetId: request.widgetId,
-									source: request.source ?? "primary",
-									...(request.maxDataPoints === undefined
-										? undefined
-										: { maxDataPoints: request.maxDataPoints }),
-								},
-								window,
-								variableValues,
-							)
-							.pipe(
-								Effect.map((resolved) => {
-									const outcome = {
-										widgetId: request.widgetId,
-										ok: true,
-										data: resolved.data,
-									} satisfies ShareWidgetDataOutcome
-									return resolved.narrowedToSeconds === undefined
-										? outcome
-										: { ...outcome, narrowedToSeconds: resolved.narrowedToSeconds }
-								}),
-								// Per-widget failures ride inside a 200: one tile the share
-								// cannot serve must not blank its neighbours.
-								Effect.catchTags({
-									"@maple/http/errors/ShareWidgetNotFoundError": (error) =>
-										Effect.succeed({
-											widgetId: request.widgetId,
-											ok: false as const,
-											reason: "not_found" as const,
-											message: error.message,
-										}),
-									"@maple/http/errors/ShareUnsupportedWidgetError": (error) =>
-										Effect.succeed({
-											widgetId: request.widgetId,
-											ok: false as const,
-											reason: "unsupported" as const,
-											message: error.message,
-										}),
-									// `failed` rather than `unsupported`: the tile offers a
-									// retry, because the widget is fine and the run was not.
-									"@maple/http/errors/ShareWidgetExecutionError": (error) =>
-										Effect.succeed({
-											widgetId: request.widgetId,
-											ok: false as const,
-											reason: "failed" as const,
-											message: error.message,
-										}),
-								}),
-							)
-						results.push(outcome)
-					}
-
-					const variables: Record<string, string> = {}
-					for (const [name, resolved] of Object.entries(variableValues)) {
-						if (resolved !== undefined) variables[name] = resolved.value
-					}
 					return new ShareWidgetDataResponse({ results, variables })
 				}),
 			)
@@ -537,7 +457,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// One series, because that is what a rule measures. The card puts
 					// its latest value in the header rather than drawing a legend for
 					// a chart with nothing to tell apart.
-					const points = series.points.map((point) => [point[0], point[1]] as const)
+					const points = Arr.map(series.points, (point) => [point[0], point[1]] as const)
 					return new ChartTimeseries({
 						kind: "area",
 						title: claims.title,

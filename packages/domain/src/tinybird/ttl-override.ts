@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 export const RAW_DATASOURCE_NAMES = {
 	logs: ["logs"] as const,
 	traces: ["traces"] as const,
@@ -46,7 +47,7 @@ export const applyRawTtlOverrides = <T extends TtlTransformableResource>(
 		overrides.metricsRetentionDays !== null
 	if (!hasAnyOverride) return datasources
 
-	return datasources.map((datasource) => {
+	return Arr.map(datasources, (datasource) => {
 		const days = overrideForDatasource(datasource.name, overrides)
 		if (days === null) return datasource
 		const next = datasource.content.replace(
@@ -71,5 +72,5 @@ export const computeEffectiveRevision = (baseRevision: string, overrides: RawTab
 		`t=${formatOverride(overrides.tracesRetentionDays)}`,
 		`m=${formatOverride(overrides.metricsRetentionDays)}`,
 	]
-	return `${baseRevision}:${parts.join(":")}`
+	return `${baseRevision}:${Arr.join(parts, ":")}`
 }

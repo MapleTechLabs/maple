@@ -1,11 +1,14 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId, ScrapeTargetId } from "@maple/domain/primitives"
+import { OrgId, ScrapeTargetId, SourceId } from "@maple/domain/primitives"
 import { Schema } from "effect"
+import { Sources } from "./sources"
 
 export const ScrapeTargets = PG.table("scrape_targets", {
 	columns: {
 		id: PG.brand(PG.text, ScrapeTargetId),
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		// The source this integration sends as. Deleting the source deletes the row.
+		sourceId: PG.column(PG.brand(PG.text, SourceId), { name: "source_id" }),
 		name: PG.text,
 		serviceName: PG.column(PG.nullable(PG.text), { name: "service_name" }),
 		url: PG.text,
@@ -34,8 +37,17 @@ export const ScrapeTargets = PG.table("scrape_targets", {
 	},
 	primaryKey: ["id"],
 	indexes: [
+		PG.index("scrape_targets_source_idx", ["sourceId"]),
 		PG.index("scrape_targets_org_idx", ["orgId"]),
 		PG.index("scrape_targets_org_enabled_idx", ["orgId", "enabled"]),
+	],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["sourceId"],
+			references: Sources,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
+		}),
 	],
 	tenantColumn: "orgId",
 })

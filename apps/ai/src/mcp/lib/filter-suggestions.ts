@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * "Did you mean" hints for an empty result. A filter value that matches nothing
  * (a service spelled `maple-alerting` instead of `alerting`, environment `stg`, a
@@ -11,7 +12,11 @@ const editDistance = (a: string, b: string): number => {
 		previous[0] = i
 		for (let j = 1; j <= b.length; j++) {
 			const above = previous[j]!
-			previous[j] = Math.min(above + 1, previous[j - 1]! + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1))
+			previous[j] = Math.min(
+				above + 1,
+				previous[j - 1]! + 1,
+				diagonal + (a[i - 1] === b[j - 1] ? 0 : 1),
+			)
 			diagonal = above
 		}
 	}
@@ -35,17 +40,17 @@ export const closestMatches = (
 	candidates: ReadonlyArray<string>,
 	max = 3,
 ): ReadonlyArray<string> => {
-	const needle = input.toLowerCase()
+	const needle = Str.toLowerCase(input)
 	if (needle.length === 0) return []
 	const scored: Array<{ readonly name: string; readonly score: number }> = []
 	for (const name of new Set(candidates)) {
-		const hay = name.toLowerCase()
+		const hay = Str.toLowerCase(name)
 		if (hay === needle) {
 			// Same value in another case is the best possible suggestion.
 			if (name !== input) scored.push({ name, score: -1 })
 			continue
 		}
-		if (hay.length > 0 && (hay.includes(needle) || needle.includes(hay))) {
+		if (hay.length > 0 && (Str.includes(needle)(hay) || Str.includes(hay)(needle))) {
 			scored.push({ name, score: Math.abs(hay.length - needle.length) / 1000 })
 			continue
 		}
@@ -53,10 +58,10 @@ export const closestMatches = (
 		if (distance <= Math.max(2, Math.floor(needle.length / 3))) scored.push({ name, score: distance })
 		else if (abbreviates(needle, hay)) scored.push({ name, score: 2.5 })
 	}
-	return scored
-		.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name))
-		.slice(0, max)
-		.map((s) => s.name)
+	return Arr.map(
+		scored.sort((a, b) => a.score - b.score || Str.localeCompare(b.name)(a.name)).slice(0, max),
+		(s) => s.name,
+	)
 }
 
 export interface RequestedFilters {
@@ -78,7 +83,11 @@ export interface KnownValues {
 	readonly spanNames?: ReadonlyArray<string>
 }
 
-const quoted = (values: ReadonlyArray<string>) => values.map((v) => `"${v}"`).join(", ")
+const quoted = (values: ReadonlyArray<string>) =>
+	Arr.join(
+		Arr.map(values, (v) => `"${v}"`),
+		", ",
+	)
 
 const hintFor = (
 	label: string,
@@ -89,7 +98,8 @@ const hintFor = (
 ): string | undefined => {
 	if (known === undefined || known.includes(value)) return undefined
 	const close = closestMatches(value, known)
-	if (close.length > 0) return `${label} "${value}" was not seen in this window. Did you mean ${quoted(close)}?`
+	if (close.length > 0)
+		return `${label} "${value}" was not seen in this window. Did you mean ${quoted(close)}?`
 	return complete ? `${label} "${value}" was not seen in this window; ${whereToLook}.` : undefined
 }
 
@@ -143,5 +153,5 @@ export const missingFilterHints = (
 			),
 		)
 	}
-	return hints.filter((hint): hint is string => hint !== undefined)
+	return Arr.filter(hints, (hint): hint is string => hint !== undefined)
 }

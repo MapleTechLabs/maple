@@ -17,13 +17,13 @@ A dashboard is a grid of widgets that query your telemetry over one time range. 
 
 On **Dashboards**, pick one of three starting points:
 
-- **Create Dashboard** opens an empty dashboard named "Untitled Dashboard". Click the name to rename it.
+- **Create dashboard** opens an empty dashboard named "Untitled Dashboard". Click the name to rename it.
 - **Browse templates** opens **Start from a template**. See [Templates](#templates).
 - **Import** loads a dashboard from a JSON file exported from Maple.
 
 <figure class="shot">
   <img src="/screenshots/docs/dashboards-01-list.webp" alt="The Dashboards list with a search box, All and Favorites tabs, tag and sort filters, and rows showing each dashboard's name, description, widget count, data sources and last update, next to Browse templates, Import and Create Dashboard buttons." loading="lazy" />
-  <figcaption>The Dashboards list, with Browse templates, Import and Create Dashboard in the header.</figcaption>
+  <figcaption>The Dashboards list, with Browse templates, Import and Create dashboard in the header.</figcaption>
 </figure>
 
 A new dashboard opens in edit mode. Click **Add Widget** to add the first widget.
@@ -37,7 +37,7 @@ Templates are ready-made dashboards for common setups:
 | Application    | Service Health, HTTP Endpoints, gRPC Service, Error Tracking, Top Errors, Platform Overview, Metric Overview, Node.js Runtime, JVM Runtime, Blank Dashboard |
 | Database       | Postgres Overview, MySQL Overview, MongoDB Overview, Redis Overview                                                                                         |
 | Messaging      | Kafka Overview, NATS Overview, RabbitMQ Overview                                                                                                            |
-| Infrastructure | Host Metrics, Docker Containers, Kubernetes Cluster, Kubernetes Pods, Cloudflare Edge, PlanetScale Databases                                                |
+| Infrastructure | Host Metrics, Docker Containers, Kubernetes Cluster, Kubernetes Pods, Cloudflare Edge, PlanetScale Databases, Google Cloud                                  |
 
 Pick a template to see a live preview on your own data and what it needs. Some templates take **Parameters**, such as a service name. Click **Create dashboard** to create your own copy, which you can edit or delete freely.
 
@@ -76,7 +76,7 @@ The preview updates as you edit. Save the widget to put it on the dashboard.
 
 In edit mode, drag widgets to move them and drag their corners to resize. From the **⋮** menu in the dashboard header:
 
-- **Auto Layout** rearranges the widgets to fill the grid without gaps.
+- **Auto layout** rearranges the widgets to fill the grid without gaps.
 - **Add group** adds a titled section you can move widgets into.
 - **Variables** and **Tags** open their editors.
 

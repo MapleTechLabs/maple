@@ -19,14 +19,18 @@ import {
 	generationManifestPath,
 	generationRoot,
 	nextMidnightUtc,
-} from "../src/server/archives/paths"
-import { promoteGeneration, selectActiveGeneration } from "../src/server/archives/generation"
-import { type ArchiveGenerationManifest, parseArchiveActivePointer } from "../src/server/archives/manifest"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
-import { rebuildCatalog } from "../src/server/archives/listing"
-import { planArchiveGc, runArchiveGc, verifyCompletedGcInvariants } from "../src/server/archives/gc"
-import { writeInitialIntent, type GcOperationIntent } from "../src/server/archives/journal"
+} from "@maple/local-server/archives/paths"
+import { promoteGeneration, selectActiveGeneration } from "@maple/local-server/archives/generation"
+import {
+	type ArchiveGenerationManifest,
+	parseArchiveActivePointer,
+} from "@maple/local-server/archives/manifest"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
+import { rebuildCatalog } from "@maple/local-server/archives/listing"
+import { planArchiveGc, runArchiveGc, verifyCompletedGcInvariants } from "@maple/local-server/archives/gc"
+import { writeInitialIntent, type GcOperationIntent } from "@maple/local-server/archives/journal"
+import { Array as Arr, String as Str } from "effect"
 
 // Hostile unit tests for archive garbage collection (Gate 3b). These cover the
 // deterministic deletion-set logic, keep-N retention, fail-closed on
@@ -35,7 +39,9 @@ import { writeInitialIntent, type GcOperationIntent } from "../src/server/archiv
 // SIGKILL probe; these unit tests cover the invariants the harness does not
 // isolate.
 
-const withArchive = async (run: (archiveDir: string) => Promise<void> | void): Promise<void> => {
+const withArchive = async (
+	run: (archiveDir: string, dataDir: string, scratchRoot: string, parent: string) => Promise<void> | void,
+): Promise<void> => {
 	const parent = realpathSync(mkdtempSync(join(tmpdir(), "maple-gc-test-")))
 	const archiveDir = join(parent, "archive")
 	const dataDir = join(parent, "data")
@@ -142,19 +148,22 @@ describe("archive gc planning", () => {
 			const plan = planArchiveGc(archiveDir, 0)
 			strictEqual(plan.deleteSet.length, 2)
 			strictEqual(
-				plan.deleteSet.some((c) => c.generationId === old.generationId),
+				Arr.some(plan.deleteSet, (c) => c.generationId === old.generationId),
 				true,
 			)
 			strictEqual(
-				plan.deleteSet.some((c) => c.generationId === mid.generationId),
+				Arr.some(plan.deleteSet, (c) => c.generationId === mid.generationId),
 				true,
 			)
 			strictEqual(
-				plan.deleteSet.some((c) => c.generationId === active.generationId),
+				Arr.some(plan.deleteSet, (c) => c.generationId === active.generationId),
 				false,
 			)
 			strictEqual(
-				plan.retained.some((r) => r.generationId === active.generationId && r.reason === "active"),
+				Arr.some(
+					plan.retained,
+					(r) => r.generationId === active.generationId && r.reason === "active",
+				),
 				true,
 			)
 			void dataDir
@@ -177,7 +186,7 @@ describe("archive gc planning", () => {
 			strictEqual(plan.deleteSet.length, 1)
 			strictEqual(plan.deleteSet[0]!.generationId, oldest.generationId)
 			strictEqual(
-				plan.retained.some((r) => r.generationId === newer.generationId && r.reason === "kept"),
+				Arr.some(plan.retained, (r) => r.generationId === newer.generationId && r.reason === "kept"),
 				true,
 			)
 		})
@@ -195,7 +204,7 @@ describe("archive gc planning", () => {
 			const plan = planArchiveGc(archiveDir, 0)
 			strictEqual(plan.deleteSet.length, 0, "nothing targeted without an active pointer")
 			ok(
-				plan.excludedRanges.some((r) => r.rangeStart === "2026-06-01"),
+				Arr.some(plan.excludedRanges, (r) => r.rangeStart === "2026-06-01"),
 				"range excluded as uncertain",
 			)
 		})
@@ -255,8 +264,9 @@ describe("archive gc planning", () => {
 			const plan = planArchiveGc(archiveDir, 0)
 			strictEqual(plan.deleteSet.length, 0, "nothing targeted under a stale pointer")
 			ok(
-				plan.excludedRanges.some(
-					(r) => r.rangeStart === "2026-06-01" && r.reason.includes("selects 0 verified"),
+				Arr.some(
+					plan.excludedRanges,
+					(r) => r.rangeStart === "2026-06-01" && Str.includes("selects 0 verified")(r.reason),
 				),
 				"range excluded as uncertain",
 			)
@@ -371,10 +381,12 @@ describe("archive gc dry-run nonmutation with an active operation (Gate 3b repai
 	const snapshot = (archiveDir: string, dataDir: string): string => {
 		const { execSync } = require("node:child_process") as typeof import("node:child_process")
 		try {
-			return execSync(
-				`find "${archiveDir}" "${dataDir}" -type f 2>/dev/null | sort | xargs shasum -a 256 2>/dev/null | shasum -a 256`,
-				{ encoding: "utf8" },
-			).trim()
+			return Str.trim(
+				execSync(
+					`find "${archiveDir}" "${dataDir}" -type f 2>/dev/null | sort | xargs shasum -a 256 2>/dev/null | shasum -a 256`,
+					{ encoding: "utf8" },
+				),
+			)
 		} catch {
 			return "snapshot-failed"
 		}
@@ -442,9 +454,9 @@ describe("archive gc terminal invariant verification (Gate 3b repair)", () => {
 				rangeStart: "2026-06-01",
 				generationId: active.generationId,
 				createdAt: "2026-06-03T00:00:00.000Z",
-				manifestSha256: "a".repeat(64),
+				manifestSha256: Str.repeat(64)("a"),
 				bytes: 100,
-				shards: [{ name: "00.parquet", bytes: 100, sha256: "b".repeat(64) }],
+				shards: [{ name: "00.parquet", bytes: 100, sha256: Str.repeat(64)("b") }],
 				recordedActiveGenerationId: active.generationId,
 			}
 			const intent = {

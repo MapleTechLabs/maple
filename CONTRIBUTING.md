@@ -207,7 +207,7 @@ Requires docker Postgres running (`bun run db:migrate:local`).
 
 ```bash
 bun dev web                    # in the stack: https://web.localhost
-bun --filter=@maple/web dev    # alone, raw port
+bun --filter=@maple/web dev   # alone, raw port
 ```
 
 Default raw URL: `http://localhost:3471`
@@ -350,4 +350,4 @@ Vitest uses embedded PGlite — no Docker Postgres required for unit tests.
 - [docs/persistence.md](docs/persistence.md) — Postgres migrations
 - [docs/self-hosted-clickhouse.md](docs/self-hosted-clickhouse.md) — ClickHouse BYO + schema
 - [docs/local-mode.md](docs/local-mode.md) — single-binary local mode
-- [.env.example](.env.example) — full env reference with optional integrations (GitHub App, Hazel, Autumn, email)
+- [.env.example](.env.example): full env reference with optional integrations (GitHub App, Autumn, email)

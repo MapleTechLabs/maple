@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 // Detects "messed up" span attribute keys in an org's telemetry and turns them into
 // recommended ingest attribute mappings. Pure and dependency-free so it runs identically in the
 // API reconcile loop (apps/api) and in unit tests, and so its types feed the HTTP layer.
@@ -282,7 +283,33 @@ const KIND_RANK: Record<RecommendationKind, number> = {
 
 /** camelCase, non-namespaced key (has an uppercase letter, no dot) — the clear naming violation. */
 function isCamelCaseNoDot(key: string): boolean {
-	return !key.includes(".") && /[A-Z]/.test(key)
+	return !Str.includes(".")(key) && /[A-Z]/.test(key)
+}
+
+/** Keys Maple reads by exact spelling. `SampleRate` is the span's sampling weight; renaming breaks it. */
+const MAPLE_READ_KEYS: ReadonlySet<string> = new Set(["SampleRate"])
+
+/**
+ * Canonical keys of the rename rules that fire for `spanKeys` but are missing from it. The caller
+ * checks these directly in the warehouse, since a top-N key list can miss a rare canonical key.
+ */
+export function canonicalKeysToProbe(
+	spanKeys: ReadonlyArray<{ attributeKey: string }>,
+	existingMappingSourceKeys: ReadonlyArray<string>,
+): string[] {
+	const present = new Set(Arr.map(spanKeys, (row) => row.attributeKey))
+	const suppressed = new Set(existingMappingSourceKeys)
+	const keys = Arr.map(
+		Arr.filter(
+			ATTRIBUTE_RENAMES,
+			(rule) =>
+				present.has(rule.deprecated) &&
+				!suppressed.has(rule.deprecated) &&
+				!present.has(rule.canonical),
+		),
+		(rule) => rule.canonical,
+	)
+	return [...new Set(keys)].sort()
 }
 
 /**
@@ -354,6 +381,7 @@ export function detectAttributeRecommendations(
 		if (handledKeys.has(attributeKey)) continue
 		if (suppressedKeys.has(attributeKey)) continue
 		if (!isCamelCaseNoDot(attributeKey)) continue
+		if (MAPLE_READ_KEYS.has(attributeKey)) continue
 		const id = `naming:${attributeKey}`
 		if (dismissed.has(id)) continue
 		namingCandidates.push({
@@ -365,14 +393,14 @@ export function detectAttributeRecommendations(
 			applyable: false,
 		})
 	}
-	namingCandidates.sort((a, b) => b.usageCount - a.usageCount || a.key.localeCompare(b.key))
+	namingCandidates.sort((a, b) => b.usageCount - a.usageCount || Str.localeCompare(b.key)(a.key))
 	out.push(...namingCandidates.slice(0, NAMING_ADVISORY_LIMIT))
 
 	out.sort(
 		(a, b) =>
 			KIND_RANK[a.kind] - KIND_RANK[b.kind] ||
 			b.usageCount - a.usageCount ||
-			a.key.localeCompare(b.key),
+			Str.localeCompare(b.key)(a.key),
 	)
 
 	return out
@@ -427,11 +455,11 @@ export function planReconcileIssues(
 	existing: ReadonlyArray<ExistingIssueLike>,
 	mappingSourceKeys: ReadonlyArray<string>,
 ): ReconcilePlan {
-	const detectedByKey = new Map(detected.map((rec) => [rec.id, rec] as const))
-	const existingByKey = new Map(existing.map((row) => [row.recommendationKey, row] as const))
+	const detectedByKey = new Map(Arr.map(detected, (rec) => [rec.id, rec] as const))
+	const existingByKey = new Map(Arr.map(existing, (row) => [row.recommendationKey, row] as const))
 	const mappingSet = new Set(mappingSourceKeys)
 
-	let nextNumber = existing.reduce((max, row) => Math.max(max, row.number), 0) + 1
+	let nextNumber = Arr.reduce(existing, 0, (max, row) => Math.max(max, row.number)) + 1
 
 	const inserts: PlannedIssueInsert[] = []
 	const updates: PlannedIssueUpdate[] = []

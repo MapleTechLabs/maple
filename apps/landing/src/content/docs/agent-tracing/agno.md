@@ -20,12 +20,13 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for Agno in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-agno -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-agno -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install and point the exporter at Maple
 
@@ -136,7 +137,7 @@ finally:
     provider.shutdown()     # scripts: flush and stop at the end of the process
 ```
 
-## Check that it works
+## Verify
 
 Run a conversation of two or three turns with one `session_id`, including a tool call, and open **Agent Sessions** filtered by your service name. You should see one session with your `session_id` as its id, framework **Agno**, one turn per `run()`, a transcript, and model calls such as `OpenRouter.invoke` with tokens. A session named `trace:...` means the run had no `session_id`. Cost shows in the sessions list only when your provider returns one, as OpenRouter does.
 
@@ -148,6 +149,6 @@ Run a conversation of two or three turns with one `session_id`, including a tool
 - **An agent run lands inside the previous team run's trace.** In scripts and workers, run each team run in its own context with `asyncio.create_task(...)` or `contextvars.copy_context().run(...)`.
 - **Every model call appears twice.** Remove the second instrumentor, usually `openinference-instrumentation-openai`, OpenLIT or Phoenix's `register(auto_instrument=True)`.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)

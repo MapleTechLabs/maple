@@ -6,7 +6,8 @@ import {
 	projectLayout,
 	tierForWidth,
 	type PlacedWidget,
-} from "@/components/dashboard-builder/canvas/grid-breakpoints"
+} from "./grid-breakpoints"
+import { Array as Arr } from "effect"
 
 // No cast: placement reads `id` and `layout`, and nothing else. That is the
 // whole reason a redacted share widget can go through the same projection as a
@@ -26,7 +27,7 @@ const AUTHORED = [
 	widget("table", 0, 10, 12, 5),
 ]
 
-const derivedTiers = GRID_TIERS.filter((tier) => !tier.canonical)
+const derivedTiers = Arr.filter(GRID_TIERS, (tier) => !tier.canonical)
 
 describe("tierForWidth", () => {
 	it("returns the canonical tier on a desktop canvas", () => {
@@ -45,8 +46,8 @@ describe("tierForWidth", () => {
 describe("projectLayout", () => {
 	it("passes the authored layout through untouched at the canonical tier", () => {
 		const projected = projectLayout(AUTHORED, GRID_TIERS[0])
-		expect(projected.map((l) => [l.i, l.x, l.y, l.w, l.h])).toEqual(
-			AUTHORED.map((w) => [w.id, w.layout.x, w.layout.y, w.layout.w, w.layout.h]),
+		expect(Arr.map(projected, (l) => [l.i, l.x, l.y, l.w, l.h])).toEqual(
+			Arr.map(AUTHORED, (w) => [w.id, w.layout.x, w.layout.y, w.layout.w, w.layout.h]),
 		)
 	})
 
@@ -57,7 +58,9 @@ describe("projectLayout", () => {
 			const projected = projectLayout(AUTHORED, tier)
 
 			it("keeps every widget exactly once", () => {
-				expect(projected.map((l) => l.i).toSorted()).toEqual(AUTHORED.map((w) => w.id).toSorted())
+				expect(Arr.map(projected, (l) => l.i).toSorted()).toEqual(
+					Arr.map(AUTHORED, (w) => w.id).toSorted(),
+				)
 			})
 
 			it("keeps every widget inside the grid", () => {
@@ -86,17 +89,25 @@ describe("projectLayout", () => {
 			})
 
 			it("preserves reading order", () => {
-				const authoredOrder = AUTHORED.map((w) => w.id)
-				const projectedOrder = projected.toSorted((a, b) => a.y - b.y || a.x - b.x).map((l) => l.i)
+				const authoredOrder = Arr.map(AUTHORED, (w) => w.id)
+				const projectedOrder = Arr.map(
+					projected.toSorted((a, b) => a.y - b.y || a.x - b.x),
+					(l) => l.i,
+				)
 				expect(projectedOrder).toEqual(authoredOrder)
 			})
 
 			it("starts each row below the tallest widget of the row above", () => {
-				const rowTops = [...new Set(projected.map((l) => l.y))].toSorted((a, b) => a - b)
+				const rowTops = [...new Set(Arr.map(projected, (l) => l.y))].toSorted((a, b) => a - b)
 				for (const [index, top] of rowTops.entries()) {
 					const next = rowTops[index + 1]
 					if (next === undefined) continue
-					const tallest = Math.max(...projected.filter((l) => l.y === top).map((l) => l.h))
+					const tallest = Math.max(
+						...Arr.map(
+							Arr.filter(projected, (l) => l.y === top),
+							(l) => l.h,
+						),
+					)
 					expect(next).toBeGreaterThanOrEqual(top + tallest)
 				}
 			})
@@ -124,8 +135,8 @@ describe("projectLayout", () => {
 		const single = GRID_TIERS.find((tier) => tier.cols === 1)
 		if (!single) throw new Error("expected a single-column tier")
 		const projected = projectLayout(AUTHORED, single)
-		expect(projected.every((l) => l.x === 0 && l.w === 1)).toBe(true)
-		expect(new Set(projected.map((l) => l.y)).size).toBe(AUTHORED.length)
+		expect(Arr.every(projected, (l) => l.x === 0 && l.w === 1)).toBe(true)
+		expect(new Set(Arr.map(projected, (l) => l.y)).size).toBe(AUTHORED.length)
 	})
 
 	it("honours the per-tier minimum span so narrow tiles never get narrower", () => {
@@ -139,7 +150,7 @@ describe("projectLayout", () => {
 			widget("d", 6, 0, 2, 4),
 		]
 		const projected = projectLayout(stats, sixCol)
-		expect(projected.every((l) => l.w >= sixCol.minSpan)).toBe(true)
+		expect(Arr.every(projected, (l) => l.w >= sixCol.minSpan)).toBe(true)
 	})
 
 	it("returns an empty layout for a dashboard with no widgets", () => {

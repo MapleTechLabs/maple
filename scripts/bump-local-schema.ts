@@ -2,9 +2,10 @@
  * Scaffold a local-store schema version bump.
  *
  * Everything the append-only gate demands except the DDL itself is a pure
- * function of one integer: the snapshot copy, the version constant, three edit
- * sites in `schema-identity.ts`, the history entry's four hashes, a new row in
- * the step table, and the pinned literals in both the bun test and the native
+ * function of one integer: the snapshot copy, the version constant, two edit
+ * sites in the CLI's `schema-snapshots.ts`, one in `schema-identity.ts`, the
+ * history entry's four hashes, a new row in the step table, and the pinned
+ * literals in both the bun test and the native
  * probe. This script writes all of them, then leaves the row's operations to a
  * human, which is the only part that was ever real work.
  *
@@ -14,14 +15,19 @@
  *   bun run local-schema:bump <slug> [--description "..."]
  *   bun run local-schema:bump --control
  */
+import { Schema, String as Str } from "effect"
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
-import { buildLocalSchemaManifest } from "../apps/cli/src/server/schema-manifest"
-import { schemaDigest, schemaFingerprint } from "../apps/cli/src/server/store-version"
+import { buildLocalSchemaManifest } from "../packages/local-server/src/schema-manifest"
+import { schemaDigest, schemaFingerprint } from "../packages/local-server/src/store-version"
 
-const SERVER_DIR = "apps/cli/src/server"
-const STEPS_FILE = `${SERVER_DIR}/local-store-migrations/steps.ts`
+// The current schema and its identity live in @maple/local-server; the frozen
+// snapshots and the migration steps that read them stay in the CLI.
+const SERVER_DIR = "packages/local-server/src"
+const CLI_SERVER_DIR = "apps/cli/src/server"
+const STEPS_FILE = `${CLI_SERVER_DIR}/local-store-migrations/steps.ts`
 const SCHEMA_DIR = `${SERVER_DIR}/schema`
+const SNAPSHOT_DIR = `${CLI_SERVER_DIR}/schema`
 const TEST_FILE = "apps/cli/test/local-store-migrations.test.ts"
 const NATIVE_PROBE = "apps/cli/test/native-local-store-migration.sh"
 
@@ -52,20 +58,24 @@ const plan = (path: string, edits: ReadonlyArray<readonly [string | RegExp, stri
 	for (const [needle, replacement] of edits) {
 		const matches =
 			typeof needle === "string"
-				? source.split(needle).length - 1
-				: [...source.matchAll(new RegExp(needle.source, `${needle.flags.replace("g", "")}g`))].length
+				? Str.split(needle)(source).length - 1
+				: [...source.matchAll(new RegExp(needle.source, `${Str.replace("g", "")(needle.flags)}g`))]
+						.length
 		if (matches === 0) fail(`${path}: anchor did not match, so the bump was not applied:\n  ${needle}`)
 		if (typeof needle === "string" && matches > 1)
 			fail(`${path}: anchor matched ${matches} times, expected exactly one:\n  ${needle}`)
 		source =
 			typeof needle === "string"
-				? source.replace(needle, replacement)
-				: source.replace(new RegExp(needle.source, `${needle.flags.replace("g", "")}g`), replacement)
+				? Str.replace(needle, replacement)(source)
+				: Str.replace(
+						new RegExp(needle.source, `${Str.replace("g", "")(needle.flags)}g`),
+						replacement,
+					)(source)
 	}
 	return { path, content: source }
 }
 
-const pad = (version: number): string => String(version).padStart(4, "0")
+const pad = (version: number): string => Str.padStart(4, "0")(String(version))
 
 // ---------------------------------------------------------------------------
 // Arguments and current state
@@ -77,12 +87,14 @@ if (process.argv.includes("--control")) {
 }
 
 const args = process.argv.slice(2)
+const encodeJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.String))
 const descriptionIndex = args.findIndex((arg) => arg === "--description")
 const description = descriptionIndex === -1 ? undefined : args[descriptionIndex + 1]
 // Guard the -1 case: with no `--description`, `descriptionIndex + 1` is 0, which
 // would skip the slug itself.
 const slug = args.find(
-	(arg, index) => !arg.startsWith("--") && !(descriptionIndex !== -1 && index === descriptionIndex + 1),
+	(arg, index) =>
+		!Str.startsWith("--")(arg) && !(descriptionIndex !== -1 && index === descriptionIndex + 1),
 )
 
 if (!slug || !/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(slug))
@@ -96,11 +108,11 @@ if (!versionMatch) fail("could not read LOCAL_SCHEMA_VERSION")
 const from = Number(versionMatch[1])
 const to = from + 1
 
-const snapshotPath = `${SCHEMA_DIR}/local-schema-v${to}.sql`
+const snapshotPath = `${SNAPSHOT_DIR}/local-schema-v${to}.sql`
 if (existsSync(snapshotPath)) fail(`${snapshotPath} already exists; v${to} looks already bumped`)
 
 // The identity is computed from the generated DDL directly rather than through
-// `schema-identity.ts`, which cannot even be imported until the v{to} snapshot
+// `schema-snapshots.ts`, which cannot even be imported until the v{to} snapshot
 // it statically imports exists.
 const currentSql = read(`${SCHEMA_DIR}/local-schema.sql`)
 const identity = {
@@ -117,7 +129,7 @@ const identity = {
 }
 
 const historySource = read(`${SERVER_DIR}/local-schema-history.ts`)
-if (historySource.includes(`fingerprint: "${identity.fingerprint}"`))
+if (Str.includes(`fingerprint: "${identity.fingerprint}"`)(historySource))
 	fail(
 		`the generated schema still hashes to an identity already in the history (${identity.fingerprint}).\nEdit the schema and run \`bun run clickhouse:schema\` before bumping.`,
 	)
@@ -133,7 +145,7 @@ const previousModuleId = new RegExp(`id: "(local-${pad(from - 1)}-to-${pad(from)
 )?.[1]
 if (!previousModuleId) fail(`no v${from - 1} -> v${from} row in ${STEPS_FILE} to follow`)
 const moduleId = `local-${pad(from)}-to-${pad(to)}-${slug}`
-if (stepsSource.includes(`"${moduleId}"`)) fail(`${moduleId} is already in ${STEPS_FILE}`)
+if (Str.includes(`"${moduleId}"`)(stepsSource)) fail(`${moduleId} is already in ${STEPS_FILE}`)
 
 const STEPS_ANCHOR = "\t// local-schema:bump appends the next step above this line.\n"
 const newRow = `\t{
@@ -143,7 +155,7 @@ const newRow = `\t{
 \t\tid: "${moduleId}",
 \t\tfrom: ${from},
 \t\tto: ${to},
-\t\tdescription: ${JSON.stringify(description ?? `TODO(v${from} -> v${to}): what this edge does, in one line`)},
+\t\tdescription: ${encodeJsonString(description ?? `TODO(v${from} -> v${to}): what this edge does, in one line`)},
 \t\tclonedBefore: "any DDL runs",
 \t\tbeforeBootstrap: [],
 \t\tplan: [["TODO-v${to}-change", "TODO(v${from} -> v${to}): what the v${to} bootstrap changes"]],
@@ -163,12 +175,15 @@ const plannedVersion: PlannedWrite = plan(`${SERVER_DIR}/local-schema-version.ts
 	],
 ])
 
-const plannedIdentity: PlannedWrite = plan(`${SERVER_DIR}/schema-identity.ts`, [
+const plannedSnapshots: PlannedWrite = plan(`${CLI_SERVER_DIR}/schema-snapshots.ts`, [
 	[
 		`import schemaV${from}Sql from "./schema/local-schema-v${from}.sql" with { type: "text" }`,
 		`import schemaV${from}Sql from "./schema/local-schema-v${from}.sql" with { type: "text" }\nimport schemaV${to}Sql from "./schema/local-schema-v${to}.sql" with { type: "text" }`,
 	],
 	[`\tschemaV${from}Sql,\n]`, `\tschemaV${from}Sql,\n\tschemaV${to}Sql,\n]`],
+])
+
+const plannedIdentity: PlannedWrite = plan(`${SERVER_DIR}/schema-identity.ts`, [
 	// The test pins CURRENT_LOCAL_SCHEMA to this constant; steps look versions up by number.
 	[
 		`export const LOCAL_SCHEMA_V${from} = localSchemaIdentity(${from})`,
@@ -237,6 +252,7 @@ const writes: ReadonlyArray<PlannedWrite> = [
 	// The retained snapshot is the generated DDL, verbatim.
 	{ path: snapshotPath, content: currentSql },
 	plannedVersion,
+	plannedSnapshots,
 	plannedIdentity,
 	plannedHistory,
 	plannedSteps,
@@ -256,7 +272,7 @@ console.log(`bumped local schema v${from} -> v${to} (${identity.fingerprint})
   ${snapshotPath}
   ${STEPS_FILE}  <- fill in the ${moduleId} row
 
-edited: local-schema-version.ts, schema-identity.ts, local-schema-history.ts,
+edited: local-schema-version.ts, schema-snapshots.ts, schema-identity.ts, local-schema-history.ts,
         ${TEST_FILE}, ${NATIVE_PROBE}
 
 next:

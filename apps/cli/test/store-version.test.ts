@@ -20,7 +20,8 @@ import {
 	serverPidPath,
 	storeMarkerPath,
 	storeOpenMarkerPath,
-} from "../src/server/store-version"
+} from "@maple/local-server/store-version"
+import { String as Str } from "effect"
 
 // Each test gets a throwaway parent dir; the data dir is a child of it so the
 // markers (written beside the data dir) land in the temp tree, not on $HOME.
@@ -36,7 +37,9 @@ const withDataDir = (run: (dataDir: string) => void): void => {
 }
 
 /** Simulate a bootstrapped store (chDB creates `store/`). */
-const seedData = (dataDir: string): void => mkdirSync(join(dataDir, "store"), { recursive: true })
+const seedData = (dataDir: string): void => {
+	mkdirSync(join(dataDir, "store"), { recursive: true })
+}
 
 /** Write a legacy (pre-v2) store marker beside the data dir. */
 const writeMarker = (dataDir: string, schema: string): void =>
@@ -94,7 +97,7 @@ describe("clean-shutdown sentinel", () => {
 		seedData(dataDir)
 		let child: ChildProcess | undefined
 		try {
-			const moduleUrl = new URL("../src/server/store-version.ts", import.meta.url).href
+			const moduleUrl = import.meta.resolve("@maple/local-server/store-version")
 			child = spawn(
 				process.execPath,
 				[
@@ -118,7 +121,7 @@ describe("clean-shutdown sentinel", () => {
 				)
 				child!.stdout?.on("data", (chunk: Buffer) => {
 					stdout += chunk.toString()
-					if (stdout.includes("ready\n")) {
+					if (Str.includes("ready\n")(stdout)) {
 						clearTimeout(timeout)
 						resolve()
 					}
@@ -129,7 +132,7 @@ describe("clean-shutdown sentinel", () => {
 				})
 				child!.once("exit", (code, signal) => {
 					clearTimeout(timeout)
-					if (!stdout.includes("ready\n"))
+					if (!Str.includes("ready\n")(stdout))
 						reject(new Error(`sentinel child exited before becoming ready (${code ?? signal})`))
 				})
 			})
@@ -289,7 +292,7 @@ describe("newerStoreSchemaVersion", () => {
 	const markerAt = (version: number) =>
 		makeStoreMarker("0.9.0", "2026-01-01T00:00:00.000Z", "0123456789abcdef", {
 			schemaVersion: version,
-			schemaDigest: "a".repeat(64),
+			schemaDigest: Str.repeat(64)("a"),
 		})
 
 	it("reports a store written by a newer maple, and nothing else", () => {

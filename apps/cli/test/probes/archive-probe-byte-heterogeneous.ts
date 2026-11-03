@@ -11,8 +11,9 @@
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { ArchiveProbe, firstRow } from "../archive-probe-helpers"
-import { archiveSignal } from "../../src/server/archives/signals"
-import { exportSignalShards } from "../../src/server/archives/export"
+import { archiveSignal } from "@maple/local-server/archives/signals"
+import { exportSignalShards } from "@maple/local-server/archives/export"
+import { String as Str } from "effect"
 
 const SCHEMA = `
 CREATE DATABASE IF NOT EXISTS default;
@@ -64,7 +65,7 @@ try {
 } catch (e) {
 	const msg = e instanceof Error ? e.message : String(e)
 	if (/exceeds|maxShardBytes/i.test(msg)) {
-		h.fail(`heterogeneous export aborted instead of refining: ${msg.slice(0, 160)}`)
+		h.fail(`heterogeneous export aborted instead of refining: ${Str.slice(0, 160)(msg)}`)
 	}
 	h.fail(msg)
 }

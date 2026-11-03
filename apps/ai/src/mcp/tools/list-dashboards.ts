@@ -1,5 +1,5 @@
 import type { McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListDashboardsOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -34,7 +34,7 @@ export function registerListDashboardsTool(server: McpToolRegistrar) {
 			const dashboards =
 				lowerSearch === undefined
 					? result.dashboards
-					: result.dashboards.filter((d) => d.name.toLowerCase().includes(lowerSearch))
+					: Arr.filter(result.dashboards, (d) => Str.includes(lowerSearch)(Str.toLowerCase(d.name)))
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
@@ -43,7 +43,7 @@ export function registerListDashboardsTool(server: McpToolRegistrar) {
 			})
 
 			return {
-				dashboards: dashboards.map(toDashboardRow),
+				dashboards: Arr.map(dashboards, toDashboardRow),
 				total: dashboards.length,
 				...(search === undefined ? undefined : { search }),
 			}
@@ -74,21 +74,20 @@ export function registerListDashboardsTool(server: McpToolRegistrar) {
 						: [
 								doc.text(`Total: ${output.total} dashboard${output.total !== 1 ? "s" : ""}`),
 								doc.table(
-									["ID", "Name", "Widgets", "Updated"],
-									output.dashboards.map((d) => [
+									["ID", "REST id", "Name", "Widgets", "Updated"],
+									Arr.map(output.dashboards, (d) => [
 										d.id,
+										d.publicId,
 										d.name,
 										String(d.widgetCount),
-										d.updatedAt.slice(0, 19),
+										Str.slice(0, 19)(d.updatedAt),
 									]),
 								),
 							],
 				next: [
-					...output.dashboards
-						.slice(0, 3)
-						.map((d) =>
-							doc.next("get_dashboard", { dashboard_id: d.id }, "view dashboard configuration"),
-						),
+					...Arr.map(output.dashboards.slice(0, 3), (d) =>
+						doc.next("get_dashboard", { dashboard_id: d.id }, "view dashboard configuration"),
+					),
 					doc.next(
 						"create_dashboard",
 						{ name: "New dashboard", template: exampleTemplate },

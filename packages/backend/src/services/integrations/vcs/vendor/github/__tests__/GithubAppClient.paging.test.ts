@@ -1,11 +1,12 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
-import { ConfigProvider, Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	COMMIT_PAGES_PER_INVOCATION,
 	GithubAppClient,
 } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
+import { VcsRepositoryBlockedError, VcsRepoUnavailableError } from "@maple/domain/http"
 import { fakeGithubHttp } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 
 const privateKey = generateKeyPairSync("rsa", {
@@ -49,7 +50,7 @@ const clientLayer = (responses: ReadonlyArray<Response>, requests: Array<string>
 }
 
 const commit = (index: number) => ({
-	sha: index.toString(16).padStart(40, "0"),
+	sha: Str.padStart(40, "0")(index.toString(16)),
 	html_url: `https://github.com/octo/shop/commit/${index}`,
 	commit: { message: `commit ${index}`, author: null },
 	author: null,
@@ -183,6 +184,55 @@ describe("GithubAppClient paging", () => {
 			assert.isUndefined(result)
 			assert.strictEqual(requests.length, 3)
 			assert.include(requests[2], "/issues/comments/500")
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+// A gone or blocked repo is an answer the sync records. The listing fails with the anticipated
+// domain error so its span records Ok instead of opening an error issue per repo and poll.
+describe("GithubAppClient repository listings", () => {
+	it.effect("fails a legally blocked repository's branch listing as VcsRepositoryBlockedError", () => {
+		const layer = clientLayer(
+			[
+				tokenResponse(),
+				new Response(
+					JSON.stringify({ message: "Repository access blocked", block: { reason: "dmca" } }),
+					{
+						status: 451,
+					},
+				),
+			],
+			[],
+		)
+
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			const error = yield* Effect.flip(client.listBranches("42", "octo", "shop"))
+			assert.instanceOf(error, VcsRepositoryBlockedError)
+			assert.strictEqual(Schema.is(VcsRepositoryBlockedError)(error) && error.status, 451)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("fails a deleted repository's commit listing as VcsRepoUnavailableError", () => {
+		const layer = clientLayer(
+			[tokenResponse(), new Response('{"message":"Not Found"}', { status: 404 })],
+			[],
+		)
+
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			const error = yield* Effect.flip(client.listCommits("42", "octo", "shop", {}))
+			assert.instanceOf(error, VcsRepoUnavailableError)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("keeps an upstream 5xx a GithubAppError the provider can retry", () => {
+		const layer = clientLayer([tokenResponse(), new Response("boom", { status: 502 })], [])
+
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			const error = yield* Effect.flip(client.listBranches("42", "octo", "shop"))
+			assert.strictEqual(error._tag, "@maple/backend/vcs/GithubAppError")
 		}).pipe(Effect.provide(layer))
 	})
 })

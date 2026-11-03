@@ -16,7 +16,7 @@
  */
 import { execFileSync, spawnSync } from "node:child_process"
 import {
-	SANDBOX_COMMAND_ENV,
+	SANDBOX_COMMAND_ENV_NAMES,
 	SANDBOX_MIRROR_DIR,
 	SANDBOX_RUN_AS_USER,
 	SANDBOX_SEED_DIR,
@@ -37,6 +37,7 @@ import {
 	snapshotScript,
 	wrapCommand,
 } from "../src/checkout.ts"
+import { Array as Arr, String as Str } from "effect"
 
 const IMAGE = "maple-sandbox:verify"
 const TOKEN = "ghs_a_secret_that_must_never_land_on_disk"
@@ -49,48 +50,59 @@ const ISOLATION_EXPECTED = process.env.MAPLE_SANDBOX_NO_CAPS ? "unavailable" : "
  * what lets the harness generate a clone script for a real SHA: the hash is read
  * from one throwaway container and every later one rebuilds the same commit.
  */
-const FIXTURE = [
-	"export GIT_AUTHOR_NAME=Test GIT_AUTHOR_EMAIL=t@example.com",
-	"export GIT_COMMITTER_NAME=Test GIT_COMMITTER_EMAIL=t@example.com",
-	"export GIT_AUTHOR_DATE='2026-01-01T00:00:00+0000' GIT_COMMITTER_DATE='2026-01-01T00:00:00+0000'",
-	"mkdir -p /work/src && cd /work/src",
-	"git init --quiet -b main .",
-	"mkdir -p src",
-	`printf 'export const total = 1\nthrow new Error(%s)\n' \"'card declined'\" > src/checkout.ts`,
-	"printf 'a\n' > README.md",
-	"git add -A && git commit --quiet -m first",
-	// A bare origin the clone can reach with no network.
-	"git clone --quiet --bare /work/src /origin.git",
-].join("\n")
+const FIXTURE = Arr.join(
+	[
+		"export GIT_AUTHOR_NAME=Test GIT_AUTHOR_EMAIL=t@example.com",
+		"export GIT_COMMITTER_NAME=Test GIT_COMMITTER_EMAIL=t@example.com",
+		"export GIT_AUTHOR_DATE='2026-01-01T00:00:00+0000' GIT_COMMITTER_DATE='2026-01-01T00:00:00+0000'",
+		"mkdir -p /work/src && cd /work/src",
+		"git init --quiet -b main .",
+		"mkdir -p src",
+		`printf 'export const total = 1\nthrow new Error(%s)\n' "'card declined'" > src/checkout.ts`,
+		"printf 'a\n' > README.md",
+		"git add -A && git commit --quiet -m first",
+		// A bare origin the clone can reach with no network.
+		"git clone --quiet --bare /work/src /origin.git",
+	],
+	"\n",
+)
 
 /** A second commit on `main`, pushed to the origin: what the next pull request review checks out. */
-const SECOND_COMMIT = [
-	"export GIT_AUTHOR_NAME=Test GIT_AUTHOR_EMAIL=t@example.com",
-	"export GIT_COMMITTER_NAME=Test GIT_COMMITTER_EMAIL=t@example.com",
-	"export GIT_AUTHOR_DATE='2026-01-02T00:00:00+0000' GIT_COMMITTER_DATE='2026-01-02T00:00:00+0000'",
-	"cd /work/src",
-	"printf 'b\n' >> README.md",
-	"git commit --quiet -am second",
-	"git push --quiet /origin.git main",
-	"cd /",
-].join("\n")
+const SECOND_COMMIT = Arr.join(
+	[
+		"export GIT_AUTHOR_NAME=Test GIT_AUTHOR_EMAIL=t@example.com",
+		"export GIT_COMMITTER_NAME=Test GIT_COMMITTER_EMAIL=t@example.com",
+		"export GIT_AUTHOR_DATE='2026-01-02T00:00:00+0000' GIT_COMMITTER_DATE='2026-01-02T00:00:00+0000'",
+		"cd /work/src",
+		"printf 'b\n' >> README.md",
+		"git commit --quiet -am second",
+		"git push --quiet /origin.git main",
+		"cd /",
+	],
+	"\n",
+)
 
 /** Run the real clone script for `target` inside the current container, reporting its exit. */
 const cloneFor = (target: SandboxCheckout, label: string) =>
-	[
-		"(",
-		`export ${CLONE_TOKEN_ENV}=${shellQuote(TOKEN)}`,
-		cloneScript(target),
-		`) > /tmp/clone-${label}.log 2>&1`,
-		`echo "${label}_EXIT=$?"`,
-	].join("\n")
+	Arr.join(
+		[
+			"(",
+			`export ${CLONE_TOKEN_ENV}=${shellQuote(TOKEN)}`,
+			cloneScript(target),
+			`) > /tmp/clone-${label}.log 2>&1`,
+			`echo "${label}_EXIT=$?"`,
+		],
+		"\n",
+	)
 
 let failures = 0
 const check = (name: string, ok: boolean, detail = "") => {
 	if (ok) console.log(`  ok    ${name}`)
 	else {
 		failures += 1
-		console.log(`  FAIL  ${name}${detail ? `\n        ${detail.replaceAll("\n", "\n        ")}` : ""}`)
+		console.log(
+			`  FAIL  ${name}${detail ? `\n        ${Str.replaceAll("\n", "\n        ")(detail)}` : ""}`,
+		)
 	}
 }
 
@@ -121,21 +133,24 @@ const inImage = (program: string) => {
  */
 const withCheckout = (commands: ReadonlyArray<string>) =>
 	inImage(
-		[
-			"set -e",
-			FIXTURE,
-			"set +e",
-			"(",
-			`export ${CLONE_TOKEN_ENV}=${shellQuote(TOKEN)}`,
-			cloneScript(checkout),
-			") > /tmp/clone.log 2>&1",
-			`echo "CLONE_EXIT=$?"`,
-			// Nothing below may run outside the checkout: without this a failed clone
-			// leaves the shell in the fixture repository, where the same commands
-			// happily succeed and every assertion passes for the wrong reason.
-			`cd ${shellQuote(checkoutDir(SHA))} || { echo "NO_CHECKOUT=yes"; cat /tmp/clone.log; exit 90; }`,
-			...commands,
-		].join("\n"),
+		Arr.join(
+			[
+				"set -e",
+				FIXTURE,
+				"set +e",
+				"(",
+				`export ${CLONE_TOKEN_ENV}=${shellQuote(TOKEN)}`,
+				cloneScript(checkout),
+				") > /tmp/clone.log 2>&1",
+				`echo "CLONE_EXIT=$?"`,
+				// Nothing below may run outside the checkout: without this a failed clone
+				// leaves the shell in the fixture repository, where the same commands
+				// happily succeed and every assertion passes for the wrong reason.
+				`cd ${shellQuote(checkoutDir(SHA))} || { echo "NO_CHECKOUT=yes"; cat /tmp/clone.log; exit 90; }`,
+				...commands,
+			],
+			"\n",
+		),
 	)
 
 console.log(`image ${IMAGE}, isolation expected: ${ISOLATION_EXPECTED}\n`)
@@ -154,7 +169,7 @@ execFileSync(
 const probe = inImage(
 	`set -e\n${FIXTURE}\ngit -C /work/src rev-parse HEAD\n${SECOND_COMMIT}\ngit -C /work/src rev-parse HEAD`,
 )
-const [SHA = "", SECOND_SHA = ""] = probe.stdout.trim().split("\n").slice(-2)
+const [SHA = "", SECOND_SHA = ""] = Str.split("\n")(Str.trim(probe.stdout)).slice(-2)
 if (!/^[0-9a-f]{40}$/.test(SHA) || !/^[0-9a-f]{40}$/.test(SECOND_SHA)) {
 	console.error(`could not build the fixture repository:\n${probe.stdout}\n${probe.stderr}`)
 	process.exit(1)
@@ -200,36 +215,39 @@ console.log("\nthe mirror")
 {
 	const second = checkoutDir(SECOND_SHA)
 	const run = inImage(
-		[
-			"set -e",
-			FIXTURE,
-			"set +e",
-			cloneFor(checkout, "FIRST"),
-			SECOND_COMMIT,
-			cloneFor(secondCheckout, "SECOND"),
-			`echo "MIRROR_COUNT=$(ls -d ${shellQuote(SANDBOX_MIRROR_DIR)}* 2>/dev/null | wc -l)"`,
-			`echo "SECOND_HEAD=$(git -C ${shellQuote(second)} rev-parse HEAD 2>&1)"`,
-			`echo "SECOND_HISTORY=$(git -C ${shellQuote(second)} log --oneline 2>/dev/null | wc -l)"`,
-			`echo "ORIGIN_MAIN=$(git -C ${shellQuote(second)} rev-parse origin/main 2>&1)"`,
-			`echo "BORROWS=$(cat ${shellQuote(second)}/.git/objects/info/alternates 2>&1)"`,
-			`echo "PINNED=$(git -C ${shellQuote(SANDBOX_MIRROR_DIR)} for-each-ref --format='%(refname)' refs/maple | wc -l)"`,
-			`echo "MIRROR_GC=$(git -C ${shellQuote(SANDBOX_MIRROR_DIR)} config gc.auto)"`,
-			`echo "MIRROR_REMOTES=$(git -C ${shellQuote(SANDBOX_MIRROR_DIR)} remote | wc -l)"`,
-			`echo "TOKEN_ON_DISK=$(grep -rlF ${shellQuote(TOKEN)} / --exclude-dir=proc --exclude-dir=sys 2>/dev/null | head -n 3)"`,
-			// The agent account reads history through the mirror it borrows objects from.
-			`echo "AGENT_LOG=$(cd ${shellQuote(second)} && runuser -u ${SANDBOX_RUN_AS_USER} -- git log --oneline 2>&1 | wc -l)"`,
-			`echo "AGENT_BLAME=$(cd ${shellQuote(second)} && runuser -u ${SANDBOX_RUN_AS_USER} -- git blame README.md 2>&1 | wc -l)"`,
-			// The backup snapshot: a complete repository, and a hard-link copy rather than a second one.
-			`( ${snapshotScript().replaceAll("\n", " && ")} ); echo "SNAPSHOT_EXIT=$?"`,
-			`git -C ${shellQuote(SANDBOX_SNAPSHOT_DIR)} fsck --connectivity-only >/dev/null 2>&1; echo "SNAPSHOT_FSCK=$?"`,
-			`echo "SNAPSHOT_HAS_SECOND=$(git -C ${shellQuote(SANDBOX_SNAPSHOT_DIR)} cat-file -t ${SECOND_SHA} 2>&1)"`,
-			`echo "SNAPSHOT_PACKS=$(ls ${shellQuote(SANDBOX_SNAPSHOT_DIR)}/objects/pack/*.pack | wc -l)"`,
-			`git -C ${shellQuote(SANDBOX_MIRROR_DIR)} fsck --connectivity-only >/dev/null 2>&1; echo "MIRROR_FSCK_AFTER=$?"`,
-			`echo "LOG_AFTER=$(git -C ${shellQuote(checkoutDir(SECOND_SHA))} log --oneline 2>/dev/null | wc -l)"`,
-			`echo "AGENT_LOCK=$(runuser -u ${SANDBOX_RUN_AS_USER} -- sh -c 'exec 8<${SANDBOX_MIRROR_DIR.replace(".git", ".lock")} && echo opened' 2>/dev/null || echo refused)"`,
-			`echo "AGENT_WRITE_MIRROR=$(runuser -u ${SANDBOX_RUN_AS_USER} -- sh -c 'touch ${SANDBOX_MIRROR_DIR}/objects/x && echo wrote' 2>/dev/null || echo refused)"`,
-			"echo LOGS_START; cat /tmp/clone-*.log; echo LOGS_END",
-		].join("\n"),
+		Arr.join(
+			[
+				"set -e",
+				FIXTURE,
+				"set +e",
+				cloneFor(checkout, "FIRST"),
+				SECOND_COMMIT,
+				cloneFor(secondCheckout, "SECOND"),
+				`echo "MIRROR_COUNT=$(ls -d ${shellQuote(SANDBOX_MIRROR_DIR)}* 2>/dev/null | wc -l)"`,
+				`echo "SECOND_HEAD=$(git -C ${shellQuote(second)} rev-parse HEAD 2>&1)"`,
+				`echo "SECOND_HISTORY=$(git -C ${shellQuote(second)} log --oneline 2>/dev/null | wc -l)"`,
+				`echo "ORIGIN_MAIN=$(git -C ${shellQuote(second)} rev-parse origin/main 2>&1)"`,
+				`echo "BORROWS=$(cat ${shellQuote(second)}/.git/objects/info/alternates 2>&1)"`,
+				`echo "PINNED=$(git -C ${shellQuote(SANDBOX_MIRROR_DIR)} for-each-ref --format='%(refname)' refs/maple | wc -l)"`,
+				`echo "MIRROR_GC=$(git -C ${shellQuote(SANDBOX_MIRROR_DIR)} config gc.auto)"`,
+				`echo "MIRROR_REMOTES=$(git -C ${shellQuote(SANDBOX_MIRROR_DIR)} remote | wc -l)"`,
+				`echo "TOKEN_ON_DISK=$(grep -rlF ${shellQuote(TOKEN)} / --exclude-dir=proc --exclude-dir=sys 2>/dev/null | head -n 3)"`,
+				// The agent account reads history through the mirror it borrows objects from.
+				`echo "AGENT_LOG=$(cd ${shellQuote(second)} && runuser -u ${SANDBOX_RUN_AS_USER} -- git log --oneline 2>&1 | wc -l)"`,
+				`echo "AGENT_BLAME=$(cd ${shellQuote(second)} && runuser -u ${SANDBOX_RUN_AS_USER} -- git blame README.md 2>&1 | wc -l)"`,
+				// The backup snapshot: a complete repository, and a hard-link copy rather than a second one.
+				`( ${Str.replaceAll("\n", " && ")(snapshotScript())} ); echo "SNAPSHOT_EXIT=$?"`,
+				`git -C ${shellQuote(SANDBOX_SNAPSHOT_DIR)} fsck --connectivity-only >/dev/null 2>&1; echo "SNAPSHOT_FSCK=$?"`,
+				`echo "SNAPSHOT_HAS_SECOND=$(git -C ${shellQuote(SANDBOX_SNAPSHOT_DIR)} cat-file -t ${SECOND_SHA} 2>&1)"`,
+				`echo "SNAPSHOT_PACKS=$(ls ${shellQuote(SANDBOX_SNAPSHOT_DIR)}/objects/pack/*.pack | wc -l)"`,
+				`git -C ${shellQuote(SANDBOX_MIRROR_DIR)} fsck --connectivity-only >/dev/null 2>&1; echo "MIRROR_FSCK_AFTER=$?"`,
+				`echo "LOG_AFTER=$(git -C ${shellQuote(checkoutDir(SECOND_SHA))} log --oneline 2>/dev/null | wc -l)"`,
+				`echo "AGENT_LOCK=$(runuser -u ${SANDBOX_RUN_AS_USER} -- sh -c 'exec 8<${Str.replace(".git", ".lock")(SANDBOX_MIRROR_DIR)} && echo opened' 2>/dev/null || echo refused)"`,
+				`echo "AGENT_WRITE_MIRROR=$(runuser -u ${SANDBOX_RUN_AS_USER} -- sh -c 'touch ${SANDBOX_MIRROR_DIR}/objects/x && echo wrote' 2>/dev/null || echo refused)"`,
+				"echo LOGS_START; cat /tmp/clone-*.log; echo LOGS_END",
+			],
+			"\n",
+		),
 	)
 	const field = (name: string) =>
 		new RegExp(`^${name}=(.*)$`, "m").exec(run.stdout)?.[1]?.trim() ?? "<missing>"
@@ -257,7 +275,7 @@ console.log("\nthe mirror")
 		field("ORIGIN_MAIN") === SECOND_SHA,
 		field("ORIGIN_MAIN"),
 	)
-	check("the checkout borrows the mirror's objects", field("BORROWS").startsWith(SANDBOX_MIRROR_DIR))
+	check("the checkout borrows the mirror's objects", Str.startsWith(SANDBOX_MIRROR_DIR)(field("BORROWS")))
 	check("each reviewed commit is pinned in the mirror", field("PINNED") === "2", field("PINNED"))
 	check("the mirror never garbage-collects what checkouts borrow", field("MIRROR_GC") === "0")
 	check("the mirror keeps no remote, so no URL is stored", field("MIRROR_REMOTES") === "0")
@@ -281,24 +299,27 @@ console.log("\na restored backup")
 {
 	// What `restoreBackup` leaves behind: the earlier mirror at the seed path, and no mirror.
 	const run = inImage(
-		[
-			"set -e",
-			FIXTURE,
-			"set +e",
-			cloneFor(checkout, "FIRST"),
-			`( ${snapshotScript().replaceAll("\n", " && ")} )`,
-			`mv ${shellQuote(SANDBOX_SNAPSHOT_DIR)} ${shellQuote(SANDBOX_SEED_DIR)}`,
-			`touch ${shellQuote(SANDBOX_SEED_DIR)}/SEEDED`,
-			`rm -rf ${shellQuote(SANDBOX_MIRROR_DIR)} ${shellQuote(SANDBOX_WORKSPACE_ROOT)}`,
-			SECOND_COMMIT,
-			cloneFor(secondCheckout, "RESTORED"),
-			`echo "FROM_SEED=$(test -e ${shellQuote(SANDBOX_MIRROR_DIR)}/SEEDED && echo yes || echo no)"`,
-			`echo "SEED_LEFT=$(test -e ${shellQuote(SANDBOX_SEED_DIR)} && echo yes || echo no)"`,
-			`echo "TEMP_MIRRORS=$(ls -d ${shellQuote(SANDBOX_MIRROR_DIR)}.* 2>/dev/null | wc -l)"`,
-			`echo "RESTORED_HEAD=$(git -C ${shellQuote(checkoutDir(SECOND_SHA))} rev-parse HEAD 2>&1)"`,
-			`echo "RESTORED_HISTORY=$(git -C ${shellQuote(checkoutDir(SECOND_SHA))} log --oneline 2>/dev/null | wc -l)"`,
-			"echo LOGS_START; cat /tmp/clone-*.log; echo LOGS_END",
-		].join("\n"),
+		Arr.join(
+			[
+				"set -e",
+				FIXTURE,
+				"set +e",
+				cloneFor(checkout, "FIRST"),
+				`( ${Str.replaceAll("\n", " && ")(snapshotScript())} )`,
+				`mv ${shellQuote(SANDBOX_SNAPSHOT_DIR)} ${shellQuote(SANDBOX_SEED_DIR)}`,
+				`touch ${shellQuote(SANDBOX_SEED_DIR)}/SEEDED`,
+				`rm -rf ${shellQuote(SANDBOX_MIRROR_DIR)} ${shellQuote(SANDBOX_WORKSPACE_ROOT)}`,
+				SECOND_COMMIT,
+				cloneFor(secondCheckout, "RESTORED"),
+				`echo "FROM_SEED=$(test -e ${shellQuote(SANDBOX_MIRROR_DIR)}/SEEDED && echo yes || echo no)"`,
+				`echo "SEED_LEFT=$(test -e ${shellQuote(SANDBOX_SEED_DIR)} && echo yes || echo no)"`,
+				`echo "TEMP_MIRRORS=$(ls -d ${shellQuote(SANDBOX_MIRROR_DIR)}.* 2>/dev/null | wc -l)"`,
+				`echo "RESTORED_HEAD=$(git -C ${shellQuote(checkoutDir(SECOND_SHA))} rev-parse HEAD 2>&1)"`,
+				`echo "RESTORED_HISTORY=$(git -C ${shellQuote(checkoutDir(SECOND_SHA))} log --oneline 2>/dev/null | wc -l)"`,
+				"echo LOGS_START; cat /tmp/clone-*.log; echo LOGS_END",
+			],
+			"\n",
+		),
 	)
 	const field = (name: string) =>
 		new RegExp(`^${name}=(.*)$`, "m").exec(run.stdout)?.[1]?.trim() ?? "<missing>"
@@ -318,7 +339,6 @@ console.log("\na restored backup")
 
 console.log("\nthe command wrapper")
 {
-	const dir = checkoutDir(SHA)
 	const wrapped = (command: string, args: ReadonlyArray<string>, maxOutputBytes = 48 * 1024): string =>
 		wrapCommand({ command, args, maxOutputBytes })
 
@@ -335,7 +355,7 @@ console.log("\nthe command wrapper")
 	const grepTrailer = parseTrailer(grep)
 	check(
 		"git grep runs and matches",
-		ISOLATION_EXPECTED === "unavailable" || grep.includes("src/checkout.ts:2:"),
+		ISOLATION_EXPECTED === "unavailable" || Str.includes("src/checkout.ts:2:")(grep),
 		grep,
 	)
 	check(
@@ -349,34 +369,33 @@ console.log("\nthe command wrapper")
 	const whoami = one("WHOAMI", wrapped("id", ["-un"]))
 	check(
 		`commands run as ${SANDBOX_RUN_AS_USER}, not root`,
-		whoami.includes(SANDBOX_RUN_AS_USER) || ISOLATION_EXPECTED === "unavailable",
+		Str.includes(SANDBOX_RUN_AS_USER)(whoami) || ISOLATION_EXPECTED === "unavailable",
 		whoami,
 	)
 
 	const environment = one("ENV", wrapped("env", []))
-	const names = environment
-		.split("\n")
-		.filter((line) => /^[A-Z_]+=/.test(line))
-		.map((line) => line.slice(0, line.indexOf("=")))
-		.sort()
+	const names = Arr.map(
+		Arr.filter(Str.split("\n")(environment), (line) => /^[A-Z_]+=/.test(line)),
+		(line) => Str.slice(0, line.indexOf("="))(line),
+	).sort()
 	check(
 		"the environment is exactly the contract's allowlist",
 		ISOLATION_EXPECTED === "unavailable" ||
-			names.join(",") === Object.keys(SANDBOX_COMMAND_ENV).sort().join(","),
-		names.join(",") || environment,
+			Arr.join(names, ",") === Arr.join(SANDBOX_COMMAND_ENV_NAMES, ","),
+		Arr.join(names, ",") || environment,
 	)
 
 	const write = one("WRITE", wrapped("sh", ["-c", "echo x > README.md; echo status=$?"]))
 	check(
 		"the checkout cannot be written",
-		ISOLATION_EXPECTED === "unavailable" || !write.includes("status=0"),
+		ISOLATION_EXPECTED === "unavailable" || !Str.includes("status=0")(write),
 		write,
 	)
 
 	const egress = one("EGRESS", wrapped("sh", ["-c", "getent hosts github.com; echo status=$?"]))
 	check(
 		"there is no egress inside the namespace",
-		ISOLATION_EXPECTED === "unavailable" || !egress.includes("status=0"),
+		ISOLATION_EXPECTED === "unavailable" || !Str.includes("status=0")(egress),
 		egress,
 	)
 
@@ -390,7 +409,7 @@ console.log("\nthe command wrapper")
 			(bigTrailer._tag === "Some" &&
 				bigTrailer.value.body.length <= 512 &&
 				bigTrailer.value.trailer.stdoutBytes === 4096),
-		big.slice(0, 200),
+		Str.slice(0, 200)(big),
 	)
 
 	if (ISOLATION_EXPECTED === "unavailable") {
@@ -406,38 +425,41 @@ console.log("\nthe command wrapper")
 console.log("\nthe background clone")
 {
 	// The scripts the Durable Object runs, quoted back into one program. `&` stands in for spawn.
-	const status = `$(${commandArgv(checkoutStatusScript(SHA)).map(shellQuote).join(" ")} | head -n 1)`
+	const status = `$(${Arr.join(Arr.map(commandArgv(checkoutStatusScript(SHA)), shellQuote), " ")} | head -n 1)`
 	const poll = `for i in $(seq 1 100); do case "${status}" in cloning) sleep 0.1;; *) break;; esac; done`
 	const spawn = (target: SandboxCheckout) =>
 		`env ${CLONE_TOKEN_ENV}=${shellQuote(target.token)} bash -c ${shellQuote(cloneRunner(target))} &`
 	const broken = new SandboxCheckout({ ...checkout, remoteUrl: "file:///nowhere.git" })
 	const run = inImage(
-		[
-			"set -e",
-			FIXTURE,
-			"set +e",
-			`echo "FIRST=${status}"`,
-			`echo "SECOND=${status}"`,
-			spawn(checkout),
-			poll,
-			`echo "AFTER=${status}"`,
-			`echo "TOKEN_ON_DISK=$(grep -rlF ${shellQuote(TOKEN)} / --exclude-dir=proc --exclude-dir=sys 2>/dev/null | head -n 3)"`,
-			// The token lives in the clone's environment; the agent's account must not read it there.
-			`id -u ${SANDBOX_RUN_AS_USER} >/dev/null 2>&1 || useradd --system ${SANDBOX_RUN_AS_USER}`,
-			`env ${CLONE_TOKEN_ENV}=${shellQuote(TOKEN)} sleep 5 & p=$!`,
-			"sleep 0.2",
-			`echo "ENVIRON=$(runuser -u ${SANDBOX_RUN_AS_USER} -- cat /proc/$p/environ 2>&1 | tr '\\0' ' ' | head -c 200)"`,
-			`echo "CMDLINE=$(runuser -u ${SANDBOX_RUN_AS_USER} -- cat /proc/$p/cmdline 2>&1 | tr '\\0' ' ')"`,
-			"kill $p",
-			// A clone that fails is reported once, then claimed again on the next call.
-			`rm -rf ${shellQuote(checkoutDir(SHA))}`,
-			`echo "BROKEN_CLAIM=${status}"`,
-			spawn(broken),
-			// Not `poll`: its own status call would report the failure, and forget it, first.
-			`for i in $(seq 1 100); do [ -e ${shellQuote(cloneStateDir(SHA))}/exit-code ] && break; sleep 0.1; done`,
-			`echo "BROKEN=$(${commandArgv(checkoutStatusScript(SHA)).map(shellQuote).join(" ")} | tr '\\n' ' ')"`,
-			`echo "RETRY=${status}"`,
-		].join("\n"),
+		Arr.join(
+			[
+				"set -e",
+				FIXTURE,
+				"set +e",
+				`echo "FIRST=${status}"`,
+				`echo "SECOND=${status}"`,
+				spawn(checkout),
+				poll,
+				`echo "AFTER=${status}"`,
+				`echo "TOKEN_ON_DISK=$(grep -rlF ${shellQuote(TOKEN)} / --exclude-dir=proc --exclude-dir=sys 2>/dev/null | head -n 3)"`,
+				// The token lives in the clone's environment; the agent's account must not read it there.
+				`id -u ${SANDBOX_RUN_AS_USER} >/dev/null 2>&1 || useradd --system ${SANDBOX_RUN_AS_USER}`,
+				`env ${CLONE_TOKEN_ENV}=${shellQuote(TOKEN)} sleep 5 & p=$!`,
+				"sleep 0.2",
+				`echo "ENVIRON=$(runuser -u ${SANDBOX_RUN_AS_USER} -- cat /proc/$p/environ 2>&1 | tr '\\0' ' ' | head -c 200)"`,
+				`echo "CMDLINE=$(runuser -u ${SANDBOX_RUN_AS_USER} -- cat /proc/$p/cmdline 2>&1 | tr '\\0' ' ')"`,
+				"kill $p",
+				// A clone that fails is reported once, then claimed again on the next call.
+				`rm -rf ${shellQuote(checkoutDir(SHA))}`,
+				`echo "BROKEN_CLAIM=${status}"`,
+				spawn(broken),
+				// Not `poll`: its own status call would report the failure, and forget it, first.
+				`for i in $(seq 1 100); do [ -e ${shellQuote(cloneStateDir(SHA))}/exit-code ] && break; sleep 0.1; done`,
+				`echo "BROKEN=$(${Arr.join(Arr.map(commandArgv(checkoutStatusScript(SHA)), shellQuote), " ")} | tr '\\n' ' ')"`,
+				`echo "RETRY=${status}"`,
+			],
+			"\n",
+		),
 	)
 	const field = (name: string) => new RegExp(`^${name}=(.*)$`, "m").exec(run.stdout)?.[1] ?? ""
 	const logs = `${run.stdout}\n${run.stderr}`
@@ -447,18 +469,18 @@ console.log("\nthe background clone")
 	check("the token is nowhere on disk", field("TOKEN_ON_DISK") === "", field("TOKEN_ON_DISK"))
 	check(
 		`${SANDBOX_RUN_AS_USER} cannot read the token from the clone's environment`,
-		!field("ENVIRON").includes(TOKEN) && field("ENVIRON").includes("Permission denied"),
+		!Str.includes(TOKEN)(field("ENVIRON")) && Str.includes("Permission denied")(field("ENVIRON")),
 		field("ENVIRON"),
 	)
 	check(
 		"the token is not in its command line either",
-		!field("CMDLINE").includes(TOKEN) && field("CMDLINE").includes("sleep"),
+		!Str.includes(TOKEN)(field("CMDLINE")) && Str.includes("sleep")(field("CMDLINE")),
 		field("CMDLINE"),
 	)
 	check("a pruned checkout is claimed again", field("BROKEN_CLAIM") === "claimed", logs)
 	check(
 		"a failed clone reports its exit code and stderr",
-		/^failed [1-9]/.test(field("BROKEN")) && field("BROKEN").includes("nowhere"),
+		/^failed [1-9]/.test(field("BROKEN")) && Str.includes("nowhere")(field("BROKEN")),
 		field("BROKEN"),
 	)
 	check("and is cloned again on the next call", field("RETRY") === "claimed", logs)

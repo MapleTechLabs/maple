@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest"
 import { readdirSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * A denylist scan over every surface an agent reads about dashboards.
@@ -52,12 +53,17 @@ const RETIRED: ReadonlyArray<RetiredIdentifier> = [
 
 /** Agent-facing text: tool descriptions, the instructions resource, the skill. */
 const surfaces = (): ReadonlyArray<{ label: string; text: string }> => {
-	const dashboardTools = readdirSync(TOOLS_DIR)
-		.filter((file) => file.includes("dashboard") && file.endsWith(".ts") && !file.includes(".test."))
-		.map((file) => ({
+	const dashboardTools = Arr.map(
+		Arr.filter(
+			readdirSync(TOOLS_DIR),
+			(file) =>
+				Str.includes("dashboard")(file) && Str.endsWith(".ts")(file) && !Str.includes(".test.")(file),
+		),
+		(file) => ({
 			label: `tools/${file}`,
 			text: readFileSync(resolve(TOOLS_DIR, file), "utf8"),
-		}))
+		}),
+	)
 
 	return [
 		...dashboardTools,

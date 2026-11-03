@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Tear down whole PR-preview stages whose PR is closed.
+ * Tear down whole PR-preview stages whose PR is closed or lost its `preview` label.
  *
  *   bun scripts/preview-stage-orphan-sweep.ts [--dry-run]
  *
@@ -14,7 +14,7 @@
  *   - Neon branches named `pr-<n>` in NEON_PROJECT_ID (alchemy.run.ts, declarePreviewDb),
  *   - R2 buckets named `maple-replay-blobs-pr-<n>`, which alchemy RETAINS on destroy
  *     (apps/api/src/resources/replay-blobs.ts), so every deployed stage keeps one.
- * For each PR the GitHub API affirmatively reports closed (unknown/open → keep), it runs
+ * For each PR the GitHub API affirmatively reports retired (unknown/live → keep), it runs
  * `alchemy destroy --yes --stage pr-<n>`, then deletes the Neon branch and empties and
  * deletes the R2 bucket. If the destroy fails, the branch and bucket stay so the next run
  * rediscovers the stage and retries. Stages run one at a time; a failure does not stop
@@ -31,12 +31,17 @@
 
 import { spawnSync } from "node:child_process"
 import { join } from "node:path"
-import { fetchPrState, hasPrStateCredentials } from "./lib/pr-state.ts"
+import { Option, Schema, Array as Arr } from "effect"
+import { fetchPreviewState, hasActivePreviewRun, hasPrStateCredentials } from "./lib/pr-state.ts"
 
 const FAILURE = 1
 const DRY_RUN = process.argv.includes("--dry-run")
 const REPO_ROOT = join(import.meta.dirname, "..")
 const DESTROY_TIMEOUT_MS = 30 * 60 * 1000
+
+// JSON.stringify printed "undefined" for an absent field; keep that in diagnostics.
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+const showJson = (value: unknown): string => Option.getOrElse(encodeJson(value), () => String(value))
 
 const fail = (message: string): never => {
 	console.error(`✗ ${message}`)
@@ -75,14 +80,13 @@ interface NeonBranch {
 const cfRequest = async (
 	token: string,
 	path: string,
-	init?: RequestInit,
+	init?: Omit<RequestInit, "headers">,
 ): Promise<{ ok: boolean; status: number; result: unknown; errors: unknown }> => {
 	const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
 		...init,
 		headers: {
 			Authorization: `Bearer ${token}`,
 			"Content-Type": "application/json",
-			...init?.headers,
 		},
 	})
 	const body = (await response.json().catch(() => ({}))) as {
@@ -101,14 +105,13 @@ const cfRequest = async (
 const neonRequest = async (
 	apiKey: string,
 	path: string,
-	init?: RequestInit,
+	init?: Omit<RequestInit, "headers">,
 ): Promise<{ ok: boolean; status: number; body: unknown }> => {
 	const response = await fetch(`https://console.neon.tech/api/v2${path}`, {
 		...init,
 		headers: {
 			Authorization: `Bearer ${apiKey}`,
 			Accept: "application/json",
-			...init?.headers,
 		},
 	})
 	const body: unknown = await response.json().catch(() => ({}))
@@ -125,11 +128,11 @@ const addCandidate = (candidates: Candidates, prNumber: string, marker: string):
 const listPreviewWorkers = async (token: string, accountId: string, candidates: Candidates) => {
 	const listed = await cfRequest(token, `/accounts/${accountId}/workers/scripts`)
 	if (!listed.ok) {
-		fail(`Could not list Worker scripts (HTTP ${listed.status}): ${JSON.stringify(listed.errors)}`)
+		fail(`Could not list Worker scripts (HTTP ${listed.status}): ${showJson(listed.errors)}`)
 	}
 	// A success response whose `result` isn't an array means the API shape
 	// changed under us: fail loudly rather than green-no-op'ing the safety net.
-	if (!Array.isArray(listed.result)) {
+	if (!Arr.isArray(listed.result)) {
 		fail(`Unexpected Worker list response shape (result is ${typeof listed.result}, expected array)`)
 	}
 	const scripts = listed.result as ReadonlyArray<WorkerScript>
@@ -149,10 +152,10 @@ const listReplayBuckets = async (token: string, accountId: string, candidates: C
 		`/accounts/${accountId}/r2/buckets?name_contains=maple-replay-blobs-pr-&per_page=1000`,
 	)
 	if (!listed.ok) {
-		fail(`Could not list R2 buckets (HTTP ${listed.status}): ${JSON.stringify(listed.errors)}`)
+		fail(`Could not list R2 buckets (HTTP ${listed.status}): ${showJson(listed.errors)}`)
 	}
 	const buckets = (listed.result as { buckets?: unknown } | undefined)?.buckets
-	if (!Array.isArray(buckets)) {
+	if (!Arr.isArray(buckets)) {
 		fail(`Unexpected R2 bucket list response shape (result.buckets is ${typeof buckets}, expected array)`)
 	}
 	let matched = 0
@@ -172,10 +175,10 @@ const listNeonBranches = async (
 ): Promise<Map<string, string>> => {
 	const listed = await neonRequest(apiKey, `/projects/${projectId}/branches`)
 	if (!listed.ok) {
-		fail(`Could not list Neon branches (HTTP ${listed.status}): ${JSON.stringify(listed.body)}`)
+		fail(`Could not list Neon branches (HTTP ${listed.status}): ${showJson(listed.body)}`)
 	}
 	const branches = (listed.body as { branches?: ReadonlyArray<NeonBranch> }).branches
-	if (!Array.isArray(branches)) {
+	if (!Arr.isArray(branches)) {
 		fail(`Unexpected Neon branch list response shape (branches is ${typeof branches}, expected array)`)
 	}
 	// PR number → branch id, for the delete after destroy.
@@ -219,7 +222,7 @@ const deleteNeonBranch = async (apiKey: string, projectId: string, branchId: str
 		method: "DELETE",
 	})
 	if (!removed.ok && removed.status !== 404) {
-		console.log(`✗ Neon branch delete failed (HTTP ${removed.status}): ${JSON.stringify(removed.body)}`)
+		console.log(`✗ Neon branch delete failed (HTTP ${removed.status}): ${showJson(removed.body)}`)
 		return false
 	}
 	return true
@@ -233,20 +236,21 @@ const emptyAndDeleteBucket = async (token: string, accountId: string, bucket: st
 	for (let page = 0; page < 10_000; page++) {
 		const listed = await cfRequest(token, `${objectsPath}?per_page=1000`)
 		if (listed.status === 404) return true
-		if (!listed.ok || !Array.isArray(listed.result)) {
+		if (!listed.ok || !Arr.isArray(listed.result)) {
 			console.log(
-				`✗ could not list objects in ${bucket} (HTTP ${listed.status}): ${JSON.stringify(listed.errors)}`,
+				`✗ could not list objects in ${bucket} (HTTP ${listed.status}): ${showJson(listed.errors)}`,
 			)
 			return false
 		}
-		const keys = (listed.result as ReadonlyArray<R2Object>)
-			.map((object) => object.key ?? "")
-			.filter((key) => key.length > 0)
+		const keys = Arr.filter(
+			Arr.map(listed.result as ReadonlyArray<R2Object>, (object) => object.key ?? ""),
+			(key) => key.length > 0,
+		)
 		if (keys.length === 0) break
-		const removed = await cfRequest(token, objectsPath, { method: "DELETE", body: JSON.stringify(keys) })
+		const removed = await cfRequest(token, objectsPath, { method: "DELETE", body: showJson(keys) })
 		if (!removed.ok) {
 			console.log(
-				`✗ could not delete objects in ${bucket} (HTTP ${removed.status}): ${JSON.stringify(removed.errors)}`,
+				`✗ could not delete objects in ${bucket} (HTTP ${removed.status}): ${showJson(removed.errors)}`,
 			)
 			return false
 		}
@@ -257,7 +261,7 @@ const emptyAndDeleteBucket = async (token: string, accountId: string, bucket: st
 		method: "DELETE",
 	})
 	if (!removed.ok && removed.status !== 404) {
-		console.log(`✗ bucket delete failed (HTTP ${removed.status}): ${JSON.stringify(removed.errors)}`)
+		console.log(`✗ bucket delete failed (HTTP ${removed.status}): ${showJson(removed.errors)}`)
 		return false
 	}
 	return true
@@ -286,24 +290,40 @@ const main = async (): Promise<void> => {
 	}
 
 	const prNumbers = [...candidates.keys()].sort((a, b) => Number(a) - Number(b))
-	console.log(`Candidate preview stage(s): ${prNumbers.map((n) => `pr-${n}`).join(", ") || "none"}`)
+	console.log(
+		`Candidate preview stage(s): ${
+			Arr.join(
+				Arr.map(prNumbers, (n) => `pr-${n}`),
+				", ",
+			) || "none"
+		}`,
+	)
 
 	const failures: string[] = []
 	for (const prNumber of prNumbers) {
 		const stage = `pr-${prNumber}`
 		const markers = candidates.get(prNumber) ?? []
-		const state = await fetchPrState(prNumber)
-		if (state === "open") {
-			console.log(`… keeping ${stage} (PR #${prNumber} is open)`)
+		const state = await fetchPreviewState(prNumber)
+		if (state === "live") {
+			console.log(`… keeping ${stage} (PR #${prNumber} has a live preview)`)
 			continue
 		}
 		if (state === "unknown") {
 			console.log(`⚠ skipping ${stage} (PR #${prNumber} state unknown)`)
 			continue
 		}
+		const activeRun = await hasActivePreviewRun(prNumber)
+		if (activeRun !== false) {
+			console.log(
+				`⚠ skipping ${stage} (${activeRun === true ? `a preview run for PR #${prNumber} is active` : "preview runs unknown"})`,
+			)
+			continue
+		}
 		const bucket = markers.find((marker) => REPLAY_BUCKET_PATTERN.test(marker))
 		const branchId = neonBranchIdByPr.get(prNumber)
-		console.log(`… tearing down ${stage} (PR #${prNumber} is closed; found ${markers.join(", ")})`)
+		console.log(
+			`… tearing down ${stage} (PR #${prNumber} is closed or unlabelled; found ${Arr.join(markers, ", ")})`,
+		)
 		if (DRY_RUN) {
 			console.log(
 				`  would destroy ${stage}${branchId ? `, delete Neon branch ${branchId}` : ""}${bucket ? `, empty and delete ${bucket}` : ""}`,
@@ -330,7 +350,7 @@ const main = async (): Promise<void> => {
 	}
 
 	if (failures.length > 0) {
-		fail(`Failed to tear down orphan preview stage(s): ${failures.join(", ")}`)
+		fail(`Failed to tear down orphan preview stage(s): ${Arr.join(failures, ", ")}`)
 	}
 	console.log(DRY_RUN ? "✓ Dry run complete" : "✓ Sweep complete")
 }

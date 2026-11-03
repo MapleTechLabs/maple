@@ -23,7 +23,6 @@ type Run = (
 
 const tools = new Map<string, Run>()
 registerSourceCodeTools({
-	tool: () => undefined,
 	define: (spec) => {
 		const run = (params: Readonly<Record<string, unknown>>) =>
 			Schema.decodeUnknownEffect(spec.parameters)(params).pipe(
@@ -50,9 +49,7 @@ const call = (
 	service: Partial<VcsSourceService["Service"]>,
 ) =>
 	tools.get(name)!(params).pipe(
-		Effect.provide(
-			Layer.mergeAll(tenant, Layer.succeed(VcsSourceService, service as VcsSourceService["Service"])),
-		),
+		Effect.provide([tenant, Layer.succeed(VcsSourceService, service as VcsSourceService["Service"])]),
 	)
 
 const file = {

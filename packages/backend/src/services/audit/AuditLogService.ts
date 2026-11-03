@@ -5,7 +5,7 @@ import type { AuditActorType, AuditChanges, AuditLogSource, AuditOutcome } from 
 import type { ActorId, ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
 import { AuditLogEntryId as AuditLogEntryIdSchema } from "@maple/domain/primitives"
 import * as CH from "@maple/query-engine/ch"
-import { Clock, Context, DateTime, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, DateTime, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { AuditEventsQueueProducer } from "@maple/backend/platform/bindings"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
@@ -90,9 +90,17 @@ export interface AuditLogListFilters {
 	readonly requestId?: string
 	readonly sinceMs?: number
 	readonly untilMs?: number
+	/** Leave out actions ending in any of these, before the limit; see {@link AUDIT_ACCESS_ACTION_SUFFIXES}. */
+	readonly excludeActionSuffixes?: ReadonlyArray<string>
 	readonly limit: number
 	readonly offset: number
 }
+
+/**
+ * Actions that record access rather than a change: reads, tool calls, SQL runs
+ * and API requests. A heavy agent user writes hundreds of these a day.
+ */
+export const AUDIT_ACCESS_ACTION_SUFFIXES = [".read", ".called", ".sql_executed", ".request"] as const
 
 export interface AuditLogServiceApi {
 	/**
@@ -182,6 +190,9 @@ const listQueryInputs = (orgId: OrgId, filters: AuditLogListFilters) => {
 		requestId: filters.requestId !== undefined,
 		since: since !== undefined,
 		until: until !== undefined,
+		...(filters.excludeActionSuffixes !== undefined
+			? { excludeActionSuffixes: filters.excludeActionSuffixes }
+			: undefined),
 		limit: filters.limit,
 		offset: filters.offset,
 	}
@@ -205,7 +216,7 @@ const listQueryInputs = (orgId: OrgId, filters: AuditLogListFilters) => {
 }
 
 export class AuditLogService extends Context.Service<AuditLogService, AuditLogServiceApi>()(
-	"@maple/api/services/AuditLogService",
+	"@maple/backend/services/AuditLogService",
 	{
 		make: Effect.gen(function* () {
 			const warehouse = yield* WarehouseQueryService
@@ -281,14 +292,14 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 						.pipe(Effect.mapError(toPersistenceError))
 					const entries = yield* Effect.forEach(rows, (row) =>
 						decodeStoredAuditLogEntry(row).pipe(
-							Effect.map((decoded) => storedRowToEntry(orgId, decoded)),
-							Effect.mapError(
-								(error) =>
+							Effect.mapBoth({
+								onSuccess: (decoded) => storedRowToEntry(orgId, decoded),
+								onFailure: (error) =>
 									new AuditLogPersistenceError({
 										message: "Stored audit entry failed to decode",
 										cause: error,
 									}),
-							),
+							}),
 						),
 					)
 					// A redelivered event the ReplacingMergeTree has not merged yet is
@@ -324,26 +335,29 @@ export function makeMemoryAuditLog(): AuditLogServiceApi {
 		})
 	const list: AuditLogServiceApi["list"] = (orgId, filters) =>
 		Effect.succeed(
-			entries
-				.filter(
-					(entry) =>
-						entry.orgId === orgId &&
-						(filters.actorType === undefined || entry.actorType === filters.actorType) &&
-						(filters.userId === undefined || entry.userId === filters.userId) &&
-						(filters.apiKeyId === undefined || entry.apiKeyId === filters.apiKeyId) &&
-						(filters.actorId === undefined || entry.actorId === filters.actorId) &&
-						(filters.affectedUserId === undefined ||
-							entry.affectedUserId === filters.affectedUserId) &&
-						(filters.action === undefined || entry.action === filters.action) &&
-						(filters.outcome === undefined || entry.outcome === filters.outcome) &&
-						(filters.resourceType === undefined || entry.resourceType === filters.resourceType) &&
-						(filters.resourceId === undefined || entry.resourceId === filters.resourceId) &&
-						(filters.changedField === undefined ||
-							(entry.changedFields?.includes(filters.changedField) ?? false)) &&
-						(filters.requestId === undefined || entry.requestId === filters.requestId) &&
-						(filters.sinceMs === undefined || entry.occurredAt.getTime() >= filters.sinceMs) &&
-						(filters.untilMs === undefined || entry.occurredAt.getTime() <= filters.untilMs),
-				)
+			Arr.filter(
+				entries,
+				(entry) =>
+					entry.orgId === orgId &&
+					(filters.actorType === undefined || entry.actorType === filters.actorType) &&
+					(filters.userId === undefined || entry.userId === filters.userId) &&
+					(filters.apiKeyId === undefined || entry.apiKeyId === filters.apiKeyId) &&
+					(filters.actorId === undefined || entry.actorId === filters.actorId) &&
+					(filters.affectedUserId === undefined ||
+						entry.affectedUserId === filters.affectedUserId) &&
+					(filters.action === undefined || entry.action === filters.action) &&
+					(filters.outcome === undefined || entry.outcome === filters.outcome) &&
+					(filters.resourceType === undefined || entry.resourceType === filters.resourceType) &&
+					(filters.resourceId === undefined || entry.resourceId === filters.resourceId) &&
+					(filters.changedField === undefined ||
+						(entry.changedFields?.includes(filters.changedField) ?? false)) &&
+					(filters.requestId === undefined || entry.requestId === filters.requestId) &&
+					(filters.sinceMs === undefined || entry.occurredAt.getTime() >= filters.sinceMs) &&
+					(filters.untilMs === undefined || entry.occurredAt.getTime() <= filters.untilMs) &&
+					!Arr.some(filters.excludeActionSuffixes ?? [], (suffix) =>
+						Str.endsWith(suffix)(entry.action),
+					),
+			)
 				.sort(
 					(a, b) =>
 						b.occurredAt.getTime() - a.occurredAt.getTime() ||

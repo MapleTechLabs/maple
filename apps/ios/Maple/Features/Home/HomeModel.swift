@@ -8,7 +8,7 @@ struct IncidentCard: Identifiable, Hashable, Codable {
 	let serviceNames: [String]
 	let display: SignalDisplay
 	/// Observed values from the rule's own checks, oldest first. Empty until
-	/// loaded, and stays empty for a rule whose checks failed to load — the
+	/// loaded, and stays empty for a rule whose checks failed to load: the
 	/// card is still worth showing.
 	var observations: [Double]
 
@@ -24,44 +24,115 @@ struct IncidentCard: Identifiable, Hashable, Codable {
 	}
 }
 
+/// One service folded across its environments: counts and throughput summed,
+/// error rate recomputed, p95 the worst environment's (a p95 cannot be summed).
+struct ServiceSummary: Codable, Hashable {
+	let name: String
+	let requestCount: Double
+	let errorCount: Double
+	let throughput: Double
+	let p95LatencyMs: Double
+	/// The trailing 7-day p95 the web judges latency against, and the spans
+	/// behind it. Nil when the service has no history there.
+	let baselineP95LatencyMs: Double?
+	let baselineSpanCount: Double?
+
+	var errorRate: Double { requestCount > 0 ? errorCount / requestCount : 0 }
+
+	var health: ServiceHealth {
+		ServiceHealth(
+			errorRate: errorRate,
+			p95LatencyMs: p95LatencyMs,
+			spanCount: requestCount,
+			baseline: baselineP95LatencyMs.flatMap { p95 in
+				baselineSpanCount.map { LatencyBaseline(p95LatencyMs: p95, spanCount: $0) }
+			}
+		)
+	}
+
+	/// Folds per-environment rows into one row per service, busiest first.
+	static func aggregate(_ entries: [ServiceHealthEntry]) -> [ServiceSummary] {
+		Dictionary(grouping: entries, by: \.serviceName).map { name, rows in
+			// The worst environment's baseline goes with the worst environment's p95.
+			let slowest = rows.max { $0.p95LatencyMs < $1.p95LatencyMs }
+			return ServiceSummary(
+				name: name,
+				requestCount: rows.reduce(0) { $0 + $1.requestCount },
+				errorCount: rows.reduce(0) { $0 + $1.errorCount },
+				throughput: rows.reduce(0) { $0 + $1.throughput },
+				p95LatencyMs: rows.map(\.p95LatencyMs).max() ?? 0,
+				baselineP95LatencyMs: slowest?.baselineP95LatencyMs ?? nil,
+				baselineSpanCount: slowest?.baselineSpanCount ?? nil
+			)
+		}
+		.sorted { $0.requestCount > $1.requestCount }
+	}
+}
+
+extension LatencyBaseline {
+	init(p95LatencyMs: Double, spanCount: Double) {
+		self.p95LatencyMs = p95LatencyMs
+		self.spanCount = spanCount
+	}
+}
+
 /// What Home knows about the org right now.
 ///
 /// Codable because the last board is persisted per (org, environment) and
-/// seeded on the next launch — see `SnapshotCache`.
+/// seeded on the next launch; see `SnapshotCache`.
 struct HomeSnapshot: Codable {
-	var services: [Service]
+	var services: [ServiceSummary]
+	/// The equally long window before `services`, for the tiles' deltas.
+	/// Nil when the API returned no comparison.
+	var previousServices: [ServiceSummary]?
 	var incidents: [IncidentCard]
-	/// Error issues first seen inside the last 24 hours. The counts are
-	/// optional because they are second-pass data: the board paints on
-	/// services and incidents alone, and `nil` means "still on its way" —
-	/// which is a different statement from 0.
+	/// Actionable issues seen in the last 24 hours, and how many of those
+	/// were first seen inside it. Second-pass data: `nil` means "still on its
+	/// way", which is a different statement from 0.
+	var openIssues: Int?
 	var newIssues: Int?
-	/// Actionable issues seen in the last 24 hours that are older than that.
-	var activeIssues: Int?
 	var openAnomalies: Int?
 	var loadedAt: Date
 
+	// MARK: Totals (the stat tiles)
+
+	var totalRequests: Double { services.reduce(0) { $0 + $1.requestCount } }
+	var errorRate: Double { Self.errorRate(services) }
+	/// The slowest service's p95; there is no org-wide p95 to show. Nil with
+	/// no services, where 0 would be a claim.
+	var slowestP95: Double? { services.map(\.p95LatencyMs).max() }
+	/// Nil when the comparison window had no traffic: a 0 there would read as a change.
+	var previousRequests: Double? { previous.map { $0.reduce(0) { $0 + $1.requestCount } } }
+	var previousErrorRate: Double? { previous.map(Self.errorRate) }
+	private var previous: [ServiceSummary]? { previousServices.flatMap { $0.isEmpty ? nil : $0 } }
+	var previousSlowestP95: Double? { previousServices.flatMap { $0.map(\.p95LatencyMs).max() } }
+
+	/// Request-weighted, so a quiet service at 50% does not outweigh a busy one.
+	private static func errorRate(_ services: [ServiceSummary]) -> Double {
+		let requests = services.reduce(0) { $0 + $1.requestCount }
+		guard requests > 0 else { return 0 }
+		return services.reduce(0) { $0 + $1.errorCount } / requests
+	}
+
 	// MARK: Derived
 
-	var unhealthy: [Service] { services.filter { health(of: $0) == .unhealthy } }
-	var degraded: [Service] { services.filter { health(of: $0) == .degraded } }
+	var unhealthy: [ServiceSummary] { services.filter { $0.health == .unhealthy } }
+	var degraded: [ServiceSummary] { services.filter { $0.health == .degraded } }
 	var criticalIncidents: [IncidentCard] { incidents.filter { $0.incident.severity == .critical } }
 
-	/// Services that need attention, worst first. Health first, then error
-	/// rate, then volume — the same ordering as the Services tab.
-	var attention: [Service] {
+	/// Services that need attention, worst first: health, then error rate,
+	/// then volume, the same ordering as the Services tab.
+	var attention: [ServiceSummary] {
 		(unhealthy + degraded).sorted { a, b in
-			let ha = health(of: a)
-			let hb = health(of: b)
-			if ha != hb { return ha == .unhealthy }
+			if a.health != b.health { return a.health == .unhealthy }
 			if a.errorRate != b.errorRate { return a.errorRate > b.errorRate }
-			return a.throughput > b.throughput
+			return a.requestCount > b.requestCount
 		}
 	}
 
 	/// The overall status Home leads with. Worst thing wins: a critical
-	/// incident beats a degraded service, no data beats everything — an org
-	/// that stopped sending is not healthy, it's dark.
+	/// incident beats a degraded service, and an org that stopped sending is
+	/// not healthy, it is dark.
 	var status: OverallStatus {
 		if services.isEmpty && incidents.isEmpty { return .noData }
 		if !criticalIncidents.isEmpty || !unhealthy.isEmpty { return .critical }
@@ -69,55 +140,33 @@ struct HomeSnapshot: Codable {
 		return .healthy
 	}
 
-	var headline: String {
+	/// The header's status line: the worst fact as the lead, the rest muted,
+	/// as in `1 critical alert · 2 of 14 services degraded`.
+	var statusLine: (lead: String, detail: String) {
+		var parts: [String] = []
 		switch status {
 		case .noData:
-			return "No telemetry in the last hour"
+			return ("", "No telemetry in the last hour")
 		case .healthy:
-			return services.count == 1 ? "Your service is healthy" : "All \(services.count) services healthy"
-		case .degraded:
-			let count = degraded.count
-			if count == 0 { return incidents.count == 1 ? "1 open alert" : "\(incidents.count) open alerts" }
-			return count == 1 ? "1 service degraded" : "\(count) services degraded"
-		case .critical:
-			let count = unhealthy.count
-			if count == 0 {
-				return criticalIncidents.count == 1 ? "1 critical alert" : "\(criticalIncidents.count) critical alerts"
+			parts.append(services.count == 1 ? "Your service is healthy" : "All \(services.count) services healthy")
+		case .degraded, .critical:
+			let critical = criticalIncidents.count
+			if critical > 0 {
+				parts.append(critical == 1 ? "1 critical alert" : "\(critical) critical alerts")
+			} else if !incidents.isEmpty {
+				parts.append(incidents.count == 1 ? "1 open alert" : "\(incidents.count) open alerts")
 			}
-			return count == 1 ? "1 service unhealthy" : "\(count) services unhealthy"
-		}
-	}
-
-	/// The second line: everything the headline didn't say, as counts. The
-	/// second-pass numbers join it only once they exist — a sentence must not
-	/// claim "0 new issues" while the count is still loading.
-	var subheadline: String {
-		var parts: [String] = []
-		let critical = criticalIncidents.count
-		let warnings = incidents.count - critical
-		if status == .critical, !unhealthy.isEmpty, critical > 0 {
-			parts.append(critical == 1 ? "1 critical alert" : "\(critical) critical alerts")
-		}
-		if warnings > 0 { parts.append(warnings == 1 ? "1 warning" : "\(warnings) warnings") }
-		if status == .critical, !degraded.isEmpty { parts.append("\(degraded.count) degraded") }
-		if let newIssues, newIssues > 0 {
-			parts.append(newIssues == 1 ? "1 new issue" : "\(newIssues) new issues")
+			// "Degraded" covers unhealthy too here, as on the web; the table's
+			// health dots carry the split and the line stays one sentence.
+			if !attention.isEmpty {
+				parts.append("\(attention.count) of \(services.count) services degraded")
+			}
 		}
 		if let openAnomalies, openAnomalies > 0 {
-			parts.append(openAnomalies == 1 ? "1 anomaly" : "\(openAnomalies) anomalies")
+			parts.append(openAnomalies == 1 ? "1 open anomaly" : "\(openAnomalies) open anomalies")
 		}
-		if parts.isEmpty {
-			switch status {
-			case .noData: return "Nothing reported by any service."
-			case .healthy: return "No open alerts, nothing new to triage."
-			case .degraded, .critical: return "No other signals out of range."
-			}
-		}
-		return parts.joined(separator: " · ")
-	}
-
-	private func health(of service: Service) -> ServiceHealth {
-		ServiceHealth(service: service)
+		let rest = parts.dropFirst().map { "· \($0)" }.joined(separator: " ")
+		return (parts.first ?? "", rest)
 	}
 }
 
@@ -146,7 +195,7 @@ final class HomeModel {
 	private var decorations: Task<Void, Never>?
 
 	/// Home is always "now": an hour for rates, a day for what's new. There is
-	/// no time picker on purpose — a picker answers "what happened", and that
+	/// no time picker on purpose: a picker answers "what happened", and that
 	/// is a question for the other tabs.
 	static let rateWindow = TimeWindow.lastHour
 	static let recentWindow = TimeWindow.last24Hours
@@ -180,27 +229,25 @@ final class HomeModel {
 		await loader.loadIfNeeded()
 	}
 
-	/// The first pass: only what gates the paint.
-	///
-	/// Services and open incidents *are* the screen, so they alone are awaited
-	/// here — the `screen.load` span now measures time-to-content. Issue and
-	/// anomaly counts and the sparklines are a second pass over the loaded
-	/// board (`scheduleDecorations`), because making the first paint wait for
-	/// the slowest of thirteen requests is what made Home feel broken.
+	/// The first pass: service health (current and previous window, as the web
+	/// overview queries it) and open incidents, the screen itself. Counts and
+	/// sparklines follow in a second pass.
 	private func fetch() async throws -> HomeSnapshot {
 		decorations?.cancel()
 		let now = Date()
 		let rates = Self.rateWindow.resolve(now: now)
 		let recent = Self.recentWindow.resolve(now: now)
 
-		async let servicesTask = api.services(window: rates, limit: 100)
+		async let healthTask = api.serviceHealth(window: rates, comparing: rates.previous)
 		async let incidentsTask = api.alertIncidents(status: .open, ruleId: nil, limit: 50, cursor: nil)
 		// Rules ride in the first pass: they name the incident cards. Still
-		// decoration in the failure sense — a card without its rule falls back
+		// decoration in the failure sense: a card without its rule falls back
 		// to the signal type rather than taking the screen down.
 		async let rulesTask = api.alertRules(limit: 100, cursor: nil)
 
-		let services = try await servicesTask.items
+		let health = try await healthTask
+		let previousServices = health.previous.map { ServiceSummary.aggregate($0) }
+		let services = ServiceSummary.aggregate(health.services)
 		let incidents = try await incidentsTask.items
 		let rules = Dictionary(
 			((try? await rulesTask.items) ?? []).map { ($0.id, $0) },
@@ -237,9 +284,10 @@ final class HomeModel {
 
 		return HomeSnapshot(
 			services: services,
+			previousServices: previousServices,
 			incidents: cards,
+			openIssues: previous?.openIssues,
 			newIssues: previous?.newIssues,
-			activeIssues: previous?.activeIssues,
 			openAnomalies: previous?.openAnomalies,
 			loadedAt: now
 		)
@@ -248,13 +296,13 @@ final class HomeModel {
 	/// What the second pass produced. Counts stay `nil` on failure so the
 	/// merge can tell "request failed, keep what we had" from "genuinely 0".
 	private struct Decorations: Sendable {
+		var openIssues: Int?
 		var newIssues: Int?
-		var activeIssues: Int?
 		var openAnomalies: Int?
 		var observations: [String: [Double]] = [:]
 	}
 
-	/// The second pass: issue counts, anomaly counts, sparklines — fetched
+	/// The second pass: issue counts, anomaly counts, sparklines, fetched
 	/// after the board is on screen and merged into it in place.
 	private func scheduleDecorations(cards: [IncidentCard], rates: ResolvedTimeWindow, recent: ResolvedTimeWindow) {
 		// Captured before the task starts: if a newer load supersedes this one,
@@ -281,8 +329,8 @@ final class HomeModel {
 						guard let firstSeen = ResolvedTimeWindow.parse(issue.firstSeenAt) else { return false }
 						return firstSeen >= dayAgo
 					}.count
+					result.openIssues = issues.count
 					result.newIssues = newIssues
-					result.activeIssues = max(0, issues.count - newIssues)
 				}
 				if let anomalies = try? await anomaliesTask.items {
 					result.openAnomalies = anomalies.count
@@ -294,9 +342,9 @@ final class HomeModel {
 			guard let self, !Task.isCancelled else { return }
 			self.loader.update(ifGeneration: generation) { snapshot in
 				var next = snapshot
-				if let newIssues = decorations.newIssues {
-					next.newIssues = newIssues
-					next.activeIssues = decorations.activeIssues
+				if let openIssues = decorations.openIssues {
+					next.openIssues = openIssues
+					next.newIssues = decorations.newIssues
 				}
 				if let openAnomalies = decorations.openAnomalies { next.openAnomalies = openAnomalies }
 				for index in next.incidents.indices {
@@ -336,7 +384,7 @@ final class HomeModel {
 	}
 
 	/// Write whatever the board currently shows, so the next launch can seed
-	/// it. Called after the second pass merges — the fullest the board gets.
+	/// it. Called after the second pass merges: the fullest the board gets.
 	private func persist() {
 		guard let organizationId, let snapshot = loader.state.value else { return }
 		SnapshotCache.save(

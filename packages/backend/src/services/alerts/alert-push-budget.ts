@@ -1,5 +1,5 @@
 import type { AlertSeverity, OrgId } from "@maple/domain/http"
-import { Effect, Ref } from "effect"
+import { Effect, Ref, Array as Arr } from "effect"
 
 /**
  * How many phone notifications one tick of the scheduler may send, and how
@@ -90,7 +90,7 @@ export const makeIncidentPushBudget: Effect.Effect<IncidentPushBudget> = Effect.
 				return [allowed, { remaining: allowed ? current.remaining - 1 : current.remaining, rules }]
 			}),
 		suppressed: Effect.map(Ref.get(state), (current) =>
-			[...current.rules.values()].flatMap((tally) =>
+			Arr.flatMap([...current.rules.values()], (tally) =>
 				tally.suppressed === 0
 					? []
 					: [

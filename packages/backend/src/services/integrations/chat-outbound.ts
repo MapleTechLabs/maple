@@ -36,7 +36,7 @@ export type RegisteredChatConnector = ChatConnector<HttpClient.HttpClient | Conn
  * and exercise it without a chat platform on the other end.
  */
 export class ChatConnectorRegistry extends Context.Reference<ReadonlyArray<RegisteredChatConnector>>(
-	"@maple/api/services/ChatConnectorRegistry",
+	"@maple/backend/services/ChatConnectorRegistry",
 	{ defaultValue: (): ReadonlyArray<RegisteredChatConnector> => connectors },
 ) {}
 
@@ -114,9 +114,10 @@ export const missingOutboundConfig = (
 	workspace: OwnedChatWorkspace,
 	outboundConfig: ConnectorConfig,
 ): ReadonlyArray<string> =>
-	workspace.connector.outbound.requiredConfig
-		.filter((key) => !outboundConfig.has(key.name))
-		.map((key) => key.name)
+	Arr.map(
+		Arr.filter(workspace.connector.outbound.requiredConfig, (key) => !outboundConfig.has(key.name)),
+		(key) => key.name,
+	)
 
 /**
  * The workspace's outbound transport, with the deployment's outbound config and the workspace's

@@ -14,6 +14,7 @@ import { Renderer } from "@takumi-rs/wasm/node"
 import decompress from "woff2-encoder/decompress"
 import { BRAND_MARKS, markColor, type BrandMark, type BrandMarkId } from "./brand-marks"
 import type { LanguageId } from "./docs-languages"
+import { Array as Arr, String as Str } from "effect"
 
 const OG_WIDTH = 1200
 const OG_HEIGHT = 630
@@ -41,7 +42,9 @@ const GROUP_ART = new Map([
 	["AI Frameworks", "ai-mcp-integration"],
 	["AI Gateways", "ai-mcp-integration"],
 	["Agent Sessions", "ai-mcp-integration"],
+	["MCP Servers", "ai-mcp-integration"],
 	["Alerting", "alerts"],
+	["Code Review", "service-catalog"],
 	["Errors", "error-tracking"],
 	["Explore", "distributed-tracing"],
 	["Instrumentation", "distributed-tracing"],
@@ -84,7 +87,10 @@ const MAPLE_SRC = svgSrc(
 const brandMarkSrc = (mark: BrandMark): string => {
 	const color = markColor(mark) === "currentColor" ? COLOR.inkHex : mark.hex
 	const paths = mark.layers
-		? mark.layers.map((layer) => `<path fill="${layer.fill}" d="${layer.path}"/>`).join("")
+		? Arr.join(
+				Arr.map(mark.layers, (layer) => `<path fill="${layer.fill}" d="${layer.path}"/>`),
+				"",
+			)
 		: `<path fill="${color}" d="${mark.path}"/>`
 	const overlay = mark.overlay
 		? `<path fill="${mark.overlay.fill}"${mark.overlay.fillRule ? ` fill-rule="${mark.overlay.fillRule}"` : ""} d="${mark.overlay.path}"/>`
@@ -199,7 +205,7 @@ const docsOgCard = (input: DocsOgInput): Node => {
 												}),
 											]
 										: []),
-									text(`DOCS · ${input.group.toUpperCase()}`, {
+									text(`DOCS · ${Str.toUpperCase(input.group)}`, {
 										color: COLOR.signal,
 										fontSize: 16,
 										fontFamily: MONO_FONT,
@@ -264,11 +270,11 @@ const makeRenderer = async () => {
 	]
 	for (const font of fonts) {
 		const woff2 = await readFile(new URL(`node_modules/${font.file}`, landing))
-		engine.registerFont({ name: font.name, data: new Uint8Array(await decompress(woff2)) })
+		await engine.registerFont({ name: font.name, data: new Uint8Array(await decompress(woff2)) })
 	}
 	const arts = [...new Set([...GROUP_ART.values(), DEFAULT_ART])]
 	const images = await Promise.all(
-		arts.map(async (art) => {
+		Arr.map(arts, async (art) => {
 			const src = `art/features/${art}.webp`
 			return { src, data: new Uint8Array(await readFile(new URL(`public/${src}`, landing))) }
 		}),

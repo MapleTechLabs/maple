@@ -1,4 +1,4 @@
-import { Result } from "effect"
+import { Result, Array as Arr } from "effect"
 import { createHmac } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
@@ -16,6 +16,7 @@ import {
 	decodePlanetScaleWebhookPayload,
 	deployRequestNumber,
 	insertPlanetScaleEvent,
+	PLANETSCALE_WEBHOOK_EVENTS,
 	planetScaleIssueFingerprint,
 	projectPlanetScaleWebhookEvent as projectPlanetScaleWebhookEventResult,
 	truncateToSecond,
@@ -58,6 +59,14 @@ describe("verifyPlanetScaleSignature", () => {
 })
 
 describe("classifyPlanetScaleEvent", () => {
+	it("acts on every event Maple subscribes its webhooks to", () => {
+		const ignored = Arr.filter(PLANETSCALE_WEBHOOK_EVENTS, (event) => {
+			const { action } = classifyPlanetScaleEvent(event)
+			return action !== "issue" && action !== "timeline"
+		})
+		assert.deepStrictEqual(ignored, [])
+	})
+
 	it("normalizes queued webhooks into deterministic common CloudEvents", () => {
 		const payload = Schema.decodeUnknownSync(PlanetScaleWebhookPayload)(JSON.parse(OOM_PAYLOAD))
 		const input = {
@@ -337,7 +346,7 @@ describe("upsertPlanetScaleIssue", () => {
 				],
 				{ concurrency: "unbounded" },
 			)
-			assert.deepStrictEqual(results.map(({ action }) => action).sort(), ["created", "refreshed"])
+			assert.deepStrictEqual(Arr.map(results, ({ action }) => action).sort(), ["created", "refreshed"])
 			assert.strictEqual(results[0].issueId, results[1].issueId)
 
 			const aggregate = yield* Effect.promise(() =>
@@ -384,7 +393,7 @@ describe("upsertPlanetScaleIssue", () => {
 				],
 				{ concurrency: "unbounded" },
 			)
-			assert.deepStrictEqual(results.map(({ action }) => action).sort(), ["refreshed", "reopened"])
+			assert.deepStrictEqual(Arr.map(results, ({ action }) => action).sort(), ["refreshed", "reopened"])
 
 			const aggregate = yield* Effect.promise(() =>
 				queryFirstRow<{

@@ -1,0 +1,203 @@
+import { activeFilterChips } from "../../components/analytics/filters"
+import { formatNumber, pluralize } from "@maple/ui/lib/format"
+import { TONE_BORDER, TONE_SOFT } from "@maple/ui/lib/tone"
+import { cn } from "@maple/ui/lib/utils"
+import { Option, Array as Arr } from "effect"
+import { AsyncData, Submodel } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import { AppRoute, hrefOf } from "../../route"
+import { button, linkButton } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { statusDot } from "@maple/views/ui/status-dot"
+import type { PageViewInputs } from "../contract"
+import { pageTime } from "../infra-integrations/kit/page-time"
+import { dashboardPage } from "../kit/dashboard-page"
+import { signalEmptyState } from "../kit/signal-empty-state"
+import { presenceOf } from "@maple/views/data/signal-presence"
+import { underlineTabClass, underlineTabStrip } from "../kit/underline-tabs"
+import { Message } from "./message"
+import type { Model } from "./model"
+import { filtersOf, tabOf } from "./requests"
+import { DEFAULT_PRESET } from "./update"
+import { aiTab } from "./view-ai"
+import { TRAFFIC_TOKENS } from "./view-chart"
+import { expandDialog } from "./view-expand"
+import { filtersRail, showsBreakdownCards } from "./view-filters"
+import { overviewContent, sharedPageFailure } from "./view-overview"
+import { hstack } from "@maple/views/ui/stack"
+
+// The web analytics page.
+
+type H = HtmlBuilder<Message>
+
+/** `AnalyticsLiveBadge`: silent until its first poll lands, then the last number it saw. */
+const liveBadge = (h: H, model: Model): ReadonlyArray<Html> => {
+	const live = Option.getOrUndefined(AsyncData.getData(model.live.data))
+	if (live === undefined) return []
+	const isIdentified = live.visitors > 0
+	const count = isIdentified ? live.visitors : live.sessions
+	const minutes = Math.max(1, Math.round(live.windowSeconds / 60))
+	const noun = pluralize(count, isIdentified ? "visitor" : "session")
+	return [
+		h.span(
+			[
+				h.Class(
+					cn(
+						"inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium tabular-nums",
+						count > 0
+							? cn(TONE_SOFT.ok, TONE_BORDER.ok)
+							: "border-border-subtle text-muted-foreground",
+					),
+				),
+				h.Title(`${count} ${noun} active in the last ${minutes} ${pluralize(minutes, "minute")}`),
+			],
+			[
+				count > 0 ? statusDot(h, { tone: "ok" }) : statusDot(h),
+				h.span(
+					[h.AriaLive("polite")],
+					[formatNumber(count), " ", h.span([h.Class("hidden sm:inline")], ["online"])],
+				),
+			],
+		),
+	]
+}
+
+const replaysLink = (h: H, model: Model): Html => {
+	const { search } = model
+	return linkButton(
+		h,
+		{
+			variant: "outline",
+			size: "sm",
+			href: hrefOf(
+				AppRoute.Replays({
+					search: {
+						startTime: search.startTime,
+						endTime: search.endTime,
+						timePreset: search.timePreset,
+					},
+				}),
+			),
+			attributes: [h.AriaLabel("View session replays")],
+		},
+		[icon(h, "PlayRotateClockwiseIcon"), h.span([h.Class("hidden sm:inline")], ["Replays"])],
+	)
+}
+
+const tabs = (h: H, model: Model): Html => {
+	const active = tabOf(model.search)
+	return underlineTabStrip(
+		h,
+		{ label: "Analytics views", navigation: true },
+		Arr.map(["overview", "ai"] as const, (tab) => {
+			const isCurrent = tab === active
+			// TanStack's partial search match: Overview's link (no `tab`) matches every tab.
+			const isLinkActive = tab === "overview" || isCurrent
+			return h.a(
+				[
+					h.Key(tab),
+					...(isCurrent ? [h.AriaCurrent("page")] : []),
+					h.Class(cn(underlineTabClass(isCurrent), isLinkActive && "active")),
+					...(isLinkActive ? [h.DataAttribute("status", "active")] : []),
+					h.Href(
+						hrefOf(
+							AppRoute.Analytics({
+								search: { ...model.search, tab: tab === "overview" ? undefined : tab },
+							}),
+						),
+					),
+				],
+				[tab === "overview" ? "Overview" : "AI traffic"],
+			)
+		}),
+	)
+}
+
+/** The active filters, removable one at a time. */
+const chipsRow = (h: H, model: Model): ReadonlyArray<Html> => {
+	const chips = activeFilterChips(filtersOf(model.search))
+	if (chips.length === 0) return []
+	return [
+		hstack(h, { gap: "1.5", wrap: true }, [
+			...Arr.map(chips, (chip) =>
+				badge(
+					h,
+					{
+						variant: "meta",
+						size: "xs",
+						mono: true,
+						className: "h-auto px-1.5 py-0.5 hover:text-foreground active:text-foreground",
+						onClick: Message.ChangedFilter({ key: chip.key, value: undefined }),
+						attributes: [h.Key(`${chip.key}:${chip.value}`)],
+					},
+					[chip.label, " ✕"],
+				),
+			),
+			button(
+				h,
+				{
+					variant: "link",
+					size: "xs",
+					className: "h-auto px-1 text-3xs text-muted-foreground sm:text-3xs",
+					attributes: [h.OnClick(Message.ClickedClearFilters())],
+				},
+				["Clear all"],
+			),
+		]),
+	]
+}
+
+const body = (h: H, model: Model, timeZone: string, isNarrow: boolean): Html => {
+	if (tabOf(model.search) === "ai") return aiTab(h, model, timeZone)
+	const presence = presenceOf(model.presence, "sessions")
+	if (!showsBreakdownCards(model))
+		return signalEmptyState(h, {
+			signal: "sessions",
+			presence,
+			nowMs: model.nowMs,
+			noun: "visits",
+			purpose: "See your visitors, top pages and where they came from.",
+			action: "Set up web analytics",
+			guideDocs: "webAnalytics",
+		})
+	return overviewContent(h, model, timeZone, isNarrow)
+}
+
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+	const timeZone = inputs.context.timeZone
+	return h.div(
+		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: TRAFFIC_TOKENS }))],
+		[
+			dashboardPage(
+				h,
+				{
+					title: "Web analytics",
+					gap: "lg",
+					filters: filtersRail(h, model),
+					actions: hstack(h, { gap: "2", wrap: true }, [
+						...liveBadge(h, model),
+						replaysLink(h, model),
+						pageTime(h, {
+							search: model.search,
+							defaultPreset: DEFAULT_PRESET,
+							window: model.window,
+							picker: model.timePicker,
+							toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+							onReset: Message.ClickedResetTimeRange(),
+							onReload: Message.ClickedReload(),
+							isReloading: model.isReloading,
+							// The page-level failure card's Try again is the one retry.
+							isReloadHidden:
+								showsBreakdownCards(model) && sharedPageFailure(model) !== undefined,
+						}),
+					]),
+					tabs: tabs(h, model),
+				},
+				[...chipsRow(h, model), body(h, model, timeZone, inputs.isBelowSm === true)],
+			),
+			expandDialog(h, model, timeZone),
+		],
+	)
+})

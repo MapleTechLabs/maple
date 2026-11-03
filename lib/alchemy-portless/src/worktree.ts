@@ -1,10 +1,11 @@
 import { spawnSync } from "node:child_process"
 import path from "node:path"
+import { String as Str } from "effect"
 
 const git = (cwd: string, ...args: string[]): string | undefined => {
 	const result = spawnSync("git", args, { cwd, encoding: "utf8" })
 	if (result.error || result.status !== 0) return undefined
-	const value = result.stdout.trim()
+	const value = Str.trim(result.stdout)
 	return value === "" ? undefined : value
 }
 
@@ -13,10 +14,10 @@ const DEFAULT_BRANCHES = new Set(["main", "master"])
 /** Portless's own rule: the branch's last segment as a hostname label, nothing for main/master. */
 const branchToPrefix = (branch: string | undefined): string => {
 	if (!branch || branch === "HEAD" || DEFAULT_BRANCHES.has(branch)) return ""
-	const label = (branch.split("/").pop() ?? "")
-		.toLowerCase()
-		.replaceAll(/[^a-z0-9-]+/g, "-")
-		.replaceAll(/^-+|-+$/g, "")
+	const label = Str.replaceAll(
+		/^-+|-+$/g,
+		"",
+	)(Str.replaceAll(/[^a-z0-9-]+/g, "-")(Str.toLowerCase(Str.split("/")(branch).pop() ?? "")))
 	return label ? `${label}.` : ""
 }
 

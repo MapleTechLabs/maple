@@ -1,5 +1,5 @@
 /** list_services rendering: a real per-minute rate, and next calls aimed at the unhealthy services. */
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { ListServicesOutput } from "@maple/domain/mcp-outputs"
 import { assert, describe, it } from "vitest"
 import { renderToolDoc, type ToolDoc } from "../../lib/tool-doc"
@@ -28,7 +28,6 @@ const output = {
 describe("list_services render", () => {
 	it("shows the window total and a per-minute rate", () => {
 		const text = renderToolDoc(render!(output))
-		assert.include(text, "Req/min")
 		assert.notInclude(text, "(rpm)")
 		// 1,440,000 requests over 360 minutes.
 		assert.match(text, /\| ingest \| 1,440,000 \| 4,000 \|/)
@@ -37,9 +36,10 @@ describe("list_services render", () => {
 
 	it("points diagnose_service at the erroring service, not the smallest", () => {
 		const next = render!(output).next ?? []
-		const diagnosed = next
-			.filter((call) => call.tool === "diagnose_service")
-			.map((call) => call.args.service)
+		const diagnosed = Arr.map(
+			Arr.filter(next, (call) => call.tool === "diagnose_service"),
+			(call) => call.args.service,
+		)
 		assert.deepEqual(diagnosed, ["api"])
 		const top = next.find((call) => call.tool === "get_service_top_operations")
 		assert.equal(top?.args.service, "ingest")

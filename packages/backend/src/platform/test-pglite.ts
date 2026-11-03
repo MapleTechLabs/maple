@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { deserialize } from "node:v8"
 import { PGlite } from "@electric-sql/pglite"
-import { Effect, Layer, Schema, Tracer } from "effect"
+import { Effect, Layer, Schema, Tracer, Array as Arr, String as Str } from "effect"
 import { inject } from "vitest"
 
 import { FixtureMemoryFS, type PgliteFixture } from "../../test/pglite-fixture"
@@ -129,10 +129,12 @@ export const makeStatementRecorder = () => {
 		},
 	})
 	const verbs = () =>
-		spans
-			.filter((span) => span.attributes.get("db.system.name") === "postgresql")
-			.flatMap((span) => decodeQueryText(span.attributes.get("db.query.text")).split(";\n"))
-			.map((statement) => statement.trim().split(/\s+/)[0]?.toUpperCase() ?? "")
+		Arr.map(
+			Arr.filter(spans, (span) => span.attributes.get("db.system.name") === "postgresql").flatMap(
+				(span) => decodeQueryText(span.attributes.get("db.query.text")).split(";\n"),
+			),
+			(statement) => Str.split(/\s+/)(Str.trim(statement))[0]?.toUpperCase() ?? "",
+		)
 	return { tracer, verbs }
 }
 
@@ -145,6 +147,28 @@ export const cleanupTestDbs = async (dbs: TestDb[]): Promise<void> => {
 /** Raw SQL against the test instance. Placeholders are Postgres-style ($1, $2, …). */
 export const executeSql = async (db: TestDb, sql: string, params: unknown[] = []): Promise<void> => {
 	await db.pglite.query(sql, params)
+}
+
+/**
+ * An integration source for a fixture row to point at through `source_id`, as the integration's
+ * connect flow creates it. Resolves to its id.
+ */
+export const insertTestSource = async (
+	db: TestDb,
+	source: {
+		readonly orgId: string
+		readonly platform: string
+		readonly name?: string
+		readonly id?: string
+	},
+): Promise<string> => {
+	const id = source.id ?? crypto.randomUUID()
+	await db.pglite.query(
+		`INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, 'integration', now(), now())`,
+		[id, source.orgId, source.name ?? source.platform, source.platform],
+	)
+	return id
 }
 
 export const queryFirstRow = async <T>(

@@ -1,0 +1,152 @@
+// Differential fuzzer: generates rules and records, runs each case through this package's
+// engine and the gateway's (the `ingest_rules_oracle` example in apps/ingest), and shrinks the
+// first disagreement to a minimal case. Usage:
+//   bun run fuzz [--runs 2000] [--seed <seed>] [--replay <token>] [--no-build]
+import { execFileSync, spawn } from "node:child_process"
+import { writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { isDeepStrictEqual, parseArgs } from "node:util"
+import { Arbitrary, Effect, Option, Ref, Schema, Array as Arr, String as Str } from "effect"
+import { isJsonObject, member, runCase, type FixtureCase } from "../src/conformance"
+import { fuzzCase } from "../src/fuzz-arbitraries"
+
+const { values: args } = parseArgs({
+	options: {
+		runs: { type: "string", default: "2000" },
+		seed: { type: "string" },
+		replay: { type: "string" },
+		"no-build": { type: "boolean", default: false },
+	},
+})
+
+const ingest = join(import.meta.dirname, "../../../apps/ingest")
+const oraclePath = join(ingest, "target/release/examples/ingest_rules_oracle")
+if (!args["no-build"])
+	execFileSync(
+		"cargo",
+		["build", "--locked", "--release", "--example", "ingest_rules_oracle", "--features", "conformance"],
+		{
+			cwd: ingest,
+			stdio: "inherit",
+		},
+	)
+
+const oracle = spawn(oraclePath, { stdio: ["pipe", "pipe", "inherit"] })
+
+/** Oracle replies split on `\n` only; readline would also split inside strings on U+2028. */
+async function* lines(stream: AsyncIterable<string>) {
+	let pending = ""
+	for await (const chunk of stream) {
+		const parts = Str.split("\n")(pending + chunk)
+		pending = parts.pop() ?? ""
+		yield* parts
+	}
+}
+oracle.stdout.setEncoding("utf8")
+const replies = lines(oracle.stdout)
+
+const parseOutcome = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonOption = Schema.encodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+const encodeReport = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
+
+/** The gateway engine's outcome; requests run one at a time, so replies stay in order. */
+const gateway = (fixture: FixtureCase) =>
+	Effect.promise(async (): Promise<Schema.Json> => {
+		oracle.stdin.write(`${encodeJson(fixture)}\n`)
+		const reply = await replies.next()
+		return reply.done === true ? { oracleExited: true } : parseOutcome(reply.value)
+	})
+
+const clip = (value: Schema.Json | undefined, at = 0) => {
+	const text =
+		typeof value === "string" ? value : Option.getOrElse(encodeJsonOption(value), () => "undefined")
+	return text.length <= 160
+		? text
+		: `…${Str.slice(Math.max(0, at - 60), at + 100)(text)}… (${text.length} chars)`
+}
+
+/** The first path where the two outcomes differ, with both sides clipped around it. */
+const firstDifference = (
+	ts: Schema.Json | undefined,
+	rust: Schema.Json | undefined,
+	path = "$",
+): string | null => {
+	if (isDeepStrictEqual(ts, rust)) return null
+	if (typeof ts === "string" && typeof rust === "string") {
+		const rustChars = Array.from(rust)
+		const at = Array.from(ts).findIndex((char, index) => char !== rustChars[index])
+		return `${path} at char ${at}\n  ts:   ${clip(ts, at)}\n  rust: ${clip(rust, at)}`
+	}
+	if (isJsonObject(ts) && isJsonObject(rust)) {
+		const keys = [...new Set([...Object.keys(ts), ...Object.keys(rust)])]
+		const nested = Arr.map(keys, (key) =>
+			firstDifference(member(ts, key), member(rust, key), `${path}.${key}`),
+		).find((difference) => difference !== null)
+		if (nested !== undefined) return nested
+	}
+	return `${path}\n  ts:   ${clip(ts)}\n  rust: ${clip(rust)}`
+}
+
+type Exercised = "dropped" | "redacted" | "untouched"
+
+/** What a passing case exercised, so a green run that never redacts anything is visible. */
+const exercised = (fixture: FixtureCase, outcome: Schema.Json): Exercised => {
+	const input = encodeJson(fixture.input)
+	const output = encodeJson(outcome)
+	if (member(outcome, "dropped") === true) return "dropped"
+	return Str.includes("REDACTED")(output) ||
+		Str.includes("hash:")(output) ||
+		output.length < input.length - 60
+		? "redacted"
+		: "untouched"
+}
+
+const seed = args.seed ?? String(Date.now())
+const runs = Number(args.runs)
+console.log(`ingest rules differential fuzz: ${runs} cases, seed ${seed}`)
+
+const coverage = await Effect.runPromise(Ref.make({ dropped: 0, redacted: 0, untouched: 0, scanCap: 0 }))
+const result = await Effect.runPromise(
+	Arbitrary.checkEffect(
+		fuzzCase,
+		(fixture) =>
+			Effect.gen(function* () {
+				const remote = yield* gateway(fixture)
+				const ts = runCase(fixture)
+				const kind = exercised(fixture, ts)
+				const nearCap = encodeJson(fixture.input).length > 16_000 ? 1 : 0
+				yield* Ref.update(coverage, (counts) => ({
+					...counts,
+					[kind]: counts[kind] + 1,
+					scanCap: counts.scanCap + nearCap,
+				}))
+				return isDeepStrictEqual(remote, ts)
+			}),
+		{ runs, seed, replay: args.replay },
+	),
+)
+const shrunkRemote = result._tag === "Falsified" ? await Effect.runPromise(gateway(result.shrunkInput)) : null
+oracle.stdin.end()
+
+if (result._tag === "Falsified") {
+	const shrunk = result.shrunkInput
+	const report = { case: shrunk, ts: runCase(shrunk), rust: shrunkRemote, seed, replay: result.replay }
+	const path = join(tmpdir(), "ingest-rules-fuzz-failure.json")
+	writeFileSync(path, `${encodeReport(report)}\n`)
+	console.error(`The engines disagree after ${result.runs} cases (${result.shrinks} shrinks).`)
+	console.error(firstDifference(report.ts, report.rust))
+	console.error(`rules: ${encodeJson(shrunk.rules)}`)
+	console.error(`Written to ${path}. Rerun with --seed ${seed} or --replay ${result.replay}.`)
+	process.exit(1)
+}
+if (result._tag !== "Passed") {
+	console.error(Arbitrary.formatCheckFailure(result))
+	process.exit(1)
+}
+const counts = await Effect.runPromise(Ref.get(coverage))
+console.log(`${result.runs} cases agree.`)
+console.log(
+	`dropped ${counts.dropped}, redacted ${counts.redacted}, untouched ${counts.untouched}; ${counts.scanCap} near the scan cap`,
+)

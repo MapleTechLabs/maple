@@ -16,17 +16,19 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for smolagents in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-smolagents -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-smolagents -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install the instrumentor and export to Maple
 
 ```bash
-pip install "smolagents[openai]>=1.26" "openinference-instrumentation-smolagents>=0.1.40" \
+pip install "smolagents[openai]>=1.26" \
+  "openinference-instrumentation-smolagents>=0.1.40" \
   "opentelemetry-sdk>=1.45" "opentelemetry-exporter-otlp-proto-http>=1.45"
 ```
 
@@ -129,11 +131,9 @@ finally:
     provider.force_flush()
 ```
 
-## Check that it works
+## Verify
 
-Run two or three messages through `handle_message` with the same conversation id, including one that uses a tool, then open **Agent Sessions**. You should see one session with framework **smolagents**, one turn per `agent.run()`, a transcript, `OpenAIModel.generate` model calls with token counts, and `execute_tool <name>` tool calls. Each run ends with an `execute_tool final_answer` call.
-
-Cost shows as unpriced.
+Run two or three messages through `handle_message` with the same conversation id, including one that uses a tool, then open **Agent Sessions**. You should see one session with framework **smolagents**, one turn per `agent.run()`, a transcript, `OpenAIModel.generate` model calls with token counts, and `execute_tool <name>` tool calls. Each run ends with an `execute_tool final_answer` call. Cost shows as unpriced.
 
 ## Troubleshooting
 
@@ -142,7 +142,7 @@ Cost shows as unpriced.
 - **Every model call appears twice.** Remove `openinference-instrumentation-openai` or `openinference-instrumentation-litellm`; the smolagents instrumentor already covers model calls.
 - **No tool spans with `CodeAgent`.** A remote executor (`e2b`, `docker`, `modal`) runs tools outside your process. Only the local executor produces tool spans.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
 - [LiteLLM](/docs/agent-tracing/litellm) and [OpenRouter](/docs/agent-tracing/openrouter), if your models go through either gateway

@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /**
  * Fixtures for the line, area and stacked-bar arms of `/lab/charts`.
  *
@@ -49,7 +50,7 @@ const FIXED_PAST_END_MS = Date.UTC(2026, 6, 17, 18, 30)
  * Five buckets beyond the current one. The in-flight bucket alone is 1/59th of
  * the plot width and reads as a rendering glitch rather than a feature; running
  * the series out past `now` makes the dashed tail a tenth of the chart, and is
- * also the honest shape for a projection (`spend-chart.tsx` draws the rest of the
+ * also the honest shape for a projection (the spend chart draws the rest of the
  * billing month the same way).
  */
 const FUTURE_BUCKETS = 5
@@ -99,7 +100,7 @@ export interface TimeseriesSpikeRow {
 
 function makeTimeseriesRows(lastStartMs: number): TimeseriesSpikeRow[] {
 	const count = 60
-	return bucketStarts(count, lastStartMs).map((startMs, index) => {
+	return Arr.map(bucketStarts(count, lastStartMs), (startMs, index) => {
 		const phase = (index / (count - 1)) * Math.PI * 6
 		const base = 0.55 + 0.35 * Math.sin(phase)
 		const date = new Date(startMs)
@@ -161,13 +162,13 @@ export function splitAtFirstPartial<T extends { partial: boolean }>(
  * assignable to `Record<string, unknown>[]` — but a fresh object literal is.
  * Rebuilding is the cast-free way across that boundary, and it keeps both arms
  * provably on identical numbers (the same move as `histogramProductionRows` in
- * `charts-lab.tsx`).
+ * `entries/charts.ts`).
  *
  * `partial` is deliberately NOT carried over: the production chart treats every
  * non-`bucket` key as a series, so it would draw a fourth line pinned at zero.
  */
 export function toLatencyProductionRows(rows: readonly TimeseriesSpikeRow[]): Record<string, unknown>[] {
-	return rows.map((row) => ({
+	return Arr.map(rows, (row) => ({
 		bucket: row.bucket,
 		p50LatencyMs: row.p50LatencyMs,
 		p95LatencyMs: row.p95LatencyMs,
@@ -177,7 +178,7 @@ export function toLatencyProductionRows(rows: readonly TimeseriesSpikeRow[]): Re
 
 /** Throughput and error throughput, widened the same way for the area arm. */
 export function toThroughputProductionRows(rows: readonly TimeseriesSpikeRow[]): Record<string, unknown>[] {
-	return rows.map((row) => ({
+	return Arr.map(rows, (row) => ({
 		bucket: row.bucket,
 		throughput: row.throughput,
 		errors: errorThroughput(row),
@@ -243,7 +244,7 @@ export function stackedBarAxisContext(rows: readonly StackedBarSpikeRow[]): {
 	rangeMs: number
 	bucketSeconds: number
 } {
-	const buckets = new Set(rows.map((row) => row.bucket))
+	const buckets = new Set(Arr.map(rows, (row) => row.bucket))
 	return { rangeMs: (buckets.size - 1) * BUCKET_MS, bucketSeconds: BUCKET_MS / 1000 }
 }
 

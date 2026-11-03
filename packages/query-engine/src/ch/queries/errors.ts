@@ -8,7 +8,7 @@ import * as CH from "@maple-dev/effect-orm/expr"
 // From the root, not `/expr`: these overloads take a `CHQuery`, keeping the
 // subquery's params, table names and column types checked.
 import { exists, inSubquery } from "@maple-dev/effect-orm/clickhouse"
-import { param } from "@maple-dev/effect-orm/clickhouse"
+import { defineCondFn, param } from "@maple-dev/effect-orm/clickhouse"
 import {
 	from,
 	fromQuery,
@@ -20,16 +20,18 @@ import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { SpanId, TraceId } from "@maple/domain"
-import { Schema, type DateTime } from "effect"
+import { Schema, type DateTime, Array as Arr } from "effect"
 import {
 	ErrorEvents,
 	ErrorEventsByTime,
 	ErrorFingerprintsMinutely,
 	ServiceUsage,
-	TraceDetailSpans,
 	TraceFacetsHourly,
+	TraceIndex,
 	TraceListMv,
 	Traces,
+	inTraces,
+	paramTraceWindow,
 	orgIdParam,
 	utcSecondsParam,
 } from "../tables"
@@ -76,12 +78,12 @@ const fingerprintHashEq = (expr: CH.Expr<number>, hash: string) => expr.eq(finge
 const isWarehouseFingerprint = (hash: string) => /^[0-9]+$/.test(hash)
 
 const fingerprintHashIn = (expr: CH.Expr<number>, hashes: readonly string[]) => {
-	const usable = hashes.filter(isWarehouseFingerprint)
+	const usable = Arr.filter(hashes, isWarehouseFingerprint)
 	// Dropping every hash is a real answer, not an error: the caller asked about
 	// fingerprints that cannot exist here, and the answer is no rows. Emitted as
 	// a false literal because `IN ()` is a ClickHouse syntax error.
 	if (usable.length === 0) return CH.rawCond("1 = 0")
-	return CH.inExprList(expr, usable.map(fingerprintHashLiteral))
+	return CH.inExprList(expr, Arr.map(usable, fingerprintHashLiteral))
 }
 
 /**
@@ -349,13 +351,26 @@ const TREE_SPAN_ATTR_KEYS = [
 	"cloudflare.colo",
 	"faas.invoked_region",
 	"cloudflare.outcome",
+	// The waterfall's technology icon: what the span called, beyond `db.system`.
+	"messaging.system",
+	"rpc.system",
+	"gen_ai.provider.name",
+	"gen_ai.system",
 ] as const
 
 /**
- * Resource attribute keys the trace-detail header reads (deployment env + commit).
- * Everything else in `ResourceAttributes` is loaded lazily by `spanDetailQuery`.
+ * Resource attribute keys the trace detail reads: the header's env and commit, and the
+ * runtime, SDK and platform behind each service's mark in the waterfall. Everything else in
+ * `ResourceAttributes` is loaded lazily by `spanDetailQuery`.
  */
-const TREE_RESOURCE_ATTR_KEYS = ["deployment.environment", "vcs.ref.head.revision"] as const
+const TREE_RESOURCE_ATTR_KEYS = [
+	"deployment.environment",
+	"vcs.ref.head.revision",
+	"process.runtime.name",
+	"telemetry.sdk.language",
+	"telemetry.sdk.name",
+	"cloud.platform",
+] as const
 
 /**
  * Hard cap on spans returned for one trace. A waterfall with more than a few
@@ -398,7 +413,7 @@ export interface SpanHierarchyOutput {
 
 export function spanHierarchyQuery(opts: SpanHierarchyOpts) {
 	return (
-		from(TraceDetailSpans)
+		from(Traces)
 			.select(($) => {
 				// HTTP span name rewriting: "http.server GET" + route → "GET /api/users".
 				// Shared with the materialized view and the trace-list span-name filter.
@@ -439,6 +454,7 @@ export function spanHierarchyQuery(opts: SpanHierarchyOpts) {
 			.where(($) => [
 				$.TraceId.eq(opts.traceId),
 				$.OrgId.eq(orgIdParam),
+				inTraces((id) => id.eq(opts.traceId), opts.narrowByTime ? paramTraceWindow() : undefined),
 				CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.gte(param.dateTime("startTime"))),
 				CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.lte(param.dateTime("endTime"))),
 			])
@@ -468,6 +484,8 @@ export interface SpanDetailOutput {
 	readonly spanId: string
 	readonly parentSpanId: string
 	readonly spanName: string
+	/** The stored `SpanName`, before the HTTP display rewrite. Keys `spanEventsQuery`. */
+	readonly rawSpanName: string
 	readonly serviceName: string
 	readonly spanKind: string
 	readonly durationMs: number
@@ -479,13 +497,13 @@ export interface SpanDetailOutput {
 }
 
 /**
- * Point lookup for one span's full attribute maps. The sorting key
- * `(OrgId, TraceId, SpanId)` makes this an O(log N) lookup. Used by the trace
+ * Point lookup for one span's full attribute maps, seeked through
+ * `trace_index` like the hierarchy. Used by the trace
  * detail panel to lazily load the attributes the trimmed `spanHierarchyQuery`
  * intentionally omits.
  */
 export function spanDetailQuery(opts: SpanDetailOpts) {
-	return from(TraceDetailSpans)
+	return from(Traces)
 		.select(($) => ({
 			traceId: $.TraceId,
 			spanId: $.SpanId,
@@ -495,6 +513,7 @@ export function spanDetailQuery(opts: SpanDetailOpts) {
 				$.SpanAttributes.get("http.route"),
 				$.SpanAttributes.get("url.path"),
 			),
+			rawSpanName: $.SpanName,
 			serviceName: $.ServiceName,
 			spanKind: $.SpanKind,
 			durationMs: $.Duration.div(1000000),
@@ -508,6 +527,7 @@ export function spanDetailQuery(opts: SpanDetailOpts) {
 			$.TraceId.eq(opts.traceId),
 			$.SpanId.eq(opts.spanId),
 			$.OrgId.eq(orgIdParam),
+			inTraces((id) => id.eq(opts.traceId), opts.narrowByTime ? paramTraceWindow() : undefined),
 			CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.gte(param.dateTime("startTime"))),
 			CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.lte(param.dateTime("endTime"))),
 		])
@@ -515,42 +535,130 @@ export function spanDetailQuery(opts: SpanDetailOpts) {
 		.format("JSON")
 }
 
-// Trace timestamp probe — resolve any one span timestamp for a trace
+// Span events — the OTel events (incl. `exception`) recorded on one span
 
-export interface TraceTimeProbeOutput {
-	readonly timestamp: DateTime.Utc
+export interface SpanEventsOpts {
+	traceId: string
+	spanId: string
+	serviceName: string
+	/** The stored `SpanName` (`SpanDetailOutput.rawSpanName`), not the display name. */
+	spanName: string
+}
+
+export interface SpanEventsOutput {
+	/** The span's own start, rendered like the event timestamps so offsets keep ns precision. */
+	readonly spanStart: string
+	readonly eventsTimestamp: string
+	readonly eventsName: string
+	readonly eventsAttributes: string
 }
 
 /**
- * Cheap timestamp resolver for a trace. `trace_detail_spans` is partitioned by
- * `toDate(Timestamp)`, so a trace lookup with no time predicate must seek across
- * every daily partition. When the caller has no timestamp (direct URL, shared
- * link, AI surface), this probe resolves one: selecting only `Timestamp`, with
- * no `ORDER BY` and `LIMIT 1`, ClickHouse reads ~one granule per partition and
- * stops — far cheaper than the full `spanHierarchyQuery` projection. The caller
- * then derives a ±1h window so the real query can prune partitions.
- *
- * Even the probe pays the every-partition seek when unbounded, so callers
- * should first try `narrowByTime: true` with a recent `startTime` lower bound
- * (pruning to the last few partitions) and only fall back to the unbounded
- * probe when the trace is older than that window.
+ * Events for one span. `traces` sorts by `(OrgId, ServiceName, 5-minute bucket,
+ * TraceId)`, so the span's service, exact start second (`startTime` and `endTime`
+ * one second apart) and trace id seek a handful of granules.
+ */
+export function spanEventsQuery(opts: SpanEventsOpts) {
+	return from(Traces)
+		.select(($) => ({
+			spanStart: CH.toString_($.Timestamp),
+			eventsTimestamp: CH.toJSONString($.EventsTimestamp),
+			eventsName: CH.toJSONString($.EventsName),
+			eventsAttributes: CH.toJSONString($.EventsAttributes),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.ServiceName.eq(opts.serviceName),
+			$.SpanName.eq(opts.spanName),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			$.TraceId.eq(opts.traceId),
+			$.SpanId.eq(opts.spanId),
+		])
+		.limit(1)
+		.format("JSON")
+}
+
+// Span events by trace — event markers for every span of one trace
+
+export interface SpanEventsByTraceOutput {
+	readonly spanId: string
+	/** The span's own start, rendered like the event timestamps so offsets keep ns precision. */
+	readonly spanStart: string
+	readonly eventsTimestamp: string
+	readonly eventsName: string
+}
+
+const notEmpty = defineCondFn<[CH.Expr<ReadonlyArray<string>>]>("notEmpty")
+
+/**
+ * Event times and names for the spans of one trace that recorded any, for the
+ * timeline markers. Attributes stay on `spanEventsQuery`, loaded per span.
+ * Seeked through `trace_index`; the trace's own `startTime`/`endTime` window
+ * also prunes partitions.
+ */
+export function spanEventsByTraceQuery(opts: { traceId: string; limit?: number }) {
+	return (
+		from(Traces)
+			.select(($) => ({
+				spanId: $.SpanId,
+				spanStart: CH.toString_($.Timestamp),
+				eventsTimestamp: CH.toJSONString($.EventsTimestamp),
+				eventsName: CH.toJSONString($.EventsName),
+			}))
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
+				$.TraceId.eq(opts.traceId),
+				inTraces((id) => id.eq(opts.traceId), paramTraceWindow()),
+				notEmpty($.EventsName),
+			])
+			// Earliest first, like `spanHierarchyQuery`, so the cap keeps the spans the timeline shows.
+			// `spanStart` is fixed-width DateTime64 text, so it sorts in time order.
+			.orderBy(["spanStart", "asc"])
+			.limit(opts.limit ?? SPAN_HIERARCHY_MAX_SPANS)
+			.format("JSON")
+	)
+}
+
+// Trace timestamp probe — resolve any one span timestamp for a trace
+
+export interface TraceTimeProbeOutput {
+	readonly traceId: string
+	/** The trace's first span start. */
+	readonly timestamp: DateTime.Utc
+	/** The trace's last span start, so a window can cover a trace longer than its padding. */
+	readonly endTimestamp: DateTime.Utc
+}
+
+/**
+ * First and last span start of a trace, aggregated over its `trace_index` rows (one per
+ * service and 5-minute bucket; sorted `(OrgId, TraceId, ...)`, one granule per daily
+ * partition). No row when the trace is unknown.
  */
 export function traceTimeProbeQuery(opts: { traceId: string }) {
-	return from(TraceDetailSpans)
-		.select(($) => ({ timestamp: $.Timestamp }))
+	return from(TraceIndex)
+		.select(($) => ({
+			traceId: $.TraceId,
+			timestamp: CH.min_($.MinTimestamp),
+			endTimestamp: CH.max_($.MaxTimestamp),
+		}))
 		.where(($) => [$.TraceId.eq(opts.traceId), $.OrgId.eq(orgIdParam)])
+		.groupBy("traceId")
 		.limit(1)
 		.format("JSON")
 }
 
 /**
- * {@link traceTimeProbeQuery} bounded below by the `startTime` param, and with
- * `endBounded` also below the `endTime` param, so tiered probes never overlap.
+ * {@link traceTimeProbeQuery} over the rows whose last span is at or after the `startTime`
+ * param (with `endBounded`, whose first is before `endTime`), so tiered probes never overlap.
+ * Rows before the bound are not seen, so `timestamp` is a lower bound only past it.
  */
 export function recentTraceTimeProbeQuery(opts: { traceId: string; endBounded?: boolean }) {
 	return traceTimeProbeQuery(opts).where(($) => [
-		$.Timestamp.gte(param.dateTime("startTime")),
-		CH.whenTrue(opts.endBounded === true, () => $.Timestamp.lt(param.dateTime("endTime"))),
+		$.MaxTimestamp.gte(param.dateTime("startTime")),
+		CH.whenTrue(opts.endBounded === true, () => $.MinTimestamp.lt(param.dateTime("endTime"))),
 	])
 }
 
@@ -1448,10 +1556,9 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 		.orderBy(["lastErrorSeen", "desc"], ["TraceId", "desc"])
 		.limit(limit)
 
-	// The `IN` filter is what bounds the `trace_detail_spans` read to these
-	// traces through its `(OrgId, TraceId, SpanId)` sort key; the join only
+	// `inTraces` bounds the read to these traces' granules; the join only
 	// carries each trace's occurrence span id across to pick the error span.
-	return from(TraceDetailSpans)
+	return from(Traces)
 		.innerJoinQuery(occurrences, "occurrence", (span, occurrence) => span.TraceId.eq(occurrence.TraceId))
 		.select(($) => {
 			const isOccurrence = $.SpanId.eq($.occurrence.occurrenceSpanId)
@@ -1486,9 +1593,13 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			inSubquery(
-				$.TraceId,
-				fromQuery(occurrences, "matching_traces").select(($$) => ({ TraceId: $$.TraceId })),
+			inTraces(
+				(id) =>
+					inSubquery(
+						id,
+						fromQuery(occurrences, "matching_traces").select(($$) => ({ TraceId: $$.TraceId })),
+					),
+				paramTraceWindow(),
 			),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
@@ -1499,7 +1610,7 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 }
 
 // One fingerprint's identity and volume, read from error_events alone. It answers even
-// when the sampled traces aged out of trace_detail_spans or fall outside the window.
+// when the sampled traces aged out of traces or fall outside the window.
 
 export interface ErrorFingerprintSummaryOpts {
 	fingerprintHash: string
@@ -1583,7 +1694,7 @@ export function errorFingerprintOccurrencesQuery(opts: { fingerprintHashes: read
 }
 
 export function errorOccurrenceSpansQuery(opts: { traceIds: readonly string[]; spanIds: readonly string[] }) {
-	return from(TraceDetailSpans)
+	return from(Traces)
 		.select(($) => ({
 			spanId: $.SpanId,
 			spanName: $.SpanName,
@@ -1596,7 +1707,9 @@ export function errorOccurrenceSpansQuery(opts: { traceIds: readonly string[]; s
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			opts.traceIds.length ? CH.inList($.TraceId, opts.traceIds) : CH.rawCond("1 = 0"),
+			opts.traceIds.length
+				? inTraces((id) => CH.inList(id, opts.traceIds), paramTraceWindow())
+				: CH.rawCond("1 = 0"),
 			opts.spanIds.length ? CH.inList($.SpanId, opts.spanIds) : CH.rawCond("1 = 0"),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),

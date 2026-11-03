@@ -1,7 +1,8 @@
 import type { SpanHierarchyOutput, ListLogsOutput } from "@maple/domain/tinybird"
 import { FIXTURES } from "./utils"
+import { String as Str } from "effect"
 
-const hex = (n: number): string => n.toString(16).padStart(16, "0")
+const hex = (n: number): string => Str.padStart(16, "0")(n.toString(16))
 
 /** Total spans in the synthetic large trace (> MAX_OVERVIEW_SPANS=100 to force the cap). */
 export const LARGE_TRACE_SPAN_COUNT = 150
@@ -98,6 +99,28 @@ export const makeSmallTraceSpans = (): SpanHierarchyOutput[] => {
 	return [root, ...children]
 }
 
+export const DEEP_TRACE_ID = "d33d0000000000000000000000000060"
+export const DEEP_TRACE_DEPTH = 60
+
+/** A single chain of spans `DEEP_TRACE_DEPTH` levels deep, ending in an error. */
+export const makeDeepTraceSpans = (): SpanHierarchyOutput[] =>
+	Array.from({ length: DEEP_TRACE_DEPTH }, (_, i): SpanHierarchyOutput => ({
+		traceId: DEEP_TRACE_ID,
+		spanId: hex(0xd000 + i),
+		parentSpanId: i === 0 ? "" : hex(0xd000 + i - 1),
+		spanName: `level-${i}`,
+		rawSpanName: `level-${i}`,
+		serviceName: FIXTURES.service,
+		spanKind: i === 0 ? "Server" : "Internal",
+		durationMs: DEEP_TRACE_DEPTH - i,
+		startTime: "2026-06-02 10:00:00",
+		statusCode: i === DEEP_TRACE_DEPTH - 1 ? "Error" : "Ok",
+		statusMessage: "",
+		spanAttributes: JSON.stringify({ "app.level": String(i) }),
+		resourceAttributes: "{}",
+		relationship: "related",
+	}))
+
 /** Trace + span ids for the `inspect_span` drill-down regression guards. */
 export const SPAN_DETAIL_TRACE_ID = "9c2f1e7a4b6d83f05e1a2c3d4e5f6071"
 export const SPAN_DETAIL_SPAN_ID = "c1c1c1c1c1c1c1c1"
@@ -112,6 +135,7 @@ export const makeSpanDetailRows = (): ReadonlyArray<Record<string, unknown>> => 
 		// the compiled query's schema now, so a partial one is a decode failure.
 		parentSpanId: "",
 		spanName: "POST /api/checkout",
+		rawSpanName: "POST",
 		serviceName: FIXTURES.service,
 		spanKind: "Server",
 		durationMs: 120,
@@ -168,6 +192,7 @@ export const makeAiSpanDetailRows = (
 		spanId,
 		parentSpanId: "",
 		spanName: "chat gpt-5",
+		rawSpanName: "chat gpt-5",
 		serviceName: FIXTURES.service,
 		spanKind: "Client",
 		durationMs: 1_200,
@@ -227,7 +252,7 @@ export const makeAiTraceSpanRows = (): ReadonlyArray<Record<string, unknown>> =>
 export const makePartialAiTraceSpanRows = (): ReadonlyArray<Record<string, unknown>> =>
 	Array.from({ length: PARTIAL_AI_TRACE_SPANS }, (_, index) =>
 		aiSpanRow({
-			spanId: `c${index.toString(16).padStart(15, "0")}`,
+			spanId: `c${Str.padStart(15, "0")(index.toString(16))}`,
 			spanName: "chat gpt-5",
 			// The first span is the LLM call that requested `call_1`; the tool span
 			// that answered it is not in this trace's first page.

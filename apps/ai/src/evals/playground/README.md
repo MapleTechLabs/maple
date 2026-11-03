@@ -49,6 +49,102 @@ against the final answer; `Efficient path` is the call count a well-designed too
 | 7   | Build me a dashboard with CPU utilization per host.                             | create_dashboard on source=metrics, `system.cpu.utilization`, group by `resource.host.name` | 1-3            |
 | 8   | How many 5xx errors did the API return today? (negative)                        | does not use the infra tools; traces/errors tools instead                                   | n/a            |
 
+## The integration world
+
+`src/mcp/__evals__/integration-world.ts` seeds Postgres with connected integrations and adds
+warehouse rules for CI runs and deployed versions. It shares names with `provider-world.ts`
+(zones, the `shop` Railway project, the PlanetScale databases). The playground tenant is an org
+admin, so the admin-only integration tools run.
+
+| Fact                                                                                                    | Where                                                |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `acme/api` stopped syncing: the GitHub App lost access                                                  | list_integrations, audit_setup                       |
+| Cloudflare analytics for `status.example.com` fail on a missing Analytics:Read permission               | list_integrations, audit_setup                       |
+| Railway `shop / preview` has had no successful poll for 4 h; production and staging are fresh           | list_integrations, audit_setup, sync_railway         |
+| PlanetScale deploy-request sync for `maple-analytics` fails (HTTP 404); metrics flow                    | list_integrations, audit_setup                       |
+| Scrape target `legacy-exporter` fails with connection refused                                           | list_integrations, audit_setup, update_scrape_target |
+| `shop` CI has failed since `a1a1…` ("allow stacking two coupons"): job `test (small-6)`, `cart.test.ts` | ci_runs                                              |
+| `checkout` (production) moved from `a0a0…` to `a3a3…`: three commits                                    | service_deployments, compare_commits                 |
+
+### Integration scenarios
+
+| #   | Ask                                                                                        | Must find                                                                        | Efficient path |
+| --- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- | -------------- |
+| I1  | What third-party stuff do we have hooked up, and is any of it broken?                      | all five problems above                                                          | 1              |
+| I2  | Our Railway preview charts stopped updating. What's going on, and can you kick it?         | preview stale 4 h, others fresh; sync_railway                                    | 2              |
+| I3  | CI on the shop repo has been red since yesterday. What broke, and which change started it? | test (small-6) fails on cart.test.ts since the coupon commit; last green at a0a0 | 1-2            |
+| I4  | What shipped in the latest checkout deploy?                                                | the three commits between a0a0 and a3a3                                          | 1              |
+| I5  | Can you look at the acme/api source to see how it calls the payments service?              | acme/api is not syncing (App lost access); grant access                          | 1-2            |
+| I6  | The legacy-exporter target has been dead for a day. Pause it.                              | update_scrape_target enabled=false                                               | 1              |
+| I7  | Is our api service healthy? It runs on Railway.                                            | Railway api in production at 99 % of its CPU limit                               | 1-2            |
+| I8  | Start collecting metrics from https://metrics.acme.dev/node2 for billing.                  | create_scrape_target with service billing                                        | 1              |
+
+### Integration results (Haiku; data calls, excluding `catalog`/`schema`)
+
+| #   | Round 1                       | Round 2                                   | Round 3    | Round 4                | Notes                                                                                                                                                       |
+| --- | ----------------------------- | ----------------------------------------- | ---------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| I1  | 2, correct                    | 2                                         | 2          |                        | fixed: overview shows unhealthy of total, two `next` calls instead of twelve                                                                                |
+| I2  | wrong (fixture contradiction) | 8, correct                                | 5, correct |                        | sync_railway now says an environment is still stale after the poll and why                                                                                  |
+| I3  |                               | 14, correct                               | failed     | 2 (+3 wasted), correct | ci_runs names the red streak, its first failing and last green commits, and hands full SHAs to compare_commits; `result` no longer hides the last green run |
+| I4  |                               | 2, correct                                |            |                        |                                                                                                                                                             |
+| I5  | blocked (fixture ids)         | blocked (no GitHub App in the playground) | correct    |                        | list_source_repositories flags repositories that stopped syncing                                                                                            |
+| I6  |                               | 2, correct                                |            |                        | paused targets say so, with no "after the next scrape" hint                                                                                                 |
+| I7  |                               | 4, correct                                |            |                        | diagnose_service says "no spans", not a healthy 0 %                                                                                                         |
+| I8  |                               | 2, correct                                |            |                        |                                                                                                                                                             |
+
+Open: `list_infra` with no rows does not say its default window is 1 hour, and its `environment`
+filter does not say it takes the bare Railway environment name (`preview`, not `shop / preview`).
+CI trace ids from the fixture do not resolve in `inspect_trace`: the world has no CI spans.
+
+## The security world
+
+`src/mcp/__evals__/security-world.ts` builds on the integration world (`acme/shop`, `acme/api`,
+`checkout` deployed from `CI_WORLD.head`) and answers the Security Center's catalogs
+(endoflife.date, OSV) with a stubbed `fetch`. Only the probe requests' spans exist as traces.
+
+| Fact                                                                                                         | Where                                  |
+| ------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
+| Code audit of `acme/shop`: confirmed critical cross-tenant order export, confirmed high, an unconfirmed lead | list_security_findings, inspect        |
+| `cart/coupon-replay` dismissed with a reason; `auth/jwt-none-alg` fixed; a rejected SSRF claim               | `status=all`, inspect                  |
+| `acme/api`'s latest audit stopped at the spend limit; it has no dependency scan                              | area summaries                         |
+| `next` 14.1.0 (CVE-2025-29927, critical, direct) runs in checkout production; `vitest` is dev only           | dependencies, inspect `CVE-2025-29927` |
+| `legacy-admin` served `/.env`, `billing` served `/actuator/env`; `marketing-site` answers every path         | exposure, inspect `legacy-admin:/.env` |
+| nuclei from 185.220.101.4 is the busiest scanner                                                             | `area=exposure`                        |
+| checkout on Node.js 18.19.0 (EOL, CVE-2025-23166), api-gateway on 22.4.0 (critical CVE), legacy-admin on 3.8 | runtimes, inspect `CVE-2025-23166`     |
+
+### Security scenarios
+
+| #   | Ask                                                                                      | Must find                                                                                                           | Efficient path |
+| --- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | -------------- |
+| S1  | What are our biggest security problems right now?                                        | order export, next CVE in checkout, legacy-admin `/.env`, api-gateway Node CVE; acme/api gaps                       | 1-2            |
+| S2  | I saw CVE-2025-29927 on Hacker News. Are we affected? Where, and what do we do?          | next 14.1.0 in acme/shop, checkout production, upgrade to 14.2.25; acme/api unknown                                 | 1              |
+| S3  | Is anyone scanning or probing our services? Did they actually get anything?              | nuclei and two others; legacy-admin `/.env` and billing `/actuator/env` answered 200; marketing-site is a catch-all | 2-3            |
+| S4  | Which of our services run outdated or end-of-life runtimes?                              | checkout Node 18 EOL, legacy-admin Python 3.8 EOL, api-gateway behind; cart and edge-worker not judged              | 1              |
+| S5  | Explain the critical order export finding, how it is exploited and how to fix it.        | missing orgId filter at export.ts, the request, filter on the tenant's orgId                                        | 2              |
+| S6  | What vulnerabilities affect the checkout service? Prioritize them.                       | order export, next, reset timing, avatar lead, Node 18, axios, cookie; not vitest                                   | 1-2            |
+| S7  | Which findings did we dismiss or accept, and why? Is our coverage complete?              | coupon replay dismissed with its reason; acme/api never scanned and its audit incomplete                            | 2              |
+| S9  | CVE-2025-23166 in Node.js is being exploited. Which services, and to what version?       | checkout to 18.20.6, api-gateway to 22.12.0; Python services clean; cart not checkable                              | 1              |
+| S10 | Did we fix the JWT alg none problem? What high or critical issues are open in acme/shop? | fixed by the latest audit run; the open code and dependency findings of acme/shop                                   | 2              |
+
+### Security results (Haiku unless noted; data calls, wasted in brackets)
+
+| #   | Round 1 | Round 2 | Round 3 | Round 4    | What changed after the round                                                                                                                                          |
+| --- | ------- | ------- | ------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S1  | 3       |         |         | 2 (Sonnet) | coverage gaps moved from notes into area summaries; the window label names the areas it applies to                                                                    |
+| S2  | 2 (+4)  |         |         | 2          | dependency rows say what to change; an advisory lookup leads with a verdict and leaves out the side (runtime or package) it is not on                                 |
+| S3  | 2 (+9)  | 4 (+15) | 4 (+2)  | 5 (+1)     | answered probes became inspectable (`service:/path`, every probe the service got); scanners on ordinary pages no longer show 2xx counts; the world gained probe spans |
+| S4  | 1       |         |         |            | unjudged runtimes (Bun posing as Node.js, Workers) are named in the summary                                                                                           |
+| S5  |         | 2       |         |            |                                                                                                                                                                       |
+| S6  |         | 8 (+3)  | 7 (+3)  |            | code findings carry the services that run their repository (from the dependency scanner's running commits), so `service` keeps them                                   |
+| S7  |         | 6 (+2)  | 7 (+3)  |            | triage reasons show in the list; counts follow the filters; a repository filter skips the per-service areas                                                           |
+| S9  |         |         | 2 (+1)  |            | an advisory lookup lists services checked clean and the ones it could not check                                                                                       |
+| S10 |         |         |         | 4 (+1)     | fixed findings name the audit run and commit that stopped finding them                                                                                                |
+
+Every answer was correct from round 1 on; the rounds cut wasted calls. Open items the agents still
+raise: Maple sees a probe's status code, not the response body, so "did they get the file" stays a
+manual check; a transitive dependency's parent package is not recorded; the catalog's size makes
+grepping it the only practical discovery step in the playground (real clients list tools natively).
+
 ## Grading
 
 Per scenario, from the agent's report and the JSONL log:
@@ -81,16 +177,16 @@ Run at most four subagents at once: each call starts a vitest process.
 
 ## Results so far (Haiku unless noted; data calls, excluding `catalog`/`schema`)
 
-| # | Round 1 | Round 2 | Round 3 | Round 4 | Status |
-| --- | --- | --- | --- | --- | --- |
-| 1 | 2 | 2 | | 1 (Sonnet) | done |
-| 2 | 3 | 4 | 3 | 3 | done; 2 is reachable (list_infra, then inspect_infra workload) |
-| 3 | 1 | | 1 | | done |
-| 4 | | 2 | 3 | 4 | correct; call count varies on Haiku |
-| 5 | 3 | | 2 | | done |
-| 6 | | 2 | 2 | | done |
-| 7 | | | 10, then 7 (broken dashboard) | 3 | done after the sandbox modeled metric discovery |
-| 8 | | | correct, no infra calls | | done |
+| #   | Round 1 | Round 2 | Round 3                       | Round 4    | Status                                                         |
+| --- | ------- | ------- | ----------------------------- | ---------- | -------------------------------------------------------------- |
+| 1   | 2       | 2       |                               | 1 (Sonnet) | done                                                           |
+| 2   | 3       | 4       | 3                             | 3          | done; 2 is reachable (list_infra, then inspect_infra workload) |
+| 3   | 1       |         | 1                             |            | done                                                           |
+| 4   |         | 2       | 3                             | 4          | correct; call count varies on Haiku                            |
+| 5   | 3       |         | 2                             |            | done                                                           |
+| 6   |         | 2       | 2                             |            | done                                                           |
+| 7   |         |         | 10, then 7 (broken dashboard) | 3          | done after the sandbox modeled metric discovery                |
+| 8   |         |         | correct, no infra calls       |            | done                                                           |
 
 Every answer was correct from round 2 on. The open items the agents still raise:
 

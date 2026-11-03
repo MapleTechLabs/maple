@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import {
 	DashboardTemplateId,
 	DashboardTemplateParameterKey,
@@ -148,7 +148,7 @@ export function chartDisplayForMetric(aggregation: string): WidgetDisplay {
 // metric where-clause literal, so a value containing `"` (or `\`) can't break
 // out of the string. Metric where-clauses are ClickHouse-dialect string literals.
 export function escapeMetricStringLiteral(value: string): string {
-	return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+	return Str.replace(/"/g, '\\"')(Str.replace(/\\/g, "\\\\")(value))
 }
 
 export function serviceWhereClause(serviceName?: string): string {
@@ -156,7 +156,7 @@ export function serviceWhereClause(serviceName?: string): string {
 }
 
 export function combineWhere(...clauses: Array<string | undefined>): string {
-	return clauses.filter((clause) => clause && clause.trim().length > 0).join(" AND ")
+	return clauses.filter((clause) => clause && Str.trim(clause).length > 0).join(" AND ")
 }
 
 export function metricsTimeseries(opts: {
@@ -213,6 +213,8 @@ export function buildPortableDashboard(opts: {
 	tags?: readonly string[]
 	timeRange?: string
 	widgets: WidgetDef[]
+	sections?: PortableDashboardDocument["sections"]
+	variables?: PortableDashboardDocument["variables"]
 }): PortableDashboardDocument {
 	return decodePortableDashboard({
 		name: opts.name,
@@ -220,6 +222,8 @@ export function buildPortableDashboard(opts: {
 		...(opts.tags && opts.tags.length > 0 && { tags: opts.tags }),
 		timeRange: { type: "relative", value: opts.timeRange ?? "1h" },
 		widgets: opts.widgets,
+		...(opts.sections && { sections: opts.sections }),
+		...(opts.variables && { variables: opts.variables }),
 	})
 }
 

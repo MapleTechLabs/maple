@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListProductEventsOutput, ProductEventKind } from "@maple/domain/mcp-outputs"
 import { productEventNames } from "@maple/query-engine/observability"
 import type { McpToolRegistrar } from "./types"
@@ -6,6 +6,7 @@ import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatNumber, truncate } from "../lib/format"
+import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -75,17 +76,19 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 			).pipe(Effect.catchTags(warehouseToMcpHandlers(TOOL)))
 
 			const search = params.search?.toLowerCase()
-			const events = rows
-				.filter((row) => params.kind === undefined || row.kind === params.kind)
-				.filter((row) => search === undefined || row.eventName.toLowerCase().includes(search))
-				.slice(0, limit)
-				.map((row) => ({
+			const events = Arr.map(
+				Arr.filter(
+					Arr.filter(rows, (row) => params.kind === undefined || row.kind === params.kind),
+					(row) => search === undefined || Str.includes(search)(Str.toLowerCase(row.eventName)),
+				).slice(0, limit),
+				(row) => ({
 					eventName: row.eventName,
 					kind: row.kind,
 					count: row.count || 0,
 					sessions: row.sessions || 0,
 					persons: row.persons || 0,
-				}))
+				}),
+			)
 			yield* Effect.annotateCurrentSpan("result.rowCount", events.length)
 
 			return {
@@ -97,14 +100,15 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 		}),
 		render: (output) => {
 			const { events } = output
-			const customEvents = events.filter((event) => event.kind === "custom")
-			const suggested = customEvents
-				.slice(0, 2)
-				.map((event) => ({ kind: "event", eventName: event.eventName }))
+			const customEvents = Arr.filter(events, (event) => event.kind === "custom")
+			const suggested = Arr.map(customEvents.slice(0, 2), (event) => ({
+				kind: "event",
+				eventName: event.eventName,
+			}))
 			const expectsCustom = output.kind === undefined || output.kind === "custom"
 			// Every event on one "person" across many sessions means the identity keys are empty.
-			const maxSessions = Math.max(0, ...events.map((event) => event.sessions))
-			const collapsed = maxSessions > 1 && events.every((event) => event.persons <= 1)
+			const maxSessions = Math.max(0, ...Arr.map(events, (event) => event.sessions))
+			const collapsed = maxSessions > 1 && Arr.every(events, (event) => event.persons <= 1)
 			return {
 				...(collapsed
 					? {
@@ -136,7 +140,7 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 						: [
 								doc.table(
 									["Event", "Kind", "Count", "Sessions", "Persons"],
-									events.map((event) => [
+									Arr.map(events, (event) => [
 										truncate(event.eventName, 60),
 										event.kind,
 										formatNumber(event.count),
@@ -159,13 +163,13 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 								suggested.length > 0
 									? doc.next(
 											"query_funnel",
-											{ steps_json: JSON.stringify(suggested) },
+											{ steps_json: stringifyJson(suggested) },
 											"measure conversion between them",
 										)
 									: doc.next(
 											"query_funnel",
 											{
-												steps_json: JSON.stringify([
+												steps_json: stringifyJson([
 													{ kind: "page", pagePath: "/" },
 													{ kind: "page", pagePath: "/pricing" },
 												]),

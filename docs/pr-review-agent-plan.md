@@ -26,10 +26,13 @@ in order, skipping with the reason in brackets:
 
 - the action is `opened`, `reopened`, `synchronize` or `ready_for_review` (`action`);
 - the repository has `pr_review_enabled` (`disabled`);
-- the organization carries the `prreview` rollout flag, see "Staged rollout" (`not_rolled_out`);
 - the PR is not a draft (`draft`) and the job carries a head SHA (`no_head_sha`);
 - the author is not a bot: a `[bot]` suffix, dependabot, renovate or GitHub Actions
   (`bot_author`);
+- on a public repository, the author is OWNER, MEMBER or COLLABORATOR, or has push access
+  (`external_author`), unless `reviewExternalContributors` is on. An outside author then gets one
+  review from pushes per PR and three a day across the org (`automatic_limit`, `quota`); later
+  heads wait for `@maple review` or a maintainer approving the CI run;
 - the repository has not reached its own optional `dailyLimit` today (`quota`); there is no
   organization-wide ceiling;
 - the head SHA has no live review yet (`duplicate`); a failed one is reclaimed for another attempt.
@@ -103,7 +106,18 @@ gaps always score the same, and it is stored in `pr_reviews.score`.
 
 The headline is now a confidence level from 1 to 10 (`confidencePrReview`, same file), from "do not
 merge" to "safe to merge". It starts from the quality score, deducts for missing tests, a high-risk
-area and unobservable new work in whole points, and is capped by findings. The quality score is shown beneath it.
+area and unobservable new work in whole points, and is capped by findings: a critical or a security
+warning at 4, a correctness or performance warning at 6 ("needs attention", never "likely safe"
+beside a known bug), any other warning at 8, and a pull request whose earlier reviews found
+correctness, security or performance findings that are now fixed at 8, since a re-review reads only
+what changed. The quality score is shown beneath it.
+
+The caps are measured, not guessed: `review-signal.corpus.test.ts` reads back every review Maple
+published on a range of real pull requests (`__fixtures__/review-signal/`, refreshed with
+`bun run --cwd apps/ai review:signal <owner/repo> <first> <last>`), renders and scores each again with
+the current code, and holds bars on what a reader is shown, on a safe-band number beside an open
+defect, on heads a person labelled as missed (`labels.json`), and on how often the review after a 9 or
+10 found a new defect. It prints the before and after table on every run.
 
 ### Publishing to GitHub
 
@@ -120,9 +134,12 @@ area and unobservable new work in whole points, and is capped by findings. The q
 2. **One summary comment per review**, always, authored by the App and found again by its hidden
    `<!-- maple-pr-review <reviewId> <attempt> -->` line (`prReviewCommentMarker`). A "reviewing"
    notice is replaced by that review's result; the next review of the pull request starts its own
-   comment (#1051). It carries the confidence, verdict, counts, summary, findings linked to their
-   lines at the head SHA, what to change, and the coverage table. The comment and the check
-   summary share `renderReviewMarkdown`.
+   comment (#1051). Once it is posted, the App's earlier review comments on the pull request are
+   folded away as outdated (`hideEarlierComments`, GraphQL `minimizeComment`), so a reader sees one
+   review rather than one per push; a refusal is logged and leaves them open. It carries the
+   confidence, verdict, counts, summary and findings linked to their lines at the head SHA. The
+   comment and the check summary share `renderReviewMarkdown`; what was checked, the coverage
+   table, production traffic and the telemetry inventory are on the check run only.
 3. **A `COMMENT` review** with the findings at or above the repository's inline threshold (`warn`
    by default) inline, only when there are any. GitHub refuses the whole review with a 422 when
    one line is outside the diff; the inline notes are then dropped, since the summary comment
@@ -210,6 +227,27 @@ moved.
 conclude `failure` while an undismissed break is open. It is the only path to a failing check, and
 it rests on facts the service established, never on a model's opinion.
 
+### Personal data and secrets in telemetry
+
+Two layers, both filed as `security` findings with check id `PII-01`:
+
+- **Scan** (`telemetry/privacy.ts`, no model, no warehouse). At submit, every added line of a
+  runtime source file that hands data to telemetry (span attributes and events, `annotateLogs`, log
+  calls, Go/Rust/Python attribute helpers, or an entry of such a call opened above) is checked for
+  sensitive names (keys in key position and identifier chains, split on camelCase and separators,
+  the way clear-text-logging heuristics and scrubbing denylists read them) and recognizable literal
+  values (JWTs, private keys, known API key prefixes, SSNs, Luhn-valid card numbers with an issuer
+  prefix). Names about the value (`tokenCount`, `emailVerified`, `hashedPassword`), entries whose
+  value is derived (a comparison, a presence check, a constant), arguments to a function that
+  derives from them, and lines that redact or hash are skipped, as are lines over 1000 characters,
+  scripts, generated code and migrations. Credentials, government ids and payment data are
+  critical, contact data and whole bodies or header maps warn, client IPs info. One finding per
+  file and kind, naming the other lines, at most 10 per review.
+  `bun run --cwd apps/ai review:checklist <owner/repo> <n>` prints the scan for any pull request.
+- **Reviewer.** The prompt's privacy lens covers what a name cannot show: whole objects, error
+  messages built from input, URLs with tokens, innocently named keys. A reviewer finding with a
+  `PII-*` id on the same line replaces the scan's.
+
 ### After the merge ships
 
 A `closed` event with `merged` stamps the merged pull request's last completed review that has
@@ -237,32 +275,11 @@ minutes, and settles `failed` once the 48 h window passes. A review that finishe
 request merged schedules its own look, and a reviewed head that is reviewed again clears the old
 one.
 
-## Staged rollout
+## Availability
 
-Merging this feature turns it on for no one. It is gated per organization by the `prreview` rollout
-flag, in the same Clerk public metadata as the other rollout flags. To flag an organization, set
-this in the Clerk dashboard under the organization's public metadata:
-
-```json
-{ "prreview": true }
-```
-
-Only the literal boolean `true` counts; a missing key, `false` or the string `"true"` all read as
-off. The flag is enforced in three places:
-
-- **The section.** Code Review, and its per-repository switch, appear only for a flagged
-  organization.
-- **The endpoint.** The `pr-review` endpoint refuses to turn reviews on for an unflagged
-  organization, so the switch cannot be bypassed by calling the API. Turning reviews off is always
-  allowed.
-- **The trigger.** `PrReviewService` skips a pull request with `not_rolled_out` for an unflagged
-  organization, so removing the flag stops reviews even on repositories switched on earlier.
-
-The flag contract lives in `@maple/domain/organization-feature-flags` and is decoded on the server
-by `OrganizationFeatureFlagsService`, which reuses an organization's flags for 60 seconds per
-isolate, so withdrawing a flag takes effect within a minute. Self-hosted builds have no Clerk and
-get every rollout on, as the web app already did. A managed build that cannot reach Clerk treats
-every rollout as off for that call.
+Code review is available to every organization; the per-repository `pr_review_enabled` switch is the
+only gate. It shipped behind a `prreview` Clerk rollout flag, retired 2026-10-16; organizations that
+still carry the key in their metadata decode it as an ignored extra.
 
 Maple's hosted App (`MapleLabsApp`) currently grants `checks: read`. Until it is raised to read and
 write and each installation accepts the change, reviews post the summary comment and the inline
@@ -340,7 +357,7 @@ open.
 ## The full review agent
 
 Built 2026-09-23 (PR #1001). The observability reviewer became a general code review agent, sold as
-one product behind the same `prreview` rollout flag. Observability is one lens of it, with its
+one product. Observability is one lens of it, with its
 `maple-audit` check ids, because it is what no other reviewer can check: the warehouse.
 
 ### General review

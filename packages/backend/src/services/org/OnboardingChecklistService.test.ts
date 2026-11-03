@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId } from "@maple/domain/http"
 import { ONBOARDING_REWARD_WINDOW_MS } from "@maple/domain/onboarding-checklist"
@@ -23,6 +23,7 @@ import { OnboardingChecklistService } from "@maple/backend/services/org/Onboardi
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { readOrgCreatedAt } from "@maple/backend/services/org/org-created-at"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
 
@@ -164,6 +165,8 @@ const stubs = (world: World) =>
 								})),
 							),
 				),
+			listOrganizationsOf: die,
+			listMemberActivity: die,
 			resolveMembers: die,
 		}),
 		Layer.succeed(AutumnClient, {
@@ -245,10 +248,10 @@ const connectGithub = (testDb: TestDb, status: "active" | "suspended" = "active"
 	Effect.promise(() =>
 		executeSql(
 			testDb,
-			`INSERT INTO vcs_installations
+			`WITH source AS (INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at) VALUES (gen_random_uuid()::text, $2, 'Source', 'github', 'integration', now(), now()) RETURNING id) INSERT INTO vcs_installations
 			   (id, org_id, provider, external_installation_id, account_login, account_type,
-			    external_account_id, installed_by_user_id, status, created_at, updated_at)
-			 VALUES ($1, $2, 'github', '42', 'acme', 'organization', '7', $3, $4, now(), now())`,
+			    external_account_id, installed_by_user_id, status, created_at, updated_at, source_id)
+			 SELECT $1, $2, 'github', '42', 'acme', 'organization', '7', $3, $4, now(), now(), source.id FROM source`,
 			[
 				status === "active"
 					? "0b2c1c3e-1d2a-4f3b-9c8d-0000000000a1"
@@ -298,7 +301,9 @@ describe("OnboardingChecklistService.read", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const service = yield* OnboardingChecklistService
-			assert.isFalse((yield* service.read(tenant)).steps.some((s) => s.id === "join_slack_channel"))
+			assert.isFalse(
+				Arr.some((yield* service.read(tenant)).steps, (s) => s.id === "join_slack_channel"),
+			)
 			world.supportChannel = "not_created"
 			const offered = (yield* service.read(tenant)).steps.at(-1)
 			assert.deepStrictEqual(offered, { id: "join_slack_channel", completed: false, optional: true })
@@ -372,6 +377,39 @@ describe("OnboardingChecklistService.read", () => {
 			assert.strictEqual(mcpStep(yield* service.read(tenant)), false)
 			yield* keys.touchLastUsed(created.id)
 			assert.strictEqual(mcpStep(yield* service.read(tenant)), true)
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
+	})
+})
+
+describe("first-data stamping on an org without onboarding state", () => {
+	const DAY_AND_AN_HOUR_MS = 25 * 60 * 60 * 1000
+	const stampFirstData = Effect.gen(function* () {
+		const onboarding = yield* OnboardingService
+		const organizations = yield* OrganizationService
+		return yield* onboarding.recordFirstDataReceived(ORG, readOrgCreatedAt(organizations, ORG))
+	})
+
+	it.effect("dates the new row by the org's real creation time, so the window stays closed", () => {
+		const world = freshWorld()
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.adjust(`${DAY_AND_AN_HOUR_MS} millis`)
+			assert.isTrue(yield* stampFirstData)
+			const row = yield* (yield* OnboardingService).findState(ORG)
+			assert.strictEqual(Option.getOrNull(row)?.createdAt, 0)
+			assert.strictEqual(Option.getOrNull(row)?.firstDataReceivedAt, DAY_AND_AN_HOUR_MS)
+			const report = yield* (yield* OnboardingChecklistService).read(tenant)
+			assert.strictEqual(report.status, "expired")
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
+	})
+
+	it.effect("creates no row when the provider cannot date the org", () => {
+		const world = freshWorld()
+		world.orgLookupFails = true
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			assert.isFalse(yield* stampFirstData)
+			assert.isTrue(Option.isNone(yield* (yield* OnboardingService).findState(ORG)))
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 })
@@ -516,8 +554,8 @@ describe("OnboardingChecklistService.claim", () => {
 				[Effect.result(service.claim(tenant)), Effect.result(service.claim(tenant))],
 				{ concurrency: 2 },
 			)
-			const won = outcomes.filter((outcome) => outcome._tag === "Success")
-			const lost = outcomes.filter((outcome) => outcome._tag === "Failure")
+			const won = Arr.filter(outcomes, (outcome) => outcome._tag === "Success")
+			const lost = Arr.filter(outcomes, (outcome) => outcome._tag === "Failure")
 			assert.strictEqual(won.length, 1)
 			assert.strictEqual(lost.length, 1)
 			const loser = lost[0]

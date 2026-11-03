@@ -53,6 +53,7 @@ import {
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import * as CH from "@maple/query-engine/ch"
+import { digestResendCutoffMs, isDigestDue, lastDigestActivity } from "./digest-schedule"
 import { resolveOrgName } from "./resolve-org-name"
 import { unsubscribeLinks, verifyUnsubscribeToken } from "./unsubscribe-token"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -103,6 +104,8 @@ interface ServiceUsageRow {
 	totalSizeBytes: number
 }
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 /** Empty arrays mean "the whole org", which is every pre-existing subscription. */
 const UNSCOPED: DigestScope = { environments: [], namespaces: [] }
 
@@ -111,10 +114,11 @@ const UNSCOPED: DigestScope = { environments: [], namespaces: [] }
  * one set of warehouse queries and one rendered email.
  */
 const scopeKey = (orgId: string, scope: DigestScope): string =>
-	JSON.stringify([orgId, [...scope.environments].sort(), [...scope.namespaces].sort()])
+	encodeJson([orgId, [...scope.environments].sort(), [...scope.namespaces].sort()])
 
 const StoredScopeColumn = Schema.fromJsonString(Schema.Array(Schema.String))
 const decodeScopeColumn = Schema.decodeUnknownOption(StoredScopeColumn)
+const encodeScopeColumn = Schema.encodeSync(StoredScopeColumn)
 
 /**
  * `[]` for anything that is not a JSON array of strings — a malformed scope
@@ -127,7 +131,7 @@ const parseScopeColumn = (raw: string | null): ReadonlyArray<string> =>
 	raw == null || raw === "" ? [] : Option.getOrElse(decodeScopeColumn(raw), () => [])
 
 const nonEmpty = (values: ReadonlyArray<string>): ReadonlyArray<string> | undefined => {
-	const kept = values.filter((value) => value !== "")
+	const kept = Arr.filter(values, (value) => value !== "")
 	return kept.length > 0 ? kept : undefined
 }
 
@@ -192,17 +196,15 @@ function groupServicesByEnvironment(
 		else byEnvironment.set(service.environment, [service])
 	}
 
-	return [...byEnvironment.entries()]
-		.map(([environment, groupServices]) => {
-			const requests = currentTotals.get(environment) ?? 0
-			return {
-				environment,
-				requests,
-				requestsDelta: computeDelta(requests, previousTotals.get(environment) ?? 0),
-				services: groupServices,
-			}
-		})
-		.sort((a, b) => b.requests - a.requests)
+	return Arr.map([...byEnvironment.entries()], ([environment, groupServices]) => {
+		const requests = currentTotals.get(environment) ?? 0
+		return {
+			environment,
+			requests,
+			requestsDelta: computeDelta(requests, previousTotals.get(environment) ?? 0),
+			services: groupServices,
+		}
+	}).sort((a, b) => b.requests - a.requests)
 }
 
 /**
@@ -239,14 +241,12 @@ function buildBreakdown(
 		prevTotals.set(label, (prevTotals.get(label) ?? 0) + (row.estimatedSpanCount || 0))
 	}
 
-	return [...totals.entries()]
-		.map(([label, { requests, errors }]) => ({
-			label,
-			requests,
-			errorRate: requests > 0 ? (errors / requests) * 100 : 0,
-			requestsDelta: computeDelta(requests, prevTotals.get(label) ?? 0),
-		}))
-		.sort((a, b) => b.requests - a.requests)
+	return Arr.map([...totals.entries()], ([label, { requests, errors }]) => ({
+		label,
+		requests,
+		errorRate: requests > 0 ? (errors / requests) * 100 : 0,
+		requestsDelta: computeDelta(requests, prevTotals.get(label) ?? 0),
+	})).sort((a, b) => b.requests - a.requests)
 }
 
 /**
@@ -258,22 +258,20 @@ function buildBreakdownFromRows(
 	current: ReadonlyArray<TracesBreakdownRow>,
 	previous: ReadonlyArray<TracesBreakdownRow>,
 ): Array<DigestBreakdownRow> {
-	const previousByName = new Map(previous.map((row) => [row.name, row.count || 0] as const))
-	return current
-		.map((row) => {
-			const label = row.name
-			const requests = row.count || 0
-			return {
-				label,
-				requests,
-				errorRate: (row.errorRate || 0) * 100,
-				requestsDelta: computeDelta(requests, previousByName.get(label) ?? 0),
-			}
-		})
-		.sort((a, b) => b.requests - a.requests)
+	const previousByName = new Map(Arr.map(previous, (row) => [row.name, row.count || 0] as const))
+	return Arr.map(current, (row) => {
+		const label = row.name
+		const requests = row.count || 0
+		return {
+			label,
+			requests,
+			errorRate: (row.errorRate || 0) * 100,
+			requestsDelta: computeDelta(requests, previousByName.get(label) ?? 0),
+		}
+	}).sort((a, b) => b.requests - a.requests)
 }
 
-export class DigestService extends Context.Service<DigestService>()("@maple/api/services/DigestService", {
+export class DigestService extends Context.Service<DigestService>()("@maple/backend/services/DigestService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "DigestService", toPersistenceError)
@@ -320,6 +318,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				email: string
 				enabled?: boolean
 				dayOfWeek?: number
+				sendHour?: number
 				timezone?: string
 				namespaces?: ReadonlyArray<string>
 				environments?: ReadonlyArray<string>
@@ -343,9 +342,10 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 							enabled: input.enabled !== false,
 							optedOutAt: input.enabled === false ? now : null,
 							dayOfWeek: input.dayOfWeek ?? 1,
+							...(input.sendHour != null ? { sendHour: input.sendHour } : undefined),
 							timezone: input.timezone ?? "UTC",
-							namespacesJson: JSON.stringify(input.namespaces ?? []),
-							environmentsJson: JSON.stringify(input.environments ?? []),
+							namespacesJson: encodeScopeColumn(input.namespaces ?? []),
+							environmentsJson: encodeScopeColumn(input.environments ?? []),
 							webAnalyticsEnabled: input.webAnalyticsEnabled !== false,
 							webAnalyticsOptedOutAt: input.webAnalyticsEnabled === false ? now : null,
 							createdAt: now,
@@ -361,12 +361,13 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 								// can tell an opt-out from a member it disabled itself.
 								optedOutAt: input.enabled === false ? now : null,
 								...(input.dayOfWeek != null ? { dayOfWeek: input.dayOfWeek } : undefined),
+								...(input.sendHour != null ? { sendHour: input.sendHour } : undefined),
 								...(input.timezone != null ? { timezone: input.timezone } : undefined),
 								...(input.namespaces != null
-									? { namespacesJson: JSON.stringify(input.namespaces) }
+									? { namespacesJson: encodeScopeColumn(input.namespaces) }
 									: undefined),
 								...(input.environments != null
-									? { environmentsJson: JSON.stringify(input.environments) }
+									? { environmentsJson: encodeScopeColumn(input.environments) }
 									: undefined),
 								// Only touched when sent, so saving the ops digest never flips it.
 								...(input.webAnalyticsEnabled != null
@@ -453,7 +454,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			yield* Effect.annotateCurrentSpan("maple.digest.environments", scope.environments.join(","))
 			yield* Effect.annotateCurrentSpan("maple.digest.namespaces", scope.namespaces.join(","))
 
-			const now = new Date(yield* Clock.currentTimeMillis)
+			const nowMs = yield* Clock.currentTimeMillis
 
 			// Every window is day-aligned to UTC midnight. `bucket_seconds: 86_400`
 			// snaps `toStartOfInterval` to UTC midnight, so a rolling now-7d window
@@ -462,7 +463,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			// makes the sparkline's bars add up to the headline Requests number —
 			// they used to be measured over different spans.
 			const DAY_MS = 24 * 60 * 60 * 1000
-			const todayStartMs = Math.floor(now.getTime() / DAY_MS) * DAY_MS
+			const todayStartMs = Math.floor(nowMs / DAY_MS) * DAY_MS
 			const currentStartMs = todayStartMs - 7 * DAY_MS
 			const previousStartMs = todayStartMs - 14 * DAY_MS
 
@@ -800,7 +801,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				ingestion: { ...curUsage, approximate: isScoped },
 				baseUrl: env.MAPLE_APP_BASE_URL,
 				dashboardUrl: env.MAPLE_APP_BASE_URL,
-				unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/settings?tab=notifications`,
+				unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/account?tab=email-preferences`,
 			}
 
 			yield* Effect.annotateCurrentSpan("maple.digest.total_requests", totalRequests)
@@ -877,12 +878,14 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 		) =>
 			Stream.paginate(0, (offset: number) =>
 				clerkRequest(spanName, attributes, () => fetchPage({ limit: CLERK_PAGE_SIZE, offset })).pipe(
-					Effect.mapError(() => new DigestPersistenceError({ message: errorMessage })),
-					Effect.map((page) => {
-						// Advance by the rows returned; stop on totalCount or an empty page.
-						const next = offset + page.data.length
-						const done = next >= page.totalCount || page.data.length === 0
-						return [page.data, done ? Option.none<number>() : Option.some(next)] as const
+					Effect.mapBoth({
+						onFailure: () => new DigestPersistenceError({ message: errorMessage }),
+						onSuccess: (page) => {
+							// Advance by the rows returned; stop on totalCount or an empty page.
+							const next = offset + page.data.length
+							const done = next >= page.totalCount || page.data.length === 0
+							return [page.data, done ? Option.none<number>() : Option.some(next)] as const
+						},
 					}),
 				),
 			).pipe(Stream.runCollect)
@@ -1035,9 +1038,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			)
 
 			const now = yield* Clock.currentTimeMillis
-			const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000
-			const todayStartMs = now - (now % 86_400_000)
-			const currentDayOfWeek = new Date(now).getUTCDay()
+			const resendCutoffMs = digestResendCutoffMs(now)
 
 			const subs = yield* dbExecute((db) =>
 				db.run(
@@ -1047,9 +1048,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				),
 			)
 
-			const dueSubs = subs.filter(
-				(s) =>
-					s.dayOfWeek === currentDayOfWeek && (s.lastSentAt == null || s.lastSentAt < sevenDaysAgo),
+			const dueSubs = subs.filter((s) =>
+				isDigestDue(s, lastDigestActivity(s.lastSentAt, s.lastAttemptedAt), now),
 			)
 
 			if (dueSubs.length === 0) {
@@ -1084,7 +1084,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 						// Orgs whose warehouse rejected queries with an auth/config-class
 						// error are parked (see warehouse-org-quarantine.ts). Checked before
-						// the claim so a parked org isn't marked attempted for the day.
+						// the claim so a parked org isn't marked attempted for the window.
 						if (yield* isOrgWarehouseQuarantined(edgeCache, rawOrgId)) {
 							yield* Effect.logInfo("Skipping digest for org with quarantined warehouse").pipe(
 								Effect.annotateLogs({ orgId: rawOrgId }),
@@ -1098,14 +1098,17 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 									.set({ lastAttemptedAt: now })
 									.where(($) => [
 										PG.inList($.id, orgSubIds),
-										PG.or($.lastAttemptedAt.isNull(), $.lastAttemptedAt.lt(todayStartMs)),
+										PG.or(
+											$.lastAttemptedAt.isNull(),
+											$.lastAttemptedAt.lte(resendCutoffMs),
+										),
 									])
 									.returning("id"),
 							),
 						)
 
 						if (claim.length === 0) {
-							yield* Effect.logInfo("Skipping digest org already attempted today").pipe(
+							yield* Effect.logInfo("Skipping digest org already attempted this window").pipe(
 								Effect.annotateLogs({
 									orgId: rawOrgId,
 									subscriptionCount: orgSubs.length,
@@ -1119,7 +1122,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 						if (claimedSubs.length < orgSubs.length) {
 							yield* Effect.logInfo(
-								"Skipping digest subscriptions already attempted today",
+								"Skipping digest subscriptions already attempted this window",
 							).pipe(
 								Effect.annotateLogs({
 									orgId: rawOrgId,
@@ -1265,6 +1268,7 @@ function rowToResponse(row: DigestSubscriptionRow): DigestSubscriptionResponse {
 		email: row.email,
 		enabled: row.enabled,
 		dayOfWeek: row.dayOfWeek,
+		sendHour: row.sendHour,
 		timezone: row.timezone,
 		namespaces: parseScopeColumn(row.namespacesJson),
 		environments: parseScopeColumn(row.environmentsJson),
@@ -1284,9 +1288,10 @@ function hasDigestContent(props: WeeklyDigestProps): boolean {
 		props.ingestion.traces > 0 ||
 		props.ingestion.metrics > 0 ||
 		props.ingestion.totalBytes > 0 ||
-		props.services.some(
+		Arr.some(
+			props.services,
 			(service) => service.requests > 0 || service.errorRate > 0 || service.p95Ms > 0,
 		) ||
-		props.topErrors.some((error) => error.count > 0)
+		Arr.some(props.topErrors, (error) => error.count > 0)
 	)
 }

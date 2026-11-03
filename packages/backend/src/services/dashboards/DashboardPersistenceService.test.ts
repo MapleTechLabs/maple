@@ -429,7 +429,7 @@ describe("DashboardPersistenceService", () => {
 
 			return Effect.gen(function* () {
 				const persistence = yield* DashboardPersistenceService
-				// Exactly what `backfill-dashboard-datasource-v3.ts` writes back.
+				// Exactly what the one-shot v2 -> v3 backfill wrote back.
 				yield* insertRawDashboard(
 					testDb,
 					"dash-backfilled",

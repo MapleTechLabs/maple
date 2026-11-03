@@ -1,18 +1,26 @@
 import { McpInvalidInputError, McpQueryBudgetError, McpQueryError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { RunSqlOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { autoBucketSeconds, runRawSql } from "../lib/run-raw-sql"
 import { truncate } from "../lib/format"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
+import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
-import { MAX_RAW_SQL_RESULT_ROWS } from "@maple/domain/raw-sql"
+import { MAX_RAW_SQL_RESULT_ROWS, maskLiteralsAndComments } from "@maple/domain/raw-sql"
+import { rawSqlErrorText } from "../lib/raw-sql-error-text"
+import { withTraceIndexSeek } from "../lib/trace-seek"
 import { doc } from "../lib/tool-doc"
 import {
-	describeWarehouseTable,
 	listWarehouseTables,
 	suggestWarehouseTables,
 } from "@maple/backend/services/warehouse/warehouse-catalog"
+import {
+	fixUnknownIdentifier,
+	type IdentifierRewrite,
+	referencedTables,
+	unknownIdentifierName,
+} from "../lib/sql-identifiers"
 
 // Rows returned to the model are capped so a wide/long result doesn't blow the
 // context. The full count is always reported via meta.rowCount.
@@ -33,16 +41,19 @@ const MISSING_TABLE_NAME_RES = [
 
 /** Names the error or the query's FROM/JOIN clauses use that are neither catalog tables nor CTEs. */
 const unknownTableNames = (message: string, sql: string): ReadonlyArray<string> => {
-	const known = new Set(listWarehouseTables().map((t) => t.name))
-	const ctes = new Set([...sql.matchAll(/\b([A-Za-z_]\w*)\s+AS\s*\(/gi)].map((m) => m[1]))
+	const known = new Set(Arr.map(listWarehouseTables(), (t) => t.name))
+	const ctes = new Set(Arr.map([...sql.matchAll(/\b([A-Za-z_]\w*)\s+AS\s*\(/gi)], (m) => m[1]))
 	const named = [
-		...MISSING_TABLE_NAME_RES.flatMap((re) => {
+		...Arr.flatMap(MISSING_TABLE_NAME_RES, (re) => {
 			const name = message.match(re)?.[1]
 			return name === undefined ? [] : [name]
 		}),
-		...[...sql.matchAll(/\b(?:FROM|JOIN)\s+([A-Za-z_][\w.]*)/gi)].map((m) => m[1]),
+		...Arr.map([...sql.matchAll(/\b(?:FROM|JOIN)\s+([A-Za-z_][\w.]*)/gi)], (m) => m[1]),
 	]
-	return [...new Set(named)].filter((name) => !known.has(name.split(".").at(-1) ?? name) && !ctes.has(name))
+	return Arr.filter(
+		[...new Set(named)],
+		(name) => !known.has(Str.split(".")(name).at(-1) ?? name) && !ctes.has(name),
+	)
 }
 
 export const withTableListOnUnknownTable = (
@@ -50,19 +61,26 @@ export const withTableListOnUnknownTable = (
 	sql = "",
 ): McpQueryError | McpQueryBudgetError => {
 	if (error._tag !== "@maple/mcp/errors/McpQueryError" || !UNKNOWN_TABLE.test(error.message)) return error
-	const names = listWarehouseTables()
-		.map((t) => t.name)
-		.join(", ")
-	const guesses = unknownTableNames(error.message, sql).flatMap((name) => {
+	const names = Arr.join(
+		Arr.map(listWarehouseTables(), (t) => t.name),
+		", ",
+	)
+	const guesses = Arr.flatMap(unknownTableNames(error.message, sql), (name) => {
 		const suggested = suggestWarehouseTables(name)
 		return suggested.length === 0
 			? []
 			: [
-					`\`${name}\` is not a Maple table; did you mean ${suggested.map((t) => `\`${t}\``).join(" or ")}?`,
+					`\`${name}\` is not a Maple table; did you mean ${Arr.join(
+						Arr.map(suggested, (t) => `\`${t}\``),
+						" or ",
+					)}?`,
 				]
 	})
 	return new McpQueryError({
-		message: `${error.message}\n\n${guesses.map((g) => `${g}\n`).join("")}Available tables: ${names}.\nCall describe_warehouse_tables with a table name for its columns.`,
+		message: `${error.message}\n\n${Arr.join(
+			Arr.map(guesses, (g) => `${g}\n`),
+			"",
+		)}Available tables: ${names}.\nCall describe_warehouse_tables with a table name for its columns.`,
 		pipeName: error.pipeName,
 		cause: error.cause,
 	})
@@ -77,28 +95,12 @@ export const withTableListOnUnknownTable = (
 const UNKNOWN_COLUMN =
 	/unknown (?:expression (?:or function )?)?identifier|missing columns|there(?:'s| is) no column|no such column/i
 
-/** The column an unknown-column error names, as written. */
-const missingColumnName = (message: string): string | undefined => {
-	const match = message.match(
-		/identifier [`']([^`']+)[`']|Missing columns: '([^']+)'|no column [`']([^`']+)[`']/i,
-	)
-	return match?.[1] ?? match?.[2] ?? match?.[3]
-}
-
 const NO_FROM_MESSAGE =
 	"Raw SQL must read from a Maple table: `$__orgFilter` filters a table's `OrgId`, and this query has no FROM. " +
 	"Select constants from a table instead: `SELECT now() FROM traces WHERE $__orgFilter LIMIT 1`."
 
 /** Cap on how many tables one enrichment describes. */
 const MAX_DESCRIBED_TABLES = 3
-
-/** Catalog tables the submitted SQL actually names, in first-mention order. */
-const referencedTables = (sql: string): ReadonlyArray<string> =>
-	listWarehouseTables()
-		.map((t) => ({ name: t.name, at: sql.search(new RegExp(`\\b${t.name}\\b`)) }))
-		.filter((t) => t.at >= 0)
-		.sort((a, b) => a.at - b.at)
-		.map((t) => t.name)
 
 /**
  * The column counterpart of `withTableListOnUnknownTable`, and it exists for the
@@ -114,7 +116,7 @@ export const withColumnListOnUnknownColumn =
 		if (error._tag !== "@maple/mcp/errors/McpQueryError" || !UNKNOWN_COLUMN.test(error.message))
 			return error
 
-		const written = missingColumnName(error.message)
+		const written = unknownIdentifierName(error.message)
 		const column = written?.split(".").at(-1)
 		// A table-less SELECT fails on the org filter itself; say that, not "unknown OrgId".
 		if (column === "OrgId" && !/\bFROM\b/i.test(sql)) {
@@ -127,17 +129,14 @@ export const withColumnListOnUnknownColumn =
 
 		// Only the tables the query names; a schema dump of all 38 would bury the
 		// message it is attached to.
-		const described = referencedTables(sql)
-			.slice(0, MAX_DESCRIBED_TABLES)
-			.map((name) => describeWarehouseTable(name))
-			.filter((info) => info !== null)
+		const described = referencedTables(sql).slice(0, MAX_DESCRIBED_TABLES)
 		if (described.length === 0) return error
 
 		// A column Maple's schema has but the warehouse lacks only happens on a cluster
 		// whose schema is behind (BYO ClickHouse); a plain typo gets the real columns.
-		const expectedOn = described.find((info) => info.columns.some((c) => c.name === column))
+		const expectedOn = described.find((info) => Arr.some(info.columns, (c) => c.name === column))
 		if (written !== undefined && column !== undefined && column !== written && expectedOn !== undefined) {
-			const alias = written.slice(0, written.length - column.length - 1)
+			const alias = Str.slice(0, written.length - column.length - 1)(written)
 			return new McpQueryError({
 				message:
 					`${error.message}\n\n\`${column}\` exists on \`${expectedOn.name}\`, so \`${alias}\` is not an alias in scope here. ` +
@@ -157,11 +156,16 @@ export const withColumnListOnUnknownColumn =
 			})
 		}
 
-		const listing = described.map(
-			(info) => `\`${info.name}\`: ${info.columns.map((c) => c.name).join(", ")}`,
+		const listing = Arr.map(
+			described,
+			(info) =>
+				`\`${info.name}\`: ${Arr.join(
+					Arr.map(info.columns, (c) => c.name),
+					", ",
+				)}`,
 		)
 		return new McpQueryError({
-			message: `${error.message}\n\nColumns available:\n${listing.join("\n")}`,
+			message: `${error.message}\n\nColumns available:\n${Arr.join(listing, "\n")}`,
 			pipeName: error.pipeName,
 			cause: error.cause,
 		})
@@ -190,27 +194,22 @@ const runSqlSchema = Schema.Struct({
 		`Clip each rendered cell to this many characters (default ${DEFAULT_CELL_CHARS}, max ${MAX_CELL_CHARS}). Raise it to read long values such as log bodies or stack traces.`,
 	),
 	show_sql: P.optionalFlag("Also return the macro-expanded SQL that ran (default false)."),
+	reason: P.optionalText(
+		"Why you are running this query, in a sentence. Optional; does not change the query.",
+	),
 })
 
 const runSqlDescription =
 	"Run one read-only ClickHouse SELECT against the org's warehouse and return its rows: " +
-	`at most ${MAX_RAW_SQL_RESULT_ROWS} are fetched and the first ${MAX_RENDERED_ROWS} rendered, with the true count reported. ` +
-	"Use it to answer what query_data cannot express, to spot-check data, or to test SQL before saving it " +
-	"as a raw_sql widget with add_dashboard_widget. For trends and top-N prefer query_data. " +
-	"Spans are in `traces` (there is no otel_spans, otel_traces or spans table) and log lines in `logs`. " +
-	"Main tables: traces, logs, metrics_sum/metrics_gauge/metrics_histogram, error_events, session_replays, product_events. " +
-	"Time columns: Timestamp on traces, logs, error_events and product_events; TimeUnix on metrics_*; StartTime on session_replays; " +
-	"Hour on *_hourly rollups and service_usage; Minute on *_minutely. " +
-	"service_usage is a SummingMergeTree (always sum() its counts; TraceCount counts spans); metrics_sum cumulative counters " +
-	"carry running totals (never sum Value across points); product_events properties are in Attributes. " +
-	"Select 64-bit IDs and hashes as toString(col) to keep their precision. " +
-	"traces columns include SpanName (not Name), StatusCode ('Ok'/'Error'/'Unset', no Status), Duration (ns), " +
-	"SpanAttributes and ResourceAttributes (no Attributes column on traces). " +
-	"Attribute columns are Map(String, String): read them as SpanAttributes['http.route'], never with JSON* functions. " +
-	"Compare timestamps to 'YYYY-MM-DD HH:MM:SS' or toDateTime64('...', 9), not ISO strings with T/Z; " +
-	"bucket with toStartOfInterval(Timestamp, INTERVAL 5 MINUTE) or toStartOfMinute/Hour (no toStartOfTenSeconds, no intDiv on DateTime64). " +
-	"Every non-aggregated SELECT column must be in GROUP BY. " +
-	"describe_warehouse_tables gives every table's columns and notes."
+	`at most ${MAX_RAW_SQL_RESULT_ROWS} are fetched and the first ${MAX_RENDERED_ROWS} rendered, with the count reported. ` +
+	"Use it for what query_data cannot express, to spot-check data, or to test SQL for a raw_sql widget. For trends and top-N prefer query_data. " +
+	"The SQL must AND in `$__orgFilter`; macros are listed on `sql`. " +
+	"Spans are in `traces` (no otel_spans/spans table), log lines in `logs`; also metrics_sum/metrics_gauge/metrics_histogram, " +
+	"error_events, session_replays, product_events and *_hourly/*_minutely rollups. " +
+	"Select 64-bit IDs and hashes as toString(col). Attribute columns are Map(String, String): SpanAttributes['http.route'], never JSON* functions. " +
+	"In traces the name is SpanName, StatusCode is 'Ok'/'Error' and Duration is nanoseconds. " +
+	"Compare timestamps to 'YYYY-MM-DD HH:MM:SS', not ISO T/Z strings; bucket with toStartOfInterval. " +
+	"Call describe_warehouse_tables for a table's columns, units and enum casing before guessing names."
 
 /** Twelve significant digits: hides binary float noise (8282.599999999999) without losing real precision. */
 const roundFloat = (value: number): number =>
@@ -222,15 +221,15 @@ export const toJson = (value: unknown): Schema.Json => {
 	if (typeof value === "string" || typeof value === "boolean") return value
 	if (typeof value === "number") return Number.isFinite(value) ? roundFloat(value) : String(value)
 	if (typeof value === "bigint") return value.toString()
-	if (Array.isArray(value)) return value.map(toJson)
+	if (Arr.isArray(value)) return Arr.map(value, toJson)
 	if (typeof value === "object")
-		return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, toJson(v)]))
+		return Rec.fromEntries(Arr.map(Rec.toEntries(value), ([k, v]) => [k, toJson(v)]))
 	return String(value)
 }
 
 /** Whether a time macro put the window into the statement; otherwise the SQL picks its own range. */
 const usesWindow = (expandedSql: string, start: string, end: string) =>
-	expandedSql.includes(`toDateTime('${start}')`) || expandedSql.includes(`toDateTime('${end}')`)
+	Str.includes(`toDateTime('${start}')`)(expandedSql) || Str.includes(`toDateTime('${end}')`)(expandedSql)
 
 /** Raw cell text with control characters made visible, so a row stays one table line. */
 export function cellToString(value: Schema.Json | undefined, maxChars = DEFAULT_CELL_CHARS): string {
@@ -238,15 +237,16 @@ export function cellToString(value: Schema.Json | undefined, maxChars = DEFAULT_
 		value === null || value === undefined
 			? "null"
 			: typeof value === "object"
-				? JSON.stringify(value)
+				? (stringifyJson(value) ?? String(value))
 				: String(value)
-	return truncate(text.replace(/\r?\n/g, "\\n").replace(/\t/g, "\\t"), maxChars)
+	return truncate(Str.replace(/\t/g, "\\t")(Str.replace(/\r?\n/g, "\\n")(text)), maxChars)
 }
 
 /** An integer past 2^53 has already lost digits in the warehouse's JSON; say so rather than show it as exact. */
 const hasUnsafeInteger = (rows: ReadonlyArray<Record<string, Schema.Json>>): boolean =>
-	rows.some((row) =>
-		Object.values(row).some(
+	Arr.some(rows, (row) =>
+		Arr.some(
+			Rec.values(row),
 			(v) => typeof v === "number" && !Number.isSafeInteger(v) && Number.isInteger(v),
 		),
 	)
@@ -254,8 +254,9 @@ const hasUnsafeInteger = (rows: ReadonlyArray<Record<string, Schema.Json>>): boo
 const BUDGET_ROLLUP_HINT =
 	"Pre-aggregated tables answer most per-service questions without scanning raw spans: service_overview_minutely / " +
 	"service_overview_hourly (requests, errors, latency per service), service_operations_minutely / service_operations_hourly " +
-	"(per span name), traces_aggregates_hourly, logs_aggregates_hourly, error_events_by_time, trace_list_mv (one row per trace). " +
-	"Otherwise narrow start_time/end_time or filter on the sorting key (ServiceName first on traces and logs)."
+	"(per span name), service_endpoint_details_hourly (per HTTP route and status), ai_trace_index (agent spans), " +
+	"traces_aggregates_hourly, logs_aggregates_hourly, error_events_by_time, trace_list_mv (one row per trace). " +
+	"Otherwise narrow start_time/end_time or filter on ServiceName with a Timestamp window."
 
 /** Point a query that ran out of time or memory at the rollups that answer it cheaply. */
 export const withRollupHintOnBudget = (
@@ -282,6 +283,49 @@ export const callerSqlAsInvalidInput = (
 		? new McpInvalidInputError({ message: error.message, parameter: "sql" })
 		: error
 
+/** Reruns with a corrected column name before the error goes back to the agent. */
+const MAX_IDENTIFIER_FIXES = 3
+
+/** Says which query a failure belongs to when the server already rewrote the agent's SQL. */
+const withRewriteNote = (message: string, rewrites: ReadonlyArray<IdentifierRewrite>): string =>
+	rewrites.length === 0
+		? message
+		: `${message}\n\nThis error is for the query rerun with ${Arr.join(
+				Arr.map(rewrites, (r) => `\`${r.to}\` for \`${r.from}\``),
+				", ",
+			)}.`
+
+/** The warehouse message in the caller's terms: no gateway database names or row-cap wrapper. */
+const withCallerErrorText =
+	(rewrites: ReadonlyArray<IdentifierRewrite>) =>
+	(error: McpQueryError | McpQueryBudgetError): McpQueryError | McpQueryBudgetError =>
+		error._tag === "@maple/mcp/errors/McpQueryError"
+			? new McpQueryError({
+					message: withRewriteNote(rawSqlErrorText(error.message), rewrites),
+					pipeName: error.pipeName,
+					cause: error.cause,
+				})
+			: error
+
+// The cap leaves no overflow row, so only a statement's own LIMIT within the cap proves it whole.
+const OWN_LIMIT = /\bLIMIT\s+(\d+)(?:\s*,\s*(\d+)|\s+OFFSET\s+\d+)?\s*;?\s*$/i
+
+/** The statement ends in its own LIMIT of at most the cap, so a full page is its answer, not ours. */
+const limitedWithinCap = (sql: string): boolean => {
+	const own = OWN_LIMIT.exec(Str.trimEnd(maskLiteralsAndComments(sql)))
+	// `LIMIT offset, count` puts the count second.
+	return own !== null && Number(own[2] ?? own[1]) <= MAX_RAW_SQL_RESULT_ROWS
+}
+
+type RawSqlRun = ReturnType<typeof runRawSql>
+
+interface FixFailure {
+	readonly error: Effect.Error<RawSqlRun>
+	/** The statement that failed, after any rewrites. */
+	readonly sql: string
+	readonly rewrites: ReadonlyArray<IdentifierRewrite>
+}
+
 export function registerRunSqlTool(server: McpToolRegistrar) {
 	server.define({
 		name: "run_sql",
@@ -292,22 +336,70 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 		hints: { readOnly: true },
 		phrases: ["Running a query", "Running SQL", "Querying the warehouse"],
 		handler: Effect.fn("McpTool.runSql")(function* (params) {
+			// Only that one was given: the text comes from the conversation and can name people.
+			yield* Effect.annotateCurrentSpan("maple.mcp.run_sql.has_reason", params.reason !== undefined)
 			const tenant = yield* CurrentMcpTenant
 			const { st, et } = yield* WINDOW.resolve(params, "run_sql")
 			const granularitySeconds = params.granularity_seconds ?? autoBucketSeconds(st, et)
 
-			const { rows, columns, rowCount, expandedSql } = yield* runRawSql({
-				tenant,
-				sql: params.sql,
-				startTime: st,
-				endTime: et,
-				granularitySeconds,
-			}).pipe(
-				Effect.mapError((error) =>
+			const execute = (sql: string) =>
+				runRawSql({
+					tenant,
+					sql,
+					startTime: st,
+					endTime: et,
+					granularitySeconds,
+					truncateAtCap: true,
+				})
+
+			// A misspelt column with exactly one right answer is fixed and rerun rather than
+			// costing the agent a round trip; each pass fixes the name the warehouse reported.
+			const runFixing = (
+				sql: string,
+				rewrites: ReadonlyArray<IdentifierRewrite>,
+			): Effect.Effect<
+				Effect.Success<RawSqlRun> & { readonly rewrites: ReadonlyArray<IdentifierRewrite> },
+				FixFailure,
+				Effect.Services<RawSqlRun>
+			> =>
+				execute(sql).pipe(
+					Effect.map((result) => ({ ...result, rewrites })),
+					Effect.catch((error) => {
+						const fix =
+							error._tag === "@maple/http/errors/RawSqlValidationError" ||
+							rewrites.length >= MAX_IDENTIFIER_FIXES
+								? undefined
+								: fixUnknownIdentifier(sql, error.message)
+						return fix === undefined
+							? Effect.fail({ error, sql, rewrites })
+							: runFixing(fix.sql, [...rewrites, fix.rewrite])
+					}),
+				)
+
+			// An unbounded trace-id lookup reads through `trace_index`. If the warehouse cannot
+			// analyse that form (the predicate sits where `ServiceName` is not in scope), the
+			// query runs as written; any other failure is the seek's to report.
+			const seeked = withTraceIndexSeek(params.sql)
+			const run =
+				seeked === undefined
+					? runFixing(params.sql, [])
+					: runFixing(seeked, []).pipe(
+							Effect.catchIf(
+								(failure) =>
+									failure.error._tag === "@maple/http/errors/WarehouseInvalidSqlError",
+								() => runFixing(params.sql, []),
+							),
+						)
+
+			const { rows, columns, rowCount, expandedSql, rewrites } = yield* run.pipe(
+				Effect.mapError(({ error, sql, rewrites }) =>
 					// Macro/safety failures (a missing `$__orgFilter` above all) are caller-fixable.
 					error._tag === "@maple/http/errors/RawSqlValidationError"
 						? new McpInvalidInputError({
-								message: `SQL rejected (${error.code}): ${error.message}`,
+								message: withRewriteNote(
+									`SQL rejected (${error.code}): ${error.message}`,
+									rewrites,
+								),
 								parameter: "sql",
 								example: RUN_SQL_EXAMPLE,
 							})
@@ -317,10 +409,10 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 								// plus the real table (or column) names when the one it named does not exist:
 								// the warehouse message never says what they are.
 								withRollupHintOnBudget(
-									withColumnListOnUnknownColumn(params.sql)(
+									withColumnListOnUnknownColumn(sql)(
 										withTableListOnUnknownTable(
-											toMcpQueryError("run_sql")(error),
-											params.sql,
+											withCallerErrorText(rewrites)(toMcpQueryError("run_sql")(error)),
+											sql,
 										),
 									),
 								),
@@ -336,58 +428,77 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 			return {
 				rowCount,
 				columns: [...columns],
-				rows: rendered.map((row) =>
-					Object.fromEntries(Object.entries(row).map(([k, v]) => [k, toJson(v)])),
+				rows: Arr.map(rendered, (row) =>
+					Rec.fromEntries(Arr.map(Rec.toEntries(row), ([k, v]) => [k, toJson(v)])),
 				),
 				truncated: rowCount > rendered.length,
 				timeRange: { start: st, end: et },
 				maxCellChars,
 				windowApplied: usesWindow(expandedSql, st, et),
+				...(rowCount >= MAX_RAW_SQL_RESULT_ROWS && !limitedWithinCap(params.sql)
+					? { atRowCap: true }
+					: undefined),
+				...(rewrites.length === 0 ? undefined : { rewrites: [...rewrites] }),
 				...(params.show_sql === true ? { expandedSql } : undefined),
 			}
 		}),
-		render: (output) => ({
-			title: "SQL result",
-			scope: [
-				[
-					"Time range",
-					output.windowApplied !== false
-						? `${output.timeRange.start} to ${output.timeRange.end}`
-						: "set by the SQL (no $__timeFilter/$__startTime/$__endTime macro)",
-				],
-				["Rows", String(output.rowCount)],
-				["Columns", String(output.columns.length)],
-			],
-			...(output.rowCount === 0 ? { empty: { message: "No rows returned." } } : undefined),
-			blocks: [
-				...(output.rowCount === 0
-					? []
-					: [
-							doc.table(
-								[...output.columns],
-								output.rows.map((row) =>
-									output.columns.map((col) => cellToString(row[col], output.maxCellChars)),
-								),
-							),
-						]),
-				...(output.expandedSql === undefined ? [] : [doc.code("sql", output.expandedSql)]),
-			],
-			...(hasUnsafeInteger(output.rows)
-				? {
-						notices: [
+		render: (output) => {
+			const notices = [
+				...(output.atRowCap === true
+					? [
+							`Stopped at the ${MAX_RAW_SQL_RESULT_ROWS}-row cap, so more rows may exist; aggregate or add a LIMIT to see all of them.`,
+						]
+					: []),
+				...Arr.map(
+					output.rewrites ?? [],
+					(r) =>
+						`Ran with \`${r.to}\` for \`${r.from}\`, which is not a column here; use \`${r.to}\` directly.`,
+				),
+				...(hasUnsafeInteger(output.rows)
+					? [
 							"Some integers exceed 2^53 and lost their last digits in transit; select them as toString(col) for exact values.",
-						],
-					}
-				: undefined),
-			...(output.truncated
-				? {
-						truncation: {
-							shown: output.rows.length,
-							total: output.rowCount,
-							noun: "rows (refine with LIMIT or filters)",
-						},
-					}
-				: undefined),
-		}),
+						]
+					: []),
+			]
+			return {
+				title: "SQL result",
+				scope: [
+					[
+						"Time range",
+						output.windowApplied !== false
+							? `${output.timeRange.start} to ${output.timeRange.end}`
+							: "set by the SQL (no $__timeFilter/$__startTime/$__endTime macro)",
+					],
+					["Rows", String(output.rowCount)],
+					["Columns", String(output.columns.length)],
+				],
+				...(output.rowCount === 0 ? { empty: { message: "No rows returned." } } : undefined),
+				blocks: [
+					...(output.rowCount === 0
+						? []
+						: [
+								doc.table(
+									[...output.columns],
+									Arr.map(output.rows, (row) =>
+										Arr.map(output.columns, (col) =>
+											cellToString(row[col], output.maxCellChars),
+										),
+									),
+								),
+							]),
+					...(output.expandedSql === undefined ? [] : [doc.code("sql", output.expandedSql)]),
+				],
+				...(notices.length === 0 ? undefined : { notices }),
+				...(output.truncated
+					? {
+							truncation: {
+								shown: output.rows.length,
+								total: output.rowCount,
+								noun: "rows (refine with LIMIT or filters)",
+							},
+						}
+					: undefined),
+			}
+		},
 	})
 }

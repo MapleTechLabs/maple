@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import {
 	EdgeCacheBackendError,
 	EdgeCacheIOError,
@@ -116,7 +116,7 @@ describe("EdgeCacheService.getOrCompute (no schema)", () => {
 			assert.strictEqual(getCalls, 2)
 			assert.strictEqual(computeCalls, 2)
 			assert.deepStrictEqual(
-				results.map(({ value }) => value),
+				Arr.map(results, ({ value }) => value),
 				["computed", "computed"],
 			)
 		}).pipe(Effect.provide(makeLayer(backend, 10)), Effect.timeout(200))
@@ -147,7 +147,7 @@ describe("EdgeCacheService.getOrCompute (no schema)", () => {
 		const puts: number[] = []
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: () => Effect.succeed(undefined), // force a miss → always computes → always writes
+			get: () => Effect.undefined, // force a miss → always computes → always writes
 			put: (_bucket, _hash, _value, ttlSeconds) =>
 				Effect.sync(() => {
 					puts.push(ttlSeconds)
@@ -249,7 +249,7 @@ describe("EdgeCacheService.invalidate", () => {
 	it.effect("swallows backend delete failures (best-effort)", () => {
 		const failing: EdgeCacheBackend = {
 			name: "memory",
-			get: () => Effect.succeed(undefined),
+			get: () => Effect.undefined,
 			put: () => Effect.void,
 			delete: () => Effect.fail(new EdgeCacheBackendError({ op: "delete", message: "kv unavailable" })),
 		}
@@ -332,7 +332,7 @@ describe("EdgeCacheService.getOrCompute (with Schema.Class schema)", () => {
 					const view = new Uint8Array(digest)
 					let out = ""
 					for (let i = 0; i < view.length; i++) {
-						out += view[i]!.toString(16).padStart(2, "0")
+						out += Str.padStart(2, "0")(view[i]!.toString(16))
 					}
 					return out
 				})
@@ -613,10 +613,10 @@ describe("EdgeCacheService read deadline", () => {
 						// the shape of an uncancellable cache.match that resolves long
 						// after the read abandoned it.
 						return Effect.callback<undefined>((resume) => {
-							settleFirstRead = () => resume(Effect.succeed(undefined))
+							settleFirstRead = () => resume(Effect.undefined)
 						})
 					}
-					return Effect.succeed(undefined)
+					return Effect.undefined
 				}),
 			put: () => Effect.void,
 			delete: () => Effect.void,

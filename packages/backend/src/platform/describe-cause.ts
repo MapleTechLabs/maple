@@ -1,11 +1,13 @@
-import { Cause, Option } from "effect"
+import { Cause, Option, Schema, Array as Arr, String as Str } from "effect"
+
+const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 
 /** Render an unknown nested cause for logs and serialized persistence errors. */
 export const describeCause = (cause: unknown): string | undefined => {
 	if (cause == null) return undefined
 	if (cause instanceof Error) return cause.stack ?? cause.message
 	if (typeof cause === "string") return cause
-	return Option.liftThrowable(() => JSON.stringify(cause))().pipe(Option.getOrElse(() => String(cause)))
+	return encodeJson(cause).pipe(Option.getOrElse(() => String(cause)))
 }
 
 /**
@@ -16,7 +18,7 @@ export const describeCause = (cause: unknown): string | undefined => {
 const MAX_CAUSE_CHARS = 500
 
 const cap = (message: string): string =>
-	message.length <= MAX_CAUSE_CHARS ? message : `${message.slice(0, MAX_CAUSE_CHARS)}…[truncated]`
+	message.length <= MAX_CAUSE_CHARS ? message : `${Str.slice(0, MAX_CAUSE_CHARS)(message)}…[truncated]`
 
 /**
  * A bounded, one-line rendering of a cause, safe to hand `Effect.annotateLogs`.
@@ -39,5 +41,10 @@ const cap = (message: string): string =>
 export const summarizeCause = (cause: Cause.Cause<unknown>): string => {
 	const errors = Cause.prettyErrors(cause)
 	if (errors.length === 0) return "empty cause"
-	return cap(errors.map((error) => `${error.name}: ${error.message}`).join("; "))
+	return cap(
+		Arr.join(
+			Arr.map(errors, (error) => `${error.name}: ${error.message}`),
+			"; ",
+		),
+	)
 }

@@ -184,6 +184,11 @@ export interface McpToolSpec<
 	readonly phrases: McpToolPhrases
 	/** Retired parameter names mapped to their current name. Accepted, never published. */
 	readonly aliases?: Readonly<Record<string, string>>
+	/**
+	 * Refuse keys a nested object parameter does not declare, instead of dropping them. For
+	 * documents that replace state, where a dropped typo would reset a field to its default.
+	 */
+	readonly rejectUnknownKeys?: true
 	readonly handler: (params: P["Type"]) => Effect.Effect<O["Type"], McpToolError, R>
 	/** The model-facing text, derived from the output alone so the two cannot disagree. */
 	readonly render: (output: O["Type"]) => ToolDoc

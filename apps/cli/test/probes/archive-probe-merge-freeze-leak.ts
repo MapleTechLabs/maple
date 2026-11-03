@@ -8,8 +8,9 @@
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { ArchiveProbe } from "../archive-probe-helpers"
-import { archiveSignal } from "../../src/server/archives/signals"
-import { exportSignalShards } from "../../src/server/archives/export"
+import { archiveSignal } from "@maple/local-server/archives/signals"
+import { exportSignalShards } from "@maple/local-server/archives/export"
+import { String as Str } from "effect"
 
 const SCHEMA = `
 CREATE DATABASE IF NOT EXISTS default;
@@ -59,9 +60,9 @@ try {
 	} catch (e) {
 		optimizeErr = e instanceof Error ? e.message : String(e)
 	}
-	if (optimizeErr.includes("236"))
-		h.fail(`merges remained stopped after failure: ${optimizeErr.slice(0, 120)}`)
-	h.ok(`merges restarted after mid-export failure (optimize error: "${optimizeErr.slice(0, 60)}")`)
+	if (Str.includes("236")(optimizeErr))
+		h.fail(`merges remained stopped after failure: ${Str.slice(0, 120)(optimizeErr)}`)
+	h.ok(`merges restarted after mid-export failure (optimize error: "${Str.slice(0, 60)(optimizeErr)}")`)
 } catch (e) {
 	h.fail(e instanceof Error ? e.message : String(e))
 }

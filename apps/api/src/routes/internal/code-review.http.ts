@@ -1,11 +1,15 @@
 import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
+import { CiAnalyticsService } from "@maple/backend/services/pr-review/CiAnalyticsService"
+import { CodeReviewTeamService } from "@maple/backend/services/pr-review/CodeReviewTeamService"
 import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
 
 export const HttpCodeReviewLive = HttpApiBuilder.group(MapleInternalApi, "codeReview", (handlers) =>
 	Effect.gen(function* () {
 		const analytics = yield* PrReviewAnalyticsService
+		const ci = yield* CiAnalyticsService
+		const teams = yield* CodeReviewTeamService
 
 		return handlers
 			.handle("analytics", ({ query }) =>
@@ -31,6 +35,15 @@ export const HttpCodeReviewLive = HttpApiBuilder.group(MapleInternalApi, "codeRe
 					const tenant = yield* CurrentTenant.Context
 					return yield* analytics.listFindings(tenant.orgId, query)
 				}),
+			)
+			.handle("ciAnalytics", ({ query }) =>
+				Effect.flatMap(CurrentTenant.Context, (tenant) => ci.analytics(tenant, query)),
+			)
+			.handle("ciRuns", ({ query }) =>
+				Effect.flatMap(CurrentTenant.Context, (tenant) => ci.listRuns(tenant, query)),
+			)
+			.handle("team", ({ query }) =>
+				Effect.flatMap(CurrentTenant.Context, (tenant) => teams.team(tenant, query)),
 			)
 	}),
 )

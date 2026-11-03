@@ -52,7 +52,7 @@ import {
 	type PathsWidgetRow,
 } from "@maple/query-model"
 import { PRODUCT_EVENTS_FUNNEL_ENDPOINT, PRODUCT_EVENTS_PATHS_ENDPOINT } from "@maple/widgets/dashboard"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import {
 	coerceErrorsByTypeRows,
 	coerceErrorsSummary,
@@ -232,7 +232,7 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 					return {
 						data: funnelWidgetBreakdownRows(
 							payload.steps,
-							rows.map((row) => ({
+							Arr.map(rows, (row) => ({
 								group: row.group,
 								step: row.step,
 								count: row.count || 0,
@@ -242,7 +242,7 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 				}
 				yield* validateFunnelDefinition(productEventsFunnelOpts(payload))
 				const rows = yield* runQuery(Queries.productEventsFunnel, context.tenant, payload)
-				const counts = rows.map((row) => ({ step: row.step, count: row.count || 0 }))
+				const counts = Arr.map(rows, (row) => ({ step: row.step, count: row.count || 0 }))
 				// The drop-off view's extras. A one-step funnel has no "between"
 				// and no leavers, so it draws with counts alone.
 				if (details !== true || payload.steps.length < 2) {
@@ -262,12 +262,12 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 						payload.steps,
 						counts,
 						funnelStepDetails(
-							timing.map((row) => ({
+							Arr.map(timing, (row) => ({
 								step: row.step,
 								p50Ms: row.p50Ms || 0,
 								p90Ms: row.p90Ms || 0,
 							})),
-							leavers.map((row) => ({
+							Arr.map(leavers, (row) => ({
 								step: row.step,
 								next: row.next,
 								count: row.count || 0,
@@ -291,7 +291,7 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 					widgetParams.anchor.kind === "event"
 						? widgetParams.anchor.eventName
 						: widgetParams.anchor.pagePath
-				if (anchorName.trim() === "") return { data: [] }
+				if (Str.trim(anchorName) === "") return { data: [] }
 				const payload = yield* decodeProductEventsPaths({
 					direction: "after",
 					depth: DEFAULT_PATHS_DEPTH,
@@ -308,7 +308,7 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 					queryEngine: context.queryEngine,
 				})
 				const rows = yield* runQuery(Queries.productEventsPaths, context.tenant, payload)
-				const data: ReadonlyArray<PathsWidgetRow> = rows.map((row) => ({
+				const data: ReadonlyArray<PathsWidgetRow> = Arr.map(rows, (row) => ({
 					hop: row.hop || 0,
 					fromNode: row.fromNode,
 					toNode: row.toNode,

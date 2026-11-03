@@ -4,8 +4,8 @@ import type { Collection, CollectionConfig } from "@tanstack/db"
 import { BTreeIndex } from "@tanstack/db"
 import type { ElectricCollectionUtils, Txid } from "@tanstack/electric-db-collection"
 import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { createCollection as tanstackCreateCollection } from "@tanstack/react-db"
-import { Effect, type ManagedRuntime, Schema } from "effect"
+import { createCollection as tanstackCreateCollection } from "@tanstack/db"
+import { Effect, type ManagedRuntime, Schema, String as Str } from "effect"
 import { AwaitTxIdError, InvalidTxIdError, TxIdTimeoutError } from "./errors"
 import { convertDeleteHandler, convertInsertHandler, convertUpdateHandler } from "./handlers"
 import type { BackoffConfig, EffectElectricCollectionConfig } from "./types"
@@ -335,7 +335,7 @@ export function effectElectricCollectionOptions(config: AnyEffectElectricCollect
 		return Effect.tryPromise({
 			try: () => standardConfig.utils.awaitTxId(txid, timeout),
 			catch: (error) => {
-				if (error instanceof Error && error.message.toLowerCase().includes("timeout")) {
+				if (error instanceof Error && Str.includes("timeout")(Str.toLowerCase(error.message))) {
 					return new TxIdTimeoutError({
 						message: `Timeout waiting for txid ${txid}`,
 						txid,

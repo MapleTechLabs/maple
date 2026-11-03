@@ -16,6 +16,7 @@ import {
 } from "@maple/domain/http"
 import type { WarehouseDriverError, WarehouseDriverFailureReason } from "./driver-error"
 import { detectQuotaSetting } from "../profiles"
+import { String as Str } from "effect"
 
 /**
  * The OTel database conventions' failure attributes for a warehouse span.
@@ -48,7 +49,7 @@ const INVALID_TOKEN_MARKER = "invalid token"
  * made of repeated markers, and this is an untrusted upstream body.
  */
 const redactInvalidTokens = (message: string): string => {
-	const lower = message.toLowerCase()
+	const lower = Str.toLowerCase(message)
 	let out = ""
 	let cursor = 0
 	for (;;) {
@@ -60,21 +61,21 @@ const redactInvalidTokens = (message: string): string => {
 		const quote = message[i]
 		const close = quote === "'" || quote === '"' ? message.indexOf(quote, i + 1) : -1
 		if (close === -1) {
-			out += message.slice(cursor, i)
+			out += Str.slice(cursor, i)(message)
 			cursor = i
 			continue
 		}
-		out += `${message.slice(cursor, i + 1)}[redacted]${quote}`
+		out += `${Str.slice(cursor, i + 1)(message)}[redacted]${quote}`
 		cursor = close + 1
 	}
-	return out + message.slice(cursor)
+	return out + Str.slice(cursor)(message)
 }
 
 const redactWarehouseCredentials = (message: string): string =>
-	redactInvalidTokens(message).replace(
+	Str.replace(
 		/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
 		"[redacted]",
-	)
+	)(redactInvalidTokens(message))
 
 // Only real HTML tags: warehouse errors echo the caller's SQL, and a generic
 // `<[^>]+>` ate everything between a `<=` and a later `>=` in it.
@@ -86,15 +87,15 @@ export const cleanErrorMessage = (raw: string): string => {
 	const redacted = redactWarehouseCredentials(raw)
 	let cleaned = redacted
 	const htmlIndex = cleaned.search(/<(!doctype|html|head|body|center|h1|hr|title)\b/i)
-	if (htmlIndex >= 0) cleaned = cleaned.slice(0, htmlIndex)
-	cleaned = cleaned
-		.replace(HTML_TAG, " ")
-		// The vendor's upsell is not something an end user or agent can act on.
-		.replace(/\s*Upgrade your plan[^.\n]*\.?/gi, "")
-		.replace(/\s+/g, " ")
-		.trim()
-	if (cleaned.endsWith(":")) cleaned = cleaned.slice(0, -1).trim()
-	return cleaned || redacted.slice(0, 200)
+	if (htmlIndex >= 0) cleaned = Str.slice(0, htmlIndex)(cleaned)
+	cleaned = Str.trim(
+		Str.replace(
+			/\s+/g,
+			" ",
+		)(Str.replace(/\s*Upgrade your plan[^.\n]*\.?/gi, "")(Str.replace(HTML_TAG, " ")(cleaned))),
+	)
+	if (Str.endsWith(":")(cleaned)) cleaned = Str.trim(Str.slice(0, -1)(cleaned))
+	return cleaned || Str.slice(0, 200)(redacted)
 }
 
 const extractUpstreamStatus = (message: string): number | undefined => {
@@ -250,8 +251,10 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 			"NOT_AN_AGGREGATE",
 			"UNKNOWN_AGGREGATE_FUNCTION",
 		]),
+		// `modifiers FINAL`: `FROM t FINAL` on Tinybird, whose tenant filter makes every table a
+		// subquery. Matched by message: its UNSUPPORTED_METHOD type also covers server-side limits.
 		pattern:
-			/There is no supertype|Illegal type .* of argument|Number of arguments doesn't match|Syntax error|Array does not start with '\['|Unknown (?:aggregate )?function|is not under aggregate function/i,
+			/There is no supertype|Illegal type .* of argument|Number of arguments doesn't match|Syntax error|Array does not start with '\['|Unknown (?:aggregate )?function|is not under aggregate function|modifiers FINAL are not supported/i,
 		make: (base) => new WarehouseInvalidSqlError(base),
 	},
 	{

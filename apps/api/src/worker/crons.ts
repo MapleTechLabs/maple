@@ -5,7 +5,7 @@
  *               scrape-results write path; a busy target writes ~75k
  *               rows/day, so the 10k cap binds within hours)
  */
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer } from "effect"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import type { ApiPortsLayer } from "./bindings"

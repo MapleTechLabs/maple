@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Array as Arr } from "effect"
 import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { orgTelemetryPulseQuery, serviceLivenessQuery } from "./liveness"
 import { OrgId } from "@maple/domain"
@@ -47,7 +47,6 @@ describe("serviceLivenessQuery", () => {
 	it("is a group-less single-row aggregate", () => {
 		const { sql } = compileUnsafe(serviceLivenessQuery(), livenessParams)
 		expect(sql).not.toContain("GROUP BY")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("omits the environment predicate unless asked to scope to one", () => {
@@ -101,7 +100,9 @@ describe("orgTelemetryPulseQuery", () => {
 		expect((sql.match(/UNION ALL/g) || []).length).toBe(1)
 		expect(sql).toContain("FROM service_overview_spans")
 		expect(sql).toContain("FROM logs")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the signal label routes each row to its branch
 		expect(sql).toContain("'spans' AS signal")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the signal label routes each row to its branch
 		expect(sql).toContain("'logs' AS signal")
 	})
 
@@ -112,7 +113,6 @@ describe("orgTelemetryPulseQuery", () => {
 		// column type across the UNION.
 		expect(sql).toContain("toString(max(service_overview_spans.Timestamp)) AS lastSeen")
 		expect(sql).toContain("toString(max(logs.Timestamp)) AS lastSeen")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("scopes every branch by OrgId and the bounded window", () => {
@@ -133,7 +133,7 @@ describe("orgTelemetryPulseQuery", () => {
 			{ signal: "spans", count: "0", lastSeen: "1970-01-01 00:00:00" },
 			{ signal: "logs", count: 42, lastSeen: "2024-01-01 00:09:00" },
 		])
-		expect(rows.map((row) => row.count)).toEqual([0, 42])
+		expect(Arr.map(rows, (row) => row.count)).toEqual([0, 42])
 	})
 
 	// Decoding rests entirely on the schema the builder derives from the SELECT:

@@ -1,0 +1,73 @@
+import { cn } from "@maple/ui/lib/utils"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { button } from "@maple/views/ui/button"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+
+// `SettingsSaveBar`: pinned while a tab has unsaved edits. TODO(settings): its `UnsavedChangesGuard`
+// (confirm before navigating away, and the browser's beforeunload prompt) needs a root-level navigation
+// blocker; not implemented.
+
+export type SaveBarOptions<M> = Readonly<{
+	isDirty: boolean
+	isPending?: boolean
+	context?: string
+	onDiscard: M
+	onSave: M
+	saveLabel?: string
+	isSaveDisabled?: boolean
+	className?: string
+}>
+
+export const saveBar = <M>(h: HtmlBuilder<M>, options: SaveBarOptions<M>): ReadonlyArray<Html> => {
+	const isPending = options.isPending ?? false
+	if (!options.isDirty && !isPending) return []
+	return [
+		h.section(
+			[
+				h.AriaLabel("Unsaved changes"),
+				h.Class(
+					cn(
+						"sticky bottom-4 z-10 mt-6 flex w-full items-center justify-between gap-4 rounded-lg border bg-popover py-2 pr-2 pl-4 shadow-popup",
+						options.className,
+					),
+				),
+			],
+			[
+				h.div(
+					[h.Class("flex min-w-0 items-center gap-2 text-sm")],
+					[
+						statusDot(h, { tone: "live" }),
+						h.span([h.Class("shrink-0 text-foreground")], ["Unsaved changes"]),
+						...(options.context === undefined
+							? []
+							: [typography(h, { tone: "muted", truncate: true }, [options.context])]),
+					],
+				),
+				hstack(h, { gap: "1.5", className: "shrink-0" }, [
+					button(
+						h,
+						{
+							variant: "ghost",
+							size: "sm",
+							isDisabled: isPending,
+							attributes: [h.OnClick(options.onDiscard)],
+						},
+						["Discard"],
+					),
+					button(
+						h,
+						{
+							size: "sm",
+							isLoading: isPending,
+							isDisabled: options.isSaveDisabled ?? false,
+							attributes: [h.OnClick(options.onSave)],
+						},
+						[options.saveLabel ?? "Save"],
+					),
+				]),
+			],
+		),
+	]
+}

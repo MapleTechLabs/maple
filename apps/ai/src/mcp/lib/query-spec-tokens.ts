@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /**
  * The `metric` and `group_by` tokens `query_data` accepts, per `source` × `kind`.
  *
@@ -89,7 +90,11 @@ const TOKENS = {
 export const tokensFor = (source: QuerySpecSource, kind: QuerySpecKind): TokenSet =>
 	TOKENS[`${source}:${kind}`]
 
-const quote = (values: ReadonlyArray<string>): string => values.map((v) => `"${v}"`).join(", ")
+const quote = (values: ReadonlyArray<string>): string =>
+	Arr.join(
+		Arr.map(values, (v) => `"${v}"`),
+		", ",
+	)
 
 /**
  * An actionable replacement for a raw `SchemaError`, naming the tokens valid for

@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { WIDGET_DATA_SOURCE_KINDS } from "@maple/widgets/dashboard"
 import { DashboardWidgetSchema, WidgetDisplayConfigSchema } from "../dashboards"
@@ -16,7 +16,7 @@ import { V2DashboardWidget, V2WidgetDataSource, V2WidgetDisplay } from "./dashbo
 // `tsc` when either side gains a field, and the encode tests fail when a field is
 // present in the type but dropped on the wire or spelled differently there.
 
-const snakeCase = (key: string): string => key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)
+const snakeCase = (key: string): string => key.replace(/[A-Z]/g, (c) => `_${Str.toLowerCase(c)}`)
 
 /** Fails to compile unless `A` is assignable to `B`. */
 type AssertAssignable<A extends B, B> = [A, B]
@@ -132,7 +132,7 @@ const fullDisplay = {
 
 describe("the v2 widget display mirrors the stored one", () => {
 	it("covers every field the stored display declares", () => {
-		expect(Object.keys(fullDisplay).sort()).toEqual(Object.keys(WidgetDisplayConfigSchema.fields).sort())
+		expect(Rec.keys(fullDisplay).sort()).toEqual(Rec.keys(WidgetDisplayConfigSchema.fields).sort())
 	})
 
 	// The failure this exists for: a field present in the stored schema that the
@@ -142,7 +142,7 @@ describe("the v2 widget display mirrors the stored one", () => {
 		const encoded = Schema.encodeUnknownSync(V2WidgetDisplay)(fullDisplay)
 
 		expect(Object.keys(encoded).sort()).toEqual(
-			Object.keys(WidgetDisplayConfigSchema.fields).map(snakeCase).sort(),
+			Arr.map(Rec.keys(WidgetDisplayConfigSchema.fields), snakeCase).sort(),
 		)
 	})
 
@@ -218,14 +218,14 @@ describe("the v2 widget mirrors the stored one", () => {
 	}
 
 	it("covers every field the stored widget declares", () => {
-		expect(Object.keys(fullWidget).sort()).toEqual(Object.keys(DashboardWidgetSchema.fields).sort())
+		expect(Rec.keys(fullWidget).sort()).toEqual(Rec.keys(DashboardWidgetSchema.fields).sort())
 	})
 
 	it("puts every stored field on the wire, in mechanical snake_case", () => {
 		const encoded = Schema.encodeUnknownSync(V2DashboardWidget)(fullWidget)
 
 		expect(Object.keys(encoded).sort()).toEqual(
-			Object.keys(DashboardWidgetSchema.fields).map(snakeCase).sort(),
+			Arr.map(Rec.keys(DashboardWidgetSchema.fields), snakeCase).sort(),
 		)
 	})
 

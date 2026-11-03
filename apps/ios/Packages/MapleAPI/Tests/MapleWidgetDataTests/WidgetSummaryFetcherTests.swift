@@ -106,7 +106,7 @@ private struct Harness {
 		)
 	}
 
-	func credential(expiresIn: TimeInterval = 30 * 24 * 3_600) {
+	func credential(expiresIn: TimeInterval = 14 * 24 * 3_600) {
 		credentials.save(
 			WidgetCredential(
 				organizationId: organizationId,

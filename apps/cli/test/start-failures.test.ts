@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Effect, Exit, Option } from "effect"
+import { Effect, Exit, Option, Array as Arr } from "effect"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -14,13 +14,11 @@ import {
 	startFailureFingerprint,
 	startFailuresPath,
 } from "../src/commands/start-failures"
-import {
-	BackgroundServerExitedError,
-	LocalStoreDirtyError,
-	ServerOptionError,
-} from "../src/commands/server-errors"
-import { ServerBindError } from "../src/server/serve"
-import { ChdbError, describeChdbOpenFailure } from "../src/server/chdb"
+import { BackgroundServerExitedError, ServerOptionError } from "../src/commands/server-errors"
+import { LocalStoreDirtyError } from "@maple/local-server/store-errors"
+import { ProjectorModuleError } from "../src/server/eventing/projector-modules"
+import { ServerBindError } from "@maple/local-server/serve"
+import { ChdbError, describeChdbOpenFailure } from "@maple/local-server/chdb"
 
 const MINUTE = 60 * 1000
 
@@ -44,7 +42,7 @@ describe("decideStartFailure", () => {
 			reports.push(decision.report)
 			record = decision.record
 		}
-		expect(reports.every((report) => !report)).toBe(true)
+		expect(Arr.every(reports, (report) => !report)).toBe(true)
 		expect(backoffs.slice(0, 4)).toEqual([0, 1_000, 2_000, 4_000])
 		expect(Math.max(...backoffs)).toBe(MAX_BACKOFF_MS)
 	})
@@ -128,6 +126,16 @@ describe("guardStartFailures", () => {
 		expect(Exit.isFailure(await run(dirty))).toBe(true)
 		expect(Exit.isSuccess(await run(dirty))).toBe(true)
 		expect(process.exitCode).toBe(EXIT_START_REFUSED)
+	})
+
+	it("refuses a broken projector module with exit 78, so supervisors stop retrying", async () => {
+		const broken = new ProjectorModuleError({
+			path: "/modules/projectors.mjs",
+			message: "projector module /modules/projectors.mjs: import failed",
+		})
+		expect(Exit.isFailure(await run(broken))).toBe(true)
+		expect(process.exitCode).toBe(EXIT_START_REFUSED)
+		expect(Exit.isSuccess(await run(broken))).toBe(true)
 	})
 
 	it("dedupes a taken port but exits 1, not 78, so supervisors retry", async () => {

@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 /**
  * Shell-style glob matching, shared so the two sides of a filter can't disagree.
  *
@@ -14,10 +15,10 @@
 
 /** Glob → anchored RegExp supporting `*` (any run) and `?` (one char). */
 export const globToRegExp = (pattern: string): RegExp => {
-	const escaped = pattern
-		.replace(/[.+^${}()|[\]\\]/g, "\\$&")
-		.replace(/\*/g, ".*")
-		.replace(/\?/g, ".")
+	const escaped = Str.replace(
+		/\?/g,
+		".",
+	)(Str.replace(/\*/g, ".*")(Str.replace(/[.+^${}()|[\]\\]/g, "\\$&")(pattern)))
 	return new RegExp(`^${escaped}$`)
 }
 

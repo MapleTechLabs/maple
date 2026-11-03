@@ -7,7 +7,7 @@ import type {
 	OrgId,
 } from "@maple/domain/http"
 import { PublicIdPrefixes, encodePublicId } from "@maple/domain/http/v2"
-import { Cause, Clock, Context, Duration, Effect, Layer } from "effect"
+import { Cause, Clock, Context, Duration, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { ApnsClient, type ApnsPush } from "@maple/backend/platform/Apns"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import {
@@ -17,6 +17,7 @@ import {
 	formatThresholdSummary,
 	formatWindow,
 	truncate,
+	uptimeSummaryLine,
 } from "@maple/backend/services/alerts/alert-formatting"
 import type { SignalDisplay } from "@maple/backend/services/alerts/alert-signal-display"
 import { LiveActivitiesService, type LiveActivity } from "./LiveActivitiesService"
@@ -78,6 +79,8 @@ export interface IncidentPushEvent {
 	readonly threshold: number
 	readonly thresholdUpper: number | null
 	readonly value: number | null
+	/** Uptime rules only: the failing check's error. */
+	readonly detail?: string | null
 	readonly groupKey: string | null
 	readonly serviceNames: ReadonlyArray<string>
 	readonly windowMinutes: number
@@ -202,7 +205,7 @@ const RENOTIFY_TAIL_INTERVAL_MINUTES = 720
 const escalationRungsBelow = (openForMs: number): number => {
 	const minutes = openForMs / 60_000
 	const last = RENOTIFY_ESCALATION_MINUTES[RENOTIFY_ESCALATION_MINUTES.length - 1]
-	const rungs = RENOTIFY_ESCALATION_MINUTES.filter((rung) => minutes >= rung).length
+	const rungs = Arr.filter(RENOTIFY_ESCALATION_MINUTES, (rung) => minutes >= rung).length
 	return minutes >= last ? rungs + Math.floor((minutes - last) / RENOTIFY_TAIL_INTERVAL_MINUTES) : rungs
 }
 
@@ -283,6 +286,32 @@ export const renderIncidentPush = (
 	const rule = truncate(event.ruleName, 60)
 	const openFor = event.openForMs === null ? null : humanDuration(event.openForMs)
 
+	// A monitor has no value worth a sentence: the check's own error is the body.
+	if (event.signalType === "uptime") {
+		const body = uptimeSummaryLine(event)
+		if (event.eventType === "resolve") {
+			return {
+				alert: {
+					title: `Resolved · ${rule}`,
+					subtitle: service ?? undefined,
+					body: openFor === null ? body : `${body} Down for ${openFor}.`,
+				},
+				interruptionLevel: "passive",
+				priority: 5,
+				sound: null,
+			}
+		}
+		return {
+			alert: {
+				title: `${event.eventType === "renotify" ? "Still down" : "Down"} · ${rule}`,
+				subtitle: service ?? undefined,
+				body,
+			},
+			interruptionLevel: event.severity === "critical" ? "time-sensitive" : "active",
+			priority: 10,
+		}
+	}
+
 	switch (event.eventType) {
 		case "resolve": {
 			const now = formatSignalMetric(event.value, event.signalDisplay)
@@ -309,10 +338,14 @@ export const renderIncidentPush = (
 		case "renotify":
 			return {
 				alert: {
-					title: `Still ${severity.toLowerCase()} · ${rule}`,
-					subtitle: [service, openFor === null ? null : `open ${openFor}`]
-						.filter((part) => part !== null)
-						.join(" · "),
+					title: `Still ${Str.toLowerCase(severity)} · ${rule}`,
+					subtitle: Arr.join(
+						Arr.filter(
+							[service, openFor === null ? null : `open ${openFor}`],
+							(part) => part !== null,
+						),
+						" · ",
+					),
 					body: `${label} ${observed} over ${formatWindow(event.windowMinutes)}.`,
 				},
 				interruptionLevel: "active",
@@ -416,7 +449,7 @@ export const buildLiveActivitySeries = (
 	event: IncidentPushEvent,
 	recentValues: ReadonlyArray<number>,
 ): ReadonlyArray<number> => {
-	const history = [...recentValues].reverse().filter((value) => Number.isFinite(value))
+	const history = Arr.filter([...recentValues].reverse(), (value) => Number.isFinite(value))
 	const series = event.value === null ? history : [...history, event.value]
 	return series.slice(-LIVE_ACTIVITY_SERIES_POINTS)
 }
@@ -444,7 +477,7 @@ export const renderLiveActivityState = (
 })
 
 export class MobilePushService extends Context.Service<MobilePushService, MobilePushServiceApi>()(
-	"@maple/api/services/push/MobilePushService",
+	"@maple/backend/services/push/MobilePushService",
 	{
 		make: Effect.gen(function* () {
 			const apns = yield* ApnsClient

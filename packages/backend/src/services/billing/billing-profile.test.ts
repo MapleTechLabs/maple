@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Option } from "effect"
+import { Effect, Option, Array as Arr } from "effect"
 import { makeEdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import type { AutumnResult } from "@maple/backend/services/billing/autumn-http"
 import { CUSTOMER_CACHE_BUCKET } from "@maple/backend/services/billing/autumn-client"
@@ -159,7 +159,7 @@ describe("readBillingProfile", () => {
 			assert.strictEqual(profile.address?.city, "Berlin")
 			assert.strictEqual(profile.address?.postalCode, "10115")
 			assert.deepStrictEqual(
-				profile.taxIds.map((t) => ({ ...t })),
+				Arr.map(profile.taxIds, (t) => ({ ...t })),
 				[
 					{
 						id: "txi_1",
@@ -188,18 +188,48 @@ describe("readBillingProfile", () => {
 		}),
 	)
 
-	it.effect("collapses a Stripe rejection on the read into a 502", () =>
+	const missing: AutumnResult = {
+		statusCode: 404,
+		response: { message: "No such customer", code: "resource_missing", statusCode: 404 },
+	}
+
+	it.effect("reads a customer Stripe no longer has as unlinked", () =>
+		Effect.gen(function* () {
+			const profile = yield* readBillingProfile(
+				{ getCustomer: () => Effect.succeed(missing), listTaxIds: () => Effect.succeed(missing) },
+				CUS,
+			)
+			assert.isFalse(profile.linked)
+			assert.deepStrictEqual(profile.taxIds, [])
+		}),
+	)
+
+	it.effect("reads a deleted customer's tombstone as unlinked", () =>
+		Effect.gen(function* () {
+			const profile = yield* readBillingProfile(
+				{
+					getCustomer: () => Effect.succeed(ok({ id: CUS, object: "customer", deleted: true })),
+					listTaxIds: () => Effect.succeed(missing),
+				},
+				CUS,
+			)
+			assert.isFalse(profile.linked)
+			assert.deepStrictEqual(profile.taxIds, [])
+		}),
+	)
+
+	it.effect("collapses any other Stripe rejection on the read into a 502", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(
 				readBillingProfile(
 					{
 						getCustomer: () =>
 							Effect.succeed({
-								statusCode: 404,
+								statusCode: 400,
 								response: {
-									message: "No such customer",
-									code: "resource_missing",
-									statusCode: 404,
+									message: "Invalid request",
+									code: "parameter_invalid",
+									statusCode: 400,
 								},
 							}),
 						listTaxIds: () => Effect.succeed(ok({ data: [] })),

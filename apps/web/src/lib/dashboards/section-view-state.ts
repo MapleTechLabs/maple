@@ -1,4 +1,5 @@
 import type { DashboardSection, SectionMembership } from "@maple/widgets/dashboard"
+import { Array as Arr, String as Str } from "effect"
 
 // Per-viewer section view state, encoded in the URL.
 //
@@ -11,7 +12,7 @@ import type { DashboardSection, SectionMembership } from "@maple/widgets/dashboa
 // up in URLs people paste to each other, and `?tab=overview:latency` is both
 // readable and impossible to fail parsing.
 //
-// Pure and React-free so the precedence rules are testable without a router.
+// Pure so the precedence rules are testable without a router.
 
 export interface SectionViewSearch {
 	collapsed?: string | undefined
@@ -25,14 +26,14 @@ const PAIR_SEPARATOR = ":"
 export function parseIdList(value: string | undefined): ReadonlySet<string> {
 	if (!value) return new Set()
 	return new Set(
-		value
-			.split(",")
-			.map((id) => id.trim())
-			.filter((id) => id.length > 0),
+		Arr.filter(
+			Arr.map(Str.split(",")(value), (id) => Str.trim(id)),
+			(id) => id.length > 0,
+		),
 	)
 }
 
-const formatIdList = (ids: Iterable<string>): string => [...ids].join(",")
+const formatIdList = (ids: Iterable<string>): string => Arr.join([...ids], ",")
 
 /**
  * Parse `?tab=sectionId:tabId,sectionId:tabId`.
@@ -44,11 +45,11 @@ const formatIdList = (ids: Iterable<string>): string => [...ids].join(",")
 export function parseActiveTabs(value: string | undefined): ReadonlyMap<string, string> {
 	const pairs = new Map<string, string>()
 	if (!value) return pairs
-	for (const entry of value.split(",")) {
+	for (const entry of Str.split(",")(value)) {
 		const separator = entry.indexOf(PAIR_SEPARATOR)
 		if (separator <= 0) continue
-		const sectionId = entry.slice(0, separator).trim()
-		const tabId = entry.slice(separator + 1).trim()
+		const sectionId = Str.trim(Str.slice(0, separator)(entry))
+		const tabId = Str.trim(Str.slice(separator + 1)(entry))
 		if (sectionId.length === 0 || tabId.length === 0) continue
 		pairs.set(sectionId, tabId)
 	}
@@ -56,7 +57,10 @@ export function parseActiveTabs(value: string | undefined): ReadonlyMap<string, 
 }
 
 const formatActiveTabs = (pairs: ReadonlyMap<string, string>): string =>
-	[...pairs].map(([sectionId, tabId]) => `${sectionId}${PAIR_SEPARATOR}${tabId}`).join(",")
+	Arr.join(
+		Arr.map([...pairs], ([sectionId, tabId]) => `${sectionId}${PAIR_SEPARATOR}${tabId}`),
+		",",
+	)
 
 /**
  * Whether a section renders collapsed for this viewer.
@@ -80,7 +84,7 @@ export function isSectionCollapsed(section: DashboardSection, search: SectionVie
 /** The tab a section shows for this viewer, falling back to its first tab. */
 export function activeTabIdFor(section: DashboardSection, search: SectionViewSearch): string {
 	const requested = parseActiveTabs(search.tab).get(section.id)
-	if (requested !== undefined && section.tabs.some((tab) => tab.id === requested)) {
+	if (requested !== undefined && Arr.some(section.tabs, (tab) => tab.id === requested)) {
 		return requested
 	}
 	return section.tabs[0]?.id ?? section.id
@@ -163,7 +167,9 @@ export function resolveSectionView(
 		}
 
 		const linkedTab =
-			isTargetSection && target?.tabId !== undefined && section.tabs.some((t) => t.id === target.tabId)
+			isTargetSection &&
+			target?.tabId !== undefined &&
+			Arr.some(section.tabs, (t) => t.id === target.tabId)
 				? target.tabId
 				: undefined
 		activeTabs.set(section.id, linkedTab ?? activeTabIdFor(section, search))

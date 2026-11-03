@@ -1,9 +1,10 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
-// Backfill SQL and the one custom step that `steps.ts` references. Each projection
+// Backfill SQL and the custom steps that `steps.ts` references. Each projection
 // is frozen byte-for-byte to the view body its snapshot installs, so backfilled and live rows agree.
-import { Schema } from "effect"
-import { applyRawTelemetryRetentionFloor } from "../chdb"
-import { decodeRowCounts } from "../chdb-rows"
+import { Schema, Array as Arr, String as Str } from "effect"
+import { applyRawTelemetryRetentionFloor, type Chdb } from "@maple/local-server/chdb"
+import { decodeJsonEachRow, decodeRowCounts } from "@maple/local-server/chdb-rows"
+import { localSchemaSnapshot } from "../schema-snapshots"
 import { customStep, LocalMigrationStepError } from "./step-executor"
 import { UnsignedDecimal } from "./journal-codecs"
 
@@ -38,25 +39,28 @@ export const PRODUCT_EVENTS_BROWSER_BACKFILL = [
 	`INSERT INTO identity_links (OrgId, VisitorId, UserId, FirstSeen) SELECT OrgId, VisitorId, UserId, StartTime AS FirstSeen FROM session_replays WHERE ${IDENTITY_LINKS_SOURCE_FILTER}`,
 ] as const
 
-const PRODUCT_EVENTS_TRACE_COLUMNS = [
-	"OrgId",
-	"Timestamp",
-	"Source",
-	"SessionId",
-	"Seq",
-	"VisitorId",
-	"UserId",
-	"GroupId",
-	"Kind",
-	"EventName",
-	"Host",
-	"PagePath",
-	"Url",
-	"ServiceName",
-	"Attributes",
-	"TraceId",
-	"SpanId",
-].join(", ")
+const PRODUCT_EVENTS_TRACE_COLUMNS = Arr.join(
+	[
+		"OrgId",
+		"Timestamp",
+		"Source",
+		"SessionId",
+		"Seq",
+		"VisitorId",
+		"UserId",
+		"GroupId",
+		"Kind",
+		"EventName",
+		"Host",
+		"PagePath",
+		"Url",
+		"ServiceName",
+		"Attributes",
+		"TraceId",
+		"SpanId",
+	],
+	", ",
+)
 
 /** v17 -> v18: migration 0028's trace projection, byte-for-byte. */
 const PRODUCT_EVENTS_TRACE_PROJECTION_SQL = `OrgId,
@@ -143,5 +147,126 @@ export const errorRollupBackfill = customStep({
 				message: "v1 -> v2 error rollup backfill verification failed",
 				moduleId: "local-0001-to-0002-error-rollup",
 			})
+	},
+})
+
+const decodeTableDefinition = decodeJsonEachRow(
+	Schema.Struct({ sortingKey: Schema.String, definition: Schema.String }),
+)
+
+/** A table re-sorted into `sortingKey` (as `system.tables` spells it) by the v`version` step. */
+interface SortKeyRekey {
+	readonly table: string
+	readonly sortingKey: string
+	readonly version: number
+	readonly moduleId: string
+}
+
+/** No view reads this name, so the copy into it fires none of the views on the table. */
+const rekeyStaging = (rekey: SortKeyRekey) => `${rekey.table}_v${rekey.version}_rekey`
+
+const rekeyFailure = (rekey: SortKeyRekey, message: string): never => {
+	throw new LocalMigrationStepError({
+		message: `v${rekey.version - 1} -> v${rekey.version} ${message}`,
+		moduleId: rekey.moduleId,
+	})
+}
+
+/** The frozen snapshot DDL of the table under the staging name, keeping the store's TTL (a retention floor may raise it). */
+const rekeyStagingDdl = (rekey: SortKeyRekey, ttl: string): string => {
+	const ddl = new RegExp(`CREATE TABLE IF NOT EXISTS ${rekey.table} \\([^;]*\nTTL [^;\n]*;`).exec(
+		localSchemaSnapshot(rekey.version).sql,
+	)?.[0]
+	if (ddl === undefined)
+		return rekeyFailure(rekey, `found no ${rekey.table} DDL in the v${rekey.version} snapshot`)
+	return Str.replace(
+		/\nTTL [^;\n]*;$/,
+		`\nTTL ${ttl}`,
+	)(
+		Str.replace(
+			`CREATE TABLE IF NOT EXISTS ${rekey.table} (`,
+			`CREATE TABLE ${rekeyStaging(rekey)} (`,
+		)(ddl),
+	)
+}
+
+/**
+ * A sort key cannot change in place, so the table is copied into a view-free staging
+ * table with the new key and swapped in by EXCHANGE, which fires no view; views writing
+ * TO it resolve it by name and follow the swap. A re-run that finds the new key only
+ * drops the leftover staging table. Returns the table's row count.
+ */
+const rekeyTable = (db: Pick<Chdb, "query" | "exec">, rekey: SortKeyRekey): string => {
+	const staging = rekeyStaging(rekey)
+	db.exec(`DROP TABLE IF EXISTS ${staging}`)
+	const [table] = decodeTableDefinition(
+		db.query(
+			`SELECT sorting_key AS sortingKey, create_table_query AS definition FROM system.tables WHERE database = 'default' AND name = '${rekey.table}'`,
+		),
+	)
+	if (table === undefined) return rekeyFailure(rekey, `found no ${rekey.table} table to re-sort`)
+	if (table.sortingKey !== rekey.sortingKey) {
+		const ttl = table.definition.match(/\bTTL\s+(.+?)(?=\bSETTINGS\b|$)/is)?.[1]?.trim()
+		if (ttl === undefined) return rekeyFailure(rekey, `cannot read the TTL of ${rekey.table}`)
+		db.exec(rekeyStagingDdl(rekey, ttl))
+		db.exec(`INSERT INTO ${staging} SELECT * FROM ${rekey.table}`)
+		db.exec(`EXCHANGE TABLES ${rekey.table} AND ${staging}`)
+		db.exec(`DROP TABLE ${staging}`)
+	}
+	const [row] = decodeRowCounts(db.query(`SELECT toString(count()) AS rowCount FROM ${rekey.table}`))
+	return row?.rowCount ?? "0"
+}
+
+const verifyRekeyStagingDropped = (db: Pick<Chdb, "query" | "exec">, rekey: SortKeyRekey) => {
+	const [row] = decodeRowCounts(
+		db.query(
+			`SELECT toString(count()) AS rowCount FROM system.tables WHERE database = 'default' AND name = '${rekeyStaging(rekey)}'`,
+		),
+	)
+	if ((row?.rowCount ?? "0") !== "0")
+		rekeyFailure(rekey, `left the ${rekeyStaging(rekey)} staging table behind`)
+}
+
+const TRACES_V34_REKEY: SortKeyRekey = {
+	table: "traces",
+	sortingKey: "OrgId, ServiceName, toStartOfFiveMinutes(Timestamp), TraceId",
+	version: 34,
+	moduleId: "local-0033-to-0034-traces-trace-key",
+}
+
+/** v33 -> v34: re-sort `traces` by service, 5-minute bucket and trace id. */
+export const tracesTraceKeyRekey = customStep({
+	progress: Schema.Struct({ rekeyedTraces: UnsignedDecimal }),
+	apply: (db) => ({ rekeyedTraces: rekeyTable(db, TRACES_V34_REKEY) }),
+	verify: (db) => verifyRekeyStagingDropped(db, TRACES_V34_REKEY),
+})
+
+const SERVICE_MAP_V40_MODULE = "local-0039-to-0040-service-map-spans-trace-key"
+const SERVICE_MAP_SPANS_V40_REKEY: SortKeyRekey = {
+	table: "service_map_spans",
+	sortingKey: "OrgId, toStartOfFiveMinutes(Timestamp), TraceId, SpanId",
+	version: 40,
+	moduleId: SERVICE_MAP_V40_MODULE,
+}
+const SERVICE_MAP_CHILDREN_V40_REKEY: SortKeyRekey = {
+	table: "service_map_children",
+	sortingKey: "OrgId, toStartOfFiveMinutes(Timestamp), TraceId, ParentSpanId",
+	version: 40,
+	moduleId: SERVICE_MAP_V40_MODULE,
+}
+
+/** v39 -> v40: re-sort the service-map span tables by 5-minute bucket and trace id. */
+export const serviceMapSpansTraceKeyRekey = customStep({
+	progress: Schema.Struct({
+		rekeyedServiceMapSpans: UnsignedDecimal,
+		rekeyedServiceMapChildren: UnsignedDecimal,
+	}),
+	apply: (db) => ({
+		rekeyedServiceMapSpans: rekeyTable(db, SERVICE_MAP_SPANS_V40_REKEY),
+		rekeyedServiceMapChildren: rekeyTable(db, SERVICE_MAP_CHILDREN_V40_REKEY),
+	}),
+	verify: (db) => {
+		verifyRekeyStagingDropped(db, SERVICE_MAP_SPANS_V40_REKEY)
+		verifyRekeyStagingDropped(db, SERVICE_MAP_CHILDREN_V40_REKEY)
 	},
 })

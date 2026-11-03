@@ -36,7 +36,7 @@ import {
 	type ErrorIssueRow,
 	IssueEscalations,
 } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
@@ -283,12 +283,10 @@ const make: Effect.Effect<
 		)
 		const row = rows[0]
 		if (!row) {
-			return yield* Effect.fail(
-				new ErrorIssueNotFoundError({
-					message: "Error issue not found",
-					issueId,
-				}),
-			)
+			return yield* new ErrorIssueNotFoundError({
+				message: "Error issue not found",
+				issueId,
+			})
 		}
 		return row
 	})
@@ -321,8 +319,8 @@ const make: Effect.Effect<
 			Effect.map(
 				([errorRows, alertRows]) =>
 					new Set([
-						...errorRows.map((row) => row.issueId),
-						...alertRows.flatMap((row) => (row.issueId == null ? [] : [row.issueId])),
+						...Arr.map(errorRows, (row) => row.issueId),
+						...Arr.flatMap(alertRows, (row) => (row.issueId == null ? [] : [row.issueId])),
 					]),
 			),
 		)
@@ -376,14 +374,14 @@ const make: Effect.Effect<
 	const hydrateIssueRows: ErrorIssueWorkflowServiceApi["hydrateIssueRows"] = (orgId, rows) =>
 		Effect.gen(function* () {
 			if (rows.length === 0) return []
-			const issueIds = rows.map((row) => row.id)
+			const issueIds = Arr.map(rows, (row) => row.id)
 			const openSet = yield* issuesWithOpenIncidents(orgId, issueIds)
 			const activityMap = yield* issueActivityRollups(orgId, issueIds)
 			const actorMap = yield* actorsService.collectActorDocs(
 				orgId,
-				rows.flatMap((row) => [row.assignedActorId ?? null, row.leaseHolderActorId ?? null]),
+				Arr.flatMap(rows, (row) => [row.assignedActorId ?? null, row.leaseHolderActorId ?? null]),
 			)
-			return rows.map((row) =>
+			return Arr.map(rows, (row) =>
 				rowToIssue(row, openSet.has(row.id), actorMap, activityMap.get(row.id) ?? EMPTY_ACTIVITY),
 			)
 		})
@@ -517,7 +515,8 @@ const make: Effect.Effect<
 	 */
 	const validateTransition = (issueId: ErrorIssueId, from: WorkflowState, to: WorkflowState) => {
 		if (!WORKFLOW_TRANSITIONS[from].includes(to)) {
-			const offered = WORKFLOW_TRANSITIONS[from].filter(
+			const offered = Arr.filter(
+				WORKFLOW_TRANSITIONS[from],
 				(target) => !MACHINE_OWNED_WORKFLOW_STATES.has(target),
 			)
 			return Effect.fail(
@@ -525,7 +524,7 @@ const make: Effect.Effect<
 					message:
 						offered.length === 0
 							? `Cannot move an issue out of '${from}'.`
-							: `Cannot move an issue from '${from}' to '${to}'. From '${from}' it can go to: ${offered.join(", ")}.`,
+							: `Cannot move an issue from '${from}' to '${to}'. From '${from}' it can go to: ${Arr.join(offered, ", ")}.`,
 					issueId,
 					fromState: from,
 					toState: to,
@@ -646,7 +645,7 @@ const make: Effect.Effect<
 		const timestamp = yield* Clock.currentTimeMillis
 		const current = yield* requireIssue(orgId, issueId)
 		if (current.leaseHolderActorId !== actorId) {
-			return yield* Effect.fail(leaseConflict(issueId, current))
+			return yield* leaseConflict(issueId, current)
 		}
 		const previous = current.leaseExpiresAt ?? timestamp
 		const leaseMs = Math.max(DEFAULT_LEASE_DURATION_MS, previous - (current.claimedAt ?? previous))
@@ -705,7 +704,7 @@ const make: Effect.Effect<
 		const timestamp = yield* Clock.currentTimeMillis
 		const current = yield* requireIssue(orgId, issueId)
 		if (current.leaseHolderActorId !== null && current.leaseHolderActorId !== actorId) {
-			return yield* Effect.fail(leaseConflict(issueId, current))
+			return yield* leaseConflict(issueId, current)
 		}
 		yield* dbExecute((db) =>
 			db.run(
@@ -742,12 +741,10 @@ const make: Effect.Effect<
 		const timestamp = yield* Clock.currentTimeMillis
 		const current = yield* requireIssue(orgId, issueId)
 		if (toActorId !== null && !(yield* actorsService.actorExists(orgId, toActorId))) {
-			return yield* Effect.fail(
-				new ActorNotFoundError({
-					message: `Actor '${toActorId}' not found`,
-					actorId: toActorId,
-				}),
-			)
+			return yield* new ActorNotFoundError({
+				message: `Actor '${toActorId}' not found`,
+				actorId: toActorId,
+			})
 		}
 		const assignedRows = yield* dbExecute((db) =>
 			db.run(
@@ -917,10 +914,10 @@ const make: Effect.Effect<
 		)
 		const actorMap = yield* actorsService.collectActorDocs(
 			orgId,
-			rows.map((row) => row.actorId ?? null),
+			Arr.map(rows, (row) => row.actorId ?? null),
 		)
 		return new ErrorIssueEventsResponse({
-			events: rows.map((row) => rowToEvent(row, actorMap)),
+			events: Arr.map(rows, (row) => rowToEvent(row, actorMap)),
 		})
 	})
 
@@ -945,7 +942,7 @@ const make: Effect.Effect<
 export class ErrorIssueWorkflowService extends Context.Service<
 	ErrorIssueWorkflowService,
 	ErrorIssueWorkflowServiceApi
->()("@maple/api/services/errors/ErrorIssueWorkflowService", { make }) {
+>()("@maple/backend/services/errors/ErrorIssueWorkflowService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(Layer.mergeAll(AuditLogService.layer, ErrorActorsService.layer)),
 	)

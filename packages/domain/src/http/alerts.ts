@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Array as Arr, Option, Order, Schema, String as Str } from "effect"
 import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "../query-engine"
 import {
 	AlertDeliveryEventId,
@@ -8,8 +8,6 @@ import {
 	ChatConnectorId,
 	ChatWorkspaceId,
 	ErrorIssueId,
-	HazelChannelId,
-	HazelOrganizationId,
 	IsoDateTimeString,
 	PostgresTransactionId,
 	RoleName,
@@ -21,11 +19,12 @@ import { HttpTaggedError } from "./error-policy"
 export const AlertDestinationType = Schema.Literals([
 	"pagerduty",
 	"webhook",
-	"hazel-oauth",
 	"discord",
 	"telegram",
+	"google-chat",
 	"email",
 	"chat",
+	"linear",
 ]).annotate({
 	identifier: "@maple/AlertDestinationType",
 	title: "Alert Destination Type",
@@ -46,6 +45,8 @@ export const AlertSignalType = Schema.Literals([
 	"throughput",
 	"builder_query",
 	"raw_query",
+	/** The hidden rule behind an uptime monitor; managed only through the monitor. */
+	"uptime",
 ]).annotate({
 	identifier: "@maple/AlertSignalType",
 	title: "Alert Signal Type",
@@ -185,6 +186,97 @@ export const AlertWindowMinutes = PositiveInt.pipe(
 	Schema.check(Schema.isLessThanOrEqualTo(MAX_ALERT_WINDOW_MINUTES)),
 )
 
+/** Check intervals a rule can pick. A longer interval gets a longer query time limit. */
+export const ALERT_EVALUATION_INTERVALS = [1, 5, 10, 15, 30, 60] as const
+export const AlertEvaluationIntervalMinutes = Schema.Literals(ALERT_EVALUATION_INTERVALS)
+export type AlertEvaluationIntervalMinutes = typeof AlertEvaluationIntervalMinutes.Type
+
+/**
+ * Why a rule's last check failed: its query ran past its time or memory limit, the
+ * query itself is invalid, or something else went wrong.
+ */
+export const AlertEvaluationErrorKind = Schema.Literals([
+	"query_too_slow",
+	"query_too_much_memory",
+	"invalid_query",
+	"other",
+])
+export type AlertEvaluationErrorKind = typeof AlertEvaluationErrorKind.Type
+
+/** Longest "N of the last M checks" window a rule can count over. */
+export const MAX_ALERT_BREACH_WINDOW = 30
+export const AlertBreachWindow = PositiveInt.pipe(
+	Schema.check(Schema.isLessThanOrEqualTo(MAX_ALERT_BREACH_WINDOW)),
+)
+
+/**
+ * One severity tier: the value that opens or escalates to it, an optional recovery value to cross
+ * back before it clears, and its destinations. A critical incident also notifies lower tiers'.
+ */
+export const AlertThreshold = Schema.Struct({
+	severity: AlertSeverity,
+	value: Schema.Number,
+	/** Upper bound for `between` / `not_between`. */
+	upper: Schema.NullOr(Schema.Number),
+	/** Null recovers as soon as the trigger stops holding. */
+	recoveryValue: Schema.NullOr(Schema.Number),
+	destinationIds: Schema.Array(AlertDestinationId),
+}).annotate({ identifier: "@maple/AlertThreshold", title: "Alert Threshold" })
+export type AlertThreshold = Schema.Schema.Type<typeof AlertThreshold>
+
+export const AlertThresholds = Schema.NonEmptyArray(AlertThreshold)
+	.check(Schema.isMaxLength(2))
+	.annotate({ identifier: "@maple/AlertThresholds", title: "Alert Thresholds" })
+export type AlertThresholds = Schema.Schema.Type<typeof AlertThresholds>
+
+export const ALERT_SEVERITY_RANK = { warning: 1, critical: 2 } as const satisfies Record<
+	AlertSeverity,
+	number
+>
+
+/** Lowest severity first. */
+export const alertSeverityOrder: Order.Order<{ readonly severity: AlertSeverity }> = Order.mapInput(
+	Order.Number,
+	(tier) => ALERT_SEVERITY_RANK[tier.severity],
+)
+
+/** Tiers lowest severity first, each tier's destinations deduped. */
+export const sortAlertThresholds = (thresholds: AlertThresholds): AlertThresholds =>
+	Arr.map(Arr.sort(thresholds, alertSeverityOrder), (tier) => ({
+		...tier,
+		destinationIds: Arr.dedupe(tier.destinationIds),
+	}))
+
+/** The single tier a rule written before tiers stands for. */
+export const legacyAlertThreshold = (fields: {
+	readonly severity: AlertSeverity
+	readonly threshold: number
+	readonly thresholdUpper: number | null
+	readonly destinationIds: ReadonlyArray<AlertDestinationId>
+}): AlertThreshold => ({
+	severity: fields.severity,
+	value: fields.threshold,
+	upper: fields.thresholdUpper,
+	recoveryValue: null,
+	destinationIds: fields.destinationIds,
+})
+
+/**
+ * The single-threshold fields pre-tier readers still use: the highest tier's
+ * severity, the lowest tier's value, and every tier's destinations. A one-tier
+ * rule maps onto exactly the fields it was written with.
+ */
+export const alertThresholdLegacyFields = (thresholds: AlertThresholds) => {
+	const sorted = sortAlertThresholds(thresholds)
+	const primary = Arr.headNonEmpty(sorted)
+	return {
+		severity: Arr.lastNonEmpty(sorted).severity,
+		threshold: primary.value,
+		thresholdUpper: primary.upper,
+		destinationIds: Arr.dedupe(Arr.flatMap(sorted, (tier) => tier.destinationIds)),
+	}
+}
+
 export class PagerDutyAlertDestinationConfig extends Schema.Class<PagerDutyAlertDestinationConfig>(
 	"PagerDutyAlertDestinationConfig",
 )({
@@ -201,19 +293,6 @@ export class WebhookAlertDestinationConfig extends Schema.Class<WebhookAlertDest
 	name: ChannelLabel,
 	url: NonEmptyString,
 	signingSecret: Schema.optionalKey(Schema.String),
-	enabled: Schema.optionalKey(Schema.Boolean),
-}) {}
-
-export class HazelOAuthAlertDestinationConfig extends Schema.Class<HazelOAuthAlertDestinationConfig>(
-	"HazelOAuthAlertDestinationConfig",
-)({
-	type: Schema.Literal("hazel-oauth"),
-	name: ChannelLabel,
-	hazelOrganizationId: HazelOrganizationId,
-	hazelOrganizationName: NonEmptyString,
-	hazelOrganizationLogoUrl: Schema.optionalKey(Schema.NullOr(NonEmptyString)),
-	hazelChannelId: HazelChannelId,
-	hazelChannelName: NonEmptyString,
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
@@ -238,6 +317,17 @@ export class TelegramAlertDestinationConfig extends Schema.Class<TelegramAlertDe
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+/** A Google Chat space's incoming webhook (`https://chat.googleapis.com/v1/spaces/…/messages?key=…&token=…`). */
+export class GoogleChatAlertDestinationConfig extends Schema.Class<GoogleChatAlertDestinationConfig>(
+	"GoogleChatAlertDestinationConfig",
+)({
+	type: Schema.Literal("google-chat"),
+	name: ChannelLabel,
+	/** Write-only: the `key` and `token` query parameters are the credential. */
+	webhookUrl: NonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 /**
  * A channel in a chat workspace linked through a chat connector. Which connector posts it is read
  * from the workspace row, never taken from the request — the workspace must belong to the org, and
@@ -252,6 +342,40 @@ export class ChatAlertDestinationConfig extends Schema.Class<ChatAlertDestinatio
 	channelId: NonEmptyString,
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
+
+/**
+ * A team in the org's connected Linear workspace. Each alert thread (rule and group) opens one
+ * issue there; the team's key and name are read from Linear at save time, never from the request.
+ */
+export class LinearAlertDestinationConfig extends Schema.Class<LinearAlertDestinationConfig>(
+	"LinearAlertDestinationConfig",
+)({
+	type: Schema.Literal("linear"),
+	name: ChannelLabel,
+	teamId: NonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+const GOOGLE_CHAT_HOST = "chat.googleapis.com"
+const SPACE_MESSAGES_PATH = /^\/v1\/spaces\/([A-Za-z0-9_-]+)\/messages$/
+
+/**
+ * An incoming webhook URL, as Google Chat's "Apps & integrations → Webhooks" hands it out. The
+ * `key` and `token` query parameters are the credential; the path names the space.
+ */
+export const parseGoogleChatWebhookUrl = (raw: string): Option.Option<{ readonly spaceId: string }> =>
+	Option.liftThrowable(() => new URL(Str.trim(raw)))().pipe(
+		Option.flatMap((url) => {
+			const space = SPACE_MESSAGES_PATH.exec(url.pathname)
+			return url.protocol === "https:" &&
+				url.host === GOOGLE_CHAT_HOST &&
+				space?.[1] !== undefined &&
+				(url.searchParams.get("key") ?? "").length > 0 &&
+				(url.searchParams.get("token") ?? "").length > 0
+				? Option.some({ spaceId: space[1] })
+				: Option.none()
+		}),
+	)
 
 export const MAX_EMAIL_RECIPIENTS = 10
 
@@ -277,11 +401,12 @@ export class EmailAlertDestinationConfig extends Schema.Class<EmailAlertDestinat
 export const AlertDestinationCreateRequest = Schema.Union([
 	PagerDutyAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
-	HazelOAuthAlertDestinationConfig,
 	DiscordAlertDestinationConfig,
 	TelegramAlertDestinationConfig,
+	GoogleChatAlertDestinationConfig,
 	EmailAlertDestinationConfig,
 	ChatAlertDestinationConfig,
+	LinearAlertDestinationConfig,
 ])
 export type AlertDestinationCreateRequest = Schema.Schema.Type<typeof AlertDestinationCreateRequest>
 
@@ -302,18 +427,6 @@ export class UpdateWebhookAlertDestinationConfig extends Schema.Class<UpdateWebh
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
-export class UpdateHazelOAuthAlertDestinationConfig extends Schema.Class<UpdateHazelOAuthAlertDestinationConfig>(
-	"UpdateHazelOAuthAlertDestinationConfig",
-)({
-	name: OptionalNonEmptyString,
-	hazelOrganizationId: Schema.optionalKey(HazelOrganizationId),
-	hazelOrganizationName: Schema.optionalKey(Schema.String),
-	hazelOrganizationLogoUrl: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	hazelChannelId: Schema.optionalKey(HazelChannelId),
-	hazelChannelName: Schema.optionalKey(Schema.String),
-	enabled: Schema.optionalKey(Schema.Boolean),
-}) {}
-
 export class UpdateDiscordAlertDestinationConfig extends Schema.Class<UpdateDiscordAlertDestinationConfig>(
 	"UpdateDiscordAlertDestinationConfig",
 )({
@@ -328,6 +441,14 @@ export class UpdateTelegramAlertDestinationConfig extends Schema.Class<UpdateTel
 	name: OptionalNonEmptyString,
 	botToken: Schema.optionalKey(Schema.String),
 	chatId: Schema.optionalKey(Schema.String),
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+export class UpdateGoogleChatAlertDestinationConfig extends Schema.Class<UpdateGoogleChatAlertDestinationConfig>(
+	"UpdateGoogleChatAlertDestinationConfig",
+)({
+	name: OptionalNonEmptyString,
+	webhookUrl: Schema.optionalKey(Schema.String),
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
@@ -348,6 +469,14 @@ export class UpdateChatAlertDestinationConfig extends Schema.Class<UpdateChatAle
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+export class UpdateLinearAlertDestinationConfig extends Schema.Class<UpdateLinearAlertDestinationConfig>(
+	"UpdateLinearAlertDestinationConfig",
+)({
+	name: OptionalNonEmptyString,
+	teamId: OptionalNonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 export const AlertDestinationUpdateRequest = Schema.Union([
 	Schema.Struct({
 		type: Schema.Literal("pagerduty"),
@@ -358,10 +487,6 @@ export const AlertDestinationUpdateRequest = Schema.Union([
 		...UpdateWebhookAlertDestinationConfig.fields,
 	}),
 	Schema.Struct({
-		type: Schema.Literal("hazel-oauth"),
-		...UpdateHazelOAuthAlertDestinationConfig.fields,
-	}),
-	Schema.Struct({
 		type: Schema.Literal("discord"),
 		...UpdateDiscordAlertDestinationConfig.fields,
 	}),
@@ -370,12 +495,20 @@ export const AlertDestinationUpdateRequest = Schema.Union([
 		...UpdateTelegramAlertDestinationConfig.fields,
 	}),
 	Schema.Struct({
+		type: Schema.Literal("google-chat"),
+		...UpdateGoogleChatAlertDestinationConfig.fields,
+	}),
+	Schema.Struct({
 		type: Schema.Literal("email"),
 		...UpdateEmailAlertDestinationConfig.fields,
 	}),
 	Schema.Struct({
 		type: Schema.Literal("chat"),
 		...UpdateChatAlertDestinationConfig.fields,
+	}),
+	Schema.Struct({
+		type: Schema.Literal("linear"),
+		...UpdateLinearAlertDestinationConfig.fields,
 	}),
 ])
 export type AlertDestinationUpdateRequest = Schema.Schema.Type<typeof AlertDestinationUpdateRequest>
@@ -394,6 +527,8 @@ export class AlertDestinationDocument extends Schema.Class<AlertDestinationDocum
 	/** The connector and linked workspace a `chat` destination posts through; absent otherwise. */
 	chatConnector: Schema.optionalKey(ChatConnectorId),
 	chatWorkspaceId: Schema.optionalKey(ChatWorkspaceId),
+	/** The Linear team a `linear` destination opens issues in; absent otherwise. */
+	linearTeamId: Schema.optionalKey(Schema.String),
 	lastTestedAt: Schema.NullOr(IsoDateTimeString),
 	lastTestError: Schema.NullOr(Schema.String),
 	/**
@@ -476,7 +611,7 @@ export const ALERT_TEMPLATE_VARIABLES: ReadonlyArray<{
 	{ key: "event.type", description: "trigger | resolve | renotify | test" },
 	{ key: "event.label", description: 'Human label, e.g. "Triggered"' },
 	{ key: "event.emoji", description: "Event emoji" },
-	{ key: "severity", description: "warning | critical" },
+	{ key: "severity", description: "warning | critical (the incident's current severity)" },
 	{ key: "signal", description: "Raw signal type" },
 	{ key: "signal.label", description: 'Human signal label, e.g. "Error Rate"' },
 	{ key: "comparator.label", description: 'Comparison operator, e.g. ">"' },
@@ -490,7 +625,7 @@ export const ALERT_TEMPLATE_VARIABLES: ReadonlyArray<{
 	{ key: "incidentId", description: "Incident id (empty for tests)" },
 	{ key: "incidentStatus", description: "open | resolved" },
 	{ key: "links.app", description: "Deep link to the alert in Maple" },
-	{ key: "links.chat", description: "Deep link to Maple AI for this alert" },
+	{ key: "links.chat", description: "Deep link to the alert rule in Maple" },
 	{ key: "sentAt", description: "ISO timestamp the notification was sent" },
 ]
 
@@ -500,7 +635,10 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	notes: Schema.NullOr(Schema.String),
 	notificationTemplate: Schema.NullOr(AlertNotificationTemplate),
 	enabled: Schema.Boolean,
+	/** The highest tier's severity. Derived from `thresholds`; kept for single-threshold readers. */
 	severity: AlertSeverity,
+	/** Severity tiers, lowest first. */
+	thresholds: AlertThresholds,
 	serviceNames: Schema.Array(Schema.String),
 	excludeServiceNames: Schema.Array(Schema.String),
 	/**
@@ -514,22 +652,36 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	groupBy: Schema.NullOr(AlertGroupBy),
 	signalType: AlertSignalType,
 	comparator: AlertComparator,
+	/** The lowest tier's value. Derived from `thresholds`. */
 	threshold: Schema.Number,
 	thresholdUpper: Schema.NullOr(Schema.Number),
 	windowMinutes: AlertWindowMinutes,
+	/** Minutes between checks. Null derives it from the window (1 to 5). */
+	evaluationIntervalMinutes: Schema.NullOr(AlertEvaluationIntervalMinutes),
 	minimumSampleCount: NonNegativeInt,
+	/** N: breaching checks needed to open (or escalate). */
 	consecutiveBreachesRequired: PositiveInt,
+	/** M: the N are counted over the last M checks. Null means N in a row. */
+	breachesOutOf: Schema.NullOr(AlertBreachWindow),
 	consecutiveHealthyRequired: PositiveInt,
 	renotifyIntervalMinutes: PositiveInt,
 	apdexThresholdMs: Schema.NullOr(PositiveFloat),
 	queryBuilderDraft: Schema.NullOr(QueryBuilderQueryDraftSchema),
 	rawQuerySql: Schema.NullOr(Schema.String),
 	rawQueryReducer: Schema.NullOr(QueryEngineAlertReducer),
+	/** Every tier's destinations. Derived from `thresholds`. */
 	destinationIds: Schema.Array(AlertDestinationId),
 	/** What the evaluator does when the window has no data: skip the check or treat it as zero. */
 	noDataBehavior: QueryEngineNoDataBehavior,
 	/** Most recent evaluation error for this rule, surfaced from `alertRuleStates.lastError`. */
 	lastEvaluationError: Schema.NullOr(Schema.String),
+	lastEvaluationErrorKind: Schema.NullOr(AlertEvaluationErrorKind),
+	/**
+	 * Set when the scheduler slowed the rule down after its query kept hitting its limit:
+	 * it is checked at least this far apart until it is edited.
+	 */
+	slowedIntervalMinutes: Schema.NullOr(AlertEvaluationIntervalMinutes),
+	slowedAt: Schema.NullOr(IsoDateTimeString),
 	lastEvaluatedAt: Schema.NullOr(IsoDateTimeString),
 	/** Last time the scheduler picked this rule up for evaluation. */
 	lastScheduledAt: Schema.NullOr(IsoDateTimeString),
@@ -548,7 +700,12 @@ export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>
 	notes: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	notificationTemplate: Schema.optionalKey(Schema.NullOr(AlertNotificationTemplate)),
 	enabled: Schema.optionalKey(Schema.Boolean),
-	severity: AlertSeverity,
+	/**
+	 * Severity tiers. When set, `severity`, `threshold`, `thresholdUpper` and
+	 * `destinationIds` are ignored; when absent, those four make one tier.
+	 */
+	thresholds: Schema.optionalKey(AlertThresholds),
+	severity: Schema.optionalKey(AlertSeverity),
 	serviceNames: Schema.optionalKey(Schema.Array(Schema.String)),
 	excludeServiceNames: Schema.optionalKey(Schema.Array(Schema.String)),
 	environments: Schema.optionalKey(Schema.Array(Schema.String)),
@@ -556,11 +713,13 @@ export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>
 	groupBy: Schema.optionalKey(Schema.NullOr(AlertGroupBy)),
 	signalType: AlertSignalType,
 	comparator: AlertComparator,
-	threshold: Schema.Number,
+	threshold: Schema.optionalKey(Schema.Number),
 	thresholdUpper: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	windowMinutes: AlertWindowMinutes,
+	evaluationIntervalMinutes: Schema.optionalKey(Schema.NullOr(AlertEvaluationIntervalMinutes)),
 	minimumSampleCount: Schema.optionalKey(NonNegativeInt),
 	consecutiveBreachesRequired: Schema.optionalKey(PositiveInt),
+	breachesOutOf: Schema.optionalKey(Schema.NullOr(AlertBreachWindow)),
 	consecutiveHealthyRequired: Schema.optionalKey(PositiveInt),
 	renotifyIntervalMinutes: Schema.optionalKey(PositiveInt),
 	apdexThresholdMs: Schema.optionalKey(Schema.NullOr(PositiveFloat)),
@@ -569,7 +728,7 @@ export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>
 	rawQueryReducer: Schema.optionalKey(Schema.NullOr(QueryEngineAlertReducer)),
 	/** Count a window with no data as a breach instead of skipping it. Default false. */
 	alertOnNoData: Schema.optionalKey(Schema.Boolean),
-	destinationIds: Schema.Array(AlertDestinationId),
+	destinationIds: Schema.optionalKey(Schema.Array(AlertDestinationId)),
 }) {}
 
 export class AlertRulesListResponse extends Schema.Class<AlertRulesListResponse>("AlertRulesListResponse")({
@@ -619,6 +778,8 @@ export class AlertRulePreviewPoint extends Schema.Class<AlertRulePreviewPoint>("
 	value: Schema.NullOr(Schema.Number),
 	sampleCount: Schema.Number,
 	status: AlertEvaluationStatus,
+	/** The highest tier this window breached; absent when none did or it skipped. */
+	level: Schema.optionalKey(AlertSeverity),
 	/** Set on `status: "skipped"` points. */
 	skipReason: Schema.optionalKey(AlertSkipReason),
 	/**
@@ -640,6 +801,26 @@ export class AlertRulePreviewFiringSpan extends Schema.Class<AlertRulePreviewFir
 	groupKey: Schema.String,
 	start: IsoDateTimeString,
 	end: IsoDateTimeString,
+	/** The incident's severity during the span; a span splits at each severity change. */
+	severity: AlertSeverity,
+}) {}
+
+/** How long one check of a raw SQL rule takes, timed once on the latest window. */
+export class AlertQueryTiming extends Schema.Class<AlertQueryTiming>("AlertQueryTiming")({
+	/** Milliseconds one check took, or null when it did not finish within `probeLimitMs`. */
+	elapsedMs: Schema.NullOr(Schema.Number),
+	/** Why it did not finish, when it did not. */
+	failure: Schema.NullOr(Schema.Literals(["query_too_slow", "query_too_much_memory"])),
+	/** The longest any check may run, so the timing stops there. */
+	probeLimitMs: Schema.Number,
+	/** The rule's check interval and that interval's time limit. */
+	intervalMinutes: Schema.Number,
+	limitMs: Schema.Number,
+	/**
+	 * Intervals up to the window whose time limit the query fits with a fifth to spare. Time only:
+	 * the probe runs with the top memory, and a check that runs out of memory slows the rule down.
+	 */
+	fitsIntervalMinutes: Schema.Array(AlertEvaluationIntervalMinutes),
 }) {}
 
 /**
@@ -655,11 +836,18 @@ export class AlertRulePreviewResponse extends Schema.Class<AlertRulePreviewRespo
 	windowMinutes: Schema.Number,
 	threshold: Schema.Number,
 	thresholdUpper: Schema.NullOr(Schema.Number),
+	thresholds: AlertThresholds,
 	comparator: AlertComparator,
 	/** Set when the requested range was clamped to the preview bucket cap. */
 	truncatedToStart: Schema.NullOr(IsoDateTimeString),
 	series: Schema.Array(AlertRulePreviewSeries),
 	wouldFire: Schema.Array(AlertRulePreviewFiringSpan),
+	/** Raw SQL rules only: how long one check takes against each interval's limit. */
+	queryTiming: Schema.optionalKey(AlertQueryTiming),
+	/** Raw SQL rules only: the range was too heavy to chart, or the SQL has no time bucket, so `series` is empty. */
+	seriesFailure: Schema.optionalKey(
+		Schema.Literals(["query_too_slow", "query_too_much_memory", "not_time_grouped"]),
+	),
 }) {}
 
 export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("AlertIncidentDocument")({
@@ -668,7 +856,10 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	ruleName: Schema.String,
 	groupKey: Schema.NullOr(Schema.String),
 	signalType: AlertSignalType,
+	/** Current severity: moves when a tiered rule escalates or de-escalates. */
 	severity: AlertSeverity,
+	/** Highest severity reached; null on incidents recorded before tiers. */
+	peakSeverity: Schema.NullOr(AlertSeverity),
 	status: AlertIncidentStatus,
 	comparator: AlertComparator,
 	threshold: Schema.Number,
@@ -944,6 +1135,7 @@ export class AlertRuleStoredConfigInvalidError extends HttpTaggedError<AlertRule
 			"group_by",
 			"notification_template",
 			"query_builder_draft",
+			"thresholds",
 		]),
 		cause: Schema.Defect(),
 	},
@@ -1120,6 +1312,8 @@ export class AlertCheckDocument extends Schema.Class<AlertCheckDocument>("AlertC
 	consecutiveHealthy: Schema.Number,
 	incidentId: Schema.NullOr(AlertIncidentId),
 	incidentTransition: AlertIncidentTransition,
+	/** Highest tier this check breached; null when none did or on rows before tiers. */
+	level: Schema.NullOr(AlertSeverity),
 	evaluationDurationMs: Schema.Number,
 	/** Populated on `status: "error"` rows — why the evaluation failed. */
 	errorMessage: Schema.NullOr(Schema.String),

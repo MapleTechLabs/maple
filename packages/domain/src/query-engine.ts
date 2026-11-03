@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { ALERT_REDUCERS } from "@maple/query-model"
 import { PublicHttpErrorBodySchema } from "./http/error-policy"
 import {
@@ -478,8 +478,13 @@ export const AttributeValuesQuery = Schema.Struct({
 	source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
 	scope: Schema.Literals(["span", "resource", "log", "metric", "event"]),
 	attributeKey: Schema.String,
-	// Scope metrics-source discovery to a single metric (see AttributeKeysQuery).
+	// Scope metrics-source discovery to a single metric (see AttributeKeysQuery),
+	// or to several metrics of one `metricType` with `metricNames`. Scoped metric
+	// discovery reads `ResourceAttributes` for the `resource` scope.
 	metricName: Schema.optional(Schema.String),
+	metricNames: Schema.optional(
+		Schema.Array(Schema.String).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
+	),
 	metricType: Schema.optional(MetricType),
 	limit: Schema.optional(
 		Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(500)),
@@ -533,11 +538,13 @@ const QUERY_SPEC_ARMS = new Map<string, Schema.ConstraintDecoder<unknown>>([
 
 // Split-and-trim instead of a whitespace regex: linear on any input.
 const oneLine = (message: string): string =>
-	message
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0)
-		.join(" ")
+	Arr.join(
+		Arr.filter(
+			Arr.map(Str.split("\n")(message), (line) => Str.trim(line)),
+			(line) => line.length > 0,
+		),
+		" ",
+	)
 
 /**
  * One actionable line for a `QuerySpec` decode failure: the targeted arm's own

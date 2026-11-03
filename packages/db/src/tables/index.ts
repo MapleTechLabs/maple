@@ -8,9 +8,11 @@ import {
 	AlertRuleStates,
 	AlertIncidents,
 	AlertDeliveryEvents,
+	AlertLinearIssues,
 } from "./alerts"
 import { AnomalyDetectorSettings, AnomalyDetectorStates, AnomalyIncidents } from "./anomalies"
 import { ApiKeys } from "./api-keys"
+import { OrgBillingLinks } from "./billing-links"
 import { CancellationReviews } from "./cancellation-reviews"
 import { ChatIdentities } from "./chat-identities"
 import { ChatWorkspaces } from "./chat-workspaces"
@@ -18,8 +20,10 @@ import { CliDeviceAuthorizations } from "./cli-device-authorizations"
 import { CloudflareAnalyticsState } from "./cloudflare-analytics-state"
 import { CloudflareHyperdriveConfigs } from "./cloudflare-hyperdrive-configs"
 import { CloudflareLogpushConnectors } from "./cloudflare-logpush-connectors"
+import { CloudflareZoneSettings } from "./cloudflare-zone-settings"
 import { DashboardShares } from "./dashboard-shares"
 import { Dashboards, DashboardVersions } from "./dashboards"
+import { DeviceCredentials, DeviceProofReplays } from "./device-credentials"
 import { DigestSubscriptions } from "./digest"
 import {
 	Actors,
@@ -35,6 +39,9 @@ import {
 	ErrorIssueVerifications,
 } from "./errors"
 import { IssueEscalationPolicies, IssueEscalations } from "./escalations"
+import { AwsConnections } from "./aws-connections"
+import { GcpConnectors } from "./gcp-connectors"
+import { GcpResources } from "./gcp-resources"
 import { Investigations } from "./investigations"
 import { LiveActivities } from "./live-activities"
 import { McpOAuthClients, McpOAuthAuthorizations, McpOAuthRefreshTokens } from "./mcp-oauth"
@@ -44,8 +51,10 @@ import { OrgOnboardingState } from "./onboarding"
 import { OrgClickHouseSchemaApplyRuns } from "./org-clickhouse-schema-apply-runs"
 import { OrgClickHouseSettings } from "./org-clickhouse-settings"
 import { OrgIngestAttributeMappings } from "./org-ingest-attribute-mappings"
+import { OrgIngestRules, OrgIngestRuleSettings, OrgIngestRuleStats } from "./org-ingest-rules"
 import { OrgIngestKeys } from "./org-ingest-keys"
 import { OrgIngestSamplingPolicies } from "./org-ingest-sampling-policies"
+import { Sources } from "./sources"
 import { OrgRecommendationIssues } from "./org-recommendation-issues"
 import { PlanetscaleConnections } from "./planetscale-connections"
 import {
@@ -57,7 +66,28 @@ import {
 import { OrgOpenRouterKeys } from "./openrouter-keys"
 import { RailwayConnections, RailwayEnvironments } from "./railway"
 import { ScrapeTargets, ScrapeTargetChecks } from "./scrape-targets"
+import {
+	SecurityAuditEvents,
+	SecurityAuditFindings,
+	SecurityAuditOrgReservations,
+	SecurityAuditOrgSettings,
+	SecurityAuditRunFindings,
+	SecurityAuditRuns,
+	SecurityAuditTargets,
+	SecurityAuditUnits,
+} from "./security-audit"
+import { DependencyFindings, DependencyScanMatches, DependencyScans } from "./dependency-scan"
+import { SupabaseConnections, SupabaseProjectInsights, SupabaseProjects } from "./supabase"
 import { OrgSupportChannels } from "./support-channels"
+import {
+	StatusPageComponents,
+	StatusPageIncidentComponents,
+	StatusPageCleanups,
+	StatusPageIncidentUpdates,
+	StatusPageIncidents,
+	StatusPages,
+} from "./status-pages"
+import { UptimeMonitorDaily, UptimeMonitorStates, UptimeMonitors } from "./uptime"
 import {
 	VcsInstallations,
 	VcsRepositories,
@@ -77,18 +107,25 @@ export * from "./ai-triage"
 export * from "./alerts"
 export * from "./anomalies"
 export * from "./api-keys"
+export * from "./billing-links"
 export * from "./cancellation-reviews"
+export * from "./dependency-scan"
 export * from "./chat-identities"
 export * from "./chat-workspaces"
 export * from "./cli-device-authorizations"
 export * from "./cloudflare-analytics-state"
 export * from "./cloudflare-hyperdrive-configs"
 export * from "./cloudflare-logpush-connectors"
+export * from "./cloudflare-zone-settings"
 export * from "./dashboard-shares"
 export * from "./dashboards"
+export * from "./device-credentials"
 export * from "./digest"
 export * from "./errors"
 export * from "./escalations"
+export * from "./aws-connections"
+export * from "./gcp-connectors"
+export * from "./gcp-resources"
 export * from "./investigations"
 export * from "./live-activities"
 export * from "./mcp-oauth"
@@ -98,6 +135,7 @@ export * from "./onboarding"
 export * from "./org-clickhouse-schema-apply-runs"
 export * from "./org-clickhouse-settings"
 export * from "./org-ingest-attribute-mappings"
+export * from "./org-ingest-rules"
 export * from "./org-ingest-keys"
 export * from "./org-ingest-sampling-policies"
 export * from "./org-recommendation-issues"
@@ -106,7 +144,12 @@ export * from "./planetscale-inventory"
 export * from "./openrouter-keys"
 export * from "./railway"
 export * from "./scrape-targets"
+export * from "./security-audit"
+export * from "./sources"
+export * from "./status-pages"
+export * from "./supabase"
 export * from "./support-channels"
+export * from "./uptime"
 export * from "./vcs"
 
 /** Every table the application database has, for schema checks and DDL. */
@@ -119,6 +162,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	AlertRuleStates,
 	AlertIncidents,
 	AlertDeliveryEvents,
+	AlertLinearIssues,
 	AnomalyDetectorSettings,
 	AnomalyDetectorStates,
 	AnomalyIncidents,
@@ -130,9 +174,12 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	CloudflareAnalyticsState,
 	CloudflareHyperdriveConfigs,
 	CloudflareLogpushConnectors,
+	CloudflareZoneSettings,
 	DashboardShares,
 	Dashboards,
 	DashboardVersions,
+	DeviceCredentials,
+	DeviceProofReplays,
 	DigestSubscriptions,
 	Actors,
 	ErrorIssues,
@@ -147,6 +194,9 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	ErrorIssueVerifications,
 	IssueEscalationPolicies,
 	IssueEscalations,
+	GcpConnectors,
+	GcpResources,
+	AwsConnections,
 	Investigations,
 	LiveActivities,
 	McpOAuthClients,
@@ -159,9 +209,14 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	OrgClickHouseSchemaApplyRuns,
 	OrgClickHouseSettings,
 	OrgIngestAttributeMappings,
+	OrgIngestRules,
+	OrgIngestRuleSettings,
+	OrgIngestRuleStats,
 	OrgIngestKeys,
 	OrgIngestSamplingPolicies,
 	OrgOpenRouterKeys,
+	OrgBillingLinks,
+	Sources,
 	OrgRecommendationIssues,
 	PlanetscaleConnections,
 	PlanetscalePollState,
@@ -172,7 +227,30 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	RailwayEnvironments,
 	ScrapeTargets,
 	ScrapeTargetChecks,
+	SecurityAuditTargets,
+	SecurityAuditRuns,
+	SecurityAuditUnits,
+	SecurityAuditRunFindings,
+	SecurityAuditFindings,
+	SecurityAuditEvents,
+	SecurityAuditOrgReservations,
+	SecurityAuditOrgSettings,
+	DependencyScans,
+	DependencyScanMatches,
+	DependencyFindings,
+	SupabaseConnections,
+	SupabaseProjects,
+	SupabaseProjectInsights,
 	OrgSupportChannels,
+	UptimeMonitors,
+	UptimeMonitorStates,
+	UptimeMonitorDaily,
+	StatusPages,
+	StatusPageComponents,
+	StatusPageIncidents,
+	StatusPageIncidentUpdates,
+	StatusPageIncidentComponents,
+	StatusPageCleanups,
 	VcsInstallations,
 	VcsRepositories,
 	VcsCommits,

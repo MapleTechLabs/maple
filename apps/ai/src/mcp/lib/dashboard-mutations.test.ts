@@ -11,11 +11,12 @@
 // tests drive the real production paths and assert they succeed.
 
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import { DashboardDocument, DashboardId, IsoDateTimeString, OrgId, UserId } from "@maple/domain/http"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { Env } from "@maple/backend/platform/Env"
+import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { dataSourceJson, widgetJson, withDashboardMutation } from "./dashboard-mutations"
 import { CurrentMcpTenant } from "./query-warehouse"
@@ -23,6 +24,7 @@ import { registerUpdateDashboardTool } from "../tools/update-dashboard"
 import { registerUpdateDashboardWidgetTool } from "../tools/update-dashboard-widget"
 import type { McpToolError, McpToolRegistrar } from "../tools/types"
 import type { McpToolRequirements } from "../tools/runtime-requirements"
+import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
 
 const trackedDbs: TestDb[] = []
 
@@ -61,6 +63,14 @@ const makeLayer = (testDb: TestDb) =>
 		}),
 	).pipe(Layer.provide(testDb.layer), Layer.provideMerge(Env.layer), Layer.provide(testConfig()))
 
+// The tool handlers name every MCP service; the ones these tests never reach are stubs.
+const makeToolServicesLayer = (testDb: TestDb) =>
+	unimplementedMcpToolServices.pipe(
+		Layer.provide(Layer.mergeAll(testDb.layer, EdgeCacheServiceLive)),
+		Layer.provide(Env.layer),
+		Layer.provide(testConfig()),
+	)
+
 const asDashboardId = Schema.decodeUnknownSync(DashboardId)
 const asIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 const asOrgId = Schema.decodeUnknownSync(OrgId)
@@ -69,7 +79,9 @@ const asUserId = Schema.decodeUnknownSync(UserId)
 const DASHBOARD = asDashboardId("dash-no-tags")
 const NOW = asIsoDateTimeString(new Date("2026-01-01T00:00:00.000Z").toISOString())
 
-const widget = (id: string) => ({
+type Widget = DashboardDocument["widgets"][number]
+
+const widget = (id: string): Widget => ({
 	id,
 	visualization: "stat",
 	dataSource: { kind: "route", endpoint: "test" },
@@ -135,7 +147,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 			const listed = yield* persistence.list(asOrgId(ORG))
 			assert.strictEqual(listed.dashboards.length, 1)
 			assert.deepStrictEqual(
-				listed.dashboards[0]!.widgets.map((w) => w.id),
+				Arr.map(listed.dashboards[0]!.widgets, (w) => w.id),
 				["w-new"],
 			)
 		}).pipe(Effect.provide(layer))
@@ -168,7 +180,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 			// The pre-existing widget keeps its container, and the added one lands in
 			// the section it asked for rather than being flattened onto the root canvas.
 			assert.deepStrictEqual(
-				stored.widgets.map((w) => [w.id, w.sectionId, w.tabId]),
+				Arr.map(stored.widgets, (w) => [w.id, w.sectionId, w.tabId]),
 				[
 					["w-1", "sec-1", "tab-1"],
 					["w-new", "sec-1", "tab-1"],
@@ -183,7 +195,6 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 
 		let handler: ToolHandler | null = null
 		const registrar: McpToolRegistrar = {
-			tool: () => {},
 			define: (spec) => {
 				handler = (params) =>
 					Schema.decodeUnknownEffect(spec.parameters)(params).pipe(
@@ -204,7 +215,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 
 			const listed = yield* persistence.list(asOrgId(ORG))
 			assert.strictEqual(listed.dashboards[0]!.name, "Renamed")
-		}).pipe(Effect.provide(layer))
+		}).pipe(Effect.provide(layer.pipe(Layer.provideMerge(makeToolServicesLayer(testDb)))))
 	})
 
 	it.effect("update_dashboard_widget patches a title and chart style without the whole widget", () => {
@@ -213,7 +224,6 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 
 		let handler: ToolHandler | null = null
 		const registrar: McpToolRegistrar = {
-			tool: () => {},
 			define: (spec) => {
 				handler = (params) =>
 					Schema.decodeUnknownEffect(spec.parameters)(params).pipe(
@@ -261,7 +271,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 				invoke({ dashboard_id: DASHBOARD, widget_id: "nope", title: "x" }),
 			)
 			assert.include(missing.message, "Widget not found: nope")
-		}).pipe(Effect.provide(layer))
+		}).pipe(Effect.provide(layer.pipe(Layer.provideMerge(makeToolServicesLayer(testDb)))))
 	})
 })
 

@@ -201,7 +201,7 @@ export interface SharedDashboardServiceApi {
 export class SharedDashboardService extends Context.Service<
 	SharedDashboardService,
 	SharedDashboardServiceApi
->()("@maple/api/services/SharedDashboardService", {
+>()("@maple/backend/services/SharedDashboardService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "SharedDashboardService", toPersistenceError)
@@ -281,7 +281,9 @@ export class SharedDashboardService extends Context.Service<
 			})
 			const rows = yield* loadLive(orgId, scope)
 			const row = rows[0]
-			return row === undefined ? Option.none() : Option.some(yield* decodeShare(row))
+			if (row === undefined) return Option.none()
+			const share = yield* decodeShare(row)
+			return Option.some(share)
 		})
 
 		/** Every live share on a dashboard: the board's own, plus one per widget. */
@@ -382,11 +384,9 @@ export class SharedDashboardService extends Context.Service<
 
 					const row = updated[0]
 					if (row === undefined) {
-						return yield* Effect.fail(
-							new SharePersistenceError({
-								message: "Share disappeared while updating its mode",
-							}),
-						)
+						return yield* new SharePersistenceError({
+							message: "Share disappeared while updating its mode",
+						})
 					}
 					yield* Effect.annotateCurrentSpan("maple.share.id", row.id)
 					return yield* decodeShare(row)
@@ -422,20 +422,16 @@ export class SharedDashboardService extends Context.Service<
 				yield* Effect.annotateCurrentSpan("maple.share.insert_raced", true)
 				const winner = (yield* loadLive(orgId, scope))[0]
 				if (winner === undefined) {
-					return yield* Effect.fail(
-						new SharePersistenceError({
-							message: "Share insert conflicted but no live share was found",
-						}),
-					)
+					return yield* new SharePersistenceError({
+						message: "Share insert conflicted but no live share was found",
+					})
 				}
 				return yield* updateMode(winner.id)
 			}
 
 			const row = attempt.rows[0]
 			if (row === undefined) {
-				return yield* Effect.fail(
-					new SharePersistenceError({ message: "Share insert returned no row" }),
-				)
+				return yield* new SharePersistenceError({ message: "Share insert returned no row" })
 			}
 			yield* Effect.annotateCurrentSpan("maple.share.id", row.id)
 			// The freshly minted token, not a decrypt of what was just written — same
@@ -460,7 +456,7 @@ export class SharedDashboardService extends Context.Service<
 			const existingRows = yield* loadLive(orgId, scope)
 			const existing = existingRows[0]
 			if (existing === undefined) {
-				return yield* Effect.fail(new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE }))
+				return yield* new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE })
 			}
 
 			const { rawToken, values } = yield* mintRow(orgId, userId, scope, existing.mode, hmacKey, now)
@@ -485,9 +481,7 @@ export class SharedDashboardService extends Context.Service<
 
 			const row = inserted[0]
 			if (row === undefined) {
-				return yield* Effect.fail(
-					new SharePersistenceError({ message: "Share rotate returned no row" }),
-				)
+				return yield* new SharePersistenceError({ message: "Share rotate returned no row" })
 			}
 			yield* Effect.annotateCurrentSpan("maple.share.id", row.id)
 			// The freshly minted token, not a decrypt of what was just written — same
@@ -548,7 +542,7 @@ export class SharedDashboardService extends Context.Service<
 		const boardMode = Effect.fnUntraced(function* (orgId: OrgId, dashboardId: DashboardId) {
 			const [board] = yield* loadLive(orgId, { dashboardId, widgetId: null })
 			if (board === undefined) {
-				return yield* Effect.fail(new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE }))
+				return yield* new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE })
 			}
 			return board.mode
 		})
@@ -570,7 +564,7 @@ export class SharedDashboardService extends Context.Service<
 
 			const row = rows[0]
 			if (row === undefined) {
-				return yield* Effect.fail(new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE }))
+				return yield* new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE })
 			}
 
 			// The share id and org, never the token or its hash.
@@ -582,10 +576,11 @@ export class SharedDashboardService extends Context.Service<
 			// `token` is the one the caller presented — it hashed to this row, so it
 			// is by definition the stored one, and decrypting to prove that again
 			// would only add a cipher round to the viewer hot path.
-			const mode =
-				row.widgetId === null
-					? row.mode
-					: capByBoard(row.mode, yield* boardMode(row.orgId, row.dashboardId))
+			let mode = row.mode
+			if (row.widgetId !== null) {
+				const board = yield* boardMode(row.orgId, row.dashboardId)
+				mode = capByBoard(row.mode, board)
+			}
 			if (row.widgetId !== null) yield* Effect.annotateCurrentSpan("maple.share.mode", mode)
 			return { share: toDashboardShare({ ...row, mode }, token), orgId: row.orgId }
 		})
@@ -598,7 +593,7 @@ export class SharedDashboardService extends Context.Service<
 			// than a branded string the query trusts.
 			const shareId = Option.getOrUndefined(decodeShareId(rawShareId))
 			if (shareId === undefined) {
-				return yield* Effect.fail(new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE }))
+				return yield* new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE })
 			}
 
 			const rows = yield* dbExecute((db) =>
@@ -611,7 +606,7 @@ export class SharedDashboardService extends Context.Service<
 
 			const row = rows[0]
 			if (row === undefined) {
-				return yield* Effect.fail(new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE }))
+				return yield* new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE })
 			}
 
 			yield* Effect.annotateCurrentSpan({
@@ -623,7 +618,7 @@ export class SharedDashboardService extends Context.Service<
 			// A widget card is only public while its board is.
 			if (row.widgetId !== null && (yield* boardMode(row.orgId, row.dashboardId)) !== "public") {
 				yield* Effect.annotateCurrentSpan("maple.share.mode", "org")
-				return yield* Effect.fail(new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE }))
+				return yield* new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE })
 			}
 			return row
 		})

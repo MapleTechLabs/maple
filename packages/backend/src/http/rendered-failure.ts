@@ -1,4 +1,4 @@
-import { Clock, Effect } from "effect"
+import { Clock, Effect, String as Str } from "effect"
 
 /** A failure at the moment the API turns it into a response. */
 export interface RenderedFailure {
@@ -49,7 +49,7 @@ export const recordRenderedFailure = (failure: RenderedFailure): Effect.Effect<v
 		// diagnosis is an event is a 500 with none.
 		yield* Effect.annotateCurrentSpan({
 			"error.type": failure.errorType,
-			"error.message": failure.message.slice(0, MAX_MESSAGE_ATTRIBUTE_CHARS),
+			"error.message": Str.slice(0, MAX_MESSAGE_ATTRIBUTE_CHARS)(failure.message),
 			"http.response.status_code": failure.status,
 			"maple.failure.summary": failure.summary,
 			"maple.failure.operation": `${failure.group}.${failure.operation}`,

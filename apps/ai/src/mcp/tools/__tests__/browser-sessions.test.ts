@@ -1,11 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import {
 	GetSessionTracesOutput,
 	GetSessionTranscriptOutput,
 	SearchSessionsOutput,
 } from "@maple/domain/mcp-outputs"
-import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../__evals__/fake-warehouse"
+import {
+	installFakeWarehouse,
+	readsTraceSpans,
+	restoreWarehouse,
+	type FixtureRule,
+} from "../../__evals__/fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import type { McpToolResult } from "../types"
 
@@ -80,9 +85,9 @@ const eventRow = (seq: number, type: string, extra: Record<string, unknown>) => 
 })
 
 const fixtures: FixtureRule[] = [
-	{ match: (sql) => sql.includes(MISSING_SESSION_ID), rows: [] },
+	{ match: (sql) => Str.includes(MISSING_SESSION_ID)(sql), rows: [] },
 	{
-		match: (sql) => sql.includes("session_events") && sql.includes("TargetSelector"),
+		match: (sql) => Str.includes("session_events")(sql) && Str.includes("TargetSelector")(sql),
 		rows: [
 			eventRow(1, "click", { targetSelector: "button#pay", targetText: "Pay now" }),
 			eventRow(2, "network", {
@@ -95,15 +100,15 @@ const fixtures: FixtureRule[] = [
 	},
 	// An event-refined list: the replay row's ErrorCount is 0, as most SDKs leave it.
 	{
-		match: (sql) => sql.includes("session_replays") && sql.includes("matchCount"),
+		match: (sql) => Str.includes("session_replays")(sql) && Str.includes("matchCount")(sql),
 		rows: [{ ...replayRow, errorCount: "0", matchCount: "5" }],
 	},
 	{
-		match: (sql) => sql.includes("session_events"),
+		match: (sql) => Str.includes("session_events")(sql),
 		rows: [{ sessionId: SESSION_ID, activeTimeMs: "4000", idleTimeMs: "1000", eventCount: "2" }],
 	},
 	{
-		match: (sql) => sql.includes("trace_detail_spans"),
+		match: (sql) => readsTraceSpans(sql),
 		rows: [
 			{
 				traceId: TRACE_ID,
@@ -118,7 +123,7 @@ const fixtures: FixtureRule[] = [
 			},
 		],
 	},
-	{ match: (sql) => sql.includes("session_replays"), rows: [replayRow] },
+	{ match: (sql) => Str.includes("session_replays")(sql), rows: [replayRow] },
 ]
 
 let rt: EvalRuntime
@@ -166,7 +171,7 @@ describe("search_sessions", () => {
 	it("rejects a tag outside the vocabulary", async () => {
 		const bad = await call("search_sessions", { tags: ["frustrated"] })
 		expect(bad.isError).toBe(true)
-		expect(markdown(bad)).toContain("Invalid parameters for `search_sessions`")
+		expect(markdown(bad)).toContain("`tags`")
 	})
 })
 
@@ -190,7 +195,7 @@ describe("get_session_transcript", () => {
 
 		const bad = await call("get_session_transcript", { session_id: SESSION_ID, event_types: ["clicks"] })
 		expect(bad.isError).toBe(true)
-		expect(markdown(bad)).toContain("Invalid parameters for `get_session_transcript`")
+		expect(markdown(bad)).toContain("`event_types`")
 	})
 })
 
@@ -200,7 +205,6 @@ describe("get_session_traces", () => {
 		const output = Schema.decodeUnknownSync(GetSessionTracesOutput)(result.structuredContent)
 		expect(output.traces[0]?.hasError).toBe(true)
 		const text = markdown(result)
-		expect(text).toContain("### Backend traces")
 		expect(text).toContain(
 			`\`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-09-24T10:00:02.000Z"\`: errored POST /api/pay in api`,
 		)

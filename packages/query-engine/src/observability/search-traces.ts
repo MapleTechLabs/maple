@@ -14,6 +14,7 @@ import {
 import type { SearchTracesInput, SearchTracesOutput, SpanResult } from "./types"
 import { toSpanResult } from "./row-mappers"
 import { safeUInt } from "./sql-utils"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "../datetime"
 
 const MAX_LIMIT = 1000
 const MAX_OFFSET = 1_000_000
@@ -22,9 +23,8 @@ const MAX_OFFSET = 1_000_000
  * Search for spans matching the given criteria.
  *
  * When `spanName` is provided (and `rootOnly` is not true), queries the
- * `span_search` pipe to find matching spans. Broad searches use `traces`; a
- * concrete trace-id search uses `trace_detail_spans`, which is sorted for that
- * lookup pattern. This avoids the unreliable EXISTS subquery in the
+ * `span_search` pipe to find matching spans. Broad searches scan `traces`; a
+ * concrete trace-id search seeks the trace's granules through `trace_index`. This avoids the unreliable EXISTS subquery in the
  * `list_traces` pipe and returns the **matched span** data instead of root
  * span summaries.
  *
@@ -58,16 +58,79 @@ export const searchTraces = Effect.fn("Observability.searchTraces")(function* (i
 		})
 	}
 
-	const spans =
-		input.spanName && !input.rootOnly
-			? yield* spanLevelSearch(executor, input, limit, offset)
-			: yield* rootLevelSearch(executor, input, limit, offset)
+	if (!rootMode && input.traceId === undefined)
+		return yield* newestFirstSpanSearch(executor, input, limit, offset)
+
+	const spans = rootMode
+		? yield* rootLevelSearch(executor, input, limit, offset)
+		: yield* spanLevelSearch(executor, input, limit, offset)
 
 	return {
 		timeRange: input.timeRange,
 		spans,
 		pagination: { offset, limit, hasMore: spans.length === limit },
 	} satisfies SearchTracesOutput
+})
+
+const RECENT_SLICE_MS = 3_600_000
+const NO_SPANS: ReadonlyArray<SpanResult> = []
+
+/**
+ * A span-name search over the newest hour first, then the rest only if that hour is short: same
+ * page, newest first. When the older part does not finish, `coveredFrom` says what was read.
+ */
+const newestFirstSpanSearch = Effect.fnUntraced(function* (
+	executor: WarehouseExecutorApi,
+	input: SearchTracesInput,
+	limit: number,
+	offset: number,
+) {
+	const startMs = parseWarehouseDateTime(input.timeRange.startTime)
+	const endMs = parseWarehouseDateTime(input.timeRange.endTime)
+	const result = (spans: ReadonlyArray<SpanResult>, coveredFrom?: string): SearchTracesOutput => ({
+		timeRange: input.timeRange,
+		spans,
+		pagination: { offset, limit, hasMore: spans.length === limit },
+		...(coveredFrom === undefined ? undefined : { coveredFrom }),
+	})
+	if (endMs - startMs <= RECENT_SLICE_MS || offset >= limit) {
+		const spans = yield* spanLevelSearch(executor, input, limit, offset)
+		return result(spans)
+	}
+
+	const want = limit + offset
+	const splitAt = formatWarehouseDateTime(endMs - RECENT_SLICE_MS)
+	const recent = yield* spanLevelSearch(
+		executor,
+		{ ...input, timeRange: { startTime: splitAt, endTime: input.timeRange.endTime } },
+		want,
+		0,
+	)
+	yield* Effect.annotateCurrentSpan("maple.query.recent_slice_rows", recent.length)
+	if (recent.length >= want) return result(recent.slice(offset, want))
+
+	// One row over what is missing: both bounds are inclusive, so a span at `splitAt` comes back twice.
+	const older = yield* spanLevelSearch(
+		executor,
+		{ ...input, timeRange: { startTime: input.timeRange.startTime, endTime: splitAt } },
+		want - recent.length + 1,
+		0,
+	).pipe(
+		Effect.map((spans) => ({ spans, cutOff: false })),
+		Effect.catchTags({
+			"@maple/http/errors/WarehouseQuotaExceededError": () =>
+				Effect.succeed({ spans: NO_SPANS, cutOff: true }),
+			// The executor's own client timeout; a real SQL error already failed the newest hour.
+			"@maple/http/errors/WarehouseQueryError": () => Effect.succeed({ spans: NO_SPANS, cutOff: true }),
+		}),
+	)
+	yield* Effect.annotateCurrentSpan("maple.query.older_slice_cut_off", older.cutOff)
+	const seen = new Set(Arr.map(recent, (span) => `${span.traceId}:${span.spanId}`))
+	const merged = [
+		...recent,
+		...Arr.filter(older.spans, (span) => !seen.has(`${span.traceId}:${span.spanId}`)),
+	]
+	return result(merged.slice(offset, want), older.cutOff ? splitAt : undefined)
 })
 
 /**
@@ -105,7 +168,7 @@ const spanLevelSearch = (
 	return Effect.map(
 		executor.query<SpanSearchWireRow>("span_search", params, { profile: "list" }),
 		(result): ReadonlyArray<SpanResult> =>
-			result.data.map((row): SpanResult => ({
+			Arr.map(result.data, (row): SpanResult => ({
 				traceId: Schema.decodeSync(TraceId)(row.traceId),
 				spanId: Schema.decodeSync(SpanId)(row.spanId),
 				spanName: row.spanName,

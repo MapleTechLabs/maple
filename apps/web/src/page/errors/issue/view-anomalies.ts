@@ -1,0 +1,82 @@
+import type { AnomalyIncidentDocument } from "@maple/domain/http"
+import { countLabel } from "@maple/ui/lib/format"
+import { SEVERITY_TONE } from "@maple/web-data/anomalies/format"
+import { anomalyIncidentFromV2 } from "../../../lib/services/anomalies"
+import { Option, Array as Arr, String as Str } from "effect"
+import { AsyncData } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { badge } from "@maple/views/ui/display"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { anomalyRow } from "../../anomalies/kit/row"
+import { sectionHeading } from "../../kit/section-heading"
+import type { Model } from "./model"
+import { hstack, vstack } from "@maple/views/ui/stack"
+
+// The related anomalies section and the open anomaly badge.
+
+export const relatedAnomaliesOf = (model: Model): ReadonlyArray<AnomalyIncidentDocument> =>
+	Option.match(AsyncData.getData(model.anomalies.data), {
+		onNone: () => [],
+		onSome: (incidents) => Arr.map(incidents, anomalyIncidentFromV2),
+	})
+
+/** Nothing at all (header included) when no detector incident points here. */
+export const relatedAnomaliesSection = <M>(
+	h: HtmlBuilder<M>,
+	incidents: ReadonlyArray<AnomalyIncidentDocument>,
+	options: Readonly<{ nowMs: number; timeZone: string }>,
+): ReadonlyArray<Html> => {
+	if (incidents.length === 0) return []
+	const sorted = [...incidents].sort((a, b) => {
+		if ((a.status === "open") !== (b.status === "open")) return a.status === "open" ? -1 : 1
+		return Str.localeCompare(a.lastTriggeredAt)(b.lastTriggeredAt)
+	})
+	return [
+		vstack(
+			h,
+			{
+				as: "section",
+				className: "shrink-0 gap-3.5",
+				attributes: [h.AriaLabelledBy("related-anomalies-heading")],
+			},
+			[
+				sectionHeading(h, {
+					id: "related-anomalies-heading",
+					title: "Related anomalies",
+					hint: countLabel(sorted.length, "detector incident"),
+				}),
+				h.div(
+					[
+						h.Class(
+							"overflow-hidden rounded-md border border-border-subtle divide-y divide-border-subtle",
+						),
+					],
+					Arr.map(sorted, (incident) =>
+						anomalyRow(h, {
+							incident,
+							nowMs: options.nowMs,
+							timeZone: options.timeZone,
+							variant: "compact",
+						}),
+					),
+				),
+			],
+		),
+	]
+}
+
+/** "Anomaly open": critical when any open incident is. */
+export const openAnomalyBadge = <M>(
+	h: HtmlBuilder<M>,
+	incidents: ReadonlyArray<AnomalyIncidentDocument>,
+): ReadonlyArray<Html> => {
+	const open = Arr.filter(incidents, (incident) => incident.status === "open")
+	if (open.length === 0) return []
+	const tone =
+		SEVERITY_TONE[Arr.some(open, (incident) => incident.severity === "critical") ? "critical" : "warning"]
+	return [
+		badge(h, { variant: "outline", className: tone.badge }, [
+			hstack(h, { gap: "1.5", as: "span" }, [statusDot(h, { tone: tone.tone }), "Anomaly open"]),
+		]),
+	]
+}

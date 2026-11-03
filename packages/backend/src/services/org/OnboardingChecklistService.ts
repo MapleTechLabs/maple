@@ -1,4 +1,5 @@
 import { BillingCustomer, BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
+import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import type { OrgId } from "@maple/domain/primitives"
 import {
 	emptyOnboardingChecklistInputs,
@@ -11,7 +12,7 @@ import {
 	OnboardingRewardNotClaimableError,
 } from "@maple/domain/onboarding-checklist"
 import { EdgeCacheService } from "@maple/cache"
-import { Clock, Context, Effect, Layer, Option } from "effect"
+import { Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
@@ -26,6 +27,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { readOrgCreatedAt } from "@maple/backend/services/org/org-created-at"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
 
@@ -136,15 +138,7 @@ const make = Effect.gen(function* () {
 			}
 		}
 
-		const createdAt = yield* organizations.retrieve(tenant.orgId).pipe(
-			Effect.map((org) => org.createdAtMs),
-			Effect.catchCause((cause) =>
-				Effect.logWarning("Onboarding checklist could not read the org's creation time").pipe(
-					Effect.annotateLogs({ orgId: tenant.orgId, cause }),
-					Effect.as<number | null>(null),
-				),
-			),
-		)
+		const createdAt = yield* readOrgCreatedAt(organizations, tenant.orgId)
 		if (createdAt === null) return { orgCreatedAtMs: null, rewardClaimedAtMs: null }
 
 		const row = yield* unavailable(
@@ -182,7 +176,8 @@ const make = Effect.gen(function* () {
 						.read(tenant)
 						.pipe(
 							Effect.map((report) =>
-								report.signals.some(
+								Arr.some(
+									report.signals,
 									(signal) =>
 										signal.status === "present" &&
 										(signal.signal === "traces" ||
@@ -200,7 +195,10 @@ const make = Effect.gen(function* () {
 						.listInstallationsByOrg(orgId)
 						.pipe(
 							Effect.map((installations) =>
-								installations.some((i) => i.provider === "github" && i.status === "active"),
+								Arr.some(
+									installations,
+									(i) => i.provider === "github" && i.status === "active",
+								),
 							),
 						),
 				),
@@ -309,7 +307,7 @@ const make = Effect.gen(function* () {
 		// lost response may have applied the discount, so the lease stays until it expires and
 		// the failure is logged for reconciliation. `classifyAutumn` keeps the 4xx/5xx split
 		// that `ensureOk` collapses.
-		const customer = yield* autumn.getOrCreateCustomer(orgId, { expand: [] }).pipe(
+		const customer = yield* autumn.getOrCreateCustomer(ownBillingCustomer(orgId), { expand: [] }).pipe(
 			Effect.flatMap(classifyAutumn),
 			Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
 			Effect.catchTags({
@@ -333,7 +331,7 @@ const make = Effect.gen(function* () {
 				reason: "no_subscription",
 			})
 		}
-		yield* autumn.applyReward(orgId, { planId, rewardId: ONBOARDING_REWARD_ID }).pipe(
+		yield* autumn.applyReward(ownBillingCustomer(orgId), { planId, rewardId: ONBOARDING_REWARD_ID }).pipe(
 			Effect.flatMap(classifyAutumn),
 			Effect.catchTags({
 				"@maple/http/errors/BillingPaymentRequiredError": releaseAndCollapse,
@@ -359,7 +357,7 @@ const make = Effect.gen(function* () {
 export class OnboardingChecklistService extends Context.Service<
 	OnboardingChecklistService,
 	OnboardingChecklistServiceApi
->()("@maple/api/services/OnboardingChecklistService", { make }) {
+>()("@maple/backend/services/OnboardingChecklistService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(

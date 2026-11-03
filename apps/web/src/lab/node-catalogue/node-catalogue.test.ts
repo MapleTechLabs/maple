@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 
-import { ACTION_GLYPH } from "@/components/investigations/flow/flow-nodes"
+import { ACTION_GLYPH } from "../../page/investigations/detail/view-canvas"
 import { buildNodeCatalogue } from "./node-catalogue"
+import { Array as Arr, Record as Rec } from "effect"
 
 const catalogue = buildNodeCatalogue()
 
@@ -11,8 +12,8 @@ const catalogue = buildNodeCatalogue()
  * before `T` is bound and hands back the whole data union, which is exactly the
  * narrowing these assertions exist to have.
  */
-const spines = catalogue.nodes.flatMap((node) => (node.type === "spine" ? [node.data] : []))
-const actions = catalogue.nodes.flatMap((node) => (node.type === "action" ? [node.data] : []))
+const spines = Arr.flatMap(catalogue.nodes, (node) => (node.type === "spine" ? [node.data] : []))
+const actions = Arr.flatMap(catalogue.nodes, (node) => (node.type === "action" ? [node.data] : []))
 
 /**
  * The studio is only worth having if it is exhaustive, and "exhaustive" is not a
@@ -22,30 +23,30 @@ const actions = catalogue.nodes.flatMap((node) => (node.type === "action" ? [nod
  */
 describe("node catalogue", () => {
 	it("covers current, lifted and live spine emphasis", () => {
-		expect(spines.some((data) => data.current === true)).toBe(true)
-		expect(spines.some((data) => data.lifted === true)).toBe(true)
+		expect(Arr.some(spines, (data) => data.current === true)).toBe(true)
+		expect(Arr.some(spines, (data) => data.lifted === true)).toBe(true)
 		expect(spines.some((data) => data.live === true && data.phase)).toBe(true)
 	})
 
 	it("covers every action kind", () => {
-		const kinds = new Set(actions.map((data) => data.kind))
-		expect(kinds).toEqual(new Set(Object.keys(ACTION_GLYPH)))
+		const kinds = new Set(Arr.map(actions, (data) => data.kind))
+		expect(kinds).toEqual(new Set(Rec.keys(ACTION_GLYPH)))
 	})
 
 	it("shows an action with and without a target", () => {
-		expect(actions.some((data) => data.target === null)).toBe(true)
-		expect(actions.some((data) => data.target !== null)).toBe(true)
+		expect(Arr.some(actions, (data) => data.target === null)).toBe(true)
+		expect(Arr.some(actions, (data) => data.target !== null)).toBe(true)
 	})
 
 	it("covers every edge kind, live and settled", () => {
-		expect(new Set(catalogue.edges.map((edge) => edge.kind))).toEqual(new Set(["causal", "roadmap"]))
-		expect(catalogue.edges.some((edge) => edge.live === true)).toBe(true)
-		expect(catalogue.edges.some((edge) => edge.live === undefined)).toBe(true)
+		expect(new Set(Arr.map(catalogue.edges, (edge) => edge.kind))).toEqual(new Set(["causal", "roadmap"]))
+		expect(Arr.some(catalogue.edges, (edge) => edge.live === true)).toBe(true)
+		expect(Arr.some(catalogue.edges, (edge) => edge.live === undefined)).toBe(true)
 		expect(catalogue.edges.some((edge) => edge.label)).toBe(true)
 	})
 
 	it("gives every edge two real anchors", () => {
-		const ids = new Set(catalogue.nodes.map((node) => node.id))
+		const ids = new Set(Arr.map(catalogue.nodes, (node) => node.id))
 		for (const edge of catalogue.edges) {
 			expect(ids.has(edge.source)).toBe(true)
 			expect(ids.has(edge.target)).toBe(true)
@@ -53,7 +54,7 @@ describe("node catalogue", () => {
 	})
 
 	it("emits unique ids and non-overlapping cells", () => {
-		const ids = catalogue.nodes.map((node) => node.id)
+		const ids = Arr.map(catalogue.nodes, (node) => node.id)
 		expect(new Set(ids).size).toBe(ids.length)
 		// Every node has to sit inside the bounds the canvas sizes itself from,
 		// or fitView frames a graph with cells hanging outside it.

@@ -1,0 +1,227 @@
+import { OrgId } from "@maple/domain"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
+import {
+	click,
+	expect as expectView,
+	expectOutMessage,
+	given,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
+import { describe, expect, test } from "vitest"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import { type PageContext, PageOutMessage } from "../../contract"
+import { Message } from "./message"
+import { RELEASE_HEALTH_ORDER } from "../../../components/releases/release-model"
+import { deriveOf } from "./derive"
+import { ReleasesData, type Model } from "./model"
+import { contextChanged, init, routeChanged, update } from "./update"
+import { view as pageView } from "./view"
+
+const context: PageContext = {
+	orgId: Schema.decodeSync(OrgId)("org_parity"),
+	pinnedNamespace: null,
+	timeZone: "UTC",
+}
+const pageUpdate = (model: Model, message: Message) => update(model, message, context)
+const view = withViewInputs(pageView, { context })()
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	Arr.map(commands ?? [], ({ name }) => name)
+const NOW = Date.UTC(2026, 9, 1, 12)
+const window = { startTime: "2026-09-25 00:00:00", endTime: "2026-10-01 12:00:00" }
+
+const sha = (digit: string) => Str.repeat(40)(digit)
+const row = (service: string, commit: string, firstSeen: string, errorCount = 0) => ({
+	serviceName: service,
+	environment: "production",
+	commitSha: commit,
+	firstSeen,
+	spanCount: 1000,
+	errorCount,
+	p50LatencyMs: 10,
+	p95LatencyMs: 40,
+	p99LatencyMs: 80,
+	apdexScore: 1,
+})
+
+const data = Schema.decodeUnknownSync(ReleasesData)({
+	releases: [
+		row("payment-svc", sha("a"), "2026-09-30T10:00:00.000Z"),
+		row("payment-svc", sha("b"), "2026-10-01T10:00:00.000Z", 90),
+	],
+	timeline: [],
+	truncated: false,
+	startTime: "2026-09-25T00:00:00.000Z",
+	endTime: "2026-10-01T12:00:00.000Z",
+	bucketSeconds: 3600,
+})
+
+const loaded = (): Model => {
+	const entered = init({ search: {} }, context).model
+	const resolved = pageUpdate(
+		entered,
+		Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+	).model
+	return pageUpdate(
+		resolved,
+		Message.CompletedFetchReleases({ key: resolved.releases.key ?? "", result: Result.succeed(data) }),
+	).model
+}
+
+const noReleases = Schema.decodeUnknownSync(ReleasesData)({ ...data, releases: [] })
+
+/** A window with no releases, after the presence read answered. */
+const empty = (traces: "present" | "absent"): Model => {
+	const entered = init({ search: {} }, context).model
+	const resolved = pageUpdate(
+		entered,
+		Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+	).model
+	return Arr.reduce(
+		[
+			Message.CompletedFetchReleases({
+				key: resolved.releases.key ?? "",
+				result: Result.succeed(noReleases),
+			}),
+			Message.CompletedLoadSignalPresence({
+				result: Result.succeed({ traces: { status: traces, lastSeenMs: null } }),
+			}),
+		],
+		resolved,
+		(model, message) => pageUpdate(model, message).model,
+	)
+}
+
+describe("releases list", () => {
+	test("entry resolves the window, then reads the releases for it", () => {
+		const entered = init({ search: {} }, context)
+		expect(names(entered.commands)).toEqual(
+			expect.arrayContaining(["ResolveReleasesWindow", "ReadRememberedFilterSections"]),
+		)
+		const resolved = pageUpdate(
+			entered.model,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+		)
+		expect(names(resolved.commands)).toEqual(["FetchReleases"])
+	})
+
+	test("the table's reads follow its first paint, keyed on the rows it shows", () => {
+		const painted = pageUpdate(loaded(), Message.PaintedTable())
+		expect(names(painted.commands)).toEqual(
+			expect.arrayContaining(["FetchReleaseIssues", "FetchReleaseRanges", "FetchReleaseCommits"]),
+		)
+		expect(pageUpdate(painted.model, Message.PaintedTable()).commands ?? []).toHaveLength(0)
+	})
+
+	test("a stale answer is dropped; a failure renders the error state", () => {
+		const entered = init({ search: {} }, context).model
+		const resolved = pageUpdate(
+			entered,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+		).model
+		expect(
+			pageUpdate(resolved, Message.CompletedFetchReleases({ key: "old", result: Result.succeed(data) }))
+				.model.releases,
+		).toEqual(resolved.releases)
+		const failed = pageUpdate(
+			resolved,
+			Message.CompletedFetchReleases({
+				key: resolved.releases.key ?? "",
+				result: Result.fail(toLoadFailure(new Error("down"))),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(text("Couldn't load releases")).toExist(),
+		)
+	})
+
+	test("after a Reload an environment filter reads under the kept window; only a new preset re-resolves", () => {
+		const reloaded = pageUpdate(loaded(), Message.ClickedReload()).model
+		const filtered = routeChanged(reloaded, { search: { environments: ["production"] } }, context)
+		expect(names(filtered.commands)).toEqual(["FetchReleases"])
+		expect(filtered.commands?.[0]?.args).toMatchObject({
+			input: { startTime: window.startTime, environments: ["production"] },
+		})
+		const moved = routeChanged(
+			filtered.model,
+			{ search: { environments: ["production"], timePreset: "1h" } },
+			context,
+		)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveReleasesWindow", "Refresh"],
+		])
+	})
+
+	test("health is single-select through the URL", () => {
+		const model = loaded()
+		expect(pageUpdate(model, Message.ToggledHealthOption({ name: "regressed" })).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/releases?impact=regressed", isReplace: false }),
+		)
+		const filtered = { ...model, search: { impact: "regressed" as const } }
+		expect(pageUpdate(filtered, Message.ToggledHealthOption({ name: "regressed" })).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/releases", isReplace: false }),
+		)
+	})
+
+	test("the namespace pin narrows the releases read and its key, and a pin change re-reads", () => {
+		const pinned: PageContext = { ...context, pinnedNamespace: "payments" }
+		const entered = init({ search: {} }, pinned).model
+		const resolved = update(
+			entered,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+			pinned,
+		)
+		expect(resolved.commands?.[0]?.args).toMatchObject({ input: { namespaces: ["payments"] } })
+		expect(resolved.model.releases.key).not.toEqual(loaded().releases.key)
+		expect(names(contextChanged(loaded(), pinned).commands)).toEqual(["FetchReleases"])
+	})
+
+	test("entry reads signal presence once, and a window change does not read it again", () => {
+		const entered = init({ search: {} }, context)
+		expect(
+			Arr.filter(names(entered.commands), (name) => name === "LoadReleasesSignalPresence"),
+		).toHaveLength(1)
+		const resolved = pageUpdate(
+			entered.model,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+		)
+		expect(names(resolved.commands)).not.toContain("LoadReleasesSignalPresence")
+	})
+
+	test("with no traces yet, an empty window offers setup", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(empty("absent")),
+			expectView(text("No releases yet")).toExist(),
+			expectView(role("link", { name: "Set up tracing" })).toExist(),
+		)
+	})
+
+	test("with traces arriving, an empty window names the missing attribute instead of setup", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(empty("present")),
+			expectView(text("No releases in this window")).toExist(),
+			expectView(text("vcs.ref.head.revision")).toExist(),
+			expectView(role("link", { name: "Set up tracing" })).toBeAbsent(),
+		)
+	})
+
+	test("a health filter that matches nothing offers to clear it", () => {
+		const shown = new Set(Arr.map(deriveOf(data).groups, (group) => group.health))
+		const unmatched = RELEASE_HEALTH_ORDER.find((health) => !shown.has(health))
+		expect(unmatched).toBeDefined()
+		const filtered = { ...loaded(), search: { impact: unmatched } }
+		scene(
+			{ update: pageUpdate, view },
+			given(filtered),
+			expectView(text("No releases match these filters")).toExist(),
+			click(role("button", { name: "Clear filter" })),
+			expectOutMessage(PageOutMessage.RequestedNavigation({ url: "/releases", isReplace: false })),
+		)
+	})
+})

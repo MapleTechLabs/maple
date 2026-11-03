@@ -6,7 +6,7 @@
 // each one in rrweb-*shaped* events so the chunk pipeline carries them
 // untouched — but there is no DOM to rebuild, so rrweb renders nothing.
 //
-// Everything above this interface (the provider's transport state, the trimmed
+// Everything above this interface (the provider's transport state, the
 // timeline, markers, idle bands, the chunk loader) is format-agnostic and stays
 // exactly as it was. Everything rrweb-specific lives in `rrweb-engine.ts`;
 // everything video-specific in `video-engine.ts`.
@@ -77,13 +77,3 @@ export interface ReplayEngine {
 export interface ReplayEngineFactory {
 	create(input: ReplayEngineCreateInput): ReplayEngine
 }
-
-/**
- * Which engine plays a session's chunks.
- *
- * Carried by the `maple.session.replay_format` resource attribute so the player
- * can pick an engine from session metadata alone, without downloading a chunk
- * to find out. An absent attribute means `rrweb` — every session recorded
- * before the marker existed is a browser recording.
- */
-export type ReplayFormat = "rrweb" | "video"

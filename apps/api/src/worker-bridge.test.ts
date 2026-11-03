@@ -4,9 +4,21 @@ import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { v2WorkerUnavailableDefinition } from "@maple/domain/http/v2-worker-unavailable"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { HttpEffect } from "alchemy/Http"
-import { Context, Effect, Exit, Layer, Logger, Option, Schema, Scope } from "effect"
+import {
+	Context,
+	Effect,
+	Exit,
+	Layer,
+	Logger,
+	Option,
+	Schema,
+	Scope,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { AiWorkerFetcher, MapleDbConnection } from "@maple/backend/platform/bindings"
@@ -78,24 +90,29 @@ const stubFetch = (recorded: Array<RecordedRequest>): typeof globalThis.fetch =>
 	}) as typeof globalThis.fetch
 
 const serverSpans = (recorded: ReadonlyArray<RecordedRequest>): Array<ExportedSpan> =>
-	recorded
-		.filter((request) => request.url.endsWith("/v1/traces"))
-		.flatMap((request) => decodeExportedTraces(JSON.parse(request.body ?? "{}")).resourceSpans ?? [])
-		.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
-		.filter((span) => span.kind === SERVER_KIND)
+	Arr.flatMap(
+		Arr.filter(recorded, (request) => Str.endsWith("/v1/traces")(request.url)).flatMap(
+			(request) => decodeExportedTraces(JSON.parse(request.body ?? "{}")).resourceSpans ?? [],
+		),
+		(resource) => resource.scopeSpans.flatMap((scope) => scope.spans),
+	).filter((span) => span.kind === SERVER_KIND)
 
 const logBodies = (recorded: ReadonlyArray<RecordedRequest>): Array<string> =>
-	recorded
-		.filter((request) => request.url.endsWith("/v1/logs"))
-		.flatMap((request) => decodeExportedLogs(JSON.parse(request.body ?? "{}")).resourceLogs ?? [])
-		.flatMap((resource) => resource.scopeLogs.flatMap((scope) => scope.logRecords))
-		.flatMap((record) => (record.body?.stringValue === undefined ? [] : [record.body.stringValue]))
+	Arr.flatMap(
+		Arr.filter(recorded, (request) => Str.endsWith("/v1/logs")(request.url)).flatMap(
+			(request) => decodeExportedLogs(JSON.parse(request.body ?? "{}")).resourceLogs ?? [],
+		),
+		(resource) => resource.scopeLogs.flatMap((scope) => scope.logRecords),
+	).flatMap((record) => (record.body?.stringValue === undefined ? [] : [record.body.stringValue]))
 
 /** One attribute as its rendered value — OTLP JSON carries ints as strings anyway. */
 const attributeOf = (span: ExportedSpan | undefined, key: string): string | undefined => {
 	const value = span?.attributes.find((attribute) => attribute.key === key)?.value
-	const rendered = value === undefined ? undefined : Object.values(value)[0]
-	return rendered === undefined ? undefined : String(rendered)
+	const rendered = value === undefined ? undefined : Rec.values(value)[0]
+	if (rendered === undefined) return undefined
+	return typeof rendered === "string" || typeof rendered === "number" || typeof rendered === "boolean"
+		? String(rendered)
+		: JSON.stringify(rendered)
 }
 
 const statusCodeOf = (span: ExportedSpan | undefined): number | undefined => {
@@ -107,8 +124,11 @@ const statusCodeOf = (span: ExportedSpan | undefined): number | undefined => {
 const exceptionTypeOf = (span: ExportedSpan | undefined): string | undefined => {
 	const event = span?.events?.find((candidate) => candidate.name === "exception")
 	const value = event?.attributes.find((attribute) => attribute.key === "exception.type")?.value
-	const rendered = value === undefined ? undefined : Object.values(value)[0]
-	return rendered === undefined ? undefined : String(rendered)
+	const rendered = value === undefined ? undefined : Rec.values(value)[0]
+	if (rendered === undefined) return undefined
+	return typeof rendered === "string" || typeof rendered === "number" || typeof rendered === "boolean"
+		? String(rendered)
+		: JSON.stringify(rendered)
 }
 
 const env = {

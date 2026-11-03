@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { hasEvalCredentials } from "../../evals/model"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /**
  * The eval harness: a case table, a task that runs the model, and scorers averaged against a
@@ -58,17 +59,18 @@ export const describeEval = <Case extends EvalCase>(name: string, options: EvalO
 		return
 	}
 	describe(name, () => {
-		options.data.forEach((evalCase) => {
+		Arr.forEach(options.data, (evalCase) => {
 			it(evalCase.name ?? evalCase.input, { timeout: EVAL_TIMEOUT_MS }, async () => {
 				const result = await options.task(evalCase.input)
-				const scores = options.scorers.map((scorer) => ({
+				const scores = Arr.map(options.scorers, (scorer) => ({
 					name: scorer.name,
 					...scorer.score({ ...evalCase, ...result }),
 				}))
-				const mean = scores.reduce((sum, entry) => sum + entry.score, 0) / scores.length
-				const report = scores
-					.map((entry) => `${entry.name} ${entry.score.toFixed(2)}: ${entry.rationale}`)
-					.join("\n")
+				const mean = Arr.reduce(scores, 0, (sum, entry) => sum + entry.score) / scores.length
+				const report = Arr.join(
+					Arr.map(scores, (entry) => `${entry.name} ${entry.score.toFixed(2)}: ${entry.rationale}`),
+					"\n",
+				)
 				console.info(`[eval] ${mean.toFixed(2)} ${evalCase.name ?? evalCase.input}\n${report}`)
 				expect(mean, `${report}\n\nOutput: ${result.output}`).toBeGreaterThanOrEqual(
 					options.threshold,
@@ -79,7 +81,7 @@ export const describeEval = <Case extends EvalCase>(name: string, options: EvalO
 }
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 const NUMERIC_TOLERANCE = 1e-3
 
@@ -89,18 +91,18 @@ const NUMERIC_TOLERANCE = 1e-3
  */
 export const fuzzyMatch = (expected: unknown, actual: unknown): boolean => {
 	if (typeof expected === "string" && typeof actual === "string") {
-		const want = expected.toLowerCase()
-		const got = actual.toLowerCase()
-		return got.includes(want) || want.includes(got)
+		const want = Str.toLowerCase(expected)
+		const got = Str.toLowerCase(actual)
+		return Str.includes(want)(got) || Str.includes(got)(want)
 	}
 	if (typeof expected === "number" && typeof actual === "number") {
 		return (
 			Math.abs(expected - actual) <= Math.max(Math.abs(expected) * NUMERIC_TOLERANCE, NUMERIC_TOLERANCE)
 		)
 	}
-	if (Array.isArray(expected) && Array.isArray(actual)) {
+	if (Arr.isArray(expected) && Arr.isArray(actual)) {
 		const used = new Set<number>()
-		return expected.every((item) => {
+		return Arr.every(expected, (item) => {
 			const index = actual.findIndex((candidate, at) => !used.has(at) && fuzzyMatch(item, candidate))
 			if (index === -1) return false
 			used.add(index)
@@ -108,7 +110,8 @@ export const fuzzyMatch = (expected: unknown, actual: unknown): boolean => {
 		})
 	}
 	if (isRecord(expected) && isRecord(actual)) {
-		return Object.entries(expected).every(
+		return Arr.every(
+			Rec.toEntries(expected),
 			([key, value]) => key in actual && fuzzyMatch(value, actual[key]),
 		)
 	}
@@ -127,7 +130,7 @@ export const ToolCallScorer = (config: { readonly requireAll?: boolean } = {}): 
 			return { score: 0, rationale: `expected ${expectedTools.length} tool(s) but none were called` }
 		}
 		const used = new Set<number>()
-		const missing = expectedTools.filter((expected) => {
+		const missing = Arr.filter(expectedTools, (expected) => {
 			const index = toolCalls.findIndex(
 				(call, at) =>
 					!used.has(at) &&
@@ -138,15 +141,19 @@ export const ToolCallScorer = (config: { readonly requireAll?: boolean } = {}): 
 			used.add(index)
 			return false
 		})
-		const called = toolCalls.map((call) => call.name).join(", ")
+		const called = Arr.join(
+			Arr.map(toolCalls, (call) => call.name),
+			", ",
+		)
 		if (missing.length === 0) return { score: 1, rationale: `all expected tools called (${called})` }
-		const issues = missing
-			.map((tool) =>
-				tool.arguments !== undefined && toolCalls.some((call) => call.name === tool.name)
+		const issues = Arr.join(
+			Arr.map(missing, (tool) =>
+				tool.arguments !== undefined && Arr.some(toolCalls, (call) => call.name === tool.name)
 					? `${tool.name} called with wrong arguments`
 					: `missing ${tool.name}`,
-			)
-			.join("; ")
+			),
+			"; ",
+		)
 		const matched = expectedTools.length - missing.length
 		return {
 			score: (config.requireAll ?? true) ? 0 : matched / expectedTools.length,

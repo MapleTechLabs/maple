@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Context, Effect, Layer, Logger, References, Schema, Tracer } from "effect"
+import { Context, Effect, Layer, Logger, References, Schema, Tracer, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { WarehouseQueryError } from "@maple/domain/http"
@@ -83,7 +83,9 @@ describe("v2 response schema boundary", () => {
 			const response = await handler(new Request("http://maple.test/declared"), context as never)
 			expect(response.status).toBe(502)
 
-			const log = logs.find((entry) => entry.message.includes("Route answered with a server error"))
+			const log = logs.find((entry) =>
+				Str.includes("Route answered with a server error")(entry.message),
+			)
 			expect(log).toBeDefined()
 			expect(log?.level).toBe("Error")
 			expect(log?.annotations).toMatchObject({

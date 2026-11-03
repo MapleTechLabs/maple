@@ -2,11 +2,11 @@ import type { AlertDestinationRow } from "@maple/db/tables"
 import { OrgId } from "@maple/domain/primitives"
 import { AlertDestinationId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import type { DispatchContext } from "../context"
 import type { HttpRequestSpec, RenderInput } from "../Transport"
 import { discordTransport } from "./discord"
-import { hazelTransport } from "./hazel"
+import { googleChatTransport } from "./google-chat"
 import { pagerDutyTransport } from "./pagerduty"
 import { telegramTransport } from "./telegram"
 import { webhookTransport } from "./webhook"
@@ -22,7 +22,7 @@ import { webhookTransport } from "./webhook"
 const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 const LINK = "https://web.localhost/alerts"
-const CHAT = "https://web.localhost/chat"
+const CHAT = "https://web.localhost/alerts/rule_1"
 
 const destinationRow: AlertDestinationRow = {
 	id: DESTINATION_ID,
@@ -107,41 +107,42 @@ describe("transport render: guard flags", () => {
 			),
 		],
 		[
-			"hazel-oauth",
-			hazelTransport.render(
-				inputFor({
-					type: "hazel-oauth",
-					hazelOrganizationId: "o",
-					hazelOrganizationName: "Acme",
-					hazelChannelId: "c",
-					hazelChannelName: "ops",
-					webhookId: "w",
-					webhookUrl: "https://hazel.test/api/webhooks/w/tok",
-					webhookToken: "tok",
-				}),
-			),
-		],
-		[
 			"telegram",
 			telegramTransport.render(
 				inputFor({ type: "telegram", botToken: "123456789:AA-token", chatId: "-100123" }),
 			),
 		],
+		[
+			"google-chat",
+			googleChatTransport.render(
+				inputFor({
+					type: "google-chat",
+					webhookUrl: "https://chat.googleapis.com/v1/spaces/AAAA/messages?key=k&token=t",
+				}),
+			),
+		],
 	]
 
 	it("guards exactly the user-configured hosts", () => {
-		const guarded = specs.filter(([, spec]) => spec.guarded).map(([name]) => name)
+		const guarded = Arr.map(
+			Arr.filter(specs, ([, spec]) => spec.guarded),
+			([name]) => name,
+		)
 		// pagerduty + telegram post to compile-time vendor constants: there
 		// is no attacker-controlled URL to validate, so the guard would only cost a
 		// redirect walk.
-		assert.deepStrictEqual(guarded, ["webhook", "discord", "hazel-oauth"])
+		assert.deepStrictEqual(guarded, ["webhook", "discord", "google-chat"])
 	})
 
 	it("marks exactly the providers whose token rides in the URL path", () => {
-		const sensitive = specs.filter(([, spec]) => spec.sensitivePath).map(([name]) => name)
+		const sensitive = Arr.map(
+			Arr.filter(specs, ([, spec]) => spec.sensitivePath),
+			([name]) => name,
+		)
 		// telegram is the first provider where this disagrees with `guarded`: a
-		// fixed vendor host, but the bot token rides in the path.
-		assert.deepStrictEqual(sensitive, ["discord", "hazel-oauth", "telegram"])
+		// fixed vendor host, but the bot token rides in the path. google-chat carries its
+		// credential in the query string, which no span records.
+		assert.deepStrictEqual(sensitive, ["discord", "telegram"])
 	})
 
 	it("always produces a parseable JSON body", () => {
@@ -182,32 +183,14 @@ describe("transport render: templates", () => {
 		assert.strictEqual(body.routing_key, "k")
 	})
 
-	it("webhook and hazel ignore templates — they ship the canonical payload", () => {
-		for (const spec of [
-			webhookTransport.render(
-				inputFor(
-					{ type: "webhook", url: "https://hooks.test/x", signingSecret: null },
-					{ templated: TEMPLATED },
-				),
+	it("webhook ignores templates: it ships the canonical payload", () => {
+		const spec = webhookTransport.render(
+			inputFor(
+				{ type: "webhook", url: "https://hooks.test/x", signingSecret: null },
+				{ templated: TEMPLATED },
 			),
-			hazelTransport.render(
-				inputFor(
-					{
-						type: "hazel-oauth",
-						hazelOrganizationId: "o",
-						hazelOrganizationName: "Acme",
-						hazelChannelId: "c",
-						hazelChannelName: "ops",
-						webhookId: "w",
-						webhookUrl: "https://hazel.test/api/webhooks/w/tok",
-						webhookToken: "tok",
-					},
-					{ templated: TEMPLATED },
-				),
-			),
-		]) {
-			assert.strictEqual(spec.body, '{"canonical":"payload"}')
-		}
+		)
+		assert.strictEqual(spec.body, '{"canonical":"payload"}')
 	})
 })
 
@@ -270,5 +253,170 @@ describe("transport render: sparkline", () => {
 			assert.notInclude(discordJson, "undefined")
 			assert.include(discordJson, "Maple Alerts")
 		}
+	})
+})
+
+describe("pagerduty dedup keys across severity tiers", () => {
+	const pd = (overrides: Partial<DispatchContext>) => {
+		const input = inputFor(
+			{ type: "pagerduty" as const, integrationKey: "k" },
+			{ context: { ...context, ...overrides } },
+		)
+		const sent = [pagerDutyTransport.render(input), ...(pagerDutyTransport.followUps?.(input) ?? [])]
+		return Arr.map(sent, (spec) => {
+			const body = JSON.parse(spec.body)
+			return `${body.event_action} ${body.dedup_key}`
+		})
+	}
+	const tiered = { ruleSeverities: ["warning", "critical"] as const }
+
+	it("keeps a single-tier rule on the incident's one key, with no extra requests", () => {
+		assert.deepStrictEqual(pd({ ruleSeverities: ["critical"] }), ["trigger org_1:rule_1:checkout"])
+		assert.deepStrictEqual(pd({ ruleSeverities: ["critical"], eventType: "resolve" }), [
+			"resolve org_1:rule_1:checkout",
+		])
+	})
+
+	it("pages a tiered rule's critical on its own key, so an acknowledged warning cannot swallow it", () => {
+		assert.deepStrictEqual(pd({ ...tiered, severity: "warning" }), [
+			"trigger org_1:rule_1:checkout",
+			"resolve org_1:rule_1:checkout:critical",
+		])
+		assert.deepStrictEqual(pd({ ...tiered, severity: "critical" }), [
+			"trigger org_1:rule_1:checkout:critical",
+		])
+	})
+
+	it("closes the critical alert of an incident that peaked at critical after the rule dropped that tier", () => {
+		assert.deepStrictEqual(
+			pd({
+				ruleSeverities: ["warning"],
+				incidentPeakSeverity: "critical",
+				severity: "warning",
+				eventType: "renotify",
+			}),
+			["trigger org_1:rule_1:checkout", "resolve org_1:rule_1:checkout:critical"],
+		)
+		assert.deepStrictEqual(
+			pd({ ruleSeverities: ["warning"], incidentPeakSeverity: "critical", eventType: "resolve" }),
+			["resolve org_1:rule_1:checkout", "resolve org_1:rule_1:checkout:critical"],
+		)
+	})
+
+	it("leaves the critical page open when a warning event is delivered after an escalation", () => {
+		assert.deepStrictEqual(
+			pd({ ...tiered, severity: "warning", eventType: "renotify", incidentSeverity: "critical" }),
+			["trigger org_1:rule_1:checkout"],
+		)
+	})
+
+	it("does not re-open the critical alert when a critical event is retried after a de-escalation", () => {
+		assert.deepStrictEqual(pd({ ...tiered, severity: "critical", incidentSeverity: "warning" }), [
+			"trigger org_1:rule_1:checkout",
+			"resolve org_1:rule_1:checkout:critical",
+		])
+		// The warning alert it lands on is not raised to critical either.
+		const spec = pagerDutyTransport.render(
+			inputFor(
+				{ type: "pagerduty", integrationKey: "k" },
+				{ context: { ...context, ...tiered, severity: "critical", incidentSeverity: "warning" } },
+			),
+		)
+		assert.strictEqual(JSON.parse(spec.body).payload.severity, "warning")
+	})
+
+	it("closes the critical alert on de-escalation and both alerts on resolve", () => {
+		assert.deepStrictEqual(pd({ ...tiered, severity: "warning", eventType: "renotify" }), [
+			"trigger org_1:rule_1:checkout",
+			"resolve org_1:rule_1:checkout:critical",
+		])
+		assert.deepStrictEqual(pd({ ...tiered, severity: "critical", eventType: "resolve" }), [
+			"resolve org_1:rule_1:checkout",
+			"resolve org_1:rule_1:checkout:critical",
+		])
+	})
+})
+
+describe("transport render: uptime monitors", () => {
+	const uptime: DispatchContext = {
+		...context,
+		ruleName: "checkout-api",
+		groupKey: "checkout-api",
+		signalType: "uptime",
+		comparator: "gte",
+		threshold: 1,
+		windowMinutes: 1,
+		value: 1,
+		sampleCount: 1,
+		detail: "Status 503, expected 2xx",
+	}
+	const uptimeInput = <Config>(config: Config, overrides: Partial<DispatchContext> = {}) =>
+		inputFor(config, { context: { ...uptime, ...overrides } })
+	const discord = (overrides: Partial<DispatchContext> = {}) =>
+		Schema.decodeUnknownSync(
+			Schema.fromJsonString(
+				Schema.Struct({
+					content: Schema.String,
+					embeds: Schema.Array(
+						Schema.Struct({
+							title: Schema.String,
+							fields: Schema.Array(
+								Schema.Struct({ name: Schema.String, value: Schema.String }),
+							),
+						}),
+					),
+				}),
+			),
+		)(
+			discordTransport.render(
+				uptimeInput({ type: "discord", webhookUrl: "https://discord.com/api/w/1/tok" }, overrides),
+			).body,
+		)
+
+	it("leads with the monitor being down and says why, not a threshold", () => {
+		const body = discord()
+		assert.strictEqual(body.content, "**checkout-api is down**")
+		assert.strictEqual(body.embeds[0]?.title, "\u{1F6A8} checkout-api is down")
+		assert.deepStrictEqual(
+			body.embeds[0]?.fields.find((field) => field.name === "Observed"),
+			{ name: "Observed", value: "Status 503, expected 2xx" },
+		)
+	})
+
+	it("reads as back up on recovery and still down on a reminder", () => {
+		assert.strictEqual(
+			discord({ eventType: "resolve", value: 0, detail: "The check is passing" }).embeds[0]?.title,
+			"✅ checkout-api is back up",
+		)
+		assert.strictEqual(
+			discord({ eventType: "renotify" }).embeds[0]?.title,
+			"\u{1F514} checkout-api is still down",
+		)
+	})
+
+	it("puts the check's error in the PagerDuty summary and details", () => {
+		const body = Schema.decodeUnknownSync(
+			Schema.fromJsonString(
+				Schema.Struct({
+					payload: Schema.Struct({
+						summary: Schema.String,
+						custom_details: Schema.Struct({ detail: Schema.String }),
+					}),
+				}),
+			),
+		)(pagerDutyTransport.render(uptimeInput({ type: "pagerduty", integrationKey: "k" })).body)
+		assert.strictEqual(body.payload.summary, "checkout-api is down: Status 503, expected 2xx.")
+		assert.strictEqual(body.payload.custom_details.detail, "Status 503, expected 2xx")
+	})
+
+	it("writes the Telegram message from the check's error", () => {
+		const body = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ text: Schema.String })))(
+			telegramTransport.render(
+				uptimeInput({ type: "telegram", botToken: "123456789:AA-token", chatId: "-100123" }),
+			).body,
+		)
+		assert.isTrue(
+			Str.startsWith("\u{1F6A8} <b>checkout-api is down</b>\n\nStatus 503, expected 2xx.")(body.text),
+		)
 	})
 })

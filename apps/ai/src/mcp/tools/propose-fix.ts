@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ProposeFixOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { resolveActorId } from "../lib/resolve-actor"
@@ -19,13 +19,16 @@ export function registerProposeFixTool(server: McpToolRegistrar) {
 	server.define({
 		name: "propose_fix",
 		title: "Propose Fix",
-		description: [
-			"Record a proposed fix for an error issue and move it to `in_review`.",
-			"Claims the issue and walks it there from wherever it is, so no claim_error_issue or transition_error_issue call is needed first; it fails if another agent holds the issue.",
-			"Pass `pr_url` when you have just opened the PR: it is linked, and once it merges Maple verifies the fix against traffic and closes the issue itself. Use link_pull_request for a PR that already exists and needs no new proposal.",
-			"Do not move the issue to `done` by hand.",
-			"When one fix covers several issues, pass the others in `also_issue_ids`: each is claimed, linked and moved the same way, with per-issue results.",
-		].join(" "),
+		description: Arr.join(
+			[
+				"Record a proposed fix for an error issue and move it to `in_review`.",
+				"Claims the issue and walks it there from wherever it is, so no claim_error_issue or transition_error_issue call is needed first; it fails if another agent holds the issue.",
+				"Pass `pr_url` when you have just opened the PR: it is linked, and once it merges Maple verifies the fix against traffic and closes the issue itself. Use link_pull_request for a PR that already exists and needs no new proposal.",
+				"Do not move the issue to `done` by hand.",
+				"When one fix covers several issues, pass the others in `also_issue_ids`: each is claimed, linked and moved the same way, with per-issue results.",
+			],
+			" ",
+		),
 		parameters: Schema.Struct({
 			issue_id: issueIdParam(),
 			patch_summary: P.text("What the fix changes and why, in a few sentences"),
@@ -45,14 +48,14 @@ export function registerProposeFixTool(server: McpToolRegistrar) {
 		phrases: ["Drafting a fix"],
 		handler: Effect.fn("McpTool.proposeFix")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
-			if (params.patch_summary.trim().length === 0) {
+			if (Str.trim(params.patch_summary).length === 0) {
 				return yield* new McpInvalidInputError({
 					message: "patch_summary must not be empty.",
 					parameter: "patch_summary",
 				})
 			}
 
-			const others = (params.also_issue_ids ?? []).filter((id) => id.trim() !== params.issue_id)
+			const others = Arr.filter(params.also_issue_ids ?? [], (id) => Str.trim(id) !== params.issue_id)
 			const alsoEntries =
 				others.length === 0 ? undefined : yield* decodeIssueIds(others, "also_issue_ids")
 			const actorId = yield* resolveActorId(tenant)
@@ -107,7 +110,7 @@ export function registerProposeFixTool(server: McpToolRegistrar) {
 					: [
 							doc.table(
 								["Also", "Result"],
-								output.also.map((result) =>
+								Arr.map(output.also, (result) =>
 									result.ok
 										? [result.id, result.workflowState ?? "ok"]
 										: [result.id, `failed: ${result.error ?? ""}`],

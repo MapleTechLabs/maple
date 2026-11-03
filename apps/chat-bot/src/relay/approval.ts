@@ -13,7 +13,7 @@ import {
 	type ChatRenderContext,
 } from "@maple/chat-platform"
 import type { ChatMessage } from "@maple/domain/chat-session"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 
 /**
  * The cutting charges an approval for its outcome whether or not it has one
@@ -28,7 +28,8 @@ export const settledMessageBlocks = (
 ): ReadonlyArray<ChatBlock> => {
 	const groups = splitBlocks(renderChatMessage(message, context), maxMessageChars)
 	const holdsProposal = (group: ReadonlyArray<ChatBlock>) =>
-		group.some(
+		Arr.some(
+			group,
 			(block) =>
 				block.kind === "approval" &&
 				Option.exists(

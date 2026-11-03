@@ -1,8 +1,11 @@
-import { Effect, Layer, Tracer } from "effect"
+import { Effect, Tracer, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
-import { apiProxyPath } from "./api-proxy"
+import { API_PROXY_PREFIX, apiProxyPath } from "./api-proxy"
 import { handleRequest } from "./handler"
 import type { WebWorkerEnv } from "./worker-env"
+import { CHART_KINDS, chartRequestFromPath } from "./og/chart-image"
+import { OG_IMAGE_PREFIX, ogIdFromPath } from "./og/share-links"
+import { WORKER_FIRST_PATHS } from "./worker-first"
 
 const assets = {
 	fetch: async () => new Response("<html></html>", { headers: { "content-type": "text/html" } }),
@@ -102,7 +105,7 @@ describe("handleRequest API proxy", () => {
 				headers: { traceparent: `00-${browserTraceId}-b7ad6b7169203331-01` },
 			}),
 			env,
-			(effect) => Effect.runPromise(effect.pipe(Effect.provide(Layer.succeed(Tracer.Tracer, tracer)))),
+			(effect) => Effect.runPromise(effect.pipe(Effect.provideService(Tracer.Tracer, tracer))),
 		)
 		const server = spans.find((span) => span.kind === "server")
 		const client = spans.find((span) => span.kind === "client")
@@ -110,5 +113,90 @@ describe("handleRequest API proxy", () => {
 		expect(server?.attributes.get("http.response.status_code")).toBe(201)
 		expect(client?.attributes.get("peer.service")).toBe("maple-api")
 		expect(forwarded[0]?.headers.get("traceparent")).toBe(`00-${browserTraceId}-${client?.spanId}-01`)
+	})
+})
+
+describe("document security headers", () => {
+	const headersFor = async (path: string) => {
+		const response = await handleRequest(new Request(`https://app.maple.test${path}`), { ASSETS: assets })
+		return {
+			csp: response.headers.get("content-security-policy"),
+			frame: response.headers.get("x-frame-options"),
+			referrer: response.headers.get("referrer-policy"),
+			sniff: response.headers.get("x-content-type-options"),
+		}
+	}
+
+	it("app documents refuse framing, plugins and base retargeting, and send only the origin cross-site", async () => {
+		expect(await headersFor("/traces")).toEqual({
+			csp: "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+			frame: "DENY",
+			referrer: "strict-origin-when-cross-origin",
+			sniff: "nosniff",
+		})
+	})
+
+	it("share documents stay frameable and keep no-referrer", async () => {
+		expect(await headersFor("/share/tok")).toEqual({
+			csp: "object-src 'none'; base-uri 'self'",
+			frame: null,
+			referrer: "no-referrer",
+			sniff: "nosniff",
+		})
+	})
+})
+
+describe("image paths", () => {
+	it("answers an image path whose id will not parse with a 404, not the app shell", async () => {
+		const { env } = recordingEnv()
+		const statuses = await Promise.all(
+			Arr.map(
+				["/share/og/%.png", "/alerts/chart/%E0%A4%A.png", "/chat/chart/a/b.png"],
+				async (path) => {
+					const response = await handleRequest(new Request(`https://app.maple.test${path}`), env)
+					return [path, response.status, response.headers.get("content-type")]
+				},
+			),
+		)
+		expect(statuses).toEqual([
+			["/share/og/%.png", 404, null],
+			["/alerts/chart/%E0%A4%A.png", 404, null],
+			["/chat/chart/a/b.png", 404, null],
+		])
+	})
+})
+
+describe("WORKER_FIRST_PATHS", () => {
+	// Cloudflare's `run_worker_first` globs: `*` spans any characters, `/` included.
+	const routedToWorker = (pathname: string) =>
+		Arr.some(WORKER_FIRST_PATHS, (pattern) =>
+			new RegExp(
+				`^${Str.replace(/\*/g, ".*")(Str.replace(/[.+?^${}()|[\]\\]/g, "\\$&")(pattern))}$`,
+			).test(pathname),
+		)
+
+	it("reaches the Worker for every path the handler answers itself", () => {
+		// Built from the routes' own prefixes, so a new image route is checked without editing this.
+		const paths = [
+			API_PROXY_PREFIX,
+			`${API_PROXY_PREFIX}/v2/traces`,
+			`${OG_IMAGE_PREFIX}abc123.png`,
+			...Arr.map(CHART_KINDS, (kind) => `${kind.pathPrefix}eyJ.sig.png`),
+		]
+		const handledByWorker = (path: string) =>
+			apiProxyPath(path) !== undefined ||
+			ogIdFromPath(path) !== undefined ||
+			chartRequestFromPath(path) !== undefined
+		expect(Arr.filter(paths, (path) => !handledByWorker(path))).toEqual([])
+		expect(Arr.filter(paths, (path) => !routedToWorker(path))).toEqual([])
+	})
+
+	it("leaves app routes and hashed assets to the assets layer", () => {
+		expect(
+			Arr.filter(
+				["/", "/alerts", "/alerts/chart", "/share/tok_123", "/assets/index-abc.js", "/chat"],
+				routedToWorker,
+			),
+		).toEqual([])
 	})
 })

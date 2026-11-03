@@ -10,12 +10,19 @@
  * the tool registry touch on their own.
  */
 import { MapleDb, parseMapleDeployment } from "@maple/infra/cloudflare"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Stage } from "alchemy/Stage"
 import { Effect, Layer, Option } from "effect"
+import { securityAuditWorkflowControl } from "../security-audit/workflow-control"
 import { isWorkersAiBinding, viaGateway, WorkersAiGateway } from "../platform/WorkersAiHttpClient"
-import { McpToolsRateLimit, RateLimitBindingError, type RateLimiter } from "@maple/backend/platform/bindings"
+import {
+	McpToolsRateLimit,
+	RateLimitBindingError,
+	type RateLimiter,
+	SecurityAuditWorkflowStarter,
+} from "@maple/backend/platform/bindings"
+import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { type ChatSessionNamespace, layerChatSessions } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
@@ -64,14 +71,16 @@ const AiGateway = Cloudflare.AI.Gateway("maple-api-ai")
  * is either on the env or not, and the others read none and call Workers AI directly.
  */
 const bindWorkersAiGateway = Effect.gen(function* () {
-	if (!globalThis.__ALCHEMY_RUNTIME__ && parseMapleDeployment(yield* Stage).stage.kind !== "prd") {
-		return Option.none()
+	if (!globalThis.__ALCHEMY_RUNTIME__) {
+		const stage = yield* Stage
+		if (parseMapleDeployment(stage).stage.kind !== "prd") return Option.none()
 	}
 	const client = yield* Cloudflare.AI.QueryGateway(AiGateway)
 	if (!globalThis.__ALCHEMY_RUNTIME__) return Option.none()
 	const raw = yield* runtime(client.raw)
 	if (!isWorkersAiBinding(raw)) return Option.none()
-	return Option.some(viaGateway(raw, yield* runtime(client.id)))
+	const id = yield* runtime(client.id)
+	return Option.some(viaGateway(raw, id))
 })
 
 /**
@@ -113,9 +122,11 @@ export const aiPorts = (
 	env: Record<string, unknown>,
 	workersAi: typeof WorkersAiGateway.Service,
 	chatSessions: ChatSessionNamespace,
+	audits: Cloudflare.WorkflowHandle<SecurityAuditWorkflowPayload>,
 ) =>
 	Layer.mergeAll(
 		Layer.succeed(WorkersAiGateway, workersAi),
+		Layer.succeed(SecurityAuditWorkflowStarter, securityAuditWorkflowControl(audits)),
 		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit)),
 		layerMapleDbConnection(env),
 		envPorts(env),

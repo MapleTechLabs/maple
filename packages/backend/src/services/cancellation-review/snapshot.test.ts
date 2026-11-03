@@ -8,6 +8,7 @@ import {
 	summarizeVisits,
 	visitsWindow,
 } from "./snapshot"
+import { String as Str } from "effect"
 
 // Cancelled mid-afternoon, so "the day of" is a partial day.
 const AT = Date.parse("2026-10-07T15:30:00Z")
@@ -15,7 +16,7 @@ const dayStart = (daysAgo: number) => Date.parse("2026-10-07T00:00:00Z") - daysA
 
 const volume = (daysAgo: number, logsGB: number) =>
 	new DailyVolume({
-		date: new Date(dayStart(daysAgo)).toISOString().slice(0, 10),
+		date: Str.slice(0, 10)(new Date(dayStart(daysAgo)).toISOString()),
 		logsGB,
 		tracesGB: 0,
 		metricsGB: 0,

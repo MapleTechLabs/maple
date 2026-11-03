@@ -1,12 +1,15 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { InspectSpanOutput, InspectTraceOutput, SearchLogsOutput } from "@maple/domain/mcp-outputs"
-import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "./fake-warehouse"
+import { installFakeWarehouse, readsTraceSpans, restoreWarehouse, type FixtureRule } from "./fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "./eval-runtime"
 import {
 	AI_SPAN_SPAN_ID,
 	AI_SPAN_TRACE_ID,
+	DEEP_TRACE_DEPTH,
+	DEEP_TRACE_ID,
 	LARGE_TRACE_SPAN_COUNT,
+	makeDeepTraceSpans,
 	makeAiSpanDetailRows,
 	makeAiTraceSpanRows,
 	makeAiTraceWindowRows,
@@ -24,7 +27,7 @@ import {
 	SPAN_DETAIL_SPAN_ID,
 	SPAN_DETAIL_TRACE_ID,
 } from "./fixtures"
-import { FIXTURES } from "./utils"
+import { FIXTURES, jsonDepth } from "./utils"
 
 /** An AI span the point lookup finds, whose trace read carries every span of
  *  the trace and not it — the AI index lagging the raw spans. */
@@ -46,16 +49,43 @@ let traceWindowReads = 0
 
 // Order matters — first match wins. Specific ids before the table fallbacks.
 const regressionFixtures: FixtureRule[] = [
+	// inspect_span without a timestamp first reads the trace's bounds off `trace_index` alone.
+	{
+		match: (sql) => /\bfrom\s+trace_index\b/i.test(sql) && !/\bfrom\s+traces\b/i.test(sql),
+		rows: (sql: string) => {
+			const traceId = /TraceId = '([^']+)'/.exec(sql)?.[1] ?? ""
+			return [{ traceId, timestamp: "2026-06-02 10:00:00", endTimestamp: "2026-06-02 10:00:05" }]
+		},
+	},
 	// inspect_span not-found: point lookup whose span id has no row.
-	{ match: (sql) => sql.includes(MISSING_SPAN_ID), rows: [] },
+	{ match: (sql) => Str.includes(MISSING_SPAN_ID)(sql), rows: [] },
 	// inspect_span found: point lookup returns one fully-attributed row.
-	{ match: (sql) => sql.includes(SPAN_DETAIL_SPAN_ID), rows: makeSpanDetailRows() },
+	{ match: (sql) => Str.includes(SPAN_DETAIL_SPAN_ID)(sql), rows: makeSpanDetailRows() },
+	// A span_name breakdown over raw spans, once its window fits the span budget.
+	{
+		match: (sql) => /\bfrom\s+traces\b/i.test(sql) && Str.includes("AS apdexScore")(sql),
+		rows: [
+			{
+				name: "checkout",
+				count: 5,
+				spanCount: 5,
+				avgDuration: 0,
+				p50Duration: 0,
+				p95Duration: 0,
+				p99Duration: 0,
+				errorRate: 0,
+				satisfiedCount: 0,
+				toleratingCount: 0,
+				apdexScore: 0,
+			},
+		],
+	},
 	// The trace's own bounds, which `inspect_span` resolves before the AI read
 	// when — and only when — the caller passed no timestamp. The one query over
 	// `traces` that counts the trace's spans, counted so the skip is testable.
 	{
 		match: (sql) => {
-			const hit = /\bfrom\s+traces\b/i.test(sql) && sql.includes("spanCount")
+			const hit = /\bfrom\s+traces\b/i.test(sql) && Str.includes("spanCount")(sql)
 			if (hit) traceWindowReads += 1
 			return hit
 		},
@@ -64,32 +94,51 @@ const regressionFixtures: FixtureRule[] = [
 	// An AI span: the point lookup names the span id, the trace read that
 	// decodes it names only the trace — so the ids tell the two reads apart.
 	{
-		match: (sql) => sql.includes(LAGGED_AI_SPAN_ID),
+		match: (sql) => Str.includes(LAGGED_AI_SPAN_ID)(sql),
 		rows: makeAiSpanDetailRows(LAGGED_AI_SPAN_ID, AI_SPAN_TRACE_ID),
 	},
-	{ match: (sql) => sql.includes(AI_SPAN_SPAN_ID), rows: makeAiSpanDetailRows() },
-	{ match: (sql) => sql.includes(AI_SPAN_TRACE_ID), rows: makeAiTraceSpanRows() },
+	{ match: (sql) => Str.includes(AI_SPAN_SPAN_ID)(sql), rows: makeAiSpanDetailRows() },
+	{ match: (sql) => Str.includes(AI_SPAN_TRACE_ID)(sql), rows: makeAiTraceSpanRows() },
 	{
-		match: (sql) => sql.includes(PARTIAL_AI_SPAN_ID),
+		match: (sql) => Str.includes(PARTIAL_AI_SPAN_ID)(sql),
 		rows: makeAiSpanDetailRows(PARTIAL_AI_SPAN_ID, PARTIAL_AI_TRACE_ID),
 	},
 	{
-		match: (sql) => sql.includes(PARTIAL_AI_FIRST_SPAN_ID),
+		match: (sql) => Str.includes(PARTIAL_AI_FIRST_SPAN_ID)(sql),
 		rows: makeAiSpanDetailRows(PARTIAL_AI_FIRST_SPAN_ID, PARTIAL_AI_TRACE_ID),
 	},
-	{ match: (sql) => sql.includes(PARTIAL_AI_TRACE_ID), rows: makePartialAiTraceSpanRows() },
+	{ match: (sql) => Str.includes(PARTIAL_AI_TRACE_ID)(sql), rows: makePartialAiTraceSpanRows() },
 	// An AI span whose trace id is not the 32-hex shape the AI reads require.
 	{
-		match: (sql) => sql.includes(NON_HEX_AI_SPAN_ID),
+		match: (sql) => Str.includes(NON_HEX_AI_SPAN_ID)(sql),
 		rows: makeAiSpanDetailRows(NON_HEX_AI_SPAN_ID, NON_HEX_TRACE_ID),
 	},
 	// Small trace (≤ overview budget) → renders in full.
 	{
-		match: (sql) => sql.includes(SMALL_TRACE_ID) && sql.includes("trace_detail_spans"),
+		match: (sql) => Str.includes(SMALL_TRACE_ID)(sql) && readsTraceSpans(sql),
 		rows: makeSmallTraceSpans(),
 	},
+	{ match: (sql) => Str.includes(DEEP_TRACE_ID)(sql) && readsTraceSpans(sql), rows: makeDeepTraceSpans() },
 	// Large trace (> budget) → bounded overview. Fallback for any other span tree.
-	{ match: (sql) => sql.includes("trace_detail_spans"), rows: makeLargeTraceSpans() },
+	{ match: (sql) => readsTraceSpans(sql), rows: makeLargeTraceSpans() },
+	// The span budget's per-service volume: 100M spans an hour, so a raw-span breakdown fits 2 hours.
+	{
+		match: (sql) => Str.includes("firstHourSpanCount")(sql),
+		rows: (sql: string) => {
+			const [start, end] = Arr.map([...sql.matchAll(/'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)'/g)], (m) =>
+				Date.parse(`${m[1]}Z`),
+			)
+			const hours = start === undefined || end === undefined ? 0 : (end - start) / 3_600_000
+			return [
+				{
+					serviceName: FIXTURES.service,
+					spanCount: hours * 100_000_000,
+					firstHourSpanCount: 0,
+					lastHourSpanCount: 0,
+				},
+			]
+		},
+	},
 	// search_logs' total, read alongside the page.
 	{ match: (sql) => /\bfrom\s+logs\b/i.test(sql) && /\bAS\s+total\b/i.test(sql), rows: [{ total: 3 }] },
 	{ match: (sql) => /\bfrom\s+logs\b/i.test(sql), rows: makeTraceLogs() },
@@ -143,7 +192,30 @@ describe("inspect_trace bounded-overview rendering", () => {
 		expect(output.totalSpanCount).toBe(LARGE_TRACE_SPAN_COUNT)
 		expect(output.omitted.length).toBeGreaterThan(0)
 	})
+
+	it("keeps a 60-level trace's structured output shallow, with every parent link", async () => {
+		const result = await runToolDirect(rt, "inspect_trace", { trace_id: DEEP_TRACE_ID, max_spans: 300 })
+		expect(jsonDepth(result.structuredContent)).toBeLessThanOrEqual(12)
+		const output = Schema.decodeUnknownSync(InspectTraceOutput)(result.structuredContent)
+		const spans = output.spans
+		expect(Arr.map(spans, (s) => s.depth)).toEqual(Array.from({ length: DEEP_TRACE_DEPTH }, (_, i) => i))
+		expect(Arr.map(spans.slice(1), (s) => s.parentSpanId)).toEqual(
+			Arr.map(spans.slice(0, -1), (s) => s.spanId),
+		)
+		// The text still draws the whole chain, deepest error included.
+		expect(markdown(result)).toContain(`level-${DEEP_TRACE_DEPTH - 1}`)
+	})
 })
+
+/** Runs inspect_span and returns the rendered text beside the structured output. */
+const inspectSpan = async (params: Record<string, unknown>) => {
+	const result = await runToolDirect(rt, "inspect_span", params)
+	return {
+		result,
+		text: markdown(result),
+		output: Schema.decodeUnknownSync(InspectSpanOutput)(result.structuredContent),
+	}
+}
 
 describe("inspect_span drill-down", () => {
 	it("returns the full attribute set for a known span", async () => {
@@ -164,7 +236,7 @@ describe("inspect_span drill-down", () => {
 			span_id: MISSING_SPAN_ID,
 		})
 		const text = markdown(result)
-		expect(text.toLowerCase()).toContain("not found")
+		expect(Str.toLowerCase(text)).toContain("not found")
 	})
 
 	// An AI agent span is read twice: the point lookup for its raw attributes,
@@ -175,62 +247,50 @@ describe("inspect_span drill-down", () => {
 			span_id: AI_SPAN_SPAN_ID,
 		})
 		const text = markdown(result)
-		expect(text).toContain("### AI agent span — inference")
-		expect(text).toContain("#### Messages")
 		expect(text).toContain("why is checkout failing?")
 		// The call's result is captured on the tool span, not on this one.
-		expect(text).toContain("#### Tool calls")
 		expect(text).toContain("table orders does not exist")
 		// The raw maps are still there, and still below the decoded view.
-		expect(text.indexOf("### AI agent span")).toBeLessThan(text.indexOf("### Span attributes"))
-		expect(text).toContain("`gen_ai.request.model`")
+		expect(text.indexOf("why is checkout failing?")).toBeLessThan(text.indexOf("`gen_ai.request.model`"))
 		expect(text).toContain('get_agent_session session_id="wrun_01KZEVAL"')
 	})
 
 	// The decode is an add-on to the raw attributes: a trace too large to read
 	// costs the decoded view and nothing else.
 	it("keeps the raw attributes when the decode read is refused as too large", async () => {
+		// Only the decode's span read is refused; the trace-bounds read (`spanCount`) still answers.
 		responseTooLargeFor = (sql) =>
-			sql.includes("trace_detail_spans") &&
-			sql.includes(AI_SPAN_TRACE_ID) &&
-			!sql.includes(AI_SPAN_SPAN_ID)
-		const result = await runToolDirect(rt, "inspect_span", {
-			trace_id: AI_SPAN_TRACE_ID,
-			span_id: AI_SPAN_SPAN_ID,
-		})
-		const text = markdown(result)
+			readsTraceSpans(sql) &&
+			Str.includes(AI_SPAN_TRACE_ID)(sql) &&
+			!Str.includes(AI_SPAN_SPAN_ID)(sql) &&
+			!Str.includes("AS spanCount")(sql)
+		const { result, output } = await inspectSpan({ trace_id: AI_SPAN_TRACE_ID, span_id: AI_SPAN_SPAN_ID })
 		expect(result.isError).toBeUndefined()
-		expect(text).toContain("AI decode skipped: the trace is too large to read in one call")
-		expect(text).toContain("### Span attributes")
-		expect(text).toContain("`gen_ai.request.model`")
-		expect(text).not.toContain("#### Messages")
+		expect(output.ai?._tag).toBe("undecoded")
+		expect(output.attributes["gen_ai.request.model"]).toBeDefined()
 	})
 
 	// A trace bigger than one read is the case where "not an AI span" and "not
 	// decoded" have to be told apart: the raw attributes still answer.
 	it("falls back to the raw view when the span is past the trace read's first page", async () => {
-		const text = markdown(
-			await runToolDirect(rt, "inspect_span", {
-				trace_id: PARTIAL_AI_TRACE_ID,
-				span_id: PARTIAL_AI_SPAN_ID,
-			}),
-		)
+		const { text, output } = await inspectSpan({
+			trace_id: PARTIAL_AI_TRACE_ID,
+			span_id: PARTIAL_AI_SPAN_ID,
+		})
 		expect(text).toContain(`only the first ${PARTIAL_AI_TRACE_SPANS - 1} spans of trace`)
-		expect(text).toContain("### Span attributes")
-		expect(text).not.toContain("#### Messages")
+		expect(output.ai?._tag).toBe("partial")
+		expect(output.found).toBe(true)
 	})
 
 	// The same trace, with the span ON its first page: it decodes, but a call
 	// whose tool span is past the page renders as "not captured" — and only the
 	// note tells that apart from a result the span never recorded.
 	it("decodes a span on the first page of a partial trace, saying the rest was not read", async () => {
-		const result = await runToolDirect(rt, "inspect_span", {
+		const { text, output } = await inspectSpan({
 			trace_id: PARTIAL_AI_TRACE_ID,
 			span_id: PARTIAL_AI_FIRST_SPAN_ID,
 		})
-		const text = markdown(result)
-		expect(text).toContain("### AI agent span")
-		expect(text).toContain("#### Messages")
+		expect(output.ai?._tag).toBe("decoded")
 		expect(text).toContain(`Only the first ${PARTIAL_AI_TRACE_SPANS - 1} spans of the trace were read`)
 		expect(text).toContain("result: not captured")
 	})
@@ -240,43 +300,31 @@ describe("inspect_span drill-down", () => {
 	// that instant is the window, and the lookup over `traces` never runs.
 	it("skips the trace-bounds lookup when the caller passed a timestamp", async () => {
 		const before = traceWindowReads
-		const text = markdown(
-			await runToolDirect(rt, "inspect_span", {
-				trace_id: AI_SPAN_TRACE_ID,
-				span_id: AI_SPAN_SPAN_ID,
-				timestamp: "2026-08-19T10:00:00Z",
-			}),
-		)
+		const { output } = await inspectSpan({
+			trace_id: AI_SPAN_TRACE_ID,
+			span_id: AI_SPAN_SPAN_ID,
+			timestamp: "2026-08-19T10:00:00Z",
+		})
 		expect(traceWindowReads).toBe(before)
-		expect(text).toContain("#### Messages")
+		expect(output.ai?._tag).toBe("decoded")
 	})
 
 	// A trace read that ended WITHOUT a cursor read all of it, so a span missing
 	// from it is not a paging problem — telling the model to page further would
 	// send it after a span the index does not have yet.
 	it("says the span is not indexed yet when the whole trace was read without it", async () => {
-		const text = markdown(
-			await runToolDirect(rt, "inspect_span", {
-				trace_id: AI_SPAN_TRACE_ID,
-				span_id: LAGGED_AI_SPAN_ID,
-			}),
-		)
+		const { text, output } = await inspectSpan({ trace_id: AI_SPAN_TRACE_ID, span_id: LAGGED_AI_SPAN_ID })
 		expect(text).toContain("not in the AI index yet")
 		expect(text).not.toContain("spans of trace")
-		expect(text).toContain("### Span attributes")
+		expect(output.found).toBe(true)
 	})
 
 	// The AI read pins the trace id into a warehouse param, so a trace stored
 	// under any other id shape still gets its raw attributes, undecoded.
 	it("falls back to the raw view for an AI span under a non-hex trace id", async () => {
-		const text = markdown(
-			await runToolDirect(rt, "inspect_span", {
-				trace_id: NON_HEX_TRACE_ID,
-				span_id: NON_HEX_AI_SPAN_ID,
-			}),
-		)
-		expect(text).toContain("### Span attributes")
-		expect(text).not.toContain("### AI agent span")
+		const { output } = await inspectSpan({ trace_id: NON_HEX_TRACE_ID, span_id: NON_HEX_AI_SPAN_ID })
+		expect(output.found).toBe(true)
+		expect(output.ai).toBeUndefined()
 	})
 
 	it("clips the decoded payloads to payload_chars, clamping an out-of-range one", async () => {
@@ -430,6 +478,33 @@ describe("agent-recoverable error messages", () => {
 		expect(text).toContain('"service", "attribute", "resource_attribute"')
 		expect(text).toContain('kind="timeseries"')
 		expect(text).not.toContain("SchemaError")
+	})
+
+	it("narrows a raw-span breakdown to the widest window that fits instead of failing", async () => {
+		const result = await runToolDirect(rt, "query_data", {
+			source: "traces",
+			kind: "breakdown",
+			group_by: "span_name",
+			start_time: "2026-06-01 00:00:00",
+			end_time: "2026-06-02 00:00:00",
+		})
+		const text = markdown(result)
+		expect(result.isError).not.toBe(true)
+		expect(text).toContain("start_time: moved to 2026-06-01 22:00:00")
+	})
+
+	it("narrows an unfiltered week-long breakdown past the range cap and then the span budget", async () => {
+		const result = await runToolDirect(rt, "query_data", {
+			source: "traces",
+			kind: "breakdown",
+			group_by: "span_name",
+			start_time: "2026-05-26 00:00:00",
+			end_time: "2026-06-02 00:00:00",
+		})
+		const text = markdown(result)
+		expect(result.isError).not.toBe(true)
+		expect(text).toContain("start_time: moved to 2026-06-01 00:00:00")
+		expect(text).toContain("start_time: moved to 2026-06-01 22:00:00")
 	})
 
 	it("names the valid group_by values for the chosen source", async () => {

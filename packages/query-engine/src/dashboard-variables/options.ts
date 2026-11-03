@@ -23,6 +23,7 @@ import type {
 	TracesFacetsQuery,
 } from "@maple/domain/query-engine"
 import { ALL_VALUE } from "./interpolate"
+import { Array as Arr } from "effect"
 
 /** The options a variable currently offers, and whether they are still arriving. */
 export interface DashboardVariableOptionsState {
@@ -87,6 +88,16 @@ export function dashboardVariableOptionsQuery(
 ): DashboardVariableOptionsQuery | null {
 	if (variable.type !== "query") return null
 	const source = variable.source
+	if (source.kind === "metric") {
+		return {
+			kind: "attributeValues",
+			source: "metrics",
+			scope: source.scope,
+			attributeKey: source.attributeKey,
+			metricNames: source.metricNames,
+			metricType: source.metricType,
+		}
+	}
 	if (source.kind === "attribute") {
 		return {
 			kind: "attributeValues",
@@ -114,9 +125,9 @@ export function dashboardVariableOptionsFromResult(
 	result: QueryEngineExecuteResponse["result"],
 ): string[] {
 	if (query.kind === "attributeValues") {
-		return result.kind === "attributeValues" ? result.data.map((row) => row.value) : []
+		return result.kind === "attributeValues" ? Arr.map(result.data, (row) => row.value) : []
 	}
 	if (result.kind !== "facets") return []
-	const rows = result.data.filter((row) => row.facetType === query.facet)
-	return (query.source === "logs" ? rows.filter((row) => row.name) : rows).map((row) => row.name)
+	const rows = Arr.filter(result.data, (row) => row.facetType === query.facet)
+	return Arr.map(query.source === "logs" ? rows.filter((row) => row.name) : rows, (row) => row.name)
 }

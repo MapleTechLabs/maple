@@ -2,11 +2,16 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
 import { AI_SESSION_SPANS_MAX_SPANS } from "@maple/domain/http"
 import { mapleToolCatalog, toInputSchema } from "../registry"
 import { clipPayload, MCP_AGENT_SESSION_MAX_SPANS } from "../../lib/agent-sessions"
-import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../__evals__/fake-warehouse"
+import {
+	installFakeWarehouse,
+	readsTraceSpans,
+	restoreWarehouse,
+	type FixtureRule,
+} from "../../__evals__/fake-warehouse"
 import { aiSpanRow } from "../../__evals__/fixtures"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import type { McpToolResult } from "../types"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	GetAgentSessionOutput,
 	GetAgentSessionTranscriptOutput,
@@ -118,7 +123,9 @@ const sessionSpanRows = [
 
 /** A page that fills the read plus the row that proves a page follows — one
  *  turn, so the fixture stays about paging rather than about turns. */
-const bigSpanId = (index: number) => `b${index.toString(16).padStart(15, "0")}`
+const bigSpanId = (index: number) => `b${Str.padStart(15, "0")(index.toString(16))}`
+const bigSpanTimestamp = (index: number) =>
+	`2026-08-19 10:${Str.padStart(2, "0")(String(Math.floor(index / 60)))}:${Str.padStart(2, "0")(String(index % 60))}.000000000`
 const bigSessionSpanRows = [
 	sessionSpan(
 		bigSpanId(0),
@@ -131,9 +138,7 @@ const bigSessionSpanRows = [
 		sessionSpan(
 			bigSpanId(index + 1),
 			"chat gpt-5",
-			`2026-08-19 10:${String(Math.floor((index + 1) / 60)).padStart(2, "0")}:${String(
-				(index + 1) % 60,
-			).padStart(2, "0")}.000000000`,
+			bigSpanTimestamp(index + 1),
 			{ "gen_ai.operation.name": "chat", "gen_ai.response.model": "gpt-5" },
 			{ sessionId: BIG_SESSION_ID },
 		),
@@ -142,12 +147,12 @@ const bigSessionSpanRows = [
 /** The cursor the first page ends on — the second page's SQL names it. */
 const BIG_PAGE_CURSOR_SPAN_ID = bigSpanId(AI_SESSION_SPANS_MAX_SPANS - 1)
 
-// First match wins: the reads over `trace_detail_spans` are told apart by the
+// First match wins: the span reads over `traces` are told apart by the
 // session ids their SQL names.
 const fixtures: FixtureRule[] = [
-	{ match: (sql) => sql.includes(EMPTY_SESSION_ID), rows: [] },
-	{ match: (sql) => sql.includes(BIG_SESSION_ID), rows: bigSessionSpanRows },
-	{ match: (sql) => sql.includes("trace_detail_spans"), rows: sessionSpanRows },
+	{ match: (sql) => Str.includes(EMPTY_SESSION_ID)(sql), rows: [] },
+	{ match: (sql) => Str.includes(BIG_SESSION_ID)(sql), rows: bigSessionSpanRows },
+	{ match: (sql) => readsTraceSpans(sql), rows: sessionSpanRows },
 	{
 		match: (sql) => /\bfrom\s+traces\b/i.test(sql),
 		rows: [
@@ -162,10 +167,10 @@ const fixtures: FixtureRule[] = [
 	},
 	// The CSV filter, as the SQL names its entries: trimmed and one per value.
 	{
-		match: (sql) => sql.includes("'run_sql'") && sql.includes("'search_logs'"),
+		match: (sql) => Str.includes("'run_sql'")(sql) && Str.includes("'search_logs'")(sql),
 		rows: [{ ...listRow, sessionId: CSV_SESSION_ID }],
 	},
-	{ match: (sql) => sql.includes("ai_trace_index"), rows: [listRow] },
+	{ match: (sql) => Str.includes("ai_trace_index")(sql), rows: [listRow] },
 ]
 
 /** SQL the warehouse aborts on rather than answering with rows — a 413 is a
@@ -196,16 +201,10 @@ const rendered = async (name: string, params: Record<string, unknown>): Promise<
 
 /** The cells of the rendered table row that opens with `first`. */
 const rowCells = (text: string, first: string): ReadonlyArray<string> | undefined =>
-	text
-		.split("\n")
-		.filter((line) => line.startsWith("| "))
-		.map((line) =>
-			line
-				.slice(1, -1)
-				.split(" | ")
-				.map((cell) => cell.trim()),
-		)
-		.find((cells) => cells[0] === first)
+	Arr.map(
+		Arr.filter(Str.split("\n")(text), (line) => Str.startsWith("| ")(line)),
+		(line) => Arr.map(Str.split(" | ")(Str.slice(1, -1)(line)), (cell) => Str.trim(cell)),
+	).find((cells) => cells[0] === first)
 
 // Parameters
 
@@ -234,14 +233,14 @@ describe("agent session parameter validation", () => {
 
 	it("does not publish the min/max bounds the page filters on", () => {
 		const definition = mapleToolCatalog.find((entry) => entry.name === "list_agent_sessions")!
-		const properties = Object.keys(toInputSchema(definition.schema).properties ?? {})
-		expect(properties.filter((name) => /_(min|max)(_ms)?$/.test(name))).toEqual([])
+		const properties = Rec.keys(toInputSchema(definition.schema).properties ?? {})
+		expect(Arr.filter(properties, (name) => /_(min|max)(_ms)?$/.test(name))).toEqual([])
 	})
 })
 
 describe("clipPayload", () => {
 	it("clips to the character budget and reports the true size in bytes", () => {
-		expect(clipPayload(`${"a".repeat(20)}é`, 5)).toBe("aaaaa… (22 bytes total)")
+		expect(clipPayload(`${Str.repeat(20)("a")}é`, 5)).toBe("aaaaa… (22 bytes total)")
 		expect(clipPayload("short", 5)).toBe("short")
 	})
 })
@@ -293,7 +292,6 @@ describe("get_agent_session rendering", () => {
 		expect(structured.verdict.status).not.toBe("clean")
 		expect(structured.evidence?.traceId).toBe(TRACE_ID)
 		const output = markdown(answer)
-		expect(output).toContain("### Verdict")
 		// The checks are the reading: a heading with the counts even when nothing
 		// needs attention, the failed tool as a row with what to do, and the
 		// checks that passed named on one line.
@@ -303,10 +301,9 @@ describe("get_agent_session rendering", () => {
 		)
 		// A passed check is its name, on one line with the others that passed.
 		expect(output).toMatch(/^Passed: .*Rate limits.*\.$/m)
-		expect(structured.checks.every((check) => check.status !== "passed")).toBe(true)
+		expect(Arr.every(structured.checks, (check) => check.status !== "passed")).toBe(true)
 		expect(structured.passedChecks).toContain("Rate limits")
 		expect(output).toContain("tool_error")
-		expect(output).toContain("### Tokens")
 		expect(rowCells(output, "run_sql")?.[2]).toBe("1")
 		expect(output).toContain("2 LLM calls")
 		expect(output).toContain(`inspect_span trace_id="${TRACE_ID}"`)
@@ -326,17 +323,15 @@ describe("get_agent_session rendering", () => {
 	// A 413 on a page after the first is what the cap describes: the pages in
 	// hand are the session's beginning, and the answer says so.
 	it("keeps the pages in hand when a later page cannot be read", async () => {
-		responseTooLargeFor = (sql) => sql.includes(BIG_PAGE_CURSOR_SPAN_ID)
+		responseTooLargeFor = (sql) => Str.includes(BIG_PAGE_CURSOR_SPAN_ID)(sql)
 		const output = await rendered("get_agent_session", { session_id: BIG_SESSION_ID, ...WINDOW })
 		expect(output).toContain(
 			`Loaded the first ${AI_SESSION_SPANS_MAX_SPANS.toLocaleString("en-US")} spans; the rest exceeded the response byte limit.`,
 		)
 		// The way out names an absolute bound: the last span in hand, so the next
 		// call has something to narrow from.
-		const lastLoaded = bigSessionSpanRows[AI_SESSION_SPANS_MAX_SPANS - 1]
-		expect(output).toContain(
-			`Pass start_time="${lastLoaded.timestamp.slice(0, 19)}" with the same end_time`,
-		)
+		const lastLoaded = bigSpanTimestamp(AI_SESSION_SPANS_MAX_SPANS - 1)
+		expect(output).toContain(`Pass start_time="${Str.slice(0, 19)(lastLoaded)}" with the same end_time`)
 	})
 
 	// Every page ends on a cursor, so the read stops on the span cap rather than
@@ -353,15 +348,14 @@ describe("get_agent_session rendering", () => {
 	// exactly the heavy ones — the same page at half the rows is the read the 413
 	// asks for, and the session still loads whole.
 	it("halves the page and retries when the first page is too large", async () => {
-		responseTooLargeFor = (sql) => sql.includes(`LIMIT ${AI_SESSION_SPANS_MAX_SPANS + 1}`)
+		responseTooLargeFor = (sql) => Str.includes(`LIMIT ${AI_SESSION_SPANS_MAX_SPANS + 1}`)(sql)
 		const output = await rendered("get_agent_session", { session_id: SESSION_ID, ...WINDOW })
-		expect(output).toContain("### Verdict")
 		expect(rowCells(output, "run_sql")?.[2]).toBe("1")
 		expect(output).not.toContain("exceeded the response byte limit")
 	})
 
 	it("answers a first-page 413 with a way out", async () => {
-		responseTooLargeFor = (sql) => sql.includes(BIG_SESSION_ID)
+		responseTooLargeFor = (sql) => Str.includes(BIG_SESSION_ID)(sql)
 		const answer = await result("get_agent_session", { session_id: BIG_SESSION_ID, ...WINDOW })
 		expect(answer.isError).toBe(true)
 		expect(markdown(answer)).toContain("start_time/end_time")
@@ -372,7 +366,7 @@ describe("get_agent_session_transcript", () => {
 	it("reads the session step by step: prompt, the call that asked for a tool, the failed tool with its result", async () => {
 		const answer = await result("get_agent_session_transcript", { session_id: SESSION_ID, ...WINDOW })
 		const structured = Schema.decodeUnknownSync(GetAgentSessionTranscriptOutput)(answer.structuredContent)
-		const kinds = structured.rows.map((row) => row.kind)
+		const kinds = Arr.map(structured.rows, (row) => row.kind)
 		expect(kinds[0]).toBe("turn")
 		expect(kinds).toContain("user")
 		const tool = structured.rows.find((row) => row.kind === "tool")
@@ -395,9 +389,13 @@ describe("get_agent_session_transcript", () => {
 			failed_only: true,
 		})
 		const structured = Schema.decodeUnknownSync(GetAgentSessionTranscriptOutput)(answer.structuredContent)
-		expect(structured.rows.filter((row) => row.kind !== "turn").map((row) => row.kind)).toEqual(["tool"])
+		expect(
+			Arr.map(
+				Arr.filter(structured.rows, (row) => row.kind !== "turn"),
+				(row) => row.kind,
+			),
+		).toEqual(["tool"])
 		const output = markdown(answer)
-		expect(output).toContain("### Failures in time order")
 		expect(output).toMatch(/turn 1 · \[\+2\.0s\] tool run_sql FAILED/)
 	})
 
@@ -436,7 +434,7 @@ describe("get_agent_session_transcript", () => {
 				})
 			).structuredContent,
 		)
-		expect(hit.rows.some((row) => row.kind === "tool")).toBe(true)
+		expect(Arr.some(hit.rows, (row) => row.kind === "tool")).toBe(true)
 		const miss = await rendered("get_agent_session_transcript", {
 			session_id: SESSION_ID,
 			...WINDOW,

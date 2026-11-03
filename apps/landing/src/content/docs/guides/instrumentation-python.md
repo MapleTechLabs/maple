@@ -19,7 +19,8 @@ To have a coding agent do this setup, use the [maple-onboard](https://github.com
 ## Install
 
 ```bash
-pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http
+pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http \
+  opentelemetry-instrumentation-logging
 ```
 
 ## Configure
@@ -36,7 +37,8 @@ from opentelemetry._logs import set_logger_provider
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.instrumentation.logging.handler import LoggingHandler
+from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
@@ -236,7 +238,7 @@ import logging
 logging.getLogger(__name__).warning("Payment retry for order %s", order_id)
 ```
 
-The root logger's level still applies. Python defaults it to `WARNING`, so call `logging.basicConfig(level=logging.INFO)` or set the level yourself to send `INFO` records.
+The root logger's level still applies. Python defaults it to `WARNING`, so call `logging.getLogger().setLevel(logging.INFO)` to send `INFO` records. `logging.basicConfig(level=...)` does nothing once the root logger has a handler, so after `import telemetry` it no longer sets the level. See [Python logging levels](/guides/python-logging-levels) for per-module and per-handler levels.
 
 ## Verify
 

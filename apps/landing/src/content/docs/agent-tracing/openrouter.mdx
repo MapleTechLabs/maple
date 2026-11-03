@@ -19,27 +19,28 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for OpenRouter in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-openrouter -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-openrouter -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt. The agent prints the values for the OpenRouter dashboard, which you enter yourself as described in the next section.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt. The agent prints the values for the OpenRouter dashboard, which you enter yourself as described in the next section.
 
 ## Point Broadcast at Maple
 
 1. In OpenRouter, open [Settings → Observability](https://openrouter.ai/settings/observability) and turn on **Enable Broadcast**. In an organization account, only an admin can change this.
 2. Click the edit icon next to **OpenTelemetry Collector** and set **Endpoint** to the full traces URL. OpenRouter doesn't append `/v1/traces`. EU organizations use `https://ingest.eu.maple.dev/v1/traces`.
 
-   ```text
-   https://ingest.maple.dev/v1/traces
-   ```
+    ```text
+    https://ingest.maple.dev/v1/traces
+    ```
 
 3. Set **Headers** to your Maple ingest key:
 
-   ```json
-   { "Authorization": "Bearer YOUR_INGEST_KEY" }
-   ```
+    ```json
+    { "Authorization": "Bearer YOUR_INGEST_KEY" }
+    ```
 
 4. Click **Test Connection**. OpenRouter only saves the destination if the test passes.
 
@@ -48,6 +49,8 @@ Leave the sampling rate at 1.0, since a lower rate drops whole conversations. Le
 ## Send a session id with every request
 
 Send a `session_id` field in the request body (or an `x-session-id` header). Use the same id on every request of a conversation, such as your chat thread id, and a new one for each conversation.
+
+The language you pick applies to every section on this page.
 
 <LanguageTabs label="Language" tabs={[{ id: "typescript", label: "TypeScript" }, { id: "python", label: "Python" }]}>
 <LanguageTab id="typescript">
@@ -162,7 +165,7 @@ Use the same value for `session_id` as your framework's conversation id.
 
 Broadcast has no tool calls or agent names. For those, trace your app with its [framework guide](/docs/agent-tracing) and nest Broadcast under it as shown here.
 
-## Check that it works
+## Verify
 
 Run a conversation of three turns with the same `session_id`. After about a minute, open **Agent Sessions** and filter by service `openrouter`.
 
@@ -175,7 +178,7 @@ You should see one session named after your `session_id`, with vendor **OpenRout
 - **Every call is its own session, named `trace:<id>`.** The request has no `session_id`. Log the outgoing body, since some wrappers drop unknown fields.
 - **Tokens or LLM calls are about double.** Your app and Broadcast both record each call. Nest Broadcast with the `trace` field as shown above.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
 - [OpenRouter Broadcast](https://openrouter.ai/docs/guides/features/broadcast)

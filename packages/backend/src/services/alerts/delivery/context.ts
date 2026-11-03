@@ -9,7 +9,7 @@
  */
 import type { AlertComparator, AlertEventType, AlertSeverity, AlertSignalType } from "@maple/domain/http"
 import type { AlertDestinationRow } from "@maple/db/tables"
-import type { EnrichedDestinationSecretConfig } from "../AlertDestinationHydration"
+import type { DestinationSecretConfig } from "../AlertDestinationHydration"
 import type { SignalDisplay } from "../alert-signal-display"
 import type { NotificationTemplateConfig } from "../alert-templating/renderer"
 
@@ -25,7 +25,7 @@ export interface DispatchContext {
 	readonly deliveryKey: string
 	readonly destination: DispatchDestination
 	readonly publicConfig: DestinationPublicConfig
-	readonly secretConfig: EnrichedDestinationSecretConfig
+	readonly secretConfig: DestinationSecretConfig
 	readonly ruleId: string
 	readonly ruleName: string
 	readonly groupKey: string | null
@@ -38,6 +38,19 @@ export interface DispatchContext {
 	 */
 	readonly signalDisplay?: SignalDisplay | null
 	readonly severity: AlertSeverity
+	/**
+	 * The rule's tier severities. A rule with both a warning and a critical tier
+	 * pages critical under its own PagerDuty dedup key. Absent on the
+	 * escalation/error paths, which dispatch without an alert rule.
+	 */
+	readonly ruleSeverities?: ReadonlyArray<AlertSeverity>
+	/**
+	 * The open incident's severity at dispatch, which can differ from the
+	 * queued event's `severity`; absent when no incident is open.
+	 */
+	readonly incidentSeverity?: AlertSeverity
+	/** Highest severity the incident reached; absent when the delivery has no incident. */
+	readonly incidentPeakSeverity?: AlertSeverity
 	readonly comparator: AlertComparator
 	readonly threshold: number
 	readonly thresholdUpper: number | null
@@ -48,6 +61,8 @@ export interface DispatchContext {
 	readonly windowMinutes: number
 	readonly value: number | null
 	readonly sampleCount: number | null
+	/** Uptime rules only: the failing check's error, snapshotted with the event. */
+	readonly detail?: string | null
 	/**
 	 * User-customized notification template (title + Markdown body, optional
 	 * per-destination overrides). `null`/absent → the built-in hardcoded format.

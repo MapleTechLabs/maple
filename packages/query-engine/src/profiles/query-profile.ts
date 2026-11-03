@@ -1,4 +1,5 @@
 import { parseStatement, renderStatement, withSettings } from "@maple-dev/effect-orm/sql"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * ClickHouse query settings forwarded via inline `SETTINGS` clause.
@@ -130,7 +131,7 @@ export const stripTinybirdRestrictedSettings = (
 	settings: WarehouseQuerySettings | undefined,
 ): WarehouseQuerySettings | undefined => {
 	if (!settings) return undefined
-	if (!TINYBIRD_RESTRICTED_SETTINGS.some((key) => settings[key] !== undefined)) return settings
+	if (!Arr.some(TINYBIRD_RESTRICTED_SETTINGS, (key) => settings[key] !== undefined)) return settings
 	const stripped = { ...settings }
 	for (const key of TINYBIRD_RESTRICTED_SETTINGS) delete stripped[key]
 	return stripped
@@ -149,7 +150,20 @@ export const settingsClause = (settings: WarehouseQuerySettings | undefined): st
 			parts.push(`${settingToCh[key]}=${value}`)
 		}
 	}
-	return parts.length === 0 ? undefined : `SETTINGS ${parts.join(", ")}`
+	return parts.length === 0 ? undefined : `SETTINGS ${Arr.join(parts, ", ")}`
+}
+
+/**
+ * One `SETTINGS` clause from a statement's own and the profile's. The profile's
+ * entries go last, so ClickHouse applies them over a statement's same-named ones.
+ */
+export const mergeSettingsClauses = (
+	statementSettings: string | undefined,
+	profileSettings: string | undefined,
+): string | undefined => {
+	if (statementSettings === undefined) return profileSettings
+	if (profileSettings === undefined) return statementSettings
+	return `${statementSettings}, ${Str.replace(/^SETTINGS\s+/i, "")(profileSettings)}`
 }
 
 /**

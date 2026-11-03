@@ -1,13 +1,16 @@
-// Inline apps/local-ui/dist into apps/cli/src/server/ui-embed.gen.ts so
+// Inline apps/local-ui/dist into packages/local-server/src/ui-embed.gen.ts so
 // `bun build --compile` bakes the SPA into the `maple` binary. Run by
 // scripts/build-local-binary.sh, which restores the committed stub afterwards.
 
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
+import { Schema, Array as Arr, String as Str } from "effect"
+
+const encodeJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.String))
 
 const distDir = fileURLToPath(new URL("../apps/local-ui/dist/", import.meta.url))
-const outPath = fileURLToPath(new URL("../apps/cli/src/server/ui-embed.gen.ts", import.meta.url))
+const outPath = fileURLToPath(new URL("../packages/local-server/src/ui-embed.gen.ts", import.meta.url))
 
 const MIME: Record<string, string> = {
 	html: "text/html",
@@ -30,7 +33,7 @@ const MIME: Record<string, string> = {
 	wasm: "application/wasm",
 } satisfies Record<string, string>
 const mimeFor = (p: string): string =>
-	MIME[p.split(".").pop()?.toLowerCase() ?? ""] ?? "application/octet-stream"
+	MIME[Str.split(".")(p).pop()?.toLowerCase() ?? ""] ?? "application/octet-stream"
 
 function* walk(dir: string): Generator<string> {
 	for (const entry of readdirSync(dir)) {
@@ -43,10 +46,10 @@ function* walk(dir: string): Generator<string> {
 const entries: string[] = []
 let count = 0
 for (const file of walk(distDir)) {
-	const rel = relative(distDir, file).split("\\").join("/")
+	const rel = Arr.join(Str.split("\\")(relative(distDir, file)), "/")
 	const b64 = readFileSync(file).toString("base64")
 	entries.push(
-		`\t[${JSON.stringify(rel)}, { data: d(${JSON.stringify(b64)}), contentType: ${JSON.stringify(mimeFor(rel))} }],`,
+		`\t[${encodeJsonString(rel)}, { data: d(${encodeJsonString(b64)}), contentType: ${encodeJsonString(mimeFor(rel))} }],`,
 	)
 	count++
 }
@@ -59,7 +62,7 @@ export interface EmbeddedAsset {
 }
 const d = (b64: string): Uint8Array => Uint8Array.from(Buffer.from(b64, "base64"))
 export const embeddedAssets: ReadonlyMap<string, EmbeddedAsset> | undefined = new Map<string, EmbeddedAsset>([
-${entries.join("\n")}
+${Arr.join(entries, "\n")}
 ])
 `
 

@@ -13,8 +13,10 @@
  * `label: m.pricing_logs()` freezes whichever locale rendered first and every
  * other locale inherits it.
  */
+import { PRICING_CARD_FEATURE_IDS, isPricingCardFeature } from "@maple/domain/billing"
 import { Autumn } from "autumn-js"
 import * as m from "../paraglide/messages.js"
+import { Array as Arr } from "effect"
 
 const AUTUMN_API_VERSION = "2.3.0"
 
@@ -37,8 +39,9 @@ export interface Allotment {
 	/** Price per `rateUnits` units once `included` is used up. */
 	rate?: number
 	/**
-	 * Units the rate is quoted per: 1 for GB and sessions, 1,000 for events.
-	 * Autumn's `billingUnits`; the rate is the price of one such block.
+	 * Units the rate is quoted per: 1 for GB and sessions, 1M for events. Autumn's
+	 * `billingUnits` except for events, which bill per 1,000 but are quoted per
+	 * million. The rate is the price of one such block.
 	 */
 	rateUnits: number
 }
@@ -53,15 +56,10 @@ export interface Offer {
 	ctaLabel: string
 }
 
-const HIDDEN_FEATURE_IDS = new Set<string>(["ai_input_tokens", "ai_output_tokens"])
-
 /** Canonical row order: Autumn can return items in any order. */
-const DATA_FEATURE_ORDER = ["logs", "traces", "metrics", "browser_sessions", "product_events", "ai_credits"]
+const DATA_FEATURE_ORDER: ReadonlyArray<string> = PRICING_CARD_FEATURE_IDS
 
-const dataFeatureRank = (id: string | undefined) => {
-	const i = id ? DATA_FEATURE_ORDER.indexOf(id) : -1
-	return i === -1 ? DATA_FEATURE_ORDER.length : i
-}
+const dataFeatureRank = (id: string) => DATA_FEATURE_ORDER.indexOf(id)
 
 const FEATURE_UNITS = {
 	browser_sessions: "sessions",
@@ -72,6 +70,9 @@ const FEATURE_UNITS = {
 const hasOwnUnit = (featureId: string): featureId is keyof typeof FEATURE_UNITS => featureId in FEATURE_UNITS
 
 const unitFor = (featureId: string): Unit => (hasOwnUnit(featureId) ? FEATURE_UNITS[featureId] : "gb")
+
+/** "$5 / 1M events" reads better than the billed "$0.005 / 1,000 events". */
+const EVENTS_QUOTE_UNITS = 1_000_000
 
 /**
  * Capitalized, localized labels for the metered rows, keyed by Autumn featureId
@@ -97,7 +98,6 @@ export const platformFeatures = (): string[] => [
 	m.pricing_unlimited_dashboards(),
 	m.pricing_advanced_alerting(),
 	m.pricing_mcp_server(),
-	m.pricing_ai_chat(),
 	m.pricing_ai_triage(),
 	m.pricing_full_api(),
 ]
@@ -116,15 +116,16 @@ export async function getOffer(): Promise<Offer> {
 			xApiVersion: AUTUMN_API_VERSION,
 		})
 		const result = await autumn.plans.list()
-		const products = (result.list ?? []).filter((p) => !p.addOn)
+		const products = Arr.filter(result.list ?? [], (p) => !p.addOn)
 
 		if (products.length > 1) {
 			// The layout renders one offer. A second tier must fail loudly at build
 			// time rather than silently vanishing off the pricing page.
 			console.warn(
-				`[pricing-offer] Autumn returned ${products.length} non-add-on plans (${products
-					.map((p) => p.id)
-					.join(", ")}); only the first is rendered. Update PricingTable for multiple tiers.`,
+				`[pricing-offer] Autumn returned ${products.length} non-add-on plans (${Arr.join(
+					Arr.map(products, (p) => p.id),
+					", ",
+				)}); only the first is rendered. Update PricingTable for multiple tiers.`,
 			)
 		}
 
@@ -137,21 +138,25 @@ export async function getOffer(): Promise<Offer> {
 				interval: product.price?.interval ? `/${product.price.interval}` : undefined,
 				hasTrial: !!product.freeTrial,
 				trialDuration: product.freeTrial?.durationLength,
-				allotments: product.items
-					.filter((item) => item.featureId && !HIDDEN_FEATURE_IDS.has(item.featureId))
-					.map((item) => {
+				allotments: Arr.map(
+					Arr.filter(product.items, (item) => isPricingCardFeature(item.featureId)),
+					(item) => {
 						const featureId = item.featureId
+						const unit = unitFor(featureId)
+						const billingUnits = Math.max(1, item.price?.billingUnits ?? 1)
+						const rateUnits = unit === "events" ? EVENTS_QUOTE_UNITS : billingUnits
+						const amount = item.price?.amount
 						return {
 							featureId,
 							label: labels[featureId] ?? item.feature?.name ?? featureId,
-							unit: unitFor(featureId),
+							unit,
 							included: Number(item.included ?? 0),
 							unlimited: item.unlimited === true,
-							rate: item.price?.amount ?? undefined,
-							rateUnits: Math.max(1, item.price?.billingUnits ?? 1),
+							rate: amount == null ? undefined : (amount / billingUnits) * rateUnits,
+							rateUnits,
 						}
-					})
-					.sort((a, b) => dataFeatureRank(a.featureId) - dataFeatureRank(b.featureId)),
+					},
+				).sort((a, b) => dataFeatureRank(a.featureId) - dataFeatureRank(b.featureId)),
 				ctaLabel: product.freeTrial
 					? m.pricing_start_trial({ duration: String(product.freeTrial.durationLength) })
 					: m.cta_get_started(),
@@ -197,10 +202,10 @@ export async function getOffer(): Promise<Offer> {
 				featureId: "product_events",
 				label: labels.product_events!,
 				unit: "events",
-				// Free and unlimited during beta; mirrors `apps/api/autumn.config.ts`.
-				included: 0,
-				unlimited: true,
-				rateUnits: 1,
+				// Mirrors `apps/api/autumn.config.ts`: $0.005 per 1,000, quoted per 1M.
+				included: 1_000_000,
+				rate: 5,
+				rateUnits: EVENTS_QUOTE_UNITS,
 			},
 			{
 				featureId: "ai_credits",
@@ -229,21 +234,19 @@ export const money = (n: number) => {
 /** Sub-cent rates (per session) need three places; per-GB rates need two. */
 export const rateLabel = (n: number) => `$${n < 0.01 ? n.toFixed(3) : n.toFixed(2)}`
 
+/** Whole millions as "1M"; anything else exact. */
+const count = (n: number) =>
+	n >= 1_000_000 && n % 1_000_000 === 0 ? `${n / 1_000_000}M` : n.toLocaleString("en-US")
+
 /**
  * The block a rate is quoted per, for the "then {rate} / …" sentence: 1 for
- * GB and sessions, "1,000" for events. Localized unit words come from the
+ * GB and sessions, "1M" for events. Localized unit words come from the
  * message catalog; this only supplies the number.
  */
-export const rateBlock = (a: Allotment) => a.rateUnits.toLocaleString("en-US")
+export const rateBlock = (a: Allotment) => count(a.rateUnits)
 
 export const volume = (a: Allotment, n: number) =>
-	a.unlimited
-		? m.pricing_unlimited()
-		: a.unit === "gb"
-			? `${n} GB`
-			: a.unit === "usd"
-				? money(n)
-				: n.toLocaleString("en-US")
+	a.unlimited ? m.pricing_unlimited() : a.unit === "gb" ? `${n} GB` : a.unit === "usd" ? money(n) : count(n)
 
 /**
  * AI usage has no flat rate: a credit is a dollar of model spend, priced per

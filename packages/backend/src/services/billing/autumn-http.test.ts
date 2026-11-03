@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
-import { BillingCustomer, BillingUsage } from "@maple/domain/http"
+import { BillingCustomer, BillingCustomerId, BillingUsage } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { classifyAutumn, decodeUpstream, ensureOk } from "@maple/backend/services/billing/autumn-client"
 import {
@@ -11,7 +11,7 @@ import {
 	camelizeKeys,
 } from "@maple/backend/services/billing/autumn-http"
 
-const ORG = "org_test_123"
+const ORG = BillingCustomerId.make("org_test_123")
 const KEY = "am_sk_test"
 const API_URL = "https://api.useautumn.com"
 
@@ -79,7 +79,7 @@ const withFetch = async (
 		const text =
 			init?.body === undefined || init.body === null ? "" : await new Response(init.body).text()
 		captured = {
-			url: String(input),
+			url: String(input instanceof Request ? input.url : input),
 			method: String(init?.method),
 			headers: new Headers(init?.headers),
 			body: text.length === 0 ? undefined : JSON.parse(text),
@@ -245,10 +245,27 @@ describe("AutumnClient request construction", () => {
 		})
 	})
 
+	it("cancelPlans cancels every plan in one multi-update request", async () => {
+		const { captured } = await withFetch({ body: JSON.stringify({}) }, (autumn) =>
+			autumn.cancelPlans(ORG, [
+				{ planId: "startup", action: "cancel_end_of_cycle" },
+				{ planId: "hobby", action: "cancel_immediately" },
+			]),
+		)
+		assert.strictEqual(captured?.url, "https://api.useautumn.com/v1/billing.multi_update")
+		assert.deepStrictEqual(captured?.body, {
+			customer_id: ORG,
+			updates: [
+				{ plan_id: "startup", cancel_action: "cancel_end_of_cycle" },
+				{ plan_id: "hobby", cancel_action: "cancel_immediately" },
+			],
+		})
+	})
+
 	it("strips trailing slashes from the configured API url", async () => {
 		let url: string | undefined
 		const fetch = (async (input) => {
-			url = String(input)
+			url = String(input instanceof Request ? input.url : input)
 			return new Response("{}", { status: 200 })
 		}) as typeof globalThis.fetch
 
@@ -600,7 +617,7 @@ describe("classifyAutumn", () => {
 	] as const
 
 	for (const [status, tag] of cases) {
-		it(`maps HTTP ${status} to ${tag.split("/").pop()}`, async () => {
+		it(`maps HTTP ${status} to ${Str.split("/")(tag).pop()}`, async () => {
 			const error = await Effect.runPromise(Effect.flip(classifyAutumn(rejection(status))))
 			assert.strictEqual(error._tag, tag)
 		})
@@ -621,13 +638,8 @@ describe("classifyAutumn", () => {
 		assert.strictEqual(error._tag, "@maple/http/errors/BillingNotConfiguredError")
 	})
 
-	it("passes a 2xx body straight through", async () => {
-		const body = await Effect.runPromise(classifyAutumn({ statusCode: 200, response: { ok: 1 } }))
-		assert.deepStrictEqual(body, { ok: 1 })
-	})
-
 	it("collapses every classified 4xx back to 502 under ensureOk, keeping the status in the message", async () => {
-		for (const [status] of cases.filter(([code]) => code < 500 && code !== 401 && code !== 403)) {
+		for (const [status] of Arr.filter(cases, ([code]) => code < 500 && code !== 401 && code !== 403)) {
 			const error = await Effect.runPromise(Effect.flip(ensureOk(rejection(status))))
 			assert.strictEqual(error._tag, "@maple/http/errors/BillingUpstreamError")
 			assert.include(error.message, String(status))

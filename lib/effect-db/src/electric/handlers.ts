@@ -6,7 +6,7 @@ import type {
 	UtilsRecord,
 } from "@tanstack/db"
 import type { Txid } from "@tanstack/electric-db-collection"
-import { Cause, Effect, Exit, type ManagedRuntime } from "effect"
+import { Cause, Effect, Exit, type ManagedRuntime, Array as Arr } from "effect"
 import { DeleteError, InsertError, MissingTxIdError, UpdateError } from "./errors"
 import type { EffectDeleteHandler, EffectInsertHandler, EffectUpdateHandler } from "./types"
 
@@ -14,7 +14,7 @@ type PromiseMutationHandler<Params> = (params: Params) => Promise<void>
 
 // Electric deprecated returning `{ txid }`; awaiting it here is what it did with the return value.
 const awaitTxids = (utils: UtilsRecord, txid: Txid | Array<Txid>) =>
-	Promise.all((Array.isArray(txid) ? txid : [txid]).map((id) => utils.awaitTxId(id)))
+	Promise.all(Arr.map(Arr.isArray(txid) ? txid : [txid], (id) => utils.awaitTxId(id)))
 
 /** Adapts an Effect insert handler to Electric's Promise API. */
 export function convertInsertHandler<

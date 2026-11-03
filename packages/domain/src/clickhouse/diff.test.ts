@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { computeSchemaDiff, type ActualTable, type DesiredSchema, type DesiredTable } from "./diff"
+import { Array as Arr } from "effect"
 
 const desiredTable = (name: string, columns: ReadonlyArray<readonly [string, string]>): DesiredTable => ({
 	name,
 	kind: "table",
-	columns: columns.map(([colName, type]) => ({ name: colName, type })),
+	columns: Arr.map(columns, ([colName, type]) => ({ name: colName, type })),
 	createStatement: `CREATE TABLE ${name} (...)`,
 })
 
@@ -18,11 +19,11 @@ const desiredMv = (name: string): DesiredTable => ({
 const actualTable = (name: string, columns: ReadonlyArray<readonly [string, string]>): ActualTable => ({
 	name,
 	kind: "table",
-	columns: columns.map(([colName, type]) => ({ name: colName, type })),
+	columns: Arr.map(columns, ([colName, type]) => ({ name: colName, type })),
 })
 
 const actualMap = (...tables: ReadonlyArray<ActualTable>): Map<string, ActualTable> =>
-	new Map(tables.map((t) => [t.name, t]))
+	new Map(Arr.map(tables, (t) => [t.name, t]))
 
 describe("computeSchemaDiff", () => {
 	it("flags every table as missing when actual schema is empty", () => {

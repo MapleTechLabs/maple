@@ -1,5 +1,6 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 import * as Orm from "@maple-dev/effect-orm/database"
+import { Schema } from "effect"
 import { SqlError } from "effect/sql/SqlError"
 import type { DatabaseError } from "./DatabaseLive"
 
@@ -26,8 +27,8 @@ const causeMessage = (cause: unknown): string | undefined => {
  * Anything else — a scope refusal, a test double — has none.
  */
 export const driverSqlError = (cause: unknown): SqlError | undefined => {
-	if (cause instanceof SqlError) return cause
-	if (cause instanceof Orm.DatabaseError || cause instanceof Orm.TransactionCommitFailed)
+	if (Schema.is(SqlError)(cause)) return cause
+	if (Schema.is(Orm.DatabaseError)(cause) || Schema.is(Orm.TransactionCommitFailed)(cause))
 		return driverSqlError(cause.cause)
 	return undefined
 }

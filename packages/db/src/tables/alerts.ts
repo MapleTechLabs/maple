@@ -10,6 +10,7 @@ import {
 import { Schema } from "effect"
 
 const StringArray = Schema.Array(Schema.String)
+const TickHistory = Schema.Array(Schema.Number)
 
 export const AlertDestinations = PG.table("alert_destinations", {
 	columns: {
@@ -76,12 +77,27 @@ export const AlertRules = PG.table("alert_rules", {
 		comparator: PG.text,
 		threshold: PG.float8,
 		thresholdUpper: PG.column(PG.nullable(PG.float8), { name: "threshold_upper" }),
+		/**
+		 * `AlertThresholds`. Null on pre-tier rows, which read as one tier from the
+		 * legacy columns; writes keep those columns in step until they are dropped.
+		 */
+		thresholdsJson: PG.column(PG.nullable(PG.jsonb()), { name: "thresholds_json" }),
 		windowMinutes: PG.column(PG.int4, { name: "window_minutes" }),
+		/** Minutes between checks, as picked by the author. Null derives it from the window. */
+		evaluationIntervalMinutes: PG.column(PG.nullable(PG.int4), { name: "evaluation_interval_minutes" }),
+		/**
+		 * Set by the scheduler after repeated query timeouts: the rule is checked at least this
+		 * far apart, which buys it a longer query limit. Cleared by any edit to the rule.
+		 */
+		slowedIntervalMinutes: PG.column(PG.nullable(PG.int4), { name: "slowed_interval_minutes" }),
+		slowedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "slowed_at" }),
 		minimumSampleCount: PG.column(PG.int4, { name: "minimum_sample_count", default: 0 }),
 		consecutiveBreachesRequired: PG.column(PG.int4, {
 			name: "consecutive_breaches_required",
 			default: 2,
 		}),
+		/** M in "N of the last M checks"; null is N in a row. */
+		breachesOutOf: PG.column(PG.nullable(PG.int4), { name: "breaches_out_of" }),
 		consecutiveHealthyRequired: PG.column(PG.int4, { name: "consecutive_healthy_required", default: 2 }),
 		renotifyIntervalMinutes: PG.column(PG.int4, { name: "renotify_interval_minutes", default: 30 }),
 		apdexThresholdMs: PG.column(PG.nullable(PG.float8), { name: "apdex_threshold_ms" }),
@@ -129,6 +145,8 @@ export const AlertRuleClaims = PG.table("alert_rule_claims", {
 		ruleId: PG.column(PG.brand(PG.text, AlertRuleId), { name: "rule_id" }),
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		lastScheduledAt: PG.column(PG.timestamptzMillis, { name: "last_scheduled_at" }),
+		/** Checks in a row that hit the query time or memory limit; reset by a clean check or an edit. */
+		consecutiveLimitFailures: PG.column(PG.int4, { name: "consecutive_limit_failures", default: 0 }),
 	},
 	primaryKey: ["ruleId"],
 	indexes: [PG.index("alert_rule_claims_org_idx", ["orgId"])],
@@ -142,11 +160,18 @@ export const AlertRuleStates = PG.table("alert_rule_states", {
 		groupKey: PG.column(PG.text, { name: "group_key", default: "__total__" }),
 		consecutiveBreaches: PG.column(PG.int4, { name: "consecutive_breaches", default: 0 }),
 		consecutiveHealthy: PG.column(PG.int4, { name: "consecutive_healthy", default: 0 }),
+		/**
+		 * Recent non-skipped ticks, oldest first, one tier-status code each
+		 * (`encodeTick`). Null on rows written before it; seeded from the counters.
+		 */
+		historyJson: PG.column(PG.nullable(PG.jsonb(TickHistory)), { name: "history_json" }),
 		lastStatus: PG.column(PG.nullable(PG.text), { name: "last_status" }),
 		lastValue: PG.column(PG.nullable(PG.float8), { name: "last_value" }),
 		lastSampleCount: PG.column(PG.nullable(PG.int4), { name: "last_sample_count" }),
 		lastEvaluatedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_evaluated_at" }),
 		lastError: PG.column(PG.nullable(PG.text), { name: "last_error" }),
+		/** `AlertEvaluationErrorKind` of `lastError`. */
+		lastErrorKind: PG.column(PG.nullable(PG.text), { name: "last_error_kind" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
 	primaryKey: {
@@ -166,7 +191,10 @@ export const AlertIncidents = PG.table("alert_incidents", {
 		ruleName: PG.column(PG.text, { name: "rule_name" }),
 		groupKey: PG.column(PG.nullable(PG.text), { name: "group_key" }),
 		signalType: PG.column(PG.text, { name: "signal_type" }),
+		/** Current severity; a tiered rule moves it on escalation and de-escalation. */
 		severity: PG.text,
+		/** Highest severity reached; null on incidents opened before tiers. */
+		peakSeverity: PG.column(PG.nullable(PG.text), { name: "peak_severity" }),
 		status: PG.text,
 		comparator: PG.text,
 		threshold: PG.float8,
@@ -245,8 +273,48 @@ export const AlertDeliveryEvents = PG.table("alert_delivery_events", {
 	tenantColumn: "orgId",
 })
 
+/**
+ * The Linear issue a `linear` destination keeps for one alert thread (a rule and group).
+ * A trigger comments on the thread's open issue, or reopens one closed within a day,
+ * instead of opening another. The row is replaced when a later trigger opens a fresh issue.
+ */
+export const AlertLinearIssues = PG.table("alert_linear_issues", {
+	columns: {
+		id: PG.text,
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		destinationId: PG.column(PG.brand(PG.text, AlertDestinationId), { name: "destination_id" }),
+		/** `<ruleId>:<groupKey>`, or the delivery's dedupe key when it has no rule. */
+		threadKey: PG.column(PG.text, { name: "thread_key" }),
+		/** The destination's team when the issue was opened; a different team today means a new issue. */
+		linearTeamId: PG.column(PG.text, { name: "linear_team_id" }),
+		/** Linear's issue UUID, which Maple chose so a retried create cannot duplicate it. */
+		linearIssueId: PG.column(PG.text, { name: "linear_issue_id" }),
+		/** e.g. `ENG-123`. */
+		linearIdentifier: PG.column(PG.text, { name: "linear_identifier" }),
+		linearUrl: PG.column(PG.text, { name: "linear_url" }),
+		incidentId: PG.column(PG.nullable(PG.text), { name: "incident_id" }),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+	},
+	primaryKey: ["id"],
+	indexes: [
+		PG.uniqueIndex("alert_linear_issues_thread_idx", ["destinationId", "threadKey"]),
+		PG.index("alert_linear_issues_org_idx", ["orgId"]),
+	],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["destinationId"],
+			references: AlertDestinations,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
+		}),
+	],
+	tenantColumn: "orgId",
+})
+
 export type AlertDestinationRow = PG.SelectRowOf<typeof AlertDestinations>
 export type AlertRuleRow = PG.SelectRowOf<typeof AlertRules>
 export type AlertRuleStateRow = PG.SelectRowOf<typeof AlertRuleStates>
 export type AlertIncidentRow = PG.SelectRowOf<typeof AlertIncidents>
 export type AlertDeliveryEventRow = PG.SelectRowOf<typeof AlertDeliveryEvents>
+export type AlertLinearIssueRow = PG.SelectRowOf<typeof AlertLinearIssues>

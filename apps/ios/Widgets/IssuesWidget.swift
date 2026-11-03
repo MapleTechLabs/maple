@@ -65,6 +65,9 @@ struct IssuesEntry: TimelineEntry {
 	/// The configured organization is not one the app publishes any more: the
 	/// user left it, or was removed. A terminal state, not a loading one.
 	var isOrganizationUnavailable = false
+	/// The widget's credential was refused and only the app can register it
+	/// again: the last snapshot stays, with a hint to open Maple.
+	var needsApp = false
 
 	/// The organization to name in the header, or nil when naming it would be
 	/// noise.
@@ -139,7 +142,8 @@ struct IssuesProvider: AppIntentTimelineProvider {
 			// snapshot yet is a different statement — "Open Maple" — and the
 			// index carrying every membership is what tells the two apart.
 			isOrganizationUnavailable: configuredId != nil
-				&& !known.contains { $0.id == organizationId }
+				&& !known.contains { $0.id == organizationId },
+			needsApp: WidgetFetchStateStore().load(organizationId: organizationId).isCredentialRejected
 		)
 	}
 
@@ -176,7 +180,7 @@ struct IssuesProvider: AppIntentTimelineProvider {
 		// Re-read rather than take the payload back: the fetcher writes both
 		// widgets' snapshots into the App Group, and going through the store
 		// keeps this provider's one way of resolving an organization.
-		if outcome.didFetch { base = makeEntry(for: configuration, at: now) }
+		if outcome.didFetch || outcome.needsApp { base = makeEntry(for: configuration, at: now) }
 		let entries = WidgetTimelineSchedule.entryDates(from: now).map { date -> IssuesEntry in
 			var entry = base
 			entry.date = date

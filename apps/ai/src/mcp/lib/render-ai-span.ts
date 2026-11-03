@@ -15,6 +15,7 @@ import {
 import { sessionToolResults, spanMessages, spanToolCalls } from "@maple/agent-sessions"
 import { clipPayload, spanCategoryLabel } from "./agent-sessions"
 import type { SpanMessage } from "@maple/agent-sessions"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /** Input-history messages kept; a long conversation re-sends its whole history
  *  on every call, and the reader asked about THIS call. */
@@ -27,19 +28,20 @@ const INPUT_HISTORY_KEPT = 6
  * `AI_NON_SIGNAL_FIELDS` — the mapper's own rule, so the two cannot disagree.
  */
 const AI_SIGNAL_KEYS: ReadonlySet<string> = (() => {
-	const core = new Set([...AI_NON_SIGNAL_FIELDS].flatMap((field) => aiFieldSourceKeys(field)))
-	return new Set(aiSpanAttributeKeys.filter((key) => !core.has(key)))
+	const core = new Set(Arr.flatMap([...AI_NON_SIGNAL_FIELDS], (field) => aiFieldSourceKeys(field)))
+	return new Set(Arr.filter(aiSpanAttributeKeys, (key) => !core.has(key)))
 })()
 
 /** Whether a raw span attribute map is worth decoding as an AI span. */
 export function hasAiSignal(attributes: Record<string, string>): boolean {
-	return Object.keys(attributes).some(
-		(key) => AI_SIGNAL_KEYS.has(key) || key.startsWith(AI_PROMPT_VARIABLE_PREFIX),
+	return Arr.some(
+		Rec.keys(attributes),
+		(key) => AI_SIGNAL_KEYS.has(key) || Str.startsWith(AI_PROMPT_VARIABLE_PREFIX)(key),
 	)
 }
 
 const messageParts = (message: SpanMessage, payloadChars: number): string[] =>
-	message.parts.map((part) => {
+	Arr.map(message.parts, (part) => {
 		switch (part.kind) {
 			case "text":
 				return clipPayload(part.text, payloadChars)
@@ -63,7 +65,7 @@ const messageParts = (message: SpanMessage, payloadChars: number): string[] =>
 const messageLines = (message: SpanMessage, payloadChars: number): string[] => {
 	const head = `- **${message.origin}/${message.role}**`
 	const parts = messageParts(message, payloadChars)
-	return parts.length === 0 ? [`${head} (no content)`] : [head, ...parts.map((part) => `  ${part}`)]
+	return parts.length === 0 ? [`${head} (no content)`] : [head, ...Arr.map(parts, (part) => `  ${part}`)]
 }
 
 /**
@@ -83,10 +85,10 @@ export function renderAiSpan(
 	partialTrace: boolean,
 ): { readonly lines: string[]; readonly sessionId: string | undefined } {
 	const messages = spanMessages(span)
-	const inputs = messages.filter((message) => message.origin === "input")
+	const inputs = Arr.filter(messages, (message) => message.origin === "input")
 	const earlier = Math.max(0, inputs.length - INPUT_HISTORY_KEPT)
 	const keptInputs = new Set(inputs.slice(earlier))
-	const shown = messages.filter((message) => message.origin !== "input" || keptInputs.has(message))
+	const shown = Arr.filter(messages, (message) => message.origin !== "input" || keptInputs.has(message))
 	const toolCalls = spanToolCalls(span, sessionToolResults(traceSpans))
 
 	const lines: string[] = [

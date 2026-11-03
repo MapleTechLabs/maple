@@ -8,6 +8,7 @@ import {
 	resolveIngestCidrBlock,
 	resolveIngestNamespaceName,
 } from "./stage.ts"
+import { Array as Arr, String as Str } from "effect"
 
 describe("parseMapleRegion", () => {
 	it("defaults to us when unset", () => {
@@ -46,10 +47,21 @@ describe("resolveAwsResourceName", () => {
 	})
 })
 
+/** The [first, last] IPv4 addresses a CIDR block covers, as integers. */
+const cidrRange = (cidr: string): readonly [number, number] => {
+	const [ip, bits = "32"] = Str.split("/")(cidr)
+	const base = Arr.reduce(Str.split(".")(ip), 0, (acc, octet) => acc * 256 + Number(octet))
+	const size = 2 ** (32 - Number(bits))
+	const first = base - (base % size)
+	return [first, first + size - 1]
+}
+
 describe("region topology", () => {
 	it("maps each region to a distinct AWS region and a non-overlapping CIDR", () => {
 		expect(resolveAwsRegion("us")).not.toBe(resolveAwsRegion("eu"))
-		expect(resolveIngestCidrBlock("us")).not.toBe(resolveIngestCidrBlock("eu"))
+		const [usFirst, usLast] = cidrRange(resolveIngestCidrBlock("us"))
+		const [euFirst, euLast] = cidrRange(resolveIngestCidrBlock("eu"))
+		expect(usLast < euFirst || euLast < usFirst).toBe(true)
 	})
 })
 

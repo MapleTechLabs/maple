@@ -1,6 +1,7 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId, ScrapeTargetId } from "@maple/domain/primitives"
+import { OrgId, ScrapeTargetId, SourceId } from "@maple/domain/primitives"
 import { Schema } from "effect"
+import { Sources } from "./sources"
 
 /**
  * First-class PlanetScale integration state, one row per Maple org, created
@@ -16,6 +17,8 @@ export const PlanetscaleConnections = PG.table("planetscale_connections", {
 	columns: {
 		id: PG.text,
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		// The source this integration sends as. Deleting the source deletes the row.
+		sourceId: PG.column(PG.brand(PG.text, SourceId), { name: "source_id" }),
 		/** PlanetScale organization slug the connection is bound to. */
 		psOrganization: PG.column(PG.text, { name: "ps_organization" }),
 		connectedByUserId: PG.column(PG.text, { name: "connected_by_user_id" }),
@@ -40,7 +43,18 @@ export const PlanetscaleConnections = PG.table("planetscale_connections", {
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
 	primaryKey: ["id"],
-	indexes: [PG.uniqueIndex("planetscale_connections_org_idx", ["orgId"])],
+	indexes: [
+		PG.index("planetscale_connections_source_idx", ["sourceId"]),
+		PG.uniqueIndex("planetscale_connections_org_idx", ["orgId"]),
+	],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["sourceId"],
+			references: Sources,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
+		}),
+	],
 	tenantColumn: "orgId",
 })
 

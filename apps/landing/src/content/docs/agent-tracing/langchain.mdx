@@ -21,12 +21,13 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for LangChain & LangGraph in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-langchain -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-langchain -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install the instrumentor
 
@@ -45,7 +46,9 @@ Keep the explicit `openinference-instrumentation` pin. Older versions don't work
 <LanguageTab id="typescript">
 
 ```bash
-npm install @arizeai/openinference-instrumentation-langchain @opentelemetry/sdk-node @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto
+npm install @arizeai/openinference-instrumentation-langchain \
+  @opentelemetry/sdk-node @opentelemetry/sdk-trace-base \
+  @opentelemetry/exporter-trace-otlp-proto
 ```
 
 `@opentelemetry/sdk-node` has to be 0.209 or newer.
@@ -145,7 +148,9 @@ function text(content: unknown): string {
 function toGenAiMessage(message: any) {
 	const fields = message?.lc ? message.kwargs : (message ?? {})
 	const type = message?.lc
-		? String(message.id.at(-1)).replace(/Message(Chunk)?$/, "").toLowerCase()
+		? String(message.id.at(-1))
+				.replace(/Message(Chunk)?$/, "")
+				.toLowerCase()
 		: String(fields.role ?? fields.type)
 	const role = ROLES[type] ?? type
 	const parts: object[] = []
@@ -169,7 +174,10 @@ export class GenAiSpans implements SpanProcessor {
 		const attrs = span.attributes
 		const set = (key: string, value: unknown) => {
 			if (value === undefined || value === null || value === "") return
-			span.setAttribute(key, typeof value === "object" ? JSON.stringify(value) : (value as string | number))
+			span.setAttribute(
+				key,
+				typeof value === "object" ? JSON.stringify(value) : (value as string | number),
+			)
 		}
 		const metadata = parse(attrs["metadata"]) ?? {}
 		const input = parse(attrs["input.value"])
@@ -179,7 +187,8 @@ export class GenAiSpans implements SpanProcessor {
 		if (kind === "LLM") {
 			const generations = output?.generations?.[0] ?? []
 			const reply = generations[0]?.message?.kwargs ?? {}
-			const finish = generations[0]?.generationInfo?.finish_reason ?? reply.response_metadata?.finish_reason
+			const finish =
+				generations[0]?.generationInfo?.finish_reason ?? reply.response_metadata?.finish_reason
 			if (this.toolArgs.size > 1000) this.toolArgs.clear() // calls whose tool never ran
 			for (const call of reply.tool_calls ?? []) this.toolArgs.set(call.id, call.args)
 			set("gen_ai.operation.name", "chat")
@@ -193,7 +202,10 @@ export class GenAiSpans implements SpanProcessor {
 			set("gen_ai.input.messages", (input?.messages?.[0] ?? []).map(toGenAiMessage))
 			set(
 				"gen_ai.output.messages",
-				generations.map((g: any) => ({ ...toGenAiMessage(g.message ?? { role: "assistant", content: g.text }), finish_reason: finish ?? "stop" })),
+				generations.map((g: any) => ({
+					...toGenAiMessage(g.message ?? { role: "assistant", content: g.text }),
+					finish_reason: finish ?? "stop",
+				})),
 			)
 		} else if (kind === "TOOL") {
 			// A tool called by the model returns a serialized ToolMessage
@@ -205,7 +217,11 @@ export class GenAiSpans implements SpanProcessor {
 			set("gen_ai.tool.call.id", message?.tool_call_id)
 			set("gen_ai.tool.call.arguments", this.toolArgs.get(message?.tool_call_id))
 			this.toolArgs.delete(message?.tool_call_id)
-			if (content !== undefined) set("gen_ai.tool.call.result", typeof result === "object" && result !== null ? result : content)
+			if (content !== undefined)
+				set(
+					"gen_ai.tool.call.result",
+					typeof result === "object" && result !== null ? result : content,
+				)
 		} else if (span.name === metadata.lc_agent_name || AGENT_NAMES.has(span.name)) {
 			const messages = output?.messages ?? []
 			set("gen_ai.operation.name", "invoke_agent")
@@ -364,11 +380,9 @@ try {
 </LanguageTab>
 </LanguageTabs>
 
-## Check that it works
+## Verify
 
-Send two or three messages with the same conversation id, one of them using a tool, then open **Agent Sessions**. Within a minute you should see one session with one turn per `invoke()`, a readable transcript, model calls with tokens, and tool calls named after your tools.
-
-Cost shows as **unpriced**, which is expected.
+Send two or three messages with the same conversation id, one of them using a tool, then open **Agent Sessions**. Within a minute you should see one session with one turn per `invoke()`, a readable transcript, model calls with tokens, and tool calls named after your tools. Cost shows as unpriced, which is expected.
 
 ## Troubleshooting
 
@@ -378,7 +392,7 @@ Cost shows as **unpriced**, which is expected.
 - **Every model call appears twice.** Remove `LANGSMITH_OTEL_ENABLED` and any provider instrumentor such as `openinference-instrumentation-openai`. Plain `LANGSMITH_TRACING=true` is fine.
 - **No agent lane, extra tool calls, or a tool shown as an agent.** In Python, fill `AGENT_NAMES` and `STEP_NAMES`, and don't put "agent" in tool names. In TypeScript, give every `createAgent()` a `name`.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview): what Maple builds from these spans.
 - [OpenRouter](/docs/agent-tracing/openrouter): if your models go through OpenRouter.

@@ -1,4 +1,4 @@
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { HttpEffect } from "alchemy/Http"
 import { Context, Effect, Exit, FileSystem, Layer, Logger, Path, Scope } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -61,4 +61,7 @@ export const bridgeHandler = <E, R>(
 		E,
 		R | Scope.Scope | HttpServerRequest.HttpServerRequest
 	>,
-): HttpEffect => handler as HttpEffect
+): HttpEffect => {
+	// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- see SAFETY above
+	return handler as HttpEffect
+}

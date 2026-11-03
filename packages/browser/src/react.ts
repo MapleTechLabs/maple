@@ -4,6 +4,7 @@
 // not depend on any router package.
 import { Component, type ErrorInfo, type ReactNode } from "react"
 import { MapleBrowser } from "./index"
+import { interruptNavigation } from "./navigation"
 
 /** Component stacks can run to hundreds of lines; the top of it names the failing tree. */
 const MAX_COMPONENT_STACK = 2_000
@@ -66,15 +67,54 @@ export class MapleErrorBoundary extends Component<MapleErrorBoundaryProps, Maple
 	}
 }
 
+type ReactRootErrorHandler = (
+	error: unknown,
+	info: { readonly componentStack?: string | null | undefined },
+) => void
+
 /**
  * For React 19's `createRoot(el, { onCaughtError, onUncaughtError, onRecoverableError })`:
  * reports what React caught, with its component stack. Errors already reported
- * (by a `MapleErrorBoundary`, say) are not reported twice.
+ * (by a `MapleErrorBoundary`, say) are not reported twice. Passing a handler
+ * replaces React's own console logging, so the error is then handed to `next`,
+ * which defaults to `console.error`.
  */
 export function mapleReactErrorHandler(
 	source = "react.root",
-): (error: unknown, info: { readonly componentStack?: string | null | undefined }) => void {
-	return (error, info) => reportReactError(error, info.componentStack, source)
+	next: ReactRootErrorHandler = (error) => console.error(error),
+): ReactRootErrorHandler {
+	return (error, info) => {
+		reportReactError(error, info.componentStack, source)
+		next(error, info)
+	}
+}
+
+/**
+ * One live instrumentation per router: StrictMode and HMR attach twice, and a
+ * second attach must not restart (and so interrupt) the page load in flight.
+ */
+type RouterLike = ReactRouterLike | TanStackRouterLike
+
+const attachedRouters = new WeakMap<RouterLike, { count: number; readonly stop: () => void }>()
+
+function attachOnce(router: RouterLike, attach: () => () => void): () => void {
+	const existing = attachedRouters.get(router)
+	const entry = existing ?? { count: 0, stop: attach() }
+	entry.count += 1
+	attachedRouters.set(router, entry)
+	let released = false
+	return () => {
+		if (released) return
+		released = true
+		entry.count -= 1
+		// A microtask later: StrictMode detaches and re-attaches in one go, and the
+		// page load in flight should survive that.
+		queueMicrotask(() => {
+			if (entry.count > 0 || attachedRouters.get(router) !== entry) return
+			attachedRouters.delete(router)
+			entry.stop()
+		})
+	}
 }
 
 /** A React Router data router (`createBrowserRouter` and friends), as far as Maple reads it. */
@@ -110,6 +150,10 @@ function reactRouterTemplate(state: ReactRouterState): string {
  * page load. Returns an unsubscribe.
  */
 export function instrumentReactRouter(router: ReactRouterLike): () => void {
+	return attachOnce(router, () => attachReactRouter(router))
+}
+
+function attachReactRouter(router: ReactRouterLike): () => void {
 	let open = false
 	let pathname = router.state.location.pathname
 	const start = (path: string): void => {
@@ -123,7 +167,7 @@ export function instrumentReactRouter(router: ReactRouterLike): () => void {
 	}
 	start(pathname)
 	if (router.state.initialized && router.state.navigation.state === "idle") end(router.state)
-	return router.subscribe((state) => {
+	const unsubscribe = router.subscribe((state) => {
 		const target = state.navigation.location?.pathname
 		if (state.navigation.state !== "idle" && target !== undefined) {
 			// Same path means a search-only change or a revalidation: not a navigation.
@@ -137,6 +181,12 @@ export function instrumentReactRouter(router: ReactRouterLike): () => void {
 		pathname = state.location.pathname
 		end(state)
 	})
+	return () => {
+		unsubscribe()
+		// Nothing will end it now: the router this navigation waited on is gone.
+		if (open) interruptNavigation()
+		open = false
+	}
 }
 
 /** A TanStack Router instance, as far as Maple reads it. */
@@ -161,6 +211,10 @@ export interface TanStackRouterLike {
  * changes are not navigations. The first is the page load. Returns an unsubscribe.
  */
 export function instrumentTanStackRouter(router: TanStackRouterLike): () => void {
+	return attachOnce(router, () => attachTanStackRouter(router))
+}
+
+function attachTanStackRouter(router: TanStackRouterLike): () => void {
 	/** The path of the navigation in flight, if any. */
 	let open: string | undefined
 	const template = (): string => {
@@ -187,5 +241,7 @@ export function instrumentTanStackRouter(router: TanStackRouterLike): () => void
 	return () => {
 		stopBefore()
 		stopResolved()
+		if (open !== undefined) interruptNavigation()
+		open = undefined
 	}
 }

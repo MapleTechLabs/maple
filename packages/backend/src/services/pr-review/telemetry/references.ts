@@ -6,6 +6,7 @@
  * token. That reads every query shape the product stores without a decoder per version.
  */
 import { PrReviewTelemetryReference } from "@maple/domain/http"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 export interface ReferenceSource {
 	readonly kind: "alert" | "dashboard"
@@ -18,15 +19,15 @@ export interface ReferenceSource {
 export const textsOf = (value: unknown, out: Array<string> = []): Array<string> => {
 	if (typeof value === "string") {
 		if (value.length > 0) out.push(value)
-	} else if (Array.isArray(value)) {
+	} else if (Arr.isArray(value)) {
 		for (const item of value) textsOf(item, out)
 	} else if (value !== null && typeof value === "object") {
-		for (const item of Object.values(value)) textsOf(item, out)
+		for (const item of Rec.values(value)) textsOf(item, out)
 	}
 	return out
 }
 
-export const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+export const escapeRegExp = (value: string) => Str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")(value)
 
 /**
  * The name as a whole token: not inside a longer name (`http.route` is not in `http.route.raw`,
@@ -43,10 +44,10 @@ export const referencesFor = (
 	sources: ReadonlyArray<ReferenceSource>,
 ): ReadonlyArray<PrReviewTelemetryReference> => {
 	const pattern = tokenPattern(name)
-	return sources
-		.filter((source) => source.texts.some((text) => text === name || pattern.test(text)))
-		.map(
-			(source) =>
-				new PrReviewTelemetryReference({ kind: source.kind, id: source.id, name: source.name }),
-		)
+	return Arr.map(
+		Arr.filter(sources, (source) =>
+			Arr.some(source.texts, (text) => text === name || pattern.test(text)),
+		),
+		(source) => new PrReviewTelemetryReference({ kind: source.kind, id: source.id, name: source.name }),
+	)
 }

@@ -10,9 +10,10 @@
 
 import { rmSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
-import { Chdb } from "../src/server/chdb"
-import { exportSignalShards } from "../src/server/archives/export"
-import { archiveSignal } from "../src/server/archives/signals"
+import { Chdb } from "@maple/local-server/chdb"
+import { exportSignalShards } from "@maple/local-server/archives/export"
+import { archiveSignal } from "@maple/local-server/archives/signals"
+import { Array as Arr, String as Str } from "effect"
 
 const SCHEMA = `
 CREATE DATABASE IF NOT EXISTS default;
@@ -47,19 +48,21 @@ const partsResult = db2.query(
 	"SELECT count(DISTINCT _part) AS n FROM traces WHERE toDate(Timestamp,'UTC')='2026-06-29' AND toHour(Timestamp,'UTC')=12",
 	"JSONEachRow",
 )
-console.log("parts before export:", partsResult.trim())
+console.log("parts before export:", Str.trim(partsResult))
 
 // The source set of IDs (sorted) that MUST appear in the archive.
-const sourceIds = db2
-	.query(
-		"SELECT TraceId FROM traces WHERE toDate(Timestamp,'UTC')='2026-06-29' AND toHour(Timestamp,'UTC')=12 ORDER BY TraceId",
-		"JSONEachRow",
-	)
-	.trim()
-	.split("\n")
-	.map((l) => JSON.parse(l).TraceId as string)
-	.sort()
-console.log("source IDs:", sourceIds.join(","))
+const sourceIds = Arr.map(
+	Str.split("\n")(
+		Str.trim(
+			db2.query(
+				"SELECT TraceId FROM traces WHERE toDate(Timestamp,'UTC')='2026-06-29' AND toHour(Timestamp,'UTC')=12 ORDER BY TraceId",
+				"JSONEachRow",
+			),
+		),
+	),
+	(l) => JSON.parse(l).TraceId as string,
+).sort()
+console.log("source IDs:", Arr.join(sourceIds, ","))
 
 // Export with an OPTIMIZE injected between shards.
 let optimizeFired = false
@@ -95,16 +98,16 @@ try {
 			`SELECT TraceId FROM file('${shard.path}', Parquet) ORDER BY TraceId`,
 			"JSONEachRow",
 		)
-		for (const line of rows.trim().split("\n")) {
-			if (line.trim()) allIds.push(JSON.parse(line).TraceId)
+		for (const line of Str.split("\n")(Str.trim(rows))) {
+			if (Str.trim(line)) allIds.push(JSON.parse(line).TraceId)
 		}
 	}
 	allIds.sort()
-	console.log("archived IDs:", allIds.join(","))
+	console.log("archived IDs:", Arr.join(allIds, ","))
 
 	// The corruption check: [5,6,7,8,5,6,7,8] under the old OFFSET approach.
-	const sourceStr = sourceIds.join(",")
-	const archivedStr = allIds.join(",")
+	const sourceStr = Arr.join(sourceIds, ",")
+	const archivedStr = Arr.join(allIds, ",")
 	if (sourceStr !== archivedStr) {
 		console.error(`CORRUPTION: source={${sourceStr}} archived={${archivedStr}}`)
 		process.exit(1)

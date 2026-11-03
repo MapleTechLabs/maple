@@ -12,7 +12,7 @@ import {
 import { AlertDestinationId, ErrorIssueId, IssueEscalationId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertDestinations, IssueEscalations } from "@maple/db/tables"
-import { Clock, Effect, Layer, Schema } from "effect"
+import { Clock, Effect, Layer, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ErrorPolicyService } from "./ErrorPolicyService"
@@ -40,6 +40,19 @@ afterEach(() => cleanupTestDbs(createdDbs))
 const makeLayer = () => {
 	const database = createTestDb(createdDbs).layer
 	return databaseOnlyLayer.pipe(Layer.provide(database), Layer.provideMerge(database))
+}
+
+// Yields before every statement so concurrent writers interleave their reads and writes,
+// which an in-memory database otherwise runs back to back.
+const makeInterleavingLayer = () => {
+	const interleaving = Layer.effect(
+		Database,
+		Effect.gen(function* () {
+			const database = yield* Database
+			return Database.of({ execute: (fn) => Effect.andThen(Effect.yieldNow, database.execute(fn)) })
+		}),
+	).pipe(Layer.provide(createTestDb(createdDbs).layer))
+	return databaseOnlyLayer.pipe(Layer.provide(interleaving), Layer.provideMerge(interleaving))
 }
 
 const insertDestination = (
@@ -83,6 +96,7 @@ describe("ErrorPolicyService", () => {
 			assert.strictEqual(initial.updatedBy, "system")
 
 			const destinationId = asDestinationId(randomUUID())
+			yield* insertDestination(destinationId, ORG)
 			const updated = yield* policies.upsertNotificationPolicy(
 				ORG,
 				USER,
@@ -106,6 +120,61 @@ describe("ErrorPolicyService", () => {
 				destinationId,
 			])
 		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("rejects notification destinations the org does not own and keeps the stored ones", () =>
+		Effect.gen(function* () {
+			const policies = yield* ErrorPolicyService
+			const ownedId = asDestinationId(randomUUID())
+			const foreignId = asDestinationId(randomUUID())
+			yield* insertDestination(ownedId, ORG)
+			yield* insertDestination(foreignId, OTHER_ORG)
+			yield* policies.upsertNotificationPolicy(
+				ORG,
+				USER,
+				ADMIN_ROLES,
+				new ErrorNotificationPolicyUpsertRequest({ destinationIds: [ownedId] }),
+			)
+
+			const failure = yield* Effect.flip(
+				policies.upsertNotificationPolicy(
+					ORG,
+					USER,
+					ADMIN_ROLES,
+					new ErrorNotificationPolicyUpsertRequest({ destinationIds: [ownedId, foreignId] }),
+				),
+			)
+
+			expect(failure).toMatchObject({
+				_tag: "@maple/http/errors/ErrorNotificationUnknownDestinationError",
+				destinationIds: [foreignId],
+			})
+			assert.deepStrictEqual((yield* policies.getNotificationPolicy(ORG)).destinationIds, [ownedId])
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("keeps every field when writes of different fields run concurrently", () =>
+		Effect.gen(function* () {
+			const policies = yield* ErrorPolicyService
+			const destinationId = asDestinationId(randomUUID())
+			yield* insertDestination(destinationId, ORG)
+			const write = (request: ErrorNotificationPolicyUpsertRequest) =>
+				policies.upsertNotificationPolicy(ORG, USER, ADMIN_ROLES, request)
+
+			yield* Effect.all(
+				[
+					write(new ErrorNotificationPolicyUpsertRequest({ destinationIds: [destinationId] })),
+					write(new ErrorNotificationPolicyUpsertRequest({ minOccurrenceCount: 9 })),
+					write(new ErrorNotificationPolicyUpsertRequest({ notifyOnResolve: true })),
+				],
+				{ concurrency: "unbounded" },
+			)
+
+			const policy = yield* policies.getNotificationPolicy(ORG)
+			assert.deepStrictEqual(policy.destinationIds, [destinationId])
+			assert.strictEqual(policy.minOccurrenceCount, 9)
+			assert.isTrue(policy.notifyOnResolve)
+		}).pipe(Effect.provide(makeInterleavingLayer())),
 	)
 
 	// The gate lives here rather than on the v1 route because the MCP tool and
@@ -228,7 +297,7 @@ describe("ErrorPolicyService", () => {
 			yield* database.execute((db) =>
 				db.run(
 					PG.insertInto(IssueEscalations).values(
-						rows.map((row) => ({
+						Arr.map(rows, (row) => ({
 							id: row.id,
 							orgId: row.orgId,
 							issueId: row.issueId,
@@ -247,10 +316,13 @@ describe("ErrorPolicyService", () => {
 			)
 
 			const issueAttempts = yield* policies.listIssueEscalations(ORG, issueId)
-			expect(issueAttempts.attempts.map((attempt) => attempt.id)).toEqual([rows[1]?.id, rows[0]?.id])
+			expect(Arr.map(issueAttempts.attempts, (attempt) => attempt.id)).toEqual([
+				rows[1]?.id,
+				rows[0]?.id,
+			])
 
 			const recent = yield* policies.listRecentEscalations(ORG, 2)
-			expect(recent.attempts.map((attempt) => attempt.id)).toEqual([rows[2]?.id, rows[1]?.id])
+			expect(Arr.map(recent.attempts, (attempt) => attempt.id)).toEqual([rows[2]?.id, rows[1]?.id])
 		}).pipe(Effect.provide(makeLayer())),
 	)
 })

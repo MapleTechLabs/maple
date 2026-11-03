@@ -14,9 +14,8 @@
  * column, and spends no other accent: the button is the only other amber thing
  * on the surface.
  *
- * Enterprise is a one-line rail below the card, not a peer. It keeps its
- * "From $2,000" anchor: that number is what makes $39 read as nothing: but a
- * "call us" card given equal weight costs self-serve conversion.
+ * Enterprise is a one-line rail below the card, not a peer: a "call us" card
+ * given equal weight costs self-serve conversion.
  */
 import * as m from "../paraglide/messages.js";
 import { APP_SIGN_UP_URL } from "../lib/app-urls";
@@ -296,9 +295,6 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                     </p>
                 </div>
                 <div class="flex shrink-0 items-center justify-between gap-5 sm:justify-end">
-                    <span class="whitespace-nowrap font-mono text-lg tabular-nums text-primary">
-                        {m.pricing_enterprise_price()}
-                    </span>
                     <a
                         href="https://cal.com/david-granzin/30min?overlayCalendar=true"
                         class="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-primary/40 bg-primary/10 px-4 text-[13px] font-medium text-primary transition-colors hover:bg-primary/20"

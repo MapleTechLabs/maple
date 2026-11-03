@@ -12,7 +12,7 @@ import {
 import type { RoleName as RoleNameType } from "@maple/domain/http"
 import { AI_CRAWLERS, AI_PRODUCTS, aiProductById } from "@maple/domain/ai-traffic"
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
-import { Array as Arr, Cause, Clock, Context, DateTime, Effect, Layer, Redacted } from "effect"
+import { Array as Arr, Cause, Clock, Context, DateTime, Effect, Layer, Redacted, String as Str } from "effect"
 import {
 	aiProductIcon,
 	computeDelta,
@@ -43,6 +43,7 @@ import {
 	isOrgWarehouseQuarantined,
 	quarantineOnConfigClassCause,
 } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
+import { digestResendCutoffMs, isDigestDue, lastDigestActivity } from "./digest-schedule"
 import { resolveOrgName } from "./resolve-org-name"
 import { unsubscribeLinks } from "./unsubscribe-token"
 
@@ -62,15 +63,17 @@ const toPersistenceError = (error: unknown) =>
 		message: error instanceof Error ? error.message : `Web analytics digest error: ${String(error)}`,
 	})
 
-const crawlerProduct = new Map(AI_CRAWLERS.map((crawler) => [crawler.name, crawler.product]))
+const crawlerProduct = new Map(Arr.map(AI_CRAWLERS, (crawler) => [crawler.name, crawler.product]))
 const referrerProduct = new Map(
-	AI_PRODUCTS.flatMap((product) => product.referrerHosts.map((host) => [host, product.id] as const)),
+	Arr.flatMap(AI_PRODUCTS, (product) =>
+		Arr.map(product.referrerHosts, (host) => [host, product.id] as const),
+	),
 )
 
 /** Direct traffic, an AI assistant's mark, the site's favicon, or a generic link. */
 function sourceIcon(referrerHost: string): string {
 	if (referrerHost === WEB_ANALYTICS_UNSET) return emailIcon("direct")
-	const host = referrerHost.toLowerCase().replace(/^www\./, "")
+	const host = Str.replace(/^www\./, "")(Str.toLowerCase(referrerHost))
 	const product = referrerProduct.get(host)
 	if (product !== undefined) return aiProductIcon(product)
 	return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host) ? faviconIcon(host) : emailIcon("source")
@@ -87,17 +90,17 @@ function withShares(
 	rows: ReadonlyArray<{ icon: string | null; label: string; value: number; delta?: Delta }>,
 	total: number,
 ): Array<WebAnalyticsRankRow> {
-	return rows.map((row) => ({ ...row, share: total > 0 ? row.value / total : 0 }))
+	return Arr.map(rows, (row) => ({ ...row, share: total > 0 ? row.value / total : 0 }))
 }
 
 /** `/pricing`, or `docs.acme.com/pricing` once more than one host is in the list. */
 function pageLabels<T extends { host: string; path: string }>(rows: ReadonlyArray<T>) {
-	const multiHost = new Set(rows.map((row) => row.host)).size > 1
+	const multiHost = new Set(Arr.map(rows, (row) => row.host)).size > 1
 	return (row: T) => (multiHost ? `${row.host}${row.path}` : row.path)
 }
 
 export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDigestService>()(
-	"@maple/api/services/WebAnalyticsDigestService",
+	"@maple/backend/services/WebAnalyticsDigestService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
@@ -152,11 +155,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				// `session_events` on a cluster that has not applied it (same rule as
 				// the query-engine routes).
 				const withRollup = <A, E, R>(read: (useProductEvents: boolean) => Effect.Effect<A, E, R>) =>
-					read(true).pipe(
-						Effect.catch((error) =>
-							isMissingProductEvents(error) ? read(false) : Effect.fail(error),
-						),
-					)
+					read(true).pipe(Effect.catchIf(isMissingProductEvents, () => read(false)))
 
 				const [
 					curSummary,
@@ -253,12 +252,11 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					// Only a missing table drops the card. Any other failure fails the
 					// org, like the rest of the queries, rather than sending a week with
 					// crawler figures silently missing.
-					Effect.catch((error) =>
-						isMissingAiCrawlerRequests(error)
-							? Effect.logInfo(
-									"ai_crawler_requests absent; sending without crawler stats",
-								).pipe(Effect.annotateLogs({ orgId }), Effect.as(null))
-							: Effect.fail(error),
+					Effect.catchIf(isMissingAiCrawlerRequests, () =>
+						Effect.logInfo("ai_crawler_requests absent; sending without crawler stats").pipe(
+							Effect.annotateLogs({ orgId }),
+							Effect.as(null),
+						),
 					),
 				)
 
@@ -412,7 +410,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					baseUrl: env.MAPLE_APP_BASE_URL,
 					analyticsUrl,
 					aiUrl: `${analyticsUrl}&tab=ai`,
-					unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/settings?tab=notifications`,
+					unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/account?tab=email-preferences`,
 				}
 
 				yield* Effect.annotateCurrentSpan({
@@ -448,16 +446,14 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 
 			/**
 			 * Runs on the ops digest's 15-minute tick, after it, so the Clerk member
-			 * sweep has already seeded any new subscriber rows. Same weekday and
-			 * once-a-day claim as the ops digest, on this email's own columns.
+			 * sweep has already seeded any new subscriber rows. Same schedule and
+			 * once-a-window claim as the ops digest, on this email's own columns.
 			 */
 			const runTick = Effect.fn("WebAnalyticsDigestService.runTick")(function* () {
 				if (!email.isConfigured) return { sentCount: 0, errorCount: 0, skipped: true }
 
 				const now = yield* Clock.currentTimeMillis
-				const sevenDaysAgo = now - 7 * DAY_MS
-				const todayStartMs = now - (now % DAY_MS)
-				const currentDayOfWeek = new Date(now).getUTCDay()
+				const resendCutoffMs = digestResendCutoffMs(now)
 
 				const subs = yield* dbExecute((db) =>
 					db.run(
@@ -467,10 +463,12 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					),
 				)
 
-				const due = subs.filter(
-					(s) =>
-						s.dayOfWeek === currentDayOfWeek &&
-						(s.webAnalyticsLastSentAt == null || s.webAnalyticsLastSentAt < sevenDaysAgo),
+				const due = subs.filter((s) =>
+					isDigestDue(
+						s,
+						lastDigestActivity(s.webAnalyticsLastSentAt, s.webAnalyticsLastAttemptedAt),
+						now,
+					),
 				)
 				if (due.length === 0) return { sentCount: 0, errorCount: 0, skipped: false }
 
@@ -494,7 +492,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 											),
 											PG.or(
 												$.webAnalyticsLastAttemptedAt.isNull(),
-												$.webAnalyticsLastAttemptedAt.lt(todayStartMs),
+												$.webAnalyticsLastAttemptedAt.lte(resendCutoffMs),
 											),
 										])
 										.returning("id"),

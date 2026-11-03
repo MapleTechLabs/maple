@@ -20,6 +20,7 @@
  */
 import * as m from "../paraglide/messages.js"
 import type { Feature } from "./page-registry"
+import { Array as Arr } from "effect"
 
 export const features: Feature[] = [
 	{
@@ -387,7 +388,7 @@ export const features: Feature[] = [
 			{ op: "service.name", title: m.feat_catalog_cap_4_title, body: m.feat_catalog_cap_4_body },
 			{ op: "service.version", title: m.feat_catalog_cap_5_title, body: m.feat_catalog_cap_5_body },
 		],
-		related: ["distributed-tracing", "kubernetes-monitoring", "metrics-dashboards"],
+		related: ["anomalies", "kubernetes-monitoring", "uptime-monitoring"],
 		relatedUseCases: ["microservices-debugging"],
 		locales: ["en", "ja", "ko"],
 	},
@@ -447,7 +448,7 @@ export const features: Feature[] = [
 			{ op: "claim", title: m.feat_errors_cap_4_title, body: m.feat_errors_cap_4_body },
 			{ op: "set severity", title: m.feat_errors_cap_5_title, body: m.feat_errors_cap_5_body },
 		],
-		related: ["distributed-tracing", "alerts", "ai-mcp-integration"],
+		related: ["github", "anomalies", "ai-mcp-integration"],
 		relatedUseCases: ["ecommerce-observability"],
 		locales: ["en", "ja", "ko"],
 	},
@@ -510,7 +511,77 @@ export const features: Feature[] = [
 			{ op: "check log", title: m.feat_alerts_cap_4_title, body: m.feat_alerts_cap_4_body },
 			{ op: "renotify 30m", title: m.feat_alerts_cap_5_title, body: m.feat_alerts_cap_5_body },
 		],
-		related: ["error-tracking", "metrics-dashboards", "product-events"],
+		related: ["error-tracking", "uptime-monitoring", "product-events"],
+		relatedUseCases: ["api-performance"],
+		locales: ["en", "ja", "ko"],
+	},
+
+	{
+		slug: "uptime-monitoring",
+		navLabel: m.nav_uptime,
+		navDesc: m.nav_desc_uptime,
+		seoTitle: m.feat_uptime_seo_title,
+		seoDescription: m.feat_uptime_seo_desc,
+		heroTitle: m.feat_uptime_hero_title,
+		heroLede: m.feat_uptime_hero_lede,
+		// No panel: there is no uptime capture yet. The live monitor list carries the
+		// surface, and the check-as-trace section carries the argument.
+		panel: null,
+		artifact: {
+			id: "uptime",
+			title: m.feat_uptime_artifact_title,
+			lede: m.feat_uptime_artifact_lede,
+			wide: true,
+		},
+		extraSections: ["uptime-check-trace"],
+		gallery: [],
+		capTitle: m.feat_uptime_cap_title,
+		capabilities: [
+			{ op: "http", title: m.feat_uptime_cap_1_title, body: m.feat_uptime_cap_1_body },
+			{ op: "tcp", title: m.feat_uptime_cap_2_title, body: m.feat_uptime_cap_2_body },
+			{ op: "dns", title: m.feat_uptime_cap_3_title, body: m.feat_uptime_cap_3_body },
+			{ op: "/hb/<token>", title: m.feat_uptime_cap_4_title, body: m.feat_uptime_cap_4_body },
+			{ op: "failures_to_down", title: m.feat_uptime_cap_5_title, body: m.feat_uptime_cap_5_body },
+			{
+				op: "create_uptime_monitor()",
+				title: m.feat_uptime_cap_6_title,
+				body: m.feat_uptime_cap_6_body,
+			},
+		],
+		related: ["alerts", "distributed-tracing", "service-catalog"],
+		relatedUseCases: ["api-performance"],
+		locales: ["en", "ja", "ko"],
+	},
+
+	{
+		slug: "anomalies",
+		navLabel: m.nav_anomalies,
+		navDesc: m.nav_desc_anomalies,
+		seoTitle: m.feat_anomalies_seo_title,
+		seoDescription: m.feat_anomalies_seo_desc,
+		heroTitle: m.feat_anomalies_hero_title,
+		heroLede: m.feat_anomalies_hero_lede,
+		// No panel: there is no anomalies capture yet. The live artifact is the detail page's
+		// chart and rail, with the detector's real thresholds.
+		panel: null,
+		artifact: {
+			id: "anomaly",
+			title: m.feat_anomalies_artifact_title,
+			lede: m.feat_anomalies_artifact_lede,
+			wide: true,
+		},
+		extraSections: [],
+		gallery: [],
+		capTitle: m.feat_anomalies_cap_title,
+		capabilities: [
+			{ op: "error_rate", title: m.feat_anomalies_cap_1_title, body: m.feat_anomalies_cap_1_body },
+			{ op: "latency_p95", title: m.feat_anomalies_cap_2_title, body: m.feat_anomalies_cap_2_body },
+			{ op: "throughput", title: m.feat_anomalies_cap_3_title, body: m.feat_anomalies_cap_3_body },
+			{ op: "error_spike", title: m.feat_anomalies_cap_4_title, body: m.feat_anomalies_cap_4_body },
+			{ op: "log_volume", title: m.feat_anomalies_cap_5_title, body: m.feat_anomalies_cap_5_body },
+			{ op: "investigate", title: m.feat_anomalies_cap_6_title, body: m.feat_anomalies_cap_6_body },
+		],
+		related: ["alerts", "error-tracking", "service-catalog"],
 		relatedUseCases: ["api-performance"],
 		locales: ["en", "ja", "ko"],
 	},
@@ -560,7 +631,7 @@ export const features: Feature[] = [
 			{ op: "claim_error_issue()", title: m.feat_mcp_cap_4_title, body: m.feat_mcp_cap_4_body },
 			{ op: "org scope", title: m.feat_mcp_cap_5_title, body: m.feat_mcp_cap_5_body },
 		],
-		related: ["error-tracking", "distributed-tracing", "service-catalog"],
+		related: ["error-tracking", "github", "service-catalog"],
 		relatedUseCases: ["api-performance"],
 		locales: ["en", "ja", "ko"],
 	},
@@ -599,8 +670,61 @@ export const features: Feature[] = [
 		relatedUseCases: ["microservices-debugging"],
 		locales: ["en", "ja", "ko"],
 	},
+
+	{
+		slug: "github",
+		navLabel: m.nav_github,
+		navDesc: m.nav_desc_github,
+		seoTitle: m.feat_github_seo_title,
+		seoDescription: m.feat_github_seo_desc,
+		heroTitle: m.feat_github_hero_title,
+		heroLede: m.feat_github_hero_lede,
+		panel: {
+			route: "/code-review",
+			constant: "acme · 41 PRs reviewed · 30d",
+			plate: {
+				src: "/screenshots/surface-code-review.webp",
+				width: 2880,
+				height: 1620,
+				alt: "Code Review analytics: pull requests reviewed and issues caught per day, with the repositories that had the most issues",
+			},
+			facts: [
+				{ key: "writes", value: "summary comment · inline review · check run" },
+				{ key: "lenses", value: "correctness · security · performance · observability · tests" },
+				{ key: "reads", value: "traces · open errors · alerts · dashboards" },
+				{ key: "blocks", value: "telemetry an alert or dashboard reads" },
+				{ key: "after", value: "production, an hour after the deploy" },
+				{ key: "rules", value: "org defaults · repo overrides" },
+			],
+			title: m.feat_github_panel_title,
+			lede: m.feat_github_panel_lede,
+		},
+		artifact: {
+			id: "pr-review",
+			title: m.feat_github_artifact_title,
+			lede: m.feat_github_artifact_lede,
+		},
+		// The CI captures live in their section rather than the gallery: the tab, the run's
+		// trace and the PR sheet read as one story about a red build.
+		extraSections: ["github-ci", "github-after-merge"],
+		gallery: [],
+		capTitle: m.feat_github_cap_title,
+		capabilities: [
+			{ op: "github.app", title: m.feat_github_cap_1_title, body: m.feat_github_cap_1_body },
+			{ op: "pull_request", title: m.feat_github_cap_2_title, body: m.feat_github_cap_2_body },
+			{ op: "before_merge", title: m.feat_github_cap_3_title, body: m.feat_github_cap_3_body },
+			{ op: "telemetry.contract", title: m.feat_github_cap_4_title, body: m.feat_github_cap_4_body },
+			{ op: "workflow_run", title: m.feat_github_cap_5_title, body: m.feat_github_cap_5_body },
+			{ op: "ci_runs()", title: m.feat_github_cap_6_title, body: m.feat_github_cap_6_body },
+			{ op: "read_source_file()", title: m.feat_github_cap_7_title, body: m.feat_github_cap_7_body },
+			{ op: "review.rules", title: m.feat_github_cap_8_title, body: m.feat_github_cap_8_body },
+		],
+		related: ["error-tracking", "ai-mcp-integration", "distributed-tracing"],
+		relatedUseCases: ["api-performance"],
+		locales: ["en", "ja", "ko"],
+	},
 ]
 
-export const featureSlugs = features.map((feature) => feature.slug)
+export const featureSlugs = Arr.map(features, (feature) => feature.slug)
 
 export const featureBySlug = (slug: string) => features.find((feature) => feature.slug === slug)

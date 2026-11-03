@@ -8,6 +8,7 @@ import {
 	toolSpanIssuers,
 } from "./span-detail"
 import { llmSpan, makeSpan, toolSpan } from "./span-test-support"
+import { Array as Arr } from "effect"
 
 describe("spanMessages", () => {
 	it("reads the documented shape: system instructions, then input, then output", () => {
@@ -38,7 +39,7 @@ describe("spanMessages", () => {
 		})
 
 		const messages = spanMessages(span)
-		expect(messages.map((message) => [message.origin, message.role])).toEqual([
+		expect(Arr.map(messages, (message) => [message.origin, message.role])).toEqual([
 			["system", "system"],
 			["input", "user"],
 			["output", "assistant"],
@@ -121,7 +122,7 @@ describe("spanMessages", () => {
 			name: "get_weather",
 			argumentsText: '{"city":"Berlin"}',
 		}
-		expect(spanMessages(span).map((message) => [message.role, message.parts])).toEqual([
+		expect(Arr.map(spanMessages(span), (message) => [message.role, message.parts])).toEqual([
 			["user", [{ kind: "text", text: "What's the weather in Berlin?" }]],
 			["assistant", [toolCall]],
 			[
@@ -136,7 +137,7 @@ describe("spanMessages", () => {
 			],
 			["assistant", [toolCall]],
 		])
-		expect(spanToolCalls(span).map((c) => c.name)).toEqual(["get_weather"])
+		expect(Arr.map(spanToolCalls(span), (c) => c.name)).toEqual(["get_weather"])
 	})
 
 	it("reads a streamed Google ADK reply as its aggregate, not its chunks", () => {
@@ -153,7 +154,7 @@ describe("spanMessages", () => {
 			durationMs: 1000,
 			genAi: {
 				outputMessages: [
-					...["The", " capital", " of", " France", " is", " Paris", "."].map(chunk),
+					...Arr.map(["The", " capital", " of", " France", " is", " Paris", "."], chunk),
 					{
 						role: "assistant",
 						parts: [{ content: "The capital of France is Paris.", type: "text" }],
@@ -163,7 +164,7 @@ describe("spanMessages", () => {
 			},
 		})
 
-		expect(spanMessages(span).map((message) => message.parts)).toEqual([
+		expect(Arr.map(spanMessages(span), (message) => message.parts)).toEqual([
 			[{ kind: "text", text: "The capital of France is Paris." }],
 		])
 
@@ -281,7 +282,7 @@ describe("spanToolCalls", () => {
 			toolName: "run_tests",
 			genAi: { toolCallId: "toolu_02", toolCallArguments: { suite: "webhooks" } },
 		})
-		expect(spanToolCalls(executed).map((call) => call.own)).toEqual([true])
+		expect(Arr.map(spanToolCalls(executed), (call) => call.own)).toEqual([true])
 
 		const requested = llmSpan({
 			spanId: "l2",
@@ -296,7 +297,7 @@ describe("spanToolCalls", () => {
 				],
 			},
 		})
-		expect(spanToolCalls(requested).map((call) => call.own)).toEqual([false])
+		expect(Arr.map(spanToolCalls(requested), (call) => call.own)).toEqual([false])
 	})
 
 	it("reads the tool_call parts of the output this call produced, not the history", () => {
@@ -385,7 +386,7 @@ describe("spanToolCalls", () => {
 		const results = sessionToolResults([model, tool, next])
 		const calls = spanToolCalls(model, results)
 
-		expect(calls.map((call) => [call.id, call.resultText])).toEqual([
+		expect(Arr.map(calls, (call) => [call.id, call.resultText])).toEqual([
 			["toolu_01", "120 lines"],
 			["toolu_02", "exit 0"],
 			// Nothing in the session carries this one's response, so none is shown.

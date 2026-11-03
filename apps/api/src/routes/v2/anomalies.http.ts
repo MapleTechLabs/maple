@@ -14,7 +14,7 @@ import {
 } from "@maple/domain/http"
 import { MapleApiV2, paginateOffsetQuery, timestamp } from "@maple/domain/http/v2"
 import type { V2AnomalyIncident, V2AnomalyIncidentTimeseries, V2AnomalySettings } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
@@ -43,7 +43,7 @@ const toV2Incident = (doc: AnomalyIncidentDocument): V2AnomalyIncident => ({
 	resolved_at: doc.resolvedAt,
 	resolve_reason: doc.resolveReason,
 	triage_status: doc.triageStatus,
-	fingerprints: doc.fingerprints.map((fp) => ({
+	fingerprints: Arr.map(doc.fingerprints, (fp) => ({
 		fingerprint_hash: fp.fingerprintHash,
 		error_issue_id: fp.errorIssueId,
 		opened_value: fp.openedValue,
@@ -61,7 +61,7 @@ const toV2Timeseries = (r: AnomalyIncidentTimeseriesResponse): V2AnomalyIncident
 	signal_type: r.signalType,
 	unit: r.unit,
 	bucket_seconds: r.bucketSeconds,
-	buckets: r.buckets.map((b) => ({ bucket: b.bucket, value: b.value, sample_count: b.sampleCount })),
+	buckets: Arr.map(r.buckets, (b) => ({ bucket: b.bucket, value: b.value, sample_count: b.sampleCount })),
 	baseline_median: r.baselineMedian,
 	threshold_value: r.thresholdValue,
 })
@@ -137,7 +137,7 @@ export const HttpV2AnomaliesLive = HttpApiBuilder.group(MapleApiV2, "anomalies",
 								limit,
 								offset,
 							})
-							.pipe(Effect.map((response) => response.incidents.map(toV2Incident))),
+							.pipe(Effect.map((response) => Arr.map(response.incidents, toV2Incident))),
 					)
 					return { object: "list" as const, ...page }
 				}),
@@ -152,7 +152,7 @@ export const HttpV2AnomaliesLive = HttpApiBuilder.group(MapleApiV2, "anomalies",
 
 					return {
 						object: "list" as const,
-						data: rows.map((row) => ({
+						data: Arr.map(rows, (row) => ({
 							object: "anomaly_service_count" as const,
 							service_name: row.serviceName,
 							deployment_env: row.deploymentEnv,

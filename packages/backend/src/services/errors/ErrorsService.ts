@@ -59,6 +59,7 @@ import {
 	type NotificationRequest,
 } from "@maple/backend/services/alerts/NotificationDispatcher"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { EdgeCacheService } from "@maple/cache"
 import {
 	isOrgWarehouseQuarantined,
@@ -237,6 +238,7 @@ const make: Effect.Effect<
 	never,
 	| Database
 	| WarehouseQueryService
+	| OrgClickHouseSettingsService
 	| EdgeCacheService
 	| Env
 	| NotificationDispatcher
@@ -259,12 +261,14 @@ const make: Effect.Effect<
 	const defaultPolicy = policies.defaultNotificationPolicy
 	const parsePolicyDestinations = policies.parseNotificationDestinationIds
 	const warehouse = yield* WarehouseQueryService
+	const orgChSettings = yield* OrgClickHouseSettingsService
 	const edgeCache = yield* EdgeCacheService
 	const env = yield* Env
 	const dispatcher = yield* NotificationDispatcher
 	// Optional: present only inside a Worker isolate. Used to start the
 	// investigation agent when an incident opens (org opt-in).
-	const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
+	const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
+	const chatSessions = Option.getOrUndefined(chatSessionsOption)
 
 	const newErrorIssueId = () => decodeErrorIssueIdSync(randomUUID())
 	const newErrorIncidentId = () => decodeErrorIncidentIdSync(randomUUID())
@@ -304,7 +308,12 @@ const make: Effect.Effect<
 		// Without the BYO set an org on its own warehouse reads as idle, and
 		// managed discovery says nothing about its data: not a discovered result.
 		const byoKnown = Option.isSome(byoRows)
-		const byo = new Set<OrgId>(Option.getOrElse(byoRows, () => []).map((r) => r.orgId))
+		const byo = new Set<OrgId>(
+			Arr.map(
+				Option.getOrElse(byoRows, () => []),
+				(r) => r.orgId,
+			),
+		)
 
 		if (knownOrgs.length === 0) {
 			yield* Effect.annotateCurrentSpan({
@@ -422,12 +431,10 @@ const make: Effect.Effect<
 				} else {
 					const parsed = parseWarehouseDateTime(opts.snoozeUntil)
 					if (!Number.isFinite(parsed)) {
-						return yield* Effect.fail(
-							new ErrorValidationError({
-								message: "Invalid snoozeUntil timestamp",
-								details: [opts.snoozeUntil],
-							}),
-						)
+						return yield* new ErrorValidationError({
+							message: "Invalid snoozeUntil timestamp",
+							details: [opts.snoozeUntil],
+						})
 					}
 					snoozeUntilMs = parsed
 				}
@@ -532,7 +539,7 @@ const make: Effect.Effect<
 						.limit(1),
 				),
 			)
-			return yield* Effect.fail(leaseConflict(issueId, latestRows[0] ?? null))
+			return yield* leaseConflict(issueId, latestRows[0] ?? null)
 		}
 
 		return { row: claimed[0]!, leaseExpiresAt }
@@ -551,14 +558,12 @@ const make: Effect.Effect<
 
 			const current = yield* requireIssue(orgId, issueId)
 			if (CLOSED_WORKFLOW_STATES.has(current.workflowState)) {
-				return yield* Effect.fail(
-					new ErrorIssueTransitionError({
-						message: `Cannot claim an issue in state '${current.workflowState}'`,
-						issueId,
-						fromState: current.workflowState,
-						toState: "in_progress",
-					}),
-				)
+				return yield* new ErrorIssueTransitionError({
+					message: `Cannot claim an issue in state '${current.workflowState}'`,
+					issueId,
+					fromState: current.workflowState,
+					toState: "in_progress",
+				})
 			}
 
 			const { row, leaseExpiresAt } = yield* acquireLease(orgId, actorId, issueId, leaseMs, timestamp)
@@ -625,24 +630,20 @@ const make: Effect.Effect<
 			// deliberately, which is a decision rather than a side effect of
 			// attaching a patch.
 			if (CLOSED_WORKFLOW_STATES.has(current.workflowState)) {
-				return yield* Effect.fail(
-					new ErrorIssueTransitionError({
-						message: `Issue is '${current.workflowState}' and takes no more fixes. Reopen it first with transition_error_issue if this fix is still needed.`,
-						issueId,
-						fromState: current.workflowState,
-						toState: "in_review",
-					}),
-				)
+				return yield* new ErrorIssueTransitionError({
+					message: `Issue is '${current.workflowState}' and takes no more fixes. Reopen it first with transition_error_issue if this fix is still needed.`,
+					issueId,
+					fromState: current.workflowState,
+					toState: "in_review",
+				})
 			}
 			if (!canReachInReview(current.workflowState)) {
-				return yield* Effect.fail(
-					new ErrorIssueTransitionError({
-						message: `An issue in '${current.workflowState}' cannot go under review. Move it to 'triage' first with transition_error_issue.`,
-						issueId,
-						fromState: current.workflowState,
-						toState: "in_review",
-					}),
-				)
+				return yield* new ErrorIssueTransitionError({
+					message: `An issue in '${current.workflowState}' cannot go under review. Move it to 'triage' first with transition_error_issue.`,
+					issueId,
+					fromState: current.workflowState,
+					toState: "in_review",
+				})
 			}
 
 			// A `pr_url` that is not a pull request URL is refused here, before any
@@ -651,13 +652,11 @@ const make: Effect.Effect<
 			// a URL was told the fix was attached and would be verified after merge,
 			// when nothing had been linked and no verification would ever run.
 			if (request.prUrl !== undefined && parsePullRequestUrl(request.prUrl) === null) {
-				return yield* Effect.fail(
-					new ErrorIssuePullRequestInvalidError({
-						message:
-							"Not a recognizable GitHub pull request URL. Omit pr_url to record the fix without one.",
-						rawUrl: request.prUrl,
-					}),
-				)
+				return yield* new ErrorIssuePullRequestInvalidError({
+					message:
+						"Not a recognizable GitHub pull request URL. Omit pr_url to record the fix without one.",
+					rawUrl: request.prUrl,
+				})
 			}
 
 			// Proposing a fix IS picking the issue up, so it takes the lease. If
@@ -1257,7 +1256,7 @@ const make: Effect.Effect<
 
 		// Every display string crosses from ClickHouse bytes into Postgres text
 		// here — the one place to strip what Postgres refuses (`PgText` in `pg-text.ts`).
-		const rows = issuesRaw.map((raw) => ({
+		const rows = Arr.map(issuesRaw, (raw) => ({
 			fingerprintHash: raw.fingerprintHash,
 			serviceName: toPgText(raw.serviceName),
 			exceptionType: toPgText(raw.exceptionType),
@@ -1266,8 +1265,11 @@ const make: Effect.Effect<
 			topFrame: toPgText(raw.topFrame),
 			// The warehouse returns every distinct build seen for the fingerprint in
 			// the window; an older cluster that predates the column returns nothing.
-			serviceVersions: Array.isArray(raw.serviceVersions)
-				? raw.serviceVersions.map((version) => String(version)).filter((version) => version !== "")
+			serviceVersions: Arr.isArray(raw.serviceVersions)
+				? Arr.filter(
+						Arr.map(raw.serviceVersions, (version) => String(version)),
+						(version) => version !== "",
+					)
 				: [],
 			count: raw.count,
 			firstSeenMs: DateTime.toEpochMillis(raw.firstSeen),
@@ -1278,7 +1280,7 @@ const make: Effect.Effect<
 			persistErrorTickWindow(db, {
 				orgId,
 				actorId: systemActor.id,
-				rows: rows.map((row) => ({
+				rows: Arr.map(rows, (row) => ({
 					fingerprintHash: row.fingerprintHash,
 					serviceName: row.serviceName,
 					exceptionType: row.exceptionType,
@@ -1347,7 +1349,7 @@ const make: Effect.Effect<
 			)
 			if (verifyingIssues.length > 0) {
 				const versionsByFingerprint = new Map(
-					rows.map((row) => [row.fingerprintHash, row.serviceVersions]),
+					Arr.map(rows, (row) => [row.fingerprintHash, row.serviceVersions]),
 				)
 				yield* Effect.forEach(
 					verifyingIssues,
@@ -1464,12 +1466,15 @@ const make: Effect.Effect<
 									$.orgId.eq(orgId),
 									$.archivedAt.isNotNull(),
 									$.archivedAt.lt(archivedCutoff),
+									// A fixed issue old clients still hit holds the build set that keeps them
+									// from reopening it; deleting it re-mints the bug as a new triage issue.
+									$.lastSeenAt.lt(archivedCutoff),
 								])
 								.limit(500),
 						),
 					)
 					if (toDelete.length > 0) {
-						const ids = toDelete.map((r) => r.id)
+						const ids = Arr.map(toDelete, (r) => r.id)
 						yield* dbExecute((db) =>
 							db.run(
 								PG.deleteFrom(ErrorIncidents).where(($) => [
@@ -1607,8 +1612,7 @@ const make: Effect.Effect<
 		// read through one by one.
 		const probed = yield* Effect.reduce(
 			Arr.chunksOf(
-				trailing
-					.filter((row) => !isObserved(row))
+				Arr.filter(trailing, (row) => !isObserved(row))
 					// Most recent first: a short outage gap before rows that are weeks old.
 					.toSorted((a, b) => b.processedThrough - a.processedThrough),
 				TICK_IDLE_RECOVERY_LOOKUPS,
@@ -1622,7 +1626,7 @@ const make: Effect.Effect<
 						}).pipe(
 							Effect.map((quarantined) => [
 								...found,
-								...wave.filter((_, index) => !quarantined[index]),
+								...Arr.filter(wave, (_, index) => !quarantined[index]),
 							]),
 						),
 		)
@@ -1676,11 +1680,14 @@ const make: Effect.Effect<
 		).pipe(Effect.map((results) => results.flat()))
 
 		const parked = [
-			...trailing.filter(isObserved).map((row) => row.orgId),
-			...recovered.filter((row) => row.firstErrorMs === null).map((row) => row.orgId),
+			...Arr.map(Arr.filter(trailing, isObserved), (row) => row.orgId),
+			...Arr.map(
+				Arr.filter(recovered, (row) => row.firstErrorMs === null),
+				(row) => row.orgId,
+			),
 		]
 		yield* moveCursors(parked, parkedAtMs)
-		const recovering = recovered.flatMap((row) =>
+		const recovering = Arr.flatMap(recovered, (row) =>
 			row.firstErrorMs === null ? [] : [{ orgId: row.orgId, firstErrorMs: row.firstErrorMs }],
 		)
 		yield* Effect.forEach(recovering, (row) => moveCursors([row.orgId], row.firstErrorMs), {
@@ -1691,7 +1698,7 @@ const make: Effect.Effect<
 			"maple.errors.idle_cursors_parked": parked.length,
 			"maple.errors.idle_cursors_recovering": recovering.length,
 		})
-		return recovering.map((row) => row.orgId)
+		return Arr.map(recovering, (row) => row.orgId)
 	})
 
 	// Align to the latest completed minute. Per-org cursor leases serialize
@@ -1712,7 +1719,7 @@ const make: Effect.Effect<
 		const stateOrgs = yield* dbExecute((db) => selectDistinctOrgIds(db, ErrorIssueStates))
 		const issueOrgs = yield* dbExecute((db) => selectDistinctOrgIds(db, ErrorIssues))
 		const ingestOrgs = yield* dbExecute((db) => db.run(PG.from(OrgIngestKeys).select("orgId").distinct()))
-		const knownOrgs = new Set<OrgId>([...stateOrgs, ...issueOrgs, ...ingestOrgs.map((r) => r.orgId)])
+		const knownOrgs = new Set<OrgId>([...stateOrgs, ...issueOrgs, ...Arr.map(ingestOrgs, (r) => r.orgId)])
 
 		const { active: activeOrgs, discovered } = yield* resolveActiveOrgs([...knownOrgs], nowMs)
 		// Orgs that hold issue/incident state must be scanned even with no recent
@@ -1727,12 +1734,12 @@ const make: Effect.Effect<
 		// any of those is in `withState` by construction. Visiting the rest cost 5
 		// Postgres round-trips each per minute — ~1.6M/day, most of the statement
 		// volume on the database — to discover nothing.
-		const activeScanOrgs = [...knownOrgs].filter(isActive)
+		const activeScanOrgs = Arr.filter([...knownOrgs], isActive)
 		// Housekeeping for orgs that are not being scanned: a failure here must not
 		// cost the active orgs their tick.
 		const recoveringOrgs = discovered
 			? yield* advanceIdleCursors(
-					[...knownOrgs].filter((org) => !isActive(org)),
+					Arr.filter([...knownOrgs], (org) => !isActive(org)),
 					cutoffMs,
 					nowMs,
 				).pipe(
@@ -1758,6 +1765,12 @@ const make: Effect.Effect<
 			issuesDeleted: 0,
 			leasesExpired: 0,
 		}
+
+		// One batched read warms the org warehouse-config memo before the fan-out
+		// below, so 4 concurrent fibers do not each miss it cold. Best-effort.
+		yield* orgChSettings
+			.primeRuntimeConfigs(scanOrgs)
+			.pipe(Effect.ignore({ log: "Warn", message: "Failed to prime error tick runtime configs" }))
 
 		const orgFailures = yield* Ref.make(0)
 		const results = yield* Effect.forEach(
@@ -1811,18 +1824,15 @@ const make: Effect.Effect<
 			{ concurrency: 4 },
 		)
 
-		const totals = results.reduce(
-			(acc, r) => ({
-				issuesTouched: acc.issuesTouched + r.issuesTouched,
-				incidentsOpened: acc.incidentsOpened + r.incidentsOpened,
-				incidentsResolved: acc.incidentsResolved + r.incidentsResolved,
-				issuesReopened: acc.issuesReopened + r.issuesReopened,
-				issuesArchived: acc.issuesArchived + r.issuesArchived,
-				issuesDeleted: acc.issuesDeleted + r.issuesDeleted,
-				leasesExpired: acc.leasesExpired + r.leasesExpired,
-			}),
-			emptyResult,
-		)
+		const totals = Arr.reduce(results, emptyResult, (acc, r) => ({
+			issuesTouched: acc.issuesTouched + r.issuesTouched,
+			incidentsOpened: acc.incidentsOpened + r.incidentsOpened,
+			incidentsResolved: acc.incidentsResolved + r.incidentsResolved,
+			issuesReopened: acc.issuesReopened + r.issuesReopened,
+			issuesArchived: acc.issuesArchived + r.issuesArchived,
+			issuesDeleted: acc.issuesDeleted + r.issuesDeleted,
+			leasesExpired: acc.leasesExpired + r.leasesExpired,
+		}))
 
 		// Drain after evaluator transactions commit. If delivery fails, the row is
 		// rescheduled with backoff and a future tick retries it.
@@ -1864,13 +1874,14 @@ const make: Effect.Effect<
 })
 
 export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceApi>()(
-	"@maple/api/services/ErrorsService",
+	"@maple/backend/services/ErrorsService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(
 				WarehouseQueryService.layer,
+				OrgClickHouseSettingsService.layer,
 				ErrorActorsService.layer,
 				ErrorIssueWorkflowService.layer,
 				ErrorPolicyService.layer,

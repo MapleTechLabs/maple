@@ -1,0 +1,325 @@
+import type { V2OnboardingChecklist, V2OnboardingChecklistStep } from "@maple/domain/http/v2"
+import { formatCountdown } from "@maple/ui/lib/time-format"
+import { cn } from "@maple/ui/lib/utils"
+import { DateTime, Option, Array as Arr } from "effect"
+import { Submodel } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { meter } from "@maple/views/ui/meter"
+import * as PopoverView from "@maple/views/ui/popover"
+import { pressable } from "@maple/views/ui/pressable"
+import { Message, type Model } from "./onboarding-checklist"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+
+type H = HtmlBuilder<Message>
+
+const credits = (checklist: V2OnboardingChecklist): string => `$${checklist.reward_amount_usd}`
+
+const deadlineOf = (checklist: V2OnboardingChecklist): number | null =>
+	checklist.deadline_at === null
+		? null
+		: Option.match(DateTime.make(checklist.deadline_at), {
+				onNone: () => null,
+				onSome: DateTime.toEpochMillis,
+			})
+
+/** `ProgressChip`: `2/5`, written out. */
+const progressChip = (h: H, completed: number, total: number): Html =>
+	badge(
+		h,
+		{
+			pill: true,
+			size: "xs",
+			mono: true,
+			className: cn(
+				"text-2xs font-semibold sm:text-2xs",
+				completed === total ? "bg-primary text-primary-foreground" : "bg-primary-a2 text-primary",
+			),
+		},
+		[String(completed), "/", String(total)],
+	)
+
+/** `RewardCallout`: the one-time pointer under the pill. */
+const rewardCallout = (h: H, checklist: V2OnboardingChecklist): Html =>
+	h.div(
+		[
+			h.Role("status"),
+			h.Class(
+				"absolute top-full right-0 z-40 mt-3 w-max max-w-[calc(100vw-1rem)] rounded-lg border bg-popover text-popover-foreground shadow-popup animate-in fade-in-0 slide-in-from-top-1",
+			),
+		],
+		[
+			h.span(
+				[
+					h.Class("absolute -top-1.5 right-6 size-3 rotate-45 border-t border-l bg-popover"),
+					h.AriaHidden(true),
+				],
+				[],
+			),
+			h.div(
+				[h.Class("flex items-start gap-2 p-3 pr-2")],
+				[
+					pressable(
+						h,
+						{
+							onClick: Message.ClickedPointer(),
+							className:
+								"min-w-0 flex-1 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
+						},
+						[
+							h.span(
+								[h.Class("block whitespace-nowrap text-sm font-semibold")],
+								["Finish setting up"],
+							),
+							h.span(
+								[h.Class("mt-0.5 block text-xs text-muted-foreground")],
+								["Then claim ", credits(checklist), " in credits."],
+							),
+						],
+					),
+					iconButton(
+						h,
+						{
+							label: "Got it",
+							className: "-mt-1 shrink-0 text-muted-foreground",
+							attributes: [h.OnClick(Message.ClickedGotIt())],
+						},
+						[icon(h, "XmarkIcon")],
+					),
+				],
+			),
+		],
+	)
+
+const optionalTag = (h: H): Html => badge(h, { variant: "meta", size: "xs", pill: true }, ["Optional"])
+
+/** `StepRow`: a done step struck through, an open one linking to where it is done. */
+const stepRow = (h: H, step: V2OnboardingChecklistStep): Html =>
+	step.completed
+		? h.li(
+				[h.Class("flex items-center gap-3 rounded-md px-2 py-2 text-sm text-muted-foreground")],
+				[
+					icon(h, "CircleCheckIcon", { size: 16, className: "shrink-0 text-severity-info" }),
+					h.span(
+						[h.Class("min-w-0 flex-1 leading-snug line-through decoration-muted-foreground/40")],
+						[step.title],
+					),
+					...(step.optional ? [optionalTag(h)] : []),
+				],
+			)
+		: h.li(
+				[],
+				[
+					h.a(
+						[
+							h.Href(step.href),
+							h.OnClick(Message.ClickedStep()),
+							h.Class(
+								"group flex items-center gap-3 rounded-md px-2 py-2 text-sm text-foreground outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-ring",
+							),
+						],
+						[
+							h.span(
+								[
+									h.Class(
+										"size-4 shrink-0 rounded-full border border-dashed border-foreground-faint group-hover:border-solid group-hover:border-foreground",
+									),
+									h.AriaHidden(true),
+								],
+								[],
+							),
+							h.span([h.Class("min-w-0 flex-1 leading-snug")], [step.title]),
+							...(step.optional ? [optionalTag(h)] : []),
+							icon(h, "ArrowRightIcon", {
+								size: 14,
+								className:
+									"shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground",
+							}),
+						],
+					),
+				],
+			)
+
+/** `OnboardingChecklistPanel`: the reward, the progress meter, the steps and the footer. */
+export const checklistPanel = (h: H, model: Model, checklist: V2OnboardingChecklist): ReadonlyArray<Html> => {
+	const isClaimed = model.isJustClaimed || checklist.status === "claimed"
+	const deadlineMs = deadlineOf(checklist)
+	const timeLeft =
+		deadlineMs === null ? null : formatCountdown(deadlineMs - model.nowMs, { fixedHours: true })
+	const progress = checklist.total_count === 0 ? 0 : checklist.completed_count / checklist.total_count
+	const amount = credits(checklist)
+	return [
+		h.div(
+			[],
+			[
+				h.div(
+					[h.Class("relative space-y-3 border-b px-4 pt-4 pb-3")],
+					[
+						hstack(h, { gap: "3", align: "start" }, [
+							h.span(
+								[
+									h.Class(
+										"flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-strong text-foreground",
+									),
+								],
+								[icon(h, isClaimed ? "CircleCheckIcon" : "StarIcon", { size: 18 })],
+							),
+							h.div(
+								[h.Class("min-w-0 space-y-1")],
+								[
+									heading(h, { level: 3, variant: "section" }, [
+										isClaimed ? `${amount} in credits added` : `Get ${amount} in credits`,
+									]),
+									typography(
+										h,
+										{ size: "xs", tone: "muted", as: "p", className: "leading-relaxed" },
+										[
+											isClaimed
+												? `${amount} in credits applied. It comes off your next invoice.`
+												: "Finish these within 24 hours of creating your org, then claim the credits.",
+										],
+									),
+								],
+							),
+						]),
+						meter(h, {
+							value: progress,
+							minVisible: 0,
+							className: "bg-primary-a2",
+							fillClassName: "bg-primary",
+						}),
+					],
+				),
+				h.ol(
+					[h.Class("space-y-0.5 p-2")],
+					Arr.map(checklist.steps, (step) => stepRow(h, step)),
+				),
+				h.div(
+					[h.Class("flex items-center justify-between gap-3 border-t px-4 py-3 text-xs")],
+					panelFooter(h, model, checklist, isClaimed, timeLeft),
+				),
+			],
+		),
+	]
+}
+
+/** The pill: shown while the window is open (or the credit just claimed in this popover). */
+export const view = Submodel.defineView<Model, Message>((model, h) => {
+	const checklist = model.checklist
+	if (checklist === null) return null
+	const isActive = checklist.status === "in_progress" || checklist.status === "claimable"
+	const deadlineMs = deadlineOf(checklist)
+	const isWindowOpen =
+		checklist.status === "claimable" || (deadlineMs !== null && deadlineMs >= model.nowMs)
+	if (!model.isJustClaimed && !(isActive && isWindowOpen)) return null
+	const isClaimable = checklist.status === "claimable"
+	return h.submodel({
+		slotId: "onboarding-checklist-popover",
+		model: model.popover,
+		view: PopoverView.view,
+		viewInputs: {
+			className: "w-[22rem] max-w-[calc(100vw-1rem)] p-0",
+			toContent: () => (model.popover.isOpen ? checklistPanel(h, model, checklist) : []),
+			toView: ({ trigger, withTrigger }) =>
+				h.div(
+					[h.Class("relative")],
+					[
+						...withTrigger(
+							button(
+								h,
+								{
+									variant: "outline",
+									size: "sm",
+									className: cn("gap-2", isClaimable && "border-primary"),
+									slot: "popover-trigger",
+									attributes: trigger,
+								},
+								[
+									icon(h, "StarIcon", { className: "text-primary" }),
+									isClaimable || deadlineMs === null
+										? h.span([], ["Claim ", credits(checklist), " credits"])
+										: typography(h, { mono: true, numeric: true }, [
+												formatCountdown(deadlineMs - model.nowMs, {
+													fixedHours: true,
+												}),
+											]),
+									progressChip(h, checklist.completed_count, checklist.total_count),
+								],
+							),
+						),
+						...(!model.isSeen && !model.popover.isOpen ? [rewardCallout(h, checklist)] : []),
+					],
+				),
+		},
+		toParentMessage: (message) => Message.GotPopoverMessage({ message }),
+	})
+})
+
+const panelFooter = (
+	h: H,
+	model: Model,
+	checklist: V2OnboardingChecklist,
+	isClaimed: boolean,
+	timeLeft: string | null,
+): ReadonlyArray<Html> => {
+	if (isClaimed)
+		return [
+			h.span([h.Class("text-muted-foreground")], ["You're all set."]),
+			button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedDone())] }, ["Done"]),
+		]
+	if (checklist.status === "claimable")
+		return model.isAdmin
+			? [
+					h.span(
+						[
+							h.Class(
+								cn(
+									"text-muted-foreground",
+									model.claimError !== null && "text-severity-error",
+								),
+							),
+						],
+						[model.claimError ?? "Every step is done."],
+					),
+					button(
+						h,
+						{
+							size: "sm",
+							isLoading: model.isClaimPending,
+							attributes: [h.OnClick(Message.ClickedClaim())],
+						},
+						["Claim ", credits(checklist), " credits"],
+					),
+				]
+			: [
+					h.span(
+						[h.Class("text-muted-foreground")],
+						["All done. Ask an org admin to claim the credits."],
+					),
+				]
+	return [
+		typography(h, { tone: "muted", mono: true, numeric: true }, [
+			String(checklist.completed_count),
+			" of ",
+			String(checklist.total_count),
+			" done",
+		]),
+		...(timeLeft === null
+			? []
+			: [
+					h.span(
+						[
+							h.Class(
+								"inline-flex items-center gap-1 font-mono tabular-nums text-muted-foreground",
+							),
+						],
+						[icon(h, "ClockIcon", { size: 12 }), timeLeft],
+					),
+				]),
+	]
+}

@@ -11,7 +11,15 @@ import type {
 	PrReviewSeverity,
 	PullRequestReviewThread,
 } from "@maple/domain/http"
+import { isPrReviewDefectHistory } from "@maple/domain/http"
 import type { PullRequestDelta } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
+import { isPrivacyScanFinding } from "./telemetry/privacy"
+
+/** Severities in order, for sorting and thresholds. */
+export const SEVERITY_RANK = { info: 0, warn: 1, critical: 2 } as const satisfies Record<
+	PrReviewSeverity,
+	number
+>
 
 /** A stored finding, as the review flow reads it. */
 export interface TrackedFinding {
@@ -24,6 +32,30 @@ export interface TrackedFinding {
 	readonly title: string
 	readonly status: PrReviewFindingStatus
 	readonly commentId: string | null
+	/** The head that fixed it, once resolved. */
+	readonly resolvedSha?: string | null
+}
+
+/**
+ * Defects fixed since the last pass that read the whole diff. A later push's pass reads only what
+ * changed, so nothing has re-read the pull request around these fixes. `reviews` are the pull
+ * request's completed reviews, newest first; one stored before `wholeDiff` existed counts as partial.
+ */
+export const uncheckedFixes = (
+	reviews: ReadonlyArray<{ readonly headSha: string; readonly wholeDiff: boolean }>,
+	tracked: ReadonlyArray<TrackedFinding>,
+): number => {
+	const lastWhole = reviews.findIndex((review) => review.wholeDiff)
+	const since = new Set(
+		(lastWhole === -1 ? reviews : reviews.slice(0, lastWhole)).map((review) => review.headSha),
+	)
+	return tracked.filter(
+		(finding) =>
+			finding.status === "resolved" &&
+			isPrReviewDefectHistory(finding) &&
+			finding.resolvedSha != null &&
+			since.has(finding.resolvedSha),
+	).length
 }
 
 /** Lines a finding may drift between pushes and still be a restatement of the same issue. */
@@ -98,8 +130,8 @@ const similarTitles = (a: string, b: string) => {
  * Whether a new finding is a near-exact restatement of one already tracked: same file, lens and
  * nearly the same line, and a title saying the same thing. Anything looser is left to the reviewer,
  * which judges each earlier finding at the new head: a different bug next to an old one is new.
- * A finding the service files from telemetry (`TEL-*`) names its subject in the title, so the same
- * title in the same file is the same issue wherever later pushes moved its line.
+ * A finding the service files itself (`TEL-*`, the privacy scan) names its subject in the title,
+ * so the same title in the same file is the same issue wherever later pushes moved it.
  */
 const restates = (
 	finding: PrReviewFinding,
@@ -107,7 +139,8 @@ const restates = (
 ) =>
 	finding.path === tracked.path &&
 	finding.category === tracked.category &&
-	((finding.checkId?.startsWith("TEL-") === true && finding.title === tracked.title) ||
+	((((finding.checkId?.startsWith("TEL-") ?? false) || isPrivacyScanFinding(finding)) &&
+		finding.title === tracked.title) ||
 		(Math.abs(finding.line - tracked.line) <= SAME_ISSUE_LINES &&
 			similarTitles(finding.title, tracked.title)))
 
@@ -180,15 +213,33 @@ const renderChanges = (changes: PullRequestDelta | undefined): ReadonlyArray<str
 	return changes.rewritten ? [REWRITTEN, scope] : [scope]
 }
 
-/** The kickoff section for a later push: what changed since, and what is still open. */
+const RECHECK =
+	"A defect is open, or was fixed since the last full pass: review the whole diff, so a fix is checked against the rest of the pull request."
+
+/** Every file is due, so what changed is a starting point and never parses as a scope. */
+const renderRecheck = (changes: PullRequestDelta | undefined): ReadonlyArray<string> => {
+	const paths = changes?.paths ?? []
+	return paths.length === 0
+		? [RECHECK]
+		: [
+				RECHECK,
+				`Start with what changed since then: ${paths.slice(0, MAX_LISTED_CHANGES).join(", ")}${paths.length > MAX_LISTED_CHANGES ? `, and ${paths.length - MAX_LISTED_CHANGES} more` : ""}.`,
+			]
+}
+
+/**
+ * The kickoff section for a later push: what changed since, and what is still open. With
+ * `recheck`, a defect is open or was fixed since the last whole-diff pass, so this pass is due every file.
+ */
 export const renderFollowUp = (input: {
 	readonly previousSha: string
 	readonly changes: PullRequestDelta | undefined
 	readonly open: ReadonlyArray<TrackedFinding>
+	readonly recheck?: boolean
 }): ReadonlyArray<string> => {
 	const lines = [
 		`This pull request was reviewed before, at ${input.previousSha.slice(0, 7)}.`,
-		...renderChanges(input.changes),
+		...(input.recheck === true ? renderRecheck(input.changes) : renderChanges(input.changes)),
 	]
 	if (input.open.length === 0) {
 		lines.push("No finding from earlier reviews is still open.")

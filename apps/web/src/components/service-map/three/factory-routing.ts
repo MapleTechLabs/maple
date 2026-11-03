@@ -1,7 +1,11 @@
 import * as THREE from "three"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import type { Edge3D, Topology3D } from "./types"
 import type { SpatialLayout } from "./spatial-layout"
+
+const encodePair = Schema.encodeSync(Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String])))
+const encodePoints = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.Array(Schema.Number))))
 
 export interface FactoryRoute {
 	id: string
@@ -60,10 +64,12 @@ export class CurveSection extends THREE.Curve<THREE.Vector3> {
 }
 
 export function factoryRoutes(topology: RoutingTopology, layout: SpatialLayout): FactoryRoute[] {
-	const nodes = new Map(topology.nodes.map((node) => [node.id, node]))
-	return topology.edges
-		.toSorted((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target))
-		.flatMap((edge, index) => {
+	const nodes = new Map(Arr.map(topology.nodes, (node) => [node.id, node]))
+	return Arr.flatMap(
+		topology.edges.toSorted(
+			(a, b) => Str.localeCompare(b.source)(a.source) || Str.localeCompare(b.target)(a.target),
+		),
+		(edge, index) => {
 			const source = layout.positions.get(edge.source),
 				target = layout.positions.get(edge.target)
 			if (!source || !target) return []
@@ -93,31 +99,32 @@ export function factoryRoutes(topology: RoutingTopology, layout: SpatialLayout):
 			const turn = tail.clone().setY(middle.y)
 			turn[side] = middle[side]
 			const waypoints = [a, lead, middle, turn, tail, b]
-			const clean = waypoints.filter((point, i) => {
+			const clean = Arr.filter(waypoints, (point, i) => {
 				const previous = waypoints[i - 1]
 				return !previous || point.distanceTo(previous) > 0.01
 			})
 			const curve = roundedRoute(clean, 0.3)
 			return [
 				{
-					id: `link:${JSON.stringify([edge.source, edge.target])}`,
+					id: `link:${encodePair([edge.source, edge.target])}`,
 					source: edge.source,
 					target: edge.target,
-					geometryKey: JSON.stringify(clean.map((point) => point.toArray())),
+					geometryKey: encodePoints(Arr.map(clean, (point) => point.toArray())),
 					kind,
 					curve,
 					signPosition: curve.getPointAt(0.5).add(new THREE.Vector3(0, 0.9, 0)),
 				},
 			]
-		})
+		},
+	)
 }
 
 /** Metrics update independently of route geometry and its GPU resources. */
 export function decorateRoutes(routes: FactoryRoute[], edges: ReadonlyArray<Edge3D>): FactoryLink[] {
-	const byId = new Map(edges.map((edge) => [JSON.stringify([edge.source, edge.target]), edge]))
-	const peak = Math.max(1, ...edges.map((edge) => edge.callsPerSecond))
-	return routes.flatMap((route) => {
-		const edge = byId.get(JSON.stringify([route.source, route.target]))
+	const byId = new Map(Arr.map(edges, (edge) => [encodePair([edge.source, edge.target]), edge]))
+	const peak = Math.max(1, ...Arr.map(edges, (edge) => edge.callsPerSecond))
+	return Arr.flatMap(routes, (route) => {
+		const edge = byId.get(encodePair([route.source, route.target]))
 		if (!edge) return []
 		return [
 			{

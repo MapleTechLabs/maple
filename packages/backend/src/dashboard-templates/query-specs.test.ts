@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Schema } from "effect"
+import { Predicate, Schema } from "effect"
 import { QueryBuilderQueryDraftSchema } from "@maple/domain/http"
 import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
 import type { BuildSpecResult } from "@maple/query-engine/query-builder"
@@ -153,7 +153,10 @@ describe("dashboard template query specs", () => {
 				const formulas = widget.dataSource.params?.formulas
 				if (!Array.isArray(formulas)) continue
 				for (const formula of formulas) {
-					const expression = String((formula as { expression?: unknown }).expression ?? "")
+					const expression =
+						Predicate.hasProperty(formula, "expression") && Predicate.isString(formula.expression)
+							? formula.expression
+							: ""
 					expect(
 						expression.replace(/\s+/g, ""),
 						`${template.id}/${widget.id}: "${expression}" under unit "percent"`,
@@ -173,9 +176,25 @@ describe("dashboard template query specs", () => {
 		expect(encoded).not.toContain('"attr.planetscale_branch"')
 	})
 
-	it("reads host filesystem utilization from the used state only", () => {
+	// The hostmetrics receiver sends utilization with no state; split shippers add state=used.
+	it("reads host filesystem utilization with no state or the used state", () => {
 		const template = DASHBOARD_TEMPLATES.find((candidate) => candidate.id === "host-metrics")
 		const widget = template?.build({}).widgets.find((candidate) => candidate.id === "filesystem")
-		expect(JSON.stringify(widget?.dataSource)).toContain('attr.state = \\"used\\"')
+		const dataSource = widget?.dataSource
+		const raw = dataSource?.kind === "query" ? dataSource.queries[0] : undefined
+		const result = buildTimeseriesQuerySpec(decodeQueryDraft(raw))
+		expect(result.warnings).toEqual([])
+		expect(result.query).toMatchObject({
+			filters: {
+				attributeFilters: [
+					{
+						key: "state",
+						mode: "equals",
+						value: "used",
+						or: [{ key: "state", mode: "exists", negated: true }],
+					},
+				],
+			},
+		})
 	})
 })

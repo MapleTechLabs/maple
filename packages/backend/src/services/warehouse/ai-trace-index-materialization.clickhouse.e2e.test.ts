@@ -257,7 +257,7 @@ const AGENT_SDK_SPAN: SeedSpan = {
 }
 
 // A plain child of the agent trace, BEFORE its first agent span: no `maple_ai.*`
-// at all, so it is in `trace_detail_spans` and NOT in the index. It is what the
+// at all, so it is in `traces` and NOT in the index. It is what the
 // fan-out's pad exists for, and what makes `spanCount` bigger than the number of
 // agent spans — the full agent context the page promises.
 const AGENT_CHILD_SPAN: SeedSpan = {

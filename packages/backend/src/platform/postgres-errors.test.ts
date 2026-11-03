@@ -15,6 +15,7 @@ import {
 	postgresErrorType,
 	postgresSqlState,
 } from "./postgres-errors"
+import { String as Str } from "effect"
 
 /** A pg error the way node-postgres raises it: the class hangs off `code`. */
 const pgError = (code: string, message: string): Error => Object.assign(new Error(message), { code })
@@ -148,7 +149,7 @@ describe("postgresErrorType", () => {
 	})
 
 	it("caps the statement in the message and keeps it out of the diagnostic", () => {
-		const longQuery = `insert into "error_events" values ${"($1),".repeat(400)}`
+		const longQuery = `insert into "error_events" values ${Str.repeat(400)("($1),")}`
 		const error = toDatabaseError(
 			queryFailure(
 				longQuery,
@@ -194,6 +195,40 @@ describe("postgresErrorType", () => {
 	it("leaves legacy contention classification unchanged", () => {
 		const deadlock = toDatabaseError(pgError("40P01", "deadlock detected"))
 		assert.isTrue(isRetryablePostgresContention(deadlock))
+	})
+
+	it("treats serialization_failure (40001) on the cause as retryable contention", () => {
+		const error = new DatabaseError({
+			message: "query failed",
+			cause: pgError("40001", "could not serialize"),
+		})
+		assert.isTrue(isRetryablePostgresContention(error))
+	})
+
+	it("matches contention SQLSTATEs in either the error or the cause message", () => {
+		assert.isTrue(
+			isRetryablePostgresContention(
+				new DatabaseError({ message: "SQLSTATE 40001: could not serialize access", cause: null }),
+			),
+		)
+		assert.isTrue(
+			isRetryablePostgresContention(
+				new DatabaseError({ message: "wrapper", cause: "SQLSTATE 40P01: deadlock" }),
+			),
+		)
+	})
+
+	it("rejects unrelated statement failures", () => {
+		assert.isFalse(
+			isRetryablePostgresContention(
+				new DatabaseError({ message: "UNIQUE constraint failed", cause: null }),
+			),
+		)
+		const unique = new DatabaseError({
+			message: "query failed",
+			cause: pgError("23505", "duplicate key value"),
+		})
+		assert.isFalse(isRetryablePostgresContention(unique))
 	})
 
 	it("does not treat a connection failure as retryable contention", () => {

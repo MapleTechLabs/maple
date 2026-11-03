@@ -8,7 +8,18 @@ import {
 	supportChannelName,
 	SupportChannelUnavailableError,
 } from "@maple/domain/support-channel"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Result, Schedule, Stream } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Result,
+	Schedule,
+	Stream,
+	String as Str,
+} from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -198,14 +209,14 @@ const make = Effect.gen(function* () {
 	const findUnrecordedChannel = Effect.fn("SupportChannelService.findUnrecordedChannel")(function* (
 		name: string,
 	) {
-		// Only channels the bot created: it can be a member of any private channel in the
-		// workspace, and a name alone would let an org name steer an invite into one of those.
+		// Only channels the bot created: it can be a member of other channels in the workspace,
+		// and a name alone would let an org name steer an invite into one of those.
 		const botUserId = (yield* slack.call("auth.test", {})).user_id
 		if (botUserId === undefined) return Option.none<SlackChannelRef>()
 		// Pages stop at the first page holding a match; the stream is read lazily.
 		const match = yield* Stream.paginate({ page: 0, cursor: "" }, ({ page, cursor }) => {
 			const args: UsersConversationsArgs = {
-				types: "private_channel",
+				types: "public_channel",
 				exclude_archived: true,
 				limit: 200,
 				...(cursor !== "" ? { cursor } : undefined),
@@ -250,8 +261,8 @@ const make = Effect.gen(function* () {
 			Arr.makeBy(MAX_NAME_ATTEMPTS, (attempt) => attempt),
 			(attempt) => {
 				const name = supportChannelName(orgName, orgId, attempt)
-				return slack.call("conversations.create", { name, is_private: true }).pipe(
-					Effect.map(Option.some),
+				return slack.call("conversations.create", { name, is_private: false }).pipe(
+					Effect.asSome,
 					Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", (refused) =>
 						refused.error === "name_taken"
 							? findUnrecordedChannel(name).pipe(
@@ -271,7 +282,7 @@ const make = Effect.gen(function* () {
 								),
 					),
 					Effect.map((created) =>
-						Option.isSome(created) && created.value.channel !== undefined
+						Option.isSome(created) && typeof created.value.channel === "object"
 							? Result.succeed(created.value.channel)
 							: Result.failVoid,
 					),
@@ -291,7 +302,10 @@ const make = Effect.gen(function* () {
 		function* (channelId: string, orgName: string | null) {
 			if (slack.teamUserIds.length > 0) {
 				yield* slack
-					.call("conversations.invite", { channel: channelId, users: slack.teamUserIds.join(",") })
+					.call("conversations.invite", {
+						channel: channelId,
+						users: Arr.join(slack.teamUserIds, ","),
+					})
 					.pipe(
 						Effect.tapError((error) =>
 							Effect.logWarning("Support channel team invite failed", error),
@@ -417,7 +431,7 @@ const make = Effect.gen(function* () {
 			}),
 		)
 		const email = resolved[0]?.email
-		if (email === undefined || !email.includes("@")) {
+		if (email === undefined || !Str.includes("@")(email)) {
 			return yield* new SupportChannelNoEmailError({ message: `No email for ${tenant.userId}` })
 		}
 		return email

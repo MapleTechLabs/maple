@@ -335,7 +335,7 @@ Recovery must complete the original durable obligation. It must not substitute
 whatever the current registry would produce.
 
 Maple Local implements this with its SQLite eventing control store
-(`apps/cli/src/server/eventing/control-store.ts`) and the chDB commit seam. A
+(`packages/local-server/src/eventing/control-store.ts`) and the chDB commit seam. A
 hosted implementation may use a database transaction or another durable outbox,
 as long as it gives the same ordering and recovery guarantees.
 
@@ -344,13 +344,13 @@ as long as it gives the same ordering and recovery guarantees.
 ### Maple Local
 
 Maple Local normalizes OTLP logs (source kind `otel.log`) in
-`apps/cli/src/server/eventing/otlp.ts`.
+`packages/local-server/src/eventing/otlp.ts`.
 
 When those logs already carry the new fact:
 
 1. register the projector in a `ProjectorRegistry` and pass it as the third
    constructor argument of `LocalEventingRuntime`
-   (`apps/cli/src/server/eventing/runtime.ts`). `apps/cli/src/server/serve.ts`
+   (`packages/local-server/src/eventing/runtime.ts`). `packages/local-server/src/serve.ts`
    constructs the runtime and currently passes no registry, so Local ships with
    no projectors installed; and
 2. activate a durable projection revision through the authenticated

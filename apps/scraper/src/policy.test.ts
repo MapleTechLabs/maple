@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration } from "effect"
+import { Duration, Array as Arr } from "effect"
 import {
 	backoffLogMessage,
 	classifyTargetStatus,
@@ -17,6 +17,7 @@ const REASONS: ReadonlyArray<ScrapeFailureReason> = [
 	"auth_failed",
 	"delivery_blocked",
 	"target_error",
+	"target_rejected",
 	"scrape_failed",
 ]
 
@@ -27,25 +28,30 @@ const failed = (reason: ScrapeFailureReason, retryAfterMs: number | null = null)
 
 describe("classifyTargetStatus", () => {
 	it("maps target statuses to reasons", () => {
-		assert.deepStrictEqual([429, 503, 401, 403, 500, 502, 504, 404, 400].map(classifyTargetStatus), [
-			"rate_limited",
-			"rate_limited",
-			"auth_failed",
-			"auth_failed",
-			"target_error",
-			"target_error",
-			"target_error",
-			"scrape_failed",
-			"scrape_failed",
-		])
+		assert.deepStrictEqual(
+			Arr.map([429, 503, 401, 403, 500, 502, 504, 404, 410, 400, 302], classifyTargetStatus),
+			[
+				"rate_limited",
+				"rate_limited",
+				"auth_failed",
+				"auth_failed",
+				"target_error",
+				"target_error",
+				"target_error",
+				"target_rejected",
+				"target_rejected",
+				"target_rejected",
+				"scrape_failed",
+			],
+		)
 	})
 })
 
 describe("shouldBackOff", () => {
 	it("backs off for every reason a retry cannot immediately clear, and only those", () => {
 		assert.deepStrictEqual(
-			REASONS.map((reason) => shouldBackOff(failed(reason))),
-			[true, true, true, true, false],
+			Arr.map(REASONS, (reason) => shouldBackOff(failed(reason))),
+			[true, true, true, true, true, false],
 		)
 		assert.isFalse(shouldBackOff(null))
 	})
@@ -63,9 +69,9 @@ describe("nextScrapeDelayMs", () => {
 	})
 
 	it("doubles per consecutive backoff for every backing-off reason", () => {
-		for (const reason of ["rate_limited", "auth_failed", "target_error"] as const) {
+		for (const reason of ["rate_limited", "auth_failed", "target_error", "target_rejected"] as const) {
 			assert.deepStrictEqual(
-				[0, 1, 3].map((n) => delay(failed(reason), n)),
+				Arr.map([0, 1, 3], (n) => delay(failed(reason), n)),
 				[10_000, 20_000, 80_000],
 			)
 		}
@@ -91,7 +97,7 @@ describe("nextScrapeDelayMs", () => {
 
 describe("backoffLogMessage", () => {
 	it("gives each reason its own line", () => {
-		assert.lengthOf(new Set(REASONS.map(backoffLogMessage)), REASONS.length)
+		assert.lengthOf(new Set(Arr.map(REASONS, backoffLogMessage)), REASONS.length)
 		assert.include(backoffLogMessage("delivery_blocked"), "delivery")
 	})
 })
@@ -105,7 +111,7 @@ describe("startJitterMs", () => {
 	})
 
 	it("spreads keys sharing an interval", () => {
-		const offsets = ["a:", "b:", "a:branch-1", "a:branch-2"].map((key) => startJitterMs(key, 30_000))
+		const offsets = Arr.map(["a:", "b:", "a:branch-1", "a:branch-2"], (key) => startJitterMs(key, 30_000))
 		assert.lengthOf(new Set(offsets), offsets.length)
 	})
 

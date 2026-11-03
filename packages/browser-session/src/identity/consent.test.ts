@@ -9,6 +9,37 @@ import {
 	resetConsentForTests,
 	setConsent,
 } from "./consent"
+import { getVisitorId, setVisitorTracking } from "./visitor"
+
+/** A page whose visitor id from an earlier, consented load is still on disk. */
+function installReturningVisitor(): { store: Map<string, string>; cookies: Map<string, string> } {
+	const store = new Map<string, string>()
+	const cookies = new Map<string, string>()
+	const localStorage = {
+		getItem: (key: string) => store.get(key) ?? null,
+		setItem: (key: string, value: string) => void store.set(key, value),
+		removeItem: (key: string) => void store.delete(key),
+	}
+	vi.stubGlobal("localStorage", localStorage)
+	vi.stubGlobal("window", { localStorage })
+	vi.stubGlobal("location", { hostname: "localhost", protocol: "http:" })
+	vi.stubGlobal("document", {
+		get cookie(): string {
+			return [...cookies].map(([name, value]) => `${name}=${value}`).join("; ")
+		},
+		set cookie(raw: string) {
+			const [pair = "", ...attrs] = raw.split(";").map((part) => part.trim())
+			const eq = pair.indexOf("=")
+			if (attrs.includes("max-age=0")) cookies.delete(pair.slice(0, eq))
+			else cookies.set(pair.slice(0, eq), pair.slice(eq + 1))
+		},
+	})
+	const record = JSON.stringify({ id: "5f0c7d0e-2b1a-4c3d-8e9f-0a1b2c3d4e5f", mintedAt: Date.now() })
+	store.set("maple.visitor", record)
+	cookies.set("maple_visitor", encodeURIComponent(record))
+	cookies.set("maple_visit", String(Date.now()))
+	return { store, cookies }
+}
 
 afterEach(() => {
 	resetConsentForTests()
@@ -47,7 +78,6 @@ describe("consent", () => {
 		})
 		// A page that starts without consent has not had it revoked.
 		configurePrivacy({ requireConsent: true })
-		setConsent(false)
 		expect(consentRevokedAt()).toBe(0)
 		setConsent(true)
 		expect(consentRevokedAt()).toBe(0)
@@ -141,6 +171,99 @@ describe("consent", () => {
 
 		configurePrivacy({ respectDoNotTrack: true })
 		expect(mayPersistIdentifier()).toBe(false)
+	})
+
+	it("memory-only mode keeps the identifier off and the revoke out of storage", () => {
+		const store = new Map<string, string>()
+		vi.stubGlobal("localStorage", {
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => store.set(key, value),
+		})
+		vi.useFakeTimers({ now: 5_000 })
+		configurePrivacy({ requireConsent: true, persistence: "memory" })
+		setConsent(true)
+		expect(hasConsent()).toBe(true)
+		expect(mayPersistIdentifier()).toBe(false)
+
+		setConsent(false)
+		// Still known to this page, so data captured before the revoke is dropped.
+		expect(consentRevokedAt()).toBe(5_000)
+		expect(store.size).toBe(0)
+
+		// A second SDK initialized without the option must not re-enable storage.
+		configurePrivacy(undefined)
+		setConsent(true)
+		expect(mayPersistIdentifier()).toBe(false)
+	})
+
+	it("treats a denial replayed on a fresh page load as a withdrawal", () => {
+		// Load 1 granted and stored a visitor id; on load 2 the consent tool
+		// replays "denied" before anything was granted in this page's memory.
+		const { store, cookies } = installReturningVisitor()
+		vi.useFakeTimers({ now: 7_000 })
+		configurePrivacy({ requireConsent: true })
+		setConsent(false)
+		// Settles first: the consent tool may still replace a default with a grant.
+		expect(store.has("maple.visitor")).toBe(true)
+		vi.advanceTimersByTime(10_000)
+
+		expect(consentRevokedAt()).toBe(17_000)
+		expect(store.has("maple.visitor")).toBe(false)
+		expect(cookies.has("maple_visitor")).toBe(false)
+		expect(cookies.has("maple_visit")).toBe(false)
+	})
+
+	it("keeps the visitor when a default denial is replaced by a grant", () => {
+		const { store, cookies } = installReturningVisitor()
+		vi.useFakeTimers({ now: 7_000 })
+		configurePrivacy({ requireConsent: true })
+		setConsent(false)
+		vi.advanceTimersByTime(800)
+		setConsent(true)
+		vi.advanceTimersByTime(60_000)
+
+		expect(consentRevokedAt()).toBe(0)
+		expect(store.has("maple.visitor")).toBe(true)
+		expect(cookies.has("maple_visitor")).toBe(true)
+	})
+
+	it("applies a denial that arrived before the gate was configured", () => {
+		const { store } = installReturningVisitor()
+		vi.useFakeTimers({ now: 7_000 })
+		setConsent(false)
+		configurePrivacy({ requireConsent: true })
+		vi.advanceTimersByTime(10_000)
+
+		expect(consentRevokedAt()).toBe(17_000)
+		expect(store.has("maple.visitor")).toBe(false)
+	})
+
+	it("ignores setConsent(false) without a gate, and says so once", () => {
+		const { store, cookies } = installReturningVisitor()
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+		configurePrivacy(undefined)
+		setConsent(true)
+		setConsent(false)
+		setConsent(false)
+
+		expect(hasConsent()).toBe(true)
+		expect(consentRevokedAt()).toBe(0)
+		expect(store.has("maple.visitor")).toBe(true)
+		expect(cookies.has("maple_visitor")).toBe(true)
+		expect(
+			warn.mock.calls.filter(([message]) => String(message).includes("requireConsent")),
+		).toHaveLength(1)
+		warn.mockRestore()
+	})
+
+	it("keeps persistVisitorId: false from one SDK copy when another re-enables tracking", () => {
+		const { store } = installReturningVisitor()
+		configurePrivacy({ persistVisitorId: false })
+		// What the second copy's `startRuntime` does with its own default config.
+		setVisitorTracking(true)
+
+		expect(getVisitorId()).toBeUndefined()
+		expect(store.has("maple.visitor")).toBe(false)
 	})
 
 	it("does not assume a navigator exists", () => {

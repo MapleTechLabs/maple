@@ -8,7 +8,7 @@ import {
 	quoteWhereValue,
 	splitCsv,
 } from "@maple/domain/where-clause"
-import { Match } from "effect"
+import { Match, Array as Arr, Record as Rec, String as Str } from "effect"
 
 export type {
 	QueryBuilderDataSource,
@@ -144,10 +144,10 @@ export const TRACES_NUMERIC_AGGREGATIONS = ["avg", "sum", "min", "max", "p50", "
  * to the list the builder accepts.
  */
 const ALLOWED_AGGREGATIONS = {
-	traces: new Set(AGGREGATIONS_BY_SOURCE.traces.map((option) => option.value)),
-	logs: new Set(AGGREGATIONS_BY_SOURCE.logs.map((option) => option.value)),
-	metrics: new Set(AGGREGATIONS_BY_SOURCE.metrics.map((option) => option.value)),
-	product_events: new Set(AGGREGATIONS_BY_SOURCE.product_events.map((option) => option.value)),
+	traces: new Set(Arr.map(AGGREGATIONS_BY_SOURCE.traces, (option) => option.value)),
+	logs: new Set(Arr.map(AGGREGATIONS_BY_SOURCE.logs, (option) => option.value)),
+	metrics: new Set(Arr.map(AGGREGATIONS_BY_SOURCE.metrics, (option) => option.value)),
+	product_events: new Set(Arr.map(AGGREGATIONS_BY_SOURCE.product_events, (option) => option.value)),
 } satisfies Record<QueryBuilderDataSource, ReadonlySet<string>>
 
 const ALLOWED_TRACES_NUMERIC_AGGREGATIONS: ReadonlySet<string> = new Set(TRACES_NUMERIC_AGGREGATIONS)
@@ -196,7 +196,7 @@ export function resetAggregationForMetricType(
 	isMonotonic: boolean,
 ): string {
 	const validOptions = getMetricsAggregations(metricType, isMonotonic)
-	if (validOptions.some((opt) => opt.value === currentAggregation)) {
+	if (Arr.some(validOptions, (opt) => opt.value === currentAggregation)) {
 		return currentAggregation
 	}
 	return validOptions[0]?.value ?? "avg"
@@ -340,7 +340,7 @@ export function resetQueryForDataSource(
 }
 
 function parseBucketSeconds(raw: string): number | undefined {
-	const trimmed = raw.trim().toLowerCase()
+	const trimmed = Str.toLowerCase(Str.trim(raw))
 	if (!trimmed) return undefined
 
 	const shorthand = trimmed.match(
@@ -356,19 +356,19 @@ function parseBucketSeconds(raw: string): number | undefined {
 	}
 
 	const unit = shorthand[2]
-	if (!unit || unit.startsWith("s") || unit.startsWith("sec") || unit.startsWith("second")) {
+	if (!unit || Str.startsWith("s")(unit) || Str.startsWith("sec")(unit) || Str.startsWith("second")(unit)) {
 		return amount
 	}
 
-	if (unit.startsWith("m") || unit.startsWith("min")) {
+	if (Str.startsWith("m")(unit) || Str.startsWith("min")(unit)) {
 		return amount * 60
 	}
 
-	if (unit.startsWith("h") || unit.startsWith("hr") || unit.startsWith("hour")) {
+	if (Str.startsWith("h")(unit) || Str.startsWith("hr")(unit) || Str.startsWith("hour")(unit)) {
 		return amount * 60 * 60
 	}
 
-	if (unit.startsWith("d") || unit.startsWith("day")) {
+	if (Str.startsWith("d")(unit) || Str.startsWith("day")(unit)) {
 		return amount * 60 * 60 * 24
 	}
 
@@ -411,14 +411,18 @@ function applyOrGroup<A extends AttributeFilterAccumulator>(
 	source: string,
 	warnings: string[],
 ): A {
-	const label = `(${group.map((c) => `${typedKey(c)} ${c.operator} ${c.value}`.trim()).join(" OR ")})`
+	const label = `(${Arr.join(
+		Arr.map(group, (c) => Str.trim(`${typedKey(c)} ${c.operator} ${c.value}`)),
+		" OR ",
+	)})`
 	const members: Array<{ map: keyof AttributeFilterAccumulator; filter: AccumulatedAttributeFilter }> = []
-	const emptyFields = new Map<string, unknown>(Object.entries(empty))
+	const emptyFields = new Map<string, unknown>(Rec.toEntries(empty))
 	for (const clause of group) {
 		const memberWarnings: string[] = []
 		const next = apply(empty, clause, memberWarnings)
 		// Fields the empty accumulator already carries (the metrics metric name) are not set by the member.
-		const setsOtherField = Object.entries(next).some(
+		const setsOtherField = Arr.some(
+			Rec.toEntries(next),
 			([field, value]) =>
 				field !== "attributeFilters" &&
 				field !== "resourceAttributeFilters" &&
@@ -440,7 +444,7 @@ function applyOrGroup<A extends AttributeFilterAccumulator>(
 	}
 	const [first, ...rest] = members
 	if (first === undefined) return filters
-	if (rest.some((m) => m.map !== first.map)) {
+	if (Arr.some(rest, (m) => m.map !== first.map)) {
 		warnings.push(`${source} OR group ignored: its members mix span and resource attributes: ${label}`)
 		return filters
 	}
@@ -448,7 +452,7 @@ function applyOrGroup<A extends AttributeFilterAccumulator>(
 		warnings.push(`Maximum of 5 filters per attribute map; ignoring ${label}`)
 		return filters
 	}
-	const combined: AccumulatedAttributeFilter = { ...first.filter, or: rest.map((m) => m.filter) }
+	const combined: AccumulatedAttributeFilter = { ...first.filter, or: Arr.map(rest, (m) => m.filter) }
 	return { ...filters, [first.map]: [...filters[first.map], combined] }
 }
 
@@ -483,7 +487,7 @@ interface WhereClauseInput {
 // Attribute Map keys are case-sensitive, so they come from the key as typed.
 // `attr.` / `resource.` are ASCII, so slicing the raw key at the prefix is safe.
 function typedKey(clause: WhereClauseInput, prefixLength = 0): string {
-	return (clause.rawKey ?? clause.key).trim().slice(prefixLength)
+	return Str.slice(prefixLength)(Str.trim(clause.rawKey ?? clause.key))
 }
 
 // Maps a parsed where-clause operator to a positive attribute-filter `mode`
@@ -555,7 +559,7 @@ function withMatchMode(
 ): TracesFilterAccumulator["matchModes"] {
 	const { [field]: _dropped, ...rest } = modes ?? {}
 	const next = contains ? { ...rest, [field]: "contains" as const } : rest
-	return Object.keys(next).length > 0 ? next : undefined
+	return Rec.keys(next).length > 0 ? next : undefined
 }
 
 function applyTracesDimension(
@@ -596,7 +600,7 @@ function applyTracesClause(
 	const key = normalizeKey(clause.key)
 
 	// Handle attr.* and resource.* prefixes before Match
-	if (key.startsWith("attr.")) {
+	if (Str.startsWith("attr.")(key)) {
 		const attributeKey = typedKey(clause, 5)
 		if (filters.attributeFilters.length >= 5) {
 			warnings.push(`Maximum of 5 attr.* filters supported; ignoring attr.${attributeKey}`)
@@ -611,7 +615,7 @@ function applyTracesClause(
 		}
 	}
 
-	if (key.startsWith("resource.")) {
+	if (Str.startsWith("resource.")(key)) {
 		const resourceKey = typedKey(clause, 9)
 		if (filters.resourceAttributeFilters.length >= 5) {
 			warnings.push(`Maximum of 5 resource.* filters supported; ignoring resource.${resourceKey}`)
@@ -734,8 +738,8 @@ function applyLogsClause(
 ): LogsFilterAccumulator {
 	const key = normalizeKey(clause.key)
 
-	if (key.startsWith("attr.") || key.startsWith("resource.")) {
-		const isResource = key.startsWith("resource.")
+	if (Str.startsWith("attr.")(key) || Str.startsWith("resource.")(key)) {
+		const isResource = Str.startsWith("resource.")(key)
 		const prefix = isResource ? "resource" : "attr"
 		const attributeKey = typedKey(clause, prefix.length + 1)
 		const target = isResource ? filters.resourceAttributeFilters : filters.attributeFilters
@@ -780,9 +784,9 @@ function applyLogsClause(
 function buildLogsSpecFilters(acc: LogsFilterAccumulator): Record<string, unknown> | undefined {
 	const filters: Record<string, unknown> = {}
 	for (const [field, value] of Object.entries(acc)) {
-		if (value !== undefined && !(Array.isArray(value) && value.length === 0)) filters[field] = value
+		if (value !== undefined && !(Arr.isArray(value) && value.length === 0)) filters[field] = value
 	}
-	return Object.keys(filters).length > 0 ? filters : undefined
+	return Rec.keys(filters).length > 0 ? filters : undefined
 }
 
 interface ProductEventsFilterAccumulator {
@@ -864,8 +868,8 @@ function applyProductEventsClause(
 ): ProductEventsFilterAccumulator {
 	const key = normalizeKey(clause.key)
 	// Prop keys keep their case: `Attributes` is a case-sensitive Map of the customer's own names.
-	const rawKey = (clause.rawKey ?? clause.key).trim()
-	const attributeKey = key.startsWith("attr.") ? rawKey.slice(5) : undefined
+	const rawKey = Str.trim(clause.rawKey ?? clause.key)
+	const attributeKey = Str.startsWith("attr.")(key) ? Str.slice(5)(rawKey) : undefined
 
 	if (attributeKey === undefined && Object.hasOwn(PRODUCT_EVENT_LIST_FIELDS, key)) {
 		const [positive, negative] = PRODUCT_EVENT_LIST_FIELDS[key as keyof typeof PRODUCT_EVENT_LIST_FIELDS]
@@ -938,8 +942,7 @@ function resolveProductEventsGroupByToken(
 		case "Literal":
 			return resolution.token
 		case "Prefixed": {
-			// The shared resolver lowercases the token; the prop key keeps the case it was typed with.
-			const key = raw.trim().slice(ATTRIBUTE_PREFIX.prefix.length)
+			const key = resolution.key
 			// One attribute group column, as on metrics.
 			if (filters.groupByAttributeKey !== undefined && filters.groupByAttributeKey !== key) {
 				warnings.push(`Product events queries support a single attr.* group by; ignoring attr.${key}`)
@@ -957,10 +960,10 @@ function buildProductEventsSpecFilters(
 	const { attributeFilters, ...rest } = acc
 	const filters: Record<string, unknown> = {}
 	for (const [field, value] of Object.entries(rest)) {
-		if (value !== undefined && !(Array.isArray(value) && value.length === 0)) filters[field] = value
+		if (value !== undefined && !(Arr.isArray(value) && value.length === 0)) filters[field] = value
 	}
 	if (attributeFilters.length > 0) filters.attributeFilters = attributeFilters
-	return Object.keys(filters).length > 0 ? filters : undefined
+	return Rec.keys(filters).length > 0 ? filters : undefined
 }
 
 interface MetricsFilterAccumulator {
@@ -983,7 +986,7 @@ function applyMetricsClause(
 
 	// Datapoint labels live in the Attributes map. Every operator applies, so
 	// `attr.state != idle` can drop one state of a per-state metric.
-	if (key.startsWith("attr.")) {
+	if (Str.startsWith("attr.")(key)) {
 		const attributeKey = typedKey(clause, 5)
 		if (filters.attributeFilters.length >= 5) {
 			warnings.push(`Maximum of 5 attr.* filters supported; ignoring attr.${attributeKey}`)
@@ -1000,7 +1003,7 @@ function applyMetricsClause(
 
 	// Host/pod/node identity on metrics lives in the ResourceAttributes map —
 	// `resource.<key>` filters predicate on it (mirrors the traces handler).
-	if (key.startsWith("resource.")) {
+	if (Str.startsWith("resource.")(key)) {
 		const resourceKey = typedKey(clause, 9)
 		if (filters.resourceAttributeFilters.length >= 5) {
 			warnings.push(`Maximum of 5 resource.* filters supported; ignoring resource.${resourceKey}`)
@@ -1187,20 +1190,20 @@ const GROUP_BY_ALIASES = {
  */
 export const GROUP_BY_TOKENS = {
 	traces: {
-		literals: Object.keys(GROUP_BY_ALIASES.traces.aliases),
-		prefixes: GROUP_BY_ALIASES.traces.prefixes.map((p) => p.prefix),
+		literals: Rec.keys(GROUP_BY_ALIASES.traces.aliases),
+		prefixes: Arr.map(GROUP_BY_ALIASES.traces.prefixes, (p) => p.prefix),
 	},
 	logs: {
-		literals: Object.keys(GROUP_BY_ALIASES.logs.aliases),
-		prefixes: GROUP_BY_ALIASES.logs.prefixes.map((p) => p.prefix),
+		literals: Rec.keys(GROUP_BY_ALIASES.logs.aliases),
+		prefixes: Arr.map(GROUP_BY_ALIASES.logs.prefixes, (p) => p.prefix),
 	},
 	metrics: {
-		literals: Object.keys(GROUP_BY_ALIASES.metrics.aliases),
-		prefixes: GROUP_BY_ALIASES.metrics.prefixes.map((p) => p.prefix),
+		literals: Rec.keys(GROUP_BY_ALIASES.metrics.aliases),
+		prefixes: Arr.map(GROUP_BY_ALIASES.metrics.prefixes, (p) => p.prefix),
 	},
 	product_events: {
-		literals: Object.keys(GROUP_BY_ALIASES.product_events.aliases),
-		prefixes: GROUP_BY_ALIASES.product_events.prefixes.map((p) => p.prefix),
+		literals: Rec.keys(GROUP_BY_ALIASES.product_events.aliases),
+		prefixes: Arr.map(GROUP_BY_ALIASES.product_events.prefixes, (p) => p.prefix),
 	},
 } satisfies Readonly<
 	Record<
@@ -1231,12 +1234,13 @@ function resolveGroupByToken<K extends string>(
 	spec: GroupBySourceSpec<K>,
 	raw: string,
 ): GroupByTokenResolution<K> {
-	const token = raw.trim().toLowerCase()
+	const token = Str.toLowerCase(Str.trim(raw))
 	if (!token) return { _tag: "Empty" }
 
 	for (const known of ALL_GROUP_BY_PREFIXES) {
-		if (!token.startsWith(known.prefix)) continue
-		const key = token.slice(known.prefix.length)
+		if (!Str.startsWith(known.prefix)(token)) continue
+		// Attribute Map keys are case-sensitive: keep the key as typed. Prefixes are ASCII, so the slice is safe.
+		const key = Str.slice(known.prefix.length)(Str.trim(raw))
 		if (!key) return { _tag: "Rejected", warning: `Invalid ${known.prefix}* group by ignored` }
 		const supported = spec.prefixes.find((p) => p.prefix === known.prefix)
 		if (!supported) {
@@ -1248,7 +1252,7 @@ function resolveGroupByToken<K extends string>(
 		return { _tag: "Prefixed", token: supported.token, bucket: supported.bucket, key }
 	}
 
-	const resolved = Object.hasOwn(spec.aliases, token) ? spec.aliases[token] : undefined
+	const resolved = Rec.has(spec.aliases, token) ? spec.aliases[token] : undefined
 	if (resolved === undefined) {
 		return { _tag: "Rejected", warning: `Unsupported ${source} group by ignored: ${raw}` }
 	}
@@ -1427,7 +1431,7 @@ function buildTracesSpecFilters(acc: TracesFilterAccumulator): Record<string, un
 	if (acc.resourceAttributeFilters.length > 0)
 		filters.resourceAttributeFilters = acc.resourceAttributeFilters
 
-	return Object.keys(filters).length > 0 ? filters : undefined
+	return Rec.keys(filters).length > 0 ? filters : undefined
 }
 
 function dedupeGroupByKeys<T extends string>(keys: readonly T[]): T[] {
@@ -1459,7 +1463,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 
 	const stepInterval = query.stepInterval ?? ""
 	const bucketSeconds = parseBucketSeconds(stepInterval)
-	if (stepInterval.trim() && !bucketSeconds) {
+	if (Str.trim(stepInterval) && !bucketSeconds) {
 		warnings.push("Invalid step interval ignored; auto interval will be used")
 	}
 
@@ -1477,7 +1481,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		// A non-empty `valueField` (e.g. "attr.result.rowCount") switches the query
 		// into numeric-attribute aggregation mode: `aggregation` becomes a numeric
 		// function over that span attribute instead of a duration-based metric.
-		const numericValueField = (query.valueField ?? "").trim()
+		const numericValueField = Str.trim(query.valueField ?? "")
 		const isNumericAggregation = numericValueField.length > 0
 
 		if (isNumericAggregation) {
@@ -1485,7 +1489,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 				return {
 					query: null,
 					warnings,
-					error: `Numeric-attribute aggregation requires one of ${TRACES_NUMERIC_AGGREGATIONS.join("/")} (got: ${query.aggregation})`,
+					error: `Numeric-attribute aggregation requires one of ${Arr.join(TRACES_NUMERIC_AGGREGATIONS, "/")} (got: ${query.aggregation})`,
 				}
 			}
 		} else {
@@ -1495,7 +1499,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 					warnings,
 					// Bare `p95` is the common miss: it is only valid with a
 					// `valueField`, and the duration percentile is `p95_duration`.
-					error: `Unsupported traces metric: ${query.aggregation}. Valid: ${[...ALLOWED_AGGREGATIONS.traces].join(", ")}${ALLOWED_TRACES_NUMERIC_AGGREGATIONS.has(query.aggregation) ? ` — \`${query.aggregation}\` is a numeric-attribute aggregation and requires \`valueField\`` : ""}`,
+					error: `Unsupported traces metric: ${query.aggregation}. Valid: ${Arr.join([...ALLOWED_AGGREGATIONS.traces], ", ")}${ALLOWED_TRACES_NUMERIC_AGGREGATIONS.has(query.aggregation) ? ` — \`${query.aggregation}\` is a numeric-attribute aggregation and requires \`valueField\`` : ""}`,
 				}
 			}
 		}
@@ -1503,7 +1507,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		// Preserve attribute-key case (ClickHouse Map keys are case-sensitive); only
 		// strip a leading `attr.` prefix if present.
 		const numericAttributeKey = isNumericAggregation
-			? numericValueField.replace(/^attr\./i, "").trim()
+			? Str.trim(Str.replace(/^attr\./i, "")(numericValueField))
 			: ""
 		if (isNumericAggregation && !numericAttributeKey) {
 			return {
@@ -1514,9 +1518,10 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		}
 
 		const emptyTraces: TracesFilterAccumulator = { attributeFilters: [], resourceAttributeFilters: [] }
-		const filters = groups.reduce(
+		const filters = Arr.reduce(
+			groups,
+			Arr.reduce(clauses, emptyTraces, (acc, clause) => applyTracesClause(acc, clause, warnings)),
 			(acc, group) => applyOrGroup(acc, group, applyTracesClause, emptyTraces, "Traces", warnings),
-			clauses.reduce((acc, clause) => applyTracesClause(acc, clause, warnings), emptyTraces),
 		)
 
 		const groupByKeys: TracesGroupByKey[] = []
@@ -1578,14 +1583,15 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 			return {
 				query: null,
 				warnings,
-				error: `Logs source currently supports only ${[...ALLOWED_AGGREGATIONS.logs].join("/")} metric (got: ${query.aggregation})`,
+				error: `Logs source currently supports only ${Arr.join([...ALLOWED_AGGREGATIONS.logs], "/")} metric (got: ${query.aggregation})`,
 			}
 		}
 
 		const emptyLogs: LogsFilterAccumulator = { attributeFilters: [], resourceAttributeFilters: [] }
-		const filters = groups.reduce(
+		const filters = Arr.reduce(
+			groups,
+			Arr.reduce(clauses, emptyLogs, (acc, clause) => applyLogsClause(acc, clause, warnings)),
 			(acc, group) => applyOrGroup(acc, group, applyLogsClause, emptyLogs, "Logs", warnings),
-			clauses.reduce((acc, clause) => applyLogsClause(acc, clause, warnings), emptyLogs),
 		)
 
 		const logsGroupByKeys: LogsGroupByKey[] = []
@@ -1618,7 +1624,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 			return {
 				query: null,
 				warnings,
-				error: `Unsupported product events aggregation: ${query.aggregation}. Valid: ${[...ALLOWED_AGGREGATIONS.product_events].join(", ")}`,
+				error: `Unsupported product events aggregation: ${query.aggregation}. Valid: ${Arr.join([...ALLOWED_AGGREGATIONS.product_events], ", ")}`,
 			}
 		}
 
@@ -1655,7 +1661,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		return {
 			query: null,
 			warnings,
-			error: `Unsupported metrics aggregation: ${query.aggregation}. Valid: ${[...ALLOWED_AGGREGATIONS.metrics].join(", ")}`,
+			error: `Unsupported metrics aggregation: ${query.aggregation}. Valid: ${Arr.join([...ALLOWED_AGGREGATIONS.metrics], ", ")}`,
 		}
 	}
 
@@ -1673,9 +1679,10 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		attributeFilters: [],
 		resourceAttributeFilters: [],
 	}
-	const metricsFilters = groups.reduce(
+	const metricsFilters = Arr.reduce(
+		groups,
+		Arr.reduce(clauses, emptyMetrics, (acc, clause) => applyMetricsClause(acc, clause, warnings)),
 		(acc, group) => applyOrGroup(acc, group, applyMetricsClause, emptyMetrics, "Metrics", warnings),
-		clauses.reduce((acc, clause) => applyMetricsClause(acc, clause, warnings), emptyMetrics),
 	)
 
 	const metricsGroupByKeys: MetricsGroupByKey[] = []
@@ -1778,7 +1785,7 @@ export function buildBreakdownQuerySpec(
 		}
 	}
 
-	const limitRaw = query.addOns?.limit ? (query.limit ?? "").trim() : ""
+	const limitRaw = query.addOns?.limit ? Str.trim(query.limit ?? "") : ""
 	const parsedLimit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined
 	const limit =
 		parsedLimit && Number.isFinite(parsedLimit) && parsedLimit > 0 && parsedLimit <= 100
@@ -1844,7 +1851,10 @@ interface FormattableAttrFilter {
 function formatAttrFilterClause(prefix: string, af: FormattableAttrFilter): string {
 	if (af.or?.length) {
 		const { or, ...first } = af
-		return `(${[first, ...or].map((member) => formatAttrFilterClause(prefix, member)).join(" OR ")})`
+		return `(${Arr.join(
+			Arr.map([first, ...or], (member) => formatAttrFilterClause(prefix, member)),
+			" OR ",
+		)})`
 	}
 	if (af.mode === "exists") {
 		return `${prefix}.${af.key} ${af.negated ? "!exists" : "exists"}`
@@ -1859,7 +1869,7 @@ function formatAttrFilterClause(prefix: string, af: FormattableAttrFilter): stri
 }
 
 function stringList(value: unknown): string[] {
-	return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
+	return Arr.isArray(value) ? Arr.filter(value, (item): item is string => typeof item === "string") : []
 }
 
 export function formatFiltersAsWhereClause(params: Record<string, unknown>): string {
@@ -1875,8 +1885,8 @@ export function formatFiltersAsWhereClause(params: Record<string, unknown>): str
 	const clauses: string[] = []
 
 	function scalar(clauseKey: string, value: unknown, contains = false) {
-		if (typeof value === "string" && value.trim()) {
-			clauses.push(`${clauseKey} ${contains ? "contains" : "="} ${quoteWhereValue(value.trim())}`)
+		if (typeof value === "string" && Str.trim(value)) {
+			clauses.push(`${clauseKey} ${contains ? "contains" : "="} ${quoteWhereValue(Str.trim(value))}`)
 		}
 	}
 
@@ -1900,13 +1910,13 @@ export function formatFiltersAsWhereClause(params: Record<string, unknown>): str
 	if (environments.length > 0) {
 		const contains = matchModes.deploymentEnv === "contains" && environments.length === 1
 		clauses.push(
-			`deployment.environment ${contains ? "contains" : "="} ${quoteWhereValue(environments.join(","))}`,
+			`deployment.environment ${contains ? "contains" : "="} ${quoteWhereValue(Arr.join(environments, ","))}`,
 		)
 	}
 
 	const commitShas = stringList(filters.commitShas)
 	if (commitShas.length > 0) {
-		clauses.push(`vcs.ref.head.revision = ${quoteWhereValue(commitShas.join(","))}`)
+		clauses.push(`vcs.ref.head.revision = ${quoteWhereValue(Arr.join(commitShas, ","))}`)
 	}
 
 	if (typeof filters.minDurationMs === "number") {
@@ -1923,17 +1933,17 @@ export function formatFiltersAsWhereClause(params: Record<string, unknown>): str
 	excluded("deployment.environment", filters.excludedEnvironments)
 	excluded("vcs.ref.head.revision", filters.excludedCommitShas)
 
-	if (Array.isArray(filters.attributeFilters)) {
+	if (Arr.isArray(filters.attributeFilters)) {
 		for (const af of filters.attributeFilters as Array<FormattableAttrFilter>) {
 			clauses.push(formatAttrFilterClause("attr", af))
 		}
 	}
 
-	if (Array.isArray(filters.resourceAttributeFilters)) {
+	if (Arr.isArray(filters.resourceAttributeFilters)) {
 		for (const rf of filters.resourceAttributeFilters as Array<FormattableAttrFilter>) {
 			clauses.push(formatAttrFilterClause("resource", rf))
 		}
 	}
 
-	return clauses.join(" AND ")
+	return Arr.join(clauses, " AND ")
 }

@@ -2,7 +2,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { ApiKeys, McpOAuthRefreshTokens } from "@maple/db/tables"
 import type { ApiKeyId, OrgId, UserId } from "@maple/domain/http"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 
 /**
  * Refresh-family revocation, shared rather than private to `McpOAuthService`.
@@ -13,6 +13,15 @@ import { Effect } from "effect"
  * revocation endpoint, the API-keys UI, and a member losing their membership)
  * has to come through here. Run them inside the caller's transaction.
  */
+
+/**
+ * The grant's absolute ceiling, independent of rotation. `expires_at` is
+ * reset on every refresh, so without this a client that rotates once a month
+ * holds an MCP credential forever. A quarter is long enough that no healthy
+ * client is ever interrupted (it re-consents once) and short enough that a
+ * grant which escaped every revocation path still dies on its own.
+ */
+export const REFRESH_FAMILY_ABSOLUTE_TTL_MS = 90 * 24 * 60 * 60 * 1000
 
 /** Revoke a whole family and every access key it has ever minted. */
 export const revokeRefreshFamily = (
@@ -31,7 +40,7 @@ export const revokeRefreshFamily = (
 				.set({ revokedAt: now })
 				.where(($) => [$.familyId.eq(familyId), $.revokedAt.isNull()]),
 		)
-		const [first, ...rest] = family.map((item) => item.accessKeyId)
+		const [first, ...rest] = Arr.map(family, (item) => item.accessKeyId)
 		if (first !== undefined) {
 			yield* orm.run(
 				PG.update(ApiKeys)
@@ -46,7 +55,7 @@ const revokeFamilies = (
 	rows: ReadonlyArray<{ readonly familyId: string }>,
 	now: number,
 ): Effect.Effect<number, MapleDbError> => {
-	const familyIds = [...new Set(rows.map((row) => row.familyId))]
+	const familyIds = [...new Set(Arr.map(rows, (row) => row.familyId))]
 	return Effect.forEach(familyIds, (familyId) => revokeRefreshFamily(orm, familyId, now), {
 		discard: true,
 	}).pipe(Effect.as(familyIds.length))

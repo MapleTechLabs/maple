@@ -1,9 +1,9 @@
 /**
  * The `MAPLE_DB` Hyperdrive binding per the profile's database mode: `managed` and `ref` bind from the
- * Worker init (`ref` via raw `host.bind`, as alchemy has no `env` form for an external config);
- * `declared` and `preview` bind from props via `mapleDbEnv`.
+ * Worker init (`ref` through `Hyperdrive.lookup` of the dashboard-managed config); `declared` and
+ * `preview` bind from props via `mapleDbEnv`.
  */
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Stage } from "alchemy/Stage"
 import * as Effect from "effect/Effect"
 import type * as Option from "effect/Option"
@@ -18,14 +18,22 @@ import {
 	resolveHyperdriveRefId,
 	resolveWorkerName,
 } from "./stage.ts"
+import { String as Str } from "effect"
 
 /** The binding's name — also the managed Connection's logical id, so both flavors bind under it. */
 export const MAPLE_DB_BINDING = "MAPLE_DB"
 
 /** This deploy's stage; the root stack already failed typed on a bad one, so here it is a defect. */
 const stageDeployment = Effect.gen(function* () {
-	return yield* parseMapleDeploymentEffect(yield* Stage)
+	const stage = yield* Stage
+	return yield* parseMapleDeploymentEffect(stage)
 }).pipe(Effect.orDie)
+
+/** `MAPLE_PG_URL` is not a URL. Carries no raw value: the URL holds the password. */
+export class MaplePgUrlError extends Schema.TaggedError<MaplePgUrlError>()("@maple/infra/MaplePgUrlError", {
+	message: Schema.String,
+	cause: Schema.Defect(),
+}) {}
 
 /**
  * Dev stages' managed Hyperdrive, origin from `MAPLE_PG_URL`. The root yields it first so that
@@ -37,7 +45,10 @@ export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 		const { stage, region } = yield* stageDeployment
 		// A dev stage without its database URL cannot be planned: a defect, not a branch.
 		const rawPgUrl = yield* Effect.orDie(requiredPlain("MAPLE_PG_URL"))
-		const pgUrl = yield* Effect.try(() => new URL(rawPgUrl)).pipe(Effect.orDie)
+		const pgUrl = yield* Effect.try({
+			try: () => new URL(rawPgUrl),
+			catch: (cause) => new MaplePgUrlError({ message: "MAPLE_PG_URL is not a valid URL", cause }),
+		}).pipe(Effect.orDie)
 		const props: Cloudflare.Hyperdrive.Props = {
 			name: resolveWorkerName("db", stage, region),
 			origin: {
@@ -45,7 +56,7 @@ export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 				host: pgUrl.hostname,
 				port: Number(pgUrl.port || "5432"),
 				// Connect-time db, not the PlanetScale resource name.
-				database: pgUrl.pathname.replace(/^\//, "") || "postgres",
+				database: Str.replace(/^\//, "")(pgUrl.pathname) || "postgres",
 				user: decodeURIComponent(pgUrl.username),
 				password: Redacted.make(decodeURIComponent(pgUrl.password)),
 			},
@@ -57,7 +68,7 @@ export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 				scheme: "postgres",
 				host: pgUrl.hostname,
 				port: Number(pgUrl.port || "5432"),
-				database: pgUrl.pathname.replace(/^\//, "") || "postgres",
+				database: Str.replace(/^\//, "")(pgUrl.pathname) || "postgres",
 				user: decodeURIComponent(pgUrl.username),
 				password: Redacted.make(decodeURIComponent(pgUrl.password)),
 				// Docker Postgres has no TLS; alchemy's default `prefer` stalls until timeout.
@@ -93,12 +104,12 @@ export const MapleDb = (consumer: MapleDbConsumer) =>
 				return
 			}
 			case "ref": {
-				const id = resolveHyperdriveRefId(stage, consumer)
-				if (id === undefined) return
-				const host = yield* Cloudflare.Worker
-				yield* host.bind(MAPLE_DB_BINDING, {
-					bindings: [{ type: "hyperdrive", name: MAPLE_DB_BINDING, id }],
-				})
+				const hyperdriveId = resolveHyperdriveRefId(stage, consumer)
+				if (hyperdriveId === undefined) return
+				// Read-only: no state row, so destroy and nuke never touch the dashboard config.
+				yield* Cloudflare.Hyperdrive.Connect(
+					Cloudflare.Hyperdrive.lookup(MAPLE_DB_BINDING, { hyperdriveId }),
+				)
 				return
 			}
 			// Bound from the Worker's props (`mapleDbEnv`).

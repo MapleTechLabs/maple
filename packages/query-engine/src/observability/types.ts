@@ -66,6 +66,8 @@ export interface SearchTracesOutput {
 		readonly limit: number
 		readonly hasMore: boolean
 	}
+	/** Set when the window before this time did not finish: only `[coveredFrom, end]` was read. */
+	readonly coveredFrom?: string
 }
 
 export interface SpanNode {

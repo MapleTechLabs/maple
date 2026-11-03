@@ -1,14 +1,15 @@
 import type { McpToolRegistrar } from "./types"
 import { warehouseReadHandlers, warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { CurrentMcpTenant, withTenantExecutor } from "../lib/query-warehouse"
-import { truncate } from "../lib/format"
+import { formatDurationFromMs, toSecondTimestamp, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { hasAiSignal, renderAiSpan } from "../lib/render-ai-span"
 import { InspectSpanOutput } from "@maple/domain/mcp-outputs"
+import { detectPlatform, type PlatformSummary } from "@maple/domain/cloud-platform"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import { spanDetail } from "@maple/query-engine/observability"
+import { spanDetail, type SpanDetailResult } from "@maple/query-engine/observability"
 import { AI_SESSION_SPANS_MAX_SPANS, GetAiSessionSpansRequest, TraceIdHex } from "@maple/domain/http"
 import {
 	readAiSessionSpans,
@@ -33,12 +34,108 @@ const isTraceIdHex = Schema.is(TraceIdHex)
 
 type Output = typeof InspectSpanOutput.Type
 
+/** The span row and the platform it ran on, beside the raw attribute maps. */
+export const spanDetailOutput = (result: SpanDetailResult) => {
+	const platform = result.found
+		? detectPlatform(result.spanAttributes, result.resourceAttributes)
+		: undefined
+	return {
+		traceId: result.traceId,
+		spanId: result.spanId,
+		found: result.found,
+		...result.span,
+		...(platform === undefined ? undefined : { platform }),
+		attributes: result.spanAttributes,
+		resourceAttributes: result.resourceAttributes,
+	}
+}
+
+const spanBlocks = (output: Output): Array<DocBlock> => {
+	if (output.spanName === undefined) return []
+	const status =
+		output.statusCode === "Error" && output.statusMessage
+			? `Error: ${truncate(output.statusMessage, 500)}`
+			: output.statusCode
+	return [
+		doc.fields([
+			["Name", output.spanName],
+			["Stored name", output.rawSpanName],
+			["Service", output.serviceName],
+			["Kind", output.spanKind],
+			[
+				"Duration",
+				output.durationMs === undefined ? undefined : formatDurationFromMs(output.durationMs),
+			],
+			["Started", output.startTime],
+			["Status", status],
+		]),
+	]
+}
+
+const millis = (ms: number | undefined) => (ms === undefined ? undefined : `${ms}ms`)
+
+const platformBlocks = (platform: PlatformSummary | undefined): Array<DocBlock> => {
+	if (platform === undefined) return []
+	switch (platform._tag) {
+		case "cloudflare":
+			return [
+				doc.heading("Cloudflare Worker"),
+				doc.fields([
+					["Script", platform.scriptName],
+					["Version", platform.scriptVersion],
+					["Handler", platform.handler],
+					["Execution model", platform.executionModel],
+					["Colo", platform.colo],
+					["Region", platform.region],
+					[
+						"Location",
+						Arr.join(
+							Arr.filter([platform.city, platform.countryCode], (part) => part !== undefined),
+							", ",
+						) || undefined,
+					],
+					["CPU time", millis(platform.cpuTimeMs)],
+					["Wall time", millis(platform.wallTimeMs)],
+					["TTFB", millis(platform.ttfbMs)],
+					["Outcome", platform.outcome],
+					["Ray ID", platform.rayId],
+				]),
+				doc.text(WORKERS_LIMITS),
+			]
+		case "cloud":
+			return [
+				doc.heading("Cloud platform"),
+				doc.fields([
+					["Provider", platform.provider],
+					["Platform", platform.platform],
+					["Region", platform.region],
+					["Availability zone", platform.availabilityZone],
+					["Account", platform.accountId],
+					["Resource", platform.resourceId],
+					["Function", platform.functionName],
+					["Function version", platform.functionVersion],
+					["Instance", platform.instance],
+					["Trigger", platform.trigger],
+					["Cold start", platform.coldStart === undefined ? undefined : String(platform.coldStart)],
+					["Invocation", platform.invocationId],
+				]),
+			]
+	}
+}
+
+/** What a Workers span cannot tell on its own; each is a limit, not a diagnosis. */
+const WORKERS_LIMITS =
+	"Workers limits: the clock only advances on I/O, so a 0ms span may still have done CPU work. " +
+	"A trace id in a log or response does not mean its spans were stored (tracing off or not sampled). " +
+	"`spanContext().traceFlags` does not reflect head sampling. Automatic propagation has gaps, so a " +
+	"missing downstream span does not prove the call did not happen."
+
 const attributeBlocks = (label: string, attrs: Output["attributes"]): Array<DocBlock> => {
-	const entries = Object.entries(attrs).sort(([a], [b]) => a.localeCompare(b))
+	const entries = Rec.toEntries(attrs).sort(([a], [b]) => Str.localeCompare(b)(a))
 	if (entries.length === 0) return []
 	return [
 		doc.heading(`${label} (${entries.length})`),
-		doc.list(entries.map(([k, v]) => `\`${k}\`: ${truncate(v, 500)}`)),
+		doc.list(Arr.map(entries, ([k, v]) => `\`${k}\`: ${truncate(v, 500)}`)),
 	]
 }
 
@@ -66,12 +163,12 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 		name: "inspect_span",
 		title: "Inspect Span",
 		description:
-			"Full attribute set for one span; `inspect_trace` shows only a trimmed set per span. For an AI agent span (an LLM call, a tool execution, an agent invocation) it also decodes the captured messages and the tool calls it made or executed, with each call's result resolved from the rest of the trace.",
+			"Full attribute set for one span, with its stored name, status and duration; `inspect_trace` shows only a trimmed set per span. For a span that ran on a cloud platform (a Cloudflare Worker, a Lambda or other `cloud.*`/`faas.*` producer) it summarizes the platform fields. For an AI agent span (an LLM call, a tool execution, an agent invocation) it also decodes the captured messages and the tool calls it made or executed, with each call's result resolved from the rest of the trace.",
 		parameters: Schema.Struct({
 			trace_id: P.text("The trace ID the span belongs to"),
 			span_id: P.text("The span ID to inspect (from `inspect_trace` output)"),
 			timestamp: P.optionalTimestamp(
-				"Timestamp of the span (e.g. from search_traces). Narrows the scan to ±1h and saves an AI span the lookup that resolves its trace's bounds",
+				"Timestamp of the span (from search_traces or inspect_trace). Reads the hour around it and skips the lookup of the trace's bounds",
 			),
 			payload_chars: P.limit({
 				default: 2_000,
@@ -114,12 +211,11 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 				"maple.ai.decode": ai?._tag ?? "none",
 			})
 
+			const output = spanDetailOutput(result)
+			yield* Effect.annotateCurrentSpan("maple.span.platform", output.platform?._tag ?? "none")
+
 			return {
-				traceId: trace_id,
-				spanId: span_id,
-				found: result.found,
-				attributes: result.spanAttributes,
-				resourceAttributes: result.resourceAttributes,
+				...output,
 				...(ai === undefined ? undefined : { ai }),
 				...(timestamp === undefined ? undefined : { timestamp }),
 				...(result.widened === true ? { widened: true } : undefined),
@@ -150,8 +246,7 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 				}
 			}
 			const noAttributes =
-				Object.keys(output.attributes).length === 0 &&
-				Object.keys(output.resourceAttributes).length === 0
+				Rec.keys(output.attributes).length === 0 && Rec.keys(output.resourceAttributes).length === 0
 			const ai = output.ai
 			return {
 				title,
@@ -165,6 +260,8 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 					],
 				],
 				blocks: [
+					...spanBlocks(output),
+					...platformBlocks(output.platform),
 					...aiBlocks(output),
 					...attributeBlocks("Span attributes", output.attributes),
 					...attributeBlocks("Resource attributes", output.resourceAttributes),
@@ -175,7 +272,13 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 						"inspect_trace",
 						{
 							trace_id: output.traceId,
-							timestamp: output.widened === true ? undefined : output.timestamp,
+							// The span's own start is inside its trace, unlike a hint that had to widen.
+							timestamp:
+								output.startTime !== undefined
+									? toSecondTimestamp(output.startTime)
+									: output.widened === true
+										? undefined
+										: output.timestamp,
 						},
 						"see the full span tree",
 					),
@@ -208,8 +311,8 @@ const undecoded = (reason: string) => Effect.succeed({ _tag: "undecoded" as cons
  * the raw attributes above it already answer the question, so a failure of
  * either read below lands as a note rather than as the tool's answer.
  *
- * The read is keyed on the trace and always bounded: `trace_detail_spans` is
- * partitioned by day, so an unbounded lookup seeks every partition. A caller
+ * The read is keyed on the trace and always bounded: `traces` is partitioned
+ * by day, so an unbounded lookup seeks every partition. A caller
  * that passed `timestamp` has already named an instant inside the trace, and
  * the pad around it is the one the page reads a session's row with — wide
  * enough that a tool span at the other end of the trace is still inside the
@@ -269,7 +372,7 @@ const decodeAiSpan = Effect.fn("McpInspectSpan.decodeAiSpan")(
 		return {
 			_tag: "decoded" as const,
 			// The leading blank line kept the section apart in the old line-joined text.
-			markdown: decoded.lines.join("\n").trim(),
+			markdown: Str.trim(Arr.join(decoded.lines, "\n")),
 			...(decoded.sessionId === undefined ? undefined : { sessionId: decoded.sessionId }),
 		}
 	},

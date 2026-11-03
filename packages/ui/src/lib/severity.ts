@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 export const SEVERITY_COLORS: Record<string, string> = {
 	TRACE: "var(--color-severity-trace)",
 	DEBUG: "var(--color-severity-debug)",
@@ -14,7 +15,7 @@ export const SEVERITY_COLORS: Record<string, string> = {
 export const SEVERITY_ORDER = ["FATAL", "ERROR", "WARN", "WARNING", "INFO", "DEBUG", "TRACE"]
 
 export function getSeverityColor(severity: string): string {
-	return SEVERITY_COLORS[severity.toUpperCase()] ?? "var(--color-muted-foreground)"
+	return SEVERITY_COLORS[Str.toUpperCase(severity)] ?? "var(--color-muted-foreground)"
 }
 
 // Synonyms share a rank (WARN/WARNING, FATAL/CRITICAL); 0 is the most severe.
@@ -31,5 +32,5 @@ const SEVERITY_RANK: Record<string, number> = {
 
 /** Sort rank for a log level, case-insensitive; unknown levels rank after every known one. */
 export function severityRank(severity: string): number {
-	return SEVERITY_RANK[severity.toUpperCase()] ?? 99
+	return SEVERITY_RANK[Str.toUpperCase(severity)] ?? 99
 }

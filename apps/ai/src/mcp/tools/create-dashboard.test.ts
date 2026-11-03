@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { buildBreakdownQuerySpec } from "@maple/query-engine/query-builder"
 import { dataSourceQuerySet } from "@maple/widgets/dashboard"
 import { buildSimpleWidgets, normalizeGroupBy } from "./create-dashboard"
 
@@ -35,16 +36,30 @@ describe("buildSimpleWidgets", () => {
 		)
 	})
 
-	it("AND-s a where clause with service_name into the query draft", () => {
-		const widgets = buildSimpleWidgets([{ ...cpu, service_name: "node" }])
+	it("AND-s a where clause with service into the query draft", () => {
+		const widgets = buildSimpleWidgets([{ ...cpu, service: "node" }])
 		const draft = typeof widgets === "string" ? undefined : dataSourceQuerySet(widgets[0]?.dataSource)
 		expect(draft?.queries[0]?.whereClause).toBe('service.name = "node" AND attr.state = "idle"')
 	})
 
-	it("quotes service_name so a double quote cannot open a second clause", () => {
-		const widgets = buildSimpleWidgets([{ ...cpu, where: undefined, service_name: 'x" AND attr.a = "1' }])
+	it("quotes service so a double quote cannot open a second clause", () => {
+		const widgets = buildSimpleWidgets([{ ...cpu, where: undefined, service: 'x" AND attr.a = "1' }])
 		const draft = typeof widgets === "string" ? undefined : dataSourceQuerySet(widgets[0]?.dataSource)
 		expect(draft?.queries[0]?.whereClause).toBe(`service.name = 'x" AND attr.a = "1'`)
+	})
+
+	it("still scopes by the retired service_name, and prefers service when both are set", () => {
+		const draftOf = (spec: Parameters<typeof buildSimpleWidgets>[0][number]) => {
+			const widgets = buildSimpleWidgets([spec])
+			return typeof widgets === "string" ? undefined : dataSourceQuerySet(widgets[0]?.dataSource)
+		}
+		expect(draftOf({ ...cpu, where: undefined, service_name: "old" })?.queries[0]?.whereClause).toBe(
+			'service.name = "old"',
+		)
+		expect(
+			draftOf({ ...cpu, where: undefined, service: "new", service_name: "old" })?.queries[0]
+				?.whereClause,
+		).toBe('service.name = "new"')
 	})
 
 	it("rejects a where clause on a list widget instead of dropping it", () => {
@@ -52,5 +67,25 @@ describe("buildSimpleWidgets", () => {
 			{ title: "Recent logs", source: "logs", visualization: "list", where: 'attr.a = "1"' },
 		])
 		expect(result).toContain("where is not supported on list widgets")
+	})
+
+	it("groups a traces widget by a span attribute", () => {
+		const widgets = buildSimpleWidgets([
+			{
+				title: "Spans by namespace",
+				source: "traces",
+				visualization: "table",
+				group_by: "attr.code.namespace",
+			},
+		])
+		const draft = typeof widgets === "string" ? undefined : dataSourceQuerySet(widgets[0]?.dataSource)
+		const query = draft?.queries[0]
+		const spec = query === undefined ? undefined : buildBreakdownQuerySpec(query)
+		expect(spec?.error ?? null).toBeNull()
+		expect(spec?.query).toMatchObject({
+			source: "traces",
+			groupBy: "attribute",
+			filters: { groupByAttributeKeys: ["code.namespace"] },
+		})
 	})
 })

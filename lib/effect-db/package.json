@@ -11,16 +11,11 @@
 	},
 	"dependencies": {
 		"@electric-sql/client": "1.5.28",
-		"@tanstack/db": "0.11.3",
-		"@tanstack/electric-db-collection": "0.5.4",
-		"@tanstack/react-db": "0.5.3",
+		"@tanstack/db": "1.0.0-rc.1.1",
+		"@tanstack/electric-db-collection": "1.0.0-rc.1.1",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
-		"@types/react": "catalog:react",
 		"typescript": "catalog:tooling"
-	},
-	"peerDependencies": {
-		"react": "^19.0.0"
 	}
 }

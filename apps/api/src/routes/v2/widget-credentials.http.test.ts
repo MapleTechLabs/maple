@@ -130,7 +130,10 @@ describe("v2 widget credentials", () => {
 			expect(minted.body.organization_id).toBe(ORG)
 			// The caller asked for none of this.
 			expect(minted.body.scopes).toEqual(["widget_summary:read"])
-			expect(Date.parse(minted.body.expires_at)).toBeGreaterThan(Date.now())
+			// Two weeks, so a key lifted off a lost phone dies on its own.
+			expect(Date.parse(minted.body.expires_at) - Date.parse(minted.body.created_at)).toBe(
+				14 * 86_400_000,
+			)
 		} finally {
 			await harness.dispose()
 		}
@@ -153,6 +156,21 @@ describe("v2 widget credentials", () => {
 				const denied = await harness.request("GET", path, minted.body.secret)
 				expect(denied.status).toBe(403)
 			}
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("does not inherit the scope exemption standard keys get for feedback", async () => {
+		const harness = makeHarness()
+		try {
+			const key = await harness.bootstrapKey()
+			const minted = await harness.mint(key.secret)
+
+			const listed = await harness.request("GET", "/v2/agent_feedback", minted.body.secret)
+			expect(listed.status).toBe(403)
+			const sent = await harness.request("POST", "/v2/agent_feedback", minted.body.secret)
+			expect(sent.status).toBe(403)
 		} finally {
 			await harness.dispose()
 		}

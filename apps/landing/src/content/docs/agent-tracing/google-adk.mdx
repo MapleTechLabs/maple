@@ -19,12 +19,13 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for Google ADK in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-google-adk -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-google-adk -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install ADK and the OTLP exporter
 
@@ -41,7 +42,8 @@ pip install "google-adk>=2.10" litellm opentelemetry-exporter-otlp-proto-http
 <LanguageTab id="typescript">
 
 ```bash
-npm install @google/adk@^2.1 zod @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-proto
+npm install @google/adk@^2.1 zod @opentelemetry/sdk-node \
+  @opentelemetry/exporter-trace-otlp-proto
 ```
 
 `zod` is for the tool in the example below.
@@ -232,14 +234,19 @@ class AdkSpanProcessor extends tracing.BatchSpanProcessor {
 			if (usage.thoughtsTokenCount) {
 				attributes["gen_ai.usage.reasoning.output_tokens"] = usage.thoughtsTokenCount
 			}
-			if (usage.cachedContentTokenCount) attributes["gen_ai.usage.cache_read.input_tokens"] = usage.cachedContentTokenCount
-			if (request.contents) attributes["gen_ai.input.messages"] = JSON.stringify(request.contents.map(toMessage))
+			if (usage.cachedContentTokenCount)
+				attributes["gen_ai.usage.cache_read.input_tokens"] = usage.cachedContentTokenCount
+			if (request.contents)
+				attributes["gen_ai.input.messages"] = JSON.stringify(request.contents.map(toMessage))
 			if (response.content?.parts?.length) {
 				const finish_reason = response.finishReason?.toLowerCase()
-				attributes["gen_ai.output.messages"] = JSON.stringify([{ ...toMessage(response.content), finish_reason }])
+				attributes["gen_ai.output.messages"] = JSON.stringify([
+					{ ...toMessage(response.content), finish_reason },
+				])
 			}
 			if (system) {
-				const parts = typeof system === "string" ? [{ type: "text", content: system }] : toParts(system.parts)
+				const parts =
+					typeof system === "string" ? [{ type: "text", content: system }] : toParts(system.parts)
 				attributes["gen_ai.system_instructions"] = JSON.stringify(parts)
 			}
 		} else if (span.name.startsWith("execute_tool ")) {
@@ -404,7 +411,7 @@ In a server, call `await sdk.shutdown()` from your shutdown hook. In a serverles
 </LanguageTab>
 </LanguageTabs>
 
-## Check that it works
+## Verify
 
 Run a conversation of two or three turns, one calling a tool, then open **Agent Sessions**. You should see one session with the framework **Google ADK**, one turn per run, tool calls with their arguments and results, and tokens on each model call. Cost shows as unpriced.
 
@@ -416,7 +423,7 @@ Run a conversation of two or three turns, one calling a tool, then open **Agent 
 - **A failing tool shows as successful.** It returned `{"status": "error", ...}`. Return an object with an `"error"` key, or raise an error.
 - **Every model call appears twice.** Another instrumentor wraps the same calls (`litellm.callbacks = ["otel"]`, `openinference-instrumentation-google-adk`), or a second OpenTelemetry SDK exports the same spans. Remove it.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview): how Maple builds sessions, turns and checks.
 - [ADK agent activity traces](https://google.github.io/adk-docs/observability/traces/): ADK's span reference and export setup.

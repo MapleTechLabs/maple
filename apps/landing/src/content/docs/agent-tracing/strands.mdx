@@ -21,14 +21,17 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for Strands Agents in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-strands -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-strands -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install and configure the exporter
+
+The language you pick applies to every section on this page.
 
 <LanguageTabs label="Language" tabs={[{ id: "python", label: "Python" }, { id: "typescript", label: "TypeScript" }]}>
 <LanguageTab id="python">
@@ -45,7 +48,10 @@ pip install 'strands-agents[otel,openai]>=1.57'
 Install the SDK with its OpenTelemetry packages:
 
 ```bash
-npm install @strands-agents/sdk @opentelemetry/api @opentelemetry/sdk-trace-base @opentelemetry/sdk-trace-node @opentelemetry/resources @opentelemetry/exporter-trace-otlp-http @opentelemetry/sdk-metrics @opentelemetry/exporter-metrics-otlp-http
+npm install @strands-agents/sdk @opentelemetry/api \
+  @opentelemetry/sdk-trace-base @opentelemetry/sdk-trace-node \
+  @opentelemetry/resources @opentelemetry/exporter-trace-otlp-http \
+  @opentelemetry/sdk-metrics @opentelemetry/exporter-metrics-otlp-http
 ```
 
 </LanguageTab>
@@ -194,11 +200,9 @@ try {
 </LanguageTab>
 </LanguageTabs>
 
-## Check that it works
+## Verify
 
-Run a conversation of two or three messages, including one that calls a tool, then open **Agent Sessions** in Maple. You should see one session per conversation id with framework **Strands Agents**, one turn per `agent(...)` call, and a transcript with the user messages, replies and tool calls.
-
-Cost shows as unpriced because Strands doesn't report it.
+Run a conversation of two or three messages, including one that calls a tool, then open **Agent Sessions** in Maple. You should see one session per conversation id with framework **Strands Agents**, one turn per `agent(...)` call, and a transcript with the user messages, replies and tool calls. Cost shows as unpriced because Strands doesn't report it.
 
 ## Troubleshooting
 
@@ -208,7 +212,7 @@ Cost shows as unpriced because Strands doesn't report it.
 - **Every model call appears twice.** Another instrumentation (OpenLIT, OpenLLMetry, OpenInference, an OpenAI or Bedrock instrumentor) wraps the same calls. Remove it.
 - **Nothing arrives from a script.** The process exited before the batch was exported. Call `force_flush()` and `shutdown()` in a `finally` block.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
 - [Strands Agents traces documentation](https://strandsagents.com/docs/user-guide/observability-evaluation/traces/)

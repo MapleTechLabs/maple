@@ -16,6 +16,7 @@ import { mysqlTemplate } from "./database/mysql"
 import { postgresTemplate } from "./database/postgres"
 import { redisTemplate } from "./database/redis"
 import { cloudflareTemplate } from "./infrastructure/cloudflare"
+import { gcpTemplate } from "./infrastructure/gcp"
 import { planetscaleTemplate } from "./infrastructure/planetscale"
 import { hostMetricsTemplate } from "./infrastructure/host-metrics"
 import { kubernetesClusterTemplate } from "./infrastructure/kubernetes-cluster"
@@ -25,6 +26,7 @@ import { kafkaTemplate } from "./messaging/kafka"
 import { natsTemplate } from "./messaging/nats"
 import { rabbitmqTemplate } from "./messaging/rabbitmq"
 import type { TemplateDefinition, TemplateMetadata, TemplatePreviewWidget } from "./types"
+import { Array as Arr } from "effect"
 
 export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
 	// Application
@@ -46,6 +48,7 @@ export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
 	// Infrastructure
 	cloudflareTemplate,
 	planetscaleTemplate,
+	gcpTemplate,
 	hostMetricsTemplate,
 	kubernetesClusterTemplate,
 	kubernetesPodTemplate,
@@ -56,7 +59,7 @@ export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
 	rabbitmqTemplate,
 ]
 
-const TEMPLATE_BY_ID = new Map<string, TemplateDefinition>(DASHBOARD_TEMPLATES.map((t) => [t.id, t]))
+const TEMPLATE_BY_ID = new Map<string, TemplateDefinition>(Arr.map(DASHBOARD_TEMPLATES, (t) => [t.id, t]))
 
 export function getTemplate(id: string): TemplateDefinition | undefined {
 	return TEMPLATE_BY_ID.get(id)
@@ -79,22 +82,39 @@ function previewKindForWidget(visualization: string, chartId: unknown): Dashboar
 	return widgetTypeByVisualization(visualization)?.panelType ?? "line"
 }
 
+/**
+ * What a viewer first sees: the root canvas, then each section's first tab, stacked
+ * in order. A widget's `layout.y` is relative to its container, so each container
+ * starts below the previous one.
+ */
 export function buildTemplatePreview(template: TemplateDefinition): TemplatePreviewWidget[] {
-	return template.build({}).widgets.map((w) => ({
-		x: w.layout.x,
-		y: w.layout.y,
-		w: w.layout.w,
-		h: w.layout.h,
-		kind: previewKindForWidget(w.visualization, w.display.chartId),
-		title: w.display.title ?? "",
-	}))
+	const { widgets, sections = [] } = template.build({})
+	const containers = [
+		Arr.filter(widgets, (w) => w.sectionId === undefined),
+		...Arr.map(sections, (section) =>
+			Arr.filter(widgets, (w) => w.sectionId === section.id && w.tabId === section.tabs[0]?.id),
+		),
+	]
+	let top = 0
+	return Arr.flatMap(containers, (container) => {
+		const offset = top
+		top += Math.max(0, ...Arr.map(container, (w) => w.layout.y + w.layout.h))
+		return Arr.map(container, (w) => ({
+			x: w.layout.x,
+			y: w.layout.y + offset,
+			w: w.layout.w,
+			h: w.layout.h,
+			kind: previewKindForWidget(w.visualization, w.display.chartId),
+			title: w.display.title ?? "",
+		}))
+	})
 }
 
 // Previews are derived from the (pure, deterministic) template builds; compute once, on first use.
 const templatePreview = memoize(buildTemplatePreview)
 
 export function listTemplateMetadata(): TemplateMetadata[] {
-	return DASHBOARD_TEMPLATES.map((t) => ({
+	return Arr.map(DASHBOARD_TEMPLATES, (t) => ({
 		id: t.id,
 		name: t.name,
 		description: t.description,

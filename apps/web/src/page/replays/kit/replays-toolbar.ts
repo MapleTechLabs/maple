@@ -1,0 +1,102 @@
+import { formatNumber } from "@maple/ui/lib/format"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import type { Tone } from "@maple/ui/lib/tone"
+import { cn } from "@maple/ui/lib/utils"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { filterChip } from "@maple/views/ui/filter-chip"
+import { searchInput } from "@maple/views/ui/search-input"
+import { listToolbar } from "../../kit/list-toolbar"
+import { hstackClass } from "@maple/views/ui/stack"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+
+// The replays toolbar: the URL search and the triage chips.
+
+export type ReplaysToolbarOptions<M> = Readonly<{
+	/** What is typed; the caller debounces it into `q` like `ToolbarSearch`. */
+	query: string
+	onInput: (value: string) => M
+	onClear: M
+	/** `undefined` until the facets answer, so a failed read never claims zero. */
+	errorSessions: number | undefined
+	isErrorsOnly: boolean
+	onToggleErrorsOnly: M
+	engagedSessions: number | undefined
+	isEngagedOnly: boolean
+	onToggleEngagedOnly: M
+	isWaiting?: boolean
+}>
+
+/** A filter toggle, sized to the search box beside it; the count trails as on every filter chip. */
+const triageChip = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		isPressed: boolean
+		onClick: M
+		tone: Tone
+		label: string
+		count: number | undefined
+		tooltip: string
+	}>,
+): Html =>
+	filterChip(
+		h,
+		{
+			isPressed: options.isPressed,
+			onClick: options.onClick,
+			tone: options.tone,
+			hasDot: true,
+			size: "sm",
+			count: options.count === undefined ? undefined : formatNumber(options.count),
+			attributes: tooltipTrigger(h, options.tooltip),
+		},
+		[options.label],
+	)
+
+export const replaysToolbar = <M>(h: HtmlBuilder<M>, options: ReplaysToolbarOptions<M>): Html => {
+	const isWaiting = options.isWaiting ?? false
+	// The sticky area pads the page edge, so the toolbar adds no gap under itself.
+	return listToolbar(h, {
+		className: "pb-0",
+		leading: searchInput(h, {
+			id: "replays-search",
+			value: options.query,
+			placeholder: "Search by URL…",
+			onInput: options.onInput,
+			onClear: options.onClear,
+			size: "sm",
+			className: cn("max-w-sm", "w-full sm:max-w-sm"),
+		}),
+		trailing: [
+			h.div(
+				[
+					...(isWaiting ? [h.AriaBusy(true)] : []),
+					h.Role("group"),
+					h.AriaLabel("Quick filters"),
+					h.Class(cn(hstackClass({ gap: "2", wrap: true }), refreshingClass(isWaiting))),
+				],
+				[
+					triageChip(h, {
+						isPressed: options.isErrorsOnly,
+						onClick: options.onToggleErrorsOnly,
+						tone: "crit",
+						label: "With errors",
+						count: options.errorSessions,
+						tooltip: options.isErrorsOnly
+							? "Show all sessions"
+							: "Show only sessions with errors",
+					}),
+					triageChip(h, {
+						isPressed: options.isEngagedOnly,
+						onClick: options.onToggleEngagedOnly,
+						tone: "ok",
+						label: "Engaged",
+						count: options.engagedSessions,
+						tooltip: options.isEngagedOnly
+							? "Show every session type"
+							: "Hide bots, bounces, idle tabs and glances",
+					}),
+				],
+			),
+		],
+	})
+}

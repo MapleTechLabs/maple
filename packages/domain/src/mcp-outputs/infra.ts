@@ -1,11 +1,31 @@
-/** Output schemas for the infrastructure MCP tools (hosts, Kubernetes, containers). */
+/** Output schemas for the infrastructure MCP tools (hosts, Kubernetes, containers, connected providers). */
 import { Schema } from "effect"
 import { OutputTimeRange } from "./shared"
 
-export const InfraKind = Schema.Literals(["hosts", "pods", "nodes", "workloads", "containers"])
+export const InfraKind = Schema.Literals([
+	"hosts",
+	"pods",
+	"nodes",
+	"workloads",
+	"containers",
+	"cloudflare_zones",
+	"cloudflare_workers",
+	"railway_services",
+	"planetscale_databases",
+])
 export type InfraKind = typeof InfraKind.Type
 
-export const InfraEntityKind = Schema.Literals(["host", "pod", "node", "workload", "container"])
+export const InfraEntityKind = Schema.Literals([
+	"host",
+	"pod",
+	"node",
+	"workload",
+	"container",
+	"cloudflare_zone",
+	"cloudflare_worker",
+	"railway_service",
+	"planetscale_database",
+])
 export type InfraEntityKind = typeof InfraEntityKind.Type
 
 /**
@@ -14,7 +34,8 @@ export type InfraEntityKind = typeof InfraEntityKind.Type
  */
 export const InfraEntityRow = Schema.Struct({
 	name: Schema.String,
-	lastSeen: Schema.String,
+	/** Absent for provider kinds polled in aggregate (Cloudflare, PlanetScale). */
+	lastSeen: Schema.optionalKey(Schema.String),
 	namespace: Schema.optionalKey(Schema.String),
 	cluster: Schema.optionalKey(Schema.String),
 	environment: Schema.optionalKey(Schema.String),
@@ -43,6 +64,33 @@ export const InfraEntityRow = Schema.Struct({
 	uptimeSeconds: Schema.optionalKey(Schema.Number),
 	/** Container restarts in the window (k8s.container.restarts, or Docker's container.restarts). */
 	restarts: Schema.optionalKey(Schema.Number),
+	/** Railway project, Cloudflare account. */
+	project: Schema.optionalKey(Schema.String),
+	memoryBytes: Schema.optionalKey(Schema.Number),
+	replicas: Schema.optionalKey(Schema.Number),
+	// Traffic kinds (Cloudflare zones and Workers): window totals.
+	requests: Schema.optionalKey(Schema.Number),
+	/** 5xx responses for a zone, failed invocations for a Worker. */
+	errors: Schema.optionalKey(Schema.Number),
+	errors4xx: Schema.optionalKey(Schema.Number),
+	/** errors / requests. */
+	errorRate: Schema.optionalKey(Schema.Number),
+	/** Edge cache hits over cacheable requests. */
+	cacheHitRate: Schema.optionalKey(Schema.Number),
+	bytes: Schema.optionalKey(Schema.Number),
+	visits: Schema.optionalKey(Schema.Number),
+	subrequests: Schema.optionalKey(Schema.Number),
+	/** Zone edge TTFB or Worker wall duration percentiles. */
+	latencyP50Ms: Schema.optionalKey(Schema.Number),
+	latencyP95Ms: Schema.optionalKey(Schema.Number),
+	latencyP99Ms: Schema.optionalKey(Schema.Number),
+	originP95Ms: Schema.optionalKey(Schema.Number),
+	cpuTimeP50Ms: Schema.optionalKey(Schema.Number),
+	cpuTimeP99Ms: Schema.optionalKey(Schema.Number),
+	// PlanetScale databases.
+	connections: Schema.optionalKey(Schema.Number),
+	connectionsPeak: Schema.optionalKey(Schema.Number),
+	replicaLagSeconds: Schema.optionalKey(Schema.Number),
 })
 export type InfraEntityRow = typeof InfraEntityRow.Type
 
@@ -82,7 +130,7 @@ export const ListInfraOutput = Schema.Struct({
 export const InfraSeriesStats = Schema.Struct({
 	/** What the series measures, e.g. "cpu (fraction of limit)". */
 	label: Schema.String,
-	unit: Schema.Literals(["fraction", "cores", "load", "bytes", "seconds"]),
+	unit: Schema.Literals(["fraction", "cores", "load", "bytes", "seconds", "count", "ms"]),
 	/** Series value per bucket for grouped metrics (filesystem by mountpoint, pods of a workload). */
 	group: Schema.optionalKey(Schema.String),
 	min: Schema.Number,
@@ -95,6 +143,17 @@ export const InfraSeriesStats = Schema.Struct({
 	change: Schema.Number,
 })
 export type InfraSeriesStats = typeof InfraSeriesStats.Type
+
+/** A ranked table from a provider (a zone's top paths, firewall rules, DNS names). */
+export const InfraBreakdown = Schema.Struct({
+	title: Schema.String,
+	keyLabel: Schema.String,
+	valueLabels: Schema.Array(Schema.String),
+	rows: Schema.Array(Schema.Struct({ key: Schema.String, values: Schema.Array(Schema.Number) })),
+})
+export type InfraBreakdown = typeof InfraBreakdown.Type
+
+export const InfraInspectSection = Schema.Literals(["traffic", "breakdown", "security", "dns"])
 
 export const InspectInfraOutput = Schema.Struct({
 	timeRange: OutputTimeRange,
@@ -111,4 +170,7 @@ export const InspectInfraOutput = Schema.Struct({
 	children: Schema.optionalKey(InfraKindSection),
 	/** Services whose spans name this workload (k8sattributes). */
 	services: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** The Cloudflare zone section shown; other sections are one call away. */
+	section: Schema.optionalKey(InfraInspectSection),
+	breakdowns: Schema.optionalKey(Schema.Array(InfraBreakdown)),
 })

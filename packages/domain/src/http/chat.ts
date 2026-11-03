@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Effect, Schema } from "effect"
+import { Schema } from "effect"
 import { ChatProposalDecision } from "../chat-session"
 import { SessionAuthorization } from "./current-tenant"
 
@@ -13,15 +13,15 @@ import { SessionAuthorization } from "./current-tenant"
  * device and tells the model's next turn what happened.
  *
  * Anything else a client sends is ignored, including the `tool`/`input`/`messageId` of a tab
- * loaded before the request went by reference.
+ * loaded before the request went by reference (which sent no `decision`, so it is refused).
  */
 export class ChatApplyRequest extends Schema.Class<ChatApplyRequest>("ChatApplyRequest")({
 	/** The conversation the proposal came from; it has to be the caller's org. */
 	sessionId: Schema.String,
 	/** The proposed call's id. */
 	toolCallId: Schema.String,
-	/** Absent from a tab loaded before denials were recorded, which only ever approved. */
-	decision: ChatProposalDecision.pipe(Schema.withDecodingDefaultKey(Effect.succeed("approve" as const))),
+	/** Required: a body without one is a 400, never an implicit approval of a mutating call. */
+	decision: ChatProposalDecision,
 }) {}
 
 export class ChatApplyResponse extends Schema.Class<ChatApplyResponse>("ChatApplyResponse")({

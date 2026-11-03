@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { SERVICE_MAP_3D_TOPOLOGY as topology } from "@/lab/service-map-3d/fixture"
+import { SERVICE_MAP_3D_TOPOLOGY as topology } from "../../../lab/service-map-3d/fixture"
 import { connectedIds, formatRate, spatialLayout } from "./spatial-layout"
+import { Array as Arr } from "effect"
 
 describe("spatial service map", () => {
 	it("distinguishes low-volume sampled traffic from idle connections", () => {
@@ -11,10 +12,10 @@ describe("spatial service map", () => {
 	})
 	it.each(["atlas", "cascade"] as const)("places every node without collisions in %s", (view) => {
 		const layout = spatialLayout(topology, view)
-		expect([...layout.positions.keys()].sort()).toEqual(topology.nodes.map((node) => node.id).sort())
+		expect([...layout.positions.keys()].sort()).toEqual(Arr.map(topology.nodes, (node) => node.id).sort())
 		const positions = [...layout.positions.values()]
-		expect(new Set(positions.map((position) => position.join(","))).size).toBe(topology.nodes.length)
-		for (const position of positions) expect(position.every(Number.isFinite)).toBe(true)
+		expect(new Set(Arr.map(positions, (position) => position.join(","))).size).toBe(topology.nodes.length)
+		for (const position of positions) expect(Arr.every(position, Number.isFinite)).toBe(true)
 	})
 	it("keeps Atlas districts separate and their nodes inside the correct district", () => {
 		const layout = spatialLayout(topology, "atlas")
@@ -28,7 +29,7 @@ describe("spatial service map", () => {
 							(district.depth + other.depth) / 2,
 				).toBe(true)
 			}
-			for (const node of topology.nodes.filter((node) => node.namespace === district.id)) {
+			for (const node of Arr.filter(topology.nodes, (node) => node.namespace === district.id)) {
 				const position = layout.positions.get(node.id)!
 				expect(Math.abs(position[0] - district.position[0]) + 1.25).toBeLessThan(district.width / 2)
 				expect(Math.abs(position[2] - district.position[2]) + 1.075).toBeLessThan(district.depth / 2)

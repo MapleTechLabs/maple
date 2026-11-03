@@ -1,4 +1,6 @@
 import type { AuditChanges } from "@maple/domain/http"
+import { redactUrlSecrets } from "@maple/domain/url-redaction"
+import { Array as Arr, Record as Rec } from "effect"
 
 /**
  * Structural equality, insensitive to object key order (a server-rebuilt
@@ -8,14 +10,17 @@ import type { AuditChanges } from "@maple/domain/http"
 export const structuralEqual = (a: unknown, b: unknown): boolean => {
 	if (a === b) return true
 	if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false
-	if (Array.isArray(a) || Array.isArray(b)) {
-		if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
-		return a.every((item, index) => structuralEqual(item, b[index]))
+	if (Arr.isArray(a) || Arr.isArray(b)) {
+		if (!Arr.isArray(a) || !Arr.isArray(b) || a.length !== b.length) return false
+		return Arr.every(a, (item, index) => structuralEqual(item, b[index]))
 	}
-	const aEntries = Object.entries(a)
-	const bEntries = new Map(Object.entries(b))
+	const aEntries = Rec.toEntries(a)
+	const bEntries = new Map(Rec.toEntries(b))
 	if (aEntries.length !== bEntries.size) return false
-	return aEntries.every(([key, value]) => bEntries.has(key) && structuralEqual(value, bEntries.get(key)))
+	return Arr.every(
+		aEntries,
+		([key, value]) => bEntries.has(key) && structuralEqual(value, bEntries.get(key)),
+	)
 }
 
 /**
@@ -30,7 +35,7 @@ export const diffAuditChanges = (
 	const fields: string[] = []
 	const beforeOut: Record<string, unknown> = {}
 	const afterOut: Record<string, unknown> = {}
-	for (const key of Object.keys(after)) {
+	for (const key of Rec.keys(after)) {
 		const prev = before[key]
 		const next = after[key]
 		if (structuralEqual(prev, next)) continue
@@ -80,15 +85,8 @@ export const compactAuditChanges = (
 	return { fields: changes.fields, before, after }
 }
 
-/**
- * Strip userinfo, query string, and fragment from a URL destined for an audit
- * row — scrape URLs routinely embed tokens there. Keeps scheme/host/path.
- */
-export const redactAuditUrl = (raw: string): string => {
-	if (!URL.canParse(raw)) return "<invalid-url>"
-	const url = new URL(raw)
-	return `${url.protocol}//${url.host}${url.pathname}`
-}
+/** Strip userinfo, query and fragment from a URL destined for an audit row; scrape URLs embed tokens there. */
+export const redactAuditUrl = redactUrlSecrets
 
 /**
  * Build the `changes` diff for one resource's update handler.
@@ -148,13 +146,19 @@ export const auditDiff = <Field extends string>(spec: {
 		// known here.
 		const present: Record<string, unknown> = payload
 		const touched = [
-			...(spec.writeOnly ?? []).filter((field) => present[field] !== undefined).map(redactedField),
-			...(spec.opaque ?? []).filter((field) => present[field] !== undefined).map(updatedField),
+			...Arr.map(
+				Arr.filter(spec.writeOnly ?? [], (field) => present[field] !== undefined),
+				redactedField,
+			),
+			...Arr.map(
+				Arr.filter(spec.opaque ?? [], (field) => present[field] !== undefined),
+				updatedField,
+			),
 		]
 		if (touched.length === 0) return observable
-		const placeholders = Object.fromEntries(touched)
+		const placeholders = Rec.fromEntries(touched)
 		return {
-			fields: [...(observable?.fields ?? []), ...touched.map(([field]) => field)],
+			fields: [...(observable?.fields ?? []), ...Arr.map(touched, ([field]) => field)],
 			before: { ...observable?.before, ...placeholders },
 			after: { ...observable?.after, ...placeholders },
 		}

@@ -1,10 +1,23 @@
-import { Cause, Clock, Deferred, Duration, Effect, HashMap, Option, Ref, Schedule, Schema } from "effect"
+import {
+	Cause,
+	Clock,
+	Deferred,
+	Duration,
+	Effect,
+	HashMap,
+	Option,
+	Ref,
+	Schedule,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { trackOutboundSlot } from "@maple/cache"
 import {
 	MAX_RAW_SQL_RESULT_BYTES,
 	MAX_RAW_SQL_RESULT_ROWS,
 	RawSqlValidationError,
-	type WarehouseQueryRequest,
+	WarehouseQueryRequest,
 	WarehouseQueryError,
 	WarehouseQueryResponse,
 	WarehouseResultDecodeError,
@@ -18,6 +31,7 @@ import { parseStatement, withFormat, withSettings } from "@maple-dev/effect-orm/
 import type { WarehouseDriverError } from "./driver-error"
 import type { WarehouseExecutorApi } from "../observability"
 import {
+	mergeSettingsClauses,
 	settingsClause,
 	type QueryProfileName,
 	resolveSettings,
@@ -109,12 +123,14 @@ type TrustedSqlError = WarehouseReadExecutionError
 type BoundedTrustedSqlError = TrustedSqlError | WarehouseResponseLimitError
 type RawSqlError = WarehouseExecutionError | RawSqlValidationError
 
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+
 const sqlClientCacheKey = (config: ResolvedWarehouseConfig): string =>
 	config.kind === "tinybird"
 		? `tinybird:${config.host}:${config.token}`
 		: `${config.kind}:${config.url}:${config.username}:${config.password}:${config.database}`
 
-// Only retry transient upstream failures (5xx, 408, 429, network blips). Non-transient
+// Only retry transient upstream failures (5xx, 408, rate-limit 429s, network blips). Non-transient
 // errors (auth, config, schema_drift, query) re-fail immediately — there's nothing to
 // recover from by trying again. Caps at 2 retries (3 attempts total) to bound worst-case
 // tail latency: at concurrency=4 in the alerting tick, a fully-degraded warehouse can
@@ -122,8 +138,16 @@ const sqlClientCacheKey = (config: ResolvedWarehouseConfig): string =>
 // `Schedule.max` recurs only while every schedule does, so `recurs(2)` is the cap.
 const TRANSIENT_RETRY_SCHEDULE = Schedule.max([Schedule.exponential("100 millis", 2.0), Schedule.recurs(2)])
 
+// A 429 naming a daily or quota limit ("daily request limit exceeded (1000/day)") cannot
+// clear within the backoff, so retrying only adds latency. vCPU limits can clear and still retry.
+const PLAN_LIMIT_429 = /\bdaily\b[^.]*\blimit\b|\/day\)|\bquota\b/i
+const VCPU_429 = /\bvCPU\b/i
+
+const isPlanLimit429 = (error: WarehouseUpstreamError) =>
+	error.upstreamStatus === 429 && PLAN_LIMIT_429.test(error.message) && !VCPU_429.test(error.message)
+
 const isTransientUpstreamError = (error: unknown): error is WarehouseUpstreamError =>
-	error instanceof WarehouseUpstreamError
+	error instanceof WarehouseUpstreamError && !isPlanLimit429(error)
 
 // Client-side ceiling for a single query attempt. Tinybird's server-side
 // `max_execution_time` is not always honored — when its query queue is saturated
@@ -147,6 +171,22 @@ const clientTimeoutMs = (
 	return maxExecutionTimeS !== undefined
 		? maxExecutionTimeS * 1000 + CLIENT_TIMEOUT_BUFFER_MS
 		: MANAGED_QUERY_HARD_TIMEOUT_MS
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null
+
+/**
+ * Whether an ingest row is tagged for `orgId` and no other org: by its `OrgId`
+ * column, or by `resource_attributes.maple_org_id` on raw telemetry rows.
+ */
+const rowBelongsTo = (row: unknown, orgId: string): boolean => {
+	if (!isRecord(row)) return false
+	const tags = Arr.filter(
+		[row.OrgId, isRecord(row.resource_attributes) ? row.resource_attributes.maple_org_id : undefined],
+		(tag) => tag !== undefined,
+	)
+	return tags.length > 0 && Arr.every(tags, (tag) => tag === orgId)
 }
 
 /**
@@ -197,7 +237,8 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 	): Effect.Effect<WarehouseSqlClient, WarehouseDriverError> =>
 		Effect.gen(function* () {
 			const configKey = sqlClientCacheKey(config)
-			const cached = Option.getOrUndefined(HashMap.get(yield* Ref.get(clientCache), cacheKey))
+			const clients = yield* Ref.get(clientCache)
+			const cached = Option.getOrUndefined(HashMap.get(clients, cacheKey))
 			if (cached && cached.cacheKey === configKey && cached.expiresAt > nowMs) {
 				return cached.client
 			}
@@ -276,7 +317,10 @@ WHERE database = currentDatabase() AND table IN ('logs', 'traces')`,
 						"columns",
 						`SELECT table, name
 FROM system.columns
-WHERE database = currentDatabase() AND table IN (${["logs", "traces", ...OPTIONAL_ROLLUP_TABLES].map((table) => `'${table}'`).join(", ")})`,
+WHERE database = currentDatabase() AND table IN (${Arr.join(
+							Arr.map(["logs", "traces", ...OPTIONAL_ROLLUP_TABLES], (table) => `'${table}'`),
+							", ",
+						)})`,
 					).pipe(
 						Effect.flatMap((rows) =>
 							Schema.decodeUnknownEffect(WarehouseColumnMetadataSchema)(rows),
@@ -496,7 +540,7 @@ WHERE name = 'enable_full_text_index'`,
 		// re-derives from SQL text which terminal clauses it already carries.
 		const parsed = parseStatement(sql)
 		const statement = withFormat(
-			withSettings(parsed, parsed.settings ?? settingsClause(settings)),
+			withSettings(parsed, mergeSettingsClauses(parsed.settings, settingsClause(settings))),
 			dialect.wireFormat === "in-statement" ? (parsed.format ?? dialect.statementFormat) : undefined,
 		)
 		const finalSql = statement.text
@@ -516,13 +560,14 @@ WHERE name = 'enable_full_text_index'`,
 		if (operation !== "") yield* Effect.annotateCurrentSpan("db.operation.name", operation)
 		if (collection !== "") yield* Effect.annotateCurrentSpan("db.collection.name", collection)
 		if (summary !== "") yield* Effect.annotateCurrentSpan("db.query.summary", summary)
-		if (settings) yield* Effect.annotateCurrentSpan("ch.settings", JSON.stringify(settings))
+		if (settings)
+			yield* encodeJson(settings).pipe(
+				Effect.flatMap((json) => Effect.annotateCurrentSpan("ch.settings", json)),
+				Effect.ignore,
+			)
 
-		const client = yield* getCachedOrCreateClient(
-			resolved.clientCacheKey,
-			resolved.config,
-			yield* Clock.currentTimeMillis,
-		).pipe(
+		const nowMs = yield* Clock.currentTimeMillis
+		const client = yield* getCachedOrCreateClient(resolved.clientCacheKey, resolved.config, nowMs).pipe(
 			Effect.mapError((error) =>
 				mapWarehouseError(pipe, error, execution === "raw" ? "caller" : "maple"),
 			),
@@ -635,7 +680,8 @@ WHERE name = 'enable_full_text_index'`,
 		const completedAtMs = yield* Clock.currentTimeMillis
 		yield* Effect.annotateCurrentSpan("db.duration_ms", completedAtMs - sqlStartedMs)
 		yield* Effect.annotateCurrentSpan("db.total_duration_ms", completedAtMs - startedAtMs)
-		yield* Effect.annotateCurrentSpan("db.retry.attempts", yield* Ref.get(retryAttempts))
+		const attempts = yield* Ref.get(retryAttempts)
+		yield* Effect.annotateCurrentSpan("db.retry.attempts", attempts)
 		return result.data
 	})
 
@@ -820,7 +866,7 @@ WHERE name = 'enable_full_text_index'`,
 		yield* Effect.annotateCurrentSpan("pipe", payload.pipeName)
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 
-		if (!tenant.orgId || tenant.orgId.trim() === "") {
+		if (!tenant.orgId || Str.trim(tenant.orgId) === "") {
 			return yield* new WarehouseScopeError({
 				pipeName: payload.pipeName,
 				message: "org_id must not be empty",
@@ -914,7 +960,7 @@ WHERE name = 'enable_full_text_index'`,
 		tenantScope: TenantScope,
 		context: string,
 	) {
-		if (!tenant.orgId || tenant.orgId.trim() === "") {
+		if (!tenant.orgId || Str.trim(tenant.orgId) === "") {
 			return yield* new WarehouseScopeError({
 				pipeName: context,
 				message: `org_id must not be empty (${context})`,
@@ -956,7 +1002,7 @@ WHERE name = 'enable_full_text_index'`,
 	const rawSqlQuery = Effect.fn("WarehouseQueryService.rawSqlQuery")(function* (
 		tenant: ExecutionTenant,
 		sql: string,
-		options?: Pick<SqlQueryOptions, "profile" | "context">,
+		options?: Pick<SqlQueryOptions, "profile" | "context" | "settings">,
 	) {
 		// No OrgId assertion here on purpose. This path runs user-authored SQL,
 		// whose isolation is enforced upstream at the credential layer — a
@@ -1182,6 +1228,14 @@ WHERE name = 'enable_full_text_index'`,
 		if (rows.length === 0) return
 
 		const label = `ingest:${datasource}`
+		// Writes skip the DSL's OrgId filter, and some callers forward rows a
+		// per-org warehouse returned, so every row must belong to the writer.
+		if (!Arr.every(rows, (row) => rowBelongsTo(row, tenant.orgId))) {
+			return yield* new WarehouseScopeError({
+				pipeName: label,
+				message: `Refused to ingest rows whose OrgId is not the writing org (${datasource})`,
+			})
+		}
 		// Writes resolve with purpose "ingest": the host routes them to the managed
 		// Tinybird pipeline, never a per-org BYO ClickHouse READ override (routing
 		// writes through the override 500'd every insert and broke demo-seed
@@ -1198,11 +1252,10 @@ WHERE name = 'enable_full_text_index'`,
 		// Tinybird) so the wire protocol is handled correctly — a hand-rolled
 		// `?query=INSERT … FORMAT JSONEachRow` POST had its query param dropped
 		// by managed ClickHouse, which then parsed the NDJSON body as SQL.
-		const client = yield* getCachedOrCreateClient(
-			resolved.clientCacheKey,
-			resolved.config,
-			yield* Clock.currentTimeMillis,
-		).pipe(Effect.mapError((error) => mapWarehouseError(label, error)))
+		const nowMs = yield* Clock.currentTimeMillis
+		const client = yield* getCachedOrCreateClient(resolved.clientCacheKey, resolved.config, nowMs).pipe(
+			Effect.mapError((error) => mapWarehouseError(label, error)),
+		)
 		const insertStartedAtMs = yield* Clock.currentTimeMillis
 
 		yield* client.insert(datasource, rows).pipe(
@@ -1267,9 +1320,10 @@ WHERE name = 'enable_full_text_index'`,
 	const asExecutor = (tenant: ExecutionTenant): WarehouseExecutorApi => ({
 		orgId: tenant.orgId,
 		query: <T>(pipe: WarehouseQueryName, params: Record<string, unknown>, options?: SqlQueryOptions) =>
-			query(tenant, { pipeName: pipe, params }, { context: `pipe:${pipe}`, ...options }).pipe(
-				Effect.map((response) => ({ data: response.data as ReadonlyArray<T> })),
-			),
+			query(tenant, new WarehouseQueryRequest({ pipeName: pipe, params }), {
+				context: `pipe:${pipe}`,
+				...options,
+			}).pipe(Effect.map((response) => ({ data: response.data as ReadonlyArray<T> }))),
 		compiledQuery: <T>(compiled: CompiledQueryInput<T>, options?: SqlQueryOptions) =>
 			compiledQuery(tenant, compiled, { context: "warehouseExecutor.compiledQuery", ...options }),
 		compiledQueryFirst: <T>(compiled: CompiledQueryInput<T>, options?: SqlQueryOptions) =>

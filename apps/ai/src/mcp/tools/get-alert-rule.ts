@@ -1,11 +1,18 @@
 import type { McpToolRegistrar } from "./types"
 import { toMcpHttpError } from "../lib/map-http-error"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { GetAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
-import { formatCondition, ruleConfigWarnings, ruleNotFound, toAlertRuleRow } from "../lib/alert-rules"
+import {
+	formatCheckInterval,
+	formatCondition,
+	ruleConfigWarnings,
+	ruleNotFound,
+	slowedNotice,
+	toAlertRuleRow,
+} from "../lib/alert-rules"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
 
@@ -30,7 +37,7 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 		description:
 			"Get full configuration details of a specific alert rule including thresholds, service filters, evaluation settings, and notification destinations. Use list_alert_rules to find rule IDs.",
 		parameters: Schema.Struct({
-			rule_id: P.text("Alert rule ID"),
+			rule_id: P.resourceId("alertRule", "Alert rule ID"),
 		}),
 		output: GetAlertRuleOutput,
 		hints: { readOnly: true },
@@ -54,7 +61,7 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 			const destinations =
 				known === undefined
 					? undefined
-					: rule.destinationIds.map((id) => {
+					: Arr.map(rule.destinationIds, (id) => {
 							const match = known.find((d) => d.id === id)
 							return {
 								id,
@@ -82,6 +89,8 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 					notificationTitle: rule.notificationTemplate?.title ?? null,
 					notificationBody: rule.notificationTemplate?.body ?? null,
 					lastEvaluationError: rule.lastEvaluationError,
+					lastEvaluationErrorKind: rule.lastEvaluationErrorKind,
+					slowedAt: rule.slowedAt,
 					lastEvaluatedAt: rule.lastEvaluatedAt,
 					...(destinations === undefined ? undefined : { destinations }),
 				},
@@ -95,27 +104,36 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 					["Severity", rule.severity],
 					["Signal", rule.signalType],
 					["Condition", formatCondition(rule)],
-					["Window", `${rule.windowMinutes}m`],
+					["Window", `${rule.windowMinutes}m, checked ${formatCheckInterval(rule)}`],
+					["Slowed down at", rule.slowedAt ?? undefined],
 					["Last evaluated", rule.lastEvaluatedAt ?? undefined],
 					["Last evaluation error", rule.lastEvaluationError ?? undefined],
+					[
+						"Last error kind",
+						rule.lastEvaluationError == null
+							? undefined
+							: (rule.lastEvaluationErrorKind ?? undefined),
+					],
 				]),
 				doc.heading("Scope"),
 				doc.fields([
 					[
 						"Service Names",
-						rule.serviceNames.length > 0 ? rule.serviceNames.join(", ") : "All services",
+						rule.serviceNames.length > 0 ? Arr.join(rule.serviceNames, ", ") : "All services",
 					],
 					[
 						"Exclude",
-						rule.excludeServiceNames.length > 0 ? rule.excludeServiceNames.join(", ") : undefined,
+						rule.excludeServiceNames.length > 0
+							? Arr.join(rule.excludeServiceNames, ", ")
+							: undefined,
 					],
 					[
 						"Environments",
-						rule.environments.length > 0 ? rule.environments.join(", ") : "All environments",
+						rule.environments.length > 0 ? Arr.join(rule.environments, ", ") : "All environments",
 					],
 					[
 						"Group By",
-						rule.groupBy && rule.groupBy.length > 0 ? rule.groupBy.join(", ") : undefined,
+						rule.groupBy && rule.groupBy.length > 0 ? Arr.join(rule.groupBy, ", ") : undefined,
 					],
 				]),
 				doc.heading("Evaluation"),
@@ -156,10 +174,10 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 				rule.destinationIds.length === 0
 					? doc.text("No notification destinations configured.")
 					: rule.destinations === undefined
-						? doc.text(`Destination IDs: ${rule.destinationIds.join(", ")}`)
+						? doc.text(`Destination IDs: ${Arr.join(rule.destinationIds, ", ")}`)
 						: doc.table(
 								["Destination", "Type", "Enabled", "ID"],
-								rule.destinations.map((d) => [
+								Arr.map(rule.destinations, (d) => [
 									d.name ?? "(deleted destination)",
 									d.type ?? "-",
 									d.name === null ? "-" : d.enabled ? "Yes" : "No",
@@ -174,7 +192,7 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 				if (rule.notificationBody) blocks.push(doc.text("Body:"), doc.code("", rule.notificationBody))
 			}
 
-			const warnings = ruleConfigWarnings(rule)
+			const warnings = [...ruleConfigWarnings(rule), ...slowedNotice(rule)]
 			return {
 				title: `Alert Rule: ${rule.name}`,
 				...(warnings.length > 0 ? { notices: warnings } : undefined),

@@ -2,7 +2,8 @@
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
 import { Effect, Layer, Redacted } from "effect"
-import type { ScopedPlanStatusSession } from "alchemy/Report"
+import { noopSession } from "alchemy/Report"
+import { AlertDestination, AlertDestinationProvider } from "../src/AlertDestination"
 import { ApiKey, ApiKeyProvider } from "../src/ApiKey"
 import { Dashboard, DashboardProvider } from "../src/Dashboard"
 import { MapleApi, type MapleApiContract } from "../src/MapleApi"
@@ -43,11 +44,7 @@ const makeStub = (
 	}
 }
 
-const session: ScopedPlanStatusSession = {
-	emit: () => Effect.void,
-	done: () => Effect.void,
-	note: () => Effect.void,
-}
+const session = noopSession
 
 const wireDashboard = {
 	id: "dash_abc",
@@ -65,12 +62,11 @@ const wireDashboard = {
 const runWithProvider = <A, E, R>(api: MapleApiContract, program: Effect.Effect<A, E, R>) => {
 	const apiLayer = Layer.succeed(MapleApi, api)
 	return program.pipe(
-		Effect.provide(
-			Layer.mergeAll(
-				DashboardProvider().pipe(Layer.provide(apiLayer)),
-				ApiKeyProvider().pipe(Layer.provide(apiLayer)),
-			),
-		),
+		Effect.provide([
+			DashboardProvider().pipe(Layer.provide(apiLayer)),
+			ApiKeyProvider().pipe(Layer.provide(apiLayer)),
+			AlertDestinationProvider().pipe(Layer.provide(apiLayer)),
+		]),
 	)
 }
 
@@ -329,6 +325,63 @@ describe("ApiKeyProvider", () => {
 				}),
 			)
 			expect(attributes.keyId).toBe("key_new")
+		}),
+	)
+})
+
+describe("AlertDestinationProvider", () => {
+	const wireLinear = (teamId: string) => ({
+		id: "dest_lin",
+		object: "alert_destination",
+		name: "Engineering triage",
+		type: "linear",
+		enabled: true,
+		summary: "Linear · Engineering",
+		channel_label: "ENG",
+		linear_team_id: teamId,
+	})
+	const props = { type: "linear" as const, name: "Engineering triage", team_id: "team_1" }
+	const output = { destinationId: "dest_lin", name: "Engineering triage", type: "linear", enabled: true }
+
+	const reconcile = (stub: ReturnType<typeof makeStub>) =>
+		runWithProvider(
+			stub.api,
+			Effect.gen(function* () {
+				const provider = yield* AlertDestination.Provider
+				return yield* provider.reconcile({
+					id: "linear",
+					fqn: "test/linear",
+					instanceId: "i-1",
+					news: props,
+					olds: props,
+					output,
+					session,
+					bindings: [],
+				})
+			}),
+		)
+
+	it.live("leaves a Linear destination alone when its team matches", () =>
+		Effect.gen(function* () {
+			const stub = makeStub({
+				"GET /v2/alerts/destinations/dest_lin": () => Effect.succeed(wireLinear("team_1")),
+			})
+			yield* reconcile(stub)
+			expect(stub.calls).toEqual(["GET /v2/alerts/destinations/dest_lin"])
+		}),
+	)
+
+	it.live("patches a Linear destination whose team was changed outside IaC", () =>
+		Effect.gen(function* () {
+			const stub = makeStub({
+				"GET /v2/alerts/destinations/dest_lin": () => Effect.succeed(wireLinear("team_other")),
+				"PATCH /v2/alerts/destinations/dest_lin": (body) => {
+					expect(body).toEqual(expect.objectContaining({ team_id: "team_1" }))
+					return Effect.succeed(wireLinear("team_1"))
+				},
+			})
+			yield* reconcile(stub)
+			expect(stub.calls).toContain("PATCH /v2/alerts/destinations/dest_lin")
 		}),
 	)
 })

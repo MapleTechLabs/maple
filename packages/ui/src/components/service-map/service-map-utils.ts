@@ -1,4 +1,4 @@
-import type { Node, Edge } from "@xyflow/react"
+import type { EdgeBase as Edge, NodeBase as Node } from "@xyflow/system"
 import { HYPERDRIVE_DB_NAMESPACE } from "@maple/domain/tinybird/db-query-shape-sql"
 import { getServiceColor, getValueHue } from "../../lib/colors"
 import { type ErrorRateLevel, errorRateLevel } from "../../lib/error-rate"
@@ -15,13 +15,14 @@ import {
 	CLOUDFLARE_COLOR,
 	getDbNodeColor,
 	PLANETSCALE_COLOR,
-	resolveDbNodePresentation,
-} from "./service-map-db"
+	resolveDbNodeStyle,
+} from "./service-map-db-style"
 import {
 	matchHyperdriveConfigs,
 	type HyperdriveConfigInput,
 	type HyperdriveNodeInfo,
 } from "./service-map-hyperdrive"
+import { Array as Arr, String as Str } from "effect"
 
 interface ServiceNodeInfra {
 	podCount: number
@@ -90,6 +91,8 @@ export interface ServiceNodeData {
 	maxLatencyMs?: number
 	selected: boolean
 	infra?: ServiceNodeInfra
+	/** The platform resource the service runs as ("Cloud Run"); the card then drops its pods cell. */
+	runsOn?: string
 	platform?: ServicePlatform
 	runtime?: string
 	dbSystem?: string
@@ -114,6 +117,7 @@ export interface ServiceNodeData {
 const PLATFORM_COLORS: Record<ServicePlatform | "unknown", string> = {
 	kubernetes: "oklch(0.62 0.16 250)",
 	cloudflare: CLOUDFLARE_COLOR,
+	gcp: "oklch(0.63 0.2 27)",
 	lambda: "oklch(0.7 0.18 60)",
 	web: "oklch(0.65 0.15 145)",
 	unknown: "oklch(0.55 0.02 270)",
@@ -196,12 +200,12 @@ export const dbNodeId = (system: string, namespace: string) =>
 export const edgeIdFor = (source: string, target: string) =>
 	`${EDGE_ID_PREFIX}${encodeIdComponent(source)}:${encodeIdComponent(target)}`
 
-export const isDbNodeId = (id: string) => id.startsWith(DB_NODE_PREFIX)
+export const isDbNodeId = (id: string) => Str.startsWith(DB_NODE_PREFIX)(id)
 
 /** Synthetic node id prefix for a collapsed namespace's aggregate node. */
 export const NS_AGGREGATE_PREFIX = "nsagg:"
 export const nsAggregateId = (namespace: string) => `${NS_AGGREGATE_PREFIX}${encodeIdComponent(namespace)}`
-export const isNsAggregateId = (id: string) => id.startsWith(NS_AGGREGATE_PREFIX)
+export const isNsAggregateId = (id: string) => Str.startsWith(NS_AGGREGATE_PREFIX)(id)
 
 /**
  * Inverse of {@link dbNodeId}. Both components are URI-encoded, so the first
@@ -209,12 +213,12 @@ export const isNsAggregateId = (id: string) => id.startsWith(NS_AGGREGATE_PREFIX
  * stale layout snapshot) decode with `dbNamespace: ""` — the generic node.
  */
 export const parseDbNodeId = (id: string): { dbSystem: string; dbNamespace: string } => {
-	const rest = id.slice(DB_NODE_PREFIX.length)
+	const rest = Str.slice(DB_NODE_PREFIX.length)(id)
 	const sep = rest.indexOf(":")
 	if (sep === -1) return { dbSystem: decodeURIComponent(rest), dbNamespace: "" }
 	return {
-		dbSystem: decodeURIComponent(rest.slice(0, sep)),
-		dbNamespace: decodeURIComponent(rest.slice(sep + 1)),
+		dbSystem: decodeURIComponent(Str.slice(0, sep)(rest)),
+		dbNamespace: decodeURIComponent(Str.slice(sep + 1)(rest)),
 	}
 }
 
@@ -275,18 +279,18 @@ export function aggregateServiceOverviews<T extends ServiceMapOverviewRow & { p9
 			out.set(name, top)
 			continue
 		}
-		const throughput = group.reduce((sum, r) => sum + r.throughput, 0)
+		const throughput = Arr.reduce(group, 0, (sum, r) => sum + r.throughput)
 		const weighted = (pick: (r: T) => number) =>
 			throughput > 0
-				? group.reduce((sum, r) => sum + pick(r) * r.throughput, 0) / throughput
+				? Arr.reduce(group, 0, (sum, r) => sum + pick(r) * r.throughput) / throughput
 				: pick(top)
-		const p95s = group.flatMap((r) => (r.p95LatencyMs === undefined ? [] : [r.p95LatencyMs]))
+		const p95s = Arr.flatMap(group, (r) => (r.p95LatencyMs === undefined ? [] : [r.p95LatencyMs]))
 		const merged: T = {
 			...top,
 			throughput,
-			tracedThroughput: group.reduce((sum, r) => sum + r.tracedThroughput, 0),
-			hasSampling: group.some((r) => r.hasSampling),
-			samplingWeight: Math.max(...group.map((r) => r.samplingWeight)),
+			tracedThroughput: Arr.reduce(group, 0, (sum, r) => sum + r.tracedThroughput),
+			hasSampling: Arr.some(group, (r) => r.hasSampling),
+			samplingWeight: Math.max(...Arr.map(group, (r) => r.samplingWeight)),
 			errorRate: weighted((r) => r.errorRate),
 			p50LatencyMs: weighted((r) => r.p50LatencyMs),
 		}
@@ -302,6 +306,8 @@ export interface BuildFlowElementsInput {
 	serviceOverviews: ReadonlyArray<ServiceMapOverviewRow>
 	durationSeconds: number
 	serviceWorkloads?: ReadonlyArray<ServiceMapWorkloadRow>
+	/** service.name → the short name of the platform resource it runs as. */
+	serviceRunsOn?: ReadonlyMap<string, string>
 	platforms?: ReadonlyMap<string, ServicePlatform>
 	runtimes?: ReadonlyMap<string, string>
 	/** Cloudflare direct-integration Worker analytics (instrumented-Worker overlay). */
@@ -337,6 +343,7 @@ export function buildFlowElements({
 	serviceOverviews,
 	durationSeconds,
 	serviceWorkloads = [],
+	serviceRunsOn,
 	platforms,
 	runtimes,
 	cloudflareServices = [],
@@ -414,7 +421,7 @@ export function buildFlowElements({
 
 	const safeDuration = Math.max(durationSeconds, 1)
 
-	const flowNodes: Node<ServiceNodeData>[] = services.map((service) => {
+	const flowNodes: Node<ServiceNodeData>[] = Arr.map(services, (service) => {
 		const overview = overviewMap.get(service)
 		const infra = infraMap.get(service)
 		return {
@@ -432,6 +439,7 @@ export function buildFlowElements({
 				avgLatencyMs: overview?.p50LatencyMs ?? 0,
 				selected: false,
 				infra,
+				runsOn: serviceRunsOn?.get(service),
 				platform: platforms?.get(service),
 				runtime: runtimes?.get(service),
 				namespace: overview?.serviceNamespace || undefined,
@@ -441,19 +449,19 @@ export function buildFlowElements({
 
 	// Inventory and scraped metrics decorate matching trace-derived DB nodes;
 	// PlanetScale data never creates a node by itself.
-	const planetscaleStatsByName = new Map(planetscaleStats.map((s) => [s.database.toLowerCase(), s]))
+	const planetscaleStatsByName = new Map(Arr.map(planetscaleStats, (s) => [Str.toLowerCase(s.database), s]))
 	const PLANETSCALE_SYSTEMS = new Set(["mysql", "mariadb", "postgresql", "postgres"])
 	const planetscaleFor = (dbSystem: string, dbNamespace: string): PlanetScaleNodeMetrics | undefined => {
 		if (!planetscaleDatabases || dbNamespace === "") return undefined
-		if (!PLANETSCALE_SYSTEMS.has(dbSystem.toLowerCase())) return undefined
-		const match = planetscaleDatabases.get(dbNamespace.toLowerCase())
+		if (!PLANETSCALE_SYSTEMS.has(Str.toLowerCase(dbSystem))) return undefined
+		const match = planetscaleDatabases.get(Str.toLowerCase(dbNamespace))
 		if (!match) return undefined
 		return {
 			kind: match.kind,
 			database: match.name,
 			branchCount: match.branchCount,
 			branches: match.branches,
-			stats: planetscaleStatsByName.get(dbNamespace.toLowerCase()),
+			stats: planetscaleStatsByName.get(Str.toLowerCase(dbNamespace)),
 		}
 	}
 
@@ -478,7 +486,7 @@ export function buildFlowElements({
 				hyperdrive,
 				// Named databases show their identity; the generic node keeps the system;
 				// Hyperdrive-fronted databases collapse to a single "Hyperdrive" node.
-				label: resolveDbNodePresentation(agg.dbSystem, agg.dbNamespace).title,
+				label: resolveDbNodeStyle(agg.dbSystem, agg.dbNamespace).title,
 				kind: "database",
 				// Sample-weighted, like every service node beside it. This divided the
 				// RAW count and hardcoded `hasSampling: false`, so at a sample rate of
@@ -506,7 +514,7 @@ export function buildFlowElements({
 
 	// Direct analytics decorate matching instrumented Workers; unmatched scripts
 	// do not create service-map nodes.
-	const nodeById = new Map(flowNodes.map((n) => [n.id, n]))
+	const nodeById = new Map(Arr.map(flowNodes, (n) => [n.id, n]))
 	const serviceNameSet = new Set(services)
 	const scriptToInstrumented = new Map<string, string>()
 	if (faasNames) {
@@ -530,7 +538,7 @@ export function buildFlowElements({
 		}
 	}
 
-	const flowEdges: Edge<ServiceEdgeData>[] = edges.map((edge) => ({
+	const flowEdges: Edge<ServiceEdgeData>[] = Arr.map(edges, (edge) => ({
 		id: edgeIdFor(edge.sourceService, edge.targetService),
 		source: edge.sourceService,
 		target: edge.targetService,
@@ -570,15 +578,15 @@ export function buildFlowElements({
 	// Synthetic dashed "fronts this database" edges: a Hyperdrive node connects to
 	// each PlanetScale node its matched configs resolve to — purely structural
 	// (zero traffic), and only when BOTH nodes already exist on the map.
-	if (hyperdriveInfo.some((info) => info.matched !== undefined)) {
+	if (Arr.some(hyperdriveInfo, (info) => info.matched !== undefined)) {
 		const psNodeByName = new Map<string, string>()
 		for (const [nodeId, agg] of dbAgg) {
 			if (
 				agg.dbNamespace !== "" &&
 				agg.dbNamespace !== HYPERDRIVE_DB_NAMESPACE &&
-				PLANETSCALE_SYSTEMS.has(agg.dbSystem.toLowerCase())
+				PLANETSCALE_SYSTEMS.has(Str.toLowerCase(agg.dbSystem))
 			) {
-				psNodeByName.set(agg.dbNamespace.toLowerCase(), nodeId)
+				psNodeByName.set(Str.toLowerCase(agg.dbNamespace), nodeId)
 			}
 		}
 		const seenOriginEdges = new Set<string>()
@@ -586,7 +594,7 @@ export function buildFlowElements({
 			if (agg.dbNamespace !== HYPERDRIVE_DB_NAMESPACE) continue
 			for (const info of hyperdriveInfo) {
 				if (info.matched === undefined) continue
-				const target = psNodeByName.get(info.matched.name.toLowerCase())
+				const target = psNodeByName.get(Str.toLowerCase(info.matched.name))
 				if (target === undefined || target === nodeId) continue
 				const edgeId = edgeIdFor(nodeId, target)
 				if (seenOriginEdges.has(edgeId)) continue
@@ -679,17 +687,17 @@ function computeLayers(
 	}
 
 	// Alphabetical ordering makes equal graphs deterministic.
-	let roots = nodes
-		.filter((n) => (inDegree.get(n.id) ?? 0) === 0)
-		.map((n) => n.id)
-		.sort()
+	let roots = Arr.map(
+		Arr.filter(nodes, (n) => (inDegree.get(n.id) ?? 0) === 0),
+		(n) => n.id,
+	).sort()
 
 	// If no roots (pure cycle), pick the node with lowest in-degree
 	if (roots.length === 0) {
 		const sorted = [...nodes].sort((a, b) => {
 			const da = inDegree.get(a.id) ?? 0
 			const db = inDegree.get(b.id) ?? 0
-			return da !== db ? da - db : a.id.localeCompare(b.id)
+			return da !== db ? da - db : Str.localeCompare(b.id)(a.id)
 		})
 		roots = [sorted[0].id]
 	}
@@ -750,9 +758,10 @@ function computeLayers(
 		const barycenters = new Map<string, number>()
 		for (let i = 0; i < layer.length; i++) {
 			const neighbors = getNeighbors(layer[i])
-			const positions = neighbors
-				.map((n) => positionOf.get(n))
-				.filter((p): p is number => p !== undefined)
+			const positions = Arr.filter(
+				Arr.map(neighbors, (n) => positionOf.get(n)),
+				(p): p is number => p !== undefined,
+			)
 
 			if (positions.length === 0) {
 				barycenters.set(layer[i], i)
@@ -767,7 +776,7 @@ function computeLayers(
 		layer.sort((a, b) => {
 			const ba = barycenters.get(a) ?? 0
 			const bb = barycenters.get(b) ?? 0
-			return ba !== bb ? ba - bb : a.localeCompare(b)
+			return ba !== bb ? ba - bb : Str.localeCompare(b)(a)
 		})
 	}
 
@@ -801,7 +810,7 @@ function computeLayers(
 				if (at) priorY.set(id, at.y)
 			}
 			if (priorY.size < 2) continue
-			const baryIndex = new Map(group.map((id, i) => [id, i]))
+			const baryIndex = new Map(Arr.map(group, (id, i) => [id, i]))
 			// Known nodes sort by where they were; unknown ones interpolate from
 			// their barycenter neighbours so they land in a sensible gap.
 			const sortKey = (id: string): number => {
@@ -837,9 +846,9 @@ function computeLayers(
  * leave the shape unchanged don't trigger a re-layout.
  */
 export function topologyKey(nodes: Node[], edges: Edge[]): string {
-	const nodeIds = nodes.map((n) => n.id).sort()
-	const edgePairs = edges.map((e) => `${e.source}->${e.target}`).sort()
-	return `${nodeIds.length}:${edgePairs.length}|${nodeIds.join(",")}|${edgePairs.join(",")}`
+	const nodeIds = Arr.map(nodes, (n) => n.id).sort()
+	const edgePairs = Arr.map(edges, (e) => `${e.source}->${e.target}`).sort()
+	return `${nodeIds.length}:${edgePairs.length}|${Arr.join(nodeIds, ",")}|${Arr.join(edgePairs, ",")}`
 }
 
 /**
@@ -909,22 +918,22 @@ export function computeFlatPositions(
 		for (const comp of connectedComponents) {
 			rank.set(comp, priorCentroidY(comp, previous) ?? Number.POSITIVE_INFINITY)
 		}
-		const traversalOrder = new Map(connectedComponents.map((c, i) => [c, i]))
+		const traversalOrder = new Map(Arr.map(connectedComponents, (c, i) => [c, i]))
 		const rankOf = (c: string[]) => rank.get(c) ?? Number.POSITIVE_INFINITY
 		const orderOf = (c: string[]) => traversalOrder.get(c) ?? 0
 		connectedComponents.sort((a, b) => rankOf(a) - rankOf(b) || orderOf(a) - orderOf(b))
 	}
 
 	let currentYOffset = 0
-	const nodeById = new Map(nodes.map((n) => [n.id, n]))
+	const nodeById = new Map(Arr.map(nodes, (n) => [n.id, n]))
 
 	for (const component of connectedComponents) {
-		const compNodes = component.flatMap((id) => {
+		const compNodes = Arr.flatMap(component, (id) => {
 			const node = nodeById.get(id)
 			return node ? [node] : []
 		})
 		const componentSet = new Set(component)
-		const compEdges = edges.filter((e) => componentSet.has(e.source) && componentSet.has(e.target))
+		const compEdges = Arr.filter(edges, (e) => componentSet.has(e.source) && componentSet.has(e.target))
 
 		const layers = computeLayers(compNodes, compEdges, previous)
 
@@ -992,7 +1001,7 @@ export function computeNodePositions(
 ): Map<string, { x: number; y: number }> {
 	if (nodes.length === 0) return new Map<string, { x: number; y: number }>()
 
-	const hasNamespaces = nodes.some((n) => nodeNamespace(n) !== undefined)
+	const hasNamespaces = Arr.some(nodes, (n) => nodeNamespace(n) !== undefined)
 	if (!hasNamespaces) return computeFlatPositions(nodes, edges, config, previous)
 
 	const { nodeHeight, layerGapX, nodeGapY } = config
@@ -1040,7 +1049,7 @@ export function computeNodePositions(
 		const laneHeight = Math.max(1, maxColumnCount) * cellHeight
 		for (const [col, group] of byColumn) {
 			const columnOffset = (laneHeight - group.length * cellHeight) / 2
-			group.forEach((node, i) => {
+			Arr.forEach(group, (node, i) => {
 				positions.set(node.id, {
 					x: NS_PADDING_X + col * layerGapX,
 					y: top + columnOffset + i * cellHeight,
@@ -1060,13 +1069,13 @@ export function computeNodePositions(
 			rank.set(
 				ns,
 				priorCentroidY(
-					laneNodes.map((n) => n.id),
+					Arr.map(laneNodes, (n) => n.id),
 					previous,
 				) ?? Number.POSITIVE_INFINITY,
 			)
 		}
 		const rankOf = (ns: string) => rank.get(ns) ?? Number.POSITIVE_INFINITY
-		laneOrder.sort((a, b) => rankOf(a) - rankOf(b) || a.localeCompare(b))
+		laneOrder.sort((a, b) => rankOf(a) - rankOf(b) || Str.localeCompare(b)(a))
 	}
 
 	let yOffset = 0

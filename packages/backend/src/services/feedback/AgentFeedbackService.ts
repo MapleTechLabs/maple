@@ -100,7 +100,7 @@ const toFeedback = (row: AgentFeedbackRow): AgentFeedback => ({
 })
 
 export class AgentFeedbackService extends Context.Service<AgentFeedbackService, AgentFeedbackServiceApi>()(
-	"@maple/api/services/feedback/AgentFeedbackService",
+	"@maple/backend/services/feedback/AgentFeedbackService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

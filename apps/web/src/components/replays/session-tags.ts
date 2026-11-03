@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import {
 	SESSION_QUALITY_TAGS,
 	SESSION_TAG_THRESHOLDS,
@@ -30,11 +30,11 @@ export const SESSION_TAG_DESCRIPTIONS = {
 } satisfies Record<SessionTag, string>
 
 /** Pill colours: the ok green for the sessions worth opening, a chart hue per
- *  noise tier, neutral for bots, and two more chart hues for the visitor traits. */
+ *  noise tier, neutral for bots and idle tabs, and two more chart hues for the visitor traits. */
 export const SESSION_TAG_STYLES = {
-	engaged: "bg-severity-info/12 text-severity-info",
+	engaged: "bg-severity-info-a2 text-severity-info",
 	glance: "bg-chart-2/12 text-chart-2",
-	idle: "bg-chart-3/12 text-chart-3",
+	idle: "bg-muted text-muted-foreground",
 	bounce: "bg-chart-1/12 text-chart-1",
 	bot: "bg-muted text-muted-foreground",
 	signed_in: "bg-chart-5/12 text-chart-5",
@@ -45,7 +45,7 @@ export const SESSION_TAG_STYLES = {
 export const SESSION_TAG_DOTS = {
 	engaged: "bg-severity-info",
 	glance: "bg-chart-2",
-	idle: "bg-chart-3",
+	idle: "bg-muted-foreground",
 	bounce: "bg-chart-1",
 	bot: "bg-muted-foreground",
 	signed_in: "bg-chart-5",
@@ -64,11 +64,11 @@ export const asSessionTag = (name: string): SessionTag | undefined => SESSION_TA
 export const sessionTagsFromSearch = (
 	tags: ReadonlyArray<string> | undefined,
 ): Array<SessionTag> | undefined => {
-	const valid = (tags ?? []).filter(isSessionTag)
+	const valid = Arr.filter(tags ?? [], isSessionTag)
 	return valid.length > 0 ? valid : undefined
 }
 
-export const isQualityTier = (tag: SessionTag) => SESSION_QUALITY_TAGS.some((quality) => quality === tag)
+export const isQualityTier = (tag: SessionTag) => Arr.some(SESSION_QUALITY_TAGS, (quality) => quality === tag)
 
 /**
  * The selection after a checkbox change. A newly ticked tier drops any other tier,
@@ -80,7 +80,9 @@ export const nextTagSelection = (
 ): Array<SessionTag> => {
 	const next = sessionTagsFromSearch(values) ?? []
 	const addedTier = next.find((tag) => isQualityTier(tag) && !previous.includes(tag))
-	return addedTier === undefined ? next : next.filter((tag) => !isQualityTier(tag) || tag === addedTier)
+	return addedTier === undefined
+		? next
+		: Arr.filter(next, (tag) => !isQualityTier(tag) || tag === addedTier)
 }
 
 /** The quality tier worth flagging on a row: everything but `engaged`. */

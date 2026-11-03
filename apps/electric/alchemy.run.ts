@@ -1,4 +1,4 @@
-import * as AWS from "alchemy/AWS"
+import * as AWS from "@alchemy.run/aws"
 import type * as Output from "alchemy/Output"
 import * as Effect from "effect/Effect"
 import { ecsSecrets, pgUrlRequireSsl, resolveAwsRegion, resolveAwsResourceName } from "@maple/infra/aws"
@@ -94,7 +94,8 @@ export const createMapleElectric = ({
 		// must carry the REPLICATION attribute itself (membership does not grant it).
 		const databaseUrl = yield* secret("database-url", pgUrlRequireSsl(dbLogin.url))
 		// Shared with the electric-sync Worker; rotate by redeploying this first, then the Worker.
-		const apiSecret = yield* secret("api-secret", yield* requiredPlain("ELECTRIC_SECRET"))
+		const electricSecret = yield* requiredPlain("ELECTRIC_SECRET")
+		const apiSecret = yield* secret("api-secret", electricSecret)
 
 		const issuedCertificateArn = yield* issueRegionalCertificate({
 			id: "electric-cert",

@@ -13,15 +13,15 @@ Maple can scrape any endpoint that serves the Prometheus or OpenMetrics text for
 
 ## Add a scrape target
 
-Open **Integrations → Prometheus** in Maple and click **Add Target**. The **Add Scrape Target** dialog has these fields:
+In Maple, open **Sources**, click **Connect source** and pick **Prometheus**. The Connect step asks for the URL and authentication, and Maple checks the endpoint as soon as you save. The Choose data step sets the name, service and interval. The fields are:
 
-| Field                         | Notes                                                                                                                                |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Name**                      | Display name. Used as the service name when **Service Name** is empty.                                                               |
-| **Service Name**              | Optional. Sets `service.name` on the resource and the `job` attribute on every data point.                                           |
-| **URL**                       | Full endpoint URL, for example `https://myapp.com:9090/metrics`. Loopback, private-range, and cloud-metadata addresses are rejected. |
-| **Scrape Interval (seconds)** | 5 to 300. Default 15.                                                                                                                |
-| **Authentication**            | **None**, **Bearer Token** (sent as `Authorization: Bearer …`), or **Basic Auth** (**Username** and **Password**).                   |
+| Field                     | Notes                                                                                                                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Name                      | Display name. Used as the service name when **Service name** is empty.                                                               |
+| Service name              | Optional. Sets `service.name` on the resource and the `job` attribute on every data point.                                           |
+| Endpoint URL              | Full endpoint URL, for example `https://myapp.com:9090/metrics`. Loopback, private-range, and cloud-metadata addresses are rejected. |
+| Scrape interval (seconds) | 5 to 300. Default 15.                                                                                                                |
+| Authentication            | **None**, **Bearer Token** (sent as `Authorization: Bearer …`), or **Basic Auth** (**Username** and **Password**).                   |
 
 Credentials are encrypted at rest. The scraper receives the decrypted auth header from Maple's API for each run and sends it directly to your endpoint. Requests carry the user agent `maple-prometheus-scraper`.
 
@@ -38,7 +38,7 @@ You can also manage targets through the [REST API](/docs/reference/api) under `/
 
 ## Verify
 
-1. On the target row, click **Test**. Maple runs an immediate scrape and reports success or the exact failure: HTTP status, timeout, TLS or connection error.
+1. On the target's source page, click **Sync now**. Maple runs an immediate scrape and reports success or the exact failure: HTTP status, timeout, TLS or connection error.
 2. Wait one scrape interval. The status badge changes from **No checks** to **Up**, and the row shows **Last scrape** with a relative time.
 3. Open the target to see its check history. Each run lists **Time**, **State**, **Duration**, and **Samples**.
 4. Search for one of your metric names in the [metrics explorer](/docs/explore/metrics).

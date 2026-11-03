@@ -14,6 +14,7 @@ import {
 } from "@maple/domain/http"
 import { formatCount, formatGb } from "./analyze"
 import { lineEmitsAt } from "./diff"
+import { Array as Arr, String as Str } from "effect"
 
 /** Calls a day past which a file's gaps are worth a warning rather than a note. */
 export const HOT_PER_DAY = 10_000
@@ -24,14 +25,17 @@ const COST_FINDING_MIN_GB = 1
 const KIND_LABEL = { span: "span name", attribute: "attribute", metric: "metric" } as const
 
 const referenceList = (item: PrReviewContractBreak) =>
-	item.references.map((ref) => `${ref.kind} “${ref.name}”`).join(", ")
+	Arr.join(
+		Arr.map(item.references, (ref) => `${ref.kind} “${ref.name}”`),
+		", ",
+	)
 
-const hasAlert = (item: PrReviewContractBreak) => item.references.some((ref) => ref.kind === "alert")
+const hasAlert = (item: PrReviewContractBreak) => Arr.some(item.references, (ref) => ref.kind === "alert")
 
 const readers = (item: PrReviewContractBreak) => {
 	const [only] = item.references
 	if (item.references.length === 1 && only !== undefined) return `${only.kind} “${only.name}” reads`
-	const kinds = new Set(item.references.map((ref) => ref.kind))
+	const kinds = new Set(Arr.map(item.references, (ref) => ref.kind))
 	const noun = kinds.size === 2 ? "alerts and dashboards" : hasAlert(item) ? "alerts" : "dashboards"
 	return `${item.references.length} ${noun} read`
 }
@@ -47,7 +51,8 @@ export const renderTelemetryKickoff = (telemetry: PrReviewTelemetry | undefined)
 	if (breaks.length > 0) {
 		lines.push(
 			"Names this pull request removes that the organization's alerts or dashboards read (Maple files each as a finding itself; do not file your own):",
-			...breaks.map(
+			...Arr.map(
+				breaks,
 				(item) =>
 					`- \`${item.name}\` (${KIND_LABEL[item.kind]}, ~${formatCount(item.perDay ?? 0)}/day) removed at ${item.path}:${item.line}; read by ${referenceList(item)}`,
 			),
@@ -58,15 +63,17 @@ export const renderTelemetryKickoff = (telemetry: PrReviewTelemetry | undefined)
 	if (telemetry.hotFiles.length > 0) {
 		lines.push(
 			`Production traffic of the operations the changed files name, last ${telemetry.windowDays} days:`,
-			...telemetry.hotFiles.map(
+			...Arr.map(
+				telemetry.hotFiles,
 				(file) =>
-					`- ${file.path}: ~${formatCount(file.perDay)} calls/day (${file.operations
-						.slice(0, 3)
-						.map(
+					`- ${file.path}: ~${formatCount(file.perDay)} calls/day (${Arr.join(
+						Arr.map(
+							file.operations.slice(0, 3),
 							(operation) =>
 								`${operation.service} \`${operation.spanName}\` ${formatCount(operation.perDay)}/day, ${(operation.errorRate * 100).toFixed(1)}% errors, p95 ${operation.p95Ms} ms`,
-						)
-						.join("; ")})`,
+						),
+						"; ",
+					)})`,
 			),
 			`Weigh findings by this traffic: a gap on a path that serves thousands of calls a day matters more than one on a path with none. Maple raises observability and performance notes in files above ${formatCount(HOT_PER_DAY)} calls/day to warnings.`,
 			"",
@@ -75,7 +82,8 @@ export const renderTelemetryKickoff = (telemetry: PrReviewTelemetry | undefined)
 	if (telemetry.linkedIssues.length > 0) {
 		lines.push(
 			"Open error issues whose top stack frame is in a changed file:",
-			...telemetry.linkedIssues.map(
+			...Arr.map(
+				telemetry.linkedIssues,
 				(issue) =>
 					`- ${issue.title} (${issue.service}, ${formatCount(issue.occurrences)} occurrences) at ${issue.topFrame} → ${issue.path}`,
 			),
@@ -91,7 +99,8 @@ export const telemetryFindings = (
 	telemetry: PrReviewTelemetry | undefined,
 ): ReadonlyArray<PrReviewFinding> => {
 	if (telemetry === undefined) return []
-	const breaks = openContractBreaks(telemetry).map(
+	const breaks = Arr.map(
+		openContractBreaks(telemetry),
 		(item) =>
 			new PrReviewFinding({
 				path: item.path,
@@ -100,14 +109,17 @@ export const telemetryFindings = (
 				checkId: "TEL-01",
 				severity: hasAlert(item) ? "critical" : "warn",
 				title: `Removes \`${item.name}\`, which ${readers(item)}`,
-				body: [
-					`\`${item.name}\` is a ${KIND_LABEL[item.kind]} production emits about ${formatCount(item.perDay ?? 0)} times a day, and this pull request removes it without adding it back anywhere.`,
-					`Read by ${referenceList(item)}. ${hasAlert(item) ? "An alert that filters on a name that stops arriving goes quiet instead of firing." : "Widgets that read it go empty."}`,
-					`Keep the name, or update ${item.references.length === 1 ? "it" : "them"} in the same change.`,
-				].join("\n\n"),
+				body: Arr.join(
+					[
+						`\`${item.name}\` is a ${KIND_LABEL[item.kind]} production emits about ${formatCount(item.perDay ?? 0)} times a day, and this pull request removes it without adding it back anywhere.`,
+						`Read by ${referenceList(item)}. ${hasAlert(item) ? "An alert that filters on a name that stops arriving goes quiet instead of firing." : "Widgets that read it go empty."}`,
+						`Keep the name, or update ${item.references.length === 1 ? "it" : "them"} in the same change.`,
+					],
+					"\n\n",
+				),
 			}),
 	)
-	const costs = telemetry.costNotes.flatMap((note) => {
+	const costs = Arr.flatMap(telemetry.costNotes, (note) => {
 		if (note.kind === "span_name") {
 			return [
 				new PrReviewFinding({
@@ -149,8 +161,8 @@ export const weighByTraffic = (
 	telemetry: PrReviewTelemetry | undefined,
 ): ReadonlyArray<PrReviewFinding> => {
 	if (telemetry === undefined || telemetry.hotFiles.length === 0) return findings
-	const traffic = new Map(telemetry.hotFiles.map((file) => [file.path, file] as const))
-	return findings.map((finding) => {
+	const traffic = new Map(Arr.map(telemetry.hotFiles, (file) => [file.path, file] as const))
+	return Arr.map(findings, (finding) => {
 		const file = traffic.get(finding.path)
 		if (
 			file === undefined ||
@@ -178,7 +190,7 @@ export const withDismissals = (
 		? telemetry
 		: new PrReviewTelemetryClass({
 				...telemetry,
-				contractBreaks: telemetry.contractBreaks.map((item) => {
+				contractBreaks: Arr.map(telemetry.contractBreaks, (item) => {
 					const proof = verified.find((dismissal) => dismissal.name === item.name)
 					return proof === undefined || item.dismissed !== undefined
 						? item
@@ -199,40 +211,71 @@ export const lineStillEmits = (
 
 /** Text for a markdown table cell: backslashes first, so an escaped pipe cannot be unescaped. */
 export const escapeCell = (value: string) =>
-	value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, " ")
+	Str.replace(/\n/g, " ")(Str.replace(/\|/g, "\\|")(Str.replace(/\\/g, "\\\\")(value)))
 
 /**
- * The comment's section on production: what breaks, where the traffic is, which open errors live
- * in the changed files, and what the change adds to or removes from the telemetry.
+ * Open issues as one row per title, service and file: separate fingerprints of the same error read
+ * as the same row repeated, so they are summed.
+ */
+const groupIssues = (issues: PrReviewTelemetry["linkedIssues"]) =>
+	issues.reduce<
+		Array<{ title: string; service: string; path: string; occurrences: number; count: number }>
+	>((rows, issue) => {
+		const row = rows.find(
+			(item) =>
+				item.title === issue.title && item.service === issue.service && item.path === issue.path,
+		)
+		if (row === undefined) {
+			rows.push({
+				title: issue.title,
+				service: issue.service,
+				path: issue.path,
+				occurrences: issue.occurrences,
+				count: 1,
+			})
+		} else {
+			row.occurrences += issue.occurrences
+			row.count += 1
+		}
+		return rows
+	}, [])
+
+/**
+ * The section on production: what breaks, which open errors live in the changed files, and, on the
+ * check run only (`brief` is the comment), where the traffic is and what telemetry the change adds
+ * or removes.
  */
 export const renderTelemetryMarkdown = (
 	telemetry: PrReviewTelemetry | undefined,
-	options: { readonly blocking: boolean },
+	options: { readonly blocking: boolean; readonly brief?: boolean },
 ): ReadonlyArray<string> => {
 	if (telemetry === undefined) return []
 	const open = openContractBreaks(telemetry)
-	const dismissed = telemetry.contractBreaks.filter((item) => item.dismissed !== undefined)
+	const dismissed = Arr.filter(telemetry.contractBreaks, (item) => item.dismissed !== undefined)
 	const sections: Array<string> = []
 	if (open.length > 0) {
 		sections.push(
 			"> [!CAUTION]",
 			`> **${open.length === 1 ? "A name" : `${open.length} names`} your alerts or dashboards read stop${open.length === 1 ? "s" : ""} arriving after this ships.**${options.blocking ? " This check fails until each is kept or its readers are updated (repository setting)." : ""}`,
-			...open.map(
+			...Arr.map(
+				open,
 				(item) =>
 					`> - \`${item.name}\` (${KIND_LABEL[item.kind]}, ~${formatCount(item.perDay ?? 0)}/day): ${referenceList(item)}`,
 			),
 			"",
 		)
 	}
-	if (telemetry.linkedIssues.length > 0) {
+	const issues = groupIssues(telemetry.linkedIssues)
+	if (issues.length > 0) {
 		sections.push(
-			"<details open><summary>Open errors in the changed files</summary>",
+			`<details><summary>Open errors in the changed files (${issues.length})</summary>`,
 			"",
 			"| Issue | Service | Occurrences | File |",
 			"| --- | --- | ---: | --- |",
-			...telemetry.linkedIssues.map(
+			...Arr.map(
+				issues,
 				(issue) =>
-					`| ${escapeCell(issue.title)} | ${escapeCell(issue.service)} | ${formatCount(issue.occurrences)} | \`${escapeCell(issue.path)}\` |`,
+					`| ${escapeCell(issue.title)}${issue.count > 1 ? ` (${issue.count} issues)` : ""} | ${escapeCell(issue.service)} | ${formatCount(issue.occurrences)} | \`${escapeCell(issue.path)}\` |`,
 			),
 			"",
 			"After this merges, Maple checks whether they stop.",
@@ -241,21 +284,24 @@ export const renderTelemetryMarkdown = (
 			"",
 		)
 	}
+	if (options.brief === true) return sections.length === 0 ? [] : ["### Production impact", "", ...sections]
 	if (telemetry.hotFiles.length > 0) {
 		sections.push(
 			`<details><summary>Production traffic of the changed files (last ${telemetry.windowDays} days)</summary>`,
 			"",
 			"| File | Calls/day | Busiest operations |",
 			"| --- | ---: | --- |",
-			...telemetry.hotFiles.map(
+			...Arr.map(
+				telemetry.hotFiles,
 				(file) =>
-					`| \`${escapeCell(file.path)}\` | ${formatCount(file.perDay)} | ${file.operations
-						.slice(0, 3)
-						.map(
+					`| \`${escapeCell(file.path)}\` | ${formatCount(file.perDay)} | ${Arr.join(
+						Arr.map(
+							file.operations.slice(0, 3),
 							(operation) =>
 								`\`${escapeCell(operation.spanName)}\` ${formatCount(operation.perDay)}/day, ${(operation.errorRate * 100).toFixed(1)}% err`,
-						)
-						.join("<br>")} |`,
+						),
+						"<br>",
+					)} |`,
 			),
 			"",
 			"</details>",
@@ -263,11 +309,13 @@ export const renderTelemetryMarkdown = (
 		)
 	}
 	const changes = [
-		...telemetry.removed.map(
+		...Arr.map(
+			telemetry.removed,
 			(item) =>
 				`- ➖ ${KIND_LABEL[item.kind]} \`${item.name}\`${item.perDay === undefined ? "" : ` (~${formatCount(item.perDay)}/day today)`} · \`${item.path}:${item.line}\``,
 		),
-		...telemetry.added.map(
+		...Arr.map(
+			telemetry.added,
 			(item) => `- ➕ ${KIND_LABEL[item.kind]} \`${item.name}\` · \`${item.path}:${item.line}\``,
 		),
 	]
@@ -280,7 +328,8 @@ export const renderTelemetryMarkdown = (
 				? [
 						"",
 						"Removed here but still emitted elsewhere at this commit:",
-						...dismissed.map(
+						...Arr.map(
+							dismissed,
 							(item) =>
 								`- \`${item.name}\` · \`${item.dismissed?.path}:${item.dismissed?.line}\``,
 						),
@@ -291,12 +340,12 @@ export const renderTelemetryMarkdown = (
 			"",
 		)
 	}
-	const costs = telemetry.costNotes.filter((note) => note.kind === "log")
+	const costs = Arr.filter(telemetry.costNotes, (note) => note.kind === "log")
 	if (costs.length > 0) {
 		sections.push(
 			"<details><summary>Ingest cost of new log lines</summary>",
 			"",
-			...costs.map((note) => `- \`${note.path}:${note.line}\`: ${note.note}`),
+			...Arr.map(costs, (note) => `- \`${note.path}:${note.line}\`: ${note.note}`),
 			"",
 			"</details>",
 			"",
@@ -316,8 +365,8 @@ export const fixedContractBreaks = <F extends { readonly title: string; readonly
 	telemetry: PrReviewTelemetry | undefined,
 ): ReadonlyArray<F> => {
 	if (telemetry === undefined) return []
-	const breaking = new Set(openContractBreaks(telemetry).map((item) => item.name))
-	return open.filter((finding) => {
+	const breaking = new Set(Arr.map(openContractBreaks(telemetry), (item) => item.name))
+	return Arr.filter(open, (finding) => {
 		const name = finding.category === "observability" ? BREAK_TITLE.exec(finding.title)?.[1] : undefined
 		return name !== undefined && !breaking.has(name)
 	})

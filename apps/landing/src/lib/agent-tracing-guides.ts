@@ -3,6 +3,7 @@
 // page under content/docs/agent-tracing.
 import type { GuideCard, GuideIcon } from "./instrumentation-guides"
 import type { BrandMarkId } from "./brand-marks"
+import { Array as Arr } from "effect"
 
 // The ids are also the tab ids on multi-language guide pages, so `?lang=` picks the matching tab.
 export const AGENT_GUIDE_LANGUAGES = [
@@ -53,6 +54,9 @@ export const AGENT_FRAMEWORK_GUIDES: readonly AgentGuide[] = [
 	guide("claude-agent-sdk", "Claude Agent SDK & Claude Code", "TypeScript, Python and the CLI", "claude", [
 		"typescript",
 		"python",
+	]),
+	guide("claude-api", "Claude API & SDK", "Built-in SDK tracing and Console export", "claude", [
+		"typescript",
 	]),
 	guide("google-adk", "Google ADK", "Runners, sub-agents and sessions", "googleadk", [
 		"python",
@@ -114,13 +118,16 @@ const cardFor = (g: AgentGuide, language: AgentGuideLanguage): GuideCard => ({
 	icon: g.icon,
 })
 
-export const AGENT_GUIDE_CATEGORIES: readonly AgentGuideCategory[] = AGENT_GUIDE_LANGUAGES.map((l) => ({
+export const AGENT_GUIDE_CATEGORIES: readonly AgentGuideCategory[] = Arr.map(AGENT_GUIDE_LANGUAGES, (l) => ({
 	...l,
-	cards: AGENT_FRAMEWORK_GUIDES.filter((g) => g.languages.includes(l.id)).map((g) => cardFor(g, l.id)),
+	cards: Arr.map(
+		Arr.filter(AGENT_FRAMEWORK_GUIDES, (g) => g.languages.includes(l.id)),
+		(g) => cardFor(g, l.id),
+	),
 }))
 
 // Gateways sit in front of any language, so their cards open on the guide's first tab.
-export const AGENT_GATEWAY_CARDS: readonly GuideCard[] = AGENT_GATEWAY_GUIDES.map((g) => ({
+export const AGENT_GATEWAY_CARDS: readonly GuideCard[] = Arr.map(AGENT_GATEWAY_GUIDES, (g) => ({
 	name: g.name,
 	hint: g.hint,
 	href: `/docs/agent-tracing/${g.slug}`,

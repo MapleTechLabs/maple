@@ -16,6 +16,7 @@ import {
 	whatsWrong,
 	type ErrorTextToken,
 } from "./tool-error-display"
+import { Array as Arr, String as Str } from "effect"
 
 // Verbatim shapes of production tool failures: a schema decoder's message in a
 // `{"result": …}` envelope, an MCP parameter error, a templated domain error,
@@ -29,8 +30,8 @@ const TOO_EXPENSIVE = "Timeseries query too expensive\nRequested 2154 points, ma
 
 /** Tokens as text, so a test reads like the row it describes. */
 const render = (tokens: ReadonlyArray<ErrorTextToken>): string =>
-	tokens
-		.map((token) => {
+	Arr.join(
+		Arr.map(tokens, (token) => {
 			switch (token.kind) {
 				case "text":
 					return token.text
@@ -43,12 +44,14 @@ const render = (tokens: ReadonlyArray<ErrorTextToken>): string =>
 				case "break":
 					return " ⏎ "
 				case "path":
-					return token.parts
-						.map((part) => (part.kind === "key" ? part.text : `{${part.label}}`))
-						.join("")
+					return Arr.join(
+						Arr.map(token.parts, (part) => (part.kind === "key" ? part.text : `{${part.label}}`)),
+						"",
+					)
 			}
-		})
-		.join("")
+		}),
+		"",
+	)
 
 describe("unwrapToolErrorText", () => {
 	it("reads the message out of a tool result's envelope", () => {
@@ -96,7 +99,7 @@ describe("errorTextTokens", () => {
 		expect(render(errorTextTokens('Missing key\n  at ["evidence"][2]["traceIds"]'))).toBe(
 			'Missing key at ["evidence"]{[*]}["traceIds"]',
 		)
-		expect(errorTextTokens('Missing key at ["claim"]').map((token) => token.kind)).toEqual([
+		expect(Arr.map(errorTextTokens('Missing key at ["claim"]'), (token) => token.kind)).toEqual([
 			"text",
 			"at",
 			"path",
@@ -107,7 +110,7 @@ describe("errorTextTokens", () => {
 		expect(render(errorTextTokens("`group_by=attribute` requires `attribute_key`."))).toBe(
 			"*`group_by=attribute`* requires *`attribute_key`*.",
 		)
-		expect(render(errorTextTokens(GROUP_BY.slice("Tool failed: ".length)))).toBe(
+		expect(render(errorTextTokens(Str.slice("Tool failed: ".length)(GROUP_BY)))).toBe(
 			'Invalid group_by *"service.version"* for source="traces" kind="breakdown". Valid group_by values: "service", "span_name".',
 		)
 	})
@@ -153,7 +156,7 @@ describe("whatsWrong", () => {
 		const args = { claim: "c", evidence: '[{"note": "disk full"}]' }
 		expect(whatsWrong(EXPECTED_ARRAY, args)).toEqual({
 			subject: "evidence",
-			text: "is a string that contains a JSON array. The schema expects the array itself — it was sent quoted.",
+			text: "is a string that contains a JSON array. The schema expects the array itself. It was sent quoted.",
 		})
 		expect(
 			whatsWrong('Expected object | null\n  at ["report"]', { report: '{"scope": 1}' })?.subject,
@@ -184,11 +187,12 @@ describe("whatsWrong", () => {
 
 describe("variantDifferences", () => {
 	it("picks out the index a group's variants differ by, inside their path", () => {
-		const texts = [0, 1, 2].map(
+		const texts = Arr.map(
+			[0, 1, 2],
 			(index) => `Invalid tool input: Missing key\n  at ["evidence"][${index}]["traceIds"]`,
 		)
 		expect(variantDifferences(texts)).toEqual(
-			[0, 1, 2].map((index) => ({
+			Arr.map([0, 1, 2], (index) => ({
 				before: '["evidence"]',
 				middle: `[${index}]`,
 				after: '["traceIds"]',
@@ -208,11 +212,11 @@ describe("variantDifferences", () => {
 
 describe("payloadLines", () => {
 	it("highlights the value at the path and says what it is", () => {
-		const args = { claim: "c", evidence: `[{"note": "${"x".repeat(300)}"}]` }
+		const args = { claim: "c", evidence: `[{"note": "${Str.repeat(300)("x")}"}]` }
 		const lines = payloadLines(args, EXPECTED_ARRAY)
-		const highlighted = lines.filter((line) => line.highlight)
+		const highlighted = Arr.filter(lines, (line) => line.highlight)
 		expect(highlighted).toHaveLength(1)
-		expect(highlighted[0]!.text.startsWith('"evidence": "[{\\"note\\"')).toBe(true)
+		expect(Str.startsWith('"evidence": "[{\\"note\\"')(highlighted[0]!.text)).toBe(true)
 		expect(highlighted[0]!.note?.text).toBe("string, expected array")
 		expect(highlighted[0]!.note?.hiddenBytes).toBeGreaterThan(0)
 	})
@@ -221,21 +225,21 @@ describe("payloadLines", () => {
 		const args = { evidence: [{ note: "first" }, { note: "second", traceIds: ["t"] }] }
 		const lines = payloadLines(args, MISSING_NESTED)
 		expect(lines.find((line) => line.missingKey !== undefined)?.missingKey).toBe("traceIds")
-		expect(lines.filter((line) => line.highlight).map((line) => line.text)).toEqual([
-			"{",
-			'"note": "first"',
-			"",
-			"},",
-		])
+		expect(
+			Arr.map(
+				Arr.filter(lines, (line) => line.highlight),
+				(line) => line.text,
+			),
+		).toEqual(["{", '"note": "first"', "", "},"])
 		const folded = lines.find((line) => line.folded !== undefined)
 		expect(folded?.text).toBe('{ "note": "…", "traceIds": […] }')
 		expect(folded?.folded).toMatch(/^item \[1\] · \d+ B$/)
 	})
 
 	it("cuts long strings off the path, and highlights nothing without one", () => {
-		const lines = payloadLines({ output: "y".repeat(500) }, TOO_EXPENSIVE)
-		expect(lines.some((line) => line.highlight)).toBe(false)
-		expect(lines[1]!.text.endsWith(' …"')).toBe(true)
+		const lines = payloadLines({ output: Str.repeat(500)("y") }, TOO_EXPENSIVE)
+		expect(Arr.some(lines, (line) => line.highlight)).toBe(false)
+		expect(Str.endsWith(' …"')(lines[1]!.text)).toBe(true)
 		expect(parsePayload('{"a": 1')).toBeUndefined()
 		expect(parsePayload("{}")).toEqual({})
 	})

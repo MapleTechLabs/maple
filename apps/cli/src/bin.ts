@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { BunRuntime } from "@effect/platform-bun"
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Cause, Console, Effect, Exit, Layer, Logger, Metric, Runtime } from "effect"
+import { Cause, Console, Effect, Exit, Layer, Logger, Metric, Runtime, Array as Arr } from "effect"
 import * as CliOutput from "effect/cli/CliOutput"
 import * as Command from "effect/cli/Command"
 import { FetchHttpClient } from "effect/http"
@@ -18,12 +18,14 @@ import {
 import { TelemetryLayer } from "./core/telemetry"
 import { maybeNotifyUpdate } from "./core/update"
 import { maybeNotifyWhatsNew } from "./core/changelog"
+import { LocalAccessHttpClient } from "./core/local-access"
 import { WarehouseExecutorFromMode } from "./core/warehouse"
-import { debugEnabled } from "./lib/debug"
+import { debugEnabled } from "@maple/local-server/debug-log"
 import { makeHelpCapture, usageHint } from "./lib/help"
-import { archiveErrorMessage } from "./server/archives/errors"
-import { CHECKPOINT_REOPEN_PROBE_ENV, validateCheckpointDataDir } from "./server/checkpoints"
-import { MAPLE_VERSION } from "./version"
+import { archiveErrorMessage } from "@maple/local-server/archives/errors"
+import { CHECKPOINT_REOPEN_PROBE_ENV, validateCheckpointDataDir } from "@maple/local-server/checkpoints"
+import { MAPLE_VERSION } from "@maple/local-server/version"
+import { encodeJson } from "@maple/local-server/json"
 
 // WarehouseExecutorFromMode needs Mode (which needs MapleConfig). provideMerge
 // keeps Mode + MapleConfig in the output context too, so the login/logout/whoami
@@ -33,7 +35,9 @@ const MainLayer = WarehouseExecutorFromMode.pipe(
 	Layer.provideMerge(Mode.layer),
 	Layer.provideMerge(MapleConfig.layer),
 	Layer.provideMerge(BunServices.layer),
-	Layer.provideMerge(FetchHttpClient.layer),
+	Layer.provideMerge(
+		LocalAccessHttpClient.pipe(Layer.provide(FetchHttpClient.layer), Layer.provide(BunServices.layer)),
+	),
 )
 
 // Throttled, non-blocking "update available" notice before dispatching the
@@ -61,7 +65,7 @@ if (checkpointProbeDataDir !== undefined) {
 	// this new process loaded the persisted restored representation and queried
 	// its core tables before closing chDB cleanly.
 	try {
-		process.stdout.write(`${JSON.stringify(validateCheckpointDataDir(checkpointProbeDataDir))}\n`)
+		process.stdout.write(`${encodeJson(validateCheckpointDataDir(checkpointProbeDataDir))}\n`)
 	} catch (error) {
 		process.stderr.write(
 			`checkpoint reopen probe failed: ${error instanceof Error ? error.message : String(error)}\n`,
@@ -127,19 +131,19 @@ if (checkpointProbeDataDir !== undefined) {
 		// already-running guard alone). `maple.cli.outcome` still records them.
 		Effect.catchIf(isExpectedFailure, recoverExpected),
 		Effect.ensuring(Effect.sync(help.flush)),
-		Effect.withSpan("maple", { attributes: { "cli.argv": process.argv.slice(2).join(" ") } }),
+		Effect.withSpan("maple", { attributes: { "cli.argv": Arr.join(process.argv.slice(2), " ") } }),
 		Effect.provide(MainLayer),
 		Effect.provide(TelemetryLayer),
 		// Genuine failures reach here after closing the root span `Error`, each
 		// under its own tag (see `commands/server-errors.ts`). They still print
 		// one `error:` line; the cause and stack are behind `--debug`.
-		Effect.catchCause((cause) =>
-			Cause.hasInterruptsOnly(cause)
-				? Effect.failCause(cause)
-				: Effect.sync(() => {
-						process.stderr.write(renderUnexpected(cause, debugEnabled()))
-						markFailedExit()
-					}),
+		Effect.catchCauseIf(
+			(cause) => !Cause.hasInterruptsOnly(cause),
+			(cause) =>
+				Effect.sync(() => {
+					process.stderr.write(renderUnexpected(cause, debugEnabled()))
+					markFailedExit()
+				}),
 		),
 		// Logs are diagnostics, never results: keep them off stdout.
 		Effect.provideService(Logger.LogToStderr, true),

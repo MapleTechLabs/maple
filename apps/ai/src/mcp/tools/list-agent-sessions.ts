@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { AI_SESSION_SEARCH_MAX_CHARS, AI_SESSION_SORT_KEYS, ListAiSessionsRequest } from "@maple/domain/http"
 import { ListAgentSessionsOutput } from "@maple/domain/mcp-outputs"
 import { formatCost } from "@maple/agent-sessions"
@@ -17,7 +17,10 @@ const WINDOW = P.timeWindow({ defaultHours: 24, maxHours: MCP_SEARCH_MAX_HOURS }
 
 /** A list filter, trimmed; an empty list is no filter. */
 const listFilter = (values: ReadonlyArray<string> | undefined): ReadonlyArray<string> | undefined => {
-	const entries = (values ?? []).map((value) => value.trim()).filter((value) => value !== "")
+	const entries = Arr.filter(
+		Arr.map(values ?? [], (value) => Str.trim(value)),
+		(value) => value !== "",
+	)
 	return entries.length === 0 ? undefined : entries
 }
 
@@ -174,7 +177,7 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 										"Models",
 										"Services",
 									],
-									sessions.map((session) => [
+									Arr.map(sessions, (session) => [
 										session.sessionId,
 										session.firstAgentName || "—",
 										session.vendorId || "—",
@@ -185,8 +188,8 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 										`${session.errorSpanCount}/${session.toolErrorCount}/${session.turnErrorCount}`,
 										formatNumber(session.totalTokens),
 										session.cost > 0 ? formatCost(session.cost) : "—",
-										truncate(session.models.join(", "), 40),
-										truncate(session.serviceNames.join(", "), 40),
+										truncate(Arr.join(session.models, ", "), 40),
+										truncate(Arr.join(session.serviceNames, ", "), 40),
 									]),
 								),
 							],
@@ -208,15 +211,13 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 								),
 							},
 						}),
-				next: sessions
-					.slice(0, 3)
-					.map((session) =>
-						doc.next(
-							"get_agent_session",
-							{ session_id: session.sessionId, ...paddedWindowArgs(session) },
-							`what happened in ${session.firstAgentName || "this session"}`,
-						),
+				next: Arr.map(sessions.slice(0, 3), (session) =>
+					doc.next(
+						"get_agent_session",
+						{ session_id: session.sessionId, ...paddedWindowArgs(session) },
+						`what happened in ${session.firstAgentName || "this session"}`,
 					),
+				),
 			}
 		},
 	})

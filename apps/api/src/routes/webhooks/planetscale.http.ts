@@ -1,9 +1,8 @@
-import { HttpRouter, HttpServerResponse, type HttpServerRequest } from "effect/http"
-import { IntegrationsPersistenceError, OrgId } from "@maple/domain/http"
-import { Clock, Effect, Option, Redacted, Schema } from "effect"
-import { decryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
-import { Env } from "@maple/backend/platform/Env"
+import { Headers, HttpRouter, HttpServerResponse, type HttpServerRequest } from "effect/http"
+import { OrgId } from "@maple/domain/http"
+import { Clock, Effect, Option, Schema } from "effect"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
+import { PlanetScaleWebhookService } from "@maple/backend/services/integrations/PlanetScaleWebhookService"
 import {
 	classifyPlanetScaleEvent,
 	decodePlanetScaleWebhookPayload,
@@ -17,9 +16,9 @@ import {
 } from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
 
 // Public PlanetScale webhook receiver. NOT behind auth — authenticity comes
-// from the per-connection HMAC secret (`X-PlanetScale-Signature`, SHA-256 hex
-// of the raw body), following the VCS webhook pattern. The connection id in
-// the path resolves which org (and which secret) the delivery belongs to.
+// from the HMAC secret PlanetScale generated for the webhook Maple registered on
+// the payload's database (`X-PlanetScale-Signature`, SHA-256 hex of the raw body).
+// The connection id in the path resolves which org the delivery belongs to.
 //
 // Health events (OOM, storage thresholds, anomalies) become kind="integration"
 // triage issues through a durable queue; lifecycle events use the same queue for
@@ -31,6 +30,11 @@ const textResponse = (body: string, status: number) => HttpServerResponse.text(b
 
 const decodeOrgIdSync = Schema.decodeUnknownSync(OrgId)
 
+/** The one field read before the signature is verified. */
+const decodeWebhookDatabase = Schema.decodeUnknownEffect(
+	Schema.fromJsonString(Schema.Struct({ database: Schema.optionalKey(Schema.NullOr(Schema.String)) })),
+)
+
 class PlanetScaleWebhookUnavailable extends Schema.TaggedError<PlanetScaleWebhookUnavailable>()(
 	"@maple/api/routes/PlanetScaleWebhookUnavailable",
 	{ message: Schema.String },
@@ -39,12 +43,8 @@ class PlanetScaleWebhookUnavailable extends Schema.TaggedError<PlanetScaleWebhoo
 export const PlanetScaleWebhookRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const connections = yield* PlanetScaleConnectionService
-		const env = yield* Env
+		const webhooks = yield* PlanetScaleWebhookService
 		const webhookQueue = yield* PlanetScaleWebhookQueue
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-			(message) => new IntegrationsPersistenceError({ message }),
-		)
 
 		const handle = Effect.fn("PlanetScaleWebhook.receive")(function* (
 			req: HttpServerRequest.HttpServerRequest,
@@ -82,15 +82,11 @@ export const PlanetScaleWebhookRouter = HttpRouter.use((router) =>
 			}
 
 			const connection = yield* connections.loadConnectionById(connectionId)
-			if (
-				connection === null ||
-				connection.webhookSecretCiphertext === null ||
-				connection.webhookSecretIv === null ||
-				connection.webhookSecretTag === null
-			) {
+			if (connection === null) {
 				return yield* reject(404, "unknown_connection", "Unknown webhook endpoint")
 			}
 			yield* Effect.annotateCurrentSpan({ orgId: connection.orgId })
+			const orgId = decodeOrgIdSync(connection.orgId)
 
 			const bodyOpt = yield* req.text.pipe(Effect.option)
 			if (Option.isNone(bodyOpt) || bodyOpt.value.length === 0) {
@@ -98,22 +94,14 @@ export const PlanetScaleWebhookRouter = HttpRouter.use((router) =>
 			}
 			const rawBody = bodyOpt.value
 
-			const secret = yield* decryptAes256Gcm(
-				{
-					ciphertext: connection.webhookSecretCiphertext,
-					iv: connection.webhookSecretIv,
-					tag: connection.webhookSecretTag,
-				},
-				encryptionKey,
-				() =>
-					new IntegrationsPersistenceError({
-						message: "Failed to decrypt webhook secret",
-					}),
-			)
-
-			const headers = req.headers as Record<string, string | undefined>
-			const signature = headers["x-planetscale-signature"]
-			if (!verifyPlanetScaleSignature(rawBody, secret, signature)) {
+			// Each database's webhook has its own secret. Only the database name is read before
+			// the signature is checked, to pick the secret it must match.
+			const target = yield* decodeWebhookDatabase(rawBody).pipe(Effect.option)
+			const secret = Option.isNone(target)
+				? null
+				: yield* webhooks.secretFor(orgId, target.value.database ?? "")
+			const signature = Option.getOrUndefined(Headers.get(req.headers, "x-planetscale-signature"))
+			if (secret === null || !verifyPlanetScaleSignature(rawBody, secret, signature)) {
 				return yield* reject(401, "signature_rejected", "Invalid signature")
 			}
 
@@ -151,7 +139,6 @@ export const PlanetScaleWebhookRouter = HttpRouter.use((router) =>
 				return textResponse("ok", 200)
 			}
 			const now = yield* Clock.currentTimeMillis
-			const orgId = decodeOrgIdSync(connection.orgId)
 			const event = yield* Effect.fromResult(
 				projectPlanetScaleWebhookEvent({
 					orgId,

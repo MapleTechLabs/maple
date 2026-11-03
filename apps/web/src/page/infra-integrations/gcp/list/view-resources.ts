@@ -1,0 +1,261 @@
+import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
+import { gcpResourceWorkload } from "../../../../components/infra/gcp/inventory"
+import { gcpAssetTypeLabel, gcpResourceName, gcpStateLabel } from "../../../../components/infra/gcp/tabs"
+import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
+import { AsyncData } from "foldkit"
+import type { Html } from "foldkit/html"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import type * as Select from "@maple/views/ui/select"
+import { type SelectEntry, view as selectView } from "@maple/views/ui/select-view"
+import { skeleton } from "@maple/views/ui/skeleton"
+import {
+	columnHead,
+	dataTable,
+	dataTableEmpty,
+	skeletonRows,
+	ROW_LINK_CLASS,
+} from "../../../infra/kit/data-table"
+import { listToolbar, toolbarCount } from "../../../kit/list-toolbar"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
+import type { Resources } from "../data"
+import { gcpMessage } from "../gcp-message"
+import { Message, type Model } from "./model"
+import type { H, TimeSearch } from "./view-rows"
+import { workloadHref } from "./view-rows"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
+import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr, Record as Rec } from "effect"
+
+// `GcpResources`: the inventory filtered by type and project.
+// TODO(select-align): these Selects should open below the trigger (`alignItemWithTrigger={false}`).
+
+const ALL = "all"
+const CELL = "truncate font-mono text-xs text-foreground-soft"
+
+const columns = (h: H): ReadonlyArray<Html> => [
+	columnHead(h, { label: "Resource", width: columnClass({ min: "56" }) }),
+	columnHead(h, { label: "Type", width: "w-44" }),
+	columnHead(h, { label: "Project", width: "w-52" }),
+	columnHead(h, { label: "Location", width: "w-32" }),
+	columnHead(h, { label: "State", width: "w-32" }),
+	columnHead(h, { label: "Labels", width: "w-36", hidden: "hidden lg:flex" }),
+]
+
+const loading = (h: H): Html =>
+	dataTable(
+		h,
+		{ ariaLabel: "Google Cloud resources" },
+		columns(h),
+		skeletonRows(h, 5, () => [
+			skeleton(h, "h-4 w-0 min-w-56 flex-1"),
+			skeleton(h, "h-3 w-44"),
+			skeleton(h, "h-3 w-52"),
+			skeleton(h, "h-3 w-32"),
+			skeleton(h, "h-3 w-32"),
+			skeleton(h, "hidden h-3 w-36 lg:block"),
+		]),
+	)
+
+const filterSelect = (
+	h: H,
+	options: Readonly<{
+		slotId: string
+		model: Select.Model
+		label: string
+		allLabel: string
+		entries: ReadonlyArray<{ value: string; label: string }>
+		value: string | undefined
+		toMessage: (message: Select.Message) => Message
+	}>,
+	toView: (parts: ReadonlyArray<Html>) => Html,
+): Html =>
+	h.submodel({
+		slotId: options.slotId,
+		model: { ...options.model, value: options.value ?? ALL },
+		view: selectView,
+		toParentMessage: options.toMessage,
+		viewInputs: {
+			entries: Arr.map(
+				[{ value: ALL, label: options.allLabel }, ...options.entries],
+				(item): SelectEntry => ({ _tag: "Item", item }),
+			),
+			ariaLabel: options.label,
+			className: "w-auto min-w-0",
+			toView,
+		},
+	})
+
+const metaChip = (h: H, text: string): Html =>
+	typography(h, { size: "3xs", tone: "subtle", mono: true }, [text])
+
+const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch: TimeSearch): Html => {
+	const labels = Arr.map(Rec.toEntries(resource.labels), ([key, value]) => `${key}: ${value}`)
+	const type = gcpAssetTypeLabel(resource.assetType)
+	const state = resource.state === null ? null : gcpStateLabel(resource.state)
+	const workload = gcpResourceWorkload(resource)
+	const cells = [
+		h.div(
+			[
+				h.Class(
+					"w-0 min-w-56 flex-1 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+				),
+				h.Title(resource.name),
+			],
+			[gcpResourceName(resource)],
+		),
+		h.div([h.Class("w-44 truncate text-xs text-foreground-soft"), h.Title(type)], [type]),
+		h.div([h.Class(`w-52 ${CELL}`), h.Title(resource.projectId)], [resource.projectId]),
+		h.div(
+			[h.Class(`w-32 ${CELL}`), ...(resource.location === null ? [] : [h.Title(resource.location)])],
+			[resource.location ?? EMPTY_VALUE],
+		),
+		h.div(
+			[
+				h.Class("w-32 truncate text-xs text-foreground-soft"),
+				...(state === null ? [] : [h.Title(state)]),
+			],
+			[state ?? EMPTY_VALUE],
+		),
+		h.div(
+			[
+				h.Class("hidden w-36 items-center gap-2 whitespace-nowrap lg:flex"),
+				h.Title(Arr.join(labels, "\n")),
+			],
+			[
+				...(labels.length === 0
+					? []
+					: [h.span([h.Class("min-w-0 truncate")], [metaChip(h, labels[0] ?? "")])]),
+				...(labels.length > 1 ? [metaChip(h, `+${labels.length - 1}`)] : []),
+			],
+		),
+	]
+	return workload === undefined
+		? hstack(
+				h,
+				{
+					gap: "4",
+					className: stripClass("hoverRow"),
+				},
+				cells,
+			)
+		: h.a(
+				[h.Class(ROW_LINK_CLASS), h.Href(workloadHref(workload.service, workload.keys, timeSearch))],
+				cells,
+			)
+}
+
+const resourcesList = (
+	h: H,
+	model: Model,
+	inventory: Resources,
+	timeSearch: TimeSearch,
+	isWaiting: boolean,
+): ReadonlyArray<Html> => {
+	const { resources, total, types, projects } = inventory
+	const projectCount = types.find((entry) => entry.assetType === GCP_PROJECT_ASSET_TYPE)?.count ?? 0
+	const type = model.search.type || undefined
+	const project = model.search.project || undefined
+	const filtered = type !== undefined || project !== undefined
+	const summary = `${total > resources.length ? `First ${resources.length} of ${countLabel(total, "resource")}` : countLabel(total, "resource")}`
+	const toolbar = filterSelect(
+		h,
+		{
+			slotId: "gcp-resource-type",
+			model: model.resourceTypeSelect,
+			label: "Resource type",
+			allLabel: "All types",
+			entries: Arr.map(types, (entry) => ({
+				value: entry.assetType,
+				label: `${gcpAssetTypeLabel(entry.assetType)} (${entry.count})`,
+			})),
+			value: type,
+			toMessage: (message) => Message.GotResourceTypeSelectMessage({ message }),
+		},
+		(typeParts) =>
+			filterSelect(
+				h,
+				{
+					slotId: "gcp-resource-project",
+					model: model.resourceProjectSelect,
+					label: "Project",
+					allLabel: "All projects",
+					entries: Arr.map(projects, (name) => ({ value: name, label: name })),
+					value: project,
+					toMessage: (message) => Message.GotResourceProjectSelectMessage({ message }),
+				},
+				(projectParts) =>
+					listToolbar(h, {
+						className: "pb-0",
+						leading: hstack(h, { gap: "2", wrap: true }, [...typeParts, ...projectParts]),
+						trailing: [
+							toolbarCount(h, [
+								summary,
+								" · ",
+								countLabel(projectCount, "project"),
+								" discovered",
+							]),
+						],
+					}),
+			),
+	)
+	return [
+		toolbar,
+		resources.length === 0 && filtered
+			? filteredEmpty(h, {
+					noun: "resources",
+					description: "Clear the type or project filter to see them all.",
+				})
+			: dataTable(
+					h,
+					{ ariaLabel: "Google Cloud resources", isWaiting },
+					columns(h),
+					resources.length === 0
+						? [
+								dataTableEmpty(h, [
+									"No resources yet. Maple lists them with a connection's first metrics read, then every hour.",
+								]),
+							]
+						: Arr.map(resources, (resource) => resourceRow(h, resource, timeSearch)),
+				),
+	]
+}
+
+export const resourcesView = (h: H, model: Model, timeSearch: TimeSearch, syncError: string | null): Html =>
+	h.div(
+		[h.Class("space-y-4")],
+		[
+			...(syncError === null
+				? []
+				: [
+						alert(h, { variant: "warn" }, [
+							icon(h, "CircleWarningIcon", { size: 16 }),
+							alertTitle(h, ["Not every resource is listed"]),
+							alertDescription(h, [gcpMessage(h, syncError)]),
+						]),
+					]),
+			...AsyncData.match(model.resources.data, {
+				onIdle: () => [loading(h)],
+				onLoading: () => [loading(h)],
+				onFailure: (failure) => [
+					errorState(h, {
+						failure,
+						title: "Couldn't load resources",
+						onRetry: Message.ClickedRetryResources(),
+					}),
+				],
+				onStale: ({ error }) => [
+					errorState(h, {
+						failure: error,
+						title: "Couldn't load resources",
+						onRetry: Message.ClickedRetryResources(),
+					}),
+				],
+				onRefreshing: (inventory) => resourcesList(h, model, inventory, timeSearch, true),
+				onSuccess: (inventory) => resourcesList(h, model, inventory, timeSearch, false),
+			}),
+		],
+	)

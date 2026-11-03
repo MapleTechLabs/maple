@@ -1,7 +1,7 @@
 /**
  * Slug → component maps.
  *
- * These live outside `lib/features.ts` on purpose: `NavBar.tsx` is a
+ * These live outside `lib/features.ts` on purpose: `NavBar.ts` is a
  * `client:load` island that reads the registry, so anything the registry
  * imports ships to the browser. The registry stores string ids; this module —
  * imported only by the two Astro templates — resolves them to components.
@@ -16,19 +16,25 @@
  */
 import type { ArtifactId, SectionId } from "../../lib/page-registry"
 import LiveAlertFiring from "../live/LiveAlertFiring.astro"
+import LiveAnomaly from "../live/LiveAnomaly.astro"
 import LiveBrowserSessions from "../live/LiveBrowserSessions.astro"
 import LiveFunnel from "../live/LiveFunnel.astro"
 import LiveK8sHeatmap from "../live/LiveK8sHeatmap.astro"
 import LiveLogStream from "../live/LiveLogStream.astro"
 import LiveMcpTranscript from "../live/LiveMcpTranscript.astro"
 import LiveServiceMap from "../live/LiveServiceMap.astro"
+import LiveUptime from "../live/LiveUptime.astro"
 import LogsVolume from "./artifacts/LogsVolume.astro"
+import PrReview from "./artifacts/PrReview.astro"
 import TraceExplorer from "./artifacts/TraceExplorer.astro"
 import K8sConsole from "./sections/K8sConsole.astro"
 import K8sCorrelation from "./sections/K8sCorrelation.astro"
 import K8sInstall from "./sections/K8sInstall.astro"
 import K8sViews from "./sections/K8sViews.astro"
+import GitHubAfterMerge from "./sections/GitHubAfterMerge.astro"
+import GitHubCi from "./sections/GitHubCi.astro"
 import ProductEventsSources from "./sections/ProductEventsSources.astro"
+import UptimeCheckTrace from "./sections/UptimeCheckTrace.astro"
 
 /**
  * `satisfies`, not an annotation: it checks that every id has an entry while
@@ -46,6 +52,9 @@ export const ARTIFACTS = {
 	"k8s-heatmap": LiveK8sHeatmap,
 	"alert-firing": LiveAlertFiring,
 	funnel: LiveFunnel,
+	"pr-review": PrReview,
+	uptime: LiveUptime,
+	anomaly: LiveAnomaly,
 } satisfies Record<ArtifactId, unknown>
 
 export const EXTRA_SECTIONS = {
@@ -54,4 +63,7 @@ export const EXTRA_SECTIONS = {
 	"k8s-correlation": K8sCorrelation,
 	"k8s-install": K8sInstall,
 	"product-events-sources": ProductEventsSources,
+	"github-ci": GitHubCi,
+	"github-after-merge": GitHubAfterMerge,
+	"uptime-check-trace": UptimeCheckTrace,
 } satisfies Record<SectionId, unknown>

@@ -7,13 +7,7 @@ navLabel: "Cloudflare Workers"
 sdk: "effect"
 ---
 
-The `/cloudflare` entry point of `@maple-dev/effect-sdk` is built for Cloudflare Workers. A Worker has no long-running process: the isolate handles a request, returns a response, and the runtime may suspend it at any moment. A background export fiber does not run reliably between invocations, so this entry point buffers telemetry inside the isolate and sends it when you call `flush(env)`, which you schedule with `ctx.waitUntil`.
-
-<div class="flex flex-wrap gap-2 mb-8 not-prose">
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Cloudflare Workers</span>
-</div>
-
-> Already installed the SDK? If not, see the [install instructions](/docs/sdks/effect#install).
+The `/cloudflare` entry point of `@maple-dev/effect-sdk` is built for Cloudflare Workers. [Install the SDK](/docs/sdks/effect#install) first. A Worker has no long-running process: the isolate handles a request, returns a response, and the runtime may suspend it at any moment. A background export fiber does not run reliably between invocations, so this entry point buffers telemetry inside the isolate and sends it when you call `flush(env)`, which you schedule with `ctx.waitUntil`.
 
 ## Why Workers are different
 
@@ -48,7 +42,9 @@ Runtimes that own a per-request scope can use `telemetry.requestLayer` instead o
 
 ## No-op mode
 
-When no ingest key is set (neither `ingestKey` nor `MAPLE_INGEST_KEY`), the SDK runs in no-op mode. Each `flush()` still empties the buffers so they do not grow for the life of the isolate, but nothing is sent. The first flush logs one `console.info` line starting with `[MapleCloudflareSDK] no ingest key configured`. The same code can therefore run in preview environments that have no key.
+When no ingest key is set (neither `ingestKey` nor `MAPLE_INGEST_KEY`) and the endpoint is Maple's hosted ingest, the SDK runs in no-op mode. Each `flush()` still empties the buffers so they do not grow for the life of the isolate, but nothing is sent. The first flush logs one `console.info` line starting with `[MapleCloudflareSDK] no ingest key configured`. The same code can therefore run in preview environments that have no key.
+
+Against any other endpoint, such as a local `maple start` or your own collector, a keyless Worker exports without an `Authorization` header.
 
 ## Failure handling
 
@@ -56,22 +52,17 @@ A flush fails when the request throws (for example a network error) or the inges
 
 ## Cloudflare-specific config
 
-`make()` accepts the [common options](/docs/sdks/effect#configuration-reference) marked for Cloudflare (`serviceName`, `region`, `endpoint`, `ingestKey`, `serviceVersion`, `serviceNamespace`, `environment`, `repositoryUrl`, `attributes`), plus these:
+`make()` accepts the [common options](/docs/sdks/effect#configuration-reference) marked for Cloudflare (`serviceName`, `region`, `endpoint`, `ingestKey`, `serviceVersion`, `serviceNamespace`, `environment`, `repositoryUrl`, `attributes`), the [span options](/docs/sdks/effect#dropping-spans) (`excludeLogSpans`, `dropSpanNames`, `dropSpanSubtrees`, `dropSpan`, `anticipatedErrorIdentifiers`, `isAnticipatedError`), plus these:
 
-| Option                        | Type                    | Default       | Description                                                                                            |
-| ----------------------------- | ----------------------- | ------------- | ------------------------------------------------------------------------------------------------------ |
-| `excludeLogSpans`             | `boolean`               | `false`       | Skip Effect log spans in OTLP log attributes                                                           |
-| `dropSpanNames`               | `ReadonlyArray<string>` | none          | Drop spans whose name starts with any prefix in this list                                              |
-| `anticipatedErrorIdentifiers` | `ReadonlyArray<string>` | none          | `_tag` / `Error.name` values of expected 4xx failures. Spans export as `Ok`, with no `exception` event |
-| `tracesPath`                  | `string`                | `/v1/traces`  | OTLP traces path appended to `endpoint`                                                                |
-| `logsPath`                    | `string`                | `/v1/logs`    | OTLP logs path appended to `endpoint`                                                                  |
-| `metricsPath`                 | `string`                | `/v1/metrics` | OTLP metrics path appended to `endpoint`                                                               |
-
-`anticipatedErrorIdentifiers` keeps expected rejections (a 404, a 401) visible as traces without counting them as errors. A span still exports as `Error` if its cause contains any defect.
+| Option        | Type     | Default       | Description                              |
+| ------------- | -------- | ------------- | ---------------------------------------- |
+| `tracesPath`  | `string` | `/v1/traces`  | OTLP traces path appended to `endpoint`  |
+| `logsPath`    | `string` | `/v1/logs`    | OTLP logs path appended to `endpoint`    |
+| `metricsPath` | `string` | `/v1/metrics` | OTLP metrics path appended to `endpoint` |
 
 An error that crossed an HTTP boundary is a decoded body rather than the class that raised it, so a failure shaped `{ error: { _tag } }` (the envelope convention many APIs use) is matched on the body's `_tag`. Client-side spans classify the same as the server-side ones they mirror, with no separate identifiers to configure.
 
-`dropSpanNames` suppresses protocol-level chatter. For example, `["McpServer/Notifications."]` drops MCP notification spans without dropping handler spans.
+`dropSpanNames` suppresses protocol-level chatter. For example, `["McpServer/Notifications."]` drops MCP notification spans without dropping handler spans. Use `dropSpanSubtrees` instead when the children should go too.
 
 ## Endpoint resolution
 

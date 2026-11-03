@@ -7,6 +7,7 @@ import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { LinearIssueTracker } from "./LinearIssueTracker"
 import { NotificationDispatcher, type NotificationRequest } from "./NotificationDispatcher"
 
 const createdDbs: TestDb[] = []
@@ -68,6 +69,7 @@ describe("NotificationDispatcher.dispatch", () => {
 		})
 		const layer = Layer.effect(NotificationDispatcher, NotificationDispatcher.make).pipe(
 			Layer.provide(ChatAlertPoster.layer),
+			Layer.provide(LinearIssueTracker.layer),
 			Layer.provide(Layer.succeed(EmailService, emailStub)),
 			Layer.provide(FetchHttpClient.layer),
 			Layer.provideMerge(failingDb),
@@ -89,6 +91,7 @@ describe("NotificationDispatcher.dispatch", () => {
 		const testDb = createTestDb(createdDbs)
 		const layer = Layer.effect(NotificationDispatcher, NotificationDispatcher.make).pipe(
 			Layer.provide(ChatAlertPoster.layer),
+			Layer.provide(LinearIssueTracker.layer),
 			Layer.provide(Layer.succeed(EmailService, emailStub)),
 			Layer.provide(FetchHttpClient.layer),
 			Layer.provideMerge(testDb.layer),

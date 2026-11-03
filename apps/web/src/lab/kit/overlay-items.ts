@@ -1,0 +1,21 @@
+// Every `/lab/kit/overlays?item=<name>` value, one overlay rendered open per item.
+export const OVERLAY_ITEMS = [
+	"dialog",
+	"alert-dialog",
+	"sheet",
+	"popover",
+	"tooltip",
+	"hover-card",
+	"dropdown-menu",
+	"context-menu",
+	"select",
+	"combobox",
+	"autocomplete",
+	"command",
+	"toast-default",
+	"toast-success",
+	"toast-error",
+	"toast-info",
+	"toast-warning",
+	"toast-loading",
+] as const

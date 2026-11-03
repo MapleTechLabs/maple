@@ -151,8 +151,8 @@ const lookupFailed =
 		)
 
 /**
- * The workspace this event belongs to: which org, which Maple user the clicker linked, and the
- * credential the connector posts with — in ONE connection.
+ * The workspace this event belongs to: which org, which Maple user the person behind the event
+ * linked, and the credential the connector posts with — in ONE connection.
  *
  * Sequential rather than parallel because the second question needs the first one's answer: a link
  * is per org, and the org is what the workspace names.
@@ -285,8 +285,13 @@ export const runInboundEvent = async (host: RelayHost, event: InboundEvent): Pro
 					connector,
 					event.connector,
 					event.workspaceId,
-					// Only a click names a person; a message is answered for the workspace.
-					event.type === "action" ? event.actor.id : undefined,
+					// The person behind the event: who clicked, or who asked. A connector without an
+					// `identity` half skips the second query anyway.
+					event.type === "action"
+						? event.actor.id
+						: event.type === "message"
+							? event.author.id
+							: undefined,
 				),
 				(resolveWorkspace) => ports(host, environment, connector, resolveWorkspace),
 			)
@@ -299,15 +304,12 @@ const inRuntime =
 	({ env, chatSessions }: Pick<RelayHost, "env" | "chatSessions">) =>
 	<A>(program: Effect.Effect<A, never, HttpClient.HttpClient>) =>
 		program.pipe(
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
-			Effect.provide(
-				Layer.mergeAll(
-					FetchHttpClient.layer,
-					envPorts(env),
-					chatSessionsLayerIfBound(chatSessions, env),
-					telemetry.layer,
-				),
-			),
+			Effect.provide([
+				FetchHttpClient.layer,
+				envPorts(env),
+				chatSessionsLayerIfBound(chatSessions, env),
+				telemetry.layer,
+			]),
 			// On the fiber rather than in a `finally`: the flush is what exports this event's spans,
 			// so it belongs to the same interruption and failure handling they do.
 			Effect.ensuring(Effect.promise(() => telemetry.flush(env).catch(() => undefined))),

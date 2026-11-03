@@ -13,6 +13,7 @@ import {
 	upsertFingerprintEntry,
 	type IncidentFingerprintEntry,
 } from "./consolidation"
+import { Array as Arr } from "effect"
 
 const nowMs = Date.parse("2026-06-12T12:00:00Z")
 
@@ -83,7 +84,7 @@ describe("upsertFingerprintEntry", () => {
 		)
 		const next = upsertFingerprintEntry(full, entry({ fingerprintHash: "overflow" }))
 		expect(next).toHaveLength(MAX_FINGERPRINT_ENTRIES)
-		expect(next.some((e) => e.fingerprintHash === "overflow")).toBe(false)
+		expect(Arr.some(next, (e) => e.fingerprintHash === "overflow")).toBe(false)
 		// Updates to entries already inside the cap still apply.
 		const updated = upsertFingerprintEntry(full, entry({ fingerprintHash: "fp0", lastValue: 7 }))
 		expect(updated.find((e) => e.fingerprintHash === "fp0")!.lastValue).toBe(7)
@@ -122,10 +123,10 @@ describe("markFingerprintResolved", () => {
 	it("keeps a consolidated incident active until every fingerprint recovers", () => {
 		const attached = [entry(), entry({ fingerprintHash: "fp2" })]
 		const oneRecovered = markFingerprintResolved(attached, "fp1", nowMs)
-		expect(oneRecovered.some((candidate) => candidate.resolvedAt === null)).toBe(true)
+		expect(Arr.some(oneRecovered, (candidate) => candidate.resolvedAt === null)).toBe(true)
 
 		const allRecovered = markFingerprintResolved(oneRecovered, "fp2", nowMs + 5 * 60 * 1000)
-		expect(allRecovered.every((candidate) => candidate.resolvedAt !== null)).toBe(true)
+		expect(Arr.every(allRecovered, (candidate) => candidate.resolvedAt !== null)).toBe(true)
 	})
 })
 

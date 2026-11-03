@@ -56,6 +56,7 @@ export interface PlanetScaleWebhookQueueApi {
 }
 
 const encodeJob = Schema.encodeSync(PlanetScaleWebhookJob)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 export interface PreparedPlanetScaleWebhookJob {
 	readonly body: Schema.Codec.Encoded<typeof PlanetScaleWebhookJob>
@@ -64,7 +65,7 @@ export interface PreparedPlanetScaleWebhookJob {
 /** Capture the exact encoded body once, before both the HTTP cap check and queue send. */
 export const preparePlanetScaleWebhookJob = (job: PlanetScaleWebhookJob): PreparedPlanetScaleWebhookJob => {
 	const body = encodeJob(job)
-	return { body, byteLength: new TextEncoder().encode(JSON.stringify(body)).byteLength }
+	return { body, byteLength: new TextEncoder().encode(encodeJson(body)).byteLength }
 }
 export const planetScaleWebhookQueueJobBytes = (job: PlanetScaleWebhookJob): number =>
 	preparePlanetScaleWebhookJob(job).byteLength
@@ -73,7 +74,7 @@ export const planetScaleWebhookQueueJobBytes = (job: PlanetScaleWebhookJob): num
 export class PlanetScaleWebhookQueue extends Context.Service<
 	PlanetScaleWebhookQueue,
 	PlanetScaleWebhookQueueApi
->()("@maple/api/services/planetscale/PlanetScaleWebhookQueue", {
+>()("@maple/backend/services/planetscale/PlanetScaleWebhookQueue", {
 	make: Effect.gen(function* () {
 		const queue = yield* PlanetScaleWebhookQueueProducer
 

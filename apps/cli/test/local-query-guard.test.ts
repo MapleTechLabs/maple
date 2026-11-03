@@ -1,22 +1,17 @@
 import { describe, expect, test } from "bun:test"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
-import { homedir, tmpdir } from "node:os"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Result } from "effect"
-import { Chdb, ChdbClosedError } from "../src/server/chdb"
+import { Chdb, ChdbClosedError } from "@maple/local-server/chdb"
+import { describeWithChdb } from "./libchdb-test-support"
 import {
 	countArrayRows,
 	prepareLocalQuery,
 	READ_ONLY_REJECTION_PREFIX,
 	ReadOnlyQueryRejected,
-} from "../src/server/query-guard"
-import { __testables } from "../src/server/serve"
-
-// Needs a real libchdb; skipped where none is installed.
-const libchdbAvailable =
-	process.env.MAPLE_LIBCHDB !== undefined ||
-	existsSync(join(homedir(), ".maple", "bin", "libchdb.so")) ||
-	existsSync(join(homedir(), ".maple", "bin", "libchdb.dylib"))
+} from "@maple/local-server/query-guard"
+import { __testables } from "@maple/local-server/serve"
 
 /** The engine's canonical form, as `formatQuerySingleLine` would print it. */
 const engine = (canonical: string) => ({ query: () => canonical })
@@ -99,7 +94,7 @@ describe("read-only statement preparation", () => {
 	})
 })
 
-describe.skipIf(!libchdbAvailable)("read-only /local/query against the engine", () => {
+describeWithChdb("read-only /local/query against the engine", () => {
 	test("blocks filesystem access, multiple statements and writes; serves reads", async () => {
 		const root = mkdtempSync(join(tmpdir(), "maple-query-guard-"))
 		const db = Chdb.open({ dataDir: join(root, "data"), schemaSql: "SELECT 1", bootstrapSchema: false })

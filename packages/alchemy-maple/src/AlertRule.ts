@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec } from "effect"
 import * as Effect from "effect/Effect"
 import { deepEqual, isResolved } from "alchemy/Diff"
 import { Unowned } from "alchemy/AdoptPolicy"
@@ -7,6 +7,7 @@ import { Resource } from "alchemy/Resource"
 import { listAll, MapleApi } from "./MapleApi"
 import { MapleErrorTags } from "./errors"
 import type { Providers } from "./Providers"
+import type { ExclusiveVariant } from "./variants"
 import {
 	canAdoptRule,
 	ownershipError,
@@ -27,18 +28,11 @@ export type AlertSignalType =
 
 export type AlertComparator = "gt" | "gte" | "lt" | "lte" | "eq" | "neq" | "between" | "not_between"
 
-/**
- * Alert rule props, authored in the v2 wire shape — mirrors
- * `POST /v2/alerts/rules`. Signal-specific fields (`apdex_threshold_ms`,
- * `query_builder_draft`, `raw_query_*`) are validated
- * server-side against `signal_type`.
- */
-export interface AlertRuleProps {
+/** Fields every alert rule takes, whatever it measures and wherever it looks. */
+interface RuleBaseProps {
 	/** Rule name — unique per organization. */
 	name: string
 	severity: "warning" | "critical"
-	signal_type: AlertSignalType
-	comparator: AlertComparator
 	/** Error rates are 0–1 ratios. */
 	threshold: number
 	window_minutes: number
@@ -46,25 +40,93 @@ export interface AlertRuleProps {
 	destination_ids: string[]
 	notes?: string | null
 	enabled?: boolean
-	service_names?: string[]
-	exclude_service_names?: string[]
 	/** Up to 19 user tags; `alchemy:` tags are reserved for stack ownership. */
 	tags?: string[]
-	group_by?: string[] | null
-	threshold_upper?: number | null
 	minimum_sample_count?: number
 	consecutive_breaches_required?: number
 	consecutive_healthy_required?: number
 	renotify_interval_minutes?: number
 	apdex_threshold_ms?: number | null
-	/** Opaque query-builder draft for `builder_query` rules (verbatim passthrough). */
-	query_builder_draft?: Record<string, unknown> | null
-	raw_query_sql?: string | null
-	raw_query_reducer?: "identity" | "sum" | "avg" | "min" | "max" | null
 	/** Count a window with no data as a breach instead of skipping it. */
 	alert_on_no_data?: boolean
 	notification_template?: Record<string, unknown> | null
 }
+
+/**
+ * The comparison: `between` and `not_between` need `threshold_upper`, which no
+ * other comparator takes.
+ */
+type Comparison =
+	| { comparator: "between" | "not_between"; threshold_upper: number }
+	| {
+			comparator: Exclude<AlertComparator, "between" | "not_between">
+			threshold_upper?: null
+	  }
+
+/**
+ * Which services a signal other than `builder_query` and `raw_query` reads:
+ * the named ones; all of them, grouped (each group its own incident); all of
+ * them grouped by `service.name` minus some; or all of them, ungrouped
+ * (`group_by` `[]` and `["none"]` group nothing). A grouped rule cannot alert
+ * on no data. Leaving a field out clears it, as
+ * `null` and `[]` do.
+ */
+type Scope =
+	| { service_names: string[]; group_by?: null; exclude_service_names?: [] }
+	| { group_by: [] | ["none"]; service_names?: []; exclude_service_names?: [] }
+	| {
+			group_by: string[]
+			service_names?: []
+			exclude_service_names?: []
+			alert_on_no_data?: false
+	  }
+	| {
+			group_by: ["service.name"]
+			exclude_service_names: string[]
+			service_names?: []
+			alert_on_no_data?: false
+	  }
+	| { service_names?: []; group_by?: null; exclude_service_names?: [] }
+
+/**
+ * What the rule measures. `builder_query` takes its draft, which carries its
+ * own scope, so the API drops `service_names` and `exclude_service_names`;
+ * grouped, it cannot alert on no data either.
+ * `raw_query` takes its SQL, which returns its own groups, so it reads no
+ * services and groups by none. Every other signal takes neither.
+ */
+type Measure =
+	| ({
+			signal_type: Exclude<AlertSignalType, "builder_query" | "raw_query">
+			query_builder_draft?: null
+			raw_query_sql?: null
+			raw_query_reducer?: null
+	  } & Scope)
+	| ({
+			signal_type: "builder_query"
+			/** Opaque query-builder draft (verbatim passthrough). */
+			query_builder_draft: Record<string, unknown>
+			raw_query_sql?: null
+			raw_query_reducer?: null
+	  } & ({ group_by: string[]; alert_on_no_data?: false } | { group_by?: null }))
+	| {
+			signal_type: "raw_query"
+			raw_query_sql: string
+			raw_query_reducer?: "identity" | "sum" | "avg" | "min" | "max" | null
+			query_builder_draft?: null
+			service_names?: []
+			group_by?: null
+			exclude_service_names?: []
+	  }
+
+/**
+ * Alert rule props, authored in the v2 wire shape — mirrors
+ * `POST /v2/alerts/rules`. Discriminated so that a combination the API
+ * rejects fails to type-check instead of failing the deploy: by `signal_type`
+ * for the query fields, by scope for `service_names`, `group_by` and
+ * `exclude_service_names`, and by `comparator` for `threshold_upper`.
+ */
+export type AlertRuleProps = ExclusiveVariant<RuleBaseProps & Comparison & Measure>
 
 export type AlertRule = Resource<
 	"Maple.AlertRule",
@@ -114,18 +176,27 @@ const WireRule = Schema.StructWithRest(
 )
 const decodeWireRule = Schema.decodeUnknownEffect(WireRule)
 
-/** The create/update body: exactly the props the user declared. */
-const desiredBody = (props: AlertRuleProps): Record<string, unknown> => {
-	const body: Record<string, unknown> = {}
-	for (const [key, value] of Object.entries(props)) {
-		if (value !== undefined) body[key] = value
-	}
-	return body
-}
+/**
+ * Fields the API validates together. PATCH keeps any field it is not sent, so
+ * an undeclared one goes out as its default, or a field dropped from props
+ * would outlive the deploy and clash with the ones that replaced it.
+ */
+const scopeDefaults = {
+	service_names: [],
+	exclude_service_names: [],
+	group_by: null,
+	alert_on_no_data: false,
+} satisfies Partial<Record<keyof AlertRuleProps, unknown>>
+
+/** The create/update body: the props the user declared, plus scope defaults. */
+const desiredBody = (props: AlertRuleProps): Record<string, unknown> => ({
+	...scopeDefaults,
+	...Rec.fromEntries(Arr.filter(Object.entries(props), ([, value]) => value !== undefined)),
+})
 
 /** Wire drift compare: declared fields vs the observed wire rule. */
 const drifted = (body: Record<string, unknown>, observed: Record<string, unknown>): boolean => {
-	return Object.keys(body).some((key) => !deepEqual(body[key], observed[key], { stripNullish: true }))
+	return Arr.some(Rec.keys(body), (key) => !deepEqual(body[key], observed[key], { stripNullish: true }))
 }
 
 const toAttributes = (observed: Schema.Schema.Type<typeof WireRule>, props?: AlertRuleProps) => ({
@@ -133,9 +204,7 @@ const toAttributes = (observed: Schema.Schema.Type<typeof WireRule>, props?: Ale
 	name: observed.name,
 	enabled: observed.enabled,
 	configuration: {
-		...Object.fromEntries(
-			Object.keys(props ? desiredBody(props) : {}).map((key) => [key, observed[key]]),
-		),
+		...Rec.fromEntries(Arr.map(Rec.keys(props ? desiredBody(props) : {}), (key) => [key, observed[key]])),
 		// Observe ownership even when the user leaves ordinary tags unmanaged.
 		tags: props?.tags === undefined ? ownershipTags(observed.tags) : observed.tags,
 	},
@@ -177,11 +246,7 @@ export const AlertRuleProvider = () =>
 					if (output?.ruleId) {
 						observedRaw = yield* api
 							.get(`/v2/alerts/rules/${output.ruleId}`)
-							.pipe(
-								Effect.catchTag(MapleErrorTags.alertRuleNotFound, () =>
-									Effect.succeed(undefined),
-								),
-							)
+							.pipe(Effect.catchTag(MapleErrorTags.alertRuleNotFound, () => Effect.undefined))
 					}
 					if (observedRaw === undefined) {
 						const adopted = yield* findByName(news.name)
@@ -206,21 +271,19 @@ export const AlertRuleProvider = () =>
 						observedRaw = yield* api.patch(`/v2/alerts/rules/${current.id}`, body)
 					}
 
-					return toAttributes(yield* decodeWireRule(observedRaw), news)
+					const observed = yield* decodeWireRule(observedRaw)
+					return toAttributes(observed, news)
 				}),
 				delete: Effect.fn(function* ({ output, fqn, force }) {
 					// A previous owner must not delete a rule another stack has adopted.
 					if (!force) {
 						const fetched = yield* api
 							.get(`/v2/alerts/rules/${output.ruleId}`)
-							.pipe(
-								Effect.catchTag(MapleErrorTags.alertRuleNotFound, () =>
-									Effect.succeed(undefined),
-								),
-							)
+							.pipe(Effect.catchTag(MapleErrorTags.alertRuleNotFound, () => Effect.undefined))
 						if (fetched === undefined) return
 						const current = yield* decodeWireRule(fetched)
-						if (!ownsRule(current.tags, yield* ruleOwnerTags(fqn), true)) {
+						const owners = yield* ruleOwnerTags(fqn)
+						if (!ownsRule(current.tags, owners, true)) {
 							return yield* ownershipError(fqn, current.name)
 						}
 					}
@@ -239,12 +302,11 @@ export const AlertRuleProvider = () =>
 					if (output?.ruleId) {
 						const fetched = yield* api
 							.get(`/v2/alerts/rules/${output.ruleId}`)
-							.pipe(
-								Effect.catchTag(MapleErrorTags.alertRuleNotFound, () =>
-									Effect.succeed(undefined),
-								),
-							)
-						if (fetched !== undefined) return attributes(yield* decodeWireRule(fetched))
+							.pipe(Effect.catchTag(MapleErrorTags.alertRuleNotFound, () => Effect.undefined))
+						if (fetched !== undefined) {
+							const observed = yield* decodeWireRule(fetched)
+							return attributes(observed)
+						}
 					}
 					if (olds?.name !== undefined) {
 						const adopted = yield* findByName(olds.name)

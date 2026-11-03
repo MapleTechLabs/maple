@@ -323,9 +323,8 @@ export const DashboardTemplateRequirement = Schema.Struct({
 	/** Full prose; the same string the `requirements` array carries. */
 	label: Schema.String,
 	/**
-	 * Row-sized statement of what's missing ("not connected"). Absent for
-	 * `metrics`, where clients derive `no <prefix>*` from
-	 * `requiredMetricPrefixes`.
+	 * Row-sized statement of what's missing ("no metrics"). Usually absent;
+	 * clients derive `no <prefix>*` from `requiredMetricPrefixes`.
 	 */
 	missing: Schema.optionalKey(Schema.String),
 	/** Noun phrase read as "Collected by {collector}." */

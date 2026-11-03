@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import * as PgliteClient from "@effect/sql-pglite/PgliteClient"
 import type { PGlite } from "@electric-sql/pglite"
 import * as Migrate from "@maple-dev/effect-orm/migrate"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Array as Arr, Record as Rec } from "effect"
 
 // The folder keeps drizzle-kit's layout, `<timestamp>_<name>/migration.sql`: the deploy
 // (alchemy) applies exactly those files. Migrations from the effect-orm baseline on are
@@ -18,18 +18,20 @@ export const listBundledMigrations = (): ReadonlyArray<{
 	readonly sqlPath: string
 }> => {
 	const dir = migrationsFolder()
-	return readdirSync(dir, { withFileTypes: true })
-		.filter((entry) => entry.isDirectory())
-		.map((entry) => entry.name)
-		.sort()
-		.map((name) => ({ name, sqlPath: join(dir, name, "migration.sql") }))
+	return Arr.map(
+		Arr.map(
+			Arr.filter(readdirSync(dir, { withFileTypes: true }), (entry) => entry.isDirectory()),
+			(entry) => entry.name,
+		).sort(),
+		(name) => ({ name, sqlPath: join(dir, name, "migration.sql") }),
+	)
 }
 
 /** The bundled migrations, ordered by the effect-orm runner (parent snapshots, then names). */
 export const bundledMigrations = Effect.suspend(() =>
 	Migrate.fromRecord(
-		Object.fromEntries(
-			listBundledMigrations().map(({ name, sqlPath }): [string, Migrate.MigrationInput] => {
+		Rec.fromEntries(
+			Arr.map(listBundledMigrations(), ({ name, sqlPath }): [string, Migrate.MigrationInput] => {
 				const snapshotPath = join(dirname(sqlPath), "snapshot.json")
 				return [
 					name,
@@ -58,8 +60,6 @@ export const migrateBundled = Effect.flatMap(bundledMigrations, (migrations) =>
 export const runMigrations = (pglite: PGlite): Promise<ReadonlyArray<Migrate.AppliedMigration>> =>
 	Effect.runPromise(
 		migrateBundled.pipe(
-			// A Promise boundary for the test harness: the run owns its client.
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
 			Effect.provide(
 				Migrate.layerSqlClient().pipe(Layer.provide(PgliteClient.layer({ liveClient: pglite }))),
 			),
@@ -75,9 +75,10 @@ let cachedMigrationsSql: string | undefined
  */
 export const readBundledMigrationsSql = (): string => {
 	if (cachedMigrationsSql !== undefined) return cachedMigrationsSql
-	const sql = listBundledMigrations()
-		.map(({ sqlPath }) => readFileSync(sqlPath, "utf8"))
-		.join("\n")
+	const sql = Arr.join(
+		Arr.map(listBundledMigrations(), ({ sqlPath }) => readFileSync(sqlPath, "utf8")),
+		"\n",
+	)
 	cachedMigrationsSql = sql
 	return sql
 }

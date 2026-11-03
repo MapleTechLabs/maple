@@ -1,0 +1,118 @@
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { errorState } from "@maple/views/ui/error-state"
+import { listFooter } from "@maple/views/ui/list-footer"
+import { table, tableBody, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import { tableSkeleton } from "@maple/views/ui/table-skeleton"
+import { Option, Array as Arr } from "effect"
+import { AsyncData, Submodel } from "foldkit"
+import type { Html } from "foldkit/html"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
+import { queryOf } from "../../route"
+import { rangeOf } from "../contract"
+import type { PageViewInputs } from "../kit/inputs"
+import { pageShell } from "../kit/page-shell"
+import { signalEmptyState } from "../kit/signal-empty-state"
+import { activeFilterCount, filtersOf } from "./filters"
+import { Message } from "./message"
+import type { Model } from "./model"
+import { traceRow } from "./view-row"
+import { sidebar } from "./view-sidebar"
+import { tracesToolbar } from "./view-toolbar"
+
+const SKELETON_COLUMNS = [
+	{ header: "Trace", headClassName: "w-[40%]", skeleton: "w-56" },
+	{ header: "Services", skeleton: "w-40" },
+	{ header: "Duration", headClassName: "text-right", skeleton: "ml-auto w-14" },
+	{ header: "Spans", headClassName: "text-right", skeleton: "ml-auto w-8" },
+	{ header: "Status", skeleton: "w-10" },
+	{ header: "Started", headClassName: "text-right", skeleton: "ml-auto w-16" },
+]
+
+const toCopy = (id: string, message: Parameters<typeof Message.GotCopyMessage>[0]["message"]) =>
+	Message.GotCopyMessage({ id, message })
+
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+	const { context } = inputs
+	const query = queryOf(context.location)
+	const filters = filtersOf(query)
+	const range = rangeOf(context)
+	const count = activeFilterCount(query)
+	const maybeData = AsyncData.getData(model.traces.data)
+	const rows = Option.match(maybeData, { onNone: () => [], onSome: (data) => data.pages.flat() })
+	const hasNextPage = Option.exists(maybeData, (data) => data.hasNextPage)
+	const content = (): Html => {
+		if (isAwaitingFirstData(model.traces))
+			return tableSkeleton(h, {
+				className: "rounded-none border-0",
+				rows: 12,
+				columns: SKELETON_COLUMNS,
+			})
+		const failure = failureWithoutData(model.traces)
+		if (Option.isSome(failure))
+			return errorState(h, {
+				failure: failure.value,
+				title: "Couldn’t load traces",
+				onRetry: Message.ClickedRefresh(),
+			})
+		if (rows.length === 0)
+			return signalEmptyState(h, {
+				signal: "traces",
+				isFiltered: count > 0 || filters.search !== undefined,
+				onClearFilters: Message.ClickedClearFilters(),
+				range,
+				onWidenRange: Message.ClickedWidenRange(),
+				presence: inputs.presenceOf("traces"),
+				nowMs: inputs.presenceNowMs,
+				guide: {
+					id: "traces-empty",
+					endpoint: context.env.otlpEndpoint,
+					copies: model.copies,
+					toCopyMessage: toCopy,
+				},
+			})
+		return h.div(
+			[h.Class(refreshingClass(model.traces.retained === true))],
+			Arr.filter(
+				[
+					table(h, {}, [
+						tableHeader(h, [
+							tableRow(h, [
+								tableHead(h, ["Trace"], "w-[40%]"),
+								tableHead(h, ["Services"]),
+								tableHead(h, ["Duration"], "text-right"),
+								tableHead(h, ["Spans"], "text-right"),
+								tableHead(h, ["Status"]),
+								tableHead(h, ["Started"], "text-right"),
+							]),
+						]),
+						tableBody(
+							h,
+							Arr.map(rows, (row) => traceRow(h, row, query, model.nowMs, context.timeFormat)),
+						),
+					]),
+					listFooter(h, {
+						hasMore: hasNextPage,
+						isLoading: model.isFetchingNextPage,
+						onLoadMore: Message.ClickedLoadMore(),
+					}),
+				],
+				(child) => child !== null,
+			),
+		)
+	}
+	return pageShell(
+		h,
+		{
+			onOpenFilters: Message.ClickedOpenFilters(),
+			sidebar: sidebar(h, model, filters, count),
+			toolbar: tracesToolbar(h, model, filters, {
+				rowCount: rows.length,
+				hasNextPage,
+				range,
+				hasNewData: inputs.hasNewDataSince(model.tracesUpdatedAtMs),
+			}),
+			activeFilterCount: count,
+		},
+		[content()],
+	)
+})

@@ -5,7 +5,7 @@ import {
 	VcsCommitNotFoundError,
 	VcsCommitShaInvalidError,
 } from "@maple/domain/http"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import type { HttpClient } from "effect/http"
@@ -45,15 +45,15 @@ const commitBody = (sha: string) => ({
 const routedHttp = (resolvable: (repoName: string, sha: string) => boolean) => {
 	const calls = { commitGets: 0 }
 	const layer = fakeGithubHttp(({ url, method }) => {
-		if (url.includes("/access_tokens") && method === "POST") {
+		if (Str.includes("/access_tokens")(url) && method === "POST") {
 			return jsonResponse({ token: "ghs_test", expires_at: "2999-01-01T00:00:00Z" })
 		}
 		const match = url.match(/\/repos\/[^/]+\/([^/]+)\/commits\/([0-9a-fA-F]+)/)
 		if (match) {
 			calls.commitGets += 1
 			const [, repoName, sha] = match
-			return resolvable(repoName!, sha!.toLowerCase())
-				? jsonResponse(commitBody(sha!.toLowerCase()))
+			return resolvable(repoName!, Str.toLowerCase(sha!))
+				? jsonResponse(commitBody(Str.toLowerCase(sha!)))
 				: jsonResponse({ message: "No commit found for SHA" }, { status: 404 })
 		}
 		return jsonResponse({ message: `unexpected ${method} ${url}` }, { status: 500 })
@@ -98,7 +98,7 @@ const seed = (repo: VcsRepo, orgId: OrgId, repos: ReadonlyArray<{ externalRepoId
 		const inst = expectSome(yield* repo.resolveInstallation("github", "42"))
 		yield* repo.upsertRepositories(
 			inst,
-			repos.map((r) => ({
+			Arr.map(repos, (r) => ({
 				externalRepoId: r.externalRepoId,
 				owner: "octo",
 				name: r.name,
@@ -115,7 +115,7 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 	it.effect("returns a stored commit without calling the provider", () => {
 		const testDb = createTestDb(trackedDbs)
 		const { layer, calls } = routedHttp(() => false)
-		const SHA = "a".repeat(40)
+		const SHA = Str.repeat(40)("a")
 		return Effect.gen(function* () {
 			const svc = yield* VcsCommitService
 			const repo = yield* VcsRepository
@@ -148,7 +148,7 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 	it.effect("uppercase SHA resolves the same stored commit (normalized)", () => {
 		const testDb = createTestDb(trackedDbs)
 		const { layer } = routedHttp(() => false)
-		const SHA = "a".repeat(40)
+		const SHA = Str.repeat(40)("a")
 		return Effect.gen(function* () {
 			const svc = yield* VcsCommitService
 			const repo = yield* VcsRepository
@@ -168,7 +168,7 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 					htmlUrl: `https://github.com/octo/repo/commit/${SHA}`,
 				},
 			])
-			const detail = yield* svc.resolveCommitDetail(orgId, "A".repeat(40))
+			const detail = yield* svc.resolveCommitDetail(orgId, Str.repeat(40)("A"))
 			assert.strictEqual(detail.resolved, "stored")
 			assert.strictEqual(detail.sha, SHA)
 		}).pipe(Effect.provide(commitLayer(testDb, layer)))
@@ -179,7 +179,7 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 		() => {
 			const testDb = createTestDb(trackedDbs)
 			const { layer, calls } = routedHttp((name) => name === "repo")
-			const SHA = "c".repeat(40)
+			const SHA = Str.repeat(40)("c")
 			return Effect.gen(function* () {
 				const svc = yield* VcsCommitService
 				const repo = yield* VcsRepository
@@ -195,7 +195,7 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 				assert.strictEqual(detail.sha, SHA)
 				assert.strictEqual(detail.repoFullName, "octo/repo")
 				assert.strictEqual(detail.authorLogin, "octocat")
-				assert.strictEqual(detail.message.split("\n")[0], "Fix the thing")
+				assert.strictEqual(Str.split("\n")(detail.message)[0], "Fix the thing")
 				assert.ok(calls.commitGets >= 2, "should have probed both repos")
 
 				// It was persisted: now stored, no further provider calls.
@@ -215,7 +215,7 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 	it.effect("returns VcsCommitNotFoundError when no repo has the SHA, and caches the miss", () => {
 		const testDb = createTestDb(trackedDbs)
 		const { layer, calls } = routedHttp(() => false)
-		const SHA = "d".repeat(40)
+		const SHA = Str.repeat(40)("d")
 		return Effect.gen(function* () {
 			const svc = yield* VcsCommitService
 			const repo = yield* VcsRepository
@@ -223,13 +223,13 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 			yield* seed(repo, orgId, [{ externalRepoId: "7", name: "repo" }])
 
 			const exit = yield* svc.resolveCommitDetail(orgId, SHA).pipe(Effect.exit)
-			assert.ok(findError(exit) instanceof VcsCommitNotFoundError)
+			assert.ok(Schema.is(VcsCommitNotFoundError)(findError(exit)))
 			const afterFirst = calls.commitGets
 			assert.ok(afterFirst >= 1)
 
 			// Second lookup is served from the negative cache — no new provider probe.
 			const exit2 = yield* svc.resolveCommitDetail(orgId, SHA).pipe(Effect.exit)
-			assert.ok(findError(exit2) instanceof VcsCommitNotFoundError)
+			assert.ok(Schema.is(VcsCommitNotFoundError)(findError(exit2)))
 			assert.strictEqual(calls.commitGets, afterFirst)
 		}).pipe(Effect.provide(commitLayer(testDb, layer)))
 	})
@@ -243,10 +243,10 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 			const orgId = asOrgId("org_test")
 			yield* seed(repo, orgId, [{ externalRepoId: "7", name: "repo" }])
 
-			for (const bad of ["abc1234", "not-a-sha", "g".repeat(40), "a".repeat(39)]) {
+			for (const bad of ["abc1234", "not-a-sha", Str.repeat(40)("g"), Str.repeat(39)("a")]) {
 				const exit = yield* svc.resolveCommitDetail(orgId, bad).pipe(Effect.exit)
 				assert.ok(
-					findError(exit) instanceof VcsCommitShaInvalidError,
+					Schema.is(VcsCommitShaInvalidError)(findError(exit)),
 					`expected invalid-sha error for "${bad}"`,
 				)
 			}
@@ -257,12 +257,12 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 	it.effect("returns IntegrationsNotConnectedError when the org has no active installation", () => {
 		const testDb = createTestDb(trackedDbs)
 		const { layer } = routedHttp(() => true)
-		const SHA = "e".repeat(40)
+		const SHA = Str.repeat(40)("e")
 		return Effect.gen(function* () {
 			const svc = yield* VcsCommitService
 			const orgId = asOrgId("org_test")
 			const exit = yield* svc.resolveCommitDetail(orgId, SHA).pipe(Effect.exit)
-			assert.ok(findError(exit) instanceof IntegrationsNotConnectedError)
+			assert.ok(Schema.is(IntegrationsNotConnectedError)(findError(exit)))
 		}).pipe(Effect.provide(commitLayer(testDb, layer)))
 	})
 })
@@ -275,9 +275,9 @@ describe("VcsCommitService.resolveCommitDetails", () => {
 			const r = expectSome(yield* repo.resolveRepository(orgId, "github", "7"))
 			yield* repo.upsertCommits(
 				r,
-				shas.map((sha) => ({
+				Arr.map(shas, (sha) => ({
 					sha,
-					message: `msg ${sha.slice(0, 4)}\n\nbody`,
+					message: `msg ${Str.slice(0, 4)(sha)}\n\nbody`,
 					authorName: "Stored Author",
 					authorEmail: "s@example.com",
 					authorLogin: "storedlogin",
@@ -292,7 +292,7 @@ describe("VcsCommitService.resolveCommitDetails", () => {
 	it.effect("resolves every stored SHA without touching the provider", () => {
 		const testDb = createTestDb(trackedDbs)
 		const { layer, calls } = routedHttp(() => false)
-		const SHAS = ["a", "b", "c"].map((c) => c.repeat(40))
+		const SHAS = Arr.map(["a", "b", "c"], (c) => Str.repeat(40)(c))
 		return Effect.gen(function* () {
 			const svc = yield* VcsCommitService
 			const repo = yield* VcsRepository
@@ -301,8 +301,8 @@ describe("VcsCommitService.resolveCommitDetails", () => {
 
 			const details = yield* svc.resolveCommitDetails(orgId, SHAS)
 			assert.strictEqual(details.length, 3)
-			assert.deepStrictEqual(details.map((d) => d.sha).toSorted(), [...SHAS].toSorted())
-			assert.ok(details.every((d) => d.resolved === "stored"))
+			assert.deepStrictEqual(Arr.map(details, (d) => d.sha).toSorted(), [...SHAS].toSorted())
+			assert.ok(Arr.every(details, (d) => d.resolved === "stored"))
 			assert.strictEqual(details[0]!.repoFullName, "octo/repo")
 			// The whole batch must be two reads, not one per SHA.
 			assert.strictEqual(calls.commitGets, 0)
@@ -313,7 +313,7 @@ describe("VcsCommitService.resolveCommitDetails", () => {
 		const testDb = createTestDb(trackedDbs)
 		// Nothing resolves at the provider, so the unknown SHA 404s.
 		const { layer } = routedHttp(() => false)
-		const STORED = "a".repeat(40)
+		const STORED = Str.repeat(40)("a")
 		return Effect.gen(function* () {
 			const svc = yield* VcsCommitService
 			const repo = yield* VcsRepository
@@ -322,12 +322,12 @@ describe("VcsCommitService.resolveCommitDetails", () => {
 
 			const details = yield* svc.resolveCommitDetails(orgId, [
 				STORED,
-				"f".repeat(40), // valid shape, no repo has it
+				Str.repeat(40)("f"), // valid shape, no repo has it
 				"not-a-sha", // invalid shape
 				"", // empty
 			])
 			assert.deepStrictEqual(
-				details.map((d) => d.sha),
+				Arr.map(details, (d) => d.sha),
 				[STORED],
 			)
 		}).pipe(Effect.provide(commitLayer(testDb, layer)))
@@ -336,7 +336,7 @@ describe("VcsCommitService.resolveCommitDetails", () => {
 	it.effect("dedupes repeated SHAs", () => {
 		const testDb = createTestDb(trackedDbs)
 		const { layer } = routedHttp(() => false)
-		const SHA = "a".repeat(40)
+		const SHA = Str.repeat(40)("a")
 		return Effect.gen(function* () {
 			const svc = yield* VcsCommitService
 			const repo = yield* VcsRepository
@@ -353,7 +353,7 @@ describe("VcsCommitService.resolveCommitDetails", () => {
 		// Everything resolves upstream, so only the cap limits the probe count.
 		const { layer, calls } = routedHttp(() => true)
 		// 12 distinct valid SHAs, none stored — above the BULK_PROBE_LIMIT of 8.
-		const SHAS = "0123456789ab".split("").map((c) => c.repeat(40))
+		const SHAS = Arr.map("0123456789ab".split(""), (c) => Str.repeat(40)(c))
 		return Effect.gen(function* () {
 			const svc = yield* VcsCommitService
 			const repo = yield* VcsRepository
@@ -369,14 +369,14 @@ describe("VcsCommitService.resolveCommitDetails", () => {
 
 describe("VcsCommitService.resolveCommitRanges", () => {
 	// Five commits on one repo, a..e, committed at 1000..5000.
-	const SHAS = ["a", "b", "c", "d", "e"].map((c) => c.repeat(40))
+	const SHAS = Arr.map(["a", "b", "c", "d", "e"], (c) => Str.repeat(40)(c))
 	const seedHistory = (repo: VcsRepo, orgId: OrgId) =>
 		Effect.gen(function* () {
 			yield* seed(repo, orgId, [{ externalRepoId: "7", name: "repo" }])
 			const r = expectSome(yield* repo.resolveRepository(orgId, "github", "7"))
 			yield* repo.upsertCommits(
 				r,
-				SHAS.map((sha, index) => ({
+				Arr.map(SHAS, (sha, index) => ({
 					sha,
 					message: `commit ${index}`,
 					authorName: null,
@@ -410,7 +410,7 @@ describe("VcsCommitService.resolveCommitRanges", () => {
 			assert.strictEqual(wide!.status, "resolved")
 			assert.strictEqual(wide!.totalCount, 4)
 			assert.deepStrictEqual(
-				wide!.commits.map((c) => c.sha),
+				Arr.map(wide!.commits, (c) => c.sha),
 				[SHAS[4], SHAS[3]],
 			)
 			assert.strictEqual(wide!.repoFullName, "octo/repo")
@@ -432,14 +432,14 @@ describe("VcsCommitService.resolveCommitRanges", () => {
 			const results = yield* svc.resolveCommitRanges(
 				orgId,
 				[
-					{ base: "f".repeat(40), head: SHAS[4]! },
+					{ base: Str.repeat(40)("f"), head: SHAS[4]! },
 					{ base: SHAS[4]!, head: SHAS[0]! },
 					{ base: "v1.2.0", head: SHAS[1]! },
 				],
 				{ limit: 10 },
 			)
 			assert.deepStrictEqual(
-				results.map((r) => r.status),
+				Arr.map(results, (r) => r.status),
 				["unavailable", "unavailable", "unavailable"],
 			)
 		}).pipe(Effect.provide(commitLayer(testDb, layer)))

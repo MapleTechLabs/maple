@@ -13,9 +13,10 @@ import type { UseCase } from "../../lib/page-registry"
 import { featureBySlug } from "../../lib/features"
 import { useCaseBySlug, useCases } from "../../lib/use-cases"
 import { absolute, blocks, docHeader, markdown } from "../../lib/page-markdown"
+import { Array as Arr } from "effect"
 
 export const getStaticPaths: GetStaticPaths = () =>
-	useCases.map((useCase) => ({ params: { slug: useCase.slug }, props: { useCase } }))
+	Arr.map(useCases, (useCase) => ({ params: { slug: useCase.slug }, props: { useCase } }))
 
 export const GET: APIRoute = ({ props, site }) => {
 	const { useCase } = props as { useCase: UseCase }
@@ -24,26 +25,35 @@ export const GET: APIRoute = ({ props, site }) => {
 		`## ${useCase.storyTitle()}`,
 		useCase.storyLede(),
 		`Signal: ${useCase.signal}. ${useCase.constantLabel}: ${useCase.constant}.`,
-		...useCase.steps.map(
+		...Arr.map(
+			useCase.steps,
 			(step) =>
 				`### ${step.elapsed} · ${step.surface} (${step.route}): ${step.title()}\n\n${step.body()}`,
 		),
 		useCase.outcomeLine(),
-		useCase.outcomeMetrics.map((metric) => `- **${metric.value}** ${metric.label()}`).join("\n"),
+		Arr.join(
+			Arr.map(useCase.outcomeMetrics, (metric) => `- **${metric.value}** ${metric.label()}`),
+			"\n",
+		),
 	)
 
 	const related = blocks(
 		"## Related",
-		[
-			...useCase.related.map(
-				(slug) =>
-					`- [${useCaseBySlug(slug)?.navLabel() ?? slug}](${absolute(site, `/use-cases/${slug}.md`)})`,
-			),
-			...useCase.relatedFeatures.map(
-				(slug) =>
-					`- [${featureBySlug(slug)?.navLabel() ?? slug}](${absolute(site, `/features/${slug}.md`)})`,
-			),
-		].join("\n"),
+		Arr.join(
+			[
+				...Arr.map(
+					useCase.related,
+					(slug) =>
+						`- [${useCaseBySlug(slug)?.navLabel() ?? slug}](${absolute(site, `/use-cases/${slug}.md`)})`,
+				),
+				...Arr.map(
+					useCase.relatedFeatures,
+					(slug) =>
+						`- [${featureBySlug(slug)?.navLabel() ?? slug}](${absolute(site, `/features/${slug}.md`)})`,
+				),
+			],
+			"\n",
+		),
 	)
 
 	return markdown(
@@ -51,7 +61,7 @@ export const GET: APIRoute = ({ props, site }) => {
 			docHeader(useCase.heroTitle(), useCase.heroLede()),
 			story,
 			`## ${useCase.capTitle()}`,
-			...useCase.capabilities.map((cap) => `### ${cap.op}: ${cap.title()}\n\n${cap.body()}`),
+			...Arr.map(useCase.capabilities, (cap) => `### ${cap.op}: ${cap.title()}\n\n${cap.body()}`),
 			related,
 		),
 	)

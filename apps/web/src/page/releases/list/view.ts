@@ -1,0 +1,297 @@
+import { formatNumber, formatRate, pluralize } from "@maple/ui/lib/format"
+import { toEpochMs } from "@maple/ui/lib/time-format"
+import type { ReleaseHealth } from "../../../components/releases/release-model"
+import { AsyncData, Submodel } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import {
+	empty,
+	emptyContent,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { activeFilterChips } from "@maple/views/ui/filters/active-filter-chips"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { panel } from "@maple/views/ui/panel"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { tableSkeleton } from "@maple/views/ui/table-skeleton"
+import type { PageViewInputs } from "../../contract"
+import { dashboardPage } from "../../kit/dashboard-page"
+import { toolbarStat } from "../../kit/list-toolbar"
+import { docsLink, signalEmptyState } from "../../kit/signal-empty-state"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
+import { presenceOf } from "@maple/views/data/signal-presence"
+import { timeControls } from "../../kit/time-controls"
+import * as TimeRangePicker from "../../kit/time-range-picker"
+import { RELEASE_HEALTH_LABEL } from "../kit"
+import { commitsOf, DEFAULT_PRESET, deriveOf, hasFilters, issueCountsOf, rangesOf } from "./derive"
+import { Message } from "./message"
+import type { Model, ReleasesData } from "./model"
+import { filtersRail } from "./view-filters"
+import { liveNow, releasesTimeline, type TimeSearch } from "./view-overview"
+import { releasesTable } from "./view-table"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
+
+// TODO(session-range): `sessionTimeRangeSearchMiddleware` (the range carried across pages).
+
+type H = HtmlBuilder<Message>
+
+const chipsOf = (model: Model) => {
+	const { search } = model
+	return Arr.map(
+		[
+			...(search.excludedEnvironments?.length
+				? [
+						{
+							id: "excludedEnvironments" as const,
+							label: "Environment",
+							values: search.excludedEnvironments,
+							isNegated: true,
+						},
+					]
+				: []),
+			...(search.environments?.length
+				? [
+						{
+							id: "environments" as const,
+							label: "Environment",
+							values: search.environments,
+							isNegated: false,
+						},
+					]
+				: []),
+			...(search.services?.length
+				? [{ id: "services" as const, label: "Service", values: search.services, isNegated: false }]
+				: []),
+			...(search.impact !== undefined
+				? [
+						{
+							id: "impact" as const,
+							label: "Health",
+							values: [RELEASE_HEALTH_LABEL[search.impact]],
+							isNegated: false,
+						},
+					]
+				: []),
+		],
+		(chip) => ({ ...chip, onRemove: Message.RemovedFilterChip({ param: chip.id }) }),
+	)
+}
+
+const loadingSkeleton = (h: H): Html =>
+	vstack(h, { gap: "3" }, [
+		skeleton(h, "h-4 w-64"),
+		skeleton(h, "h-52 w-full rounded-md"),
+		tableSkeleton(h, {
+			rows: 8,
+			// The loaded table sits in a card panel.
+			className: "bg-card",
+			columns: [
+				{ header: "Release", headClassName: "w-[46%] min-w-64", skeleton: "w-48" },
+				{ header: "Services" },
+				{ header: "Deployed", headClassName: "whitespace-nowrap" },
+				{ header: "Error rate", headClassName: "whitespace-nowrap", skeleton: "w-12" },
+				{ header: "p95", skeleton: "w-12" },
+				{ header: "Issues", skeleton: "w-8" },
+			],
+		}),
+	])
+
+const timeSearchOf = (model: Model): TimeSearch => ({
+	startTime: model.search.startTime,
+	endTime: model.search.endTime,
+	timePreset: model.search.timePreset,
+})
+
+const vcsHint = (h: H): ReadonlyArray<Html | string> => [
+	"Release tracking needs spans to carry the ",
+	inlineCode(h, {}, ["vcs.ref.head.revision"]),
+	" resource attribute.",
+]
+
+/** Setup copy only while traces are unknown to Maple; once they arrive, the missing attribute is the cause. */
+const releasesEmpty = (h: H, model: Model): Html => {
+	if (hasFilters(model.search))
+		return filteredEmpty(h, { noun: "releases", onClear: Message.ClickedClearFilters() })
+	const presence = presenceOf(model.presence, "traces")
+	if (presence.status === "loading" || presence.status === "absent")
+		return signalEmptyState(h, {
+			signal: "traces",
+			presence,
+			nowMs: model.nowMs,
+			noun: "releases",
+			purpose: "Releases compare errors and latency before and after each deploy.",
+			setupDocs: "github",
+			detail: typography(
+				h,
+				{ size: "xs", tone: "muted", as: "p", className: "font-prose" },
+				vcsHint(h),
+			),
+		})
+	return empty(h, [
+		emptyHeader(h, [
+			emptyMedia(h, { variant: "icon" }, [icon(h, "ClockIcon")]),
+			emptyTitle(h, ["No releases in this window"]),
+			emptyDescription(h, vcsHint(h)),
+		]),
+		emptyContent(h, [docsLink(h, "github")]),
+	])
+}
+
+const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, timeZone: string): Html => {
+	const { impacts, groups, live, response } = deriveOf(data)
+	const health: ReleaseHealth | undefined = model.search.impact
+	const visibleGroups =
+		health === undefined ? groups : Arr.filter(groups, (group) => group.health === health)
+	const visibleImpacts =
+		health === undefined ? impacts : Arr.filter(impacts, (impact) => impact.health === health)
+	const services = new Set(Arr.map(impacts, (impact) => impact.serviceName)).size
+	const windowDays = Math.max(
+		1 / 24,
+		(toEpochMs(response.endTime) - toEpochMs(response.startTime)) / 86_400_000,
+	)
+	const flagged = Arr.filter(groups, (group) => group.health === "regressed").length
+	const timeSearch = timeSearchOf(model)
+	if (groups.length === 0) return panel(h, {}, [releasesEmpty(h, model)])
+	const issues = AsyncData.getOrElse(model.issues.data, () => null)
+	const live_ = liveNow(h, live, timeSearch, model.search.environments)
+	return vstack(h, { gap: "3" }, [
+		h.div(
+			[h.Class("flex flex-wrap items-center gap-x-5 gap-y-1 px-0.5 text-xs text-muted-foreground")],
+			[
+				toolbarStat(h, {
+					value: formatNumber(groups.length),
+					label: pluralize(groups.length, "release"),
+				}),
+				toolbarStat(h, { value: formatNumber(services), label: pluralize(services, "service") }),
+				toolbarStat(h, { value: formatRate(groups.length / windowDays), label: "per day" }),
+				...(flagged > 0
+					? [
+							toolbarStat(h, {
+								value: formatNumber(flagged),
+								label: `${pluralize(flagged, "release")} with errors up`,
+								dot: "crit",
+							}),
+						]
+					: []),
+				h.span(
+					[h.Class("text-foreground-subtle")],
+					["Each release is compared with the version it replaced"],
+				),
+				...(response.truncated
+					? [
+							h.span(
+								[h.Class("text-foreground-subtle")],
+								["Showing the newest ", formatNumber(response.releases.length), " rows"],
+							),
+						]
+					: []),
+			],
+		),
+		...(live_ === null ? [] : [live_]),
+		releasesTimeline(h, {
+			impacts: visibleImpacts,
+			startTime: response.startTime,
+			endTime: response.endTime,
+			timeSearch,
+			environments: model.search.environments,
+			trackWidth: model.trackWidth,
+			nowMs: model.nowMs,
+			timeZone,
+		}),
+		visibleGroups.length === 0
+			? panel(h, {}, [
+					filteredEmpty(h, {
+						noun: "releases",
+						onClear: Message.ClickedClearHealthFilter(),
+						clearLabel: "Clear filter",
+					}),
+				])
+			: vstack(h, { gap: "1.5" }, [
+					releasesTable(h, {
+						groups: visibleGroups,
+						issueCounts: issueCountsOf(impacts, issues),
+						timeSearch,
+						environments: model.search.environments,
+						isWaiting,
+						commits: commitsOf(model),
+						ranges: rangesOf(model),
+						expanded: model.expanded,
+						nowMs: model.nowMs,
+						timeZone,
+						overlays: {
+							model: model.overlays,
+							toParent: (message) => Message.GotOverlaysMessage({ message }),
+							clock: { nowMs: model.nowMs, timeZone },
+						},
+					}),
+					...(issues?.hasMore === true
+						? [
+								h.span(
+									[h.Class("px-0.5 text-2xs text-foreground-subtle")],
+									[
+										"Issue counts cover the 100 most recently active issues introduced in this window.",
+									],
+								),
+							]
+						: []),
+				]),
+	])
+}
+
+const content = (h: H, model: Model, timeZone: string): Html =>
+	AsyncData.match(model.releases.data, {
+		onIdle: () => loadingSkeleton(h),
+		onLoading: () => loadingSkeleton(h),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Couldn't load releases", onRetry: Message.ClickedRetry() }),
+		onStale: ({ error }) =>
+			errorState(h, {
+				failure: error,
+				title: "Couldn't load releases",
+				onRetry: Message.ClickedRetry(),
+			}),
+		onSuccess: (data) => loaded(h, model, data, false, timeZone),
+		onRefreshing: (data) => loaded(h, model, data, true, timeZone),
+	})
+
+const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
+
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+	const chips = activeFilterChips(h, { chips: chipsOf(model) })
+	return dashboardPage(
+		h,
+		{
+			title: "Releases",
+			filters: filtersRail(h, model),
+			actions: timeControls(h, {
+				search: model.search,
+				defaultPreset: DEFAULT_PRESET,
+				window: model.window,
+				onReset: Message.ClickedResetTimeRange(),
+				onReload: Message.ClickedReload(),
+				isReloading: model.isReloading,
+				trigger: (label) =>
+					h.submodel({
+						slotId: "releases-time-range-picker",
+						model: model.timePicker,
+						view: TimeRangePicker.view,
+						toParentMessage: toTimePicker,
+						viewInputs: {
+							label,
+							selectedPreset:
+								model.search.timePreset ??
+								(model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
+							presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
+						},
+					}),
+			}),
+		},
+		[...(chips === null ? [] : [chips]), content(h, model, inputs.context.timeZone)],
+	)
+})

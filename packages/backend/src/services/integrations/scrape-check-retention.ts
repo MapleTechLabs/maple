@@ -1,7 +1,7 @@
 import type { ScrapeTargetId } from "@maple/domain"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ScrapeTargetChecks, ScrapeTargets } from "@maple/db/tables"
-import { Clock, Effect } from "effect"
+import { Clock, Effect, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 
 /**
@@ -59,11 +59,11 @@ export const canExceedRowCap = (target: RetentionTarget): boolean => {
 export const pruneChecksForTargets = Effect.fn("ScrapeCheckRetention.pruneForTargets")(function* (
 	targets: ReadonlyArray<RetentionTarget>,
 ) {
-	const [firstId, ...restIds] = targets.map((target) => target.id)
+	const [firstId, ...restIds] = Arr.map(targets, (target) => target.id)
 	if (firstId === undefined) return
 	const now = yield* Clock.currentTimeMillis
 	const cutoff = now - CHECK_RETENTION_MS
-	const capCandidates = targets.filter(canExceedRowCap)
+	const capCandidates = Arr.filter(targets, canExceedRowCap)
 	const database = yield* Database
 
 	yield* database.execute((db) =>

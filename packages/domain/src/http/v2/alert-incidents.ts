@@ -23,6 +23,7 @@ const alertIncidentExample = {
 	group_key: null,
 	signal_type: "error_rate",
 	severity: "critical",
+	peak_severity: "critical",
 	status: "open",
 	comparator: "gt",
 	threshold: 0.05,
@@ -63,7 +64,12 @@ export const V2AlertIncident = Schema.Struct({
 		examples: ["error_rate"],
 	}),
 	severity: AlertSeverity.annotate({
-		description: "Severity inherited from the rule: `warning` or `critical`.",
+		description:
+			"Current severity: `warning` or `critical`. Moves when a rule with severity tiers escalates or de-escalates.",
+		examples: ["critical"],
+	}),
+	peak_severity: Schema.NullOr(AlertSeverity).annotate({
+		description: "Highest severity the incident reached, or `null` on incidents opened before tiers.",
 		examples: ["critical"],
 	}),
 	status: AlertIncidentStatus.annotate({

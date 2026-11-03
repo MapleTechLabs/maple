@@ -1,0 +1,162 @@
+import type { McpToolCatalogEntry } from "@maple/domain/http"
+import { cn } from "@maple/ui/lib/utils"
+import { groupMcpTools, type McpToolGroup } from "../../../components/mcp/mcp-tool-groups"
+import { AsyncData } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { button } from "@maple/views/ui/button"
+import { collapsible } from "@maple/views/ui/collapsible"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { searchInput } from "@maple/views/ui/search-input"
+import { skeletonList } from "@maple/views/ui/skeleton"
+import { sectionNote, settingsSection } from "../kit/section"
+import { Message } from "./message"
+import type { Model } from "./model"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr, String as Str } from "effect"
+
+// `McpToolsList`.
+
+type H = HtmlBuilder<Message>
+
+const OPEN_GROUPS = 3
+const PREVIEW_ROWS = 4
+
+const toolRow = (h: H, tool: McpToolCatalogEntry): Html =>
+	h.li(
+		[
+			h.Key(tool.name),
+			h.Class(
+				"grid grid-cols-[minmax(0,13rem)_minmax(0,1fr)_auto] items-center gap-4 py-1.5 max-sm:grid-cols-[minmax(0,1fr)_auto]",
+			),
+		],
+		[
+			h.code([h.Class("truncate font-mono text-xs font-medium text-foreground")], [tool.name]),
+			h.p(
+				[h.Class("truncate text-xs text-muted-foreground max-sm:hidden"), h.Title(tool.description)],
+				[tool.description],
+			),
+			tool.readOnly
+				? badge(h, { variant: "muted", size: "sm" }, ["Read only"])
+				: badge(h, { variant: "warn", size: "sm" }, ["Writes"]),
+		],
+	)
+
+const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boolean): Html => {
+	const hidden = isShowingAll ? 0 : Math.max(0, group.tools.length - PREVIEW_ROWS)
+	const rows = hidden === 0 ? group.tools : group.tools.slice(0, PREVIEW_ROWS)
+	const panelId = `mcp-tools-${group.id}-panel`
+	return collapsible(
+		h,
+		{
+			isOpen,
+			onToggle: Message.ToggledToolGroup({ groupId: group.id }),
+			panelId,
+			attributes: [h.Key(group.id)],
+			triggerClassName:
+				"flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-surface-sunken active:bg-surface-sunken",
+			trigger: [
+				icon(h, "ChevronRightIcon", {
+					size: 14,
+					className: cn(
+						typographyClass({ tone: "muted", className: "shrink-0 transition-transform" }),
+						isOpen && "rotate-90",
+					),
+				}),
+				h.span([h.Class("font-medium")], [group.label]),
+				typography(h, { size: "xs", tone: "muted", numeric: true }, [String(group.tools.length)]),
+			],
+		},
+		[
+			h.div(
+				[h.Class("px-4 pb-3 pl-10")],
+				[
+					h.ul(
+						[],
+						Arr.map(rows, (tool) => toolRow(h, tool)),
+					),
+					...(hidden > 0
+						? [
+								button(
+									h,
+									{
+										variant: "ghost",
+										size: "xs",
+										className: "-ml-2 mt-1 text-muted-foreground",
+										attributes: [
+											h.OnClick(Message.ClickedShowAllTools({ groupId: group.id })),
+										],
+									},
+									["Show ", String(hidden), " more"],
+								),
+							]
+						: []),
+				],
+			),
+		],
+	)
+}
+
+const catalog = (h: H, model: Model, tools: ReadonlyArray<McpToolCatalogEntry>): ReadonlyArray<Html> => {
+	const isSearching = Str.trim(model.toolSearch) !== ""
+	const groups = groupMcpTools(tools, model.toolSearch)
+	return [
+		h.div(
+			[h.Class("border-b p-2")],
+			[
+				searchInput(h, {
+					id: "mcp-tools-search",
+					value: model.toolSearch,
+					onInput: (value) => Message.ChangedToolSearch({ value }),
+					onClear: Message.ClickedClearToolSearch(),
+					placeholder: `Search ${tools.length} tools…`,
+					ariaLabel: "Search tools",
+				}),
+			],
+		),
+		tools.length === 0
+			? emptyMessage(h, { className: "py-10 md:py-12" }, ["No tools are registered yet"])
+			: groups.length === 0
+				? filteredEmpty(h, {
+						noun: "tools",
+						description: `Nothing matches “${model.toolSearch}”.`,
+						onClear: Message.ClickedClearToolSearch(),
+						clearLabel: "Clear search",
+						className: "py-10 md:py-12",
+					})
+				: h.div(
+						[h.Class("divide-y")],
+						Arr.map(groups, (group, index) =>
+							toolGroup(
+								h,
+								group,
+								isSearching || index < OPEN_GROUPS !== model.flippedGroups.includes(group.id),
+								isSearching || model.expandedGroups.includes(group.id),
+							),
+						),
+					),
+	]
+}
+
+export const toolsSection = (h: H, model: Model): Html => {
+	const count = AsyncData.getOrElse(
+		AsyncData.map(model.tools, (tools) => tools.length),
+		() => null,
+	)
+	return settingsSection(
+		h,
+		{
+			id: "mcp-tools-heading",
+			title: count === null ? "Tools" : `Tools · ${count}`,
+			description: ["What a connected client can do. Tools marked Writes change data."],
+			padded: false,
+		},
+		AsyncData.matchData(model.tools, {
+			onEmpty: () => [h.div([h.Class("p-4")], [skeletonList(h, { rows: 6 })])],
+			onFailure: () => [sectionNote(h, "Couldn't load the tool list.")],
+			onData: (tools) => catalog(h, model, tools),
+		}),
+	)
+}

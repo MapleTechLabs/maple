@@ -53,13 +53,14 @@ The easiest way to get a widget document is to build the dashboard in the UI and
 
 A notification channel that alert rules deliver to. Props are discriminated on `type`:
 
-| `type`      | Channel fields                                 |
-| ----------- | ---------------------------------------------- |
-| `pagerduty` | `integration_key`                              |
-| `webhook`   | `url`, optional `signing_secret`               |
-| `discord`   | `webhook_url`                                  |
-| `telegram`  | `bot_token`, `chat_id`                         |
-| `email`     | `member_user_ids` (Maple user IDs in your org) |
+| `type`      | Channel fields                                                |
+| ----------- | ------------------------------------------------------------- |
+| `pagerduty` | `integration_key`                                             |
+| `webhook`   | `url`, optional `signing_secret`                              |
+| `discord`   | `webhook_url`                                                 |
+| `telegram`  | `bot_token`, `chat_id`                                        |
+| `email`     | `member_user_ids` (Maple user IDs in your org)                |
+| `linear`    | `team_id` (a team in the Linear workspace connected in Maple) |
 
 Every variant also takes `name` (required) and `enabled` (defaults to `true` on both create and update).
 
@@ -76,7 +77,7 @@ Effect.gen(function* () {
 
 - Channel secrets (`integration_key`, `signing_secret`, `webhook_url`, `bot_token`) are write-only: the API never returns them. Pass them as `Redacted` values so they stay out of logs and plan output. Because they cannot be read back, the provider re-sends them on every update.
 - Changing `type` replaces the destination with a new ID.
-- Slack, other chat-connector and Hazel destinations depend on integrations linked in Maple, so manage them in [Notification destinations](/docs/alerting/notification-destinations), not here.
+- Slack and other chat-connector destinations depend on integrations linked in Maple, so manage them in [Notification destinations](/docs/alerting/notification-destinations), not here.
 - Deleting a destination that rules still reference fails with a conflict. When the rules live in the same stack, Alchemy deletes them first.
 
 Outputs: `destinationId` (`dest_…`), `name`, `type`, `enabled`.
@@ -106,30 +107,30 @@ Effect.gen(function* () {
 | `signal_type`                   | `AlertSignalType`         | Required. See values below                                          |
 | `comparator`                    | `AlertComparator`         | Required. See values below                                          |
 | `threshold`                     | `number`                  | Required. Error rates are 0-1 ratios                                |
-| `threshold_upper`               | `number \| null`          | Upper bound for `between` / `not_between`                           |
+| `threshold_upper`               | `number`                  | Required for `between` / `not_between`, and only for them           |
 | `window_minutes`                | `number`                  | Required                                                            |
 | `destination_ids`               | `string[]`                | Required. `dest_…` IDs, usually `destination.destinationId` outputs |
 | `enabled`                       | `boolean`                 |                                                                     |
 | `notes`                         | `string \| null`          |                                                                     |
-| `service_names`                 | `string[]`                | Only these services                                                 |
-| `exclude_service_names`         | `string[]`                | All services except these                                           |
-| `group_by`                      | `string[] \| null`        |                                                                     |
+| `service_names`                 | `string[]`                | Only these services. Not with `group_by`                            |
+| `exclude_service_names`         | `string[]`                | All services except these. Needs `group_by: ["service.name"]`       |
+| `group_by`                      | `string[] \| null`        | One incident per group. Not with `service_names`                    |
 | `tags`                          | `string[]`                | Up to 19. `alchemy:` tags are reserved (see below)                  |
 | `minimum_sample_count`          | `number`                  |                                                                     |
 | `consecutive_breaches_required` | `number`                  | Breaching windows before it fires                                   |
 | `consecutive_healthy_required`  | `number`                  | Healthy windows before it resolves                                  |
 | `renotify_interval_minutes`     | `number`                  |                                                                     |
-| `alert_on_no_data`              | `boolean`                 | Count a window with no data as a breach                             |
+| `alert_on_no_data`              | `boolean`                 | Count a window with no data as a breach. Not on grouped rules       |
 | `apdex_threshold_ms`            | `number \| null`          | For `apdex` rules                                                   |
-| `query_builder_draft`           | `object \| null`          | For `builder_query` rules, passed through verbatim                  |
-| `raw_query_sql`                 | `string \| null`          | For `raw_query` rules                                               |
+| `query_builder_draft`           | `object`                  | Required for `builder_query` rules, passed through verbatim         |
+| `raw_query_sql`                 | `string`                  | Required for `raw_query` rules                                      |
 | `raw_query_reducer`             | `string \| null`          | `identity`, `sum`, `avg`, `min` or `max`                            |
 | `notification_template`         | `object \| null`          |                                                                     |
 
 - `signal_type`: `error_rate`, `p95_latency`, `p99_latency`, `apdex`, `throughput`, `builder_query`, `raw_query`
 - `comparator`: `gt`, `gte`, `lt`, `lte`, `eq`, `neq`, `between`, `not_between`
 
-Signal-specific fields are validated by the API against `signal_type`, so a mismatch fails the deploy with a `400`. See [Alert rules](/docs/alerting/alert-rules) for what each signal measures.
+The props type refuses the combinations the API rejects, so they fail to type-check instead of failing the deploy: `group_by` and `exclude_service_names` only without `service_names`, and `exclude_service_names` only with `group_by: ["service.name"]`; `query_builder_draft` on `builder_query` only, which requires it; `raw_query_sql` and `raw_query_reducer` on `raw_query` only, which requires the SQL and reads no named services and no `group_by`; `threshold_upper` with `between` and `not_between` only, which require it; and no `alert_on_no_data` on a grouped rule. Every deploy sends `service_names`, `exclude_service_names`, `group_by` and `alert_on_no_data`, so removing one from props clears it. The API checks the rest, such as the SQL itself, and a failure there fails the deploy with a `400`. See [Alert rules](/docs/alerting/alert-rules) for what each signal measures.
 
 Outputs: `ruleId` (`alrt_…`), `name`, `enabled`.
 

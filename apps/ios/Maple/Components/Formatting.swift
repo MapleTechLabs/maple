@@ -10,10 +10,13 @@ import SwiftUI
 /// fine" and "this service is failing rarely", and matching the web exactly
 /// means a number never disagrees across surfaces.
 enum Format {
+	/// What a missing or non-finite value renders as.
+	static let placeholder = "–"
+
 	/// `formatErrorRate`: takes a 0–1 ratio.
 	/// 0 → "0%"; below 0.01% → "<0.01%"; below 1% → 2dp; below 10% → 1dp; else integer.
 	static func errorRate(_ ratio: Double) -> String {
-		guard ratio.isFinite else { return "—" }
+		guard ratio.isFinite else { return placeholder }
 		let pct = ratio * 100
 		if pct == 0 { return "0%" }
 		if pct < 0.01 { return "<0.01%" }
@@ -22,18 +25,19 @@ enum Format {
 		return "\(Int(pct.rounded()))%"
 	}
 
-	/// `formatThroughput`: 0 → "0/s"; ≥1000 → "1.2k/s"; ≥1 → 1dp; else 3dp.
-	static func throughput(_ perSecond: Double) -> String {
-		guard perSecond.isFinite else { return "—" }
-		if perSecond == 0 { return "0/s" }
-		if perSecond >= 1000 { return String(format: "%.1fk/s", perSecond / 1000) }
-		if perSecond >= 1 { return String(format: "%.1f/s", perSecond) }
-		return String(format: "%.3f/s", perSecond)
+	/// `formatThroughput`'s precision, spelled `41.7 rps` as the design does:
+	/// 0 → "0 rps"; ≥1000 → "1.2k rps"; ≥1 → 1dp; else 3dp.
+	static func rps(_ perSecond: Double) -> String {
+		guard perSecond.isFinite else { return placeholder }
+		if perSecond == 0 { return "0 rps" }
+		if perSecond >= 1000 { return String(format: "%.1fk rps", perSecond / 1000) }
+		if perSecond >= 1 { return String(format: "%.1f rps", perSecond) }
+		return String(format: "%.3f rps", perSecond)
 	}
 
 	/// `formatLatency`: sub-ms in μs, then ms, s, min, h.
 	static func latency(_ ms: Double) -> String {
-		guard ms.isFinite else { return "—" }
+		guard ms.isFinite else { return placeholder }
 		if ms < 1 { return "\(Int((ms * 1000).rounded()))μs" }
 		if ms < 1000 { return String(format: "%.1fms", ms) }
 		if ms < 60_000 { return String(format: "%.2fs", ms / 1000) }
@@ -43,7 +47,7 @@ enum Format {
 
     /// `formatNumber`: T/B/M/K with 1dp.
 	static func count(_ value: Double) -> String {
-		guard value.isFinite else { return "—" }
+		guard value.isFinite else { return placeholder }
 		let magnitude = abs(value)
 		if magnitude >= 1_000_000_000_000 { return trimmed(value / 1_000_000_000_000) + "T" }
 		if magnitude >= 1_000_000_000 { return trimmed(value / 1_000_000_000) + "B" }
@@ -56,7 +60,7 @@ enum Format {
 	/// `formatLastSeen` — deliberately terse, and deliberately without "ago":
 	/// "now", "12m", "3h", "5d", then an abbreviated date.
 	static func lastSeen(_ timestamp: String) -> String {
-		guard let date = ResolvedTimeWindow.parse(timestamp) else { return "—" }
+		guard let date = ResolvedTimeWindow.parse(timestamp) else { return placeholder }
 		let elapsed = Date().timeIntervalSince(date)
 		if elapsed < 60 { return "now" }
 		if elapsed < 3600 { return "\(Int(elapsed / 60))m" }
@@ -72,8 +76,18 @@ enum Format {
 		)
 	}
 
+	/// `just now`, `14m ago`, `3h ago`; dates past a week stay bare.
+	static func ago(_ timestamp: String) -> String {
+		let terse = lastSeen(timestamp)
+		if terse == "now" { return "just now" }
+		guard let unit = terse.last, "mhd".contains(unit), terse.dropLast().allSatisfy(\.isNumber) else {
+			return terse
+		}
+		return "\(terse) ago"
+	}
+
 	static func absolute(_ timestamp: String) -> String {
-		guard let date = ResolvedTimeWindow.parse(timestamp) else { return "—" }
+		guard let date = ResolvedTimeWindow.parse(timestamp) else { return placeholder }
 		return date.formatted(date: .abbreviated, time: .shortened)
 	}
 

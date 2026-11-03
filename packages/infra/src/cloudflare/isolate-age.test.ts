@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { IsolateAge } from "./isolate-age.ts"
 
@@ -35,7 +35,7 @@ describe("IsolateAge", () => {
 				Array.from({ length: 50 }, () => recordOn),
 				{ concurrency: "unbounded" },
 			)
-			const ordinals = stamps.map((stamp) => Number(stamp.ordinal)).sort((a, b) => a - b)
+			const ordinals = Arr.map(stamps, (stamp) => Number(stamp.ordinal)).sort((a, b) => a - b)
 			assert.deepStrictEqual(
 				ordinals,
 				Array.from({ length: 50 }, (_, index) => index + 1),

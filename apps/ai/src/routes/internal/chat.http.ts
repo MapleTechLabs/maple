@@ -8,8 +8,12 @@ import {
 	CurrentTenant,
 	MapleAiApi,
 } from "@maple/domain/http"
-import { Effect } from "effect"
-import { encodeChatTurnTenant, orgIdFromChatSessionId } from "@maple/domain/chat-session"
+import { Effect, Array as Arr } from "effect"
+import {
+	encodeChatTurnTenant,
+	investigationIdFromChatSessionId,
+	orgIdFromChatSessionId,
+} from "@maple/domain/chat-session"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { describeCause } from "@maple/backend/platform/describe-cause"
 
@@ -48,6 +52,8 @@ export const HttpChatLive = HttpApiBuilder.group(MapleAiApi, "chat", (handlers) 
 			})
 			// Another org's conversation reads as missing: confirming it exists is itself a leak.
 			if (orgIdFromChatSessionId(sessionId) !== tenant.orgId) return yield* notFound
+			// Bot threads settle through their connector; the dashboard only decides investigations'.
+			if (investigationIdFromChatSessionId(sessionId) === undefined) return yield* notFound
 
 			const stub = (yield* ChatSessions).session(sessionId)
 
@@ -76,7 +82,9 @@ export const HttpChatLive = HttpApiBuilder.group(MapleAiApi, "chat", (handlers) 
 
 			// The answer is what the session recorded, read back as the chat-platform relay reads it.
 			const messages = yield* sessionCall(toolCallId, stub.history())
-			const call = messages.flatMap((message) => message.toolCalls).find((c) => c.id === toolCallId)
+			const call = Arr.flatMap(messages, (message) => message.toolCalls).find(
+				(c) => c.id === toolCallId,
+			)
 			return new ChatApplyResponse({
 				content: typeof call?.output === "string" ? call.output : "",
 				...(call?.isError === true ? { isError: true } : undefined),

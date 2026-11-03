@@ -6,7 +6,7 @@ import {
 	SessionTraceSummariesResponse,
 	TraceId,
 } from "@maple/domain/http"
-import { DateTime, Effect, Option, Schema } from "effect"
+import { DateTime, Effect, Option, Schema, Array as Arr } from "effect"
 import { parseUtc } from "@maple/query-engine"
 import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
 
@@ -45,6 +45,7 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 								userId: payload.userId,
 								userSearch: payload.userSearch,
 								groupName: payload.groupName,
+								groupId: payload.groupId,
 								visitorId: payload.visitorId,
 								hasErrors: payload.hasErrors,
 								search: payload.search,
@@ -56,9 +57,10 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 						// The union derives its row schema from the first branch, so `count` is
 						// already a number here even where ClickHouse quotes a UInt64.
 						const pick = (facetType: string) =>
-							rows
-								.filter((row) => row.facetType === facetType)
-								.map((row) => ({ name: row.name, count: row.count }))
+							Arr.map(
+								Arr.filter(rows, (row) => row.facetType === facetType),
+								(row) => ({ name: row.name, count: row.count }),
+							)
 						// The percentile branches ride the same {name, count} shape as the
 						// facets, with the quantile in `count` — read them back by label.
 						const stat = (name: string) =>
@@ -94,7 +96,7 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 							endTime: optionalUtc(payload.windowEnd),
 						})
 						return new SessionTraceSummariesResponse({
-							data: rows.map((row) => ({
+							data: Arr.map(rows, (row) => ({
 								...row,
 								startTime: DateTime.formatIso(row.startTime),
 								traceId: decodeTraceId(row.traceId),

@@ -1,8 +1,8 @@
 import { strictEqual, ok } from "node:assert"
 import { describe, it } from "vitest"
-import { Effect, ManagedRuntime } from "effect"
+import { Effect, ManagedRuntime, Array as Arr, String as Str } from "effect"
 import { Maple } from "@maple-dev/effect-sdk/server"
-import { observeEventing } from "../src/server/eventing/telemetry"
+import { observeEventing } from "@maple/local-server/eventing/telemetry"
 
 describe("eventing metric export", () => {
 	it("exports eventing counters through the CLI's server SDK layer", async () => {
@@ -30,16 +30,17 @@ describe("eventing metric export", () => {
 			)
 			await runtime.runPromise(
 				Effect.repeat(Effect.sleep("10 millis"), {
-					until: () => bodies.some((body) => body.includes("maple.eventing.operations_total")),
+					until: () =>
+						Arr.some(bodies, (body) => Str.includes("maple.eventing.operations_total")(body)),
 				}).pipe(Effect.timeout("2 seconds")),
 			)
-			const exported = bodies.join("\n")
-			ok(exported.includes("maple.eventing.operations_total"))
-			ok(exported.includes("outbox_stage"))
-			strictEqual(exported.includes("tenantid"), false)
+			const exported = Arr.join(bodies, "\n")
+			ok(Str.includes("maple.eventing.operations_total")(exported))
+			ok(Str.includes("outbox_stage")(exported))
+			strictEqual(Str.includes("tenantid")(exported), false)
 		} finally {
 			await runtime.dispose()
-			server.stop(true)
+			await server.stop(true)
 		}
 	})
 })

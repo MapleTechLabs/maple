@@ -3,7 +3,7 @@ import type { AlertIncidentDocument } from "@maple/domain/http"
 import { CurrentTenant } from "@maple/domain/http"
 import type { V2AlertIncident } from "@maple/domain/http/v2"
 import { MapleApiV2, paginateOffsetQuery } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 
 const toV2Incident = (doc: AlertIncidentDocument): V2AlertIncident => ({
@@ -14,6 +14,7 @@ const toV2Incident = (doc: AlertIncidentDocument): V2AlertIncident => ({
 	group_key: doc.groupKey,
 	signal_type: doc.signalType,
 	severity: doc.severity,
+	peak_severity: doc.peakSeverity,
 	status: doc.status,
 	comparator: doc.comparator,
 	threshold: doc.threshold,
@@ -47,7 +48,7 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 								limit,
 								offset,
 							})
-							.pipe(Effect.map((response) => response.incidents.map(toV2Incident))),
+							.pipe(Effect.map((response) => Arr.map(response.incidents, toV2Incident))),
 					)
 					return { object: "list" as const, ...page }
 				}),

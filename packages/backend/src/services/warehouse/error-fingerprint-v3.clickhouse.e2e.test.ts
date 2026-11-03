@@ -4,7 +4,7 @@
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { computeFingerprintInputs, FINGERPRINT_HASH_SALT } from "@maple/domain/tinybird/fingerprint"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { msToDate } from "../../platform/time"
 import {
 	applyRealMigrations,
@@ -18,12 +18,9 @@ const ORG_ID = "org_error_fingerprint_v3"
 const SERVICE = "api"
 
 /** Now-relative: the tables enforce a TTL at insert time. */
-const SEED_TS = msToDate(Date.now() - 60 * 60 * 1000)
-	.toISOString()
-	.replace("T", " ")
-	.slice(0, 19)
+const SEED_TS = Str.slice(0, 19)(Str.replace("T", " ")(msToDate(Date.now() - 60 * 60 * 1000).toISOString()))
 
-const quote = (value: string): string => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
 
 interface Seed {
 	readonly spanId: string
@@ -32,7 +29,7 @@ interface Seed {
 	readonly stacktrace: string
 }
 
-const frames = (...lines: ReadonlyArray<string>) => ["Error: boom", ...lines].join("\n")
+const frames = (...lines: ReadonlyArray<string>) => Arr.join(["Error: boom", ...lines], "\n")
 
 const SEEDS: ReadonlyArray<Seed> = [
 	{
@@ -149,7 +146,24 @@ const SEEDS: ReadonlyArray<Seed> = [
 			"copy /data.quarantine-x1/store /var/b, ~/.maple/x, read /datasets/x, retry in ~5 min, key top_operations",
 		stacktrace: "",
 	},
-	...[401, 404, 500, 502, 520, 524].map((status) => ({
+	// Location-less span frames: `at http.client POST` became `at POST` in effect 4.0.4.
+	...Arr.map(["    at http.client POST", "    at POST"], (spanFrame, index) => ({
+		spanId: `span-name-frame-${index}`,
+		type: "HttpClientError",
+		message: "Transport error (POST /api/query)",
+		stacktrace: frames(
+			"    at catch (https://x.dev/assets/client.js:1:2)",
+			spanFrame,
+			"    at load (/app/src/load.ts:7:2)",
+		),
+	})),
+	{
+		spanId: "paren-less-location",
+		type: "Error",
+		message: "failed",
+		stacktrace: frames("    at file:///app/a.js:1:2"),
+	},
+	...Arr.map([401, 404, 500, 502, 520, 524], (status) => ({
 		spanId: `http-${status}`,
 		type: "",
 		message: `upstream returned ${status}, HTTP ${status} after 3 tries`,
@@ -158,10 +172,14 @@ const SEEDS: ReadonlyArray<Seed> = [
 ]
 
 const seed = async (): Promise<void> => {
-	const rows = SEEDS.map(
-		(row) =>
-			`(${quote(ORG_ID)}, ${quote(SEED_TS)}, ${quote(`trace-${row.spanId}`)}, ${quote(row.spanId)}, '', 'GET /', 'Server', ${quote(SERVICE)}, 1000000, 'Error', ${quote(row.message)}, map(), map(), [toDateTime64(${quote(SEED_TS)}, 9)], ['exception'], [map('exception.type', ${quote(row.type)}, 'exception.message', ${quote(row.message)}, 'exception.stacktrace', ${quote(row.stacktrace)})])`,
-	).join(",\n")
+	const rows = Arr.join(
+		Arr.map(
+			SEEDS,
+			(row) =>
+				`(${quote(ORG_ID)}, ${quote(SEED_TS)}, ${quote(`trace-${row.spanId}`)}, ${quote(row.spanId)}, '', 'GET /', 'Server', ${quote(SERVICE)}, 1000000, 'Error', ${quote(row.message)}, map(), map(), [toDateTime64(${quote(SEED_TS)}, 9)], ['exception'], [map('exception.type', ${quote(row.type)}, 'exception.message', ${quote(row.message)}, 'exception.stacktrace', ${quote(row.stacktrace)})])`,
+		),
+		",\n",
+	)
 	await clickhouseExec(
 		`INSERT INTO traces
 		 (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, StatusMessage, SpanAttributes, ResourceAttributes, EventsTimestamp, EventsName, EventsAttributes)
@@ -176,22 +194,22 @@ const decodeHashRow = Schema.decodeUnknownSync(Schema.fromJsonString(HashRow))
 
 const readRows = async (sql: string): Promise<Map<string, HashRow>> => {
 	const body = await clickhouseExec(`${sql} FORMAT JSONEachRow`, database)
-	const rows = body
-		.split("\n")
-		.filter((line) => line.trim().length > 0)
-		.map(decodeHashRow)
-	return new Map(rows.map((row) => [row.SpanId, row]))
+	const rows = Arr.filter(Str.split("\n")(body), (line) => Str.trim(line).length > 0).map(decodeHashRow)
+	return new Map(Arr.map(rows, (row) => [row.SpanId, row]))
 }
 
 /** cityHash64 over the TS mirror's inputs, evaluated by ClickHouse itself. */
-const mirroredSql = SEEDS.map((row) => {
-	const inputs = computeFingerprintInputs({
-		exceptionType: row.type,
-		exceptionStacktrace: row.stacktrace,
-		statusMessage: row.message,
-	})
-	return `SELECT ${quote(row.spanId)} AS SpanId, ${quote(inputs.topFrame)} AS TopFrame, toString(cityHash64(${quote(ORG_ID)}, ${quote(SERVICE)}, ${quote(row.type)}, ${quote(inputs.fpFrames)}, ${quote(inputs.msgSignature)}, ${quote(FINGERPRINT_HASH_SALT)})) AS Hash`
-}).join("\nUNION ALL\n")
+const mirroredSql = Arr.join(
+	Arr.map(SEEDS, (row) => {
+		const inputs = computeFingerprintInputs({
+			exceptionType: row.type,
+			exceptionStacktrace: row.stacktrace,
+			statusMessage: row.message,
+		})
+		return `SELECT ${quote(row.spanId)} AS SpanId, ${quote(inputs.topFrame)} AS TopFrame, toString(cityHash64(${quote(ORG_ID)}, ${quote(SERVICE)}, ${quote(row.type)}, ${quote(inputs.fpFrames)}, ${quote(inputs.msgSignature)}, ${quote(FINGERPRINT_HASH_SALT)})) AS Hash`
+	}),
+	"\nUNION ALL\n",
+)
 
 describe.skipIf(!clickhouseE2eEnabled)("error fingerprint v3 (ClickHouse e2e)", () => {
 	let materialized: Map<string, HashRow>

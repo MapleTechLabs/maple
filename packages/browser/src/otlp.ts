@@ -128,7 +128,7 @@ export function flushUnloading(flush: () => void): void {
  * most `OTLP_UNLOAD_TAIL_BYTES`, then everything older. No split when nothing
  * or everything fits.
  */
-function newestFirst<T>(items: T[], serializer: Serializer<T>): T[][] {
+export function newestFirst<T>(items: T[], serializer: Serializer<T>): T[][] {
 	const limit = Math.min(OTLP_UNLOAD_TAIL_BYTES, otlpKeepaliveRoom())
 	const size = (from: number): number => serializer.serializeRequest(items.slice(from))?.byteLength ?? 0
 	let start = items.length
@@ -142,17 +142,19 @@ function newestFirst<T>(items: T[], serializer: Serializer<T>): T[][] {
  * newest items first, in a body small enough for keepalive, then the rest,
  * which keeps keepalive while it fits and leaves `olderReserve` bytes of room
  * for what is flushed after it. Each goes through `inner` on its own, so only
- * the part that failed is queued.
+ * the part that failed is queued. `leaving` covers a pipeline whose exit flush
+ * exports after `flushUnloading` has returned.
  */
 export function newestFirstOnExit<T>(
 	inner: Exporter<T>,
 	serializer: Serializer<T>,
 	olderReserve = 0,
+	leaving: () => boolean = () => false,
 ): Exporter<T> {
 	return {
 		export(items, callback) {
 			const hidden = globalThis.document?.visibilityState === "hidden"
-			const parts = unloading || hidden ? newestFirst(items, serializer) : [items]
+			const parts = unloading || hidden || leaving() ? newestFirst(items, serializer) : [items]
 			let pending = parts.length
 			let failed: ExportResult | undefined
 			for (const [index, part] of parts.entries()) {

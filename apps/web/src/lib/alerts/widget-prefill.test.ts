@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 
-import { defaultRuleForm } from "@/lib/alerts/form-utils"
+import { buildRuleCreateParamsV2, defaultRuleForm } from "@maple/web-data/alerts/form-utils"
 import { createWidgetAlertPrefill, resolveWidgetAlertPrefill } from "./widget-prefill"
+import { Array as Arr } from "effect"
 
 function builderQuery(overrides: Record<string, unknown> = {}) {
 	return {
@@ -76,9 +77,12 @@ describe("createWidgetAlertPrefill", () => {
 		)
 
 		expect(result.form.rawQueryReducer).toBe("identity")
-		expect(result.notices.map((notice) => notice.message).join("\n")).toContain(
-			"alert rules cannot express",
-		)
+		expect(
+			Arr.join(
+				Arr.map(result.notices, (notice) => notice.message),
+				"\n",
+			),
+		).toContain("alert rules cannot express")
 	})
 
 	it("warns when copied raw SQL does not clearly return value", () => {
@@ -96,7 +100,12 @@ describe("createWidgetAlertPrefill", () => {
 		)
 
 		expect(result.form.signalType).toBe("raw_query")
-		expect(result.notices.map((notice) => notice.message).join("\n")).toContain("numeric value column")
+		expect(
+			Arr.join(
+				Arr.map(result.notices, (notice) => notice.message),
+				"\n",
+			),
+		).toContain("numeric value column")
 	})
 
 	it("uses the first enabled visible query and warns about multi-query charts", () => {
@@ -130,7 +139,12 @@ describe("createWidgetAlertPrefill", () => {
 		expect(result.form.signalType).toBe("builder_query")
 		expect(result.form.queryBuilderDraft.whereClause).toBe('service.name = "checkout"')
 		expect(result.form.name).toBe("Alert - Traffic")
-		expect(result.notices.map((notice) => notice.message).join("\n")).toContain("2 visible queries")
+		expect(
+			Arr.join(
+				Arr.map(result.notices, (notice) => notice.message),
+				"\n",
+			),
+		).toContain("2 visible queries")
 	})
 
 	it("seeds a ratio-scale threshold for error_rate builder queries", () => {
@@ -147,9 +161,9 @@ describe("createWidgetAlertPrefill", () => {
 			defaultRuleForm(),
 		)
 
-		// error_rate evaluates as a 0–1 ratio; the blank-form default of "5"
-		// (percent entry for the built-in signal) would mean 500%.
-		expect(result.form.threshold).toBe("0.05")
+		// Entered as a percent like the built-in signal; saved as the 0.05 ratio.
+		expect(result.form.threshold).toBe("5")
+		expect(buildRuleCreateParamsV2(result.form).threshold).toBe(0.05)
 	})
 
 	it("keeps the default threshold for non-ratio aggregations", () => {
@@ -189,9 +203,12 @@ describe("createWidgetAlertPrefill", () => {
 		)
 
 		expect(result.form.queryBuilderDraft.dataSource).toBe("metrics")
-		expect(result.notices.map((notice) => notice.message).join("\n")).toContain(
-			"Metric source requires a metric name",
-		)
+		expect(
+			Arr.join(
+				Arr.map(result.notices, (notice) => notice.message),
+				"\n",
+			),
+		).toContain("Metric source requires a metric name")
 	})
 })
 

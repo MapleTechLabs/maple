@@ -1,0 +1,196 @@
+import { PrReviewCategory, PrReviewFindingStatus, PrReviewSeverity } from "@maple/domain/http"
+import {
+	CATEGORY_LABELS,
+	FINDING_STATUS_LABELS,
+	SEVERITY_LABELS,
+} from "../../../components/code-review/code-review-format"
+import { Option, Array as Arr } from "effect"
+import { AsyncData, Submodel } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { listFooter } from "@maple/views/ui/list-footer"
+import type * as Select from "@maple/views/ui/select"
+import { type SelectEntry, view as selectView } from "@maple/views/ui/select-view"
+import { findingsListSkeleton } from "../kit/skeletons"
+import type { PageViewInputs } from "../../contract"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
+import * as TimeRangePicker from "../../kit/time-range-picker"
+import { ALL } from "../kit/frame"
+import { filtersView } from "../kit/filters-view"
+import { codeReviewLayout } from "../kit/layout"
+import type { SheetMessage } from "../kit/review-sheet"
+import * as ReviewSheetView from "../kit/review-sheet-view"
+import { searchBox } from "../kit/search"
+import { type FilterKey, Message, type Model } from "./model"
+import { DEFAULT_PRESET, MAX_ROWS } from "./update"
+import { findingsList } from "./view-list"
+import { vstack } from "@maple/views/ui/stack"
+
+// The code review issues page.
+
+type H = HtmlBuilder<Message>
+
+const entries = (
+	allLabel: string,
+	options: ReadonlyArray<readonly [string, string]>,
+): ReadonlyArray<SelectEntry> => [
+	{ _tag: "Item", item: { value: ALL, label: allLabel } },
+	...Arr.map(options, ([value, label]): SelectEntry => ({ _tag: "Item", item: { value, label } })),
+]
+
+const FILTERS: ReadonlyArray<{
+	filter: FilterKey
+	label: string
+	field: "severitySelect" | "categorySelect" | "stateSelect"
+	entries: ReadonlyArray<SelectEntry>
+}> = [
+	{
+		filter: "severity",
+		label: "Severity",
+		field: "severitySelect",
+		entries: entries(
+			"All severities",
+			Arr.map(PrReviewSeverity.literals, (value) => [value, SEVERITY_LABELS[value]]),
+		),
+	},
+	{
+		filter: "category",
+		label: "Category",
+		field: "categorySelect",
+		entries: entries(
+			"All categories",
+			Arr.map(PrReviewCategory.literals, (value) => [value, CATEGORY_LABELS[value]]),
+		),
+	},
+	{
+		filter: "state",
+		label: "State",
+		field: "stateSelect",
+		entries: entries(
+			"All states",
+			Arr.map(PrReviewFindingStatus.literals, (value) => [value, FINDING_STATUS_LABELS[value]]),
+		),
+	},
+]
+
+const filterSelects = (h: H, model: Model): ReadonlyArray<Html> =>
+	Arr.map(FILTERS, ({ filter, label, field, entries: options }) =>
+		h.submodel({
+			slotId: model[field].id,
+			model: model[field],
+			view: selectView,
+			toParentMessage: (message: Select.Message) => Message.GotFilterSelectMessage({ filter, message }),
+			viewInputs: {
+				entries: options,
+				size: "sm",
+				ariaLabel: label,
+				className: "w-40",
+				toView: (parts) => h.div([h.Class("contents")], parts),
+			},
+		}),
+	)
+
+const isFiltered = (model: Model) =>
+	model.search.repo !== undefined ||
+	model.search.author !== undefined ||
+	model.search.severity !== undefined ||
+	model.search.category !== undefined ||
+	model.search.state !== undefined ||
+	model.search.q !== undefined
+
+const content = (h: H, model: Model, timeZone: string): Html =>
+	AsyncData.matchData(model.findings.data, {
+		onEmpty: () => findingsListSkeleton(h),
+		onFailure: (failure) =>
+			errorState(h, {
+				failure,
+				title: "Couldn't load issues",
+				onRetry: Message.ClickedRetry(),
+			}),
+		onData: (response) => {
+			if (response.findings.length === 0) {
+				const filtered = isFiltered(model)
+				if (filtered)
+					return filteredEmpty(h, {
+						noun: "issues",
+						onClear: Message.ClickedClearFilters(),
+						className: emptyFrameClass("dashed"),
+					})
+				return empty(
+					h,
+					[
+						emptyHeader(h, [
+							emptyTitle(h, ["No issues in this window"]),
+							emptyDescription(h, [
+								"Issues the reviewer posts on pull requests are listed here.",
+							]),
+						]),
+					],
+					emptyFrameClass("dashed"),
+				)
+			}
+			const footer =
+				response.nextCursor === null
+					? null
+					: listFooter(h, {
+							shown: response.findings.length,
+							noun: "issues",
+							hasMore: model.limit < MAX_ROWS,
+							isCapped: model.limit >= MAX_ROWS,
+							isLoading: AsyncData.isRefreshing(model.findings.data),
+							onLoadMore: Message.ClickedLoadMore(),
+						})
+			return vstack(h, { gap: "3" }, [
+				findingsList(h, model, response.findings, timeZone),
+				...(footer === null ? [] : [footer]),
+			])
+		},
+	})
+
+const authorsOf = (model: Model): ReadonlyArray<string> =>
+	Option.match(AsyncData.getData(model.authors.data), {
+		onNone: () => [],
+		onSome: (analytics) => Arr.map(analytics.authors, (row) => row.author),
+	})
+
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+	const filters = filtersView(h, {
+		frame: model.frame,
+		search: model.search,
+		reviewedOnly: true,
+		kind: "author",
+		options: authorsOf(model),
+		selected: model.search.author,
+		defaultPreset: DEFAULT_PRESET,
+		presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
+		toMessage: (message) => Message.GotFrameMessage({ message }),
+		isFailed: AsyncData.isFailure(model.findings.data),
+	})
+	return codeReviewLayout(
+		{
+			h,
+			active: "issues",
+			search: model.search,
+			toolbar: filters.actions,
+			filters: [
+				searchBox(h, {
+					id: "code-review-issues-search",
+					value: model.searchDraft,
+					placeholder: "Search issues…",
+					onInput: (value) => Message.ChangedSearchDraft({ value }),
+				}),
+				...filters.filters,
+				...filterSelects(h, model),
+			],
+			overlay: h.submodel({
+				slotId: "code-review-issues-sheet",
+				model: model.sheet,
+				view: ReviewSheetView.view,
+				viewInputs: { timeZone: inputs.context.timeZone },
+				toParentMessage: (message: SheetMessage) => Message.GotSheetMessage({ message }),
+			}),
+		},
+		[content(h, model, inputs.context.timeZone)],
+	)
+})

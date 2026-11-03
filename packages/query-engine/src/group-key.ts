@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 /**
  * The engine's name for "this result has no grouping dimension".
  *
@@ -23,4 +24,4 @@ export const ENGINE_UNGROUPED_GROUP_KEY = "all"
  * the value is whatever the author's query produced.
  */
 export const isEngineUngroupedKey = (groupName: string): boolean =>
-	groupName.trim().toLowerCase() === ENGINE_UNGROUPED_GROUP_KEY
+	Str.toLowerCase(Str.trim(groupName)) === ENGINE_UNGROUPED_GROUP_KEY

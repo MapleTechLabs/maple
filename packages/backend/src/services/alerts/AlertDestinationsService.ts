@@ -21,11 +21,12 @@ import {
 	type ChatWorkspaceId as ChatWorkspaceIdType,
 	type OrgId,
 	type UserId,
+	parseGoogleChatWebhookUrl,
 } from "@maple/domain/http"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { AlertDestinations, AlertRules, type AlertDestinationRow } from "@maple/db/tables"
-import { Context, Effect, Layer, Match, Option, Redacted, Schema } from "effect"
+import { AlertDestinations, AlertLinearIssues, AlertRules, type AlertDestinationRow } from "@maple/db/tables"
+import { Context, Effect, Layer, Match, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
 import { HttpClient } from "effect/http"
 import { encryptAes256Gcm, type EncryptedValue } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -33,7 +34,11 @@ import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
 import { validateExternalUrl } from "@maple/safe-fetch"
-import { HazelOAuthService, type HazelOAuthServiceApi } from "@maple/backend/services/auth/HazelOAuthService"
+import {
+	LinearOAuthService,
+	type LinearOAuthServiceApi,
+	type LinearTeam,
+} from "@maple/backend/services/auth/LinearOAuthService"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
 import {
@@ -42,6 +47,7 @@ import {
 	type OrgMembersServiceApi,
 } from "@maple/backend/services/org/OrgMembersService"
 import { ChatAlertPoster, type ChatChannelChoice } from "./ChatAlertPoster"
+import { LinearIssueTracker } from "./LinearIssueTracker"
 import { PAGERDUTY_ROUTING_KEY_PATTERN, verifyPagerDutyRoutingKey } from "./delivery/transports/pagerduty"
 import {
 	fetchTelegramChats,
@@ -77,7 +83,7 @@ const normalizeOptionalString = (value: string | null | undefined) => {
 
 const validateDestinationUrl = (rawUrl: string, field: string): Effect.Effect<string, AlertValidationError> =>
 	validateExternalUrl(rawUrl).pipe(
-		Effect.as(rawUrl.trim()),
+		Effect.as(Str.trim(rawUrl)),
 		Effect.mapError((error) => makeValidationError(`${field}: ${error.message}`, [], error)),
 	)
 
@@ -91,12 +97,12 @@ const summarizeMembers = (members: ReadonlyArray<OrgMember>): string => {
 const emailPublicConfig = (members: ReadonlyArray<OrgMember>): DestinationPublicConfig => ({
 	summary: summarizeMembers(members),
 	channelLabel: members[0]?.email ?? null,
-	memberUserIds: members.map((member) => member.userId),
+	memberUserIds: Arr.map(members, (member) => member.userId),
 })
 
 const emailSecretConfig = (members: ReadonlyArray<OrgMember>): DestinationSecretConfig => ({
 	type: "email",
-	members: members.map((member) => ({
+	members: Arr.map(members, (member) => ({
 		userId: member.userId,
 		email: member.email,
 		name: member.name,
@@ -104,23 +110,39 @@ const emailSecretConfig = (members: ReadonlyArray<OrgMember>): DestinationSecret
 })
 
 type AlertDestinationDependencyError =
-	| Effect.Error<ReturnType<HazelOAuthServiceApi["createChannelWebhook"]>>
 	| Effect.Error<ReturnType<OrgMembersServiceApi["resolveMembers"]>>
+	| Effect.Error<ReturnType<LinearOAuthServiceApi["getTeam"]>>
+
+const linearPublicConfig = (team: LinearTeam): DestinationPublicConfig => ({
+	summary: `Linear · ${team.name}`,
+	channelLabel: team.key,
+	linearTeamId: team.id,
+})
+
+const linearSecretConfig = (team: LinearTeam): DestinationSecretConfig => ({
+	type: "linear",
+	teamId: team.id,
+	teamKey: team.key,
+	teamName: team.name,
+})
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const encryptSecret = (
-	plaintext: string,
+	secretConfig: DestinationSecretConfig,
 	encryptionKey: Buffer,
 	destinationId: AlertDestinationDocument["id"],
-): Effect.Effect<EncryptedValue, AlertDestinationEncryptionError> =>
-	encryptAes256Gcm(
-		plaintext,
-		encryptionKey,
-		() =>
-			new AlertDestinationEncryptionError({
-				message: "Failed to encrypt destination secret",
-				destinationId,
-			}),
+): Effect.Effect<EncryptedValue, AlertDestinationEncryptionError> => {
+	const encryptionError = () =>
+		new AlertDestinationEncryptionError({
+			message: "Failed to encrypt destination secret",
+			destinationId,
+		})
+	return Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(secretConfig).pipe(
+		Effect.mapError(encryptionError),
+		Effect.flatMap((plaintext) => encryptAes256Gcm(plaintext, encryptionKey, encryptionError)),
 	)
+}
 
 const summarizeWebhookUrl = (url: string) =>
 	Option.match(Option.liftThrowable(() => new URL(url))(), {
@@ -131,8 +153,24 @@ const summarizeWebhookUrl = (url: string) =>
 const TELEGRAM_MALFORMED_TOKEN_MESSAGE =
 	"Telegram bot token must look like `123456789:ABC-DEF…` — copy it from @BotFather without the `bot` prefix."
 
+/** The space id is not a secret; the `key` and `token` query parameters are. */
+const googleChatSummary = (webhookUrl: string) =>
+	Option.match(parseGoogleChatWebhookUrl(webhookUrl), {
+		onNone: () => "Google Chat space",
+		onSome: ({ spaceId }) => `Space ${spaceId}`,
+	})
+
+const validateGoogleChatWebhookUrl = (rawUrl: string): Effect.Effect<string, AlertValidationError> =>
+	Option.isSome(parseGoogleChatWebhookUrl(rawUrl))
+		? validateDestinationUrl(rawUrl, "webhookUrl")
+		: Effect.fail(
+				makeValidationError(
+					"Google Chat webhook URL must look like `https://chat.googleapis.com/v1/spaces/…/messages?key=…&token=…` — copy it from the space's Apps & integrations → Webhooks.",
+				),
+			)
+
 /** A chat id is not a secret, but it is also not a name — label it as what it is. */
-const telegramSummary = (chatId: string) => `Chat ${chatId.trim()}`
+const telegramSummary = (chatId: string) => `Chat ${Str.trim(chatId)}`
 
 /**
  * The workspace's name is the summary, and the connector rides in the public config so the
@@ -150,47 +188,40 @@ const chatPublicConfig = (
 })
 
 const buildPublicConfig = (
-	request: Exclude<AlertDestinationCreateRequest, { readonly type: "email" | "chat" }>,
+	request: Exclude<AlertDestinationCreateRequest, { readonly type: "email" | "chat" | "linear" }>,
 ): DestinationPublicConfig =>
 	Match.value(request).pipe(
 		Match.discriminatorsExhaustive("type")({
 			pagerduty: () => ({ summary: "PagerDuty Events API v2", channelLabel: null }),
 			webhook: (r) => ({ summary: summarizeWebhookUrl(r.url), channelLabel: null }),
-			"hazel-oauth": (r) => ({
-				summary: `${r.hazelOrganizationName} · #${r.hazelChannelName}`,
-				channelLabel: `#${r.hazelChannelName}`,
-				hazelOrganizationId: r.hazelOrganizationId,
-				hazelOrganizationName: r.hazelOrganizationName,
-				hazelOrganizationLogoUrl: r.hazelOrganizationLogoUrl ?? null,
-				hazelChannelId: r.hazelChannelId,
-				hazelChannelName: r.hazelChannelName,
-			}),
 			discord: (r) => ({ summary: summarizeWebhookUrl(r.webhookUrl), channelLabel: null }),
 			// The chat id, not the token: this config is Electric-synced to the
 			// browser, so nothing secret may appear here. It rides in
 			// `channelLabel` as well as the summary so the edit form can prefill it
 			// — without that, renaming a destination would demand retyping the id.
-			telegram: (r) => ({ summary: telegramSummary(r.chatId), channelLabel: r.chatId.trim() }),
+			telegram: (r) => ({ summary: telegramSummary(r.chatId), channelLabel: Str.trim(r.chatId) }),
+			"google-chat": (r) => ({ summary: googleChatSummary(r.webhookUrl), channelLabel: null }),
 		}),
 	)
 
 const buildSecretConfig = (
-	request: Exclude<AlertDestinationCreateRequest, { readonly type: "hazel-oauth" | "email" | "chat" }>,
+	request: Exclude<AlertDestinationCreateRequest, { readonly type: "email" | "chat" | "linear" }>,
 ): DestinationSecretConfig =>
 	Match.value(request).pipe(
 		Match.discriminatorsExhaustive("type")({
-			pagerduty: (r) => ({ type: "pagerduty" as const, integrationKey: r.integrationKey.trim() }),
+			pagerduty: (r) => ({ type: "pagerduty" as const, integrationKey: Str.trim(r.integrationKey) }),
 			webhook: (r) => ({
 				type: "webhook" as const,
-				url: r.url.trim(),
+				url: Str.trim(r.url),
 				signingSecret: normalizeOptionalString(r.signingSecret),
 			}),
-			discord: (r) => ({ type: "discord" as const, webhookUrl: r.webhookUrl.trim() }),
+			discord: (r) => ({ type: "discord" as const, webhookUrl: Str.trim(r.webhookUrl) }),
 			telegram: (r) => ({
 				type: "telegram" as const,
-				botToken: r.botToken.trim(),
-				chatId: r.chatId.trim(),
+				botToken: Str.trim(r.botToken),
+				chatId: Str.trim(r.chatId),
 			}),
+			"google-chat": (r) => ({ type: "google-chat" as const, webhookUrl: Str.trim(r.webhookUrl) }),
 		}),
 	)
 
@@ -227,6 +258,9 @@ const destinationDocumentFromRow = (
 		...(publicConfig.chatWorkspaceId === undefined
 			? undefined
 			: { chatWorkspaceId: publicConfig.chatWorkspaceId }),
+		...(publicConfig.linearTeamId === undefined
+			? undefined
+			: { linearTeamId: publicConfig.linearTeamId }),
 		lastTestedAt: row.lastTestedAt == null ? null : isoFromMs(row.lastTestedAt),
 		lastTestError: row.lastTestError,
 		consecutiveFailures: row.consecutiveFailures,
@@ -324,13 +358,13 @@ export interface AlertDestinationsServiceApi {
 export class AlertDestinationsService extends Context.Service<
 	AlertDestinationsService,
 	AlertDestinationsServiceApi
->()("@maple/api/services/alerts/AlertDestinationsService", {
+>()("@maple/backend/services/alerts/AlertDestinationsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
 		const runtime = yield* AlertRuntime
 		const httpClient = yield* HttpClient.HttpClient
-		const hazelOAuth = yield* HazelOAuthService
+		const linearOAuth = yield* LinearOAuthService
 		const email = yield* EmailService
 		const orgMembers = yield* OrgMembersService
 		const chatAlertPoster = yield* ChatAlertPoster
@@ -344,6 +378,7 @@ export class AlertDestinationsService extends Context.Service<
 			httpClient,
 			email,
 			postChatAlert: chatAlertPoster.post,
+			linear: yield* LinearIssueTracker,
 		})
 
 		const dbExecute = makeDbExecute(database, "AlertDestinationsService", makePersistenceError)
@@ -352,12 +387,10 @@ export class AlertDestinationsService extends Context.Service<
 			roles: ReadonlyArray<RoleName>,
 		) {
 			if (roles.some((role) => adminRoles.includes(role))) return
-			return yield* Effect.fail(
-				new AlertForbiddenError({
-					message: "Only org admins can manage alerts",
-					...(roles.length > 0 ? { roles: [...roles] } : undefined),
-				}),
-			)
+			return yield* new AlertForbiddenError({
+				message: "Only org admins can manage alerts",
+				...(roles.length > 0 ? { roles: [...roles] } : undefined),
+			})
 		})
 
 		const requireDestinationRow = Effect.fn("AlertDestinationsService.requireDestinationRow")(function* (
@@ -373,24 +406,31 @@ export class AlertDestinationsService extends Context.Service<
 				),
 			)
 			if (rows[0]) return rows[0]
-			return yield* Effect.fail(
-				new AlertDestinationNotFoundError({
-					message: "Alert destination not found",
-					destinationId,
-				}),
-			)
+			return yield* new AlertDestinationNotFoundError({
+				message: "Alert destination not found",
+				destinationId,
+			})
 		})
 
 		const resolveEmailMembers = (orgId: OrgId, memberUserIds: ReadonlyArray<UserId>) =>
-			orgMembers
-				.resolveMembers(orgId, memberUserIds)
-				.pipe(
-					Effect.flatMap((members) =>
-						members.length === 0
-							? Effect.fail(makeValidationError("At least one workspace member is required"))
-							: Effect.succeed(members),
-					),
-				)
+			orgMembers.resolveMembers(orgId, memberUserIds).pipe(
+				Effect.filterOrFail(
+					(members) => members.length > 0,
+					() => makeValidationError("At least one workspace member is required"),
+				),
+			)
+
+		/** The team must be one the org's connected Linear workspace lists; its key and name come from there. */
+		const resolveLinearTeam = Effect.fn("AlertDestinationsService.resolveLinearTeam")(function* (
+			orgId: OrgId,
+			teamId: string,
+		) {
+			const team = yield* linearOAuth.getTeam(orgId, teamId)
+			if (team === null) {
+				return yield* makeValidationError("That team is not in the connected Linear workspace")
+			}
+			return team
+		})
 
 		const markDestinationTest = Effect.fn("AlertDestinationsService.markDestinationTest")(function* (
 			orgId: OrgId,
@@ -439,10 +479,8 @@ export class AlertDestinationsService extends Context.Service<
 			integrationKey: string,
 		) {
 			if (!PAGERDUTY_ROUTING_KEY_PATTERN.test(integrationKey)) {
-				return yield* Effect.fail(
-					makeValidationError(
-						"PagerDuty integration key must be a 32-character Events API v2 routing key — a REST API token won't work.",
-					),
+				return yield* makeValidationError(
+					"PagerDuty integration key must be a 32-character Events API v2 routing key — a REST API token won't work.",
 				)
 			}
 			const result = yield* verifyPagerDutyRoutingKey(
@@ -451,16 +489,14 @@ export class AlertDestinationsService extends Context.Service<
 				`maple-keycheck-${runtime.makeUuid()}`,
 			).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
 			if (result.status === "invalid") {
-				return yield* Effect.fail(
-					makeValidationError(`PagerDuty rejected this routing key: ${result.reason}`),
-				)
+				return yield* makeValidationError(`PagerDuty rejected this routing key: ${result.reason}`)
 			}
 		})
 
 		const validateTelegramCredentials = Effect.fn("AlertDestinationsService.validateTelegramCredentials")(
 			function* (botToken: string, chatId: string) {
 				if (!TELEGRAM_BOT_TOKEN_PATTERN.test(botToken)) {
-					return yield* Effect.fail(makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE))
+					return yield* makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE)
 				}
 				const result = yield* verifyTelegramCredentials(
 					botToken,
@@ -468,7 +504,7 @@ export class AlertDestinationsService extends Context.Service<
 					runtime.deliveryTimeoutMs(),
 				).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
 				if (result.status === "invalid") {
-					return yield* Effect.fail(makeValidationError(result.reason))
+					return yield* makeValidationError(result.reason)
 				}
 			},
 		)
@@ -482,12 +518,12 @@ export class AlertDestinationsService extends Context.Service<
 			yield* requireAdmin(roles)
 			const trimmed = botToken.trim()
 			if (!TELEGRAM_BOT_TOKEN_PATTERN.test(trimmed)) {
-				return yield* Effect.fail(makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE))
+				return yield* makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE)
 			}
 			const result = yield* fetchTelegramChats(trimmed, runtime.deliveryTimeoutMs()).pipe(
 				Effect.provideService(HttpClient.HttpClient, httpClient),
 			)
-			if (result.status === "invalid") return yield* Effect.fail(makeValidationError(result.reason))
+			if (result.status === "invalid") return yield* makeValidationError(result.reason)
 			return result.chats
 		})
 
@@ -498,7 +534,7 @@ export class AlertDestinationsService extends Context.Service<
 			if (request.type === "webhook") yield* validateDestinationUrl(request.url, "url")
 			else if (request.type === "discord") {
 				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
-			}
+			} else if (request.type === "google-chat") yield* validateGoogleChatWebhookUrl(request.webhookUrl)
 			const destinationId = decodeAlertDestinationIdSync(runtime.makeUuid())
 			let publicConfig: DestinationPublicConfig
 			let secretConfig: DestinationSecretConfig
@@ -518,38 +554,19 @@ export class AlertDestinationsService extends Context.Service<
 					channelId,
 					channelName: channel.channelName,
 				}
+			} else if (request.type === "linear") {
+				const team = yield* resolveLinearTeam(orgId, request.teamId.trim())
+				publicConfig = linearPublicConfig(team)
+				secretConfig = linearSecretConfig(team)
 			} else {
 				publicConfig = buildPublicConfig(request)
-				secretConfig =
-					request.type === "hazel-oauth"
-						? yield* hazelOAuth
-								.createChannelWebhook(orgId, {
-									channelId: request.hazelChannelId.trim(),
-									name: request.name.trim(),
-								})
-								.pipe(
-									Effect.map((webhook) => ({
-										type: "hazel-oauth" as const,
-										hazelOrganizationId: request.hazelOrganizationId.trim(),
-										hazelOrganizationName: request.hazelOrganizationName.trim(),
-										hazelChannelId: request.hazelChannelId.trim(),
-										hazelChannelName: request.hazelChannelName.trim(),
-										webhookId: webhook.id,
-										webhookUrl: webhook.webhookUrl,
-										webhookToken: webhook.token,
-									})),
-								)
-						: buildSecretConfig(request)
+				secretConfig = buildSecretConfig(request)
 			}
 			if (secretConfig.type === "pagerduty") yield* validatePagerDutyKey(secretConfig.integrationKey)
 			if (secretConfig.type === "telegram") {
 				yield* validateTelegramCredentials(secretConfig.botToken, secretConfig.chatId)
 			}
-			const encryptedSecret = yield* encryptSecret(
-				JSON.stringify(secretConfig),
-				encryptionKey,
-				destinationId,
-			)
+			const encryptedSecret = yield* encryptSecret(secretConfig, encryptionKey, destinationId)
 			const timestamp = yield* runtime.now
 			const row = {
 				id: destinationId,
@@ -590,7 +607,7 @@ export class AlertDestinationsService extends Context.Service<
 			yield* requireAdmin(roles)
 			const existing = yield* requireDestinationRow(orgId, destinationId)
 			if (existing.type !== request.type) {
-				return yield* Effect.fail(makeValidationError("Destination type cannot be changed"))
+				return yield* makeValidationError("Destination type cannot be changed")
 			}
 			const hydrated = yield* delivery.hydrateDestination(existing)
 			if (request.type === "webhook" && request.url != null && request.url.trim().length > 0) {
@@ -601,6 +618,12 @@ export class AlertDestinationsService extends Context.Service<
 				request.webhookUrl.trim().length > 0
 			) {
 				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
+			} else if (
+				request.type === "google-chat" &&
+				request.webhookUrl != null &&
+				request.webhookUrl.trim().length > 0
+			) {
+				yield* validateGoogleChatWebhookUrl(request.webhookUrl)
 			}
 
 			const { nextPublicConfig, nextSecretConfig } = yield* Match.value(request).pipe(
@@ -641,61 +664,6 @@ export class AlertDestinationsService extends Context.Service<
 										: normalizeOptionalString(r.signingSecret),
 							} satisfies DestinationSecretConfig,
 						}),
-					"hazel-oauth": (r) =>
-						Effect.gen(function* () {
-							const previousSecret =
-								hydrated.secretConfig.type === "hazel-oauth" ? hydrated.secretConfig : null
-							const nextOrganizationId =
-								normalizeOptionalString(r.hazelOrganizationId) ??
-								previousSecret?.hazelOrganizationId ??
-								""
-							const nextOrganizationName =
-								normalizeOptionalString(r.hazelOrganizationName) ??
-								previousSecret?.hazelOrganizationName ??
-								""
-							const nextOrganizationLogoUrl =
-								r.hazelOrganizationLogoUrl === undefined
-									? (hydrated.publicConfig.hazelOrganizationLogoUrl ?? null)
-									: r.hazelOrganizationLogoUrl
-							const nextChannelId =
-								normalizeOptionalString(r.hazelChannelId) ??
-								previousSecret?.hazelChannelId ??
-								""
-							const nextChannelName =
-								normalizeOptionalString(r.hazelChannelName) ??
-								previousSecret?.hazelChannelName ??
-								""
-							const nextName = normalizeOptionalString(r.name) ?? existing.name
-							const channelChanged =
-								previousSecret == null || previousSecret.hazelChannelId !== nextChannelId
-							const provisioned = channelChanged
-								? yield* hazelOAuth.createChannelWebhook(orgId, {
-										channelId: nextChannelId,
-										name: nextName,
-									})
-								: null
-							return {
-								nextPublicConfig: {
-									summary: `${nextOrganizationName} · #${nextChannelName}`,
-									channelLabel: `#${nextChannelName}`,
-									hazelOrganizationId: nextOrganizationId,
-									hazelOrganizationName: nextOrganizationName,
-									hazelOrganizationLogoUrl: nextOrganizationLogoUrl,
-									hazelChannelId: nextChannelId,
-									hazelChannelName: nextChannelName,
-								} satisfies DestinationPublicConfig,
-								nextSecretConfig: {
-									type: "hazel-oauth" as const,
-									hazelOrganizationId: nextOrganizationId,
-									hazelOrganizationName: nextOrganizationName,
-									hazelChannelId: nextChannelId,
-									hazelChannelName: nextChannelName,
-									webhookId: provisioned?.id ?? previousSecret!.webhookId,
-									webhookUrl: provisioned?.webhookUrl ?? previousSecret!.webhookUrl,
-									webhookToken: provisioned?.token ?? previousSecret!.webhookToken,
-								} satisfies DestinationSecretConfig,
-							}
-						}),
 					discord: (r) =>
 						Effect.succeed({
 							nextPublicConfig: {
@@ -714,6 +682,26 @@ export class AlertDestinationsService extends Context.Service<
 										: ""),
 							} satisfies DestinationSecretConfig,
 						}),
+					"google-chat": (r) => {
+						const nextUrl = normalizeOptionalString(r.webhookUrl)
+						return Effect.succeed({
+							nextPublicConfig: {
+								summary:
+									nextUrl != null
+										? googleChatSummary(nextUrl)
+										: hydrated.publicConfig.summary,
+								channelLabel: null,
+							} satisfies DestinationPublicConfig,
+							nextSecretConfig: {
+								type: "google-chat" as const,
+								webhookUrl:
+									nextUrl ??
+									(hydrated.secretConfig.type === "google-chat"
+										? hydrated.secretConfig.webhookUrl
+										: ""),
+							} satisfies DestinationSecretConfig,
+						})
+					},
 					telegram: (r) => {
 						const previous =
 							hydrated.secretConfig.type === "telegram" ? hydrated.secretConfig : null
@@ -768,6 +756,25 @@ export class AlertDestinationsService extends Context.Service<
 								} satisfies DestinationSecretConfig,
 							}
 						}),
+					linear: (r) =>
+						Effect.gen(function* () {
+							const teamId = normalizeOptionalString(r.teamId)
+							const previous = hydrated.secretConfig
+							if (
+								teamId === null ||
+								(previous.type === "linear" && previous.teamId === teamId)
+							) {
+								return {
+									nextPublicConfig: hydrated.publicConfig,
+									nextSecretConfig: previous satisfies DestinationSecretConfig,
+								}
+							}
+							const team = yield* resolveLinearTeam(orgId, teamId)
+							return {
+								nextPublicConfig: linearPublicConfig(team),
+								nextSecretConfig: linearSecretConfig(team),
+							}
+						}),
 					email: (r) =>
 						Effect.gen(function* () {
 							const supplied =
@@ -806,11 +813,7 @@ export class AlertDestinationsService extends Context.Service<
 			) {
 				yield* validateTelegramCredentials(nextSecretConfig.botToken, nextSecretConfig.chatId)
 			}
-			const encryptedSecret = yield* encryptSecret(
-				JSON.stringify(nextSecretConfig),
-				encryptionKey,
-				destinationId,
-			)
+			const encryptedSecret = yield* encryptSecret(nextSecretConfig, encryptionKey, destinationId)
 			const timestamp = yield* runtime.now
 			const nextName = normalizeOptionalString(request.name) ?? existing.name
 			const nextEnabled = request.enabled === undefined ? existing.enabled : request.enabled
@@ -824,22 +827,40 @@ export class AlertDestinationsService extends Context.Service<
 				disabledAt: null,
 				disabledReason: null,
 			} as const
+			// Once the new team is saved, the old team's issues stop being this destination's threads.
+			const linearTeamChanged =
+				hydrated.secretConfig.type === "linear" &&
+				nextSecretConfig.type === "linear" &&
+				hydrated.secretConfig.teamId !== nextSecretConfig.teamId
 			const writeRows = yield* dbExecute((db) =>
-				db.run(
-					PG.update(AlertDestinations)
-						.set({
-							name: nextName,
-							enabled: nextEnabled,
-							configJson: nextPublicConfig,
-							secretCiphertext: encryptedSecret.ciphertext,
-							secretIv: encryptedSecret.iv,
-							secretTag: encryptedSecret.tag,
-							...clearedFailureState,
-							updatedAt: timestamp,
-							updatedBy: userId,
-						})
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(destinationId)])
-						.returning(() => ({ txid: currentTxid })),
+				db.transaction(
+					Effect.gen(function* () {
+						const rows = yield* db.run(
+							PG.update(AlertDestinations)
+								.set({
+									name: nextName,
+									enabled: nextEnabled,
+									configJson: nextPublicConfig,
+									secretCiphertext: encryptedSecret.ciphertext,
+									secretIv: encryptedSecret.iv,
+									secretTag: encryptedSecret.tag,
+									...clearedFailureState,
+									updatedAt: timestamp,
+									updatedBy: userId,
+								})
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(destinationId)])
+								.returning(() => ({ txid: currentTxid })),
+						)
+						if (linearTeamChanged) {
+							yield* db.run(
+								PG.deleteFrom(AlertLinearIssues).where(($) => [
+									$.orgId.eq(orgId),
+									$.destinationId.eq(destinationId),
+								]),
+							)
+						}
+						return rows
+					}),
 				),
 			)
 			const txid = readTxid(writeRows)
@@ -890,14 +911,12 @@ export class AlertDestinationsService extends Context.Service<
 			if (referencedByRules.length > 0) {
 				const ruleIds = referencedByRules.map(({ row }) => decodeAlertRuleIdSync(row.id))
 				const ruleNames = referencedByRules.map(({ row }) => row.name)
-				return yield* Effect.fail(
-					new AlertDestinationInUseError({
-						message: `Destination is still used by alert rules: ${ruleNames.join(", ")}`,
-						destinationId,
-						ruleIds,
-						ruleNames,
-					}),
-				)
+				return yield* new AlertDestinationInUseError({
+					message: `Destination is still used by alert rules: ${ruleNames.join(", ")}`,
+					destinationId,
+					ruleIds,
+					ruleNames,
+				})
 			}
 			// The scan above is the rich-message UX path; this transaction is the
 			// correctness gate. Rule writes validate destinations under the same
@@ -913,7 +932,7 @@ export class AlertDestinationsService extends Context.Service<
 								.where(($) => [
 									$.orgId.eq(orgId),
 									PG.sql
-										.cond`${$.destinationIdsJson} @> ${JSON.stringify([destinationId])}::jsonb`,
+										.cond`${$.destinationIdsJson} @> ${encodeJson([destinationId])}::jsonb`,
 								]),
 						)
 						if (stillReferenced.length > 0) {
@@ -929,16 +948,14 @@ export class AlertDestinationsService extends Context.Service<
 				),
 			)
 			if (deleteResult.referencedBy.length > 0) {
-				return yield* Effect.fail(
-					new AlertDestinationInUseError({
-						message: `Destination is still used by alert rules: ${deleteResult.referencedBy
-							.map((rule) => rule.name)
-							.join(", ")}`,
-						destinationId,
-						ruleIds: deleteResult.referencedBy.map((rule) => decodeAlertRuleIdSync(rule.id)),
-						ruleNames: deleteResult.referencedBy.map((rule) => rule.name),
-					}),
-				)
+				return yield* new AlertDestinationInUseError({
+					message: `Destination is still used by alert rules: ${deleteResult.referencedBy
+						.map((rule) => rule.name)
+						.join(", ")}`,
+					destinationId,
+					ruleIds: deleteResult.referencedBy.map((rule) => decodeAlertRuleIdSync(rule.id)),
+					ruleNames: deleteResult.referencedBy.map((rule) => rule.name),
+				})
 			}
 			const txid = readTxid(deleteResult.deleted)
 			return new AlertDestinationDeleteResponse({
@@ -952,7 +969,7 @@ export class AlertDestinationsService extends Context.Service<
 		)(function* (orgId, _userId, roles, destinationId) {
 			yield* requireAdmin(roles)
 			const row = yield* requireDestinationRow(orgId, destinationId)
-			yield* delivery
+			const sent = yield* delivery
 				.sendImmediateNotification(row, {
 					deliveryKey: `${orgId}:${destinationId}:test`,
 					ruleId: decodeAlertRuleIdSync(runtime.makeUuid()),
@@ -985,7 +1002,8 @@ export class AlertDestinationsService extends Context.Service<
 			yield* markDestinationTest(orgId, destinationId, null)
 			return new AlertDestinationTestResponse({
 				success: true,
-				message: "Test notification sent",
+				// A Linear test checks the team and opens no issue, so "sent" would be untrue.
+				message: row.type === "linear" ? sent.providerMessage : "Test notification sent",
 			})
 		})
 
@@ -1001,6 +1019,13 @@ export class AlertDestinationsService extends Context.Service<
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(ChatAlertPoster.layer),
-		Layer.provide(Layer.mergeAll(EmailService.layer, HazelOAuthService.layer, OrgMembersService.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				EmailService.layer,
+				LinearOAuthService.layer,
+				LinearIssueTracker.layer,
+				OrgMembersService.layer,
+			),
+		),
 	)
 }

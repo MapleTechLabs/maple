@@ -1,5 +1,6 @@
 import { publicHttpErrorBody } from "../error-policy"
 import { defineV2Error } from "./errors"
+import { String as Str } from "effect"
 
 /**
  * The envelope for a request that matched no route at all — the one failure
@@ -34,6 +35,6 @@ export interface RouteNotFoundHints {
 export const v2RouteNotFoundBody = (method: string, path: string, hints: RouteNotFoundHints) =>
 	publicHttpErrorBody(
 		V2RouteNotFound.make(
-			`No route matches ${method.toUpperCase()} ${path}. The Maple API is documented at ${hints.docsUrl}; the OpenAPI specification is at ${hints.openApiUrl}.`,
+			`No route matches ${Str.toUpperCase(method)} ${path}. The Maple API is documented at ${hints.docsUrl}; the OpenAPI specification is at ${hints.openApiUrl}.`,
 		),
 	)

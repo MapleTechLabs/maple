@@ -12,6 +12,7 @@ import {
 } from "@maple/domain/http"
 import { cleanErrorMessage, mapWarehouseError, toWarehouseQueryError } from "./errors"
 import { WarehouseDriverError } from "./driver-error"
+import { String as Str } from "effect"
 
 // Promise-land inputs, lifted the way a Promise-based adapter lifts them.
 const classify = (pipe: string, error: unknown, authoredBy?: "maple" | "caller") =>
@@ -134,6 +135,7 @@ describe("mapWarehouseError", () => {
 				"[Error] Illegal type DateTime64(9) of argument of function intDiv. (ILLEGAL_TYPE_OF_ARGUMENT)",
 				"[Error] Column `SpanName` is not under aggregate function and not in GROUP BY keys. (NOT_AN_AGGREGATE)",
 				"[Error] Cannot parse string '2026-10-04T00:00:00Z' as DateTime64(9). (CANNOT_PARSE_DATETIME)",
+				"[Error] Table expression modifiers FINAL are not supported for subquery SELECT * FROM (SELECT * FROM session_replays) AS session_replays. (UNSUPPORTED_METHOD)",
 			])("reports agent SQL the warehouse refused as invalid SQL: %s", (message) => {
 				expect(classify("rawSqlQuery", { message }, "caller")).toBeInstanceOf(
 					WarehouseInvalidSqlError,
@@ -404,8 +406,8 @@ describe("cleanErrorMessage", () => {
 	})
 
 	it("falls back to the first 200 chars when cleaning empties the message", () => {
-		const raw = `<html>${"x".repeat(300)}`
-		expect(cleanErrorMessage(raw)).toBe(raw.slice(0, 200))
+		const raw = `<html>${Str.repeat(300)("x")}`
+		expect(cleanErrorMessage(raw)).toBe(Str.slice(0, 200)(raw))
 	})
 })
 

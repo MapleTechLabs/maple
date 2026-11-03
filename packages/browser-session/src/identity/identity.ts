@@ -1,3 +1,5 @@
+import { bagKeys, capText, defineEntry, isPropertyBag, readEntry } from "../events/props"
+
 /**
  * Who the current visitor is.
  *
@@ -48,6 +50,8 @@ export interface ResolvedIdentity {
 const MAX_TRAITS = 24
 const MAX_TRAIT_KEY_LENGTH = 64
 const MAX_TRAIT_VALUE_LENGTH = 256
+/** Ids, emails and names; matches the gateway's per-id byte cap in UTF-16 units. */
+const MAX_FIELD_LENGTH = 256
 
 let warnedAboutTraitKeys = false
 
@@ -56,21 +60,31 @@ function looksLikeId(key: string): boolean {
 	return /^[0-9a-f]{8,}$/i.test(key) || /^(usr|user|org|cus|acct)_/i.test(key)
 }
 
-function coerceTraitValue(value: TraitValue): string | undefined {
-	if (value === null || value === undefined) return undefined
-	const text = typeof value === "string" ? value : String(value)
-	return text.slice(0, MAX_TRAIT_VALUE_LENGTH)
+function coerceTraitValue(value: unknown): string | undefined {
+	switch (typeof value) {
+		case "string":
+			return capText(value, MAX_TRAIT_VALUE_LENGTH)
+		case "number":
+		case "boolean":
+		case "bigint":
+			return String(value)
+		default:
+			// Objects, functions and symbols are outside `TraitValue`; dropping them
+			// beats `String()`, which can throw or yield "[object Object]".
+			return undefined
+	}
 }
 
-function normalizeTraits(traits: Readonly<Record<string, TraitValue>> | undefined): Record<string, string> {
-	if (!traits) return {}
+function normalizeTraits(traits: unknown): Record<string, string> {
 	const out: Record<string, string> = {}
-	for (const [rawKey, rawValue] of Object.entries(traits)) {
-		if (Object.keys(out).length >= MAX_TRAITS) break
-		const value = coerceTraitValue(rawValue)
+	if (!isPropertyBag(traits)) return out
+	let count = 0
+	for (const rawKey of bagKeys(traits)) {
+		if (count >= MAX_TRAITS) break
+		const value = readEntry(traits, rawKey, coerceTraitValue)
 		if (value === undefined) continue
-		const key = rawKey.slice(0, MAX_TRAIT_KEY_LENGTH)
-		if (!key) continue
+		const key = capText(rawKey, MAX_TRAIT_KEY_LENGTH)
+		if (!key || Object.prototype.hasOwnProperty.call(out, key)) continue
 		if (!warnedAboutTraitKeys && looksLikeId(key)) {
 			warnedAboutTraitKeys = true
 			console.warn(
@@ -78,14 +92,25 @@ function normalizeTraits(traits: Readonly<Record<string, TraitValue>> | undefine
 					"session row's trait map; put ids in the value, or in id/groupId, not the key.",
 			)
 		}
-		out[key] = value
+		defineEntry(out, key, value)
+		count++
 	}
 	return out
 }
 
-function trimmed(value: string | undefined): string | undefined {
-	const text = value?.trim()
-	return text ? text : undefined
+/**
+ * A trimmed, capped string field. Numeric ids (`{ id: 42 }`) are common enough in
+ * untyped callers to keep; anything else that is not a string is ignored.
+ */
+function field(value: unknown): string | undefined {
+	const text =
+		typeof value === "string"
+			? value
+			: (typeof value === "number" && Number.isFinite(value)) || typeof value === "bigint"
+				? String(value)
+				: undefined
+	const trimmed = text?.trim()
+	return trimmed ? capText(trimmed, MAX_FIELD_LENGTH) : undefined
 }
 
 /**
@@ -97,18 +122,17 @@ function trimmed(value: string | undefined): string | undefined {
  * already did.
  */
 export function normalizeIdentity(input: IdentifyInput): ResolvedIdentity | undefined {
-	if (input === null || input === undefined) return undefined
-	if (typeof input === "string") {
-		const id = trimmed(input)
+	if (!isPropertyBag(input)) {
+		const id = field(input)
 		return id ? { id, traits: {} } : undefined
 	}
 	const resolved: ResolvedIdentity = {
-		id: trimmed(input.id),
-		email: trimmed(input.email),
-		username: trimmed(input.username),
-		groupId: trimmed(input.groupId),
-		groupName: trimmed(input.groupName),
-		traits: normalizeTraits(input.traits),
+		id: readEntry(input, "id", field),
+		email: readEntry(input, "email", field),
+		username: readEntry(input, "username", field),
+		groupId: readEntry(input, "groupId", field),
+		groupName: readEntry(input, "groupName", field),
+		traits: readEntry(input, "traits", normalizeTraits) ?? {},
 	}
 	// An object with nothing usable in it reads as "clear the identity" — the
 	// same as identify(undefined).

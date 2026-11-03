@@ -8,7 +8,9 @@
 // every `needsWarehouse` check emits `skip` and the report still returns the config findings.
 //
 // Severity is fixed per check, never computed inside `evaluate`. Conditional severity ("critical if
-// referenced, warn otherwise") is a smell — split it into two checks or pick the honest one.
+// referenced, warn otherwise") is a smell — split it into two checks or pick the honest one. The one
+// exception is a rate with tiered thresholds (TRC-02): one condition, so one check, and its evaluation
+// names the tier it crossed.
 //
 // Checks deliberately NOT included, so nobody re-adds them: escalation policy disabled (defaults to
 // false — would fire on nearly every org), AI triage disabled (opt-in by design), no scrape targets /
@@ -16,8 +18,9 @@
 // tested (delivery works fine without ever pressing Test), onboarding checklist incomplete (owned by
 // the onboarding surface). A check that fires on every healthy org is noise, not an audit.
 
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { HttpTaggedError } from "./http/error-policy"
+import type { IntegrationEntry, IntegrationInventory } from "./integration-inventory"
 
 export class SetupAuditUnavailableError extends HttpTaggedError<SetupAuditUnavailableError>()(
 	"@maple/http/errors/SetupAuditUnavailableError",
@@ -74,6 +77,8 @@ export interface AuditEvaluation {
 	readonly affected?: ReadonlyArray<AuditAffectedEntity>
 	/** Total affected before capping; defaults to `affected.length`. */
 	readonly affectedCount?: number
+	/** The tier a tiered-rate check crossed; defaults to the check's own severity. */
+	readonly severity?: AuditSeverity
 }
 
 export interface AuditCheck {
@@ -129,6 +134,9 @@ export interface AuditAlertRule {
 	readonly enabled: boolean
 	readonly destinationIds: ReadonlyArray<string>
 	readonly windowMinutes: number
+	/** Effective minutes between checks: picked, derived from the window, or slowed by the scheduler. */
+	readonly evaluationIntervalMinutes: number
+	/** Heartbeat stamped when the scheduler claims the rule, so it advances once per interval. */
 	readonly lastScheduledAt: number | null
 	readonly createdAt: number
 }
@@ -153,11 +161,18 @@ export interface AuditAttributeMapping {
 	readonly sourceContext: string
 	readonly sourceKey: string
 	readonly targetKey: string
+	/** `copy` keeps the source key on the span; `move` deletes it once the target is written. */
+	readonly operation: string
+	/** Epoch ms of the last change; spans stored before it predate the current rule. */
+	readonly updatedAt: number
 }
 
 export interface ConfigAuditInputs {
-	/** Null when the org has never received telemetry — gates the whole report. */
-	readonly firstDataReceivedAt: number | null
+	/**
+	 * Whether the org has ever received telemetry; gates the whole report. `absent` short-circuits to
+	 * `no_data`; `unavailable` (the warehouse could not answer) runs the config checks only.
+	 */
+	readonly telemetry: "present" | "absent" | "unavailable"
 	readonly alertRules: ReadonlyArray<AuditAlertRule>
 	readonly alertRuleStates: ReadonlyArray<AuditAlertRuleState>
 	readonly alertDestinations: ReadonlyArray<AuditAlertDestination>
@@ -173,6 +188,7 @@ export interface ConfigAuditInputs {
 	readonly samplingPolicy: {
 		readonly traceSampleRatio: number
 		readonly alwaysKeepErrorSpans: boolean
+		readonly alwaysKeepSlowSpansMs: number | null
 	} | null
 	readonly attributeMappings: ReadonlyArray<AuditAttributeMapping>
 	/** Null when the org is on managed Tinybird rather than BYO ClickHouse. */
@@ -203,6 +219,11 @@ export interface ConfigAuditInputs {
 		readonly lastScrapeError: string | null
 	}>
 	readonly openRecommendationCount: number
+	/**
+	 * Every connected integration with its derived health (`buildIntegrationInventory`), for the
+	 * providers the narrower inputs above do not cover. Absent when it could not be read.
+	 */
+	readonly integrationInventory?: IntegrationInventory
 }
 
 export interface AuditAttributeKey {
@@ -301,6 +322,10 @@ export interface TraceCompletenessInputs {
 		readonly traceCount: number
 		readonly rootlessCount: number
 		readonly sampledRootlessCount: number
+		/** Org-wide totals, the same on every row; they include services past the row cap. */
+		readonly orgTraceCount: number
+		readonly orgRootlessCount: number
+		readonly orgSampledRootlessCount: number
 	}>
 }
 
@@ -315,8 +340,11 @@ export interface SetupAuditInputs {
 /** How many affected entities a single finding carries; the rest are counted, not listed. */
 const AFFECTED_LIMIT = 20
 
-/** An enabled rule whose scheduler claim is older than this has stopped being picked up. */
-const RULE_SCHEDULE_STALE_MS = 30 * 60_000
+/** Floor for how old an enabled rule's scheduler claim may get before it counts as stalled. */
+const RULE_SCHEDULE_STALE_FLOOR_MS = 30 * 60_000
+/** A claim older than this has missed at least one full interval, not just a slow tick. */
+const ruleScheduleStaleMs = (intervalMinutes: number): number =>
+	Math.max(RULE_SCHEDULE_STALE_FLOOR_MS, 2 * intervalMinutes * 60_000)
 /** Grace period before a never-scheduled rule counts as broken rather than brand new. */
 const RULE_NEVER_SCHEDULED_GRACE_MS = 2 * 60 * 60_000
 /** Max characters of a provider error quoted into a finding, ellipsis included. */
@@ -350,13 +378,24 @@ const formatAgo = (ms: number): string => {
 
 /** Truncates a provider error so one pathological message can't dominate the report. */
 const briefError = (message: string): string =>
-	message.length > ERROR_EXCERPT_LIMIT ? `${message.slice(0, ERROR_EXCERPT_LIMIT - 1)}…` : message
+	message.length > ERROR_EXCERPT_LIMIT ? `${Str.slice(0, ERROR_EXCERPT_LIMIT - 1)(message)}…` : message
 
 const percent = (numerator: number, denominator: number): string =>
 	denominator === 0 ? "0%" : `${Math.round((numerator / denominator) * 100)}%`
 
+/** Like `percent`, with two significant digits below 10% so a 0.1% threshold reads as one. */
+const sharePercent = (numerator: number, denominator: number): string => {
+	const share = denominator === 0 ? 0 : (numerator / denominator) * 100
+	return share >= 10 ? `${Math.round(share)}%` : `${Number(share.toPrecision(2))}%`
+}
+
 const keysForScope = (warehouse: WarehouseAuditInputs, scope: string): Set<string> =>
-	new Set(warehouse.attributeKeys.filter((row) => row.scope === scope).map((row) => row.key))
+	new Set(
+		Arr.map(
+			Arr.filter(warehouse.attributeKeys, (row) => row.scope === scope),
+			(row) => row.key,
+		),
+	)
 
 const spanKeySet = (warehouse: WarehouseAuditInputs): Set<string> => keysForScope(warehouse, "span")
 
@@ -377,7 +416,7 @@ const resourceKeyCheck = (
 	evaluate: ({ warehouse }) => {
 		if (!warehouse) return PASS
 		const present = keysForScope(warehouse, "resource")
-		return keys.some((key) => present.has(key)) ? PASS : fail(detail)
+		return Arr.some(keys, (key) => present.has(key)) ? PASS : fail(detail)
 	},
 })
 
@@ -389,9 +428,9 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 		category: "alerting",
 		title: "At least one notification destination is enabled",
 		severity: "critical",
-		fixHint: "Add a destination in Alerts → Destinations (Slack, PagerDuty, webhook, email, …).",
+		fixHint: "Add a destination in Alerts → Routing (Slack, PagerDuty, webhook, email, …).",
 		evaluate: ({ config }) =>
-			config.alertDestinations.some((destination) => destination.enabled)
+			Arr.some(config.alertDestinations, (destination) => destination.enabled)
 				? PASS
 				: fail(
 						"No enabled notification destinations. Alert rules, error notifications and escalations all deliver through destinations, so every notification is silently dropped.",
@@ -405,7 +444,7 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 		fixHint:
 			"Create a rule in Alerts → Rules, starting with error rate or p95 latency on your busiest service.",
 		evaluate: ({ config }) => {
-			if (config.alertRules.some((rule) => rule.enabled)) return PASS
+			if (Arr.some(config.alertRules, (rule) => rule.enabled)) return PASS
 			// A missing settings row means the detector is on — see the schema comment on
 			// anomaly_detector_settings.
 			const anomalyOn = config.anomalyDetector === null || config.anomalyDetector.enabled
@@ -423,30 +462,33 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 		severity: "critical",
 		fixHint: "Open each rule and pick at least one enabled destination under Notifications.",
 		evaluate: ({ config }) => {
-			const deliverable = new Set(config.alertDestinations.filter((d) => d.enabled).map((d) => d.id))
-			const broken = config.alertRules
-				.filter((rule) => rule.enabled)
-				.flatMap((rule) => {
-					if (rule.destinationIds.length === 0) {
-						return [
-							{
-								kind: "alert_rule" as const,
-								id: rule.id,
-								name: rule.name,
-								note: "no destinations selected",
-							},
-						]
-					}
-					if (rule.destinationIds.some((id) => deliverable.has(id))) return []
+			const deliverable = new Set(
+				Arr.map(
+					Arr.filter(config.alertDestinations, (d) => d.enabled),
+					(d) => d.id,
+				),
+			)
+			const broken = Arr.filter(config.alertRules, (rule) => rule.enabled).flatMap((rule) => {
+				if (rule.destinationIds.length === 0) {
 					return [
 						{
 							kind: "alert_rule" as const,
 							id: rule.id,
 							name: rule.name,
-							note: "every selected destination is disabled or deleted",
+							note: "no destinations selected",
 						},
 					]
-				})
+				}
+				if (rule.destinationIds.some((id) => deliverable.has(id))) return []
+				return [
+					{
+						kind: "alert_rule" as const,
+						id: rule.id,
+						name: rule.name,
+						note: "every selected destination is disabled or deleted",
+					},
+				]
+			})
 			return broken.length === 0
 				? PASS
 				: fail(
@@ -461,16 +503,20 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 		title: "Notification destinations delivered successfully on their last test",
 		severity: "warn",
 		fixHint:
-			"Re-test the destination in Alerts → Destinations; a stale webhook URL or revoked token is the usual cause.",
+			"Re-test the destination in Alerts → Routing; a stale webhook URL or revoked token is the usual cause.",
 		evaluate: ({ config }) => {
-			const failing = config.alertDestinations
-				.filter((destination) => destination.enabled && destination.lastTestError !== null)
-				.map((destination) => ({
+			const failing = Arr.map(
+				Arr.filter(
+					config.alertDestinations,
+					(destination) => destination.enabled && destination.lastTestError !== null,
+				),
+				(destination) => ({
 					kind: "alert_destination" as const,
 					id: destination.id,
 					name: destination.name,
 					note: briefError(destination.lastTestError ?? ""),
-				}))
+				}),
+			)
 			return failing.length === 0
 				? PASS
 				: fail(`${plural(failing.length, "destination")} failed the last delivery test.`, failing)
@@ -491,47 +537,45 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 				else statesByRule.set(state.ruleId, [state])
 			}
 
-			const stalled = config.alertRules
-				.filter((rule) => rule.enabled)
-				.flatMap((rule) => {
-					const states = statesByRule.get(rule.id) ?? []
-					const errored = states.find((state) => state.lastError !== null)
-					if (errored?.lastError != null) {
-						return [
-							{
-								kind: "alert_rule" as const,
-								id: rule.id,
-								name: rule.name,
-								note: `evaluation error: ${briefError(errored.lastError)}`,
-							},
-						]
-					}
-					if (rule.lastScheduledAt === null) {
-						return now - rule.createdAt > RULE_NEVER_SCHEDULED_GRACE_MS
-							? [
-									{
-										kind: "alert_rule" as const,
-										id: rule.id,
-										name: rule.name,
-										note: "never evaluated",
-									},
-								]
-							: []
-					}
-					// The scheduler re-claims each rule every tick under a 30s lock, so a claim this old
-					// means the rule has fallen out of the rotation entirely.
-					const age = now - rule.lastScheduledAt
-					return age > RULE_SCHEDULE_STALE_MS
+			const stalled = Arr.filter(config.alertRules, (rule) => rule.enabled).flatMap((rule) => {
+				const states = statesByRule.get(rule.id) ?? []
+				const errored = states.find((state) => state.lastError !== null)
+				if (errored?.lastError != null) {
+					return [
+						{
+							kind: "alert_rule" as const,
+							id: rule.id,
+							name: rule.name,
+							note: `evaluation error: ${briefError(errored.lastError)}`,
+						},
+					]
+				}
+				if (rule.lastScheduledAt === null) {
+					return now - rule.createdAt > RULE_NEVER_SCHEDULED_GRACE_MS
 						? [
 								{
 									kind: "alert_rule" as const,
 									id: rule.id,
 									name: rule.name,
-									note: `last evaluated ${formatAgo(age)} ago`,
+									note: "never evaluated",
 								},
 							]
 						: []
-				})
+				}
+				// The scheduler claims a rule once per its effective interval (1 to 60 minutes, picked or
+				// slowed), so a claim older than two intervals means it fell out of the rotation.
+				const age = now - rule.lastScheduledAt
+				return age > ruleScheduleStaleMs(rule.evaluationIntervalMinutes)
+					? [
+							{
+								kind: "alert_rule" as const,
+								id: rule.id,
+								name: rule.name,
+								note: `last evaluated ${formatAgo(age)} ago`,
+							},
+						]
+					: []
+			})
 
 			return stalled.length === 0
 				? PASS
@@ -549,7 +593,8 @@ const notificationChecks: ReadonlyArray<AuditCheck> = [
 		category: "notifications",
 		title: "New errors notify someone",
 		severity: "warn",
-		fixHint: "Settings → Notifications: enable error notifications and select at least one destination.",
+		fixHint:
+			"Error notifications have no settings screen yet. Ask the Maple MCP to read the policy with `get_error_notification_policy`, then run `update_error_notification_policy` with `enabled: true` and at least one enabled destination from Alerts → Routing.",
 		evaluate: ({ config }) => {
 			// A missing row means Maple's defaults apply: enabled, but with an empty destination list —
 			// which still routes nowhere, so the second arm below catches it.
@@ -559,8 +604,13 @@ const notificationChecks: ReadonlyArray<AuditCheck> = [
 					"Error notifications are turned off — new and regressed errors will surface in the dashboard only.",
 				)
 			}
-			const deliverable = new Set(config.alertDestinations.filter((d) => d.enabled).map((d) => d.id))
-			if (policy.destinationIds.some((id) => deliverable.has(id))) return PASS
+			const deliverable = new Set(
+				Arr.map(
+					Arr.filter(config.alertDestinations, (d) => d.enabled),
+					(d) => d.id,
+				),
+			)
+			if (Arr.some(policy.destinationIds, (id) => deliverable.has(id))) return PASS
 			return fail(
 				policy.destinationIds.length === 0
 					? "Error notifications are enabled but no destination is selected, so nothing is delivered."
@@ -574,7 +624,7 @@ const notificationChecks: ReadonlyArray<AuditCheck> = [
 		title: "Anomaly detection is enabled",
 		severity: "info",
 		fixHint:
-			"Settings → Automation: re-enable anomaly detection to get baseline-relative alerts without authoring rules.",
+			'Anomaly detection has no settings screen yet. Re-enable it with `PATCH /v2/anomalies/settings` and `{"enabled": true}` (org admin, `anomalies:write` scope) to get baseline-relative alerts without authoring rules.',
 		evaluate: ({ config }) =>
 			// Only an explicit opt-out counts; a missing row means the zero-config default (enabled).
 			config.anomalyDetector !== null && !config.anomalyDetector.enabled
@@ -644,19 +694,23 @@ const ingestionChecks: ReadonlyArray<AuditCheck> = [
 		evaluate: ({ config, warehouse }) => {
 			if (!warehouse) return PASS
 			const present = spanKeySet(warehouse)
-			const dead = config.attributeMappings
-				.filter(
+			const dead = Arr.map(
+				Arr.filter(
+					config.attributeMappings,
 					(mapping) =>
 						mapping.enabled &&
 						mapping.sourceContext === "span" &&
-						!present.has(mapping.sourceKey),
-				)
-				.map((mapping) => ({
+						!present.has(mapping.sourceKey) &&
+						// A working move deletes its source, so the target arriving means it runs.
+						!(mapping.operation === "move" && present.has(mapping.targetKey)),
+				),
+				(mapping) => ({
 					kind: "attribute_mapping" as const,
 					id: mapping.id,
 					name: mapping.name,
 					note: `${mapping.sourceKey} no longer arrives`,
-				}))
+				}),
+			)
 			return dead.length === 0
 				? PASS
 				: fail(
@@ -673,19 +727,32 @@ const ingestionChecks: ReadonlyArray<AuditCheck> = [
 		needsWarehouse: true,
 		fixHint:
 			"Stop emitting the source key at the SDK — the mapping cannot merge two keys, so it will never run.",
-		evaluate: ({ config, warehouse }) => {
+		evaluate: ({ config, warehouse, now }) => {
 			if (!warehouse) return PASS
 			const present = spanKeySet(warehouse)
-			// The ingest gateway never overwrites an existing target key (apps/ingest/src/telemetry.rs
-			// `apply_attribute_mappings`), so a mapping whose target already arrives can never fire.
-			const noop = config.attributeMappings
-				.filter((mapping) => mapping.enabled && present.has(mapping.targetKey))
-				.map((mapping) => ({
+			const lookbackMs = warehouse.lookbackHours * 60 * 60 * 1000
+			// Stored spans are post-mapping, so a working mapping's target is always present. Only a
+			// span move is decidable: it deletes its source, so a surviving source means it was skipped
+			// because the target already arrived (`apply_attribute_mappings` never overwrites).
+			const noop = Arr.map(
+				Arr.filter(
+					config.attributeMappings,
+					(mapping) =>
+						mapping.enabled &&
+						mapping.sourceContext === "span" &&
+						mapping.operation === "move" &&
+						// Spans from before the mapping changed still carry the source key.
+						now - mapping.updatedAt > lookbackMs &&
+						present.has(mapping.sourceKey) &&
+						present.has(mapping.targetKey),
+				),
+				(mapping) => ({
 					kind: "attribute_mapping" as const,
 					id: mapping.id,
 					name: mapping.name,
 					note: `${mapping.targetKey} already arrives natively`,
-				}))
+				}),
+			)
 			return noop.length === 0
 				? PASS
 				: fail(
@@ -703,7 +770,7 @@ const platformChecks: ReadonlyArray<AuditCheck> = [
 		title: "Bring-your-own ClickHouse is reachable",
 		severity: "critical",
 		fixHint:
-			"Settings → Data Platform: re-test the connection. Credentials, network policy and cluster health are the usual causes.",
+			"Settings → Data platform: re-test the connection. Credentials, network policy and cluster health are the usual causes.",
 		evaluate: ({ config }) => {
 			const clickhouse = config.clickhouse
 			if (clickhouse === null || clickhouse.syncStatus !== "error") return PASS
@@ -718,7 +785,7 @@ const platformChecks: ReadonlyArray<AuditCheck> = [
 		title: "Bring-your-own ClickHouse schema is up to date",
 		severity: "warn",
 		fixHint:
-			"Settings → Data Platform → Apply schema. Newer Maple features query tables the older schema doesn't have.",
+			"Settings → Data platform → Apply schema. Newer Maple features query tables the older schema doesn't have.",
 		evaluate: ({ config }) => {
 			const clickhouse = config.clickhouse
 			if (clickhouse === null) return PASS
@@ -730,7 +797,7 @@ const platformChecks: ReadonlyArray<AuditCheck> = [
 				applied === null
 					? "an unrecognized version"
 					: applied.length > 12
-						? `an unrecognized version (${applied.slice(0, 8)}…)`
+						? `an unrecognized version (${Str.slice(0, 8)(applied)}…)`
 						: `schema ${applied}`
 			return fail(
 				`Your cluster reports ${shown}; Maple expects schema ${clickhouse.expectedSchemaVersion}.`,
@@ -738,6 +805,37 @@ const platformChecks: ReadonlyArray<AuditCheck> = [
 		},
 	},
 ]
+
+/** One provider's problems from the inventory: its own condition first, then each unhealthy resource. */
+const inventoryFindings = (
+	inventory: IntegrationInventory | undefined,
+	provider: IntegrationEntry["provider"],
+	only?: { readonly kinds: ReadonlySet<string>; readonly failingOnly: boolean },
+): ReadonlyArray<AuditAffectedEntity> => {
+	const entry = inventory?.integrations.find((integration) => integration.provider === provider)
+	if (entry === undefined) return []
+	const resources = Arr.map(
+		Arr.filter(
+			Arr.filter(entry.resources, (resource) =>
+				only?.failingOnly ? resource.status === "failing" : resource.status !== "healthy",
+			),
+			(resource) => only === undefined || only.kinds.has(resource.kind),
+		),
+		(resource) => ({
+			kind: "integration" as const,
+			name: `${resource.kind} ${resource.name}`,
+			note: `${resource.status}: ${briefError(resource.lastError ?? resource.note ?? resource.status)}`,
+		}),
+	)
+	// A provider-wide problem the resources do not explain (a pending setup step, a rejected token).
+	// A revoked OAuth grant is CFG-INTEG-01's finding already.
+	const revoked = entry.status === "disconnected" && provider !== "railway"
+	const own =
+		only === undefined && !revoked && entry.problem !== null && resources.length === 0
+			? [{ kind: "integration" as const, name: provider, note: briefError(entry.problem) }]
+			: []
+	return [...own, ...resources]
+}
 
 const integrationChecks: ReadonlyArray<AuditCheck> = [
 	{
@@ -748,13 +846,14 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		fixHint:
 			"Reconnect the integration — a revoked grant makes its poller skip silently, with no other surface.",
 		evaluate: ({ config }) => {
-			const revoked = config.integrations
-				.filter((integration) => integration.revokedAt !== null)
-				.map((integration) => ({
+			const revoked = Arr.map(
+				Arr.filter(config.integrations, (integration) => integration.revokedAt !== null),
+				(integration) => ({
 					kind: "integration" as const,
 					name: integration.provider,
 					note: "access revoked — reconnect required",
-				}))
+				}),
+			)
 			return revoked.length === 0
 				? PASS
 				: fail(
@@ -771,15 +870,17 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		fixHint:
 			"Check the Cloudflare integration's permissions — an expired token or a dataset the plan doesn't include is the usual cause.",
 		evaluate: ({ config }) => {
-			const failing = config.cloudflareAnalytics
-				.filter(
+			const failing = Arr.map(
+				Arr.filter(
+					config.cloudflareAnalytics,
 					(state) => state.lastErrorAt !== null && state.lastErrorAt > (state.lastSuccessAt ?? 0),
-				)
-				.map((state) => ({
+				),
+				(state) => ({
 					kind: "integration" as const,
 					name: state.zoneName ? `${state.dataset} · ${state.zoneName}` : state.dataset,
 					note: briefError(state.lastError ?? "last poll failed"),
-				}))
+				}),
+			)
 			return failing.length === 0
 				? PASS
 				: fail(
@@ -794,16 +895,17 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		title: "Source repositories are syncing",
 		severity: "warn",
 		fixHint:
-			"Re-check the repository's installation in Settings → Integrations; commit linking and release markers depend on it.",
+			"Re-check the repository's installation in Sources; commit linking and release markers depend on it.",
 		evaluate: ({ config }) => {
-			const failing = config.vcsRepositories
-				.filter((repository) => repository.syncStatus === "error")
-				.map((repository) => ({
+			const failing = Arr.map(
+				Arr.filter(config.vcsRepositories, (repository) => repository.syncStatus === "error"),
+				(repository) => ({
 					kind: "repository" as const,
 					id: repository.id,
 					name: repository.fullName,
 					note: briefError(repository.lastSyncError ?? "sync failed"),
-				}))
+				}),
+			)
 			return failing.length === 0
 				? PASS
 				: fail(
@@ -813,20 +915,75 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		},
 	},
 	{
+		id: "CFG-INTEG-04",
+		category: "integrations",
+		title: "Railway metrics are being collected",
+		severity: "warn",
+		fixHint:
+			"Sources → Railway: save a new API token if Railway rejected it; a stale environment usually means the token lost access to its project.",
+		evaluate: ({ config }) => {
+			const affected = inventoryFindings(config.integrationInventory, "railway")
+			return affected.length === 0
+				? PASS
+				: fail(
+						`Railway collection has ${plural(affected.length, "problem")}: charts for the affected environments stop at the last successful poll.`,
+						affected,
+					)
+		},
+	},
+	{
+		id: "CFG-INTEG-05",
+		category: "integrations",
+		title: "PlanetScale is fully set up and polling",
+		severity: "warn",
+		fixHint:
+			"Sources → PlanetScale: finish picking the organization, or reconnect with the missing permissions.",
+		evaluate: ({ config }) => {
+			const affected = inventoryFindings(config.integrationInventory, "planetscale")
+			return affected.length === 0
+				? PASS
+				: fail(
+						`PlanetScale has ${plural(affected.length, "problem")}: database metrics, inventory or deploy requests are incomplete.`,
+						affected,
+					)
+		},
+	},
+	{
+		id: "CFG-INTEG-06",
+		category: "integrations",
+		title: "Cloudflare Logpush jobs are delivering",
+		severity: "warn",
+		fixHint:
+			"Check the Logpush job in the Cloudflare dashboard; its destination must be Maple's Logpush endpoint.",
+		evaluate: ({ config }) => {
+			const affected = inventoryFindings(config.integrationInventory, "cloudflare", {
+				kinds: new Set(["logpush"]),
+				failingOnly: true,
+			})
+			return affected.length === 0
+				? PASS
+				: fail(`${plural(affected.length, "Logpush job")} reported an error.`, affected)
+		},
+	},
+	{
 		id: "CFG-SCRAPE-01",
 		category: "integrations",
 		title: "Prometheus scrape targets are reachable",
 		severity: "warn",
-		fixHint: "Verify the target URL and credentials in Settings → Integrations → Prometheus.",
+		fixHint: "Verify the target URL and credentials in Sources → Prometheus.",
 		evaluate: ({ config }) => {
-			const failing = config.scrapeTargets
-				.filter((target) => target.enabled && target.lastScrapeError !== null)
-				.map((target) => ({
+			const failing = Arr.map(
+				Arr.filter(
+					config.scrapeTargets,
+					(target) => target.enabled && target.lastScrapeError !== null,
+				),
+				(target) => ({
 					kind: "scrape_target" as const,
 					id: target.id,
 					name: target.name,
 					note: briefError(target.lastScrapeError ?? "scrape failed"),
-				}))
+				}),
+			)
 			return failing.length === 0
 				? PASS
 				: fail(
@@ -907,10 +1064,10 @@ const SENSITIVE_COMPOUNDS = [
 
 /** True when an attribute key name looks like it carries a secret. */
 export const looksSensitive = (key: string): boolean => {
-	const lower = key.toLowerCase()
-	if (lower.split(/[.\-_/]/).some((segment) => SENSITIVE_SEGMENTS.has(segment))) return true
-	const squashed = lower.replaceAll(/[.\-_/]/g, "")
-	return SENSITIVE_COMPOUNDS.some((needle) => squashed.includes(needle))
+	const lower = Str.toLowerCase(key)
+	if (Arr.some(Str.split(/[.\-_/]/)(lower), (segment) => SENSITIVE_SEGMENTS.has(segment))) return true
+	const squashed = Str.replaceAll(/[.\-_/]/g, "")(lower)
+	return Arr.some(SENSITIVE_COMPOUNDS, (needle) => Str.includes(needle)(squashed))
 }
 
 const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
@@ -926,16 +1083,18 @@ const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 			if (!warehouse) return PASS
 			// Both failure modes of an unset resource: the SDK's synthetic default, and an empty
 			// string where the attribute was omitted entirely.
-			const unknown = warehouse.serviceUsage
-				.filter(
+			const unknown = Arr.map(
+				Arr.filter(
+					warehouse.serviceUsage,
 					(service) =>
-						service.serviceName === "" || service.serviceName.startsWith("unknown_service"),
-				)
-				.map((service) => ({
+						service.serviceName === "" || Str.startsWith("unknown_service")(service.serviceName),
+				),
+				(service) => ({
 					kind: "service" as const,
 					name: service.serviceName === "" ? "(no service.name)" : service.serviceName,
 					note: `${service.traceCount} traces, ${service.logCount} logs`,
-				}))
+				}),
+			)
 			return unknown.length === 0
 				? PASS
 				: fail(
@@ -959,16 +1118,18 @@ const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 			// flagging them buries the real signal. A service shipping OTLP logs almost always has a
 			// tracer in the same process, so logs without traces really does mean the names disagree.
 			// Unnamed services are RES-01's finding, not a mismatch.
-			const split = warehouse.serviceUsage
-				.filter(
+			const split = Arr.map(
+				Arr.filter(
+					warehouse.serviceUsage,
 					(service) =>
 						service.traceCount === 0 && service.logCount > 0 && service.serviceName !== "",
-				)
-				.map((service) => ({
+				),
+				(service) => ({
 					kind: "service" as const,
 					name: service.serviceName,
 					note: "logs but no traces",
-				}))
+				}),
+			)
 			return split.length === 0
 				? PASS
 				: fail(
@@ -989,14 +1150,18 @@ const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 			if (!warehouse) return PASS
 			// Gated on the org logging at all: a traces-only setup is a legitimate choice, an
 			// inconsistent one is the finding.
-			if (!warehouse.serviceUsage.some((service) => service.logCount > 0)) return PASS
-			const silent = warehouse.serviceUsage
-				.filter((service) => service.traceCount > 0 && service.logCount === 0)
-				.map((service) => ({
+			if (!Arr.some(warehouse.serviceUsage, (service) => service.logCount > 0)) return PASS
+			const silent = Arr.map(
+				Arr.filter(
+					warehouse.serviceUsage,
+					(service) => service.traceCount > 0 && service.logCount === 0,
+				),
+				(service) => ({
 					kind: "service" as const,
 					name: service.serviceName,
 					note: "traces only",
-				}))
+				}),
+			)
 			return silent.length === 0
 				? PASS
 				: fail(
@@ -1016,16 +1181,20 @@ const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
 			const traced = new Set(
-				warehouse.serviceUsage.filter((s) => s.traceCount > 0).map((s) => s.serviceName),
+				Arr.map(
+					Arr.filter(warehouse.serviceUsage, (s) => s.traceCount > 0),
+					(s) => s.serviceName,
+				),
 			)
-			const broken = warehouse.logCorrelation
-				.filter(
+			const broken = Arr.map(
+				Arr.filter(
+					warehouse.logCorrelation,
 					(row) =>
 						traced.has(row.serviceName) &&
 						row.logCount >= LOG_CORRELATION_MIN_LOGS &&
 						row.uncorrelatedCount / row.logCount > LOG_CORRELATION_FAIL_RATIO,
-				)
-				.map((row) => ({
+				),
+				(row) => ({
 					kind: "service" as const,
 					name: row.serviceName,
 					note: `${percent(row.uncorrelatedCount, row.logCount)} of logs have no trace_id${
@@ -1033,7 +1202,8 @@ const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 							? `, including ${row.uncorrelatedErrorCount} error-level`
 							: ""
 					}`,
-				}))
+				}),
+			)
 			return broken.length === 0
 				? PASS
 				: fail(
@@ -1052,7 +1222,7 @@ const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 			"Pass fields as log attributes (`order_id`, `user_id`) instead of interpolating them into the message string.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
-			const totalLogs = warehouse.serviceUsage.reduce((sum, service) => sum + service.logCount, 0)
+			const totalLogs = Arr.reduce(warehouse.serviceUsage, 0, (sum, service) => sum + service.logCount)
 			if (totalLogs < UNSTRUCTURED_LOG_MIN_VOLUME) return PASS
 			const logKeys = keysForScope(warehouse, "log").size
 			return logKeys >= UNSTRUCTURED_LOG_KEY_LIMIT
@@ -1072,18 +1242,19 @@ const ingestCoverageChecks: ReadonlyArray<AuditCheck> = [
 			"Map your logger's levels onto TRACE/DEBUG/INFO/WARN/ERROR/FATAL in the OTLP bridge — severity drives row coloring and the error banner.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
-			const offenders = warehouse.logSeverity
-				.filter((row) => {
-					const text = row.severityText.trim().toUpperCase()
+			const offenders = Arr.map(
+				Arr.filter(warehouse.logSeverity, (row) => {
+					const text = Str.toUpperCase(Str.trim(row.severityText))
 					if (text === "") return false
 					// OTel allows a numeric suffix within a level, e.g. `DEBUG3`.
-					return !STANDARD_SEVERITIES.has(text.replace(/\d+$/, ""))
-				})
-				.map((row) => ({
+					return !STANDARD_SEVERITIES.has(Str.replace(/\d+$/, "")(text))
+				}),
+				(row) => ({
 					kind: "service" as const,
 					name: row.serviceName,
 					note: `severity "${row.severityText}" (${row.logCount} records)`,
-				}))
+				}),
+			)
 			return offenders.length === 0
 				? PASS
 				: fail(
@@ -1127,10 +1298,13 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
 			const present = keysForScope(warehouse, "resource")
-			const invented = INVENTED_RESOURCE_KEYS.filter((key) => present.has(key)).map((key) => ({
-				kind: "attribute_key" as const,
-				name: key,
-			}))
+			const invented = Arr.map(
+				Arr.filter(INVENTED_RESOURCE_KEYS, (key) => present.has(key)),
+				(key) => ({
+					kind: "attribute_key" as const,
+					name: key,
+				}),
+			)
 			return invented.length === 0
 				? PASS
 				: fail(
@@ -1149,16 +1323,18 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 			"Set `deployment.environment.name` (Maple also accepts the legacy `deployment.environment`) on the resource in each service's bootstrap.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
-			const missing = warehouse.spanShape
-				.filter(
+			const missing = Arr.map(
+				Arr.filter(
+					warehouse.spanShape,
 					(service) =>
 						service.spanCount > 0 && service.noEnvCount / service.spanCount > MISSING_ENV_RATIO,
-				)
-				.map((service) => ({
+				),
+				(service) => ({
 					kind: "service" as const,
 					name: service.serviceName,
 					note: `${percent(service.noEnvCount, service.spanCount)} of spans have no environment`,
-				}))
+				}),
+			)
 			return missing.length === 0
 				? PASS
 				: fail(
@@ -1177,13 +1353,17 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 			"Use `domain.verb` span names (`order.process`) and move IDs and URLs into attributes — never into the name.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
-			const exploded = warehouse.spanShape
-				.filter((service) => service.spanNameCount > SPAN_NAME_CARDINALITY_LIMIT)
-				.map((service) => ({
+			const exploded = Arr.map(
+				Arr.filter(
+					warehouse.spanShape,
+					(service) => service.spanNameCount > SPAN_NAME_CARDINALITY_LIMIT,
+				),
+				(service) => ({
 					kind: "service" as const,
 					name: service.serviceName,
 					note: `${service.spanNameCount.toLocaleString("en-US")} distinct span names`,
-				}))
+				}),
+			)
 			return exploded.length === 0
 				? PASS
 				: fail(
@@ -1201,9 +1381,13 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 		fixHint: "Rename these to your own namespace — `maple_*` is reserved and hidden from the UI.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
-			const reserved = warehouse.attributeKeys
-				.filter((row) => row.scope !== "resource" && row.key.toLowerCase().startsWith("maple_"))
-				.map((row) => ({ kind: "attribute_key" as const, name: row.key, note: row.scope }))
+			const reserved = Arr.map(
+				Arr.filter(
+					warehouse.attributeKeys,
+					(row) => row.scope !== "resource" && Str.startsWith("maple_")(Str.toLowerCase(row.key)),
+				),
+				(row) => ({ kind: "attribute_key" as const, name: row.key, note: row.scope }),
+			)
 			return reserved.length === 0
 				? PASS
 				: fail(
@@ -1222,9 +1406,10 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 			"Stop emitting these at the SDK and rotate anything already sent — telemetry is broadly visible within the workspace and retained.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
-			const sensitive = warehouse.attributeKeys
-				.filter((row) => looksSensitive(row.key))
-				.map((row) => ({ kind: "attribute_key" as const, name: row.key, note: row.scope }))
+			const sensitive = Arr.map(
+				Arr.filter(warehouse.attributeKeys, (row) => looksSensitive(row.key)),
+				(row) => ({ kind: "attribute_key" as const, name: row.key, note: row.scope }),
+			)
 			return sensitive.length === 0
 				? PASS
 				: fail(
@@ -1243,13 +1428,17 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 			"Drop unbounded IDs (user, order, request, raw URL) from metric labels — put them on spans instead, where cardinality is free.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
-			const exploded = warehouse.metricLabels
-				.filter((label) => label.valueCardinality > METRIC_LABEL_CARDINALITY_LIMIT)
-				.map((label) => ({
+			const exploded = Arr.map(
+				Arr.filter(
+					warehouse.metricLabels,
+					(label) => label.valueCardinality > METRIC_LABEL_CARDINALITY_LIMIT,
+				),
+				(label) => ({
 					kind: "attribute_key" as const,
 					name: label.attributeKey,
 					note: `~${label.valueCardinality.toLocaleString("en-US")} distinct values`,
-				}))
+				}),
+			)
 			return exploded.length === 0
 				? PASS
 				: fail(
@@ -1271,16 +1460,23 @@ const serviceMapChecks: ReadonlyArray<AuditCheck> = [
 			"Set status through the SDK's status API rather than hand-stamping a string — error analytics match `Error` exactly, so wrong casing yields zero errors.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
-			const offenders = warehouse.spanShape
-				.filter((service) => service.badStatusCodes.length > 0 || service.badSpanKinds.length > 0)
-				.map((service) => ({
+			const offenders = Arr.map(
+				Arr.filter(
+					warehouse.spanShape,
+					(service) => service.badStatusCodes.length > 0 || service.badSpanKinds.length > 0,
+				),
+				(service) => ({
 					kind: "service" as const,
 					name: service.serviceName,
-					note: [
-						...service.badStatusCodes.map((value) => `status "${value}"`),
-						...service.badSpanKinds.map((value) => `kind "${value}"`),
-					].join(", "),
-				}))
+					note: Arr.join(
+						[
+							...Arr.map(service.badStatusCodes, (value) => `status "${value}"`),
+							...Arr.map(service.badSpanKinds, (value) => `kind "${value}"`),
+						],
+						", ",
+					),
+				}),
+			)
 			return offenders.length === 0
 				? PASS
 				: fail(
@@ -1301,25 +1497,27 @@ const serviceMapChecks: ReadonlyArray<AuditCheck> = [
 			if (!warehouse) return PASS
 			const errorLogsByService = new Map<string, number>()
 			for (const row of warehouse.logSeverity) {
-				const text = row.severityText.trim().toUpperCase().replace(/\d+$/, "")
+				const text = Str.replace(/\d+$/, "")(Str.toUpperCase(Str.trim(row.severityText)))
 				if (text !== "ERROR" && text !== "FATAL") continue
 				errorLogsByService.set(
 					row.serviceName,
 					(errorLogsByService.get(row.serviceName) ?? 0) + row.logCount,
 				)
 			}
-			const swallowed = warehouse.spanShape
-				.filter(
+			const swallowed = Arr.map(
+				Arr.filter(
+					warehouse.spanShape,
 					(service) =>
 						service.spanCount > 0 &&
 						service.errorCount === 0 &&
 						(errorLogsByService.get(service.serviceName) ?? 0) > 0,
-				)
-				.map((service) => ({
+				),
+				(service) => ({
 					kind: "service" as const,
 					name: service.serviceName,
 					note: `${errorLogsByService.get(service.serviceName)} error logs, no error spans`,
-				}))
+				}),
+			)
 			return swallowed.length === 0
 				? PASS
 				: fail(
@@ -1338,16 +1536,18 @@ const serviceMapChecks: ReadonlyArray<AuditCheck> = [
 			"Expected for cron jobs and workers with no inbound traffic. For anything serving requests, register the HTTP-server or queue-consumer instrumentation.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
-			const noEntry = warehouse.spanShape
-				.filter(
+			const noEntry = Arr.map(
+				Arr.filter(
+					warehouse.spanShape,
 					(service) =>
 						service.spanCount > 0 && service.serverCount === 0 && service.consumerCount === 0,
-				)
-				.map((service) => ({
+				),
+				(service) => ({
 					kind: "service" as const,
 					name: service.serviceName,
 					note: "no Server or Consumer spans",
-				}))
+				}),
+			)
 			return noEntry.length === 0
 				? PASS
 				: fail(
@@ -1366,17 +1566,19 @@ const serviceMapChecks: ReadonlyArray<AuditCheck> = [
 			"Set `db.namespace` (or the legacy `db.name`) on database client spans so each database gets its own node.",
 		evaluate: ({ warehouse }) => {
 			if (!warehouse) return PASS
-			const anonymous = warehouse.dbEdges
-				.filter(
+			const anonymous = Arr.map(
+				Arr.filter(
+					warehouse.dbEdges,
 					(edge) =>
 						edge.callCount > 0 &&
 						edge.unknownNamespaceCallCount / edge.callCount > DB_NAMESPACE_MISSING_RATIO,
-				)
-				.map((edge) => ({
+				),
+				(edge) => ({
 					kind: "service" as const,
 					name: `${edge.serviceName} → ${edge.dbSystem}`,
 					note: `${percent(edge.unknownNamespaceCallCount, edge.callCount)} of calls have no db.namespace`,
-				}))
+				}),
+			)
 			return anonymous.length === 0
 				? PASS
 				: fail(
@@ -1398,18 +1600,19 @@ const serviceMapChecks: ReadonlyArray<AuditCheck> = [
 			// Group by (key, casefolded value); more than one raw spelling in a group is a collision.
 			const spellings = new Map<string, Set<string>>()
 			for (const row of warehouse.peerValues) {
-				const groupKey = `${row.attributeKey}\x00${row.attributeValue.toLowerCase()}`
+				const groupKey = `${row.attributeKey}\x00${Str.toLowerCase(row.attributeValue)}`
 				const bucket = spellings.get(groupKey)
 				if (bucket) bucket.add(row.attributeValue)
 				else spellings.set(groupKey, new Set([row.attributeValue]))
 			}
-			const collisions = [...spellings.entries()]
-				.filter(([, values]) => values.size > 1)
-				.map(([groupKey, values]) => ({
+			const collisions = Arr.map(
+				Arr.filter([...spellings.entries()], ([, values]) => values.size > 1),
+				([groupKey, values]) => ({
 					kind: "attribute_key" as const,
-					name: groupKey.split("\x00")[0] ?? "",
-					note: [...values].sort().join(" / "),
-				}))
+					name: Str.split("\x00")(groupKey)[0] ?? "",
+					note: Arr.join([...values].sort(), " / "),
+				}),
+			)
 			return collisions.length === 0
 				? PASS
 				: fail(
@@ -1428,9 +1631,14 @@ const serviceMapChecks: ReadonlyArray<AuditCheck> = [
 
 /** Below this many observed children a service's orphan rate is noise. */
 const TRACE_MIN_SAMPLE = 50
-/** Orphan / rootless share above which the gap is structural rather than incidental. */
+/** Orphan share above which the gap is structural rather than incidental. */
 const TRACE_GAP_RATIO = 0.1
-/** Above this share, a rootless rate is systemic — one upstream finding, not one per service. */
+/** Share of traces without a root span above which TRC-02 warns, and above which it is critical. */
+const ROOTLESS_WARN_RATIO = 0.001
+const ROOTLESS_CRITICAL_RATIO = 0.01
+/** One rootless trace is a crashed request or a restart; from two on, TRC-02 reports at least `info`. */
+const ROOTLESS_MIN_TRACES = 2
+/** Above this share, trace context is created upstream of everything instrumented. */
 const ROOTLESS_SYSTEMIC_RATIO = 0.95
 /** Share of orphans that must sit inside sampled traces before sampling is the better explanation. */
 const SAMPLING_EXPLAINS_RATIO = 0.5
@@ -1447,21 +1655,22 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 		evaluate: ({ warehouse }) => {
 			const traces = warehouse?.traceCompleteness
 			if (!traces) return PASS
-			const broken = traces.orphans
-				.filter((row) => {
+			const broken = Arr.map(
+				Arr.filter(traces.orphans, (row) => {
 					if (row.childCount < TRACE_MIN_SAMPLE) return false
 					// Orphans inside sampling-marked traces are expected — a dropped parent is the
 					// sampler working. Those are reported by TRC-03 instead.
 					const unsampled = row.orphanCount - row.sampledOrphanCount
 					return unsampled / row.childCount > TRACE_GAP_RATIO
-				})
-				.map((row) => ({
+				}),
+				(row) => ({
 					kind: "service" as const,
 					name: row.serviceName,
 					note: `${percent(row.orphanCount - row.sampledOrphanCount, row.childCount)} of entry spans reference a parent that never arrived${
 						row.sampleTraceIds[0] ? ` (e.g. trace ${row.sampleTraceIds[0]})` : ""
 					}`,
-				}))
+				}),
+			)
 			return broken.length === 0
 				? PASS
 				: fail(
@@ -1477,35 +1686,64 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 		severity: "warn",
 		needsWarehouse: true,
 		fixHint:
-			"Instrument the first hop that creates trace context, or let your ingress service start the trace instead of continuing one from upstream.",
+			"A root span is exported when it ends, so it is the span most often lost: make sure the process flushes the exporter before it exits or is frozen (serverless handlers, CLI commands, worker shutdown). If an uninstrumented proxy or gateway starts the trace, instrument it or let your ingress service start the trace instead. A root that stays open for more than a few minutes (a WebSocket session, a long job) also reads as missing until it ends; start a new trace per message or step and link it instead.",
 		evaluate: ({ warehouse }) => {
 			const traces = warehouse?.traceCompleteness
-			if (!traces) return PASS
-			const eligible = traces.rootless.filter((row) => row.traceCount >= TRACE_MIN_SAMPLE)
-			const gaps = eligible.filter(
-				(row) => (row.rootlessCount - row.sampledRootlessCount) / row.traceCount > TRACE_GAP_RATIO,
-			)
-			if (gaps.length === 0) return PASS
+			const org = traces?.rootless[0]
+			if (!traces || !org) return PASS
+			// Rootless traces inside sampling-marked traces are the sampler's doing, not a lost root.
+			const rows = Arr.map(traces.rootless, (row) => ({
+				...row,
+				missing: row.rootlessCount - row.sampledRootlessCount,
+			}))
+			const total = org.orgTraceCount
+			const missing = org.orgRootlessCount - org.orgSampledRootlessCount
+			if (missing < ROOTLESS_MIN_TRACES) return PASS
+			const ratio = missing / total
+			// Below the minimum sample a rate is noise, so it never escalates past info.
+			const severity =
+				total < TRACE_MIN_SAMPLE || ratio <= ROOTLESS_WARN_RATIO
+					? "info"
+					: ratio > ROOTLESS_CRITICAL_RATIO
+						? "critical"
+						: "warn"
 
-			// A near-total, uniform rootless rate is one architectural fact — trace context is being
-			// created upstream of anything instrumented — not N independent per-service defects.
-			const systemic =
-				gaps.length === eligible.length &&
-				eligible.every((row) => row.rootlessCount / row.traceCount > ROOTLESS_SYSTEMIC_RATIO)
-			if (systemic) {
-				return fail(
-					"Essentially every trace arrives without a root span, across all services. Trace context is being created upstream of your instrumented services — typically a proxy, gateway or load balancer that injects `traceparent` but exports no spans of its own.",
-				)
-			}
-
-			return fail(
-				`${plural(gaps.length, "service")} ${conj(gaps.length, "starts", "start")} traces that have no root span. Trace duration and the waterfall's origin are both wrong for them.`,
-				gaps.map((row) => ({
+			const affected = Arr.map(
+				Arr.filter(rows, (row) => row.missing > 0).sort((a, b) => b.missing - a.missing),
+				(row) => ({
 					kind: "service" as const,
 					name: row.entryService,
-					note: `${percent(row.rootlessCount - row.sampledRootlessCount, row.traceCount)} of traces entering here have no root`,
-				})),
+					note: `${sharePercent(row.missing, row.traceCount)} of traces starting here have no root (${row.missing} of ${row.traceCount})`,
+				}),
 			)
+
+			// One upstream fact, not N service defects — but only when every sizable service shows it,
+			// so the rows must cover every trace (none cut by the query's row cap).
+			const sizable = Arr.filter(rows, (row) => row.traceCount >= TRACE_MIN_SAMPLE)
+			const everyService = Arr.reduce(rows, 0, (sum, row) => sum + row.traceCount) === total
+			const systemic =
+				ratio > ROOTLESS_SYSTEMIC_RATIO &&
+				everyService &&
+				sizable.length > 0 &&
+				Arr.every(sizable, (row) => row.missing / row.traceCount > ROOTLESS_SYSTEMIC_RATIO)
+			if (systemic) {
+				return {
+					...fail(
+						"Essentially every trace arrives without a root span, across all services. Trace context is being created upstream of your instrumented services — typically a proxy, gateway or load balancer that injects `traceparent` but exports no spans of its own.",
+						affected,
+					),
+					severity,
+				}
+			}
+
+			const sample = traces.traceSampleModulus > 1 ? ` (1 in ${traces.traceSampleModulus} sampled)` : ""
+			return {
+				...fail(
+					`${sharePercent(missing, total)} of traces have no root span: ${missing} of ${total} traces over ${plural(traces.windowMinutes, "minute")}${sample}. Their duration and waterfall start at the first span that did arrive, so both are wrong.`,
+					affected,
+				),
+				severity,
+			}
 		},
 	},
 	{
@@ -1519,18 +1757,20 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 		evaluate: ({ warehouse }) => {
 			const traces = warehouse?.traceCompleteness
 			if (!traces) return PASS
-			const sampled = traces.orphans
-				.filter(
+			const sampled = Arr.map(
+				Arr.filter(
+					traces.orphans,
 					(row) =>
 						row.orphanCount > 0 &&
 						row.childCount >= TRACE_MIN_SAMPLE &&
 						row.sampledOrphanCount / row.orphanCount > SAMPLING_EXPLAINS_RATIO,
-				)
-				.map((row) => ({
+				),
+				(row) => ({
 					kind: "service" as const,
 					name: row.serviceName,
 					note: `${percent(row.sampledOrphanCount, row.orphanCount)} of its incomplete traces were sampling-marked`,
-				}))
+				}),
+			)
 			return sampled.length === 0
 				? PASS
 				: fail(
@@ -1569,7 +1809,7 @@ const emptySummary: SetupAuditSummary = { critical: 0, warn: 0, info: 0, pass: 0
 export function runSetupAudit(inputs: SetupAuditInputs): SetupAuditReport {
 	const warehouseAvailable = inputs.warehouse !== undefined
 
-	if (inputs.config.firstDataReceivedAt === null) {
+	if (inputs.config.telemetry === "absent") {
 		return {
 			generatedAt: inputs.now,
 			dataStatus: "no_data",
@@ -1601,14 +1841,15 @@ export function runSetupAudit(inputs: SetupAuditInputs): SetupAuditReport {
 		}
 
 		const evaluation = check.evaluate(inputs)
+		const severity = evaluation.severity ?? check.severity
 		if (evaluation.status === "pass") summary.pass += 1
-		else summary[check.severity] += 1
+		else summary[severity] += 1
 
 		checks.push({
 			id: check.id,
 			category: check.category,
 			title: check.title,
-			severity: check.severity,
+			severity,
 			status: evaluation.status,
 			detail: evaluation.detail ?? null,
 			affected: evaluation.affected ?? [],

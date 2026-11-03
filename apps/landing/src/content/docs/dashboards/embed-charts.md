@@ -25,7 +25,7 @@ Other chart types embed the same way. See [Which charts can be embedded](#which-
 
 ## Embed a chart in three steps
 
-### Step 1: make the dashboard public
+### 1. Make the dashboard public
 
 A chart can only be embedded while its dashboard is shared with **Anyone with the link**. Open the **⋮** menu in the dashboard header, choose **Share…**, and pick that option.
 
@@ -36,7 +36,7 @@ A chart can only be embedded while its dashboard is shared with **Anyone with th
 
 This makes the whole dashboard viewable, without signing in, by anyone who has the dashboard's own link. If some charts on a dashboard should stay private, move the charts you want to embed to a dashboard of their own.
 
-### Step 2: open Embed chart
+### 2. Open Embed chart
 
 Hover the chart, open its **⋮** menu and choose **Embed chart**.
 
@@ -44,7 +44,7 @@ Hover the chart, open its **⋮** menu and choose **Embed chart**.
   <img src="/screenshots/docs/embed-charts-02-menu.webp" alt="A chart's menu on the dashboard, opened from the three-dot button in its top-right corner, showing an Embed chart item." loading="lazy" />
 </figure>
 
-If the dashboard isn't public yet, the dialog says so and offers to make it public for you. That button does exactly what Step 1 does.
+If the dashboard isn't public yet, the dialog says so and offers to make it public for you. That button does exactly what step 1 does.
 
 <figure class="shot">
   <img src="/screenshots/docs/embed-charts-03-not-public.webp" alt="The Embed chart dialog on a dashboard that is not shared. It explains that embeds only work on public dashboards, lists the steps to share it, and has a Make dashboard public button." loading="lazy" />
@@ -58,7 +58,7 @@ On a public dashboard, the dialog creates the chart's own link the first time yo
   <figcaption>The chart's link, the iframe snippet and the URL options it accepts.</figcaption>
 </figure>
 
-### Step 3: paste the snippet into your page
+### 3. Paste the snippet into your page
 
 Copy the snippet from the **HTML** tab for plain HTML, Vue, Svelte, Angular or a server-rendered template:
 
@@ -171,4 +171,4 @@ The chart is a JavaScript app, so it won't render inside an iframe whose `sandbo
 
 ### Does the embed work when my app uses a light theme?
 
-Add `&theme=light` to the link. Without `theme`, a viewer who has never opened Maple sees the dark theme, and a viewer who has sees the theme they last chose. Set `theme` explicitly so every viewer sees the same chart. The embed has no background, so the chart's card sits on your page in either theme.
+Add `&theme=light` to the link. Without `theme`, first-time viewers see the dark theme and returning viewers see the theme they last chose. Set `theme` explicitly so every viewer sees the same chart. The embed has no background, so the chart's card sits on your page in either theme.

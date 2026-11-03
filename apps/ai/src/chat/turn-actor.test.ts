@@ -53,6 +53,7 @@ const unavailableActors = Layer.succeed(ErrorActorsService, {
 	ensureAgentActor: () => Effect.fail(new ErrorPersistenceError({ message: "actors table unavailable" })),
 	touchActor: die,
 	collectActorDocs: die,
+	findOwnedAgentActor: die,
 })
 
 describe("withConnectorActor", () => {

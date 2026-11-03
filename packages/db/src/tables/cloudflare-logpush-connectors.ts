@@ -1,5 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId, SourceId } from "@maple/domain/primitives"
+import { Sources } from "./sources"
 
 // NOTE: the manual connector CRUD (CloudflareLogpushService + UI) was removed in favor of the
 // account OAuth integration, but this table intentionally stays: the Rust ingest gateway's
@@ -10,6 +11,8 @@ export const CloudflareLogpushConnectors = PG.table("cloudflare_logpush_connecto
 	columns: {
 		id: PG.text,
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		// The org's Cloudflare source; null when the org has no Cloudflare connection.
+		sourceId: PG.column(PG.nullable(PG.brand(PG.text, SourceId)), { name: "source_id" }),
 		name: PG.text,
 		zoneName: PG.column(PG.text, { name: "zone_name" }),
 		serviceName: PG.column(PG.text, { name: "service_name" }),
@@ -29,9 +32,19 @@ export const CloudflareLogpushConnectors = PG.table("cloudflare_logpush_connecto
 	},
 	primaryKey: ["id"],
 	indexes: [
+		PG.index("cloudflare_logpush_connectors_source_idx", ["sourceId"]),
 		PG.index("cloudflare_logpush_connectors_org_idx", ["orgId"]),
 		PG.index("cloudflare_logpush_connectors_org_enabled_idx", ["orgId", "enabled"]),
 		PG.uniqueIndex("cloudflare_logpush_connectors_secret_hash_unique", ["secretHash"]),
+	],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["sourceId"],
+			references: Sources,
+			foreignColumns: ["id"],
+			// Disconnecting Cloudflare leaves a manually configured Logpush job running, unattributed.
+			onDelete: "set null",
+		}),
 	],
 	tenantColumn: "orgId",
 })

@@ -9,12 +9,12 @@
  *    `title: m.x()` would evaluate once at module-eval time and freeze
  *    whichever locale happened to render first — so every page in the build
  *    would inherit it. Store the function reference and let the template call
- *    it. `NavBar.tsx` already uses this exact `() => string` shape.
+ *    it. `NavBar.ts` already uses this exact `() => string` shape.
  *
  *    The same rule is why `getStaticPaths()` must never call a message either:
  *    it runs outside that storage and always resolves to the source locale.
  *
- * 2. **No `.astro` and no `astro:i18n` imports here.** `NavBar.tsx` is a
+ * 2. **No `.astro` and no `astro:i18n` imports here.** `NavBar.ts` is a
  *    `client:load` island that reads these registries, so anything imported
  *    here ships to the browser. Component references live in
  *    `components/page/slots.ts`, which only the templates import; paths are
@@ -40,6 +40,9 @@ export type ArtifactId =
 	| "k8s-heatmap"
 	| "alert-firing"
 	| "funnel"
+	| "pr-review"
+	| "uptime"
+	| "anomaly"
 
 export type SectionId =
 	| "k8s-console"
@@ -47,6 +50,9 @@ export type SectionId =
 	| "k8s-correlation"
 	| "k8s-install"
 	| "product-events-sources"
+	| "github-ci"
+	| "github-after-merge"
+	| "uptime-check-trace"
 
 /**
  * A plate. `src` unset renders MediaFrame's placeholder, which prints the
@@ -174,7 +180,7 @@ export interface UseCase {
 }
 
 /**
- * Path helpers. Pure, so both the Astro templates and the React nav island can
+ * Path helpers. Pure, so both the Astro templates and the nav island can
  * use them and agree — NavBar builds hrefs with the same `/${locale}${path}`
  * shape, and `getRelativeLocaleUrl` produces the same strings for these routes.
  */

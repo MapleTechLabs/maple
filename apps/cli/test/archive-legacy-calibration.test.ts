@@ -10,11 +10,12 @@ import {
 	checkpointRoot,
 	checkpointSnapshotDir,
 	checkpointStatePath,
-} from "../src/server/checkpoints"
-import { runArchiveReconciliation } from "../src/server/archives/generation"
-import { retireLegacyCalibration } from "../src/server/archives/legacy-calibration"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
+	newCheckpointId,
+} from "@maple/local-server/checkpoints"
+import { runArchiveReconciliation } from "@maple/local-server/archives/generation"
+import { retireLegacyCalibration } from "@maple/local-server/archives/legacy-calibration"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
 
 // Calibration was removed; what an interrupted older run left must not wedge
 // anything and must be retired by the ordinary reconcile path.
@@ -40,7 +41,7 @@ const withRoots = async (run: (roots: Roots) => Promise<void>): Promise<void> =>
 }
 
 const seedCheckpoint = (dataDir: string): string => {
-	const checkpointId = randomUUID()
+	const checkpointId = newCheckpointId()
 	const createdAt = "2026-01-01T00:00:00.000Z"
 	const snapshot = checkpointSnapshotDir(dataDir, checkpointId)
 	mkdirSync(join(snapshot, "backup"), { recursive: true })

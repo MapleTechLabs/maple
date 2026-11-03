@@ -25,14 +25,14 @@ const dispatchDelivery = (
 
 /**
  * The outbound provider call must be a **Client-kind span carrying
- * `peer.service`** — that pair is what draws PagerDuty/Discord/Hazel/Telegram as
+ * `peer.service`**: that pair is what draws PagerDuty/Discord/Telegram as
  * nodes on the service map and makes their latency and status attributable.
  * Before the transport registry existed, `dispatchDelivery` had no span at all
  * and no provider arm had one, so every provider dependency was invisible.
  * These assertions are the regression guard for that (same reasoning as
  * `GithubAppClient.span.test.ts`).
  *
- * They also guard the secret-leak rule: Discord and Hazel webhook URLs embed
+ * They also guard the secret-leak rule: Discord and Telegram embed
  * their delivery token in the PATH, so those transports must annotate
  * `server.address` only — never `url.path`, and never `url.full`.
  */
@@ -109,7 +109,7 @@ const dispatch = (context: DispatchContext, fetchFn: typeof fetch) =>
 		fetchFn,
 		5_000,
 		"https://web.localhost/alerts",
-		"https://web.localhost/chat",
+		"https://web.localhost/alerts/rule_1",
 		deps,
 	)
 
@@ -147,23 +147,6 @@ describe("AlertDelivery.http span", () => {
 			expectPath: null,
 			// Discord answers a plain webhook POST with 204 and no body.
 			respond: () => new Response(null, { status: 204 }),
-		},
-		{
-			name: "hazel-oauth",
-			config: {
-				type: "hazel-oauth",
-				hazelOrganizationId: "o",
-				hazelOrganizationName: "Acme",
-				hazelChannelId: "c",
-				hazelChannelName: "incidents",
-				webhookId: "wh_1",
-				webhookUrl: "https://hazel.test/api/webhooks/wh_1/s3cr3t-token",
-				webhookToken: "s3cr3t-token",
-			} as const,
-			peerService: "hazel",
-			host: "hazel.test",
-			expectPath: null,
-			respond: () => new Response("", { status: 200 }),
 		},
 		{
 			name: "telegram",
@@ -254,7 +237,7 @@ describe("AlertDelivery.http span", () => {
 				respondWith(() => new Response("", { status: 200 })),
 				5_000,
 				"https://web.localhost/alerts",
-				"https://web.localhost/chat",
+				"https://web.localhost/alerts/rule_1",
 				{ ...deps, sendEmail: () => Effect.void },
 			).pipe(Effect.withTracer(tracer))
 

@@ -1,0 +1,25 @@
+receivers:
+    file_log/syslog:
+        include: [/var/log/remote/hosts.log]
+        resource:
+            service.name: syslog
+        operators:
+            - type: syslog_parser
+              protocol: rfc5424
+
+processors:
+    batch: {}
+
+exporters:
+    otlp_http/maple:
+        endpoint: https://ingest.maple.dev
+        compression: gzip
+        headers:
+            x-maple-ingest-key: ${env:MAPLE_INGEST_KEY}
+
+service:
+    pipelines:
+        logs:
+            receivers: [file_log/syslog]
+            processors: [batch]
+            exporters: [otlp_http/maple]

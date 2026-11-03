@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 /**
  * ISO-3166 alpha-2 codes Stripe accepts as a customer address `country`,
  * labelled through `Intl.DisplayNames` so the list carries no translations of
@@ -267,7 +268,7 @@ const displayNames = (() => {
 export const countryName = (code: string): string => {
 	if (code.length !== 2) return code
 	try {
-		return displayNames?.of(code.toUpperCase()) ?? code
+		return displayNames?.of(Str.toUpperCase(code)) ?? code
 	} catch {
 		return code
 	}
@@ -275,4 +276,4 @@ export const countryName = (code: string): string => {
 
 /** Every code, ordered by its display name so the picker reads alphabetically. */
 export const sortedCountryCodes = (): ReadonlyArray<string> =>
-	[...COUNTRY_CODES].sort((a, b) => countryName(a).localeCompare(countryName(b)))
+	[...COUNTRY_CODES].sort((a, b) => Str.localeCompare(countryName(b))(countryName(a)))

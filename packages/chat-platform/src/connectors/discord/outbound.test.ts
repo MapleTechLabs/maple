@@ -3,7 +3,7 @@
  * on demand: a 429, and a rejection that has to reach the driver as a typed failure.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Fiber, Layer } from "effect"
+import { Effect, Fiber, Layer, String as Str } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { TestClock } from "effect/testing"
 import type { InboundAction, InboundMessage } from "../../ingress"
@@ -239,7 +239,7 @@ describe("discord transport", () => {
 				workspaceId: "guild_1",
 				channelId: "conv_1",
 				anchorMessageId: "msg_3",
-				title: "t".repeat(140),
+				title: Str.repeat(140)("t"),
 			})
 
 			expect(threadId).toBe("thread_7")
@@ -248,7 +248,7 @@ describe("discord transport", () => {
 			)
 			// A thread name is 1–100 characters; over it, Discord rejects the request.
 			expect(sentThreadBody(http.seen[0])).toEqual({
-				name: "t".repeat(100),
+				name: Str.repeat(100)("t"),
 				auto_archive_duration: 1440,
 			})
 		}).pipe(Effect.provide(http.layer))

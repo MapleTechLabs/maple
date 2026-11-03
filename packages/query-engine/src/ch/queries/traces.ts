@@ -19,9 +19,12 @@ import {
 	ServiceOverviewSpans,
 	ServiceOverviewHourly,
 	ServiceOverviewMinutely,
-	TraceDetailSpans,
 	TraceListMv,
 	Traces,
+	inServiceMapSpans,
+	inTraces,
+	paramTraceWindow,
+	type TraceWindow,
 	TracesAggregatesHourly,
 	orgIdParam,
 	utcSecondsParam,
@@ -39,6 +42,7 @@ import { edgeCondition, hourGrain, interiorBounds, utcInteriorConditions, minute
 import {
 	apdexExprs,
 	buildProjectedMapExpr,
+	ROOT_SPAN_ATTR_KEYS,
 	canUseServiceOverviewMv,
 	canUseTracesAggregatesMv,
 	errorsOnlyCondition,
@@ -52,6 +56,7 @@ import {
 	timeseriesBucket,
 	wholeRangeEnd,
 } from "./query-helpers"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * The two t-digest state types the timeseries branches must agree on.
@@ -194,7 +199,7 @@ function buildGroupNameExpr(
 				if (groupByResourceAttributeKey) {
 					parts.push(CH.toString_($.ResourceAttributes.get(groupByResourceAttributeKey)))
 				} else if (groupByAttributeKeys?.length) {
-					const keys: CH.Expr<string>[] = groupByAttributeKeys.map((k) =>
+					const keys: CH.Expr<string>[] = Arr.map(groupByAttributeKeys, (k) =>
 						CH.toString_($.SpanAttributes.get(k)),
 					)
 					// When multiple attribute keys, join them into a single part
@@ -486,7 +491,7 @@ export function canUseAnnualServiceOverview(opts: TracesTimeseriesOpts): boolean
 		opts.rootOnly === true &&
 		bucketSeconds >= 60 &&
 		tierIsAvailable &&
-		(opts.groupBy ?? []).every((key) => OVERVIEW_ROLLUP_GROUP_KEYS.has(key)) &&
+		Arr.every(opts.groupBy ?? [], (key) => OVERVIEW_ROLLUP_GROUP_KEYS.has(key)) &&
 		opts.spanName == null &&
 		opts.statusCode == null &&
 		!opts.errorsOnly &&
@@ -908,11 +913,16 @@ export interface TracesBreakdownOutput {
 	readonly apdexScore: number
 }
 
+/** Whether `tracesBreakdownQuery` scans raw `traces` rather than the entry-span rollup. */
+export function tracesBreakdownReadsRaw(opts: TracesBreakdownOpts): boolean {
+	return !canUseServiceOverviewMv(opts, [opts.groupBy])
+}
+
 export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 	const apdexThresholdMs = opts.apdexThresholdMs ?? 500
 	const limit = opts.limit ?? 10
 
-	if (canUseServiceOverviewMv(opts, [opts.groupBy])) {
+	if (!tracesBreakdownReadsRaw(opts)) {
 		const mv = from(ServiceOverviewSpans)
 			.select(($) => {
 				const { estimatedSpanCount: _estimatedSpanCount, ...metrics } = metricSelectExprs(
@@ -1034,10 +1044,10 @@ export function tracesListQuery(opts: TracesListOpts) {
 
 	if (opts.columns) {
 		for (const col of opts.columns) {
-			if (col.startsWith("spanAttributes.")) {
-				requestedSpanAttrKeys.push(col.slice("spanAttributes.".length))
-			} else if (col.startsWith("resourceAttributes.")) {
-				requestedResourceAttrKeys.push(col.slice("resourceAttributes.".length))
+			if (Str.startsWith("spanAttributes.")(col)) {
+				requestedSpanAttrKeys.push(Str.slice("spanAttributes.".length)(col))
+			} else if (Str.startsWith("resourceAttributes.")(col)) {
+				requestedResourceAttrKeys.push(Str.slice("resourceAttributes.".length)(col))
 			}
 		}
 	}
@@ -1171,9 +1181,9 @@ export function slowTracesQuery(opts: SlowTracesOpts) {
 // DSL port of the span-level search in `observability/search-traces.ts`
 // (`spanLevelSearch`). Returns the matched span rows (not root summaries) for
 // flexible span-level filtering: span name (exact or contains), service,
-// error, duration bounds, attribute filters, and trace id. When a trace id is
-// present, it reads `trace_detail_spans`, whose sort key starts with
-// (OrgId, TraceId); otherwise it uses the raw `traces` search path.
+// error, duration bounds, attribute filters, and trace id. With a trace id it
+// seeks that trace's granules through `trace_index`; otherwise it searches the
+// window in two stages.
 // OrgId-scoped via `tracesBaseWhereConditions`.
 
 export interface SpanSearchOpts extends TracesQueryOpts {
@@ -1248,16 +1258,17 @@ export function spanSearchQuery(opts: SpanSearchOpts) {
 	const limit = opts.limit ?? 20
 	const offset = opts.offset ?? 0
 
-	// With a trace id, `trace_detail_spans` is keyed `(OrgId, TraceId, SpanId)`:
-	// the filter is a sort-key prefix and the row set is one trace, so the whole
-	// Maps are cheap to read directly.
+	// With a trace id the row set is one trace's granules, so the whole Maps
+	// are cheap to read directly.
 	if (opts.traceId) {
-		return spanSearchFrom(TraceDetailSpans, opts, limit, offset)
+		const traceId = opts.traceId
+		return spanSearchFrom(Traces, opts, limit, offset).where(() => [
+			inTraces((id) => id.eq(traceId), paramTraceWindow()),
+		])
 	}
 
-	// Without one, this reads raw `traces`, whose sort key
-	// `(OrgId, ServiceName, SpanName, toDateTime(Timestamp))` cannot serve
-	// `ORDER BY Timestamp DESC` — so a single-stage query materialized both
+	// Without one, the sort key `(OrgId, ServiceName, 5-minute bucket, TraceId)`
+	// cannot serve `ORDER BY Timestamp DESC`, so a single-stage query materialized both
 	// attribute Maps for every matching row in range before `LIMIT` discarded
 	// all but N (9–13 GB reads in production). Two-stage it exactly like
 	// `tracesListQuery`: stage 1 reads only `Timestamp` to find the cutoff,
@@ -1353,13 +1364,28 @@ export interface TraceSummaryOutput {
 // which is why the trace list — thirteen `argMin` columns — decoded nothing.
 const argMin = CH.argMin
 
+const REWRITTEN_HTTP_SPAN_NAMES = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+
+/** Raw names `normalizedSpanNameExpr` rewrites, so they never appear as-is in `trace_list_mv`. */
+const isRewrittenHttpSpanName = (name: string) =>
+	Str.startsWith("http.server ")(name) || REWRITTEN_HTTP_SPAN_NAMES.has(name)
+
 /**
  * Public trace catalog read over the root-span MV, ordered deterministically.
- * Signal filters match any span by default. A tenant/time-filtered `IN`
- * semi-join selects owning TraceIds before the root-summary MV is read, avoiding
- * a broad runtime JOIN while keeping the returned fields explicitly root-scoped.
+ *
+ * Every path pages before it aggregates: grouping the window first (or collecting
+ * every matching TraceId for an `IN`) grows with the org's trace volume, not the
+ * page, and ran out of memory for orgs writing ~2M traces an hour.
+ *
+ * - Root-scoped or unfiltered: filters apply to the trace's true root
+ *   (`ParentSpanId = ''`, the row the returned fields describe). The page walks
+ *   `trace_list_mv` in sort-key order; filters it cannot express page over raw
+ *   root spans instead.
+ * - Otherwise filters match any span, through a TraceId semi-join.
  */
 export function traceSummariesQuery(opts: TraceSummariesOpts) {
+	const limit = opts.limit ?? 20
+	const offset = opts.offset ?? 0
 	const attributeFilters = [
 		...(opts.attributeFilters ?? []),
 		...(opts.httpMethod ? [{ key: "http.method", mode: "equals" as const, value: opts.httpMethod }] : []),
@@ -1372,7 +1398,6 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 		serviceName: opts.serviceName,
 		spanName: opts.spanName,
 		statusCode: opts.statusCode,
-		rootOnly: opts.spanScope === "root" ? true : undefined,
 		errorsOnly: opts.hasError,
 		environments: opts.environments ?? (opts.deploymentEnv ? [opts.deploymentEnv] : undefined),
 		namespaces: opts.namespaces ?? (opts.namespace ? [opts.namespace] : undefined),
@@ -1380,17 +1405,56 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 		maxDurationMs: opts.maxDurationMs,
 		attributeFilters,
 		resourceAttributeFilters: opts.resourceAttributeFilters,
+		matchModes: opts.matchModes,
 	}
-	const hasSpanFilters = Object.entries(spanFilters).some(([, value]) =>
-		Array.isArray(value) ? value.length > 0 : value !== undefined,
+	// Match modes only shape the filters, so they never count as one.
+	const hasSpanFilters = Arr.some(Object.entries(spanFilters), ([key, value]) =>
+		key === "matchModes" ? false : Arr.isArray(value) ? value.length > 0 : value !== undefined,
 	)
-	// Match modes only shape the filters above, so they never force the semi-join on their own.
-	const matchingTraceIds = hasSpanFilters
-		? from(Traces)
-				.select(($) => ({ traceId: $.TraceId }))
-				.where(($) => tracesBaseWhereConditions($, { ...spanFilters, matchModes: opts.matchModes }))
-				.groupBy("traceId")
-		: undefined
+	// Keyset over (second, TraceId): the MV stores whole seconds, and the cursor is a page's last `startTime`.
+	const afterCursor = (ts: CH.Expr<DateTime.Utc>, traceId: CH.Expr<string>) =>
+		opts.cursor
+			? ts
+					.lt(opts.cursor.timestamp)
+					.or(ts.eq(opts.cursor.timestamp).and(traceId.lt(opts.cursor.traceId)))
+			: undefined
+
+	// The MV stores display span names, which equal the raw name except for HTTP server spans
+	// (`http.server GET` -> `GET /route`). `span_name` matches either, so a raw HTTP spelling,
+	// or a substring of one, has to page over raw spans.
+	const spanName = spanFilters.spanName
+	const pagesOverMv =
+		canUseTraceListMvStage1(spanFilters) &&
+		(spanName === undefined ||
+			(opts.matchModes?.spanName !== "contains" && !isRewrittenHttpSpanName(spanName)))
+	const page =
+		opts.spanScope === "root" || !hasSpanFilters
+			? pagesOverMv
+				? from(TraceListMv)
+						.select(($) => ({ ts: $.Timestamp, traceId: $.TraceId }))
+						.where(($) => [
+							...traceListMvWhereConditions($, spanFilters),
+							afterCursor($.Timestamp, $.TraceId),
+						])
+						.orderBy(["ts", "desc"], ["traceId", "desc"])
+						.limit(limit + offset)
+				: from(Traces)
+						.select(($) => ({ ts: CH.toDateTime($.Timestamp), traceId: $.TraceId }))
+						.where(($) => [
+							...tracesBaseWhereConditions($, spanFilters),
+							$.ParentSpanId.eq(""),
+							afterCursor(CH.toDateTime($.Timestamp), $.TraceId),
+						])
+						.orderBy(["ts", "desc"], ["traceId", "desc"])
+						.limit(limit + offset)
+			: undefined
+	const matchingTraceIds =
+		page === undefined
+			? from(Traces)
+					.select(($) => ({ traceId: $.TraceId }))
+					.where(($) => tracesBaseWhereConditions($, spanFilters))
+					.groupBy("traceId")
+			: undefined
 
 	return from(TraceListMv)
 		.select(($) => ({
@@ -1412,41 +1476,19 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(utcSecondsParam("startTime")),
 			$.Timestamp.lte(utcSecondsParam("endTime")),
-			matchingTraceIds ? subqueryCond(matchingTraceIds, (sql) => `TraceId IN (${sql})`) : undefined,
-			opts.cursor
-				? $.Timestamp.lt(opts.cursor.timestamp).or(
-						$.Timestamp.eq(opts.cursor.timestamp).and($.TraceId.lt(opts.cursor.traceId)),
-					)
+			// The (Timestamp, TraceId) tuple is the MV's sort key after OrgId, so the page is an index seek.
+			page
+				? subqueryCond(page, (sql) => `(Timestamp, TraceId) IN (SELECT ts, traceId FROM (${sql}))`)
 				: undefined,
+			matchingTraceIds ? subqueryCond(matchingTraceIds, (sql) => `TraceId IN (${sql})`) : undefined,
+			matchingTraceIds ? afterCursor($.Timestamp, $.TraceId) : undefined,
 		])
 		.groupBy("traceId")
 		.orderBy(["startTime", "desc"], ["traceId", "desc"])
-		.limit(opts.limit ?? 20)
-		.offset(opts.offset ?? 0)
+		.limit(limit)
+		.offset(offset)
 		.format("JSON")
 }
-
-/**
- * HTTP attribute keys projected into `rootSpanAttributes`. Mirrors the web app's
- * trace-list projection and the hierarchy query's `TREE_SPAN_ATTR_KEYS` so the
- * shared `getHttpInfo` / `HttpSpanLabel` render identically across surfaces.
- */
-const ROOT_SPAN_ATTR_KEYS = [
-	"http.method",
-	"http.request.method",
-	"http.route",
-	"http.target",
-	"http.status_code",
-	"http.response.status_code",
-	"http.url",
-	"url.full",
-	"url.path",
-	"server.address",
-	"net.peer.name",
-	// Mobile screen spans (`ui.screen` / `screen.load`) carry their only useful
-	// identity here — without it every screen trace renders as the bare span name.
-	"screen.name",
-] as const
 
 /**
  * Two-stage root-trace list query. Same OOM avoidance as `tracesListQuery`:
@@ -1576,6 +1618,12 @@ const subtractHours = <Q>(d: CH.Expr<DateTime.Utc, Q>, hours: CH.Expr<number>) =
 
 const addHours = <Q>(d: CH.Expr<DateTime.Utc, Q>, hours: CH.Expr<number>) =>
 	CH.compileTypedFnCall("addHours", T.dateTime.schema, d, hours)
+
+/** The list window padded ±1h: a trace's children can start before or outlive its root. */
+const paddedTraceWindow = {
+	start: subtractHours(CH.toDateTime(utcSecondsParam("startTime")), CH.lit(1)),
+	end: addHours(CH.toDateTime(utcSecondsParam("endTime")), CH.lit(1)),
+}
 
 /**
  * Attribute-filter keys the trace-list MV pre-extracts into columns. The MV
@@ -1758,21 +1806,21 @@ function traceListPage(opts: TraceListOpts) {
 }
 
 /**
- * Stage 2 of the trace list: one aggregated row per page trace in
- * `trace_detail_spans`, whose `(OrgId, TraceId, SpanId)` sort key turns the
- * page's trace ids into primary-key seeks; the heavy SpanAttributes lookups are
- * materialized only here, for at most one page of traces. `where` supplies the
- * trace-id set and the Timestamp partition bound — without that bound the PK
- * analysis touches every retained partition and times out on prod retention.
+ * Stage 2 of the trace list: one aggregated row per page trace in `traces`,
+ * seeked through `trace_index`; the heavy SpanAttributes lookups are
+ * materialized only here, for at most one page of traces. `match` picks the
+ * page's trace ids and `window` bounds both the index lookup and the scan —
+ * without it the lookup probes every retained partition and times out.
  */
-function traceListAggregate(
-	where: ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => Array<CH.Condition | undefined>,
+function traceListAggregate<Q>(
+	match: (traceId: T.ColumnRef<"TraceId", T.CHString>) => CH.Condition<Q>,
+	window: TraceWindow,
 ) {
 	// Lexicographic tuple ordering: true root first, earliest span as the
 	// tiebreaker for the (malformed) traces that ship no root at all.
 	const rootOrder = CH.untypedExpr("(if(ParentSpanId = '', 0, 1), Timestamp)")
 
-	return from(TraceDetailSpans)
+	return from(Traces)
 		.select(($) => {
 			const rootServiceName = argMin($.ServiceName, rootOrder)
 			const startNanos = CH.toUnixTimestamp64Nano($.Timestamp)
@@ -1807,7 +1855,12 @@ function traceListAggregate(
 				hasError: CH.if_(argMin($.StatusCode, rootOrder).eq("Error"), CH.lit(1), CH.lit(0)),
 			}
 		})
-		.where(($) => [$.OrgId.eq(orgIdParam), ...where($)])
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(window.start),
+			$.Timestamp.lte(window.end),
+			inTraces(match, window),
+		])
 		.groupBy("traceId")
 }
 
@@ -1833,17 +1886,13 @@ export function traceListQuery(opts: TraceListOpts) {
 	const sortDir = opts.sortDir ?? "desc"
 	const pageQuery = traceListPage(opts)
 
-	const aggregated = traceListAggregate(($) => [
-		// Padded, not exact: children can start slightly before their root
-		// (clock skew) or outlive the window, but they cannot drift a full
-		// hour — the same ±1h convention as the trace-detail partition hint
-		// (`computeTraceTimeWindow`). Without any bound this scans every
-		// retained partition for the PK analysis and times out on prod
-		// (measured: 12h window, unbounded >10s; bounded <10s).
-		$.Timestamp.gte(subtractHours(CH.toDateTime(utcSecondsParam("startTime")), CH.lit(1))),
-		$.Timestamp.lte(addHours(CH.toDateTime(utcSecondsParam("endTime")), CH.lit(1))),
-		subqueryCond(pageQuery, (sql) => `TraceId IN (SELECT traceId FROM (${sql}))`),
-	])
+	// Padded, not exact: children can start slightly before their root (clock
+	// skew) or outlive the window, but they cannot drift a full hour — the same
+	// ±1h convention as the trace-detail partition hint (`computeTraceTimeWindow`).
+	const aggregated = traceListAggregate(
+		() => subqueryCond(pageQuery, (sql) => `trace_index.TraceId IN (SELECT traceId FROM (${sql}))`),
+		paddedTraceWindow,
+	)
 
 	// The page must come back in stage 1's order, or its last row is not the
 	// stage-1 cut and the next cursor repeats traces. The MV pages whole seconds
@@ -1884,11 +1933,10 @@ export interface TraceListByTraceIdsOpts {
  * restores the page order.
  */
 export function traceListByTraceIdsQuery(opts: TraceListByTraceIdsOpts) {
-	return traceListAggregate(($) => [
-		$.TraceId.in_(...opts.traceIds),
-		$.Timestamp.gte(utcSecondsParam("startTime")),
-		$.Timestamp.lte(utcSecondsParam("endTime")),
-	])
+	return traceListAggregate((id) => id.in_(...opts.traceIds), {
+		start: CH.toDateTime(utcSecondsParam("startTime")),
+		end: CH.toDateTime(utcSecondsParam("endTime")),
+	})
 		.limit(opts.traceIds.length)
 		.format("JSON")
 }
@@ -1908,16 +1956,13 @@ export interface TraceServicesByTraceIdsOutput {
 /**
  * Batch-load the services touched by one already-paged set of traces.
  *
- * `service_map_spans` is the light projection sorted by
- * `(OrgId, TraceId, SpanId, Timestamp)`, so the tenant + page TraceIds form an
- * ORDER BY prefix instead of rescanning and aggregating every trace in the
- * list window. The caller supplies buffered page-derived time bounds as a
- * partition hint; without them, every retained daily partition is probed.
+ * `service_map_spans` is the light projection of the dependency-bearing kinds
+ * (Client/Producer/Server/Consumer), sorted by the same 5-minute bucket as
+ * `traces`, so the page's ids are seeked through `trace_index`. The caller
+ * passes the page's own time span; it is padded ±1h as in `traceListQuery`.
  *
- * The projection intentionally contains the OTel dependency-bearing kinds
- * (Client/Producer/Server/Consumer). The list mapper always preserves its row
- * service as a fallback, covering Internal/unset single-service roots and MV
- * propagation lag.
+ * The list mapper always preserves its row service as a fallback, covering
+ * Internal/unset single-service roots and MV propagation lag.
  */
 export function traceServicesByTraceIdsQuery(opts: TraceServicesByTraceIdsOpts) {
 	return from(ServiceMapSpans)
@@ -1933,9 +1978,9 @@ export function traceServicesByTraceIdsQuery(opts: TraceServicesByTraceIdsOpts) 
 		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TraceId.in_(...opts.traceIds),
-			$.Timestamp.gte(utcSecondsParam("startTime")),
-			$.Timestamp.lte(utcSecondsParam("endTime")),
+			inServiceMapSpans((id) => id.in_(...opts.traceIds), paddedTraceWindow),
+			$.Timestamp.gte(paddedTraceWindow.start),
+			$.Timestamp.lte(paddedTraceWindow.end),
 		])
 		.groupBy("traceId")
 		.limit(opts.traceIds.length)
@@ -1959,11 +2004,11 @@ export interface TraceSpanStatsByTraceIdsOutput {
 /**
  * Span count and services for one already-paged set of traces, for lists whose
  * page query reads the roots-only `trace_list_mv` and so cannot count spans.
- * `trace_detail_spans` is keyed `(OrgId, TraceId, SpanId)`, so the page's ids
- * are primary-key seeks; the window is padded ±1h as in `traceListQuery`.
+ * The page's ids are seeked through `trace_index`; the window is padded ±1h as
+ * in `traceListQuery`.
  */
 export function traceSpanStatsByTraceIdsQuery(opts: TraceSpanStatsByTraceIdsOpts) {
-	return from(TraceDetailSpans)
+	return from(Traces)
 		.select(($) => {
 			const rootOrder = CH.untypedExpr("(if(ParentSpanId = '', 0, 1), Timestamp)")
 			const rootServiceName = argMin($.ServiceName, rootOrder)
@@ -1977,9 +2022,9 @@ export function traceSpanStatsByTraceIdsQuery(opts: TraceSpanStatsByTraceIdsOpts
 		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TraceId.in_(...opts.traceIds),
-			$.Timestamp.gte(subtractHours(CH.toDateTime(utcSecondsParam("startTime")), CH.lit(1))),
-			$.Timestamp.lte(addHours(CH.toDateTime(utcSecondsParam("endTime")), CH.lit(1))),
+			inTraces((id) => id.in_(...opts.traceIds), paddedTraceWindow),
+			$.Timestamp.gte(paddedTraceWindow.start),
+			$.Timestamp.lte(paddedTraceWindow.end),
 		])
 		.groupBy("traceId")
 		.limit(opts.traceIds.length)

@@ -6,26 +6,8 @@
 // behave", and the honest way to compare two countries is two looks, not a
 // union that neither the KPI row nor the coverage figure could attribute.
 
-import { Schema } from "effect"
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
-
-/** URL search-param fields. Spread into the route's `validateSearch` schema. */
-export const analyticsFilterSearchFields = {
-	host: Schema.optional(Schema.String),
-	pagePath: Schema.optional(Schema.String),
-	referrerHost: Schema.optional(Schema.String),
-	country: Schema.optional(Schema.String),
-	deviceType: Schema.optional(Schema.String),
-	browserName: Schema.optional(Schema.String),
-	osName: Schema.optional(Schema.String),
-	language: Schema.optional(Schema.String),
-	utmSource: Schema.optional(Schema.String),
-	utmMedium: Schema.optional(Schema.String),
-	utmCampaign: Schema.optional(Schema.String),
-	visitorType: Schema.optional(Schema.Literals(["new", "returning"])),
-	traffic: Schema.optional(Schema.Literals(["all", "humans", "bots"])),
-	eventName: Schema.optional(Schema.String),
-}
+import { Array as Arr, Record as Rec } from "effect"
 
 export interface AnalyticsFilters {
 	host?: string
@@ -105,7 +87,7 @@ export const FILTER_SECTION_LABEL: Record<AnalyticsFilterKey, string> = {
 	eventName: "Event",
 } satisfies Record<AnalyticsFilterKey, string>
 
-const FILTER_KEYS = Object.keys(FILTER_CHIP_LABEL) as ReadonlyArray<AnalyticsFilterKey>
+const FILTER_KEYS = Rec.keys(FILTER_CHIP_LABEL) as ReadonlyArray<AnalyticsFilterKey>
 
 /** Pull just the filter fields out of the route's search object. */
 export const filtersFromSearch = (search: Record<string, unknown>): AnalyticsFilters => {
@@ -156,7 +138,7 @@ const chipValue = (key: AnalyticsFilterKey, value: string): string => {
  * get a chip.
  */
 export const activeFilterChips = (filters: AnalyticsFilters): ReadonlyArray<ActiveFilterChip> =>
-	FILTER_KEYS.flatMap((key) => {
+	Arr.flatMap(FILTER_KEYS, (key) => {
 		const value = filters[key]
 		if (!value || (key === "traffic" && value === DEFAULT_TRAFFIC)) return []
 		return [{ key, value, label: `${FILTER_CHIP_LABEL[key]}:${chipValue(key, value)}` }]

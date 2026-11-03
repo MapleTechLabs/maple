@@ -1,5 +1,5 @@
 import { McpInvalidInputError, McpNotReadyError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { DateTime, Effect, Schema } from "effect"
 import { AgentFeedbackImpact, AgentFeedbackKind, AgentType } from "@maple/domain/http"
 import { AgentFeedbackPublicId } from "@maple/domain/http/v2"
 import { SendMapleFeedbackOutput } from "@maple/domain/mcp-outputs"
@@ -112,9 +112,10 @@ export function registerSendMapleFeedbackTool(server: McpToolRegistrar) {
 			// Same attribution as the executor's `mcp_tool.called` entry: a pinned agent,
 			// an autonomous turn or a chat connector is the actor, not the key's user.
 			const audit = yield* AuditLogService
+			const actor = yield* CurrentAuditActor
 			yield* audit.record({
 				orgId: tenant.orgId,
-				...auditAttribution(tenant, yield* CurrentAuditActor),
+				...auditAttribution(tenant, actor),
 				action: "agent_feedback.submitted",
 				resourceId: feedback.id,
 				metadata: { kind: feedback.kind, agent_type: feedback.agent.type },
@@ -128,7 +129,7 @@ export function registerSendMapleFeedbackTool(server: McpToolRegistrar) {
 				agentType: feedback.agent.type,
 				agentName: feedback.agent.name,
 				agentModel: feedback.agent.model,
-				createdAt: new Date(feedback.createdAtMs).toISOString(),
+				createdAt: DateTime.formatIso(DateTime.makeUnsafe(feedback.createdAtMs)),
 			}
 		}),
 		render: (output) => ({

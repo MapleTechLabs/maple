@@ -1,7 +1,7 @@
 /** Output schemas for the services, metrics and query MCP tools. */
 import { Schema } from "effect"
 import { OutputPagination, OutputTimeRange } from "./shared"
-import { InfraEntityRow } from "./infra"
+import { InfraEntityRow, InfraKindSection } from "./infra"
 
 // list_services
 
@@ -81,6 +81,12 @@ export const DiagnoseServiceOutput = Schema.Struct({
 	),
 	/** Set when the infrastructure lookup failed; the rest of the diagnosis still stands. */
 	infrastructureError: Schema.optionalKey(Schema.String),
+	/**
+	 * Connected-platform entities behind the service: its Railway service or Cloudflare Worker (same
+	 * name) and the PlanetScale databases it calls. Absent when none match.
+	 */
+	platform: Schema.optionalKey(Schema.Array(InfraKindSection)),
+	platformError: Schema.optionalKey(Schema.String),
 })
 
 // get_service_top_operations
@@ -268,6 +274,9 @@ export const QueryDataOutput = Schema.Struct({
 
 // run_sql
 
+/** A column name the warehouse rejected and the one `run_sql` reran with. */
+export const RunSqlRewrite = Schema.Struct({ from: Schema.String, to: Schema.String })
+
 export const RunSqlOutput = Schema.Struct({
 	rowCount: Schema.Number,
 	columns: Schema.Array(Schema.String),
@@ -282,6 +291,10 @@ export const RunSqlOutput = Schema.Struct({
 	windowApplied: Schema.optionalKey(Schema.Boolean),
 	/** The fully macro-expanded SQL that was executed, only when asked for (`show_sql`). */
 	expandedSql: Schema.optionalKey(Schema.String),
+	/** The result stopped at the 1,000-row cap, so more rows may exist. */
+	atRowCap: Schema.optionalKey(Schema.Boolean),
+	/** Column names the warehouse rejected and the server replaced before rerunning. */
+	rewrites: Schema.optionalKey(Schema.Array(RunSqlRewrite)),
 })
 
 // describe_warehouse_tables

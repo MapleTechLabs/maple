@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec } from "effect"
 /**
  * Raw-SQL widget rows, reshaped for the renderer.
  *
@@ -46,7 +47,7 @@ export function toLineChartRows(
 	rows: ReadonlyArray<Record<string, unknown>>,
 ): Array<Record<string, string | number>> {
 	if (rows.length === 0) return []
-	const columns = Object.keys(rows[0])
+	const columns = Rec.keys(rows[0])
 	const bucketCol = pickBucketColumn(columns, rows[0])
 	if (!bucketCol) {
 		// Couldn't infer a time axis — return rows untouched so the user can debug
@@ -54,9 +55,9 @@ export function toLineChartRows(
 		return rows as Array<Record<string, string | number>>
 	}
 
-	const seriesCols = columns.filter((c) => c !== bucketCol)
+	const seriesCols = Arr.filter(columns, (c) => c !== bucketCol)
 
-	return rows.map((row) => {
+	return Arr.map(rows, (row) => {
 		const out: Record<string, string | number> = {
 			bucket: String(row[bucketCol] instanceof Date ? row[bucketCol].toISOString() : row[bucketCol]),
 		} satisfies Record<string, string | number>

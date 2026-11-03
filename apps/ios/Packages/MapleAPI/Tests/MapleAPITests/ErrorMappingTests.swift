@@ -78,22 +78,43 @@ struct ErrorMappingTests {
 		#expect(error.title == "Sign in required")
 	}
 
-	/// v2 resolves the org from the token's claim, so this must land on the org
-	/// picker rather than signing the user out — they are still authenticated.
-	@Test("401 without an active organization asks for an organization, not a sign-out")
+	/// The exact body v2 sends for a session with no active organization
+	/// (`V2NoActiveOrganization`): the org picker, never a sign-out.
+	@Test("403 without an active organization asks for an organization, not a sign-out")
 	func missingOrganization() throws {
 		let error = ErrorMappingMiddleware.mapError(
-			status: 401,
+			status: 403,
 			data: envelope(
-				tag: "@maple/http/v2/UnauthorizedError",
-				type: "authentication_error",
-				code: "unauthorized",
-				message: "Active organization is required",
-				recovery: "reauthenticate"
+				tag: "@maple/http/v2/NoActiveOrganizationError",
+				type: "permission_error",
+				code: "no_active_organization",
+				title: "Choose an organization",
+				message: "This session has no active organization. Select an organization and retry.",
+				recovery: "none"
 			)
 		)
 
 		#expect(error.requiresOrganization)
+		#expect(!error.requiresReauthentication)
+	}
+
+	/// Every other session 401 is redacted to exactly this body.
+	@Test("A redacted 401 asks for re-authentication, not an organization")
+	func redactedUnauthorized() throws {
+		let error = ErrorMappingMiddleware.mapError(
+			status: 401,
+			data: envelope(
+				tag: "@maple/http/errors/UnauthorizedError",
+				type: "authentication_error",
+				code: "invalid_credentials",
+				title: "Sign in required",
+				message: "Invalid or missing credentials.",
+				recovery: "reauthenticate"
+			)
+		)
+
+		#expect(error.requiresReauthentication)
+		#expect(!error.requiresOrganization)
 	}
 
 	@Test("429 carries the server's retry delay")

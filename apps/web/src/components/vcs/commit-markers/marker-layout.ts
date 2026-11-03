@@ -1,6 +1,7 @@
 // Pure geometry + derivation for the chart's commit deploy markers. Kept free of
-// React/recharts so it unit-tests cleanly and the overlay component stays thin.
+// rendering so it unit-tests cleanly and the overlay component stays thin.
 import { shortId } from "@maple/ui/lib/ids"
+import { Array as Arr, String as Str } from "effect"
 
 /** A row of the per-bucket release timeline (one per distinct commit per bucket). */
 export interface ReleasePoint {
@@ -75,8 +76,8 @@ function shortLabel(sha: string): string {
 
 // Tolerates ISO ("…T…Z") and Tinybird ("YYYY-MM-DD HH:mm:ss", treated as UTC).
 function bucketMs(bucket: string): number {
-	const s = bucket.trim()
-	const iso = s.includes("T") ? s : `${s.replace(" ", "T")}Z`
+	const s = Str.trim(bucket)
+	const iso = Str.includes("T")(s) ? s : `${Str.replace(" ", "T")(s)}Z`
 	return new Date(iso).getTime()
 }
 
@@ -140,10 +141,10 @@ export function buildCommitMarkers(
 	}
 	if (firstSeen.size === 0) return []
 
-	const chartMs = chartBuckets
-		.map((b) => ({ b, ms: bucketMs(b) }))
-		.filter((x) => !Number.isNaN(x.ms))
-		.sort((a, b) => a.ms - b.ms)
+	const chartMs = Arr.filter(
+		Arr.map(chartBuckets, (b) => ({ b, ms: bucketMs(b) })),
+		(x) => !Number.isNaN(x.ms),
+	).sort((a, b) => a.ms - b.ms)
 	if (chartMs.length === 0) return []
 
 	const byBucket = new Map<string, MarkerCommit[]>()
@@ -155,12 +156,10 @@ export function buildCommitMarkers(
 		byBucket.set(snapped, list)
 	}
 
-	return Array.from(byBucket.entries())
-		.map(([bucket, commits]): CommitMarker => {
-			const ordered = commits.toSorted(byRepresentative)
-			return { bucket, label: shortLabel(ordered[0].sha), commits: ordered }
-		})
-		.sort((a, b) => bucketMs(a.bucket) - bucketMs(b.bucket))
+	return Arr.map(Array.from(byBucket.entries()), ([bucket, commits]): CommitMarker => {
+		const ordered = commits.toSorted(byRepresentative)
+		return { bucket, label: shortLabel(ordered[0].sha), commits: ordered }
+	}).sort((a, b) => bucketMs(a.bucket) - bucketMs(b.bucket))
 }
 
 /** A marker resolved to a pixel x (host fills `x` via the chart's x-scale). */

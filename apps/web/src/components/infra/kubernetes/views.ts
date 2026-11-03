@@ -24,9 +24,3 @@ export const KUBERNETES_VIEWS = [
 	{ id: "nodes", title: "Nodes", href: "/infra/kubernetes/nodes" },
 	{ id: "services", title: "Services", href: "/infra/kubernetes/services" },
 ] as const satisfies ReadonlyArray<KubernetesViewDef>
-
-export function kubernetesView(id: KubernetesView): KubernetesViewDef {
-	const view = KUBERNETES_VIEWS.find((candidate) => candidate.id === id)
-	if (!view) throw new Error(`unknown Kubernetes view: ${id}`)
-	return view
-}

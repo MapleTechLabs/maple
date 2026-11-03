@@ -14,7 +14,7 @@
  * *model* stream, while this is a *session* stream that also carries user turns, approval gates and
  * turn lifecycle. `apps/api/src/chat/events.ts` is the only place the two are mapped.
  */
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import {
 	ActorId,
 	AuthMode,
@@ -46,19 +46,19 @@ export const makeChatSessionId = (orgId: string, tabId: string): ChatSessionId =
  */
 export const orgIdFromChatSessionId = (sessionId: string): string | undefined => {
 	const index = sessionId.indexOf(":")
-	return index <= 0 ? undefined : sessionId.slice(0, index)
+	return index <= 0 ? undefined : Str.slice(0, index)(sessionId)
 }
 
 /** Everything after the first `:`. The tab-id prefix encodes the conversation mode. */
 export const tabIdFromChatSessionId = (sessionId: string): string => {
 	const index = sessionId.indexOf(":")
-	return index === -1 ? "" : sessionId.slice(index + 1)
+	return index === -1 ? "" : Str.slice(index + 1)(sessionId)
 }
 
 /** Recover the investigation id from an `inv-<id>` tab. `undefined` for other modes. */
 export const investigationIdFromChatSessionId = (sessionId: string): string | undefined => {
 	const tab = tabIdFromChatSessionId(sessionId)
-	return tab.startsWith("inv-") ? tab.slice("inv-".length) : undefined
+	return Str.startsWith("inv-")(tab) ? Str.slice("inv-".length)(tab) : undefined
 }
 
 /** The chat session a pull request review runs on: `<orgId>:pr-<reviewId>`. */
@@ -67,7 +67,7 @@ export const prReviewSessionId = (orgId: string, reviewId: string): string => `$
 /** Recover the pull-request review id from a `pr-<id>` tab. `undefined` for other modes. */
 export const prReviewIdFromChatSessionId = (sessionId: string): string | undefined => {
 	const tab = tabIdFromChatSessionId(sessionId)
-	return tab.startsWith("pr-") ? tab.slice("pr-".length) : undefined
+	return Str.startsWith("pr-")(tab) ? Str.slice("pr-".length)(tab) : undefined
 }
 
 /** The chat session a reply to a pull request comment runs on: `<orgId>:prr-<replyId>`. */
@@ -76,7 +76,7 @@ export const prReplySessionId = (orgId: string, replyId: string): string => `${o
 /** Recover the reply id from a `prr-<id>` tab. `undefined` for other modes. */
 export const prReplyIdFromChatSessionId = (sessionId: string): string | undefined => {
 	const tab = tabIdFromChatSessionId(sessionId)
-	return tab.startsWith("prr-") ? tab.slice("prr-".length) : undefined
+	return Str.startsWith("prr-")(tab) ? Str.slice("prr-".length)(tab) : undefined
 }
 
 /**
@@ -87,32 +87,19 @@ export const prReplyIdFromChatSessionId = (sessionId: string): string | undefine
  * from somewhere new. A connector-driven thread is an ordinary chat-mode conversation that a
  * connector is answering in, and it stays free to be anchored on an alert later.
  */
-export const ChatMode = Schema.Literals([
-	"default",
-	"alert",
-	"widget-fix",
-	"investigate",
-	"pr-review",
-	"pr-reply",
-])
+export const ChatMode = Schema.Literals(["default", "investigate", "pr-review", "pr-reply"])
 export type ChatMode = Schema.Schema.Type<typeof ChatMode>
 
 /** Mode is derived from the tab-id prefix, never sent by the client. */
 export const chatModeFromSessionId = (sessionId: string): ChatMode => {
 	const tab = tabIdFromChatSessionId(sessionId)
-	if (tab.startsWith("alert-")) return "alert"
-	if (tab.startsWith("widget-fix-")) return "widget-fix"
-	if (tab.startsWith("inv-")) return "investigate"
-	if (tab.startsWith("prr-")) return "pr-reply"
-	if (tab.startsWith("pr-")) return "pr-review"
+	if (Str.startsWith("inv-")(tab)) return "investigate"
+	if (Str.startsWith("prr-")(tab)) return "pr-reply"
+	if (Str.startsWith("pr-")(tab)) return "pr-review"
 	return "default"
 }
 
 const CONNECTOR_TAB_PREFIX = "bot-"
-
-/** Whether this session's transcript belongs to a connector thread rather than the Maple app. */
-export const isConnectorSessionId = (sessionId: string): boolean =>
-	tabIdFromChatSessionId(sessionId).startsWith(CONNECTOR_TAB_PREFIX)
 
 // Owned by `./primitives` so the engine and the connector packages cannot drift apart.
 export { ChatConnectorId, ChatConversationKey } from "./primitives"
@@ -150,6 +137,8 @@ export class ChatSubToolCall extends Schema.Class<ChatSubToolCall>("@maple/ChatS
 	input: Schema.Unknown,
 	output: Schema.optionalKey(Schema.Unknown),
 	isError: Schema.optionalKey(Schema.Boolean),
+	/** The turn ended before this call settled. */
+	stopped: Schema.optionalKey(Schema.Boolean),
 	textOffset: Schema.optionalKey(Schema.Number),
 }) {}
 
@@ -178,6 +167,11 @@ export class ChatToolCall extends Schema.Class<ChatToolCall>("@maple/ChatToolCal
 	/** Present once the tool settled. */
 	output: Schema.optionalKey(Schema.Unknown),
 	isError: Schema.optionalKey(Schema.Boolean),
+	/**
+	 * The turn ended (stopped, failed or ran out of steps) before this call settled, so it never
+	 * will. Without it a reader shows the call as still running, forever.
+	 */
+	stopped: Schema.optionalKey(Schema.Boolean),
 	/**
 	 * True when this call is an approval-gated mutation the agent paused on. The tool did NOT run;
 	 * the client renders an approval card and applies it through `POST /internal/chat/apply`.
@@ -263,8 +257,8 @@ export const delegationToolName = (agent: string): string => `${DELEGATION_TOOL_
 
 /** The sub-agent a tool name delegates to, or `undefined` for an ordinary tool. */
 export const delegatedAgentOf = (toolName: string): string | undefined =>
-	toolName.startsWith(DELEGATION_TOOL_PREFIX) && toolName.length > DELEGATION_TOOL_PREFIX.length
-		? toolName.slice(DELEGATION_TOOL_PREFIX.length)
+	Str.startsWith(DELEGATION_TOOL_PREFIX)(toolName) && toolName.length > DELEGATION_TOOL_PREFIX.length
+		? Str.slice(DELEGATION_TOOL_PREFIX.length)(toolName)
 		: undefined
 
 const task = { task: Schema.optionalKey(ChatTaskRef) }
@@ -493,9 +487,13 @@ export const ChatTurnOrigin = Schema.Union([
 	/** An investigation's own unattended pass, which has no reader at all. */
 	Schema.Struct({ kind: Schema.Literal("autonomous") }),
 	/**
-	 * Someone addressing Maple from a chat platform. The identity is the platform's, not Maple's:
-	 * there is no user row behind `externalUserId`, and `displayName` is what that platform shows.
-	 * The engine reads only `kind`; the rest is what the audit model will attribute a turn by.
+	 * Someone addressing Maple from a chat platform. `externalUserId` and `displayName` are the
+	 * platform's; the rest of the audit model attributes a turn by them.
+	 *
+	 * `actingUserId` is the Maple user that chat account is linked to, resolved by the host from its
+	 * own database. Present means the turn runs as that user, under the roles they hold in the org
+	 * when it starts. Absent means the connector cannot prove who is asking, and the turn runs as the
+	 * connector (see `ChatConnector.identity`).
 	 */
 	Schema.Struct({
 		kind: Schema.Literal("connector"),
@@ -503,6 +501,7 @@ export const ChatTurnOrigin = Schema.Union([
 		workspaceId: Schema.String,
 		externalUserId: ExternalUserId,
 		displayName: Schema.String,
+		actingUserId: Schema.optionalKey(UserId),
 	}),
 ])
 /**
@@ -514,9 +513,9 @@ export type ChatTurnOrigin = (typeof ChatTurnOrigin)["Encoded"]
 /**
  * The user id a connector turn's tenant carries.
  *
- * `TenantContext` requires one and no Maple user stands behind a connector turn, so this is a
- * placeholder to satisfy that type — **nothing branches on it**. Every behavioural question is
- * answered by {@link ChatTurnOrigin}.
+ * `TenantContext` requires one, and the Maple user behind a connector turn (when there is one)
+ * rides on the origin's `actingUserId` instead, so this is a placeholder to satisfy that type.
+ * **Nothing branches on it**: every behavioural question is answered by {@link ChatTurnOrigin}.
  */
 export const CONNECTOR_TENANT_USER_ID = Schema.decodeSync(UserId)("chat-connector")
 
@@ -525,7 +524,8 @@ export const CONNECTOR_TENANT_USER_ID = Schema.decodeSync(UserId)("chat-connecto
  *
  * No roles: a connector turn proposes mutations rather than performing them, so the only reader of
  * roles — the authorization check inside a mutating tool — is reached by the apply path, under
- * whoever approved the proposal, not by the turn that wrote it.
+ * whoever approved the proposal, not by the turn that wrote it. A turn whose origin names an
+ * `actingUserId` is widened to that user's tenant on the other side of the hop.
  */
 export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 	encodeChatTurnTenant({

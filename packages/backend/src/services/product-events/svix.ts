@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 
 /**
  * Svix (Standard Webhooks) signature verification, shared by the Clerk and
@@ -66,8 +66,8 @@ const constantTimeEqual = (a: string, b: string): boolean => {
 }
 
 const secretBytes = (secret: string): Uint8Array<ArrayBuffer> | undefined => {
-	const raw = secret.startsWith("whsec_") ? secret.slice("whsec_".length) : secret
-	const bytes = decodeBase64(raw.trim())
+	const raw = Str.startsWith("whsec_")(secret) ? Str.slice("whsec_".length)(secret) : secret
+	const bytes = decodeBase64(Str.trim(raw))
 	return bytes === undefined || bytes.length === 0 ? undefined : bytes
 }
 
@@ -120,12 +120,14 @@ export const verifySvixSignature = (options: {
 			})
 		}
 		const expected = yield* signSvix(options.secret, id, timestamp, options.body)
-		const provided = signature
-			.split(" ")
-			.map((entry) => entry.trim())
-			.filter((entry) => entry.startsWith("v1,"))
-			.map((entry) => entry.slice(3))
-		if (!provided.some((candidate) => constantTimeEqual(candidate, expected))) {
+		const provided = Arr.map(
+			Arr.filter(
+				Arr.map(Str.split(" ")(signature), (entry) => Str.trim(entry)),
+				(entry) => Str.startsWith("v1,")(entry),
+			),
+			(entry) => Str.slice(3)(entry),
+		)
+		if (!Arr.some(provided, (candidate) => constantTimeEqual(candidate, expected))) {
 			return yield* new SvixVerificationError({
 				message: "Signature mismatch",
 				reason: "signature_mismatch",

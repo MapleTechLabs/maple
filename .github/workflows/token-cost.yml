@@ -10,7 +10,7 @@ on:
         paths:
             - "apps/ai/src/mcp/**"
             - "packages/domain/src/**"
-            - ".github/actions/bun-install/action.yml"
+            - ".github/actions/**"
             - ".github/workflows/token-cost.yml"
 
 concurrency:
@@ -30,23 +30,16 @@ jobs:
               with:
                   fetch-depth: 0
 
-            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-
-            # This script only needs the agent Worker's dependency closure, which
-            # includes apps/api: the tools import api's services by path alias, and
-            # those modules resolve `@maple/domain/*` out of api's own node_modules.
-            # Installing all workspaces accounted for roughly half of this job's
-            # wall time.
-            - uses: ./.github/actions/bun-install
+            # Only the agent Worker's closure; it includes apps/api, whose services the
+            # tools import by path alias.
+            - uses: ./.github/actions/setup
               with:
-                  filters: "@maple/ai @maple/api @maple-dev/effect-sdk @maple-dev/browser"
+                  install-filters: "@maple/ai @maple/api @maple-dev/effect-sdk @maple-dev/browser"
 
-            - name: Turbo remote cache
-              uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
-
-            # The SDK and browser workspace packages need their dist exports built.
+            # The SDK and browser workspace packages need their dist exports built. Not
+            # `alchemy:build-deps`: it also bundles apps/scraper, outside the filtered install.
             - name: Build workspace deps
-              run: bun run alchemy:build-deps
+              run: bunx turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/browser
 
             - name: Measure (PR head)
               run: bun run --filter @maple/ai measure-tokens -- -o "$RUNNER_TEMP/head.json" | tee "$RUNNER_TEMP/head.txt"

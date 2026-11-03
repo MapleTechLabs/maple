@@ -10,7 +10,7 @@
  */
 import { ChatSessionId, decodeChatEvent, type ChatEvent } from "@maple/domain/chat-session"
 import type { ChatSessionClient } from "@maple/domain/chat-session-stub"
-import { Duration, Effect, Schema, Stream } from "effect"
+import { Duration, Effect, Schema, Stream, Array as Arr, String as Str } from "effect"
 
 /** The session's Durable Object could not be reached, or dropped the subscription mid-turn. */
 export class ChatSessionUnreachable extends Schema.TaggedError<ChatSessionUnreachable>()(
@@ -34,11 +34,13 @@ const DATA_PREFIX = "data:"
  * dropped here rather than thrown on, so a deploy skew degrades a turn instead of ending it.
  */
 const eventOfFrame = (frame: string): ReadonlyArray<ChatEvent> => {
-	const data = frame
-		.split("\n")
-		.filter((line) => line.startsWith(DATA_PREFIX))
-		.map((line) => line.slice(DATA_PREFIX.length).trimStart())
-		.join("\n")
+	const data = Arr.join(
+		Arr.map(
+			Arr.filter(Str.split("\n")(frame), (line) => Str.startsWith(DATA_PREFIX)(line)),
+			(line) => Str.trimStart(Str.slice(DATA_PREFIX.length)(line)),
+		),
+		"\n",
+	)
 	if (data === "") return []
 	const event = decodeChatEvent(data)
 	return event === undefined ? [] : [event]
@@ -55,27 +57,28 @@ const connection = (
 ): Stream.Stream<ChatEvent, ChatSessionUnreachable> =>
 	Stream.unwrap(
 		stub.subscribe(cursor).pipe(
-			Effect.mapError(sessionUnreachable(sessionId, "The chat session did not accept a subscription")),
-			Effect.map((body) =>
-				Stream.fromReadableStream({
-					evaluate: () => body,
-					onError: sessionUnreachable(sessionId, "The chat session's event stream failed"),
-				}).pipe(
-					// A connection that drops part-way through is what the reconnect below is for: the
-					// turn is still running and the events already have their seq. A session that is
-					// actually gone fails the SUBSCRIPTION instead, which is terminal.
-					Stream.ignoreCause({ log: "Debug" }),
-					Stream.decodeText(),
-					// The buffer is the tail of a frame that spanned two chunks; whole frames go on.
-					Stream.mapAccumArray(
-						() => "",
-						(buffer: string, chunks) => {
-							const frames = (buffer + chunks.join("")).split(FRAME_SEPARATOR)
-							return [frames.pop() ?? "", frames.flatMap(eventOfFrame)]
-						},
+			Effect.mapBoth({
+				onFailure: sessionUnreachable(sessionId, "The chat session did not accept a subscription"),
+				onSuccess: (body) =>
+					Stream.fromReadableStream({
+						evaluate: () => body,
+						onError: sessionUnreachable(sessionId, "The chat session's event stream failed"),
+					}).pipe(
+						// A connection that drops part-way through is what the reconnect below is for: the
+						// turn is still running and the events already have their seq. A session that is
+						// actually gone fails the SUBSCRIPTION instead, which is terminal.
+						Stream.ignoreCause({ log: "Debug" }),
+						Stream.decodeText(),
+						// The buffer is the tail of a frame that spanned two chunks; whole frames go on.
+						Stream.mapAccumArray(
+							() => "",
+							(buffer: string, chunks) => {
+								const frames = Str.split(FRAME_SEPARATOR)(buffer + Arr.join(chunks, ""))
+								return [frames.pop() ?? "", Arr.flatMap(frames, eventOfFrame)]
+							},
+						),
 					),
-				),
-			),
+			}),
 		),
 	)
 

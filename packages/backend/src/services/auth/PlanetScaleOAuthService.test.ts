@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Fiber, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Fiber, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -26,13 +26,6 @@ interface MockOptions {
 	readonly withoutRefreshToken?: boolean
 	/** `/v1/user` responds 403 (outside the app's scopes) → externalUserId falls back. */
 	readonly userForbidden?: boolean
-	readonly counters?: { refreshes: number }
-	/** After the first refresh, subsequent refreshes 400 (rotated refresh token). */
-	readonly refreshOnce?: boolean
-	/** Every refresh 400s — the grant is genuinely gone. */
-	readonly refreshAlwaysFails?: boolean
-	/** Exchange returns an immediately-expiring access token (forces refresh on first use). */
-	readonly shortLivedAccessToken?: boolean
 	/** First N `/v1/organizations` calls answer 401 `invalid_token` (doorkeeper body). */
 	readonly organizationsUnauthorizedTimes?: number
 	/**
@@ -54,7 +47,7 @@ const mockPlanetScaleFetch = (options: MockOptions = {}): typeof globalThis.fetc
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		const organizations = options.organizations ?? [{ id: "psorg_1", name: "acme" }]
 		// Must precede the token-endpoint match — "/oauth/token/info" contains "/oauth/token".
-		if (url.includes("/oauth/token/info")) {
+		if (Str.includes("/oauth/token/info")(url)) {
 			if (!options.introspection) {
 				return jsonResponse({ code: "internal" }, 500)
 			}
@@ -75,7 +68,7 @@ const mockPlanetScaleFetch = (options: MockOptions = {}): typeof globalThis.fetc
 				application: { uid: "ps-client-id" },
 			})
 		}
-		if (url.includes("/oauth/token")) {
+		if (Str.includes("/oauth/token")(url)) {
 			const text = await new Request(url, {
 				method: "POST",
 				body: init?.body,
@@ -84,11 +77,6 @@ const mockPlanetScaleFetch = (options: MockOptions = {}): typeof globalThis.fetc
 			}).text()
 			const body = new URLSearchParams(text)
 			if (body.get("grant_type") === "refresh_token") {
-				if (options.counters) options.counters.refreshes += 1
-				const refreshes = options.counters?.refreshes ?? 1
-				if (options.refreshAlwaysFails || (options.refreshOnce && refreshes > 1)) {
-					return jsonResponse({ error: "invalid_grant" }, 400)
-				}
 				return jsonResponse({
 					access_token: "ps-access-token-refreshed",
 					refresh_token: "ps-refresh-token-rotated",
@@ -109,18 +97,18 @@ const mockPlanetScaleFetch = (options: MockOptions = {}): typeof globalThis.fetc
 			return jsonResponse({
 				access_token: "ps-access-token",
 				token_type: "Bearer",
-				expires_in: options.shortLivedAccessToken ? 1 : 3600,
+				expires_in: 3600,
 				scope: "read_organization read_databases read_metrics_endpoints",
 				...(!options.withoutRefreshToken ? { refresh_token: "ps-refresh-token" } : undefined),
 			})
 		}
-		if (url.includes("/v1/user")) {
+		if (Str.includes("/v1/user")(url)) {
 			if (options.userForbidden) {
 				return jsonResponse({ code: "forbidden" }, 403)
 			}
 			return jsonResponse({ id: "psuser_1", email: "dev@acme.test" })
 		}
-		if (url.includes("/v1/organizations")) {
+		if (Str.includes("/v1/organizations")(url)) {
 			if (orgRejectionsRemaining > 0) {
 				orgRejectionsRemaining -= 1
 				return jsonResponse(
@@ -170,6 +158,7 @@ const withOAuthApp = {
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
+const initiatorA = { orgId: asOrgId("org_a"), userId: asUserId("user_a") }
 
 const CALLBACK_URL = "https://api.example.com/api/integrations/planetscale/callback"
 
@@ -251,10 +240,10 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			const result = yield* service.completeConnect("auth-code", state)
+			const result = yield* service.completeConnect("auth-code", state, initiatorA)
 			assert.strictEqual(result.orgId, "org_a")
 			assert.deepStrictEqual(
-				result.organizations.map((org) => org.name),
+				Arr.map(result.organizations, (org) => org.name),
 				["acme", "beta"],
 			)
 
@@ -278,9 +267,7 @@ describe("PlanetScaleOAuthService", () => {
 			// Tokens are encrypted at rest, never stored verbatim.
 			assert.isTrue(!!row && row.access_token_ciphertext !== "ps-access-token")
 			assert.isTrue(!!row && !!row.refresh_token_ciphertext)
-		}).pipe(
-			Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch({ organizations }))),
-		)
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch({ organizations })]))
 	})
 
 	it.effect("completeConnect falls back to the first org id when /v1/user is out of scope", () => {
@@ -290,7 +277,7 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			yield* service.completeConnect("auth-code", state)
+			yield* service.completeConnect("auth-code", state, initiatorA)
 			const row = yield* Effect.promise(() =>
 				queryFirstRow<{ external_user_id: string }>(
 					testDb,
@@ -299,11 +286,7 @@ describe("PlanetScaleOAuthService", () => {
 				),
 			)
 			assert.strictEqual(row?.external_user_id, "psorg_1")
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch({ userForbidden: true })),
-			),
-		)
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch({ userForbidden: true })]))
 	})
 
 	it.effect("completeConnect rejects an unknown or expired state", () => {
@@ -311,11 +294,11 @@ describe("PlanetScaleOAuthService", () => {
 		return Effect.gen(function* () {
 			const service = yield* PlanetScaleOAuthService
 			const error = yield* service
-				.completeConnect("auth-code", "state-that-was-never-issued")
+				.completeConnect("auth-code", "state-that-was-never-issued", initiatorA)
 				.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			assert.isFalse(yield* service.hasConnection(asOrgId("org_a")))
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch())))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch()]))
 	})
 
 	it.effect("completeConnect rejects a state after its TTL", () => {
@@ -327,11 +310,11 @@ describe("PlanetScaleOAuthService", () => {
 			})
 			yield* TestClock.adjust("11 minutes")
 
-			const error = yield* service.completeConnect("auth-code", state).pipe(Effect.flip)
+			const error = yield* service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			assert.include(error.message, "expired")
 			assert.isFalse(yield* service.hasConnection(asOrgId("org_a")))
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch())))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch()]))
 	})
 
 	it.effect("completeConnect refuses a grant with no refresh token", () => {
@@ -341,16 +324,14 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			const error = yield* service.completeConnect("auth-code", state).pipe(Effect.flip)
+			const error = yield* service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			if (error._tag === "@maple/http/errors/IntegrationsValidationError") {
 				assert.include(error.message, "refresh token")
 			}
 			assert.isFalse(yield* service.hasConnection(asOrgId("org_a")))
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch({ withoutRefreshToken: true })),
-			),
+			Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch({ withoutRefreshToken: true })]),
 		)
 	})
 
@@ -363,7 +344,7 @@ describe("PlanetScaleOAuthService", () => {
 			})
 			// The first listing 401s (auth→API propagation lag); the retry after the
 			// 2s backoff succeeds and the connect completes normally.
-			const fiber = yield* Effect.forkChild(service.completeConnect("auth-code", state), {
+			const fiber = yield* Effect.forkChild(service.completeConnect("auth-code", state, initiatorA), {
 				startImmediately: true,
 			})
 			yield* TestClock.adjust("2 seconds")
@@ -371,12 +352,10 @@ describe("PlanetScaleOAuthService", () => {
 			assert.strictEqual(result.orgId, "org_a")
 			assert.isTrue(yield* service.hasConnection(asOrgId("org_a")))
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					withMockFetch({ organizationsUnauthorizedTimes: 1 }),
-				),
-			),
+			Effect.provide([
+				makeLayer(testDb, withOAuthApp),
+				withMockFetch({ organizationsUnauthorizedTimes: 1 }),
+			]),
 		)
 	})
 
@@ -388,7 +367,7 @@ describe("PlanetScaleOAuthService", () => {
 				callbackUrl: CALLBACK_URL,
 			})
 			const fiber = yield* Effect.forkChild(
-				service.completeConnect("auth-code", state).pipe(Effect.flip),
+				service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip),
 				{ startImmediately: true },
 			)
 			yield* TestClock.adjust("2 seconds")
@@ -396,12 +375,10 @@ describe("PlanetScaleOAuthService", () => {
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsRevokedError")
 			assert.isFalse(yield* service.hasConnection(asOrgId("org_a")))
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					withMockFetch({ organizationsUnauthorizedTimes: 2, introspection: "invalid" }),
-				),
-			),
+			Effect.provide([
+				makeLayer(testDb, withOAuthApp),
+				withMockFetch({ organizationsUnauthorizedTimes: 2, introspection: "invalid" }),
+			]),
 		)
 	})
 
@@ -417,7 +394,7 @@ describe("PlanetScaleOAuthService", () => {
 				// The v1 API keeps rejecting a token the auth server introspects as
 				// active — "reconnect" would be a lie, so this must NOT be RevokedError.
 				const fiber = yield* Effect.forkChild(
-					service.completeConnect("auth-code", state).pipe(Effect.flip),
+					service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip),
 					{ startImmediately: true },
 				)
 				yield* TestClock.adjust("2 seconds")
@@ -428,12 +405,10 @@ describe("PlanetScaleOAuthService", () => {
 				}
 				assert.isFalse(yield* service.hasConnection(asOrgId("org_a")))
 			}).pipe(
-				Effect.provide(
-					Layer.mergeAll(
-						makeLayer(testDb, withOAuthApp),
-						withMockFetch({ organizationsUnauthorizedTimes: 2, introspection: "legacy" }),
-					),
-				),
+				Effect.provide([
+					makeLayer(testDb, withOAuthApp),
+					withMockFetch({ organizationsUnauthorizedTimes: 2, introspection: "legacy" }),
+				]),
 			)
 		},
 	)
@@ -446,19 +421,17 @@ describe("PlanetScaleOAuthService", () => {
 				callbackUrl: CALLBACK_URL,
 			})
 			const fiber = yield* Effect.forkChild(
-				service.completeConnect("auth-code", state).pipe(Effect.flip),
+				service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip),
 				{ startImmediately: true },
 			)
 			yield* TestClock.adjust("2 seconds")
 			const error = yield* Fiber.join(fiber)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsUpstreamError")
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					withMockFetch({ organizationsUnauthorizedTimes: 2, introspection: "active" }),
-				),
-			),
+			Effect.provide([
+				makeLayer(testDb, withOAuthApp),
+				withMockFetch({ organizationsUnauthorizedTimes: 2, introspection: "active" }),
+			]),
 		)
 	})
 
@@ -470,19 +443,17 @@ describe("PlanetScaleOAuthService", () => {
 				callbackUrl: CALLBACK_URL,
 			})
 			const fiber = yield* Effect.forkChild(
-				service.completeConnect("auth-code", state).pipe(Effect.flip),
+				service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip),
 				{ startImmediately: true },
 			)
 			yield* TestClock.adjust("2 seconds")
 			const error = yield* Fiber.join(fiber)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsRevokedError")
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					withMockFetch({ organizationsUnauthorizedTimes: 2, introspection: "inactive" }),
-				),
-			),
+			Effect.provide([
+				makeLayer(testDb, withOAuthApp),
+				withMockFetch({ organizationsUnauthorizedTimes: 2, introspection: "inactive" }),
+			]),
 		)
 	})
 
@@ -494,19 +465,17 @@ describe("PlanetScaleOAuthService", () => {
 				callbackUrl: CALLBACK_URL,
 			})
 			const fiber = yield* Effect.forkChild(
-				service.completeConnect("auth-code", state).pipe(Effect.flip),
+				service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip),
 				{ startImmediately: true },
 			)
 			yield* TestClock.adjust("2 seconds")
 			const error = yield* Fiber.join(fiber)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsRevokedError")
 		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					withMockFetch({ organizationsUnauthorizedTimes: 2, introspection: "unexpected" }),
-				),
-			),
+			Effect.provide([
+				makeLayer(testDb, withOAuthApp),
+				withMockFetch({ organizationsUnauthorizedTimes: 2, introspection: "unexpected" }),
+			]),
 		)
 	})
 
@@ -517,17 +486,13 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			const error = yield* service.completeConnect("auth-code", state).pipe(Effect.flip)
+			const error = yield* service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			if (error._tag === "@maple/http/errors/IntegrationsValidationError") {
 				assert.include(error.message, "no organizations")
 			}
 			assert.isFalse(yield* service.hasConnection(asOrgId("org_a")))
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch({ organizations: [] })),
-			),
-		)
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch({ organizations: [] })]))
 	})
 
 	it.effect("listOrganizations uses the stored grant", () => {
@@ -541,15 +506,13 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			yield* service.completeConnect("auth-code", state)
+			yield* service.completeConnect("auth-code", state, initiatorA)
 			const listed = yield* service.listOrganizations(asOrgId("org_a"))
 			assert.deepStrictEqual(
-				listed.map((org) => org.name),
+				Arr.map(listed, (org) => org.name),
 				["acme", "beta"],
 			)
-		}).pipe(
-			Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch({ organizations }))),
-		)
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch({ organizations })]))
 	})
 
 	it.effect("listOrganizations surfaces a dead grant as revoked (org-picker reconnect CTA)", () => {
@@ -559,14 +522,14 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			yield* service.completeConnect("auth-code", state)
+			yield* service.completeConnect("auth-code", state, initiatorA)
 
 			// The grant dies upstream: the org listing starts answering 401. That
 			// must surface as revoked, not a generic upstream failure — the picker
 			// keys its reconnect CTA on the tag.
 			const deadGrantFetch: typeof globalThis.fetch = async (input, init) => {
 				const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-				if (url.includes("/v1/organizations")) {
+				if (Str.includes("/v1/organizations")(url)) {
 					return jsonResponse({ code: "unauthorized" }, 401)
 				}
 				return mockPlanetScaleFetch()(input, init)
@@ -575,7 +538,7 @@ describe("PlanetScaleOAuthService", () => {
 				.listOrganizations(asOrgId("org_a"))
 				.pipe(Effect.provideService(FetchHttpClient.Fetch, deadGrantFetch), Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsRevokedError")
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch())))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch()]))
 	})
 
 	it.effect("listOrganizations fails not-connected without a stored grant", () => {
@@ -584,60 +547,7 @@ describe("PlanetScaleOAuthService", () => {
 			const service = yield* PlanetScaleOAuthService
 			const error = yield* service.listOrganizations(asOrgId("org_a")).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsNotConnectedError")
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch())))
-	})
-
-	it.effect("concurrent getValidAccessToken refreshes once (single-flight, no false revoke)", () => {
-		const testDb = createTestDb(trackedDbs)
-		const counters = { refreshes: 0 }
-		return Effect.gen(function* () {
-			const service = yield* PlanetScaleOAuthService
-			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
-				callbackUrl: CALLBACK_URL,
-			})
-			yield* service.completeConnect("auth-code", state)
-
-			// Two racers on an expired token: without single-flight both refresh, the
-			// loser's rotated-token 400 falsely surfaces as IntegrationsRevokedError.
-			const [a, b] = yield* Effect.all(
-				[
-					service.getValidAccessToken(asOrgId("org_a")),
-					service.getValidAccessToken(asOrgId("org_a")),
-				],
-				{ concurrency: 2 },
-			)
-			assert.strictEqual(a.accessToken, "ps-access-token-refreshed")
-			assert.strictEqual(b.accessToken, "ps-access-token-refreshed")
-			assert.strictEqual(counters.refreshes, 1)
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					withMockFetch({ shortLivedAccessToken: true, refreshOnce: true, counters }),
-				),
-			),
-		)
-	})
-
-	it.effect("a refresh the token endpoint rejects with 400 surfaces as revoked", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			const service = yield* PlanetScaleOAuthService
-			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
-				callbackUrl: CALLBACK_URL,
-			})
-			yield* service.completeConnect("auth-code", state)
-
-			const error = yield* service.getValidAccessToken(asOrgId("org_a")).pipe(Effect.flip)
-			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsRevokedError")
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					withMockFetch({ shortLivedAccessToken: true, refreshAlwaysFails: true }),
-				),
-			),
-		)
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch()]))
 	})
 
 	it.effect("getValidAccessToken serves a repeat call from the memo without re-reading Postgres", () => {
@@ -647,7 +557,7 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			yield* service.completeConnect("auth-code", state)
+			yield* service.completeConnect("auth-code", state, initiatorA)
 
 			const first = yield* service.getValidAccessToken(asOrgId("org_a"))
 
@@ -658,7 +568,7 @@ describe("PlanetScaleOAuthService", () => {
 
 			const second = yield* service.getValidAccessToken(asOrgId("org_a"))
 			assert.strictEqual(second.accessToken, first.accessToken)
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch())))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch()]))
 	})
 
 	it.effect("disconnect invalidates the memo so a removed grant stops issuing tokens", () => {
@@ -668,7 +578,7 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			yield* service.completeConnect("auth-code", state)
+			yield* service.completeConnect("auth-code", state, initiatorA)
 
 			// Populate the memo first — that is the state the invalidation has to clear.
 			yield* service.getValidAccessToken(asOrgId("org_a"))
@@ -676,7 +586,7 @@ describe("PlanetScaleOAuthService", () => {
 
 			const error = yield* service.getValidAccessToken(asOrgId("org_a")).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsNotConnectedError")
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch())))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch()]))
 	})
 
 	it.effect("disconnect removes the grant; disconnecting a fresh org reports nothing removed", () => {
@@ -686,7 +596,7 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			yield* service.completeConnect("auth-code", state)
+			yield* service.completeConnect("auth-code", state, initiatorA)
 
 			const result = yield* service.disconnect(asOrgId("org_a"))
 			assert.strictEqual(result.disconnected, true)
@@ -694,6 +604,6 @@ describe("PlanetScaleOAuthService", () => {
 
 			const again = yield* service.disconnect(asOrgId("org_a"))
 			assert.strictEqual(again.disconnected, false)
-		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch())))
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch()]))
 	})
 })

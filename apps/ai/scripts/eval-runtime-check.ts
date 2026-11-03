@@ -12,6 +12,7 @@ import { installFakeWarehouse, restoreWarehouse } from "@/mcp/__evals__/fake-war
 import { makeEvalRuntime, runToolDirect } from "@/mcp/__evals__/eval-runtime"
 import { FIXTURES } from "@/mcp/__evals__/utils"
 import { LARGE_TRACE_SPAN_COUNT } from "@/mcp/__evals__/fixtures"
+import { Array as Arr, String as Str } from "effect"
 
 const main = async () => {
 	installFakeWarehouse()
@@ -22,13 +23,13 @@ const main = async () => {
 
 		const expected = `of ${LARGE_TRACE_SPAN_COUNT} spans (errors and longest first)`
 		const checks: Array<[string, boolean]> = [
-			["renders Showing note", text.includes("Showing")],
-			[`reports "${expected}"`, text.includes(expected)],
-			["surfaces span ids", text.includes("span=")],
+			["renders Showing note", Str.includes("Showing")(text)],
+			[`reports "${expected}"`, Str.includes(expected)(text)],
+			["surfaces span ids", Str.includes("span=")(text)],
 			["not an error result", result?.isError !== true],
 		]
 
-		console.log(text.split("\n").slice(0, 12).join("\n"))
+		console.log(Arr.join(Str.split("\n")(text).slice(0, 12), "\n"))
 		console.log("\n--- checks ---")
 		let ok = true
 		for (const [label, passed] of checks) {

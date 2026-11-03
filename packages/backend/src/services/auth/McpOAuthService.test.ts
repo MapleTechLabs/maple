@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Tracer } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
@@ -326,6 +326,37 @@ describe("McpOAuthService", () => {
 				),
 			)
 			expect(Number(live?.count)).toBe(0)
+		}).pipe(Effect.provide(makeLayer(db)))
+	})
+
+	it.effect("leaves the refresh span Ok when the client presents a revoked grant", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const oauth = yield* McpOAuthService
+			const grant = yield* issueGrant(oauth, "Revoked Grant Client")
+			const request = { refreshToken: grant.tokens.refresh_token, clientId: grant.clientId, resource }
+			yield* oauth.refresh(request, "127.0.0.1")
+
+			const spans: Array<Tracer.NativeSpan> = []
+			const tracer = Tracer.make({
+				span(options) {
+					const span = new Tracer.NativeSpan(options)
+					spans.push(span)
+					return span
+				},
+			})
+			// The token was rotated above, so replaying it is `invalid_grant`.
+			const failure = yield* oauth
+				.refresh(request, "127.0.0.1")
+				.pipe(Effect.flip, Effect.withTracer(tracer))
+			expect(failure._tag).toBe("@maple/backend/errors/McpOAuthProtocolError")
+
+			const span = spans.find((candidate) => candidate.name === "McpOAuthService.refresh")
+			expect(span?.status._tag).toBe("Ended")
+			if (span?.status._tag !== "Ended") return
+			expect(Exit.isSuccess(span.status.exit)).toBe(true)
+			expect(span.attributes.get("error.type")).toBe("@maple/backend/errors/McpOAuthProtocolError")
+			expect(span.attributes.get("maple.oauth.error")).toBe("invalid_grant")
 		}).pipe(Effect.provide(makeLayer(db)))
 	})
 

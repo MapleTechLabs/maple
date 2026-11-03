@@ -1,9 +1,11 @@
 import type { McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { GetDashboardOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { dashboardNotFound, toMcpDashboardError } from "../lib/dashboard-mutations"
+import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -16,7 +18,7 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 		description:
 			"Full configuration of one dashboard: every widget with its id, visualization, dataSource, display, layout and any pinned timeRange. Widgets come back in the shape update_dashboard_widget and replace_dashboard_widgets take. Ids from list_dashboards.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text("Dashboard ID"),
+			dashboard_id: P.resourceId("dashboard", "Dashboard ID"),
 		}),
 		output: GetDashboardOutput,
 		hints: { readOnly: true },
@@ -33,6 +35,7 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 			if (!dashboard) return yield* dashboardNotFound(dashboard_id)
 
 			return {
+				publicId: encodePublicId(PublicIdPrefixes.dashboard, dashboard.id),
 				dashboard: {
 					id: dashboard.id,
 					name: dashboard.name,
@@ -43,7 +46,7 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 					// `update_dashboard`'s `dashboard_json` and the incremental widget tools.
 					tags: dashboard.tags ? [...dashboard.tags] : [],
 					timeRange: dashboard.timeRange,
-					widgets: dashboard.widgets.map((w) => ({
+					widgets: Arr.map(dashboard.widgets, (w) => ({
 						id: w.id,
 						visualization: w.visualization,
 						dataSource: w.dataSource,
@@ -66,15 +69,15 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 					doc.fields([
 						["ID", dashboard.id],
 						["Widgets", widgets.length],
-						["Created", dashboard.createdAt.slice(0, 19)],
-						["Updated", dashboard.updatedAt.slice(0, 19)],
+						["Created", Str.slice(0, 19)(dashboard.createdAt)],
+						["Updated", Str.slice(0, 19)(dashboard.updatedAt)],
 					]),
 					...(widgets.length === 0
 						? []
 						: [
 								doc.table(
 									["Widget", "Visualization", "Title"],
-									widgets.map((w) => [w.id, w.visualization, w.display.title ?? ""]),
+									Arr.map(widgets, (w) => [w.id, w.visualization, w.display.title ?? ""]),
 								),
 							]),
 					// Compact, one widget per line: a long dashboard is cut on whole widgets, never mid-object.
@@ -86,18 +89,16 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 					),
 					doc.code(
 						"json",
-						[JSON.stringify(header), ...widgets.map((w) => JSON.stringify(w))].join("\n"),
+						[stringifyJson(header), ...Arr.map(widgets, (w) => stringifyJson(w))].join("\n"),
 					),
 				],
-				next: dashboard.widgets
-					.slice(0, 1)
-					.map((w) =>
-						doc.next(
-							"inspect_chart_data",
-							{ dashboard_id: dashboard.id, widget_id: w.id },
-							"check the data a widget renders",
-						),
+				next: Arr.map(dashboard.widgets.slice(0, 1), (w) =>
+					doc.next(
+						"inspect_chart_data",
+						{ dashboard_id: dashboard.id, widget_id: w.id },
+						"check the data a widget renders",
 					),
+				),
 			}
 		},
 	})

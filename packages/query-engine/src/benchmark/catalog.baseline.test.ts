@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { collectQueryCatalog } from "./catalog"
 
@@ -15,10 +15,13 @@ import { collectQueryCatalog } from "./catalog"
 
 describe("sql catalog baseline", () => {
 	it("emits the same SQL as the recorded baseline", async () => {
-		const rendered = [...Effect.runSync(collectQueryCatalog())]
-			.sort((a, b) => a.id.localeCompare(b.id))
-			.map((entry) => `-- ${entry.id}  [${entry.fingerprint}]\n${entry.sql}`)
-			.join("\n\n")
+		const rendered = Arr.join(
+			Arr.map(
+				[...Effect.runSync(collectQueryCatalog())].sort((a, b) => Str.localeCompare(b.id)(a.id)),
+				(entry) => `-- ${entry.id}  [${entry.fingerprint}]\n${entry.sql}`,
+			),
+			"\n\n",
+		)
 
 		await expect(rendered).toMatchFileSnapshot("../__sql_baseline__/catalog.sql")
 	})

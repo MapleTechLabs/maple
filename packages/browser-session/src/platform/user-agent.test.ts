@@ -29,6 +29,36 @@ describe("parseUserAgent", () => {
 		expect(iphone.deviceType).toBe("mobile")
 	})
 
+	it.each([
+		[
+			"an iPad, despite its Mobile token",
+			"Mozilla/5.0 (iPad; CPU OS 12_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1 Mobile/15E148 Safari/604.1",
+			{ browserName: "Safari", osName: "iOS", deviceType: "tablet" },
+		],
+		[
+			"an Android tablet, which drops the Mobile token",
+			"Mozilla/5.0 (Linux; Android 13; SM-X700) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+			{ browserName: "Chrome", osName: "Android", deviceType: "tablet" },
+		],
+		[
+			"a Chromebook",
+			"Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+			{ browserName: "Chrome", osName: "ChromeOS", deviceType: "desktop" },
+		],
+		[
+			"Samsung Internet",
+			"Mozilla/5.0 (Linux; Android 13; SM-S911B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/23.0 Chrome/115.0.0.0 Mobile Safari/537.36",
+			{ browserName: "Samsung Internet", osName: "Android", deviceType: "mobile" },
+		],
+		[
+			"a Linux desktop whose UA mentions BIOS",
+			"Mozilla/5.0 (X11; Linux x86_64; BIOS) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+			{ browserName: "Chrome", osName: "Linux", deviceType: "desktop" },
+		],
+	])("classifies %s", (_, ua, expected) => {
+		expect(parseUserAgent(ua)).toEqual(expected)
+	})
+
 	it("falls back to Unknown/desktop for unrecognized agents", () => {
 		const odd = parseUserAgent("SomeBot/1.0")
 		expect(odd.browserName).toBe("Unknown")

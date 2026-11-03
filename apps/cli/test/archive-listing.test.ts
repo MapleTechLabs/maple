@@ -13,7 +13,7 @@ import {
 	generationsRoot,
 	nextMidnightUtc,
 	shardsRoot,
-} from "../src/server/archives/paths"
+} from "@maple/local-server/archives/paths"
 import {
 	ARCHIVE_VERIFY_BUFFER_BYTES,
 	activeParquetPaths,
@@ -21,11 +21,12 @@ import {
 	rebuildCatalog,
 	rebuildCatalogWithMaintenanceLock,
 	verifyActiveGenerations,
-} from "../src/server/archives/listing"
-import { withMaintenanceLock } from "../src/server/checkpoints"
-import { type ArchiveGenerationManifest } from "../src/server/archives/manifest"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
+} from "@maple/local-server/archives/listing"
+import { withMaintenanceLock } from "@maple/local-server/checkpoints"
+import { type ArchiveGenerationManifest } from "@maple/local-server/archives/manifest"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
+import { Array as Arr, String as Str } from "effect"
 
 const withArchive = async (run: (archiveDir: string) => Promise<void> | void): Promise<void> => {
 	const parent = mkdtempSync(join(tmpdir(), "maple-archive-listing-test-"))
@@ -43,7 +44,7 @@ const manifest = (
 	signal: string,
 	rangeDate: string,
 	rowCount: number,
-	shardSha = "a".repeat(64),
+	shardSha = Str.repeat(64)("a"),
 	shardBytes = 4096,
 ): ArchiveGenerationManifest => ({
 	formatVersion: 3,
@@ -149,7 +150,7 @@ describe("archive listing", () => {
 			strictEqual(summary.archivedRowCount, 10)
 			strictEqual(summary.shardCount, 1)
 			strictEqual(summary.shardPaths.length, 1)
-			ok(summary.shardPaths[0]!.endsWith("00-0000.parquet"))
+			ok(Str.endsWith("00-0000.parquet")(summary.shardPaths[0]!))
 			strictEqual(summary.shardBytes, 4)
 			deepStrictEqual(listing.signals, ["traces"])
 		})
@@ -224,8 +225,8 @@ describe("archive listing", () => {
 			const paths = activeParquetPaths(archiveDir, "logs")
 			strictEqual(paths.length, 2)
 			// Ascending range order: June 1 before June 2.
-			ok(paths[0]!.includes("2026-06-01"))
-			ok(paths[1]!.includes("2026-06-02"))
+			ok(Str.includes("2026-06-01")(paths[0]!))
+			ok(Str.includes("2026-06-02")(paths[1]!))
 		})
 	})
 
@@ -288,7 +289,7 @@ describe("archive catalog rebuild", () => {
 			// Both the superseded and the active generation appear, because the
 			// catalog indexes all retained generations.
 			strictEqual(entries.length, 2)
-			const ids = entries.map((e) => e.generationId).sort()
+			const ids = Arr.map(entries, (e) => e.generationId).sort()
 			deepStrictEqual(ids, [active, old].sort())
 			ok(existsSync(catalogPath(archiveDir, "traces")))
 		})
@@ -319,7 +320,7 @@ describe("archive catalog rebuild", () => {
 		await withArchive(async (archiveDir) => {
 			seedActiveGeneration(archiveDir, "logs", "2026-06-01", randomUUID(), 12)
 			await rebuildCatalog(archiveDir, "logs")
-			const lines = readFileSync(catalogPath(archiveDir, "logs"), "utf8").trim().split("\n")
+			const lines = Str.split("\n")(Str.trim(readFileSync(catalogPath(archiveDir, "logs"), "utf8")))
 			strictEqual(lines.length, 1)
 			const entry = JSON.parse(lines[0]!) as { signal: string; archivedRowCount: number }
 			strictEqual(entry.signal, "logs")

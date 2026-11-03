@@ -1,0 +1,162 @@
+{
+	"defaults": { "profile": "quick", "budget": 16, "concurrency": 3 },
+	"cases": [
+		{
+			"id": "py-aiohttp",
+			"corpus": "public",
+			"language": "python",
+			"repo": { "name": "aiohttp", "url": "https://github.com/aio-libs/aiohttp.git" },
+			"sha": "33ccdfb0a12690af5bb49bda2319ec0907fa7827",
+			"scope": ["aiohttp/web_urldispatcher.py", "aiohttp/web_fileresponse.py"],
+			"bugs": [
+				{
+					"id": "cve-2024-23334",
+					"reference": "GHSA-5h86-8mv2-jq9f / CVE-2024-23334",
+					"fixSha": "1c335944d6a8b1298baf179b7c0b3069f10c514b",
+					"touchedFiles": ["aiohttp/web_urldispatcher.py"]
+				}
+			]
+		},
+		{
+			"id": "py-python-multipart",
+			"corpus": "public",
+			"language": "python",
+			"repo": { "name": "python-multipart", "url": "https://github.com/Kludex/python-multipart.git" },
+			"sha": "d3d16dae4b061c34fe9d3c9081d9800c49fc1f7a",
+			"scope": ["multipart"],
+			"bugs": [
+				{
+					"id": "cve-2024-24762",
+					"reference": "GHSA-2jv5-9r88-3w3p / CVE-2024-24762",
+					"fixSha": "20f0ef6b4e4caf7d69a667c54dff57fe467109a4",
+					"touchedFiles": ["multipart/multipart.py"]
+				}
+			]
+		},
+		{
+			"id": "go-chall-manager",
+			"corpus": "public",
+			"language": "go",
+			"repo": { "name": "chall-manager", "url": "https://github.com/ctfer-io/chall-manager.git" },
+			"sha": "33d71763f4b8401d6cd6fca30afc8afc8a3837d5",
+			"scope": ["pkg/scenario"],
+			"bugs": [
+				{
+					"id": "cve-2025-53632",
+					"reference": "GHSA-3gv2-v3jx-r9fh / CVE-2025-53632",
+					"fixSha": "47d188fda5e3f86285e820f12ad9fb6f9930662c",
+					"touchedFiles": ["pkg/scenario/io.go"]
+				}
+			]
+		},
+		{
+			"id": "go-hoverfly",
+			"corpus": "public",
+			"language": "go",
+			"repo": { "name": "hoverfly", "url": "https://github.com/SpectoLabs/hoverfly.git" },
+			"sha": "be277f7ed76ff921aee159a44f03e77a8563a003",
+			"scope": ["core/handlers/v2", "core/handlers/auth_handler.go", "core/admin.go"],
+			"bugs": [
+				{
+					"id": "cve-2025-54376",
+					"reference": "GHSA-jxmr-2h4q-rhxp / CVE-2025-54376",
+					"fixSha": "ffc2cc34563de67fe1a04f7ba5d78fa2d4564424",
+					"touchedFiles": ["core/handlers/v2/logs_handler.go"]
+				}
+			]
+		},
+		{
+			"id": "rust-redlib",
+			"corpus": "public",
+			"language": "rust",
+			"repo": { "name": "redlib", "url": "https://github.com/redlib-org/redlib.git" },
+			"sha": "3d85df5044d062d353d8d0bee4da39a733db61c9",
+			"scope": ["src/settings.rs", "src/utils.rs", "src/server.rs"],
+			"bugs": [
+				{
+					"id": "cve-2025-30160",
+					"reference": "GHSA-g8vq-v3mg-7mrg / CVE-2025-30160",
+					"fixSha": "15147cea8e42f6569a11603d661d71122f6a02dc",
+					"touchedFiles": ["src/settings.rs"]
+				}
+			]
+		},
+		{
+			"id": "rust-zip2",
+			"corpus": "public",
+			"language": "rust",
+			"repo": { "name": "zip2", "url": "https://github.com/zip-rs/zip2.git" },
+			"sha": "c6ba2012352c1b7ba6340d38207538c71aacc797",
+			"scope": ["src/read.rs", "src/read", "src/types.rs"],
+			"bugs": [
+				{
+					"id": "cve-2025-29787",
+					"reference": "GHSA-94vh-gphv-8pm8 / CVE-2025-29787",
+					"fixSha": "a2e062f37066c3b12860a32eb1cb44856cfb7afe",
+					"touchedFiles": ["src/read.rs", "src/read/stream.rs", "src/types.rs"]
+				}
+			]
+		},
+		{
+			"id": "java-pgjdbc",
+			"corpus": "public",
+			"language": "java",
+			"repo": { "name": "pgjdbc", "url": "https://github.com/pgjdbc/pgjdbc.git" },
+			"sha": "cb10dce086845b300f67125a7f33d59cc824c3d8",
+			"scope": [
+				"pgjdbc/src/main/java/org/postgresql/core/v3/ConnectionFactoryImpl.java",
+				"pgjdbc/src/main/java/org/postgresql/core/v3/AuthenticationPluginManager.java",
+				"pgjdbc/src/main/java/org/postgresql/core/v3/ScramAuthenticator.java",
+				"pgjdbc/src/main/java/org/postgresql/core/v3/ChannelBindingOption.java"
+			],
+			"bugs": [
+				{
+					"id": "cve-2025-49146",
+					"reference": "GHSA-hq9p-pm7w-8p54 / CVE-2025-49146",
+					"fixSha": "9217ed16cb2918ab1b6b9258ae97e6ede244d8a0",
+					"touchedFiles": ["pgjdbc/src/main/java/org/postgresql/core/v3/ConnectionFactoryImpl.java"]
+				}
+			]
+		},
+		{
+			"id": "java-allure2",
+			"corpus": "public",
+			"language": "java",
+			"repo": { "name": "allure2", "url": "https://github.com/allure-framework/allure2.git" },
+			"sha": "eaa87ff7d93e79074f7a1d785740bd3fed2f89fd",
+			"scope": [
+				"plugins/xunit-xml-plugin/src/main",
+				"plugins/junit-xml-plugin/src/main",
+				"plugins/trx-plugin/src/main"
+			],
+			"bugs": [
+				{
+					"id": "cve-2025-52888",
+					"reference": "GHSA-h7qf-qmf3-85qg / CVE-2025-52888",
+					"fixSha": "cbcb33719851ff70adce85d38e15d20fc58d4eb7",
+					"touchedFiles": [
+						"plugins/xunit-xml-plugin/src/main/java/io/qameta/allure/xunitxml/XunitXmlPlugin.java",
+						"plugins/junit-xml-plugin/src/main/java/io/qameta/allure/junitxml/JunitXmlPlugin.java",
+						"plugins/trx-plugin/src/main/java/io/qameta/allure/trx/TrxPlugin.java"
+					]
+				}
+			]
+		},
+		{
+			"id": "js-ws",
+			"corpus": "public",
+			"language": "javascript",
+			"repo": { "name": "ws", "url": "https://github.com/websockets/ws.git" },
+			"sha": "6a00029edd924499f892aed8003cef1fa724cfe5",
+			"scope": ["lib/websocket-server.js", "lib/websocket.js"],
+			"bugs": [
+				{
+					"id": "cve-2024-37890",
+					"reference": "GHSA-3h5v-q93c-6h6q / CVE-2024-37890",
+					"fixSha": "e55e5106f10fcbaac37cfa89759e4cc0d073a52c",
+					"touchedFiles": ["lib/websocket-server.js", "lib/websocket.js"]
+				}
+			]
+		}
+	]
+}

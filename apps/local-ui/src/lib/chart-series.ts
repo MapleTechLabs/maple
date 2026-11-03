@@ -5,6 +5,7 @@
 import { bucketTimeline } from "@maple/query-engine"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import type { ChartWindow } from "./time"
+import { Array as Arr } from "effect"
 
 export interface SeriesPoint {
 	readonly bucket: string
@@ -28,7 +29,7 @@ export function pivotSeries(
 	fill: GapFill,
 ): ChartRow[] {
 	const timeline = bucketTimeline(window.startMs, window.endMs, window.bucketSeconds)
-	const seriesNames = [...new Set(points.map((point) => point.series))]
+	const seriesNames = [...new Set(Arr.map(points, (point) => point.series))]
 	const byBucket = new Map<number, ChartRow>()
 	for (const bucket of timeline) {
 		const row: ChartRow = {}
@@ -44,7 +45,10 @@ export function pivotSeries(
 		row[point.series] = point.value
 		touched.add(key)
 	}
-	return [...byBucket.entries()]
-		.filter(([key]) => (fill === "zero" ? seriesNames.length > 0 : touched.has(key)))
-		.map(([, row]) => row)
+	return Arr.map(
+		Arr.filter([...byBucket.entries()], ([key]) =>
+			fill === "zero" ? seriesNames.length > 0 : touched.has(key),
+		),
+		([, row]) => row,
+	)
 }

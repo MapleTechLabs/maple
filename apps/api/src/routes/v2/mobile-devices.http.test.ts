@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema, Array as Arr } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -179,7 +179,7 @@ describe("v2 mobile devices", () => {
 					return yield* devices.listForOrg(ORG)
 				}),
 			)
-			expect(forOrg.map((device) => device.token)).toEqual([TOKEN])
+			expect(Arr.map(forOrg, (device) => device.token)).toEqual([TOKEN])
 
 			const removed = await harness.request("DELETE", `/v2/mobile_devices/${TOKEN}`, key.secret)
 			expect(removed.status).toBe(200)
@@ -238,7 +238,7 @@ describe("v2 mobile devices", () => {
 					return yield* activities.listActive(ORG, incidentId)
 				}),
 			)
-			expect(running.map((row) => row.pushToken)).toEqual([ACTIVITY_TOKEN])
+			expect(Arr.map(running, (row) => row.pushToken)).toEqual([ACTIVITY_TOKEN])
 
 			// iOS rotated the token: the same (device, incident) is updated, not
 			// duplicated.

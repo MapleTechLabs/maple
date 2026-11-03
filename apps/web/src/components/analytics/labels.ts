@@ -6,6 +6,7 @@
 // constructing one per row is the expensive part, not the lookup.
 
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * The empty-referrer group. "Direct" is what every analytics product calls it,
@@ -38,7 +39,10 @@ let languageNames: Intl.DisplayNames | undefined | null = null
 export const countryFlag = (code: string): string | undefined => {
 	if (!/^[A-Za-z]{2}$/.test(code)) return undefined
 	return String.fromCodePoint(
-		...[...code.toUpperCase()].map((char) => 0x1f1e6 + (char.charCodeAt(0) - "A".charCodeAt(0))),
+		...Arr.map(
+			Array.from(Str.toUpperCase(code)),
+			(char) => 0x1f1e6 + (char.charCodeAt(0) - "A".charCodeAt(0)),
+		),
 	)
 }
 
@@ -46,7 +50,7 @@ export const countryFlag = (code: string): string | undefined => {
 export const countryName = (code: string): string => {
 	if (regionNames === null) regionNames = displayNames("region")
 	if (!/^[A-Za-z]{2}$/.test(code)) return code
-	const upper = code.toUpperCase()
+	const upper = Str.toUpperCase(code)
 	return regionNames?.of(upper) ?? upper
 }
 

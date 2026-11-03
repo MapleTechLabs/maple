@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "bun:test"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { WarehouseQueryError } from "@maple/domain/http/warehouse-errors"
 import { CliUsageError } from "../lib/errors"
@@ -37,7 +37,7 @@ const fetchStub = Object.assign(
 		const text = await request.clone().text()
 		requests.push({
 			url: request.url,
-			method: request.method.toUpperCase(),
+			method: Str.toUpperCase(request.method),
 			authorization: request.headers.get("authorization"),
 			accept: request.headers.get("accept"),
 			body: text.length > 0 ? decodeBody(JSON.parse(text)) : {},

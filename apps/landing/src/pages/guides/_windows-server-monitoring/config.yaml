@@ -1,0 +1,76 @@
+extensions:
+  file_storage:
+    directory: C:\ProgramData\OpenTelemetry Collector\storage
+    create_directory: true
+
+receivers:
+  host_metrics:
+    collection_interval: 30s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      filesystem:
+        exclude_fs_types:
+          fs_types: [CDFS, UDF] # CD and DVD drives always read 100% full
+          match_type: strict
+        metrics:
+          system.filesystem.utilization:
+            enabled: true
+      load: {}
+      network: {}
+
+  windows_service:
+    include_services: [W3SVC, MSSQLSERVER] # the services this server must keep running
+
+  windows_event_log/errors:
+    storage: file_storage
+    query: |
+      <QueryList>
+        <Query Id="0">
+          <Select Path="System">*[System[(Level=1 or Level=2 or Level=3)]]</Select>
+          <Select Path="Application">*[System[(Level=1 or Level=2 or Level=3)]]</Select>
+        </Query>
+      </QueryList>
+    resource:
+      service.name: windows-eventlog
+
+  windows_event_log/security:
+    storage: file_storage
+    query: |
+      <QueryList>
+        <Query Id="0">
+          <Select Path="Security">*[System[(EventID=4625 or EventID=4740)]]</Select>
+        </Query>
+      </QueryList>
+    resource:
+      service.name: windows-security
+
+processors:
+  resource_detection:
+    detectors: [system]
+  batch: {}
+
+exporters:
+  otlp_http/maple:
+    endpoint: https://ingest.maple.dev
+    compression: gzip
+    headers:
+      x-maple-ingest-key: ${env:MAPLE_INGEST_KEY}
+
+service:
+  extensions: [file_storage]
+  pipelines:
+    metrics:
+      receivers: [host_metrics, windows_service]
+      processors: [resource_detection, batch]
+      exporters: [otlp_http/maple]
+    logs:
+      receivers: [windows_event_log/errors, windows_event_log/security]
+      processors: [resource_detection, batch]
+      exporters: [otlp_http/maple]

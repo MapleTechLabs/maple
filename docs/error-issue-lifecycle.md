@@ -77,6 +77,11 @@ fixed once.
 └───────────┘  next person doesn't fix the same bug a second time
 ```
 
+The notification policy's `minOccurrenceCount` is compared with the count an incident opens
+with. A promoted issue opens with at least `PROMOTION_MIN_OCCURRENCES` (3), so values of 3 or less
+only matter for regressions. Policy writes run in one transaction under the per-org advisory lock
+that destination deletes take, and reject destinations the org does not own.
+
 `cancelled` and `wontfix` are the exits off to the side. `wontfix` takes an optional `snoozeUntil`
 and wakes back into `triage` when it expires.
 

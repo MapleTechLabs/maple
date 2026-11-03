@@ -1,10 +1,20 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
-import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import {
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import type { AutumnResult, AutumnTransportFailure } from "./autumn-http"
-import { camelizeKeys } from "./autumn-http"
+import { camelizeKeys, withBillingTimeout } from "./autumn-http"
 import { STRIPE_API_VERSION } from "./stripe-api"
 
 /**
@@ -39,7 +49,14 @@ export interface StripeCustomerUpdate {
 	readonly address?: StripeAddressInput | null
 }
 
-type StripeRoute = "getCustomer" | "updateCustomer" | "listTaxIds" | "createTaxId" | "deleteTaxId"
+type StripeRoute =
+	| "getCustomer"
+	| "updateCustomer"
+	| "listTaxIds"
+	| "createTaxId"
+	| "deleteTaxId"
+	| "listSubscriptions"
+	| "listCharges"
 
 type StripeCall = Effect.Effect<AutumnResult, AutumnTransportFailure>
 
@@ -52,6 +69,10 @@ export interface StripeClientApi {
 		taxId: { readonly type: string; readonly value: string },
 	) => StripeCall
 	readonly deleteTaxId: (stripeCustomerId: string, taxIdId: string) => StripeCall
+	/** The customer's subscriptions in any status, cancelled ones included, newest first, discounts expanded. */
+	readonly listSubscriptions: (stripeCustomerId: string) => StripeCall
+	/** The customer's latest 20 charges, newest first. Needs Charges read on the key. */
+	readonly listCharges: (stripeCustomerId: string) => StripeCall
 }
 
 const toBillingUpstreamError = (error: unknown) =>
@@ -63,10 +84,10 @@ const JsonBody = Schema.fromJsonString(Schema.Unknown)
 const decodeJson = Schema.decodeEffect(JsonBody)
 const parseJsonOption = Schema.decodeUnknownOption(JsonBody)
 
-const trimTrailingSlash = (url: string) => url.replace(/\/+$/, "")
+const trimTrailingSlash = (url: string) => Str.replace(/\/+$/, "")(url)
 
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 		? (value as Record<string, unknown>)
 		: undefined
 
@@ -108,11 +129,11 @@ export const encodeForm = (fields: {
 			out.push([prefix, value])
 			return
 		}
-		for (const [key, child] of Object.entries(value)) {
+		for (const [key, child] of Rec.toEntries(value)) {
 			walk(`${prefix}[${key}]`, child)
 		}
 	}
-	for (const [key, value] of Object.entries(fields)) walk(key, value)
+	for (const [key, value] of Rec.toEntries(fields)) walk(key, value)
 	return out
 }
 
@@ -158,7 +179,10 @@ const callStripe = (
 					yield* Effect.annotateCurrentSpan({ "maple.stripe.code": errorBody.code })
 				}
 				return { statusCode: response.status, response: errorBody }
-			}).pipe(Effect.withSpan("stripe.request", { attributes: { "maple.stripe.route": route } }))
+			}).pipe(
+				withBillingTimeout("Stripe", route),
+				Effect.withSpan("stripe.request", { attributes: { "maple.stripe.route": route } }),
+			)
 
 const customerPath = (stripeCustomerId: string) => `/v1/customers/${encodeURIComponent(stripeCustomerId)}`
 
@@ -167,7 +191,7 @@ const customerPath = (stripeCustomerId: string) => `/v1/customers/${encodeURICom
  * `HttpClient`. As with `AutumnClient`, every returned effect is `R = never`.
  */
 export class StripeClient extends Context.Service<StripeClient, StripeClientApi>()(
-	"@maple/api/services/billing/StripeClient",
+	"@maple/backend/services/billing/StripeClient",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
@@ -232,6 +256,28 @@ export class StripeClient extends Context.Service<StripeClient, StripeClientApi>
 						"deleteTaxId",
 						HttpClientRequest.delete(
 							`${customerPath(cus)}/tax_ids/${encodeURIComponent(taxIdId)}`,
+						),
+					),
+
+				listSubscriptions: (cus) =>
+					call(
+						"listSubscriptions",
+						HttpClientRequest.get("/v1/subscriptions").pipe(
+							// 100 is Stripe's page maximum, past any customer's history of plans and add-ons.
+							HttpClientRequest.setUrlParams({
+								customer: cus,
+								status: "all",
+								limit: "100",
+								"expand[]": "data.discounts",
+							}),
+						),
+					),
+
+				listCharges: (cus) =>
+					call(
+						"listCharges",
+						HttpClientRequest.get("/v1/charges").pipe(
+							HttpClientRequest.setUrlParams({ customer: cus, limit: "20" }),
 						),
 					),
 			} satisfies StripeClientApi

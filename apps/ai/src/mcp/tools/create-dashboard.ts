@@ -1,5 +1,5 @@
 import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { CreateDashboardOutput } from "@maple/domain/mcp-outputs"
 import { quoteWhereValue } from "@maple/domain/where-clause"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -55,9 +55,11 @@ const SimpleWidgetSpec = Schema.Struct({
 	metric: Schema.optionalKey(Schema.String),
 	metric_name: Schema.optionalKey(Schema.String),
 	metric_type: Schema.optionalKey(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
+	service: Schema.optionalKey(Schema.String),
+	/** Retired spelling of `service`, still accepted; `service` wins when both are set. */
 	service_name: Schema.optionalKey(Schema.String),
 	group_by: Schema.optionalKey(Schema.String),
-	/** A whereClause in the query-builder grammar, AND-ed with `service_name`. */
+	/** A whereClause in the query-builder grammar, AND-ed with `service`. */
 	where: Schema.optionalKey(Schema.String),
 	unit: Schema.optionalKey(Schema.Literals(WIDGET_UNIT_TOKENS)),
 })
@@ -88,7 +90,7 @@ const VALID_GROUP_BY: Record<string, readonly string[]> = {
 } satisfies Record<string, readonly string[]>
 
 /** Sources whose query builder also groups by an attribute key, `attr.<key>`. */
-const ATTR_GROUP_BY_SOURCES: ReadonlySet<string> = new Set(["metrics", "product_events"])
+const ATTR_GROUP_BY_SOURCES: ReadonlySet<string> = new Set(["traces", "metrics", "product_events"])
 
 /** Sources that also group by a resource attribute, `resource.<key>` (host.name, k8s.pod.name). */
 const RESOURCE_GROUP_BY_SOURCES: ReadonlySet<string> = new Set(["metrics"])
@@ -116,16 +118,16 @@ function validateGroupBy(rawGroupBy: string, source: string, widgetTitle: string
 	const allowsAttr = ATTR_GROUP_BY_SOURCES.has(source)
 
 	if (validOptions.includes(rawGroupBy)) return null
-	if (allowsAttr && rawGroupBy.startsWith("attr.") && rawGroupBy.length > 5) return null
+	if (allowsAttr && Str.startsWith("attr.")(rawGroupBy) && rawGroupBy.length > 5) return null
 	const allowsResource = RESOURCE_GROUP_BY_SOURCES.has(source)
-	if (allowsResource && rawGroupBy.startsWith("resource.") && rawGroupBy.length > 9) return null
+	if (allowsResource && Str.startsWith("resource.")(rawGroupBy) && rawGroupBy.length > 9) return null
 
 	const optsList = [
 		...validOptions,
 		...(allowsAttr ? ["attr.<key>"] : []),
 		...(allowsResource ? ["resource.<key>"] : []),
 	]
-	return `Widget "${widgetTitle}": invalid group_by "${rawGroupBy}" for source=${source}. Valid: ${optsList.join(", ")}. ${allowsAttr ? "Example: attr.signal" : ""}`
+	return `Widget "${widgetTitle}": invalid group_by "${rawGroupBy}" for source=${source}. Valid: ${Arr.join(optsList, ", ")}. ${allowsAttr ? "Example: attr.signal" : ""}`
 }
 
 function simpleSpecToWidget(
@@ -144,13 +146,15 @@ function simpleSpecToWidget(
 	const metricType = spec.metric_type
 
 	const metric = spec.metric ?? (source === "metrics" ? "avg" : "count")
+	const service = spec.service ?? spec.service_name
 	const extraWhere = spec.where?.trim() ?? ""
-	const where = [
-		spec.service_name ? `service.name = ${quoteWhereValue(spec.service_name)}` : "",
-		extraWhere,
-	]
-		.filter((clause) => clause !== "")
-		.join(" AND ")
+	const where = Arr.join(
+		Arr.filter(
+			[service ? `service.name = ${quoteWhereValue(service)}` : "", extraWhere],
+			(clause) => clause !== "",
+		),
+		" AND ",
+	)
 
 	let groupBy: string[]
 	if (spec.group_by) {
@@ -191,8 +195,9 @@ function simpleSpecToWidget(
 					{
 						field: "name",
 						header:
-							groupBy[0]?.replace(".", " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) ??
-							"Name",
+							groupBy[0]
+								?.replace(".", " ")
+								.replace(/\b\w/g, (c: string) => Str.toUpperCase(c)) ?? "Name",
 					},
 					{ field: "value", header: spec.title, unit, align: "right" },
 				],
@@ -203,14 +208,14 @@ function simpleSpecToWidget(
 
 	if (viz === "list") {
 		if (extraWhere !== "") {
-			return `Widget "${spec.title}": where is not supported on list widgets; use service_name, or a chart/table.`
+			return `Widget "${spec.title}": where is not supported on list widgets; use service, or a chart/table.`
 		}
 		if (source === "logs") {
 			return {
 				id,
 				visualization: viz,
 				dataSource: makeRouteDataSource("list_logs", {
-					...(spec.service_name ? { service: spec.service_name } : undefined),
+					...(service ? { service } : undefined),
 					limit: 10,
 				}),
 				display: { title: spec.title, listDataSource: "logs", listLimit: 10 },
@@ -221,7 +226,7 @@ function simpleSpecToWidget(
 			id,
 			visualization: viz,
 			dataSource: makeRouteDataSource("list_traces", {
-				...(spec.service_name ? { service: spec.service_name } : undefined),
+				...(service ? { service } : undefined),
 				limit: 10,
 			}),
 			display: { title: spec.title, listDataSource: "traces", listLimit: 10 },
@@ -287,7 +292,7 @@ function computeAutoLayout(
 		placed.push({ layout: { ...findNextPosition(placed, w), w, h } })
 	}
 
-	return placed.map((widget) => widget.layout)
+	return Arr.map(placed, (widget) => widget.layout)
 }
 
 export function buildSimpleWidgets(specs: ReadonlyArray<SimpleWidgetSpec>): WidgetDef[] | string {
@@ -304,11 +309,11 @@ export function buildSimpleWidgets(specs: ReadonlyArray<SimpleWidgetSpec>): Widg
 		}
 	}
 
-	return errors.length > 0 ? errors.join("\n") : widgets
+	return errors.length > 0 ? Arr.join(errors, "\n") : widgets
 }
 const DEFAULT_TIME_RANGE = "1h"
 
-const TEMPLATE_IDS = [...DASHBOARD_TEMPLATES.map((t) => t.id), "custom"]
+const TEMPLATE_IDS = [...Arr.map(DASHBOARD_TEMPLATES, (t) => t.id), "custom"]
 
 const invalid = (message: string, parameter?: string, example?: string) =>
 	new McpInvalidInputError({
@@ -323,15 +328,15 @@ const SIMPLE_WIDGETS_EXAMPLE =
 // Tool registration
 
 export function registerCreateDashboardTool(server: McpToolRegistrar) {
-	// The template descriptions are shared with the web template gallery
-	// (`listTemplateMetadata`); only the separator is this tool's.
-	const templateList = DASHBOARD_TEMPLATES.map((t) => `  ${t.id}: ${t.description}`).join("\n")
 	const groupByDoc = (source: keyof typeof VALID_GROUP_BY) =>
-		[
-			...(VALID_GROUP_BY[source] ?? []),
-			...(ATTR_GROUP_BY_SOURCES.has(source) ? ["attr.<key>"] : []),
-			...(RESOURCE_GROUP_BY_SOURCES.has(source) ? ["resource.<key>"] : []),
-		].join("|")
+		Arr.join(
+			[
+				...(VALID_GROUP_BY[source] ?? []),
+				...(ATTR_GROUP_BY_SOURCES.has(source) ? ["attr.<key>"] : []),
+				...(RESOURCE_GROUP_BY_SOURCES.has(source) ? ["resource.<key>"] : []),
+			],
+			"|",
+		)
 
 	server.define({
 		name: TOOL,
@@ -340,9 +345,8 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 		// modes to use, not a schema reference. The per-parameter descriptions carry
 		// the shapes, and `describe_dashboard_schema` carries the full vocabulary.
 		description:
-			"Create a dashboard one of three ways: a `template`, simplified `widgets` specs, or full `dashboard_json`.\n\n" +
-			"Templates:\n" +
-			templateList +
+			"Create a dashboard one of three ways: a `template`, simplified `widgets` specs, or full `dashboard_json`. " +
+			'Templates (service health, errors, HTTP, runtimes, databases, integrations) are listed by describe_dashboard_schema section "templates".' +
 			"\n\nTemplates chart one service or host at a time. To compare entities in one chart (CPU per host, memory per pod), " +
 			"use `widgets` on source=metrics with group_by `resource.host.name` / `resource.k8s.pod.name`; list_infra names the metrics." +
 			"\n\nCreated widgets are inspected (up to 12) and returned with a verdict " +
@@ -351,7 +355,7 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			name: P.text("Dashboard name"),
 			template: P.optionalOneOf(
 				TEMPLATE_IDS,
-				"Default service-health when neither widgets nor dashboard_json is given; dashboard_json alone selects custom.",
+				'Default service-health when neither widgets nor dashboard_json is given; dashboard_json alone selects custom. What each charts: describe_dashboard_schema section "templates".',
 			),
 			service: P.service("Scope template widgets to a specific service"),
 			time_range: P.optionalText(
@@ -367,8 +371,8 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			),
 			widgets: P.optionalJson(
 				Schema.Array(SimpleWidgetSpec),
-				`Simplified widget specs, one per widget: { title, visualization?: ${SIMPLE_SPEC_VISUALIZATIONS.join("|")}, source: ${QUERY_BUILDER_DATA_SOURCES.join("|")}, metric?, metric_name?, metric_type?, service_name?, group_by?, where?, unit?: ${WIDGET_UNIT_TOKENS.join("|")} }. ` +
-					`Not the query_data vocabulary: group_by is ${groupByDoc("traces")} for traces, ${groupByDoc("logs")} for logs, ${groupByDoc("metrics")} for metrics, ${groupByDoc("product_events")} for product_events. ` +
+				`Simplified widget specs, one per widget: { title, visualization?: ${Arr.join(SIMPLE_SPEC_VISUALIZATIONS, "|")}, source: ${Arr.join(QUERY_BUILDER_DATA_SOURCES, "|")}, metric?, metric_name?, metric_type?, service?, group_by?, where?, unit?: ${Arr.join(WIDGET_UNIT_TOKENS, "|")} }. ` +
+					`group_by is ${groupByDoc("traces")} for traces, ${groupByDoc("logs")} for logs, ${groupByDoc("metrics")} for metrics, ${groupByDoc("product_events")} for product_events (query_data spellings like service, span_name also work). ` +
 					"table needs a group_by; list shows recent traces or logs. Charts default to group_by service.name. " +
 					'where is a whereClause (describe_dashboard_schema "queries"), e.g. attr.state = "idle" to read one state of a per-state metric like system.cpu.utilization (unscoped it averages to about 1/states). ' +
 					"unit percent expects a 0-1 fraction, percent_100 a 0-100 value.",
@@ -402,7 +406,10 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 						"Provide dashboard_json for custom template, or use a different approach:\n\n" +
 							"Simplified widgets example:\n" +
 							`  ${SIMPLE_WIDGETS_EXAMPLE}\n\n` +
-							`Templates: ${DASHBOARD_TEMPLATES.map((t) => t.id).join(", ")}\n\n` +
+							`Templates: ${Arr.join(
+								Arr.map(DASHBOARD_TEMPLATES, (t) => t.id),
+								", ",
+							)}\n\n` +
 							"For full custom JSON, use get_dashboard on an existing dashboard to see the expected schema.",
 						"dashboard_json",
 					)
@@ -426,14 +433,17 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 				const blocking = yield* Effect.forEach(result, (widget) =>
 					collectBlockingBuilderWarnings(widget.dataSource).pipe(
 						Effect.map((warnings) =>
-							warnings.map((w) => `${widget.display.title ?? widget.id}: ${w}`),
+							Arr.map(warnings, (w) => `${widget.display.title ?? widget.id}: ${w}`),
 						),
 					),
 				).pipe(Effect.map((all) => all.flat()))
 
 				if (blocking.length > 0) {
 					return yield* invalid(
-						`These widgets would not query what they describe:\n${blocking.map((w) => `  - ${w}`).join("\n")}`,
+						`These widgets would not query what they describe:\n${Arr.join(
+							Arr.map(blocking, (w) => `  - ${w}`),
+							"\n",
+						)}`,
 						"widgets",
 					)
 				}
@@ -458,7 +468,10 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 				const template = getTemplate(templateName)
 				if (!template) {
 					return yield* invalid(
-						`Unknown template "${templateName}". Available: ${DASHBOARD_TEMPLATES.map((t) => t.id).join(", ")}, custom`,
+						`Unknown template "${templateName}". Available: ${Arr.join(
+							Arr.map(DASHBOARD_TEMPLATES, (t) => t.id),
+							", ",
+						)}, custom`,
 						"template",
 					)
 				}
@@ -468,12 +481,13 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 				if (params.metric_name) templateParams[decodeParamKey("metric_name")] = params.metric_name
 				if (params.metric_type) templateParams[decodeParamKey("metric_type")] = params.metric_type
 
-				const missingRequired = template.parameters
-					.filter((p) => p.required && !templateParams[p.key])
-					.map((p) => (p.key === "service_name" ? "service" : p.key))
+				const missingRequired = Arr.map(
+					Arr.filter(template.parameters, (p) => p.required && !templateParams[p.key]),
+					(p) => (p.key === "service_name" ? "service" : p.key),
+				)
 				if (missingRequired.length > 0) {
 					return yield* invalid(
-						`Template "${template.id}" requires parameters: ${missingRequired.join(", ")}. Pass them as tool args (e.g. metric_name, metric_type).`,
+						`Template "${template.id}" requires parameters: ${Arr.join(missingRequired, ", ")}. Pass them as tool args (e.g. metric_name, metric_type).`,
 						missingRequired[0],
 					)
 				}
@@ -482,15 +496,15 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 					try: () => {
 						const built = template.build(templateParams)
 						const description = params.description ?? built.description
+						// The whole build, so a template's sections and variables come along.
 						return new PortableDashboardDocument({
+							...built,
 							name: params.name || built.name,
 							...(description ? { description } : undefined),
-							...(built.tags ? { tags: built.tags } : undefined),
 							// An explicit time_range wins over the template's default.
 							timeRange: params.time_range
 								? { type: "relative" as const, value: params.time_range }
 								: built.timeRange,
-							widgets: built.widgets,
 						})
 					},
 					catch: (error) =>
@@ -504,7 +518,10 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			} else {
 				return yield* invalid(
 					"Provide a template, widgets, or dashboard_json.\n\n" +
-						`Templates: ${DASHBOARD_TEMPLATES.map((t) => t.id).join(", ")}\n` +
+						`Templates: ${Arr.join(
+							Arr.map(DASHBOARD_TEMPLATES, (t) => t.id),
+							", ",
+						)}\n` +
 						'Simplified widgets: widgets=\'[{"title":"...","source":"metrics","metric_name":"...","metric_type":"..."}]\'\n' +
 						"Custom JSON: dashboard_json with full widget definitions",
 				)
@@ -520,7 +537,7 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			const validation = yield* inspectWidgetsAfterMutation({
 				tenant,
 				dashboard,
-				widgetIds: dashboard.widgets.map((w) => w.id),
+				widgetIds: Arr.map(dashboard.widgets, (w) => w.id),
 				validate: params.validate !== false,
 			})
 
@@ -543,10 +560,11 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 				blocks: [
 					doc.fields([
 						["ID", output.dashboard.id],
+						["REST id", output.dashboard.publicId],
 						["Name", output.dashboard.name],
 						["Description", output.dashboard.description],
 						["Widgets", output.dashboard.widgetCount],
-						["Created", output.dashboard.createdAt.slice(0, 19)],
+						["Created", Str.slice(0, 19)(output.dashboard.createdAt)],
 						["Template", output.template],
 						["Source", output.source === "widgets" ? "simplified widget specs" : undefined],
 					]),

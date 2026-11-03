@@ -4,7 +4,7 @@ import { ErrorIncidentId, ErrorIssueId, OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIncidents, ErrorIssues } from "@maple/db/tables"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
-import { Clock, Effect, Layer, Schema } from "effect"
+import { Clock, Effect, Layer, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -144,7 +144,7 @@ describe("ErrorIssueReadModelsService", () => {
 				deploymentEnv: "production",
 			})
 			assert.deepStrictEqual(
-				listed.issues.map((issue) => issue.id),
+				Arr.map(listed.issues, (issue) => issue.id),
 				[issueId],
 			)
 			const counts = yield* readModels.countOpenIssuesByService(ORG)
@@ -157,19 +157,22 @@ describe("ErrorIssueReadModelsService", () => {
 			const issueIncidents = yield* readModels.listIssueIncidents(ORG, issueId)
 			const openIncidents = yield* readModels.listOpenIncidents(ORG)
 			assert.deepStrictEqual(
-				issueIncidents.incidents.map((incident) => incident.id),
+				Arr.map(issueIncidents.incidents, (incident) => incident.id),
 				[incidentId],
 			)
 			assert.deepStrictEqual(
-				openIncidents.incidents.map((incident) => incident.id),
+				Arr.map(openIncidents.incidents, (incident) => incident.id),
 				[incidentId],
 			)
-			expect(contexts).toEqual([
-				"errorIssueEnvFingerprints",
-				"errorIssueTimeseries",
-				"errorIssueSampleTraces",
-				"errorIssueEnvironments",
-			])
+			// getIssue reads these warehouse models; dropping one leaves its detail panel empty.
+			expect(contexts).toEqual(
+				expect.arrayContaining([
+					"errorIssueEnvFingerprints",
+					"errorIssueTimeseries",
+					"errorIssueSampleTraces",
+					"errorIssueEnvironments",
+				]),
+			)
 		}).pipe(Effect.provide(makeLayer(contexts)))
 	})
 
@@ -191,7 +194,7 @@ describe("ErrorIssueReadModelsService", () => {
 				fingerprintHashes: ["fp-wanted"],
 			})
 			assert.deepStrictEqual(
-				listed.issues.map((issue) => issue.id),
+				Arr.map(listed.issues, (issue) => issue.id),
 				[wanted],
 			)
 
@@ -221,7 +224,9 @@ describe("ErrorIssueReadModelsService", () => {
 			const listed = yield* readModels.listIssues(ORG, {
 				introducedAfter: new Date(now - 120_000).toISOString(),
 			})
-			expect(listed.issues.map((issue) => issue.id).toSorted()).toEqual([fresh, regressed].toSorted())
+			expect(Arr.map(listed.issues, (issue) => issue.id).toSorted()).toEqual(
+				[fresh, regressed].toSorted(),
+			)
 		}).pipe(Effect.provide(makeLayer(contexts)))
 	})
 
@@ -245,13 +250,13 @@ describe("ErrorIssueReadModelsService", () => {
 			})
 
 			const firstClosed = yield* readModels.listIssues(ORG, { stateGroup: "closed", limit: 1 })
-			expect(firstClosed.issues.map((issue) => issue.id)).toEqual([verifying])
+			expect(Arr.map(firstClosed.issues, (issue) => issue.id)).toEqual([verifying])
 
 			const closed = yield* readModels.listIssues(ORG, { stateGroup: "closed", includeArchived: true })
-			expect(closed.issues.map((issue) => issue.id)).toEqual([verifying, wontfix, archivedDone])
+			expect(Arr.map(closed.issues, (issue) => issue.id)).toEqual([verifying, wontfix, archivedDone])
 
 			const opened = yield* readModels.listIssues(ORG, { stateGroup: "open", includeArchived: true })
-			expect(opened.issues.map((issue) => issue.id)).toEqual([open])
+			expect(Arr.map(opened.issues, (issue) => issue.id)).toEqual([open])
 		}).pipe(Effect.provide(makeLayer(contexts)))
 	})
 
@@ -269,7 +274,7 @@ describe("ErrorIssueReadModelsService", () => {
 			yield* seedIssue(ORG, unrelated, now - 2_000)
 
 			const found = yield* readModels.listIssues(ORG, { search: "STRIPE" })
-			expect(found.issues.map((issue) => issue.id)).toEqual([byMessage, byService])
+			expect(Arr.map(found.issues, (issue) => issue.id)).toEqual([byMessage, byService])
 
 			// LIKE wildcards in the term are literal, not "match everything".
 			const literal = yield* readModels.listIssues(ORG, { search: "%" })

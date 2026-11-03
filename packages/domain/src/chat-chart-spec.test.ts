@@ -9,6 +9,7 @@ import {
 	staticChartUnit,
 	timeseriesRows,
 } from "./chat-chart-spec"
+import { Array as Arr } from "effect"
 
 const timeseries = JSON.stringify({
 	type: "line",
@@ -96,34 +97,40 @@ it("lands every unit on one the image renderer knows, scaling the values with it
 
 describe("chartFences", () => {
 	it("returns the charts of a reply in the order they appear in it", () => {
-		const reply = [
-			"Latency climbed after the deploy.",
-			"```chart",
-			'{"type":"line","data":[]}',
-			"```",
-			"And the errors with it:",
-			"```chart",
-			'{"type":"ranked","data":[]}',
-			"```",
-		].join("\n")
+		const reply = Arr.join(
+			[
+				"Latency climbed after the deploy.",
+				"```chart",
+				'{"type":"line","data":[]}',
+				"```",
+				"And the errors with it:",
+				"```chart",
+				'{"type":"ranked","data":[]}',
+				"```",
+			],
+			"\n",
+		)
 
 		expect(chartFences(reply)).toEqual(['{"type":"line","data":[]}', '{"type":"ranked","data":[]}'])
 	})
 
 	it("ignores fences that are not charts, and does not let them shift the index", () => {
-		const reply = ["```sql", "SELECT 1", "```", "```chart", '{"type":"bar"}', "```"].join("\n")
+		const reply = Arr.join(["```sql", "SELECT 1", "```", "```chart", '{"type":"bar"}', "```"], "\n")
 
 		expect(chartFences(reply)).toEqual(['{"type":"bar"}'])
 	})
 
 	it("keeps a chart that holds a line of backticks of its own", () => {
-		const reply = ["````chart", '{"note":"```"}', "````"].join("\n")
+		const reply = Arr.join(["````chart", '{"note":"```"}', "````"], "\n")
 
 		expect(chartFences(reply)).toEqual(['{"note":"```"}'])
 	})
 
 	it("keeps an unclosed trailing chart, so the charts before it keep their positions", () => {
-		const reply = ["```chart", '{"type":"line","data":[]}', "```", "```chart", '{"type":"ar'].join("\n")
+		const reply = Arr.join(
+			["```chart", '{"type":"line","data":[]}', "```", "```chart", '{"type":"ar'],
+			"\n",
+		)
 
 		expect(chartFences(reply)).toHaveLength(2)
 		expect(parseChartSpec(chartFences(reply)[1] ?? "")).toBeNull()
@@ -137,11 +144,11 @@ describe("chartFences", () => {
 describe("hasOpenFence", () => {
 	it("agrees with the scan a caller would otherwise re-derive", () => {
 		expect(hasOpenFence("plain prose")).toBe(false)
-		expect(hasOpenFence(["```chart", '{"type":"bar"}'].join("\n"))).toBe(true)
-		expect(hasOpenFence(["```chart", '{"type":"bar"}', "```"].join("\n"))).toBe(false)
+		expect(hasOpenFence(Arr.join(["```chart", '{"type":"bar"}'], "\n"))).toBe(true)
+		expect(hasOpenFence(Arr.join(["```chart", '{"type":"bar"}', "```"], "\n"))).toBe(false)
 		// A run of backticks inside a longer fence is payload, not the fence closing.
-		expect(hasOpenFence(["````chart", '{"note":"```"}'].join("\n"))).toBe(true)
-		expect(hasOpenFence(["````chart", '{"note":"```"}', "````"].join("\n"))).toBe(false)
+		expect(hasOpenFence(Arr.join(["````chart", '{"note":"```"}'], "\n"))).toBe(true)
+		expect(hasOpenFence(Arr.join(["````chart", '{"note":"```"}', "````"], "\n"))).toBe(false)
 		// Backticks mid-line open nothing: a fence is a line construct.
 		expect(hasOpenFence("write ``` to open a fence")).toBe(false)
 	})

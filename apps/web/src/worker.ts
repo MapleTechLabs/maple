@@ -1,41 +1,44 @@
 /**
- * The dashboard's Worker, built by `Cloudflare.Website.Vite` (one `vite build`
- * for client and server). `bun dev` serves it through alchemy's vite child, which
- * strips the CLI's `NODE_ENV=production` so `import.meta.env.DEV` is correct.
- * `VITE_*` env keys are inlined into the client; other keys are Worker bindings.
+ * The dashboard's Worker at `app.maple.dev` (and every region and stage), built by
+ * `Cloudflare.Website.Vite`: one `vite build` for client and server. `VITE_*` env keys are
+ * inlined into the client; other keys are Worker bindings.
  */
 import {
 	ApiWorker,
 	MapleStack,
+	resolveDeploymentEnvironment,
 	resolveRegionAppUrls,
 	resolveWorkerName,
 	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
 import { plainFrom, selfObservabilityEnv } from "@maple/infra/env"
-import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect } from "effect"
-import { API_PROXY_PREFIX } from "./api-proxy"
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import { Effect, Schema } from "effect"
+import { API_PROXY_PREFIX } from "./api-proxy.ts"
+import { WORKER_FIRST_PATHS } from "./worker-first.ts"
 
-const rootDir = new URL("..", import.meta.url).pathname
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+
+// `memo.include` also hashes the `@maple/*` sources; `lockfile` is restated because `include` drops it.
+const MEMO_INCLUDE = ["**/*", "../../packages/*/src/**", "../../lib/*/src/**"]
 
 const props = Effect.gen(function* () {
 	const { stage, region, domains, urls } = yield* MapleStack
 	const api = yield* ApiWorker
 	return {
 		name: resolveWorkerName("web", stage, region),
-		rootDir,
+		rootDir: new URL("..", import.meta.url).pathname,
 		main: "src/worker-entry.ts",
 		assets: {
 			// Deep links serve the shell in place; otherwise hard reloads 307 to "/".
 			notFoundHandling: "single-page-application" as const,
-			// Or the SPA fallback answers the API proxy.
-			runWorkerFirst: [API_PROXY_PREFIX, `${API_PROXY_PREFIX}/*`],
+			// Or the SPA fallback answers the API proxy and the image routes with the shell.
+			runWorkerFirst: [...WORKER_FIRST_PATHS],
+			// Vite's content-hashed output never changes under a name. Served by the asset layer,
+			// not worker-first: the Worker is placed in one region, a hop that cost ~1s per cold load.
+			headers: "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n",
 		},
-		// Also hash the `@maple/*` sources; `lockfile` is restated because `include` drops it.
-		memo: {
-			include: ["**/*", "../../packages/*/src/**", "../../lib/*/src/**"],
-			lockfile: true,
-		},
+		memo: { include: MEMO_INCLUDE, lockfile: true },
 		placement: resolveWorkerPlacement(region),
 		workersDev: true,
 		domain: domains.web,
@@ -58,9 +61,15 @@ const props = Effect.gen(function* () {
 					? yield* plainFrom(["VITE_INGEST_URL"], "https://ingest.maple.dev")
 					: urls.ingest,
 			VITE_ELECTRIC_SYNC_URL: urls.electricSync,
+			// A `preview:web` stage has no Electric, so its shape proxy can only 503 (as electric-sync's env).
+			...(stage.kind === "pr" && domains.electric === undefined
+				? { VITE_ELECTRIC_SYNC_DISABLED: "1" }
+				: undefined),
+			// The status Worker's origin for public page links; empty hides them (prd has no domain yet).
+			VITE_STATUS_PAGE_BASE_URL: urls.status,
 			// Orgs living in another region are redirected to that region's app.
 			VITE_MAPLE_REGION: region,
-			VITE_MAPLE_REGION_APP_URLS: JSON.stringify(resolveRegionAppUrls(stage)),
+			VITE_MAPLE_REGION_APP_URLS: yield* encodeJson(resolveRegionAppUrls(stage)),
 			VITE_MAPLE_AUTH_MODE: yield* plainFrom(
 				["VITE_MAPLE_AUTH_MODE", "MAPLE_AUTH_MODE"],
 				"self_hosted",
@@ -73,6 +82,8 @@ const props = Effect.gen(function* () {
 				["VITE_MAPLE_INGEST_KEY", "MAPLE_OTEL_PUBLIC_INGEST_KEY"],
 				"",
 			),
+			// Browser telemetry's `deployment.environment.name`, matching the Worker's (`pr-<n>` on previews).
+			VITE_MAPLE_ENVIRONMENT: resolveDeploymentEnvironment(stage),
 			// Stamped onto browser telemetry as `vcs.ref.head.revision` / `service.version`.
 			VITE_COMMIT_SHA: yield* plainFrom(["VITE_COMMIT_SHA", "COMMIT_SHA", "GITHUB_SHA"], ""),
 		},

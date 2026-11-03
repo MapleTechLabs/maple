@@ -16,7 +16,7 @@
 //   to help — and this runs on views that are, by definition, already not working
 //   for the user.
 
-import { Clock, Context, Effect, Layer, Option } from "effect"
+import { Clock, Context, Effect, Layer, Option, Array as Arr, String as Str } from "effect"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -69,7 +69,7 @@ export interface SignalPresenceServiceApi {
  * default.
  */
 const parseWarehouseTime = (value: string): number | null => {
-	if (value === "" || value.startsWith(CH_EPOCH)) return null
+	if (value === "" || Str.startsWith(CH_EPOCH)(value)) return null
 	const ms = parseWarehouseDateTime(value)
 	return Number.isNaN(ms) ? null : ms
 }
@@ -109,7 +109,7 @@ const make: Effect.Effect<SignalPresenceServiceApi, never, WarehouseQueryService
 		const rows = yield* warehouse
 			.compiledQuery(tenant, compiled, { profile: "discovery", context: "signalPresence" })
 			.pipe(
-				Effect.map(Option.some),
+				Effect.asSome,
 				Effect.catchCause((cause) =>
 					Effect.logWarning("Signal presence unavailable — warehouse read failed").pipe(
 						Effect.annotateLogs({ orgId: tenant.orgId, cause }),
@@ -128,18 +128,18 @@ const make: Effect.Effect<SignalPresenceServiceApi, never, WarehouseQueryService
 				windowStart,
 				windowEnd: now,
 				warehouseAvailable: false,
-				signals: TELEMETRY_SIGNALS.map(unknown),
+				signals: Arr.map(TELEMETRY_SIGNALS, unknown),
 			} satisfies SignalPresenceReport
 		}
 
-		const bySignal = new Map(rows.value.map((row) => [row.signal, row]))
+		const bySignal = new Map(Arr.map(rows.value, (row) => [row.signal, row]))
 
 		// The union always emits one group-less row per branch, so a signal that
 		// is missing here means the query changed shape — report it as `absent`
 		// rather than dropping the entry, because the wire contract promises the
 		// full set and a caller that indexes by signal would otherwise read
 		// `undefined` as "unknown" and silently stop advising.
-		const signals = TELEMETRY_SIGNALS.map((signal): SignalPresence => {
+		const signals = Arr.map(TELEMETRY_SIGNALS, (signal): SignalPresence => {
 			const row = bySignal.get(signal)
 			if (row === undefined || row.count === 0) return absent(signal)
 			return {
@@ -154,7 +154,7 @@ const make: Effect.Effect<SignalPresenceServiceApi, never, WarehouseQueryService
 		yield* Effect.annotateCurrentSpan({
 			orgId: tenant.orgId,
 			"maple.signals.warehouse_available": true,
-			"maple.signals.present": signals.filter((s) => s.status === "present").length,
+			"maple.signals.present": Arr.filter(signals, (s) => s.status === "present").length,
 		})
 
 		return {
@@ -170,7 +170,7 @@ const make: Effect.Effect<SignalPresenceServiceApi, never, WarehouseQueryService
 })
 
 export class SignalPresenceService extends Context.Service<SignalPresenceService, SignalPresenceServiceApi>()(
-	"@maple/api/services/SignalPresenceService",
+	"@maple/backend/services/SignalPresenceService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))

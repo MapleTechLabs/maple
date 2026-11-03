@@ -7,7 +7,7 @@
  * chart paths go on to `runTimeseriesQuerySet`.
  */
 
-import { Effect, Result } from "effect"
+import { Effect, Result, Array as Arr } from "effect"
 import type { QueryBuilderQueryDraftPayload } from "@maple/query-model"
 import type { QuerySpec } from "@maple/domain/query-engine"
 import { buildTimeseriesQuerySpec } from "../query-builder/model"
@@ -110,7 +110,10 @@ const executeWithFallback = <E>(
 				// crashing the whole set.
 				const points =
 					result.kind === "timeseries"
-						? result.data.map((point) => ({ bucket: point.bucket, series: { ...point.series } }))
+						? Arr.map(result.data, (point) => ({
+								bucket: point.bucket,
+								series: { ...point.series },
+							}))
 						: []
 				const hasSeries = hasAnySeriesData(points)
 				const next = [

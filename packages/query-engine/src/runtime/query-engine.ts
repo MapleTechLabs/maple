@@ -28,7 +28,18 @@ import {
 	type WarehouseReadError,
 } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain"
-import { Array as Arr, DateTime, Duration, Effect, Match, Option, Result, Schema } from "effect"
+import {
+	Array as Arr,
+	DateTime,
+	Duration,
+	Effect,
+	Match,
+	Option,
+	Result,
+	Schema,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import type { QueryProfileName, SqlQueryOptions, WarehouseQuerySettings } from "../profiles"
 import { canonicalJSON } from "../canonical-json"
 import { memoizeAlertBuckets } from "./alert-evaluation-scope"
@@ -49,6 +60,7 @@ import {
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 	formatRangeSeconds,
 } from "../limits"
+import { rawBreakdownSpanVerdict, spanBudgetApplies } from "./breakdown-span-budget"
 import {
 	attributeIndexMode,
 	hasWarehouseTable,
@@ -98,6 +110,7 @@ export {
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 	formatRangeSeconds,
 	maxRangeSecondsForKind,
+	timeWindowViolation,
 	validateRelativeRange,
 } from "../limits"
 export { relativeRangeSeconds, resolveRelativeRange, resolveRelativeRangeToWarehouse } from "../datetime"
@@ -117,7 +130,11 @@ export interface QueryEngineWarehouse<T extends QueryTenant = QueryTenant> {
 	readonly rawSqlQuery: (
 		tenant: T,
 		sql: string,
-		options: { readonly profile: QueryProfileName; readonly context: string },
+		options: {
+			readonly profile: QueryProfileName
+			readonly context: string
+			readonly settings?: WarehouseQuerySettings
+		},
 	) => Effect.Effect<
 		ReadonlyArray<Record<string, unknown>>,
 		WarehouseQueryPathError | RawSqlValidationError
@@ -235,16 +252,15 @@ export const withTimeout = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 		}),
 	)
 
-export const toEpochMs = (value: string): number => new Date(value.replace(" ", "T") + "Z").getTime()
+export const toEpochMs = (value: string): number => new Date(Str.replace(" ", "T")(value) + "Z").getTime()
 const TINYBIRD_DATETIME_RE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(\.\d+)?$/
 
 export const msToTinybirdDateTime = (ms: number): string => {
 	const iso = new Date(ms).toISOString()
-	return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`
+	return `${Str.slice(0, 10)(iso)} ${Str.slice(11, 19)(iso)}`
 }
 
 const CACHE_SNAP_S = 15
-const TRACE_SERVICE_PARTITION_BUFFER_MS = 24 * 60 * 60 * 1000
 // Same ±1h pad `traceListQuery` puts around the window, here around the page.
 const TRACE_LIST_PAGE_BUFFER_MS = 60 * 60 * 1000
 const TRACE_LIST_PAGE_SLICE_MS = MAX_LIST_RANGE_SECONDS * 1000
@@ -256,22 +272,20 @@ const TRACE_LIST_FANOUT_CONCURRENCY = 4
 export { ENGINE_UNGROUPED_GROUP_KEY } from "../group-key"
 
 /**
- * Bound the service-enrichment lookup to the daily partitions surrounding the
- * rows already selected for this page. A one-day cushion covers traces that
- * cross the requested range boundary without probing the full 30-day
- * retention window of `service_map_spans`.
+ * The time span of the rows already selected for this page. The services lookup
+ * pads it ±1h itself, as for every trace-id read.
  */
-function traceServicePartitionWindow(
+function pageTimeWindow(
 	rows: ReadonlyArray<{ readonly timestamp: DateTime.Utc }>,
 	fallback: { readonly startTime: string; readonly endTime: string },
 ): { readonly startTime: string; readonly endTime: string } {
-	const pageTimes = rows.map((row) => DateTime.toEpochMillis(row.timestamp))
+	const pageTimes = Arr.map(rows, (row) => DateTime.toEpochMillis(row.timestamp))
 
 	if (pageTimes.length === 0) return fallback
 
 	return {
-		startTime: formatWarehouseDateTime(Math.min(...pageTimes) - TRACE_SERVICE_PARTITION_BUFFER_MS),
-		endTime: formatWarehouseDateTime(Math.max(...pageTimes) + TRACE_SERVICE_PARTITION_BUFFER_MS),
+		startTime: formatWarehouseDateTime(Math.min(...pageTimes)),
+		endTime: formatWarehouseDateTime(Math.max(...pageTimes)),
 	}
 }
 
@@ -289,7 +303,7 @@ function parseProjectedAttributes(raw: unknown): Record<string, string> {
 	const parsed = decodeProjectedAttributes(raw)
 	if (Option.isNone(parsed)) return {}
 	const out: Record<string, string> = {}
-	for (const [key, value] of Object.entries(parsed.value)) {
+	for (const [key, value] of Rec.toEntries(parsed.value)) {
 		if (typeof value === "string" && value.length > 0) out[key] = value
 	}
 	return out
@@ -322,10 +336,8 @@ export function snapToWindow(dateStr: string, windowSeconds: number): string {
 	if (Number.isNaN(ms)) return dateStr
 	const snappedMs = Math.floor(ms / (windowSeconds * 1000)) * (windowSeconds * 1000)
 	const iso = new Date(snappedMs).toISOString()
-	return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`
+	return `${Str.slice(0, 10)(iso)} ${Str.slice(11, 19)(iso)}`
 }
-
-const snapSeconds = (dateStr: string): string => snapToWindow(dateStr, CACHE_SNAP_S)
 
 /**
  * Discovery queries (attribute keys/values, facets) change slowly because
@@ -377,16 +389,6 @@ export function buildCacheKey(orgId: string, request: QueryEngineExecuteRequest)
 	return `${orgId}:${snapToWindow(request.startTime, snap)}:${snapToWindow(request.endTime, snap)}:${canonicalJSON(request.query)}`
 }
 
-export function buildEvaluateCacheKey(orgId: string, request: AlertEvaluateRequest): string {
-	// `source.kind` is part of the key so a spec plan and a raw-SQL plan can
-	// never share an entry.
-	const source =
-		request.source.kind === "spec"
-			? `spec:${canonicalJSON(request.source.query)}`
-			: `raw:${request.source.windowMinutes}:${request.source.sql}`
-	return `eval:${orgId}:${snapSeconds(request.startTime)}:${snapSeconds(request.endTime)}:${request.reducer}:${request.sampleCountStrategy}:${source}`
-}
-
 const DIRECT_CACHE_SNAP_KEYS = new Set(["startTime", "endTime"])
 const DIRECT_CACHE_SET_KEYS = new Set([
 	"commitShas",
@@ -397,6 +399,11 @@ const DIRECT_CACHE_SET_KEYS = new Set([
 	"spanNames",
 ])
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+/** `JSON.stringify`: an absent payload keys as `undefined`, as it always has. */
+const stringifyJson = (value: unknown): string | undefined => Option.getOrUndefined(encodeJsonOption(value))
+
 function normalizeDirectCacheValue(value: unknown, snapWindowSeconds: number, parentKey?: string): unknown {
 	if (value == null) return value
 	if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
@@ -406,33 +413,36 @@ function normalizeDirectCacheValue(value: unknown, snapWindowSeconds: number, pa
 		return value
 	}
 
-	if (Array.isArray(value)) {
-		const normalized = value.map((item) => normalizeDirectCacheValue(item, snapWindowSeconds))
+	if (Arr.isArray(value)) {
+		const normalized = Arr.map(value, (item) => normalizeDirectCacheValue(item, snapWindowSeconds))
 		if (
 			parentKey &&
 			DIRECT_CACHE_SET_KEYS.has(parentKey) &&
-			normalized.every((item) => ["string", "number", "boolean"].includes(typeof item))
+			Arr.every(normalized, (item) => ["string", "number", "boolean"].includes(typeof item))
 		) {
-			return [...new Map(normalized.map((item) => [JSON.stringify(item), item])).values()].sort(
-				(a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)),
+			return [...new Map(Arr.map(normalized, (item) => [encodeJson(item), item])).values()].sort(
+				(a, b) => Str.localeCompare(encodeJson(b))(encodeJson(a)),
 			)
 		}
 		return normalized
 	}
 
 	if (typeof value === "object") {
-		return Object.fromEntries(
-			Object.entries(value as Record<string, unknown>)
-				.filter(([, nestedValue]) => nestedValue !== undefined)
-				.sort(([left], [right]) => left.localeCompare(right))
-				.map(([key, nestedValue]) => [
-					key,
-					normalizeDirectCacheValue(nestedValue, snapWindowSeconds, key),
-				]),
+		return Rec.fromEntries(
+			Arr.map(
+				Arr.filter(
+					Rec.toEntries(value as Record<string, unknown>),
+					([, nestedValue]) => nestedValue !== undefined,
+				).sort(([left], [right]) => Str.localeCompare(right)(left)),
+				([key, nestedValue]) => [key, normalizeDirectCacheValue(nestedValue, snapWindowSeconds, key)],
+			),
 		)
 	}
 
-	return String(value)
+	// bigint, symbol or function: every other type returned above.
+	return typeof value === "bigint" || typeof value === "symbol" || typeof value === "function"
+		? value.toString()
+		: value
 }
 
 export function buildDirectRouteCacheKey(
@@ -442,7 +452,7 @@ export function buildDirectRouteCacheKey(
 	policyInput: DirectRouteCachePolicyInput = CACHE_SNAP_S,
 ): string {
 	const policy = resolveDirectRouteCachePolicy(policyInput)
-	return `direct:v${policy.version}:${orgId}:${routeName}:${JSON.stringify(normalizeDirectCacheValue(payload, policy.snapWindowSeconds))}`
+	return `direct:v${policy.version}:${orgId}:${routeName}:${stringifyJson(normalizeDirectCacheValue(payload, policy.snapWindowSeconds))}`
 }
 
 const floorToBucketMs = (epochMs: number, bucketSeconds: number): number => {
@@ -471,7 +481,7 @@ const normalizeBucket = (bucket: string | Date | DateTime.Utc): string => {
 		return bucket.toISOString()
 	}
 
-	const raw = bucket.trim()
+	const raw = Str.trim(bucket)
 	if (!raw) {
 		return raw
 	}
@@ -561,10 +571,8 @@ const validateMetricsAttributeFilters = Effect.fn("QueryEngineService.validateMe
 
 		// `groupBy` is an array for timeseries, a single literal for breakdown.
 		const groupBy = query.groupBy
-		const wantsAttribute = Array.isArray(groupBy)
-			? groupBy.includes("attribute")
-			: groupBy === "attribute"
-		const wantsResourceAttribute = Array.isArray(groupBy)
+		const wantsAttribute = Arr.isArray(groupBy) ? groupBy.includes("attribute") : groupBy === "attribute"
+		const wantsResourceAttribute = Arr.isArray(groupBy)
 			? groupBy.includes("resource_attribute")
 			: groupBy === "resource_attribute"
 		if (wantsAttribute && !query.filters.groupByAttributeKey) {
@@ -686,24 +694,24 @@ function hasNarrowingFilter(request: QueryEngineExecuteRequest): boolean {
 		return true
 	}
 	const envs = filters.environments
-	if (Array.isArray(envs) && envs.length > 0) return true
+	if (Arr.isArray(envs) && envs.length > 0) return true
 	const services = filters.services
-	if (Array.isArray(services) && services.length > 0) return true
+	if (Arr.isArray(services) && services.length > 0) return true
 	const serviceNames = filters.serviceNames
-	if (Array.isArray(serviceNames) && serviceNames.length > 0) return true
+	if (Arr.isArray(serviceNames) && serviceNames.length > 0) return true
 	const spanNames = filters.spanNames
-	if (Array.isArray(spanNames) && spanNames.length > 0) return true
+	if (Arr.isArray(spanNames) && spanNames.length > 0) return true
 	const namespaces = filters.namespaces
-	if (Array.isArray(namespaces) && namespaces.length > 0) return true
+	if (Arr.isArray(namespaces) && namespaces.length > 0) return true
 	const attributeFilters = filters.attributeFilters
-	if (Array.isArray(attributeFilters) && attributeFilters.length > 0) return true
+	if (Arr.isArray(attributeFilters) && attributeFilters.length > 0) return true
 	// product_events: any row-side equality narrows the scan the way a service does.
 	for (const key of ["eventNames", "kinds", "sources", "hosts", "pagePaths", "userIds", "groupIds"]) {
 		const values = filters[key]
-		if (Array.isArray(values) && values.length > 0) return true
+		if (Arr.isArray(values) && values.length > 0) return true
 	}
 	const resourceAttributeFilters = filters.resourceAttributeFilters
-	if (Array.isArray(resourceAttributeFilters) && resourceAttributeFilters.length > 0) return true
+	if (Arr.isArray(resourceAttributeFilters) && resourceAttributeFilters.length > 0) return true
 	return false
 }
 
@@ -727,6 +735,7 @@ const validateBreakdownQuery = Effect.fn("QueryEngineService.validateBreakdownQu
 				`Breakdown queries support a maximum range of ${formatRangeSeconds(MAX_BREAKDOWN_RANGE_SECONDS)}`,
 				"Narrow the time range or use a timeseries query for wider trends",
 			],
+			fittingRangeSeconds: MAX_BREAKDOWN_RANGE_SECONDS,
 		})
 	}
 
@@ -737,6 +746,7 @@ const validateBreakdownQuery = Effect.fn("QueryEngineService.validateBreakdownQu
 				`Breakdowns spanning more than ${formatRangeSeconds(MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS)} require a serviceName, environment, or similar filter`,
 				"Add a filter or narrow the time range",
 			],
+			fittingRangeSeconds: MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 		})
 	}
 })
@@ -774,7 +784,7 @@ function groupTimeSeriesRows<T extends { bucket: string | Date | DateTime.Utc; g
 
 	// Every ordered bucket was either seeded above or written while iterating
 	// rows; an empty series is the honest value for one that was neither.
-	return bucketOrder.map((bucket) => ({
+	return Arr.map(bucketOrder, (bucket) => ({
 		bucket,
 		series: bucketMap.get(bucket) ?? {},
 	}))
@@ -808,7 +818,7 @@ function groupAllMetricsTimeSeriesRows<
 	const bucketOrder: string[] = fillOptions
 		? buildBucketTimeline(fillOptions.startMs, fillOptions.endMs, fillOptions.bucketSeconds)
 		: []
-	const isGrouped = rows.some((row) => row.groupName !== ENGINE_UNGROUPED_GROUP_KEY)
+	const isGrouped = Arr.some(rows, (row) => row.groupName !== ENGINE_UNGROUPED_GROUP_KEY)
 	const metricKey = (metric: string, groupName: string) =>
 		isGrouped ? `${metric}::${groupName || ENGINE_UNGROUPED_GROUP_KEY}` : metric
 
@@ -842,7 +852,7 @@ function groupAllMetricsTimeSeriesRows<
 
 	// Every ordered bucket was either seeded above or written while iterating
 	// rows; an empty series is the honest value for one that was neither.
-	return bucketOrder.map((bucket) => ({
+	return Arr.map(bucketOrder, (bucket) => ({
 		bucket,
 		series: bucketMap.get(bucket) ?? {},
 	}))
@@ -880,9 +890,9 @@ function collapseMetricTimeseriesRows(
 		}
 	}
 
-	return [...bucketMap.entries()]
-		.sort(([left], [right]) => left.localeCompare(right))
-		.map(([bucket, value]) => ({
+	return Arr.map(
+		[...bucketMap.entries()].sort(([left], [right]) => Str.localeCompare(right)(left)),
+		([bucket, value]) => ({
 			bucket,
 			groupName: ENGINE_UNGROUPED_GROUP_KEY,
 			value:
@@ -897,7 +907,8 @@ function collapseMetricTimeseriesRows(
 								: value.dataPointCount > 0
 									? value.sumValue / value.dataPointCount
 									: 0,
-		}))
+		}),
+	)
 }
 
 const validateExecute = Effect.fn("QueryEngineService.validateExecute")(function* (
@@ -948,7 +959,7 @@ const annotateWarehouseError = <A, Error extends { readonly _tag: string; readon
 	)
 
 /** A query `compile` accepts, for helpers generic over its output. */
-type SelectQuery<Output extends object> = CH.CHQuery<any, Output> & CH.NeedsSelect<Output>
+type SelectQuery<Output extends object> = CH.CHQuery<CH.ColumnDefs, Output> & CH.NeedsSelect<Output>
 
 /**
  * Compile a CHQuery, execute it via the warehouse SQL executor, and return typed rows.
@@ -987,9 +998,10 @@ const executeCHQuery = Effect.fnUntraced(function* <
 
 /**
  * The grouped trace list in two round trips: page the roots, then aggregate only
- * that page in `trace_detail_spans`. The one-shot `traceListQuery` bounds stage 2
- * by the requested window, and each cold daily partition a `TraceId` seek probes
- * costs ~0.5–3s — a 30-day window times out even when the page sits in one day.
+ * that page in `traces`, seeked through `trace_index`. The one-shot
+ * `traceListQuery` bounds that seek by the requested window, and every cold daily
+ * partition a `TraceId` lookup probes costs seconds — a 30-day window times out
+ * even when the page sits in one day.
  *
  * Stage 1 reads `trace_list_mv` in `MAX_LIST_RANGE_SECONDS` slices from the
  * sorted end: one scan over a wider window runs out of memory even read-in-order
@@ -999,8 +1011,8 @@ const executeCHQuery = Effect.fnUntraced(function* <
  * slice, and one after another they would outrun the 30s engine timeout.
  *
  * Stage 2 seeks each UTC date's roots separately, so every seek probes at most
- * two partitions however far the page spreads (on prod, 100 ids spread over 20
- * days: killed at 10s; one day: 63ms). A seek reaches from an hour before its
+ * two partitions however far the page spreads (on prod, before `trace_index`:
+ * 100 ids spread over 20 days were killed at 10s; one day's took 63ms). A seek reaches from an hour before its
  * earliest root to the end of that date — its partition is read anyway — or an
  * hour past the last root or the window, the one-shot's pad, whichever is less.
  */
@@ -1088,6 +1100,52 @@ const executeTraceListByPage = Effect.fnUntraced(function* <T extends QueryTenan
 	const byTraceId = new Map(rows.flat().map((row) => [row.traceId, row] as const))
 	return page.flatMap((root) => byTraceId.get(root.traceId) ?? [])
 })
+
+/**
+ * Refuse a raw-`traces` breakdown whose window holds more spans than one query can
+ * aggregate in time: a 400 naming a window that fits, not a 30s timeout. Fails open.
+ */
+const enforceRawBreakdownSpanBudget = Effect.fn("QueryEngineService.enforceRawBreakdownSpanBudget")(
+	function* <T extends QueryTenant>(
+		warehouse: QueryEngineWarehouse<T>,
+		tenant: T,
+		request: QueryEngineExecuteRequest,
+		range: TimeRangeBounds,
+		filter: Parameters<typeof rawBreakdownSpanVerdict>[1],
+	) {
+		const compiled = CH.compile(
+			CH.traceSpanVolumeByServiceQuery(),
+			{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
+			{ rowSchema: CH.traceSpanVolumeRowSchema },
+		)
+		const rows = yield* warehouse
+			.compiledQuery(tenant, compiled, { profile: "list", context: "breakdownSpanEstimate" })
+			.pipe(
+				Effect.catch((error) =>
+					Effect.as(
+						Effect.annotateCurrentSpan("maple.query_engine.span_estimate_error", error._tag),
+						undefined,
+					),
+				),
+			)
+		if (rows === undefined) return
+
+		const verdict = rawBreakdownSpanVerdict(rows, filter, range)
+		yield* Effect.annotateCurrentSpan({
+			"maple.query_engine.estimated_spans": verdict.estimatedSpans,
+			"maple.query_engine.span_budget_exceeded": verdict.exceeded !== undefined,
+		})
+		if (verdict.exceeded) {
+			return yield* new QueryEngineValidationError({
+				message: verdict.exceeded.message,
+				details: [...verdict.exceeded.details],
+				...(verdict.exceeded.fittingRangeSeconds === undefined
+					? undefined
+					: { fittingRangeSeconds: verdict.exceeded.fittingRangeSeconds }),
+			})
+		}
+	},
+)
 
 // A whole-range counter needs each series' last sample before the window. Two
 // widths reach at least as far back as the epoch-aligned grid (and its hourly rollup) did.
@@ -1224,11 +1282,10 @@ const executeMetricsBreakdownRows = Effect.fnUntraced(function* <T extends Query
 			if (name === "") continue
 			totals.set(name, (totals.get(name) ?? 0) + row.increaseValue)
 		}
-		return [...totals]
-			.map(([name, increase]) => ({
-				name,
-				value: metric === "rate" ? increase / windowSeconds : increase,
-			}))
+		return Arr.map([...totals], ([name, increase]) => ({
+			name,
+			value: metric === "rate" ? increase / windowSeconds : increase,
+		}))
 			.sort((a, b) => b.value - a.value)
 			.slice(0, query.limit ?? 10)
 	}
@@ -1253,7 +1310,7 @@ const executeMetricsBreakdownRows = Effect.fnUntraced(function* <T extends Query
 		count: "count",
 	} as const
 	const field = valueField[metric]
-	return rows.map((row) => ({ name: row.name, value: Number(row[field]) }))
+	return Arr.map(rows, (row) => ({ name: row.name, value: Number(row[field]) }))
 })
 
 /** Same as executeCHQuery but for union queries. */
@@ -1407,8 +1464,9 @@ function extractTracesOpts(filters: Record<string, unknown> | undefined) {
 function extractTracesFacetsOpts(filters: Record<string, unknown> | undefined): CH.TracesFacetsOpts {
 	// Facet opts take single filters; an `(a OR b)` group has no such shape, so
 	// facet counts ignore it rather than read one member as the whole filter.
-	const attrFilters = ((filters?.attributeFilters ?? []) as AttrFilterArray).filter((f) => !f.or?.length)
-	const resFilters = ((filters?.resourceAttributeFilters ?? []) as AttrFilterArray).filter(
+	const attrFilters = Arr.filter((filters?.attributeFilters ?? []) as AttrFilterArray, (f) => !f.or?.length)
+	const resFilters = Arr.filter(
+		(filters?.resourceAttributeFilters ?? []) as AttrFilterArray,
 		(f) => !f.or?.length,
 	)
 
@@ -1481,7 +1539,7 @@ function signatureMetricsGroupRows<
 ): Array<TimeseriesPoint> {
 	if (groupBy?.includes("none") || !groupBy?.length) {
 		return groupTimeSeriesRows(
-			rows.map((row) => ({
+			Arr.map(rows, (row) => ({
 				bucket: row.bucket,
 				groupName: ENGINE_UNGROUPED_GROUP_KEY,
 				value: valueExtractor(row),
@@ -1492,7 +1550,7 @@ function signatureMetricsGroupRows<
 	}
 	if (groupByAttributeKey) {
 		return groupTimeSeriesRows(
-			rows.map((row) => ({
+			Arr.map(rows, (row) => ({
 				bucket: row.bucket,
 				groupName: row.attributeValue || "(empty)",
 				value: valueExtractor(row),
@@ -1502,7 +1560,11 @@ function signatureMetricsGroupRows<
 		)
 	}
 	return groupTimeSeriesRows(
-		rows.map((row) => ({ bucket: row.bucket, groupName: row.serviceName, value: valueExtractor(row) })),
+		Arr.map(rows, (row) => ({
+			bucket: row.bucket,
+			groupName: row.serviceName,
+			value: valueExtractor(row),
+		})),
 		(r) => r.value,
 		fillOptions,
 	)
@@ -1589,12 +1651,12 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 		}
 		if ("filters" in request.query && request.query.filters) {
 			const filters = request.query.filters as Record<string, unknown>
-			if (filters.serviceName)
-				yield* Effect.annotateCurrentSpan("query.filter.serviceName", String(filters.serviceName))
-			if (filters.spanName)
-				yield* Effect.annotateCurrentSpan("query.filter.spanName", String(filters.spanName))
-			if (filters.metricName)
-				yield* Effect.annotateCurrentSpan("query.filter.metricName", String(filters.metricName))
+			if (typeof filters.serviceName === "string" && filters.serviceName !== "")
+				yield* Effect.annotateCurrentSpan("query.filter.serviceName", filters.serviceName)
+			if (typeof filters.spanName === "string" && filters.spanName !== "")
+				yield* Effect.annotateCurrentSpan("query.filter.spanName", filters.spanName)
+			if (typeof filters.metricName === "string" && filters.metricName !== "")
+				yield* Effect.annotateCurrentSpan("query.filter.metricName", filters.metricName)
 		}
 
 		const range = yield* validateExecute(request)
@@ -1664,18 +1726,18 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				// other rollup fallbacks so the retry happens *before* the response
 				// cache: the value stored is the one that succeeded.
 				const rows = yield* runAllMetrics(options?.overviewTiers).pipe(
-					Effect.catch((error) => {
-						if (options?.overviewTiers === "hour" || !isMissingServiceOverviewMinutely(error)) {
-							return Effect.fail(error)
-						}
-						return Effect.gen(function* () {
-							yield* Effect.logWarning(
-								"service_overview_minutely is absent on this cluster; restricting to the hourly tier. Apply ClickHouse schema to restore the fast path.",
-							).pipe(Effect.annotateLogs({ orgId: tenant.orgId }))
-							yield* Effect.annotateCurrentSpan("query.rollup.fallback", true)
-							return yield* runAllMetrics("hour")
-						})
-					}),
+					Effect.catchIf(
+						(error) =>
+							options?.overviewTiers !== "hour" && isMissingServiceOverviewMinutely(error),
+						() =>
+							Effect.gen(function* () {
+								yield* Effect.logWarning(
+									"service_overview_minutely is absent on this cluster; restricting to the hourly tier. Apply ClickHouse schema to restore the fast path.",
+								).pipe(Effect.annotateLogs({ orgId: tenant.orgId }))
+								yield* Effect.annotateCurrentSpan("query.rollup.fallback", true)
+								return yield* runAllMetrics("hour")
+							}),
+					),
 				)
 
 				return new QueryEngineExecuteResponse({
@@ -1890,7 +1952,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "sparklines",
 					source: "metrics",
-					data: metricNames.map((metricName) => ({
+					data: Arr.map(metricNames, (metricName) => ({
 						metricName,
 						points: pointsByMetric.get(metricName) ?? [],
 					})),
@@ -1901,6 +1963,16 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 		if (request.query.source === "traces" && request.query.kind === "breakdown") {
 			const tracesQuery = request.query
 			const opts = extractTracesOpts(request.query.filters as Record<string, unknown>)
+			if (
+				spanBudgetApplies(opts, range.rangeSeconds) &&
+				CH.tracesBreakdownReadsRaw({
+					...opts,
+					metric: tracesQuery.metric,
+					groupBy: tracesQuery.groupBy,
+				})
+			) {
+				yield* enforceRawBreakdownSpanBudget(warehouse, tenant, request, range, opts)
+			}
 			const rows = yield* executeCHQuery(
 				warehouse,
 				tenant,
@@ -1929,7 +2001,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "breakdown",
 					source: "traces",
-					data: rows.map((row) => ({
+					data: Arr.map(rows, (row) => ({
 						name: row.name,
 						value: Number(row[field]),
 					})),
@@ -1959,7 +2031,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "breakdown",
 					source: "logs",
-					data: rows.map((row) => ({
+					data: Arr.map(rows, (row) => ({
 						name: row.name,
 						value: row.count,
 					})),
@@ -1981,7 +2053,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "breakdown",
 					source: "product_events",
-					data: rows.map((row) => ({ name: row.name, value: row.value })),
+					data: Arr.map(rows, (row) => ({ name: row.name, value: row.value })),
 				},
 			})
 		}
@@ -2045,13 +2117,13 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					result: {
 						kind: "list",
 						source: "traces",
-						data: rows.map((row) => ({
+						data: Arr.map(rows, (row) => ({
 							traceId: row.traceId,
 							startTime: DateTime.formatIso(row.startTime),
 							endTime: DateTime.formatIso(row.endTime),
 							durationMs: row.durationMicros / 1000,
 							spanCount: row.spanCount,
-							services: row.services.map(String),
+							services: Arr.map(row.services, String),
 							rootSpanName: row.rootSpanName,
 							rootSpanKind: row.rootSpanKind,
 							rootSpanStatusCode: row.rootSpanStatusCode,
@@ -2102,7 +2174,12 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			)
 
 			const traceIds = Array.from(
-				new Set(rows.map((row) => row.traceId).filter((traceId) => traceId.length > 0)),
+				new Set(
+					Arr.filter(
+						Arr.map(rows, (row) => row.traceId),
+						(traceId) => traceId.length > 0,
+					),
+				),
 			)
 			const wantsTraceServices = requestedColumns?.includes("services") === true
 			const serviceRows: ReadonlyArray<CH.TraceServicesByTraceIdsOutput> =
@@ -2113,7 +2190,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 							CH.traceServicesByTraceIdsQuery({ traceIds }),
 							{
 								orgId: tenant.orgId,
-								...traceServicePartitionWindow(rows, {
+								...pageTimeWindow(rows, {
 									startTime: request.startTime,
 									endTime: request.endTime,
 								}),
@@ -2135,14 +2212,14 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						)
 					: []
 			const servicesByTraceId = new Map(
-				serviceRows.map((row) => [row.traceId, row.services.map(String)] as const),
+				Arr.map(serviceRows, (row) => [row.traceId, Arr.map(row.services, String)] as const),
 			)
 
 			return new QueryEngineExecuteResponse({
 				result: {
 					kind: "list",
 					source: "traces",
-					data: rows.map((row) => ({
+					data: Arr.map(rows, (row) => ({
 						traceId: row.traceId,
 						timestamp: DateTime.formatIso(row.timestamp),
 						spanId: row.spanId,
@@ -2177,7 +2254,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "list",
 					source: "product_events",
-					data: rows.map((row) => ({
+					data: Arr.map(rows, (row) => ({
 						timestamp: DateTime.formatIso(row.timestamp),
 						eventName: row.eventName,
 						kind: row.kind,
@@ -2211,7 +2288,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "attributeKeys",
 					source: "product_events",
-					data: rows.map((row) => ({ key: row.attributeKey, count: row.usageCount })),
+					data: Arr.map(rows, (row) => ({ key: row.attributeKey, count: row.usageCount })),
 				},
 			})
 		}
@@ -2232,7 +2309,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "attributeValues",
 					source: "product_events",
-					data: rows.map((row) => ({ value: row.attributeValue, count: row.usageCount })),
+					data: Arr.map(rows, (row) => ({ value: row.attributeValue, count: row.usageCount })),
 				},
 			})
 		}
@@ -2272,7 +2349,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "attributeKeys",
 					source: request.query.source,
-					data: rows.map((row) => ({
+					data: Arr.map(rows, (row) => ({
 						key: row.attributeKey,
 						count: row.usageCount,
 					})),
@@ -2311,7 +2388,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					result: {
 						kind: "facets",
 						source: "traces",
-						data: rows.map((row) => ({
+						data: Arr.map(rows, (row) => ({
 							facetType: row.facetType,
 							name: row.name,
 							count: row.count,
@@ -2347,7 +2424,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					result: {
 						kind: "facets",
 						source: "logs",
-						data: rows.map((row) => ({
+						data: Arr.map(rows, (row) => ({
 							facetType: row.facetType,
 							name:
 								row.facetType === "severity"
@@ -2391,7 +2468,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					result: {
 						kind: "facets",
 						source: "errors",
-						data: rows.map((row) => ({
+						data: Arr.map(rows, (row) => ({
 							facetType: row.facetType,
 							name: row.name,
 							count: row.count,
@@ -2413,7 +2490,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					result: {
 						kind: "facets",
 						source: "services",
-						data: rows.map((row) => ({
+						data: Arr.map(rows, (row) => ({
 							facetType: row.facetType,
 							name: row.name,
 							count: row.count,
@@ -2462,9 +2539,10 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 
 		if (request.query.kind === "attributeValues") {
 			// Per-metric scoping reads the raw metric table (see attributeKeys above).
+			const { metricName, metricNames, metricType } = request.query
 			const metricScoped =
-				request.query.source === "metrics" && request.query.metricName && request.query.metricType
-					? { metricName: request.query.metricName, metricType: request.query.metricType }
+				request.query.source === "metrics" && (metricName || metricNames) && metricType
+					? { metricName, metricNames, metricType }
 					: undefined
 			const queryFn = Match.value(request.query.scope).pipe(
 				Match.when("resource", () => CH.resourceAttributeValuesQuery),
@@ -2478,6 +2556,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				metricScoped
 					? CH.metricScopedAttributeValuesQuery({
 							metricType: metricScoped.metricType,
+							metricNames: metricScoped.metricNames,
+							scope: request.query.scope === "resource" ? "resource" : "metric",
 							attributeKey: request.query.attributeKey,
 							limit: request.query.limit,
 						})
@@ -2486,7 +2566,9 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					orgId: tenant.orgId,
 					startTime: request.startTime,
 					endTime: request.endTime,
-					...(metricScoped ? { metricName: metricScoped.metricName } : undefined),
+					...(metricScoped?.metricName && !metricScoped.metricNames
+						? { metricName: metricScoped.metricName }
+						: undefined),
 				},
 				metricScoped ? "attributeValues:metric-scoped" : `attributeValues:${request.query.scope}`,
 				"discovery",
@@ -2495,7 +2577,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "attributeValues",
 					source: request.query.source,
-					data: rows.map((row) => ({ value: row.attributeValue, count: row.usageCount })),
+					data: Arr.map(rows, (row) => ({ value: row.attributeValue, count: row.usageCount })),
 				},
 			})
 		}
@@ -2538,8 +2620,8 @@ export const reducePerGroupObservations = (
 	const result: Array<GroupedAlertObservation> = []
 	for (const [groupKey, observations] of byGroup.entries()) {
 		const reducedValue = applyAlertReducer(observations, reducer)
-		const totalSampleCount = observations.reduce((sum, o) => sum + o.sampleCount, 0)
-		const hasData = observations.some((o) => o.hasData)
+		const totalSampleCount = Arr.reduce(observations, 0, (sum, o) => sum + o.sampleCount)
+		const hasData = Arr.some(observations, (o) => o.hasData)
 		result.push({
 			groupKey,
 			value: reducedValue,
@@ -2564,9 +2646,9 @@ const composeMetricsGroupKey = (
 		// attributeValue column (only one can be active per query).
 		else if (dim === "attribute" || dim === "resource_attribute") parts.push(attributeValue || "")
 	}
-	const filtered = parts.filter((p) => p.length > 0)
+	const filtered = Arr.filter(parts, (p) => p.length > 0)
 	if (filtered.length === 0) return ENGINE_UNGROUPED_GROUP_KEY
-	return filtered.join(" \u00b7 ")
+	return Arr.join(filtered, " \u00b7 ")
 }
 
 /**
@@ -2590,7 +2672,13 @@ const RawSqlAlertRowSchema = Schema.Struct({
  */
 export type AlertBucketSource =
 	| { readonly kind: "spec"; readonly query: QuerySpec }
-	| { readonly kind: "raw_sql"; readonly sql: string; readonly windowMinutes: number }
+	| {
+			readonly kind: "raw_sql"
+			readonly sql: string
+			readonly windowMinutes: number
+			/** The rule's check interval, which sets the query's time and memory limits. */
+			readonly intervalMinutes: number
+	  }
 
 /** Structural request slice that {@link computeAlertBuckets} needs for one range. */
 export interface AlertBucketRequest {
@@ -2607,6 +2695,8 @@ export interface BucketGroupObs {
 	readonly groupKey: string
 	readonly value: number | null
 	readonly sampleCount: number
+	/** A raw-SQL row without a `bucket` column: one aggregate over the whole range, not a window. */
+	readonly untimed?: true
 }
 
 /**
@@ -2807,18 +2897,18 @@ const rawSqlRowsToObs = (
 			}
 			seenGroups.add(groupKey)
 		}
+		const timed = typeof row.bucket === "string" || row.bucket instanceof Date
 		obs.push({
 			// A query without `$__timeGroup` has no bucket column: the whole window
 			// collapses into one synthetic bucket at its start. Normalize either way
 			// — `windowStart` is a Tinybird datetime, and consumers key buckets
 			// by `Date.parse`, which would read that space-separated form as local
 			// time rather than UTC.
-			bucket: normalizeBucket(
-				typeof row.bucket === "string" || row.bucket instanceof Date ? row.bucket : windowStart,
-			),
+			bucket: normalizeBucket(timed ? row.bucket : windowStart),
 			groupKey,
 			value,
 			sampleCount: value == null ? 0 : rawSamples,
+			...(timed ? undefined : { untimed: true as const }),
 		})
 	}
 	return Result.succeed(obs)
@@ -2860,6 +2950,7 @@ const computeRawSqlBuckets = Effect.fnUntraced(function* <T extends QueryTenant>
 		granularitySeconds,
 		workload: "alert",
 		context: "alertRawQuery",
+		alertIntervalMinutes: source.intervalMinutes,
 		wholeRange: range.wholeRange,
 	}).pipe(
 		Effect.catchTag("@maple/http/errors/RawSqlValidationError", (error) =>
@@ -2927,7 +3018,7 @@ const prepareAlertEvaluation = Effect.fnUntraced(function* (request: AlertEvalua
 		if ("groupBy" in query && query.groupBy) {
 			yield* Effect.annotateCurrentSpan(
 				"query.groupBy",
-				(query.groupBy as ReadonlyArray<string>).join(","),
+				Arr.join(query.groupBy as ReadonlyArray<string>, ","),
 			)
 		}
 	}
@@ -2990,8 +3081,8 @@ export const makeQueryEngineEvaluate = <T extends QueryTenant>(warehouse: QueryE
 			wholeRange: true,
 		}
 		const load = computeAlertBuckets(warehouse, tenant, bucketRequest, bucketSeconds)
-		// Raw SQL may contain volatile functions. Keep its existing whole-result
-		// cache policy; only structured queries share buckets across reducers.
+		// Raw SQL may contain volatile functions, so it always runs; only
+		// structured queries share buckets across reducers.
 		const obs = yield* request.source.kind === "spec"
 			? memoizeAlertBuckets(
 					warehouse,

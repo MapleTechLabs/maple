@@ -7,6 +7,7 @@
 import type { APIRoute } from "astro"
 import { EU_APP_URL, EU_INGEST_URL, euFaqs } from "../lib/eu-region"
 import { blocks, docHeader, markdown, table } from "../lib/page-markdown"
+import { Array as Arr } from "effect"
 
 export const GET: APIRoute = async ({ site }) => {
 	const url = (path: string) => new URL(path, site ?? "https://maple.dev").toString()
@@ -32,30 +33,39 @@ export const GET: APIRoute = async ({ site }) => {
 			regions,
 
 			"## Getting started in the EU",
-			[
-				"1. Sign up. The first onboarding step asks where your data should live.",
-				"2. Choose European Union. Onboarding continues in the EU dashboard.",
-				"3. Point your OpenTelemetry exporters at the EU ingest endpoint with an ingest key from the EU dashboard.",
-			].join("\n"),
-			[
-				"```bash",
-				`export OTEL_EXPORTER_OTLP_ENDPOINT="${EU_INGEST_URL}"`,
-				'export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"',
-				"```",
-			].join("\n"),
+			Arr.join(
+				[
+					"1. Sign up. The first onboarding step asks where your data should live.",
+					"2. Choose European Union. Onboarding continues in the EU dashboard.",
+					"3. Point your OpenTelemetry exporters at the EU ingest endpoint with an ingest key from the EU dashboard.",
+				],
+				"\n",
+			),
+			Arr.join(
+				[
+					"```bash",
+					`export OTEL_EXPORTER_OTLP_ENDPOINT="${EU_INGEST_URL}"`,
+					'export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"',
+					"```",
+				],
+				"\n",
+			),
 
 			"## Shared between regions",
 			"Your Maple login, billing (plan and usage totals, no telemetry) and the maple.dev website are run once for both regions. None of them hold the telemetry you send.",
 
 			"## FAQ",
-			...euFaqs().flatMap((item) => [`### ${item.question}`, item.answer]),
+			...Arr.flatMap(euFaqs(), (item) => [`### ${item.question}`, item.answer]),
 
 			"## Links",
-			[
-				`- [EU hosting (HTML)](${url("/eu")})`,
-				`- [Pricing](${url("/pricing.md")})`,
-				`- [Instrumentation docs](${url("/docs/instrumentation.md")})`,
-			].join("\n"),
+			Arr.join(
+				[
+					`- [EU hosting (HTML)](${url("/eu")})`,
+					`- [Pricing](${url("/pricing.md")})`,
+					`- [Instrumentation docs](${url("/docs/instrumentation.md")})`,
+				],
+				"\n",
+			),
 		),
 	)
 }

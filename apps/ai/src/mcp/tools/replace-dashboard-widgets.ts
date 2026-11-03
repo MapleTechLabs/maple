@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { DashboardWidgetSchema, WidgetLayoutSchema } from "@maple/domain/http"
 import { ReplaceDashboardWidgetsOutput } from "@maple/domain/mcp-outputs"
 import {
@@ -34,7 +34,7 @@ const WidgetInput = Schema.Struct({
 })
 
 const legacyWidgetsHint = (value: unknown): string | undefined => {
-	if (!Array.isArray(value)) return undefined
+	if (!Arr.isArray(value)) return undefined
 	for (const [index, widget] of value.entries()) {
 		const hint = legacyWidgetDataSourceHint(widget)
 		if (hint !== undefined) return `widgets_json[${index}]: ${hint}`
@@ -57,7 +57,7 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 			"Replace every widget on a dashboard in one validated write. Every widget's query is checked first; if any has a clause the engine cannot honor, nothing is saved and the offending clauses are returned. " +
 			"Use it for a rewrite of the whole board; use add/update_dashboard_widget for one widget, and update_dashboard's dashboard_json only to restore a saved document. Dashboard metadata is untouched. The result carries a validation verdict per widget.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text("Dashboard ID (ids from list_dashboards)"),
+			dashboard_id: P.resourceId("dashboard", "Dashboard ID (ids from list_dashboards)"),
 			widgets_json: jsonText(
 				Schema.Array(WidgetInput),
 				"The complete new widget list as JSON text, each the shape of a get_dashboard widgets[] entry: [{ id?, visualization, dataSource, display, layout?, timeRange? }, ...]. " +
@@ -124,31 +124,31 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 			// all-or-nothing guard so a single bad widget can't corrupt the board.
 			const blocking = yield* Effect.forEach(widgets, (w) =>
 				collectBlockingBuilderWarnings(w.dataSource).pipe(
-					Effect.map((warns) => warns.map((warn) => `[${w.id}] ${warn}`)),
+					Effect.map((warns) => Arr.map(warns, (warn) => `[${w.id}] ${warn}`)),
 				),
 			).pipe(Effect.map((nested) => nested.flat()))
 			if (blocking.length > 0) {
 				return yield* invalid(
-					`Some widgets have clauses the engine can't honor; NOTHING was saved:\n- ${blocking.join("\n- ")}\n\nFix and retry. Span/resource attributes work automatically but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys.`,
+					`Some widgets have clauses the engine can't honor; NOTHING was saved:\n- ${Arr.join(blocking, "\n- ")}\n\nFix and retry. Span/resource attributes work automatically but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys.`,
 				)
 			}
 
 			// Same all-or-nothing guard for shapes the renderer can't draw: a batch of
 			// freshly-authored widgets, not a restore, so fatal issues block here.
-			const renderIssues = widgets.map((widget) => ({
+			const renderIssues = Arr.map(widgets, (widget) => ({
 				widget,
 				issues: validateWidgetRenderability({ widget }),
 			}))
-			const fatalRenderIssues = renderIssues.flatMap(({ widget, issues }) =>
-				issues.fatal.map((message) => `[${widget.id}] ${message}`),
+			const fatalRenderIssues = Arr.flatMap(renderIssues, ({ widget, issues }) =>
+				Arr.map(issues.fatal, (message) => `[${widget.id}] ${message}`),
 			)
 			if (fatalRenderIssues.length > 0) {
 				return yield* invalid(
-					`Some widgets cannot render as configured; NOTHING was saved:\n- ${fatalRenderIssues.join("\n- ")}`,
+					`Some widgets cannot render as configured; NOTHING was saved:\n- ${Arr.join(fatalRenderIssues, "\n- ")}`,
 				)
 			}
-			const renderWarnings = renderIssues.flatMap(({ widget, issues }) =>
-				issues.warnings.map((message) => `[${widget.id}] ${message}`),
+			const renderWarnings = Arr.flatMap(renderIssues, ({ widget, issues }) =>
+				Arr.map(issues.warnings, (message) => `[${widget.id}] ${message}`),
 			)
 
 			const dashboard = yield* withDashboardMutation(dashboard_id, TOOL, () => Effect.succeed(widgets))
@@ -157,14 +157,14 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 			const validation = yield* inspectWidgetsAfterMutation({
 				tenant,
 				dashboard,
-				widgetIds: widgets.map((w) => w.id),
+				widgetIds: Arr.map(widgets, (w) => w.id),
 				validate: true,
 			})
 
 			const row = toDashboardRow(dashboard)
 			return {
 				dashboard: { ...row, tags: row.tags ?? [] },
-				widgetIds: widgets.map((w) => w.id),
+				widgetIds: Arr.map(widgets, (w) => w.id),
 				...(validation.ran ? { validation } : undefined),
 				repairedScalarIds,
 				renderWarnings,
@@ -181,12 +181,12 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 					doc.fields([
 						["Dashboard", `${output.dashboard.name} (${output.dashboard.id})`],
 						["Total widgets", output.dashboard.widgetCount],
-						["Updated", output.dashboard.updatedAt.slice(0, 19)],
+						["Updated", Str.slice(0, 19)(output.dashboard.updatedAt)],
 					]),
 					...(output.repairedScalarIds.length > 0
 						? [
 								doc.text(
-									`Note: ${output.repairedScalarIds.length} scalar widget(s) had no \`transform.reduceToValue\` and were given \`{ field: "value", aggregate: "first" }\`. A stat/gauge renders \`[object Object]\` without one: ${output.repairedScalarIds.join(", ")}`,
+									`Note: ${output.repairedScalarIds.length} scalar widget(s) had no \`transform.reduceToValue\` and were given \`{ field: "value", aggregate: "first" }\`. A stat/gauge renders \`[object Object]\` without one: ${Arr.join(output.repairedScalarIds, ", ")}`,
 								),
 							]
 						: []),

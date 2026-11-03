@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { FINGERPRINT_HASH_SALT } from "../tinybird/fingerprint"
 import { buildTinybirdProjectManifest } from "../tinybird/project-manifest"
@@ -16,8 +16,10 @@ describe("ClickHouse DDL emitter", () => {
 		const stmts = emitProjectDdl(manifest)
 
 		expect(stmts.length).toBe(manifest.datasources.length + manifest.pipes.length)
-		expect(stmts.filter((s) => s.startsWith("CREATE TABLE")).length).toBe(manifest.datasources.length)
-		expect(stmts.filter((s) => s.startsWith("CREATE MATERIALIZED VIEW")).length).toBe(
+		expect(Arr.filter(stmts, (s) => Str.startsWith("CREATE TABLE")(s)).length).toBe(
+			manifest.datasources.length,
+		)
+		expect(Arr.filter(stmts, (s) => Str.startsWith("CREATE MATERIALIZED VIEW")(s)).length).toBe(
 			manifest.pipes.length,
 		)
 	})
@@ -30,7 +32,7 @@ describe("ClickHouse DDL emitter", () => {
 		const ddl = emitCreateTable(traces!)
 		expect(ddl).not.toContain("`json:")
 		expect(ddl).toContain("OrgId LowCardinality(String)")
-		expect(ddl).toContain("ORDER BY (OrgId, ServiceName, SpanName, toDateTime(Timestamp))")
+		expect(ddl).toContain("ORDER BY (OrgId, ServiceName, toStartOfFiveMinutes(Timestamp), TraceId)")
 		expect(ddl).toContain("PARTITION BY toDate(Timestamp)")
 		expect(ddl).toContain("TTL toDate(Timestamp) + INTERVAL 30 DAY")
 	})
@@ -107,12 +109,12 @@ describe("ClickHouse DDL emitter", () => {
 		const body = spec.find((c) => c.column === "Body")
 		expect(body?.jsonPath).toBe("$.body")
 		// ClickHouse-only columns are never ingested, so the spec leaves them out.
-		expect(spec.some((c) => c.column === "ResourceAttributeItems")).toBe(false)
+		expect(Arr.some(spec, (c) => c.column === "ResourceAttributeItems")).toBe(false)
 
 		// Datasources populated only by MVs (e.g. service_usage) have no JSONPaths.
 		const serviceUsage = manifest.datasources.find((ds) => ds.name === "service_usage")
 		const serviceUsageSpec = emitJsonPathSpec(serviceUsage!)
-		expect(serviceUsageSpec.every((c) => c.jsonPath === null)).toBe(true)
+		expect(Arr.every(serviceUsageSpec, (c) => c.jsonPath === null)).toBe(true)
 	})
 
 	it("appends the ClickHouse-only search columns that Tinybird does not store", async () => {
@@ -166,8 +168,8 @@ ENGINE = MergeTree`
 		const line = extractColumnDefinition(COMPLEX_DEFAULT, "SampleRate")
 		expect(line).not.toBeNull()
 		// Must start with the column name and preserve the full multiIf body.
-		expect(line!.startsWith("SampleRate Float64 DEFAULT multiIf(")).toBe(true)
-		expect(line!.endsWith(", 1.0)")).toBe(true)
+		expect(Str.startsWith("SampleRate Float64 DEFAULT multiIf(")(line!)).toBe(true)
+		expect(Str.endsWith(", 1.0)")(line!)).toBe(true)
 		// Sanity: the IsEntryPoint line must NOT bleed in.
 		expect(line!).not.toContain("IsEntryPoint")
 	})

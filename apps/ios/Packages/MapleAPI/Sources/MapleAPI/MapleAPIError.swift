@@ -78,12 +78,11 @@ extension MapleAPIError {
 
 	/// The token authenticated but carries no active organization.
 	///
-	/// v2 resolves the org from the Clerk token's active-organization claim and
-	/// has no org header, so this is an org-picker prompt rather than a
-	/// sign-out. See `packages/auth/src/index.ts`.
+	/// v2 answers with a dedicated 403 (`V2NoActiveOrganization` in
+	/// `packages/domain/src/http/v2/errors.ts`): an org-picker prompt, not a
+	/// sign-out. Matched on the stable `_tag`, never on the message.
 	public var requiresOrganization: Bool {
-		guard let body else { return false }
-		return body.message.localizedCaseInsensitiveContains("active organization is required")
+		body?.tag == "@maple/http/v2/NoActiveOrganizationError"
 	}
 
 	/// True when the underlying failure is a cancelled Task, however deeply the

@@ -7,7 +7,7 @@
  * headline one on the first run.
  */
 import { assert, beforeEach, describe, it } from "vitest"
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { encodeChatTurnTenant, type ChatTurnOrigin, type ChatTurnTenant } from "@maple/domain/chat-session"
 import { ChatSession, MAX_TURN_RESUMES, TURN_STALE_MS } from "./ChatSession"
 import type { RunChatSessionTurnInput } from "./turn-runner"
@@ -47,18 +47,6 @@ const makeSession = () => {
 	return { session, state, turnId }
 }
 
-interface ChatSessionWaiterHarness {
-	readonly waiters: Set<() => void>
-	readonly appends: number
-	readonly waitForAppend: (seen: number, timeoutMs: number) => Effect.Effect<boolean>
-}
-
-const waiterHarness = (session: ChatSession): ChatSessionWaiterHarness => {
-	// SAFETY: this test intentionally exercises ChatSession's private waiter lifecycle; the
-	// interface mirrors the three members declared by ChatSession and never escapes the test.
-	return session as ChatSessionWaiterHarness
-}
-
 describe("ChatSession.history", () => {
 	it("folds a streamed turn into ONE assistant message", () => {
 		const { session } = makeSession()
@@ -75,7 +63,7 @@ describe("ChatSession.history", () => {
 		// because the fold replaced the array slot and then looked the *old* object up again.
 		assert.lengthOf(history, 2)
 		assert.deepEqual(
-			history.map((m) => m.role),
+			Arr.map(history, (m) => m.role),
 			["user", "assistant"],
 		)
 		assert.equal(history[1]?.text, "Checking the traces.")
@@ -119,7 +107,7 @@ describe("ChatSession.history", () => {
 		// rebuilds it from, so a reloaded turn reads the way it was watched.
 		const calls = session.history()[0]!.toolCalls
 		assert.deepEqual(
-			calls.map((call) => call.textOffset),
+			Arr.map(calls, (call) => call.textOffset),
 			["Looking.".length, "Looking. Now the errors.".length],
 		)
 	})
@@ -241,7 +229,7 @@ describe("ChatSession cursor and replay", () => {
 
 		const all = session.since(0)
 		assert.deepEqual(
-			all.map((event) => event.seq),
+			Arr.map(all, (event) => event.seq),
 			[1, 2, 3],
 		)
 	})
@@ -682,18 +670,16 @@ describe("ChatSession.subscribe", () => {
 
 	/** Frames as `[seq, event]` pairs, skipping the leading `retry:` hint. */
 	const framesOf = (text: string): Array<{ seq: number; type: string }> =>
-		text
-			.split("\n\n")
-			.filter((frame) => frame.startsWith("id:"))
-			.map((frame) => {
-				const data = frame
-					.split("\n")
-					.find((line) => line.startsWith("data:"))!
-					.slice(5)
-					.trimStart()
+		Arr.map(
+			Arr.filter(Str.split("\n\n")(text), (frame) => Str.startsWith("id:")(frame)),
+			(frame) => {
+				const data = Str.trimStart(
+					Str.slice(5)(Str.split("\n")(frame).find((line) => Str.startsWith("data:")(line))!),
+				)
 				const event = JSON.parse(data) as { seq: number; type: string }
 				return { seq: event.seq, type: event.type }
-			})
+			},
+		)
 
 	it("replays from the cursor as SSE frames and closes on turn-end", async () => {
 		const { session } = makeSession()
@@ -704,7 +690,7 @@ describe("ChatSession.subscribe", () => {
 		const text = await drain(session.subscribe(1))
 
 		// The `retry:` hint is what keeps a browser's own reconnect logic from hammering the DO.
-		assert.isTrue(text.startsWith("retry: 1000\n\n"))
+		assert.isTrue(Str.startsWith("retry: 1000\n\n")(text))
 		assert.deepEqual(framesOf(text), [
 			{ seq: 2, type: "text-delta" },
 			{ seq: 3, type: "turn-end" },
@@ -727,7 +713,7 @@ describe("ChatSession.subscribe", () => {
 
 		const frames = framesOf(await collected)
 		assert.deepEqual(
-			frames.map((frame) => frame.type),
+			Arr.map(frames, (frame) => frame.type),
 			["turn-start", "turn-end"],
 		)
 		assert.isBelow(Date.now() - started, 40, "a push must not pay the old poll interval")
@@ -749,11 +735,10 @@ describe("ChatSession.subscribe", () => {
 
 	it("removes a timed-out waiter before the next idle reconnect", async () => {
 		const { session } = makeSession()
-		const harness = waiterHarness(session)
-
+		// Element access reaches the private waiter lifecycle this test pins, without a cast.
 		for (let reconnect = 0; reconnect < 3; reconnect++) {
-			assert.isFalse(await Effect.runPromise(harness.waitForAppend.call(session, harness.appends, 0)))
-			assert.equal(harness.waiters.size, 0)
+			assert.isFalse(await Effect.runPromise(session["waitForAppend"](session["appends"], 0)))
+			assert.equal(session["waiters"].size, 0)
 		}
 	})
 })

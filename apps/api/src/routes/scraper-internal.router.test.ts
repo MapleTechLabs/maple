@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, Ref, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, Ref, Schema, Array as Arr } from "effect"
 import { HttpRouter } from "effect/http"
 import {
 	IngestKeysResponse,
@@ -8,9 +8,11 @@ import {
 	OrgId,
 	ScrapeTargetId,
 } from "@maple/domain/http"
+import { SourceId } from "@maple/domain/primitives"
 import type { ScrapeTargetRow } from "@maple/db/tables"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import { publicSourceId } from "@maple/backend/services/org/integration-sources"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { ScraperInternalRouter } from "./scraper-internal.http"
@@ -21,9 +23,13 @@ const asTargetId = Schema.decodeUnknownSync(ScrapeTargetId)
 const asIso = Schema.decodeUnknownSync(IsoDateTimeString)
 const decodeTargets = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(InternalScrapeTarget)))
 
+// Only the first row is linked to a source; the rest must send without one.
+const FIRST_SOURCE = Schema.decodeUnknownSync(SourceId)("00000000-0000-4000-8000-0000000000aa")
+
 const makeRow = (index: number): ScrapeTargetRow => ({
 	id: asTargetId(`00000000-0000-4000-8000-00000000000${index}`),
 	orgId: asOrgId(`org_${index % 2}`),
+	sourceId: index === 0 ? FIRST_SOURCE : null,
 	name: `PlanetScale ${index}`,
 	serviceName: null,
 	url: "https://api.planetscale.com/v1/organizations/acme/metrics",
@@ -90,7 +96,7 @@ const makeHarness = Effect.fnUntraced(function* (rowCount: number) {
 					Ref.update(keyBatches, (count) => count + 1).pipe(
 						Effect.as(
 							new Map(
-								orgIds.map((orgId) => [
+								Arr.map(orgIds, (orgId) => [
 									orgId,
 									new IngestKeysResponse({
 										publicKey: `maple_pk_${orgId}`,
@@ -102,6 +108,7 @@ const makeHarness = Effect.fnUntraced(function* (rowCount: number) {
 							),
 						),
 					),
+				forget: die,
 				rerollPublic: die,
 				rerollPrivate: die,
 				resolveIngestKey: die,
@@ -151,10 +158,12 @@ describe("GET /api/internal/scrape-targets", () => {
 			assert.strictEqual(yield* Ref.get(harness.maxInFlight), 4)
 			assert.strictEqual(yield* Ref.get(harness.keyBatches), 1)
 			assert.deepStrictEqual(
-				response.body.map((target) => target.id),
-				harness.rows.map((row) => row.id),
+				Arr.map(response.body, (target) => target.id),
+				Arr.map(harness.rows, (row) => row.id),
 			)
 			assert.strictEqual(response.body[1]?.ingestKey, "maple_pk_org_1")
+			assert.strictEqual(response.body[0]?.sourceId, publicSourceId(FIRST_SOURCE))
+			assert.isUndefined(response.body[1]?.sourceId)
 		}),
 	)
 })

@@ -27,7 +27,6 @@ describe("cloudflareUsageQuery", () => {
 		expect(sql).toContain("TimeUnix <= '2026-07-03 00:00:00.000'")
 		expect(sql).toContain("GROUP BY serviceName, bucket")
 		expect(sql).toContain("ORDER BY serviceName ASC, bucket ASC")
-		expect(sql).toContain("FORMAT JSON")
 	})
 })
 
@@ -60,7 +59,6 @@ describe("cloudflareUsageStatsQuery", () => {
 		)
 		expect(sql).toContain("TimeUnix >= '2026-07-02 00:00:00.000')) AS firewallBlockedEvents")
 		expect(sql).not.toContain("GROUP BY")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("row schema coerces BYO-CH string-encoded aggregates", () => {

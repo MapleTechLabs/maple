@@ -4,6 +4,7 @@
 // web app: this package doesn't depend on @maple/query-engine.
 
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
+import { String as Str } from "effect"
 
 /** The two columns that together say what a session is doing. */
 export interface SessionLiveness {
@@ -18,7 +19,7 @@ export interface SessionLiveness {
 
 const epochMs = (value: string | null): number | null => {
 	if (value === null) return null
-	const normalized = value.includes("T") ? value : value.replace(" ", "T")
+	const normalized = Str.includes("T")(value) ? value : Str.replace(" ", "T")(value)
 	const ms = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(normalized) ? normalized : `${normalized}Z`)
 	return Number.isNaN(ms) ? null : ms
 }
@@ -75,9 +76,9 @@ export function formatClock(ms: number): string {
 	const totalSeconds = Math.floor(ms / 1000)
 	const hours = Math.floor(totalSeconds / 3600)
 	const minutes = Math.floor(totalSeconds / 60) % 60
-	const seconds = (totalSeconds % 60).toString().padStart(2, "0")
+	const seconds = Str.padStart(2, "0")((totalSeconds % 60).toString())
 	if (hours === 0) return `${minutes}:${seconds}`
-	return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds}`
+	return `${hours}:${Str.padStart(2, "0")(minutes.toString())}:${seconds}`
 }
 
 // Relative-time formatting lives in `./time-format` — import `formatRelativeFrom`

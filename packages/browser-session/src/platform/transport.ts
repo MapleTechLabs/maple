@@ -1,3 +1,5 @@
+import { stringifyWellFormed } from "./json"
+
 /**
  * The slice of configuration the replay engine needs. Both SDKs adapt their
  * own config shapes onto this.
@@ -150,6 +152,11 @@ export function reserveKeepalive(requested: boolean, bytes: number, otlp = false
 	}
 }
 
+/** Keepalive bytes a session write could reserve right now. */
+export function keepaliveRoom(): number {
+	return Math.max(0, KEEPALIVE_BUDGET_BYTES - keepaliveInflight().bytes)
+}
+
 /** Test seam. */
 export function resetKeepaliveBudgetForTests(): void {
 	Object.assign(keepaliveInflight(), { bytes: 0, otlpBytes: 0 })
@@ -218,6 +225,8 @@ const GZIP_MIN_BYTES = 18
  * crawlers, which tear the page down on nearly every session.
  */
 export async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
+	// Safari before 16.4 and Firefox before 113: valid gzip, just not smaller.
+	if (typeof CompressionStream !== "function") return gzipStored(bytes)
 	const stream = new CompressionStream("gzip")
 	const writer = stream.writable.getWriter()
 	// Both halves are started before either is awaited: awaiting the write first
@@ -232,48 +241,185 @@ export async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
 	return out
 }
 
+let crcTable: Uint32Array | undefined
+
+function crc32(bytes: Uint8Array): number {
+	if (!crcTable) {
+		crcTable = new Uint32Array(256)
+		for (let n = 0; n < 256; n++) {
+			let c = n
+			for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+			crcTable[n] = c >>> 0
+		}
+	}
+	let crc = 0xffffffff
+	for (const byte of bytes) crc = (crcTable[(crc ^ byte) & 0xff] ?? 0) ^ (crc >>> 8)
+	return (crc ^ 0xffffffff) >>> 0
+}
+
+/** Largest payload of one stored (uncompressed) deflate block. */
+const STORED_BLOCK_BYTES = 0xffff
+
+/**
+ * gzip with stored deflate blocks: valid gzip any inflater reads, built
+ * synchronously and not compressed. For a page going away, where
+ * `CompressionStream` never resolves: a request has to be issued before the
+ * document is torn down, and nothing after the first await runs by then.
+ */
+export function gzipStored(bytes: Uint8Array): Uint8Array {
+	const blocks = Math.max(1, Math.ceil(bytes.length / STORED_BLOCK_BYTES))
+	const out = new Uint8Array(10 + blocks * 5 + bytes.length + 8)
+	const view = new DataView(out.buffer)
+	// ID1 ID2 CM=deflate FLG=0 MTIME=0 XFL=0 OS=unknown
+	out.set([0x1f, 0x8b, 0x08, 0, 0, 0, 0, 0, 0, 0xff])
+	let at = 10
+	for (let block = 0; block < blocks; block++) {
+		const start = block * STORED_BLOCK_BYTES
+		const length = Math.min(STORED_BLOCK_BYTES, bytes.length - start)
+		out[at] = block === blocks - 1 ? 1 : 0
+		view.setUint16(at + 1, length, true)
+		view.setUint16(at + 3, ~length & 0xffff, true)
+		out.set(bytes.subarray(start, start + length), at + 5)
+		at += 5 + length
+	}
+	view.setUint32(at, crc32(bytes), true)
+	view.setUint32(at + 4, bytes.length >>> 0, true)
+	return out
+}
+
+/**
+ * How ingest answered. `"retry"` (429, 5xx) may succeed later; `"refused"`
+ * (401, 402, 403) will not on this page, so the channel stops; `"rejected"`
+ * is any other answer, never resent; `"failed"` means no response came back,
+ * so the rows may or may not have reached ingest.
+ */
+export type PostOutcome = "accepted" | "retry" | "refused" | "rejected" | "failed"
+
+function outcomeOf(status: number): Exclude<PostOutcome, "failed"> {
+	if (status >= 200 && status < 300) return "accepted"
+	if (status === 429 || status >= 500) return "retry"
+	if (status === 401 || status === 402 || status === 403) return "refused"
+	return "rejected"
+}
+
+/**
+ * Ingest URL and key pairs that were refused. Every later request with the
+ * same key would be refused the same way, so none is sent for the rest of the
+ * page; a re-init with another key starts clean.
+ */
+const refusedUrls = new Set<string>()
+
+/** The URL plus an FNV-1a hash of the key, so the key itself is not kept. */
+function channelOf(config: Pick<IngestConfig, "ingestKey">, url: string): string {
+	let hash = 0x811c9dc5
+	for (const char of config.ingestKey ?? "") hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193)
+	return `${url}|${hash >>> 0}`
+}
+
+const isRefused = (config: Pick<IngestConfig, "ingestKey">, url: string): boolean =>
+	refusedUrls.has(channelOf(config, url))
+
+function refuse(config: Pick<IngestConfig, "ingestKey">, url: string, status: number): void {
+	const channel = channelOf(config, url)
+	if (refusedUrls.has(channel)) return
+	refusedUrls.add(channel)
+	console.warn(`[maple] ingest refused ${url} (HTTP ${status}); nothing more is sent there from this page`)
+}
+
+/** Test seam. */
+export function resetRefusedChannelsForTests(): void {
+	refusedUrls.clear()
+}
+
+/** POST one body, mapping the answer to a {@link PostOutcome}. Never throws. */
+async function postNdjson(
+	config: IngestConfig,
+	url: string,
+	body: string,
+	keepalive: boolean,
+	what: string,
+): Promise<PostOutcome> {
+	try {
+		const response = await postToIngest(
+			url,
+			{ ...ingestHeaders(config), "content-type": "application/x-ndjson" },
+			body,
+			keepalive,
+		)
+		const outcome = outcomeOf(response.status)
+		if (outcome === "refused") refuse(config, url, response.status)
+		return outcome
+	} catch (error) {
+		warnDropped(what, error)
+		return "failed"
+	}
+}
+
 /** POST session metadata (NDJSON, single row). `keepalive` for the final unload write. */
 export async function postSessionMeta(
 	config: IngestConfig,
 	row: Record<string, unknown>,
 	keepalive = false,
 ): Promise<void> {
-	const body = `${JSON.stringify(row)}\n`
-	await postToIngest(
-		`${config.endpoint}/v1/sessionReplays/meta`,
-		{ ...ingestHeaders(config), "content-type": "application/x-ndjson" },
-		body,
-		keepalive,
-	).catch((error) => {
-		// Replay is best-effort; never throw into the host app.
-		warnDropped("metadata POST", error)
-	})
+	const url = `${config.endpoint}/v1/sessionReplays/meta`
+	if (isRefused(config, url)) return
+	// Replay is best-effort; never throws into the host app.
+	await postNdjson(config, url, `${stringifyWellFormed(row)}\n`, keepalive, "metadata POST")
+}
+
+/** Worst first: what a caller acts on when a batch went out in parts. */
+const OUTCOME_RANK = {
+	refused: 0,
+	failed: 1,
+	retry: 2,
+	rejected: 3,
+	accepted: 4,
+} satisfies Record<PostOutcome, number>
+
+/**
+ * Split NDJSON lines for a page going away: the oldest that fit the keepalive
+ * room left, measured on the serialized bytes, and the rest as a plain request
+ * that only survives if the page does. One body over the room lost all of it.
+ */
+function keepaliveBodies(lines: ReadonlyArray<string>): Array<{ body: string; keepalive: boolean }> {
+	const encoder = new TextEncoder()
+	let room = keepaliveRoom()
+	let fits = 0
+	for (const line of lines) {
+		const size = encoder.encode(line).byteLength
+		if (size > room) break
+		room -= size
+		fits++
+	}
+	const bodies = [
+		{ body: lines.slice(0, fits).join(""), keepalive: true },
+		{ body: lines.slice(fits).join(""), keepalive: false },
+	]
+	return bodies.filter(({ body }) => body.length > 0)
 }
 
 /**
  * POST distilled session events (NDJSON, one row per event). Never throws.
- * `"failed"` means no response came back, so the rows may or may not have
- * reached ingest.
+ * A keepalive batch larger than the room left goes out in two parts, and the
+ * worst of their outcomes is returned.
  */
 export async function postSessionEvents(
 	config: IngestConfig,
 	rows: ReadonlyArray<Record<string, unknown>>,
 	keepalive = false,
-): Promise<"accepted" | "rejected" | "failed"> {
+): Promise<PostOutcome> {
 	if (rows.length === 0) return "accepted"
-	const body = `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`
-	try {
-		const response = await postToIngest(
-			`${config.endpoint}/v1/sessionEvents`,
-			{ ...ingestHeaders(config), "content-type": "application/x-ndjson" },
-			body,
-			keepalive,
-		)
-		return response.ok ? "accepted" : "rejected"
-	} catch (error) {
-		warnDropped("events POST", error)
-		return "failed"
-	}
+	const url = `${config.endpoint}/v1/sessionEvents`
+	if (isRefused(config, url)) return "refused"
+	const lines = rows.map((row) => `${stringifyWellFormed(row)}\n`)
+	const bodies = keepalive ? keepaliveBodies(lines) : [{ body: lines.join(""), keepalive: false }]
+	// Issued together, without awaiting in between: each reserves keepalive room as it starts.
+	const outcomes = await Promise.all(
+		bodies.map((part) => postNdjson(config, url, part.body, part.keepalive, "events POST")),
+	)
+	return outcomes.reduce((worst, outcome) =>
+		OUTCOME_RANK[outcome] < OUTCOME_RANK[worst] ? outcome : worst,
+	)
 }
 
 export interface ChunkMeta {
@@ -288,9 +434,10 @@ export interface ChunkMeta {
  * How ingest answered a chunk upload. `"exhausted"` is the 413 ingest returns
  * once a session has hit its recorded-size ceiling; every later chunk of that
  * session gets the same answer, so the recorder must stop uploading rather than
- * pay for a rejected POST every flush for the rest of the page's life.
+ * pay for a rejected POST every flush for the rest of the page's life. The
+ * others are as for {@link PostOutcome}.
  */
-export type BlobPostOutcome = "accepted" | "rejected" | "exhausted" | "failed"
+export type BlobPostOutcome = "accepted" | "retry" | "refused" | "rejected" | "exhausted" | "failed"
 
 const SESSION_EXHAUSTED_STATUS = 413
 
@@ -301,9 +448,11 @@ export async function postSessionBlob(
 	gzipped: Uint8Array,
 	keepalive = false,
 ): Promise<BlobPostOutcome> {
+	const url = `${config.endpoint}/v1/sessionReplays/blob`
+	if (isRefused(config, url)) return "refused"
 	try {
 		const response = await postToIngest(
-			`${config.endpoint}/v1/sessionReplays/blob`,
+			url,
 			{
 				...ingestHeaders(config),
 				"content-type": "application/octet-stream",
@@ -316,8 +465,10 @@ export async function postSessionBlob(
 			gzipped,
 			keepalive,
 		)
-		if (response.ok) return "accepted"
-		return response.status === SESSION_EXHAUSTED_STATUS ? "exhausted" : "rejected"
+		if (response.status === SESSION_EXHAUSTED_STATUS) return "exhausted"
+		const outcome = outcomeOf(response.status)
+		if (outcome === "refused") refuse(config, url, response.status)
+		return outcome
 	} catch (error) {
 		// Best-effort.
 		warnDropped("blob PUT", error)

@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import { AiAgentSpanSchema, AiGenAiValuesSchema } from "../gen-ai"
 import { TinybirdDateTime } from "../query-engine"
 import { BucketSeconds } from "./query-engine"
@@ -206,7 +206,7 @@ export const AI_SESSION_DETAILS_MAX_SESSIONS = 100
 export const AI_SESSION_DETAILS_MAX_EXTENT_MS = 31 * 24 * 60 * 60_000
 
 /** `TinybirdDateTime` is UTC without a zone marker. */
-const tinybirdDateTimeMs = (value: string): number => Date.parse(`${value.replace(" ", "T")}Z`)
+const tinybirdDateTimeMs = (value: string): number => Date.parse(`${Str.replace(" ", "T")(value)}Z`)
 
 export class ListAiSessionDetailsRequest extends Schema.Class<ListAiSessionDetailsRequest>(
 	"ListAiSessionDetailsRequest",
@@ -253,9 +253,9 @@ export class ListAiSessionDetailsResponse extends Schema.Class<ListAiSessionDeta
 	/**
 	 * One item per session the fan-out found, in no particular order — merge by
 	 * `sessionId`. A page session can be missing: `ai_trace_index` and
-	 * `trace_detail_spans` are two materialized views written one after the
-	 * other from the same insert, so the newest session can be ranked a moment
-	 * before its spans are readable. Its row keeps the index's figures.
+	 * `trace_index` are two materialized views written one after the other from
+	 * the same insert, so the newest session can be ranked a moment before its
+	 * spans are findable. Its row keeps the index's figures.
 	 */
 	data: Schema.Array(AiSessionDetailsItem),
 }) {}

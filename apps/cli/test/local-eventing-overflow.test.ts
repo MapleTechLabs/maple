@@ -5,8 +5,9 @@ import { mkdtempSync, mkdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, it } from "vitest"
-import { RetiredDayAuthority } from "../src/server/archives/retention"
-import { __testables } from "../src/server/serve"
+import { RetiredDayAuthority } from "@maple/local-server/archives/retention"
+import { InsertBatcher } from "@maple/local-server/insert-batcher"
+import { __testables } from "@maple/local-server/serve"
 import { makeRuntime, openStore, run, serveWith } from "./eventing-test-support"
 
 describe("Durable outbox overflow", () => {
@@ -48,17 +49,17 @@ describe("Durable outbox overflow", () => {
 				}),
 			)
 			const statements: string[] = []
-			const warehouse = {
+			const inserts = new InsertBatcher({
 				exec: (sql: string) => {
 					statements.push(sql)
 				},
-			}
+			})
 			const authority = new RetiredDayAuthority(dataDir)
 			const ingest = (id: string) =>
 				serveWith(
 					runtime,
 					__testables.ingest(
-						warehouse,
+						inserts,
 						authority,
 						"logs",
 						new Request("http://localhost/v1/logs", {

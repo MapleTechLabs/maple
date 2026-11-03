@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * Ranking for the chat channel picker.
  *
@@ -28,7 +29,7 @@ export const CHANNEL_RESULT_LIMIT = 50
  * too, and users type `#` out of habit. Normalise both
  * sides the same way so neither can miss a match.
  */
-const normalize = (value: string): string => value.trim().toLowerCase().replace(/^#+/, "")
+const normalize = (value: string): string => Str.replace(/^#+/, "")(Str.toLowerCase(Str.trim(value)))
 
 /** Characters that start a new "word" inside a channel name. */
 const isBoundary = (char: string): boolean => char === "-" || char === "_" || char === "." || char === " "
@@ -64,7 +65,7 @@ export const scoreChannelName = (name: string, query: string): number | null => 
 	const needle = normalize(query)
 	if (needle.length === 0) return 0
 	if (haystack === needle) return 10_000
-	if (haystack.startsWith(needle)) return 9_000 - Math.min(haystack.length, 500)
+	if (Str.startsWith(needle)(haystack)) return 9_000 - Math.min(haystack.length, 500)
 
 	const index = haystack.indexOf(needle)
 	if (index !== -1) {
@@ -101,9 +102,9 @@ export const rankChannels = <T extends RankableChannel>(
 	scored.sort((a, b) => {
 		if (b.score !== a.score) return b.score - a.score
 		if (a.channel.is_member !== b.channel.is_member) return a.channel.is_member ? -1 : 1
-		return a.channel.name.localeCompare(b.channel.name)
+		return Str.localeCompare(b.channel.name)(a.channel.name)
 	})
-	return scored.slice(0, Math.max(limit, 0)).map((entry) => entry.channel)
+	return Arr.map(scored.slice(0, Math.max(limit, 0)), (entry) => entry.channel)
 }
 
 /**
@@ -140,8 +141,8 @@ export const resolveSearchQuery = (
 	selected: Pick<PickableChannel, "name" | "is_private"> | undefined,
 ): string => {
 	if (selected === undefined) return input
-	const typed = input.trim().toLowerCase()
-	return selectionEchoes(selected).some((echo) => echo.toLowerCase() === typed) ? "" : input
+	const typed = Str.toLowerCase(Str.trim(input))
+	return Arr.some(selectionEchoes(selected), (echo) => Str.toLowerCase(echo) === typed) ? "" : input
 }
 
 export interface ChannelPickerView<T> {
@@ -172,8 +173,8 @@ export const channelPickerView = <T extends PickableChannel>(
 	const ranked = rankChannels(channels, searchQuery, limit + 1)
 	const truncated = ranked.length > limit
 	const visible = truncated ? ranked.slice(0, limit) : ranked
-	if (searchQuery.trim().length > 0 || selectedId === null || limit < 1) return { visible, truncated }
-	if (visible.some((channel) => channel.id === selectedId)) return { visible, truncated }
+	if (Str.trim(searchQuery).length > 0 || selectedId === null || limit < 1) return { visible, truncated }
+	if (Arr.some(visible, (channel) => channel.id === selectedId)) return { visible, truncated }
 	const selected = channels.find((channel) => channel.id === selectedId)
 	if (selected === undefined) return { visible, truncated }
 	return { visible: [selected, ...visible.slice(0, limit - 1)], truncated }

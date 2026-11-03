@@ -6,10 +6,8 @@ import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/work
  */
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import type { HttpEffect } from "alchemy/Http"
-import { Cause, Config, Context, Effect, Exit, Layer, Option, Scope } from "effect"
+import { Cause, Config, Context, Effect, Exit, Layer, Option, Scope, String as Str } from "effect"
 import { FetchHttpClient, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
-import * as Etag from "effect/http/Etag"
-import * as HttpPlatform from "effect/http/HttpPlatform"
 import {
 	API_CORS_RESPONSE_HEADERS,
 	API_TIMING_ALLOW_ORIGIN,
@@ -22,6 +20,7 @@ import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import type { ApiPortsLayer } from "./bindings"
+import { VCS_SYNC_BATCH_PATH } from "./vcs-sync-dispatch"
 
 /**
  * The route graph as the bridge's handler, built for the isolate.
@@ -54,6 +53,7 @@ export const buildIsolateHandler = <ROut, E>(
 					// HttpRouter.toHttpEffect erases the same phantom markers internally.
 					// A fresh router is essential: only services may be shared across these graphs.
 					const context = yield* Layer.buildWithMemoMap(
+						// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- phantom request markers, see above
 						(routes as Layer.Layer<ROut, E, HttpRouter.HttpRouter>).pipe(
 							Layer.provideMerge(Layer.fresh(HttpRouter.layer)),
 						),
@@ -136,10 +136,10 @@ export const makeAppGraphs = (isolate: Context.Context<never>, ports: ApiPortsLa
 
 const pathOf = (url: string): string => {
 	const query = url.indexOf("?")
-	return query === -1 ? url : url.slice(0, query)
+	return query === -1 ? url : Str.slice(0, query)(url)
 }
 
-const isV2Path = (path: string): boolean => path === "/v2" || path.startsWith("/v2/")
+const isV2Path = (path: string): boolean => path === "/v2" || Str.startsWith("/v2/")(path)
 
 /** The route graph could not finish bootstrapping: the canonical v2 fallback, or a plain 504 for the rest. */
 const unavailableResponse = (path: string) =>
@@ -179,6 +179,11 @@ export const makeFetch = (
 	app: Effect.Effect<HttpEffect, unknown>,
 	ports: Layer.Layer<MapleDbConnection | AiWorkerFetcher>,
 	queryApp: Effect.Effect<HttpEffect, unknown> = app,
+	vcsSyncBatch?: Effect.Effect<
+		HttpServerResponse.HttpServerResponse,
+		never,
+		HttpServerRequest.HttpServerRequest
+	>,
 ) =>
 	IsolateAge.useSync((isolateAge) => {
 		const serve = Effect.gen(function* () {
@@ -200,6 +205,10 @@ export const makeFetch = (
 						onSome: (sha) => ({ ...API_CORS_RESPONSE_HEADERS, "x-maple-revision": sha }),
 					}),
 				})
+			}
+			// A queue batch handed over the self binding; graph-free, like the queue consumer it stands in for.
+			if (vcsSyncBatch !== undefined && request.method === "POST" && path === VCS_SYNC_BATCH_PATH) {
+				return yield* vcsSyncBatch
 			}
 			// The unattributed 500s all landed within ~60ms of an isolate's first request, so the
 			// span carries that shape. Counted before the graph builds, so build failures count too,
@@ -223,7 +232,7 @@ export const makeFetch = (
 			}
 
 			const selectedApp =
-				path === "/internal/query-engine" || path.startsWith("/internal/query-engine/")
+				path === "/internal/query-engine" || Str.startsWith("/internal/query-engine/")(path)
 					? queryApp
 					: app
 			const built = yield* Effect.exit(selectedApp)

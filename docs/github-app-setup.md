@@ -75,7 +75,7 @@ This closes the loop after a user installs your app, so Maple can record the ins
 3. Check **Request user authorization (OAuth) during installation**. **Do not skip this. It is a security control.** See the box below.
 4. Leave **Expire user authorization tokens** at its default (checked).
 
-> **Why this is required (confused-deputy guard).** `installation_id` values are small, **enumerable** integers and are not tied to the connect `state`. Without OAuth, anyone who starts a connect flow could submit _someone else's_ `installation_id` and bind another org's private repos to their own Maple org. With OAuth on, GitHub also returns a `code`. Maple exchanges it and calls `GET /user/installations` to confirm the user administers that installation before binding it. GitHub delivers `code`, `installation_id`, and `state` to the Callback URL above. There is no separate Setup URL.
+> **Why this is required (confused-deputy guard).** `installation_id` values are small, **enumerable** integers and are not tied to the connect `state`. Without OAuth, anyone who starts a connect flow could submit _someone else's_ `installation_id` and bind another org's private repos to their own Maple org. With OAuth on, GitHub also returns a `code`. Maple exchanges it, calls `GET /user/installations` to confirm the user can access that installation, then confirms they administer its account (an active org `admin` via `GET /user/memberships/orgs/{org}`, or the personal account itself) before binding it. GitHub delivers `code`, `installation_id`, and `state` to the Callback URL above. There is no separate Setup URL. Maple's **Connect GitHub** button starts with plain user authorization against the same Callback URL, so an app installed directly on GitHub can still be connected.
 
 ---
 
@@ -110,10 +110,11 @@ On repositories where a Maple admin has switched on the pull request review, Map
 | **Pull requests**     | **Read and write** (reads the diff; posts the review as a comment, never an approval or block)                                          |
 | **Checks**            | **Read and write** (posts the `Maple / observability` check run on the head commit; without it the review is still posted as a comment) |
 | **Metadata**          | **Read-only** (GitHub pre-selects this and it is mandatory)                                                                             |
+| **Actions**           | **Read-only** (downloads each finished job's log for CI logs; without it CI traces still arrive but carry no logs)                      |
 
-> **Upgrading an existing App?** Adding a permission to an App that is already installed makes GitHub ask every installation's admin to accept the new permissions. Until they do, Maple still records each review but cannot post it: the review's row keeps a publish error and nothing appears on the pull request. To fix it, accept the permission request on GitHub (Settings → Applications → the App → Review request).
+> **Upgrading an existing App?** Adding a permission to an App that is already installed makes GitHub ask every installation's admin to accept the new permissions. Until they do, Maple still records each review but cannot post it: the review's row keeps a publish error and nothing appears on the pull request. CI logs behave the same way: until the installation accepts **Actions: Read**, GitHub refuses every job log download with `403 Resource not accessible by integration` and those repositories get traces without logs. To fix it, accept the permission request on GitHub (Settings → Applications → the App → Review request).
 
-3. Leave **Organization permissions** and **Account permissions** entirely at **No access**.
+3. Under **Organization permissions**, set **Members** to **Read-only**. Maple uses it only during connect, to confirm the person connecting an organization installation is an admin of that organization. Without it, connecting an organization is refused. Leave every other organization permission and all **Account permissions** at **No access**.
 
 ---
 
@@ -130,6 +131,8 @@ On repositories where a Maple admin has switched on the pull request review, Map
 | **Pull request**                | Link pull requests to error issues, and start the observability review on repositories that opted in. |
 | **Issue comment**               | Answer `@maple` mentions in a pull request's conversation.                                            |
 | **Pull request review comment** | Answer `@maple` mentions in a pull request's review threads.                                          |
+| **Workflow run**                | Write one trace per GitHub Actions run attempt (CI traces).                                           |
+| **Workflow job**                | Add each job and its steps to the run's trace, then download the job's log (CI logs).                 |
 
 > You do **not** need to (and cannot) subscribe to `installation` or `installation_repositories` here. GitHub always delivers those lifecycle events once the app is installed, and Maple handles them. The `ping` event GitHub sends on setup, and any other event, is accepted as a no-op.
 
@@ -158,7 +161,7 @@ Near the top of the **General** tab, find **App ID** (a number, e.g. `123456`). 
 
 Look at the page URL: `https://github.com/settings/apps/<your-slug>`. The final path segment is your **slug** (a lowercase, hyphenated version of the app name, e.g. `maple-example-com`). This is your `GITHUB_APP_SLUG`.
 
-> Maple builds the install link from this slug: `https://github.com/apps/<GITHUB_APP_SLUG>/installations/new`. If the slug is wrong, the "Connect GitHub" button will 404 on GitHub.
+> Maple builds the install link from this slug: `https://github.com/apps/<GITHUB_APP_SLUG>/installations/new`. If the slug is wrong, the install page (reached after authorization, or from "Install on another GitHub account") will 404 on GitHub.
 
 ### 8c. Client ID and client secret
 
@@ -217,8 +220,8 @@ After setting the variables, **restart the Maple API** so they take effect. Mapl
 
 ## Step 10: Verify the setup
 
-1. **Confirm the dashboard sees the app.** Open **Integrations → GitHub** in your Maple dashboard. The **Connect GitHub** button should be active. (If you get "GitHub App is not configured (set GITHUB_APP_SLUG)", the slug env var is missing or the API wasn't restarted.)
-2. **Run the connect flow.** Click **Connect GitHub**. A popup should open `https://github.com/apps/<your-slug>/installations/new`. Install the app on a test account and pick at least one repository.
+1. **Confirm the dashboard sees the app.** Open **Integrations → GitHub** in your Maple dashboard. The **Connect GitHub** button should be active. (If you get "GitHub App is not configured (set GITHUB_APP_SLUG)" or "(set GITHUB_APP_CLIENT_ID)", that env var is missing or the API wasn't restarted.)
+2. **Run the connect flow.** Click **Connect GitHub**. A popup should open GitHub's authorization page (`/login/oauth/authorize`). After you authorize Maple it lists the accounts where the app is installed; with none, the popup goes on to `https://github.com/apps/<your-slug>/installations/new`. Install the app on a test account and pick at least one repository.
 3. **Confirm the callback completes.** After installing (and authorizing when GitHub prompts), the popup should close and the card should flip to **Connected**, then move repositories from **Queued → Syncing → Synced**. If it doesn't, recheck your **Callback URL** (Step 3) first.
 4. **Confirm webhooks are signed correctly.** In your app's settings, open the **Advanced** tab → **Recent Deliveries**. The initial `ping` and the install events should show a **`200`** response. A non-`200` here means the webhook URL is wrong or the **webhook secret in GitHub doesn't match `GITHUB_APP_WEBHOOK_SECRET`**.
 5. **Confirm live sync.** Push a commit to a tracked branch in the test repository, check **Recent Deliveries** for a `push` event returning `200`, and confirm the commit appears in Maple.
@@ -255,20 +258,25 @@ After setting the variables, **restart the Maple API** so they take effect. Mapl
 | Repository → Pull requests | Read and write                                   |
 | Repository → Checks        | Read and write                                   |
 | Repository → Metadata      | Read-only (mandatory)                            |
+| Repository → Actions       | Read-only (CI job logs)                          |
+| Organization → Members     | Read-only (connect-time admin check)             |
 
 ### Subscribed webhook events
 
-`Create`, `Delete`, `Push`, `Pull request`, `Issue comment`, `Pull request review comment`. (`installation` and `installation_repositories` are delivered automatically and need no subscription.)
+`Create`, `Delete`, `Push`, `Pull request`, `Issue comment`, `Pull request review comment`, `Workflow run`, `Workflow job`. (`installation` and `installation_repositories` are delivered automatically and need no subscription.)
 
 ---
 
 ## Troubleshooting
 
 - **"GitHub App is not configured" in the dashboard.** A required env var (`GITHUB_APP_SLUG`, `GITHUB_APP_ID`, or `GITHUB_APP_PRIVATE_KEY`) is missing, or the API wasn't restarted after setting it.
-- **Install succeeds on GitHub but never connects in Maple.** The **Callback URL** is missing or incorrect, or **Request user authorization (OAuth) during installation** is unchecked, or `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_CLIENT_SECRET` are unset. The flow fails closed: with no OAuth `code`, Maple rejects a new installation binding with "Could not verify you own this GitHub installation." Fix Step 3 / Step 8c and reinstall.
+- **The app was installed directly on GitHub.** An installation created outside Maple has no Maple organization binding, and its webhooks cannot choose one. Click **Connect GitHub** in Maple: it starts with GitHub user authorization, lists the installations that user administers, and binds the one they pick without reinstalling the app.
+- **GitHub authorization does not return to Maple.** The **Callback URL** is missing or incorrect, or **Request user authorization (OAuth) during installation** is unchecked, or `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_CLIENT_SECRET` are unset. The flow fails closed: with no OAuth `code`, Maple rejects a new installation binding with "Could not verify you own this GitHub installation." Fix Step 3 / Step 8c, then click **Connect GitHub** again.
 - **Webhook deliveries return `401` or signature errors.** The webhook secret in GitHub does not match `GITHUB_APP_WEBHOOK_SECRET`. Regenerate it, paste it into both places, and restart the API.
 - **Webhook deliveries return `404`.** The Webhook URL is wrong, or your Maple API isn't publicly reachable at `https://YOUR_MAPLE_DOMAIN`.
-- **`Connect GitHub` opens a GitHub 404.** `GITHUB_APP_SLUG` does not match the app's real slug (the last path segment of `https://github.com/settings/apps/<slug>`).
+- **`Connect GitHub` opens a GitHub 404.** Authorization uses `GITHUB_APP_CLIENT_ID`; check it matches the app's Client ID. A 404 only on the install page means `GITHUB_APP_SLUG` does not match the app's real slug (the last path segment of `https://github.com/settings/apps/<slug>`).
+- **CI traces arrive but have no logs.** The App lacks **Actions: Read**, or an installation has not accepted it yet. GitHub still delivers `workflow_job` webhooks without it, but answers every job log download with `403 Resource not accessible by integration`. Add the permission (Step 5) and have each installation accept the request.
+- **Connecting an organization fails with "Maple could not confirm you are an owner".** GitHub answered `403` to the org role read: the App lacks **Members: Read**, the installation has not accepted it yet, or the organization blocks the App. Maple refuses rather than guess. Add the permission (Step 5) and have an organization owner accept the request (organization Settings > GitHub Apps > Review request), then retry. Refusals are counted on the `GithubConnectService.completeConnect` span as `maple.vcs.connect.refused=true` with `vcs.connect.outcome`.
 - **Private key errors when minting tokens.** The PEM was truncated or had its newlines stripped. Re-paste the full key, including the BEGIN/END lines, preserving line breaks.
 
 For the end-user description of what the integration does once configured, see [the GitHub integration doc](../apps/landing/src/content/docs/integrations/github.md).

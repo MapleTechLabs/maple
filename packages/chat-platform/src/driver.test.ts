@@ -13,11 +13,11 @@ import {
 	type ChatEvent,
 	type ChatEventInput,
 } from "@maple/domain/chat-session"
-import { Duration, Effect, Fiber, Stream } from "effect"
+import { Duration, Effect, Fiber, Stream, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { chatConnectorId } from "./connector"
 import { driveChatTurn } from "./driver"
-import type { ChatMessageRef, ChatOutbound, ChatTarget } from "./outbound"
+import type { ChatMessageRef, ChatOutbound, ChatTarget, ChatWritePhase } from "./outbound"
 import type { ChatBlock, ChatRenderContext } from "./render"
 
 const sessionId = makeChatSessionId("org_1", "bot-42")
@@ -38,11 +38,16 @@ const TESTCHAT = chatConnectorId("testchat")
 interface Recorder {
 	readonly outbound: ChatOutbound
 	/** Every post and edit, in order, as `<verb> <messageId>` plus the blocks it carried. */
-	readonly calls: Array<{ verb: "post" | "edit"; ref: ChatMessageRef; blocks: ReadonlyArray<ChatBlock> }>
+	readonly calls: Array<{
+		verb: "post" | "edit"
+		ref: ChatMessageRef
+		blocks: ReadonlyArray<ChatBlock>
+		phase: ChatWritePhase | undefined
+	}>
 	readonly typing: Array<string>
 }
 
-const recorder = (maxMessageChars = 500): Recorder => {
+const recorder = (maxMessageChars = 500, liveMessages = false): Recorder => {
 	const calls: Recorder["calls"] = []
 	const typing: Array<string> = []
 	let posted = 0
@@ -52,15 +57,17 @@ const recorder = (maxMessageChars = 500): Recorder => {
 		outbound: {
 			connectorId: TESTCHAT,
 			limits: { maxMessageChars, minEditInterval: EDIT_INTERVAL },
+			liveMessages,
 			requiredConfig: [],
 			transport: Effect.sync(() => ({
-				post: (postTarget, blocks) =>
+				post: (postTarget, blocks, phase) =>
 					Effect.sync(() => {
 						const ref = { target: postTarget, messageId: `m${++posted}` }
-						calls.push({ verb: "post", ref, blocks })
+						calls.push({ verb: "post", ref, blocks, phase })
 						return ref
 					}),
-				edit: (ref, blocks) => Effect.sync(() => void calls.push({ verb: "edit", ref, blocks })),
+				edit: (ref, blocks, phase) =>
+					Effect.sync(() => void calls.push({ verb: "edit", ref, blocks, phase })),
 				whisper: () => Effect.die("the driver answered a click"),
 				typing: (typingTarget) => Effect.sync(() => void typing.push(typingTarget.channelId)),
 				// A platform where a thread is just replies to a message opens one without any I/O.
@@ -86,14 +93,19 @@ const timeline = (steps: ReadonlyArray<readonly [Duration.Duration, ChatEvent]>)
 const NOW = Duration.zero
 
 const prose = (blocks: ReadonlyArray<ChatBlock>): string =>
-	blocks
-		.filter((block) => block.kind === "prose")
-		.map((block) => block.markdown)
-		.join("\n")
+	Arr.join(
+		Arr.map(
+			Arr.filter(blocks, (block) => block.kind === "prose"),
+			(block) => block.markdown,
+		),
+		"\n",
+	)
 
 /** Whatever the status line names, if a message is carrying one at all. */
 const working = (blocks: ReadonlyArray<ChatBlock>): ReadonlyArray<string> =>
-	blocks.flatMap((block) => (block.kind === "activity" ? block.tools.map((tool) => tool.label) : []))
+	Arr.flatMap(blocks, (block) =>
+		block.kind === "activity" ? Arr.map(block.tools, (tool) => tool.label) : [],
+	)
 
 describe("driveChatTurn", () => {
 	it.effect("posts a placeholder, coalesces deltas into throttled edits, and flushes at the end", () =>
@@ -122,7 +134,7 @@ describe("driveChatTurn", () => {
 			yield* TestClock.adjust("2 seconds")
 			yield* Fiber.join(fiber)
 
-			expect(chat.calls.map((call) => call.verb)).toEqual(["post", "edit", "edit"])
+			expect(Arr.map(chat.calls, (call) => call.verb)).toEqual(["post", "edit", "edit"])
 			// The placeholder says the bot is working before a single token has landed.
 			expect(chat.calls[0].blocks).toEqual([
 				{ kind: "notice", tone: "pending", text: "Working on it…" },
@@ -215,7 +227,7 @@ describe("driveChatTurn", () => {
 			expect(chat.calls.find((call) => working(call.blocks).length > 0)?.blocks).toEqual([
 				{ kind: "activity", tools: [{ label: "Finding errors", status: "running", detail: null }] },
 			])
-			const lines = chat.calls.map((call) => working(call.blocks))
+			const lines = Arr.map(chat.calls, (call) => working(call.blocks))
 			// One tool at a time, never the list of everything the turn touched on its way here.
 			for (const line of lines) expect(line.length).toBeLessThanOrEqual(1)
 			// The two calls, in the order the turn made them. Repeats are a call whose status
@@ -354,7 +366,7 @@ describe("driveChatTurn", () => {
 			yield* driveChatTurn({
 				events: timeline([
 					[NOW, event(1, { type: "turn-start", messageId: "a1" })],
-					[NOW, event(2, { type: "text-delta", messageId: "a1", text: "line\n".repeat(30) })],
+					[NOW, event(2, { type: "text-delta", messageId: "a1", text: Str.repeat(30)("line\n") })],
 					[NOW, event(3, { type: "turn-end", messageId: "a1", reason: "stop" })],
 				]),
 				messageId: "a1",
@@ -363,7 +375,7 @@ describe("driveChatTurn", () => {
 				context,
 			})
 
-			const posts = chat.calls.filter((call) => call.verb === "post")
+			const posts = Arr.filter(chat.calls, (call) => call.verb === "post")
 			expect(posts.length).toBeGreaterThan(1)
 			// Every message the follow-ups carry is within the budget the connector declared.
 			for (const call of chat.calls) expect(prose(call.blocks).length).toBeLessThanOrEqual(80)
@@ -472,7 +484,7 @@ describe("driveChatTurn", () => {
 				context,
 			})
 
-			expect(chat.calls.map((call) => call.verb)).toEqual(["post", "edit"])
+			expect(Arr.map(chat.calls, (call) => call.verb)).toEqual(["post", "edit"])
 			expect(chat.calls[1].blocks).toEqual([
 				{ kind: "notice", tone: "error", text: "Failed: no model" },
 			])
@@ -505,15 +517,64 @@ describe("driveChatTurn", () => {
 
 			// The placeholder, one edit carrying the answer, and nothing else — a turn cut into
 			// several messages would otherwise rewrite each of them on every tick.
-			expect(chat.calls.map((call) => call.verb)).toEqual(["post", "edit"])
+			expect(Arr.map(chat.calls, (call) => call.verb)).toEqual(["post", "edit"])
 		}),
+	)
+
+	it.effect(
+		"closes every message a live platform streamed, even one that already says the right thing",
+		() =>
+			Effect.gen(function* () {
+				const chat = recorder(80, true)
+				const fiber = yield* Effect.forkChild(
+					driveChatTurn({
+						events: timeline([
+							[NOW, event(1, { type: "turn-start", messageId: "a1" })],
+							[
+								NOW,
+								event(2, {
+									type: "text-delta",
+									messageId: "a1",
+									text: Str.repeat(30)("line\n"),
+								}),
+							],
+							[
+								Duration.seconds(2),
+								event(3, { type: "turn-end", messageId: "a1", reason: "stop" }),
+							],
+						]),
+						messageId: "a1",
+						outbound: chat.outbound,
+						target,
+						context,
+					}),
+				)
+
+				yield* TestClock.adjust("3 seconds")
+				yield* Fiber.join(fiber)
+
+				const calls = Arr.map(
+					chat.calls,
+					(call) => `${call.verb} ${call.ref.messageId} ${call.phase}`,
+				)
+				const messages = [...new Set(Arr.map(chat.calls, (call) => call.ref.messageId))]
+				expect(messages.length).toBeGreaterThan(1)
+				// Every write before the end streams; each message then gets exactly one final write.
+				expect(calls[0]).toBe("post m1 streaming")
+				expect(Arr.filter(calls, (call) => Str.endsWith("final")(call))).toEqual(
+					Arr.map(messages, (messageId) => `edit ${messageId} final`),
+				)
+				expect(
+					Arr.every(calls.slice(0, -messages.length), (call) => Str.endsWith("streaming")(call)),
+				).toBe(true)
+			}),
 	)
 
 	it.effect("reports each message it posts, and a resume edits them rather than posting again", () =>
 		Effect.gen(function* () {
 			const events = [
 				event(1, { type: "turn-start", messageId: "a1" }),
-				event(2, { type: "text-delta", messageId: "a1", text: "line\n".repeat(30) }),
+				event(2, { type: "text-delta", messageId: "a1", text: Str.repeat(30)("line\n") }),
 				event(3, { type: "turn-end", messageId: "a1", reason: "stop" }),
 			]
 			const first = recorder(80)
@@ -525,12 +586,15 @@ describe("driveChatTurn", () => {
 				target,
 				context,
 				onPosted: (messages) =>
-					Effect.sync(() => void reported.push(messages.map((ref) => ref.messageId))),
+					Effect.sync(() => void reported.push(Arr.map(messages, (ref) => ref.messageId))),
 			})
 			// Every post, as the growing list a checkpoint is written from.
-			const posts = first.calls.filter((call) => call.verb === "post").map((call) => call.ref.messageId)
+			const posts = Arr.map(
+				Arr.filter(first.calls, (call) => call.verb === "post"),
+				(call) => call.ref.messageId,
+			)
 			expect(posts.length).toBeGreaterThan(1)
-			expect(reported).toEqual(posts.map((_, index) => posts.slice(0, index + 1)))
+			expect(reported).toEqual(Arr.map(posts, (_, index) => posts.slice(0, index + 1)))
 
 			const again = recorder(80)
 			yield* driveChatTurn({
@@ -539,16 +603,16 @@ describe("driveChatTurn", () => {
 				outbound: again.outbound,
 				target,
 				context,
-				posted: posts.map((messageId) => ({ target, messageId })),
+				posted: Arr.map(posts, (messageId) => ({ target, messageId })),
 			})
 			// No placeholder, no typing, no second copy: one rewrite of each message it was handed.
 			expect(again.typing).toEqual([])
-			expect(again.calls.map((call) => `${call.verb} ${call.ref.messageId}`)).toEqual(
-				posts.map((messageId) => `edit ${messageId}`),
+			expect(Arr.map(again.calls, (call) => `${call.verb} ${call.ref.messageId}`)).toEqual(
+				Arr.map(posts, (messageId) => `edit ${messageId}`),
 			)
-			const settled = new Map(first.calls.map((call) => [call.ref.messageId, call.blocks]))
-			expect(again.calls.map((call) => call.blocks)).toEqual(
-				posts.map((messageId) => settled.get(messageId)),
+			const settled = new Map(Arr.map(first.calls, (call) => [call.ref.messageId, call.blocks]))
+			expect(Arr.map(again.calls, (call) => call.blocks)).toEqual(
+				Arr.map(posts, (messageId) => settled.get(messageId)),
 			)
 		}),
 	)
@@ -556,7 +620,7 @@ describe("driveChatTurn", () => {
 	it.effect("empties a message a retraction shrank the turn past", () =>
 		Effect.gen(function* () {
 			const chat = recorder(80)
-			const long = "line\n".repeat(30)
+			const long = Str.repeat(30)("line\n")
 			const fiber = yield* Effect.forkChild(
 				driveChatTurn({
 					events: timeline([
@@ -588,7 +652,7 @@ describe("driveChatTurn", () => {
 			yield* TestClock.adjust("6 seconds")
 			yield* Fiber.join(fiber)
 
-			const second = chat.calls.filter((call) => call.ref.messageId === "m2")
+			const second = Arr.filter(chat.calls, (call) => call.ref.messageId === "m2")
 			expect(second.length).toBeGreaterThan(1)
 			// The follow-up message is emptied rather than left holding text the turn took back.
 			expect(second[second.length - 1].blocks).toEqual([])
@@ -634,7 +698,7 @@ describe("driveChatTurn", () => {
 				context,
 			})
 
-			expect(chat.calls.filter((call) => call.verb === "post")).toHaveLength(1)
+			expect(Arr.filter(chat.calls, (call) => call.verb === "post")).toHaveLength(1)
 			expect(prose(chat.calls[chat.calls.length - 1].blocks)).toBe("Checking.")
 		}),
 	)

@@ -1,7 +1,9 @@
 import { SpanId, TraceId } from "@maple/domain"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
-import type { Log } from "@/api/warehouse/logs"
+import type { LogRow as Log } from "@maple/query-engine"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /**
  * A realistic slice of a production log stream for `/lab/logs`: HTTP access
@@ -38,7 +40,10 @@ const pick = <const T extends readonly [unknown, ...unknown[]]>(r: Rng, items: T
 	items[Math.floor(r() * items.length)] ?? items[0]
 const int = (r: Rng, min: number, max: number) => Math.floor(min + r() * (max - min + 1))
 const hex = (r: Rng, length: number) =>
-	Array.from({ length }, () => Math.floor(r() * 16).toString(16)).join("")
+	Arr.join(
+		Array.from({ length }, () => Math.floor(r() * 16).toString(16)),
+		"",
+	)
 
 const ROUTES = [
 	["GET", "/api/v1/products"],
@@ -70,7 +75,7 @@ const TEMPLATES: readonly [Template, ...Template[]] = [
 			const [method, route] = pick(r, ROUTES)
 			const status = r() < 0.92 ? 200 : pick(r, [201, 204, 304])
 			return {
-				body: `${method} ${route.replace(":id", String(int(r, 100, 9999)))} ${status} ${int(r, 3, 240)}ms`,
+				body: `${method} ${Str.replace(":id", String(int(r, 100, 9999)))(route)} ${status} ${int(r, 3, 240)}ms`,
 				attrs: {
 					"http.request.method": method,
 					"http.route": route,
@@ -144,7 +149,7 @@ const TEMPLATES: readonly [Template, ...Template[]] = [
 		make: (r) => {
 			const user = pick(r, USERS)
 			return {
-				body: JSON.stringify({ event: "session.refreshed", user, ttl_s: 3600, mfa: r() < 0.3 }),
+				body: encodeJson({ event: "session.refreshed", user, ttl_s: 3600, mfa: r() < 0.3 }),
 				attrs: { "user.id": user, "enduser.auth.method": pick(r, ["passkey", "oauth", "password"]) },
 			}
 		},
@@ -209,10 +214,10 @@ const TEMPLATES: readonly [Template, ...Template[]] = [
 	},
 ]
 
-const TOTAL_WEIGHT = TEMPLATES.reduce((sum, t) => sum + t.weight, 0)
+const TOTAL_WEIGHT = Arr.reduce(TEMPLATES, 0, (sum, t) => sum + t.weight)
 const INCIDENT_TEMPLATES: readonly [Template, ...Template[]] = [
 	TEMPLATES[0],
-	...TEMPLATES.filter((t) => t.service === "payment-svc" || t.severity === "ERROR"),
+	...Arr.filter(TEMPLATES, (t) => t.service === "payment-svc" || t.severity === "ERROR"),
 ]
 const SEVERITY_NUMBER = { TRACE: 1, DEBUG: 5, INFO: 9, WARN: 13, ERROR: 17, FATAL: 21 } as const
 
@@ -235,7 +240,7 @@ export function buildLogsLabFixture(anchorMs: number, count = 400): Log[] {
 		const iso = new Date(t).toISOString()
 		return {
 			timestamp: iso,
-			exactTimestamp: iso.replace("T", " ").replace("Z", ""),
+			exactTimestamp: Str.replace("Z", "")(Str.replace("T", " ")(iso)),
 			severityText: template.severity,
 			severityNumber: SEVERITY_NUMBER[template.severity],
 			serviceName: template.service,

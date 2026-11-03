@@ -2,8 +2,10 @@ import type {
 	CloudflareWorkerDurableObjectBucket,
 	CloudflareWorkerLatencyBucket,
 	CloudflareWorkerOutcomeBucket,
-} from "@/api/warehouse/cloudflare-infra"
-import type { ChartEventMarker } from "../primitives/chart-event-markers"
+} from "@maple/web-data/warehouse/cloudflare-infra"
+import { shortId } from "@maple/ui/lib/ids"
+import type { ChartEventMarker } from "../primitives/chart-event-marker"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 type StripRow = { bucket: string; attributeValue: string; value: number }
 
@@ -29,8 +31,8 @@ const FAILURE_COLOR_BY_STATUS = [
 ] as const
 
 /** The same colours keyed by the label the strip's series carry. */
-export const FAILURE_COLORS: Readonly<Record<string, string>> = Object.fromEntries(
-	FAILURE_COLOR_BY_STATUS.map(([status, color]) => [outcomeLabel(status), color]),
+export const FAILURE_COLORS: Readonly<Record<string, string>> = Rec.fromEntries(
+	Arr.map(FAILURE_COLOR_BY_STATUS, ([status, color]) => [outcomeLabel(status), color]),
 )
 
 export const DURABLE_OBJECT_COLORS = {
@@ -52,10 +54,10 @@ export function workerOutcomeTotals(
 ): WorkerOutcomeTotals {
 	const counts = new Map<string, number>()
 	for (const b of buckets) counts.set(b.status, (counts.get(b.status) ?? 0) + b.requests)
-	const byStatus = [...counts]
-		.map(([status, count]) => ({ status, count }))
-		.toSorted((a, b) => b.count - a.count)
-	const invocations = byStatus.reduce((acc, row) => acc + row.count, 0)
+	const byStatus = Arr.map([...counts], ([status, count]) => ({ status, count })).toSorted(
+		(a, b) => b.count - a.count,
+	)
+	const invocations = Arr.reduce(byStatus, 0, (acc, row) => acc + row.count)
 	return {
 		invocations,
 		byStatus,
@@ -68,7 +70,7 @@ export function workerOutcomeTotals(
 export function invocationRows(buckets: ReadonlyArray<CloudflareWorkerOutcomeBucket>): StripRow[] {
 	const totals = new Map<string, number>()
 	for (const b of buckets) totals.set(b.bucket, (totals.get(b.bucket) ?? 0) + b.requests)
-	return [...totals].map(([bucket, value]) => ({ bucket, attributeValue: "", value }))
+	return Arr.map([...totals], ([bucket, value]) => ({ bucket, attributeValue: "", value }))
 }
 
 /**
@@ -77,11 +79,18 @@ export function invocationRows(buckets: ReadonlyArray<CloudflareWorkerOutcomeBuc
  * that stops after its last failure reads as "no data" rather than "no failures".
  */
 export function failureRows(buckets: ReadonlyArray<CloudflareWorkerOutcomeBucket>): StripRow[] {
-	const allBuckets = [...new Set(buckets.map((b) => b.bucket))].toSorted()
-	const failing = [...new Set(buckets.filter((b) => b.status !== "success").map((b) => b.status))]
-	const counts = new Map(buckets.map((b) => [`${b.bucket}|${b.status}`, b.requests]))
-	return failing.flatMap((status) =>
-		allBuckets.map((bucket) => ({
+	const allBuckets = [...new Set(Arr.map(buckets, (b) => b.bucket))].toSorted()
+	const failing = [
+		...new Set(
+			Arr.map(
+				Arr.filter(buckets, (b) => b.status !== "success"),
+				(b) => b.status,
+			),
+		),
+	]
+	const counts = new Map(Arr.map(buckets, (b) => [`${b.bucket}|${b.status}`, b.requests]))
+	return Arr.flatMap(failing, (status) =>
+		Arr.map(allBuckets, (bucket) => ({
 			bucket,
 			attributeValue: outcomeLabel(status),
 			value: counts.get(`${bucket}|${status}`) ?? 0,
@@ -94,7 +103,7 @@ export function percentileRows(
 	buckets: ReadonlyArray<CloudflareWorkerLatencyBucket>,
 	pick: (b: CloudflareWorkerLatencyBucket) => readonly [p50: number, p99: number],
 ): StripRow[] {
-	return buckets.flatMap((b) => {
+	return Arr.flatMap(buckets, (b) => {
 		const [p50, p99] = pick(b)
 		return p99 > 0
 			? [
@@ -106,7 +115,7 @@ export function percentileRows(
 }
 
 export function durableObjectRows(buckets: ReadonlyArray<CloudflareWorkerDurableObjectBucket>): StripRow[] {
-	return buckets.flatMap((b) => [
+	return Arr.flatMap(buckets, (b) => [
 		{ bucket: b.bucket, attributeValue: "calls", value: b.requests },
 		{ bucket: b.bucket, attributeValue: "errors", value: b.errors },
 	])
@@ -122,15 +131,17 @@ export function deployMarkers(
 	bucketSeconds: number,
 ): ChartEventMarker[] {
 	const openedAt = new Date(windowStartIso).getTime() + bucketSeconds * 1000
-	return releases
-		.filter((release) => new Date(release.firstSeen).getTime() > openedAt)
-		.toSorted((a, b) => a.firstSeen.localeCompare(b.firstSeen))
-		.map((release) => ({
+	return Arr.map(
+		Arr.filter(releases, (release) => new Date(release.firstSeen).getTime() > openedAt).toSorted((a, b) =>
+			Str.localeCompare(b.firstSeen)(a.firstSeen),
+		),
+		(release) => ({
 			id: release.commitSha,
 			at: release.firstSeen,
-			label: release.commitSha.slice(0, 7),
+			label: shortId(release.commitSha, "sha"),
 			tone: "neutral",
-		}))
+		}),
+	)
 }
 
 /**

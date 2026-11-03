@@ -39,6 +39,7 @@ export const TRACE_LIST_MV_RESOURCE_MAP: Record<string, string> = {
 import * as CH from "@maple-dev/effect-orm/expr"
 import { normalizedSpanNameExpr } from "@maple/domain/tinybird/span-display-name"
 import * as T from "@maple-dev/effect-orm/clickhouse"
+import { Array as Arr } from "effect"
 
 // Semconv rename coalescing
 //
@@ -127,9 +128,10 @@ export function buildAttrFilterCondition(
 	// than the exact OR and only adds granule reads.
 	if (af.or?.length) {
 		const { or, ...first } = af
-		return [first, ...or]
-			.map((member) => buildAttrFilterCondition(member, mapName, "none"))
-			.reduce((acc, cond) => acc.or(cond))
+		// One flat OR: a chained `.or()` per member nests past ClickHouse's max_parser_depth.
+		return CH.or(
+			...Arr.map([first, ...or], (member) => buildAttrFilterCondition(member, mapName, "none")),
+		)
 	}
 	// `Attributes` (product events, metric datapoints) carries no skip index, so the exact predicate stands alone.
 	const indexMode: AttributeIndexMode = mapName === "Attributes" ? "none" : requestedIndexMode

@@ -20,6 +20,8 @@
 	<string>0.1.0</string>
 	<key>CFBundleVersion</key>
 	<string>100</string>
+	<key>MapleWidgetKeychainGroup</key>
+	<string>$(AppIdentifierPrefix)com.maple.mobile.widget-keys</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionPointIdentifier</key>

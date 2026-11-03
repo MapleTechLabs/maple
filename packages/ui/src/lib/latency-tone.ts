@@ -70,7 +70,7 @@ export function latencyLevel(ms: number, scale: LatencyScale = "p95", budgetMs?:
  */
 export const LATENCY_TEXT_TONE: Record<LatencyLevel, string> = {
 	quiet: "text-muted-foreground",
-	nominal: "text-foreground/70",
+	nominal: "text-foreground-soft",
 	elevated: "text-foreground",
 	slow: "text-severity-warn",
 	critical: "text-severity-error",
@@ -81,8 +81,8 @@ export const LATENCY_BAR_TONE: Record<LatencyLevel, string> = {
 	quiet: "bg-muted-foreground/15",
 	nominal: "bg-muted-foreground/25",
 	elevated: "bg-foreground/20",
-	slow: "bg-severity-warn/25",
-	critical: "bg-severity-error/25",
+	slow: "bg-severity-warn-a3",
+	critical: "bg-severity-error-a3",
 } satisfies Record<LatencyLevel, string>
 
 /** Raw color strings for SVG fills and inline styles (no Tailwind class). */

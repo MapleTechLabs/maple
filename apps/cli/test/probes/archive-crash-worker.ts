@@ -23,8 +23,11 @@
 
 import { writeFileSync, existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
-import { createArchiveGeneration, type ArchiveGenerationFaults } from "../../src/server/archives/generation"
-import { resolveArchiveTuning } from "../../src/server/archives/config"
+import {
+	createArchiveGeneration,
+	type ArchiveGenerationFaults,
+} from "@maple/local-server/archives/generation"
+import { resolveArchiveTuning } from "@maple/local-server/archives/config"
 
 interface Args {
 	boundary: string
@@ -143,7 +146,6 @@ const main = async (): Promise<void> => {
 	const tuning = resolveArchiveTuning({
 		archiveDir: args.archiveDir,
 		scratchRoot: args.scratchRoot,
-		dataDir: args.dataDir,
 		// The harness inserts three rows and one row per shard forces a genuine
 		// pause after shard 1 while later shards do not yet exist.
 		maxShardRows: 1,

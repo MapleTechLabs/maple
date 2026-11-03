@@ -1,0 +1,293 @@
+import type { SecurityAuditFinding, SecurityAuditTarget } from "@maple/domain/http"
+import { countLabel } from "@maple/ui/lib/format"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { AppRoute, hrefOf } from "../../../route"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { label } from "@maple/views/ui/label"
+import { searchInput } from "@maple/views/ui/search-input"
+import * as SelectView from "@maple/views/ui/select-view"
+import * as Select from "@maple/views/ui/select"
+import { switchControl } from "@maple/views/ui/switch"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
+import { relativeTime } from "../../kit/relative-time"
+import { countByBucket, sectionsOf, type SeverityBucket } from "../kit/findings"
+import { findingGroups, severityTabs } from "../kit/findings-view"
+import { FINDING_STATUS_LABEL, STATUS_TAB_LABEL } from "../kit/format"
+import { gateState, placeholderRows, repositoryName } from "../kit/parts"
+import {
+	countForTab,
+	filteredFindings,
+	findingsStateOf,
+	isNewFinding,
+	isReopened,
+	STATUS_TABS,
+	targetsOf,
+	toolbarFindings,
+} from "./derive"
+import { Message, type Model } from "./model"
+import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
+import { borderedBox } from "@maple/views/ui/bordered-box"
+import { Array as Arr } from "effect"
+
+// The Findings tab, as Linear lists issues: severity tabs, a filter toolbar, then one dense line
+// per finding under collapsible severity groups.
+
+type H = HtmlBuilder<Message>
+type Clock = Readonly<{ nowMs: number; timeZone: string }>
+
+const selectSubmodel = (
+	h: H,
+	select: Select.Model,
+	entries: ReadonlyArray<SelectView.SelectEntry>,
+	label: string,
+	renderValue: (value: string) => string,
+	wrap: (message: Select.Message) => Message,
+): Html =>
+	h.submodel({
+		slotId: select.id,
+		model: select,
+		view: SelectView.view,
+		viewInputs: {
+			entries,
+			size: "sm",
+			ariaLabel: label,
+			className: "h-7 w-auto min-w-28 text-xs",
+			renderValue: (value) => [
+				h.span([h.Class("text-muted-foreground")], [`${label} `]),
+				renderValue(value),
+			],
+			toView: (parts) => h.div([h.Class("contents")], parts),
+		},
+		toParentMessage: (message) => wrap(message),
+	})
+
+const item = (value: string, label: string): SelectView.SelectEntry => ({
+	_tag: "Item",
+	item: { value, label },
+})
+
+const toolbar = (
+	h: H,
+	model: Model,
+	findings: ReadonlyArray<SecurityAuditFinding>,
+	targets: ReadonlyArray<SecurityAuditTarget>,
+): Html => {
+	const targetLabel = (value: string) =>
+		value === "all"
+			? "All targets"
+			: (targets.find((target) => target.id === value)?.repository ?? "Removed target")
+	const statusLabel = (value: string) => STATUS_TABS.find((tab) => tab === value) ?? "open"
+	return listToolbar(h, {
+		framed: true,
+		leading: searchInput(h, {
+			id: "security-findings-search",
+			size: "sm",
+			className: "w-full sm:w-64 sm:max-w-sm",
+			placeholder: "Search title, file or fingerprint…",
+			value: model.searchDraft,
+			onInput: (value) => Message.ChangedSearchDraft({ value }),
+			onClear: Message.ChangedSearchDraft({ value: "" }),
+		}),
+		trailing: [
+			selectSubmodel(
+				h,
+				model.statusSelect,
+				Arr.map(STATUS_TABS, (tab) =>
+					item(tab, `${STATUS_TAB_LABEL[tab]} (${countForTab(findings, tab)})`),
+				),
+				"Status",
+				(value) => STATUS_TAB_LABEL[statusLabel(value)],
+				(message) => Message.GotStatusSelectMessage({ message }),
+			),
+			// One repository needs no target filter.
+			...(targets.length < 2
+				? []
+				: [
+						selectSubmodel(
+							h,
+							model.targetSelect,
+							[
+								item("all", "All targets"),
+								...Arr.map(targets, (target) => item(target.id, target.repository)),
+							],
+							"Target",
+							targetLabel,
+							(message) => Message.GotTargetSelectMessage({ message }),
+						),
+					]),
+			label(
+				h,
+				{
+					className: "flex items-center gap-2 text-xs font-normal text-muted-foreground sm:text-xs",
+					attributes: [h.Id("security-show-rejected-label")],
+				},
+				[
+					...switchControl(h, {
+						id: "security-show-rejected",
+						inputId: "security-show-rejected-input",
+						isChecked: model.findingsSearch.rejected === true,
+						labelledBy: "security-show-rejected-label",
+						onToggle: Message.ToggledShowRejected(),
+					}),
+					"Show rejected",
+				],
+			),
+		],
+	})
+}
+
+/** Reopened and new lead; a triaged finding says how; an open one says nothing. */
+const statusOf = (h: H, finding: SecurityAuditFinding, nowMs: number): ReadonlyArray<Html> =>
+	isReopened(finding)
+		? [badge(h, { variant: "meta" }, ["Reopened"])]
+		: isNewFinding(finding, nowMs)
+			? [badge(h, { variant: "done" }, ["New"])]
+			: finding.status === "open"
+				? []
+				: [badge(h, { variant: "meta" }, [FINDING_STATUS_LABEL[finding.status]])]
+
+const findingsList = (
+	h: H,
+	model: Model,
+	rows: ReadonlyArray<SecurityAuditFinding>,
+	targets: ReadonlyArray<SecurityAuditTarget>,
+	clock: Clock,
+): Html => {
+	const showsTarget = targets.length > 1 && model.findingsSearch.target === undefined
+	return findingGroups(h, {
+		sections: sectionsOf(rows),
+		collapsed: model.collapsed,
+		onToggle: (bucket) => Message.ToggledSection({ bucket }),
+		label: "Findings",
+		row: (finding) => ({
+			finding,
+			open: {
+				href: hrefOf(
+					AppRoute.SecurityFinding({
+						targetId: finding.targetId,
+						fingerprint: finding.fingerprint,
+					}),
+				),
+			},
+			trailing: [
+				...statusOf(h, finding, clock.nowMs),
+				...(showsTarget
+					? [
+							repositoryName(
+								h,
+								targets.find((target) => target.id === finding.targetId)?.repository ??
+									"Removed target",
+								"hidden max-w-48 text-xs lg:inline",
+							),
+						]
+					: []),
+				h.span(
+					[h.Class("w-8 text-right font-mono text-xs text-muted-foreground")],
+					[
+						relativeTime(h, {
+							value: finding.updatedAt,
+							nowMs: clock.nowMs,
+							timeZone: clock.timeZone,
+							variant: "short",
+							tooltip: "title",
+						}),
+					],
+				),
+			],
+		}),
+	})
+}
+
+/** The tab's one-line explanation above the list. The gate and the failure card go without it,
+ * so the failure lines up with the other Security tabs. */
+const findingsIntro = (h: H): Html =>
+	h.p(
+		[h.Class("-mb-3 font-prose text-xs text-muted-foreground")],
+		["Each finding is tracked by its fingerprint from run to run."],
+	)
+
+export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
+	const clock: Clock = { nowMs: model.nowMs, timeZone }
+	const state = findingsStateOf(model)
+	if (state._tag === "Gated") return [gateState(h, state.gate)]
+	if (state._tag === "Failed")
+		return [
+			errorState(h, {
+				failure: state.failure,
+				title: "Couldn't load findings",
+				onRetry: Message.ClickedRetry(),
+			}),
+		]
+	const targets = targetsOf(model)
+	const all = state._tag === "Ready" ? state.findings : []
+	const query = model.findingsSearch.q ?? ""
+	const rows = filteredFindings(all, model.findingsSearch, query)
+	const content =
+		state._tag === "Loading"
+			? placeholderRows(h, 6)
+			: targets.length === 0 || all.length === 0
+				? empty(
+						h,
+						[
+							emptyHeader(h, [
+								emptyTitle(h, ["No findings yet"]),
+								emptyDescription(h, [
+									targets.length === 0
+										? "Findings appear here after the first audit run of a target finishes."
+										: "No audit has reported a finding yet.",
+								]),
+							]),
+						],
+						emptyFrameClass("dashed"),
+					)
+				: rows.length === 0
+					? h.div(
+							[h.Class("p-4")],
+							[
+								// Clearing keeps the status, so the status alone is not a filter.
+								Arr.some(Object.keys(model.findingsSearch), (key) => key !== "status")
+									? filteredEmpty(h, {
+											noun: "findings",
+											className: emptyFrameClass("dashed"),
+											description: "Nothing in this status matches the filters.",
+											onClear: Message.ClickedClearFilters(),
+										})
+									: empty(
+											h,
+											[emptyHeader(h, [emptyTitle(h, ["No findings in this status"])])],
+											emptyFrameClass("dashed"),
+										),
+							],
+						)
+					: findingsList(h, model, rows, targets, clock)
+	const shown = Arr.filter(rows, (finding) => finding.verdict !== "rejected").length
+	return [
+		findingsIntro(h),
+		borderedBox(
+			h,
+			{ as: "section", overflow: "hidden", card: true, attributes: [h.AriaLabel("Findings")] },
+			[
+				// Nothing to filter until there is a target, as the errors hub hides its toolbar when empty.
+				...(targets.length === 0 || state._tag !== "Ready"
+					? []
+					: [
+							listToolbar(h, {
+								framed: true,
+								leading: severityTabs(h, {
+									counts: countByBucket(toolbarFindings(all, model.findingsSearch, query)),
+									active: model.findingsSearch.severity ?? null,
+									onPick: (bucket: SeverityBucket | null) =>
+										Message.PickedSeverity({ bucket }),
+									label: "Severity",
+								}),
+								trailing: [toolbarCount(h, [countLabel(shown, "finding")])],
+							}),
+							toolbar(h, model, all, targets),
+						]),
+				content,
+			],
+		),
+	]
+}

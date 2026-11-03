@@ -6,6 +6,7 @@ import {
 	ONBOARDING_REWARD_WINDOW_MS,
 	type OnboardingChecklistInputs,
 } from "./onboarding-checklist"
+import { Array as Arr } from "effect"
 
 const CREATED = Date.parse("2026-07-27T00:00:00.000Z")
 const NOW = CREATED + 6 * 60 * 60 * 1000
@@ -32,7 +33,7 @@ describe("evaluateOnboardingChecklist", () => {
 			},
 			NOW,
 		)
-		expect(report.steps.map((step) => step.id)).toEqual([...ONBOARDING_CHECKLIST_STEP_IDS])
+		expect(Arr.map(report.steps, (step) => step.id)).toEqual([...ONBOARDING_CHECKLIST_STEP_IDS])
 		expect(report.status).toBe("in_progress")
 		expect(report.completedCount).toBe(0)
 		expect(report.totalCount).toBe(4)
@@ -86,7 +87,7 @@ describe("evaluateOnboardingChecklist", () => {
 
 	it("shows the Slack step only where channels can be created, and never requires it", () => {
 		const ids = (inputs: OnboardingChecklistInputs) =>
-			evaluateOnboardingChecklist(inputs, NOW).steps.map((s) => s.id)
+			Arr.map(evaluateOnboardingChecklist(inputs, NOW).steps, (s) => s.id)
 		expect(ids({ ...allDone, supportChannelAvailable: false })).not.toContain("join_slack_channel")
 		expect(ids(allDone).at(-1)).toBe("join_slack_channel")
 		const withoutChannel = evaluateOnboardingChecklist({ ...allDone, supportChannelCreated: false }, NOW)

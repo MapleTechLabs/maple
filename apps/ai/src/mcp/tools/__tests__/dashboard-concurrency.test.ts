@@ -11,7 +11,7 @@
 // regressions of that property.
 
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema, Array as Arr } from "effect"
 import {
 	DashboardConcurrencyError,
 	DashboardDocument,
@@ -60,7 +60,9 @@ const USER = asUserId("user_a")
 const DASHBOARD = asDashboardId("dash-1")
 const NOW = asIsoDateTimeString(new Date("2026-01-01T00:00:00.000Z").toISOString())
 
-const widget = (id: string) => ({
+type Widget = DashboardDocument["widgets"][number]
+
+const widget = (id: string): Widget => ({
 	id,
 	visualization: "stat",
 	dataSource: { kind: "route", endpoint: "test" },
@@ -111,7 +113,7 @@ describe("dashboard concurrency", () => {
 			const listed = yield* persistence.list(ORG)
 
 			assert.strictEqual(listed.dashboards.length, 1)
-			const widgets = listed.dashboards[0]!.widgets.map((w) => w.id).sort()
+			const widgets = Arr.map(listed.dashboards[0]!.widgets, (w) => w.id).sort()
 			assert.deepStrictEqual(widgets, ["w-a", "w-b"])
 		}).pipe(Effect.provide(layer))
 	})
@@ -160,8 +162,8 @@ describe("dashboard concurrency", () => {
 
 			const exitsAndListed = { exits, listed: yield* persistence.list(ORG) }
 
-			const successes = exitsAndListed.exits.filter(Exit.isSuccess)
-			const failures = exitsAndListed.exits.filter(Exit.isFailure)
+			const successes = Arr.filter(exitsAndListed.exits, Exit.isSuccess)
+			const failures = Arr.filter(exitsAndListed.exits, Exit.isFailure)
 			assert.strictEqual(successes.length + failures.length, 2)
 			// At least one writer must hit the CAS conflict path. Under serialized
 			// scheduling both could conceivably succeed; a regression that makes
@@ -243,7 +245,7 @@ describe("dashboard concurrency", () => {
 			// on which — under serialized scheduling either A or B can win — only
 			// that the loser surfaced as a typed concurrency error rather than
 			// silently dropping the update.
-			const failures = exits.filter(Exit.isFailure)
+			const failures = Arr.filter(exits, Exit.isFailure)
 			for (const exit of failures) {
 				assert.instanceOf(findError(exit), DashboardConcurrencyError)
 			}

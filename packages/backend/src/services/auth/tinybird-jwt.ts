@@ -1,5 +1,6 @@
 import { createHash, createHmac } from "node:crypto"
 import { escapeClickHouseString } from "@maple-dev/effect-orm/sql"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 // Tinybird per-org read JWT minting.
 //
@@ -38,6 +39,8 @@ export interface MintOrgReadJwtInput {
 	readonly rpsLimit?: number
 }
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 const base64url = (input: string | Buffer): string =>
 	(Buffer.isBuffer(input) ? input : Buffer.from(input, "utf8")).toString("base64url")
 
@@ -47,7 +50,7 @@ const base64url = (input: string | Buffer): string =>
  * id keeps customer identifiers out of Tinybird's token-name analytics.
  */
 const tokenNameForOrg = (orgId: string): string =>
-	`maple-raw-sql-${createHash("sha256").update(orgId).digest("hex").slice(0, 16)}`
+	`maple-raw-sql-${Str.slice(0, 16)(createHash("sha256").update(orgId).digest("hex"))}`
 
 /**
  * Mint a per-org Tinybird read JWT scoped to `datasourceNames`, each filtered to
@@ -55,15 +58,15 @@ const tokenNameForOrg = (orgId: string): string =>
  */
 export function mintOrgReadJwt(input: MintOrgReadJwtInput): string {
 	const orgLiteral = `OrgId = '${escapeClickHouseString(input.orgId)}'`
-	const scopes: ReadonlyArray<TinybirdJwtScope> = input.datasourceNames.map((resource) => ({
+	const scopes: ReadonlyArray<TinybirdJwtScope> = Arr.map(input.datasourceNames, (resource) => ({
 		type: "DATASOURCES:READ",
 		resource,
 		filter: orgLiteral,
 	}))
 
-	const header = base64url(JSON.stringify({ alg: "HS256", typ: "JWT" }))
+	const header = base64url(encodeJson({ alg: "HS256", typ: "JWT" }))
 	const payload = base64url(
-		JSON.stringify({
+		encodeJson({
 			workspace_id: input.workspaceId,
 			name: tokenNameForOrg(input.orgId),
 			exp: input.nowSeconds + input.ttlSeconds,

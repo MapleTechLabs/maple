@@ -1,4 +1,4 @@
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { FieldRefSchema, FieldNamespaceSchema } from "./model"
 import type { FieldNamespace, FieldRef, NormalizedSignal, SignalPredicate, SignalScalarType } from "./model"
 import { fieldKey } from "./model"
@@ -178,7 +178,7 @@ export const validatePredicateAgainstSource = (
 			if (!catalogTypes.includes(leaf.field.type))
 				issues.push({
 					path: `${leaf.path}.field.type`,
-					message: `catalog field ${fieldKey(leaf.field)} allows ${catalogTypes.join(", ")}`,
+					message: `catalog field ${fieldKey(leaf.field)} allows ${Arr.join(catalogTypes, ", ")}`,
 				})
 			if (!catalogEntry.operators.includes(leaf.operator))
 				issues.push({

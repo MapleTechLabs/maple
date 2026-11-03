@@ -29,20 +29,20 @@ jobs:
         # Restoring a backup provisions a fresh cluster (~10 min) before the
         # checks run, and the branch delete is awaited at the end.
         timeout-minutes: 45
-        # Same STOPGAP as cleanup-preview-orphans.yml: the job borrows
-        # `pr-preview` only to shape the Infisical OIDC subject
-        # (repo:<org>/<repo>:environment:<name> is the allowlisted form). It
-        # deploys nothing. Remove once the `ref:refs/heads/main` subject is
-        # allowlisted on the machine identity.
-        environment: pr-preview
+        # `maintenance` (main only) carries this job's own Infisical identity,
+        # limited to `dev` and trusting only `environment:maintenance`.
+        environment: maintenance
         env:
             INFISICAL_ENV_SLUG: dev
         steps:
             - name: Checkout
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - name: Setup mise (toolchain)
-              uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+            - name: Toolchain and dependencies
+              uses: ./.github/actions/setup
+              with:
+                  install-filters: "@maple/db"
+                  turbo-cache: "false"
 
             - name: Load secrets from Infisical
               uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
@@ -53,11 +53,6 @@ jobs:
                   env-slug: ${{ env.INFISICAL_ENV_SLUG }}
                   export-type: "env"
                   secret-path: "/"
-
-            - name: Install dependencies
-              uses: ./.github/actions/bun-install
-              with:
-                  filters: "@maple/db"
 
             - name: Install PlanetScale CLI
               uses: planetscale/setup-pscale-action@b6a50ee45b4b24944e1d8de6e57b3a5f6476a1af # v1

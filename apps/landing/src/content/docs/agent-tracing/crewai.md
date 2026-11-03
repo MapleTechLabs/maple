@@ -16,12 +16,13 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for CrewAI in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-crewai -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-crewai -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install the instrumentors
 
@@ -33,13 +34,13 @@ pip install "crewai>=1.15" "openinference-instrumentation-crewai>=1.1.18" \
 
 Pick the model instrumentor by the model string you pass to `LLM(...)`:
 
-| Model string | Instrumentor |
-| --- | --- |
-| `openai/…`, `openrouter/…`, `deepseek/…`, `ollama/…`, `custom_openai=True`, or a bare name like `gpt-4.1-mini` | `openinference-instrumentation-openai` |
-| `anthropic/…` or a bare `claude-…` | `openinference-instrumentation-anthropic` |
-| `gemini/…` or a bare `gemini-…` | `openinference-instrumentation-google-genai` |
-| `bedrock/…` | `openinference-instrumentation-bedrock` |
-| Anything else (needs `crewai[litellm]`) | `openinference-instrumentation-litellm` |
+| Model string                                                                                                   | Instrumentor                                 |
+| -------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `openai/…`, `openrouter/…`, `deepseek/…`, `ollama/…`, `custom_openai=True`, or a bare name like `gpt-4.1-mini` | `openinference-instrumentation-openai`       |
+| `anthropic/…` or a bare `claude-…`                                                                             | `openinference-instrumentation-anthropic`    |
+| `gemini/…` or a bare `gemini-…`                                                                                | `openinference-instrumentation-google-genai` |
+| `bedrock/…`                                                                                                    | `openinference-instrumentation-bedrock`      |
+| Anything else (needs `crewai[litellm]`)                                                                        | `openinference-instrumentation-litellm`      |
 
 Install only the ones your crews use. The LiteLLM instrumentor records nothing for the first four rows.
 
@@ -165,11 +166,9 @@ def stream_message(conversation_id: str, text: str, history: str, send) -> None:
 
 Servers and `crewai run` need nothing. In serverless handlers and notebooks, import `provider` from `tracing` and call `provider.force_flush()` in a `finally` after each run.
 
-## Check that it works
+## Verify
 
-Send two or three messages with the same conversation id, one of them using a tool, then open **Agent Sessions**. Within a minute you should see one session labeled **CrewAI**, with one turn per `kickoff()` starting at `support.kickoff`, `ChatCompletion` model calls with tokens, tool calls like `get_weather.run`, and one lane per agent role.
-
-Cost shows as **unpriced** unless your models go through LiteLLM, which is expected.
+Send two or three messages with the same conversation id, one of them using a tool, then open **Agent Sessions**. Within a minute you should see one session labeled **CrewAI**, with one turn per `kickoff()` starting at `support.kickoff`, `ChatCompletion` model calls with tokens, tool calls like `get_weather.run`, and one lane per agent role. Cost shows as unpriced unless your models go through LiteLLM.
 
 ## Troubleshooting
 
@@ -179,7 +178,7 @@ Cost shows as **unpriced** unless your models go through LiteLLM, which is expec
 - **Every model and tool call is its own trace.** Replace `akickoff()` with `kickoff()` or `kickoff_async()`.
 - **The process hangs at exit asking about traces.** Set `CREWAI_TRACING_ENABLED=false`.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview): what Maple builds from these spans.
 - [LiteLLM](/docs/agent-tracing/litellm) and [OpenRouter](/docs/agent-tracing/openrouter): if your models go through either gateway.

@@ -2,6 +2,7 @@ import { OrgClickHouseSettingsEncryptionError } from "@maple/domain/http"
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, describe, expect, it, layer } from "@effect/vitest"
 import {
+	OrgClickHouseSettingsPersistenceError,
 	OrgClickHouseSettingsUpstreamRejectedError,
 	OrgClickHouseSettingsUpstreamUnavailableError,
 	OrgClickHouseSettingsStoredConfigInvalidError,
@@ -16,7 +17,17 @@ import {
 	makeEdgeCacheService,
 	MemoryCacheBackendLive,
 } from "@maple/cache"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import {
+	Cause,
+	ConfigProvider,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import type { TableDiffEntry } from "@maple/domain/clickhouse"
@@ -249,6 +260,54 @@ layer(FetchHttpClient.layer, { excludeTestServices: true })("execClickHouse", (i
 		}),
 	)
 
+	it.effect("rejects an endless response body without retrying instead of buffering it", () =>
+		Effect.gen(function* () {
+			const pulled = { count: 0 }
+			const chunk = new TextEncoder().encode(Str.repeat(64 * 1024)("x"))
+			const { state, fetchImpl } = makeFetch(() =>
+				Promise.resolve(
+					new Response(
+						new ReadableStream<Uint8Array>({
+							pull: (controller) => {
+								pulled.count++
+								controller.enqueue(chunk)
+							},
+						}),
+						{ status: 200 },
+					),
+				),
+			)
+
+			const exit = yield* run("SELECT 1", fetchImpl).pipe(Effect.exit)
+
+			expect(getError(exit)).toBeInstanceOf(OrgClickHouseSettingsUpstreamRejectedError)
+			expect(state.calls).toBe(1)
+			expect(pulled.count).toBeLessThan(200)
+		}),
+	)
+
+	it.effect("reads a normal multi-chunk body in full", () =>
+		Effect.gen(function* () {
+			const parts = ['{"name":"a"}\n', '{"name":"b"}\n']
+			const { fetchImpl } = makeFetch(() =>
+				Promise.resolve(
+					new Response(
+						new ReadableStream<Uint8Array>({
+							start: (controller) => {
+								Arr.forEach(parts, (part) =>
+									controller.enqueue(new TextEncoder().encode(part)),
+								)
+								controller.close()
+							},
+						}),
+						{ status: 200 },
+					),
+				),
+			)
+			expect(yield* run("SELECT name", fetchImpl)).toBe(Arr.join(parts, ""))
+		}),
+	)
+
 	it.effect("does NOT retry a 4xx rejection", () =>
 		Effect.gen(function* () {
 			const { state, fetchImpl } = makeFetch(() => Promise.resolve(mockResponse("Syntax error", 400)))
@@ -322,7 +381,7 @@ describe("resolveRuntimeConfig caching", () => {
 	// (it is a required dependency) while making its backend a deliberate miss.
 	const missOnlyBackend: EdgeCacheBackend = {
 		name: "memory",
-		get: () => Effect.succeed(undefined),
+		get: () => Effect.undefined,
 		put: () => Effect.void,
 		delete: () => Effect.void,
 	}
@@ -431,8 +490,22 @@ describe("resolveRuntimeConfig caching", () => {
 			const exit = yield* service.resolveRuntimeConfig(asOrgId(orgId)).pipe(Effect.exit)
 			const error = getError(exit)
 			expect(error).toBeInstanceOf(OrgClickHouseSettingsStoredConfigInvalidError)
-			if (!(error instanceof OrgClickHouseSettingsStoredConfigInvalidError)) return
+			if (!Schema.is(OrgClickHouseSettingsStoredConfigInvalidError)(error)) return
 			expect(error.cause).toBeInstanceOf(OrgClickHouseSettingsValidationError)
+		}).pipe(Effect.provide(buildLayer(testDb)))
+	})
+
+	it.effect("the settings page still reports a settings database outage as its own error", () => {
+		const testDb = createTestDb(cacheTrackedDbs)
+		const orgId = asOrgId("org_ch_settings_db_down")
+		const admin = [asRole("org:admin")]
+		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
+			yield* Effect.promise(() => executeSql(testDb, "DROP TABLE org_clickhouse_settings CASCADE"))
+			const get = getError(yield* service.get(orgId, admin).pipe(Effect.exit))
+			const remove = getError(yield* service.delete(orgId, admin).pipe(Effect.exit))
+			expect(get).toBeInstanceOf(OrgClickHouseSettingsPersistenceError)
+			expect(remove).toBeInstanceOf(OrgClickHouseSettingsPersistenceError)
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
 
@@ -929,7 +1002,7 @@ describe("resolveRuntimeConfig caching", () => {
 			const exit = yield* service.resolveRuntimeConfig(asOrgId(orgId)).pipe(Effect.exit)
 			const error = getError(exit)
 			expect(error).toBeInstanceOf(OrgClickHouseSettingsStoredConfigInvalidError)
-			if (!(error instanceof OrgClickHouseSettingsStoredConfigInvalidError)) return
+			if (!Schema.is(OrgClickHouseSettingsStoredConfigInvalidError)(error)) return
 			expect(error.cause).toBeInstanceOf(OrgClickHouseSettingsValidationError)
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
@@ -994,7 +1067,7 @@ describe("applySchema claim lifecycle", () => {
 
 	const missBackend: EdgeCacheBackend = {
 		name: "memory",
-		get: () => Effect.succeed(undefined),
+		get: () => Effect.undefined,
 		put: () => Effect.void,
 		delete: () => Effect.void,
 	}

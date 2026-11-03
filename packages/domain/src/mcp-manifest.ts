@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 /**
  * The MCP registry `server.json` document for Maple's hosted MCP server.
  *
@@ -42,7 +43,7 @@ export interface MapleMcpManifestOptions {
 const trimTrailingSlash = (url: string) => {
 	let end = url.length
 	while (end > 0 && url[end - 1] === "/") end--
-	return url.slice(0, end)
+	return Str.slice(0, end)(url)
 }
 
 export const mapleMcpServerManifest = ({
@@ -78,7 +79,7 @@ export const mapleMcpServerManifest = ({
 					{
 						name: "Authorization",
 						description:
-							"`Bearer <Maple API key>` (`maple_ak_…`, created under Settings → API keys). Omit it to use OAuth instead: the server advertises its authorization server at `/.well-known/oauth-protected-resource/mcp`.",
+							"`Bearer <Maple API key>` (`maple_ak_…`, created under Settings → Keys). Omit it to use OAuth instead: the server advertises its authorization server at `/.well-known/oauth-protected-resource/mcp`.",
 						isRequired: false,
 						isSecret: true,
 					},
@@ -103,7 +104,7 @@ export const mapleMcpServerManifest = ({
 export type McpToolSurface =
 	/** The public MCP transport (`mcp/server.ts`). */
 	| "mcp"
-	/** The in-process AI chat agent (`chat/turn-runner.ts`). */
+	/** In-process agent turns: investigations, their follow-ups and pull request review (`chat/turn-runner.ts`). */
 	| "chat"
 	/**
 	 * The chat-platform bot, which runs the same agent engine as `chat` but answers into a channel

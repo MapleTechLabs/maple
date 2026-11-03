@@ -13,7 +13,7 @@ Traces come from any OpenTelemetry SDK exporting spans over OTLP. The list and f
 
 - `service.name` resource attribute for **Service**, and `deployment.environment` and `service.namespace` for **Environment** and **Namespace**.
 - Span name for **Root Span**.
-- Span status (`Ok`, `Error`, `Unset`) for **Has Error** and the **Status** column.
+- Span status (`Ok`, `Error`, `Unset`) for **Has error** and the **Status** column.
 - `http.request.method` and `http.response.status_code` (or their older `http.method` and `http.status_code` spellings) for **HTTP Method** and **Status Code**.
 
 See [OpenTelemetry conventions](/docs/concepts/otel-conventions) for the full list of attributes Maple reads.
@@ -37,9 +37,9 @@ Click a row to open the trace in a side sheet. Use **Previous trace** and **Next
 
 | Facet                      | What it does                                                                                                                                       |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Has Error**              | Only traces with an error span.                                                                                                                    |
-| **Root Traces Only**       | Lists one row per trace, keyed on its entry span (a root span, or a Server or Consumer span). On by default. Turn it off to list individual spans. |
-| **Hide Single-Span Noise** | Hides single-span traces that are not entry points, such as orphaned client spans. On by default, shown while **Root Traces Only** is on.          |
+| **Has error**              | Only traces with an error span.                                                                                                                    |
+| **Root traces only**       | Lists one row per trace, keyed on its entry span (a root span, or a Server or Consumer span). On by default. Turn it off to list individual spans. |
+| **Hide Single-Span Noise** | Hides single-span traces that are not entry points, such as orphaned client spans. On by default, shown while **Root traces only** is on.          |
 | **Environment**            | Filter by `deployment.environment`.                                                                                                                |
 | **Namespace**              | Filter by `service.namespace`.                                                                                                                     |
 | **Service**                | Filter by `service.name`.                                                                                                                          |
@@ -111,7 +111,7 @@ The [MCP server](/docs/reference/mcp) exposes the same data:
 - **"No traces yet".** Maple has never received a span for this organization. Configure an OpenTelemetry SDK with your ingest key and the [ingest endpoint](/docs/reference/ingest). See [Instrumentation](/docs/instrumentation).
 - **"No traces in this time range".** Maple has data, just not in this window. Click **Widen time range**.
 - **"No traces match these filters".** Your exclusions removed everything. Click **Clear filters**.
-- **A trace you expect is missing.** **Root Traces Only** and **Hide Single-Span Noise** are on by default. Turn off **Hide Single-Span Noise** to see single-span traces, or **Root Traces Only** to search individual spans.
+- **A trace you expect is missing.** **Root traces only** and **Hide Single-Span Noise** are on by default. Turn off **Hide Single-Span Noise** to see single-span traces, or **Root traces only** to search individual spans.
 - **"Trace not found".** The trace has expired past your [retention](/docs/reference/retention) or has not been ingested yet.
 
 ## Next steps

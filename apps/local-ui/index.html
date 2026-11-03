@@ -8,24 +8,11 @@
 		<link rel="icon" href="/favicon.ico" />
 		<meta name="theme-color" content="#171410" />
 		<title>Maple Local</title>
-		<!-- Follow the OS theme before first paint so light-mode users don't see a dark
-		     flash. main.tsx takes over from here (same class + colorScheme). -->
-		<script>
-			;(() => {
-				try {
-					const theme = window.matchMedia("(prefers-color-scheme: light)").matches
-						? "light"
-						: "dark"
-					const root = document.documentElement
-					root.classList.remove("light", "dark")
-					root.classList.add(theme)
-					root.style.colorScheme = theme
-				} catch {}
-			})()
-		</script>
+		<!-- Sets the OS theme before first paint; a same-origin file so the CSP allows it. -->
+		<script src="/theme-init.js"></script>
 	</head>
 	<body>
 		<div id="app"></div>
-		<script type="module" src="/src/main.tsx"></script>
+		<script type="module" src="/src/entry.ts"></script>
 	</body>
 </html>

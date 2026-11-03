@@ -1,6 +1,6 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 import { assert, describe, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Effect, Exit, Layer } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Array as Arr, String as Str } from "effect"
 import { OrgId } from "@maple/domain"
 import { Schema } from "effect"
 import { TestClock } from "effect/testing"
@@ -34,7 +34,7 @@ const testConfig = (extra: Record<string, string> = {}, includeSigning = true) =
 const layer = TinybirdOrgTokenService.layer.pipe(Layer.provide(Env.layer), Layer.provide(testConfig()))
 
 const decodePayload = (jwt: string) =>
-	JSON.parse(Buffer.from(jwt.split(".")[1], "base64url").toString("utf8")) as {
+	JSON.parse(Buffer.from(Str.split(".")(jwt)[1], "base64url").toString("utf8")) as {
 		workspace_id: string
 		exp: number
 		name: string
@@ -50,7 +50,7 @@ describe("TinybirdOrgTokenService", () => {
 			const payload = decodePayload(token)
 			assert.strictEqual(payload.workspace_id, "ws-uuid-abc")
 			assert.isAbove(payload.scopes.length, 0)
-			assert.isTrue(payload.scopes.every((s) => s.filter === "OrgId = 'org_a'"))
+			assert.isTrue(Arr.every(payload.scopes, (s) => s.filter === "OrgId = 'org_a'"))
 		}).pipe(Effect.provide(layer)),
 	)
 
@@ -83,7 +83,7 @@ describe("TinybirdOrgTokenService", () => {
 			const a = yield* svc.getOrgReadToken(asOrgId("org_a"))
 			const b = yield* svc.getOrgReadToken(asOrgId("org_b"))
 			assert.notStrictEqual(a, b)
-			assert.isTrue(decodePayload(b).scopes.every((s) => s.filter === "OrgId = 'org_b'"))
+			assert.isTrue(Arr.every(decodePayload(b).scopes, (s) => s.filter === "OrgId = 'org_b'"))
 		}).pipe(Effect.provide(layer)),
 	)
 

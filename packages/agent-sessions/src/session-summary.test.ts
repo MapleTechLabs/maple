@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { agentSpan, llmSpan, makeSpan, toolSpan } from "./span-test-support"
 import { buildSessionTurns } from "./session-turns"
 import { buildSessionSummary, countTurnTokens, findIdleGaps, type AgentTimeKind } from "./session-summary"
+import { Array as Arr, String as Str } from "effect"
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -111,7 +112,7 @@ describe("buildSessionSummary — time", () => {
 			llmSpan({ spanId: "llm", parentSpanId: "agent", startMs: 6 * SECOND, durationMs: 3 * SECOND }),
 		])
 
-		expect(summary.agentTime.segments.map((entry) => entry.kind)).toEqual(["inference", "tool"])
+		expect(Arr.map(summary.agentTime.segments, (entry) => entry.kind)).toEqual(["inference", "tool"])
 		expect(summary.agentTime.totalMs).toBe(7 * SECOND)
 	})
 
@@ -277,7 +278,12 @@ describe("buildSessionSummary — tokens and models", () => {
 				spanName: "agent.step",
 				startMs: 0,
 				durationMs: 2 * SECOND,
-				genAi: { operationName: "workflow", usageCost: 0.0004263, mapleLlmCall: 0, mapleCost: 0.0004263 },
+				genAi: {
+					operationName: "workflow",
+					usageCost: 0.0004263,
+					mapleLlmCall: 0,
+					mapleCost: 0.0004263,
+				},
 			}),
 			llmSpan({
 				spanId: "chat",
@@ -305,7 +311,12 @@ describe("buildSessionSummary — tokens and models", () => {
 				spanId,
 				startMs,
 				durationMs: SECOND,
-				genAi: { requestModel: "openai/gpt-4o-mini", responseModel, usageInputTokens: 10, usageOutputTokens: 1 },
+				genAi: {
+					requestModel: "openai/gpt-4o-mini",
+					responseModel,
+					usageInputTokens: 10,
+					usageOutputTokens: 1,
+				},
 			})
 		const summary = summarize([
 			call("a", 0, "gpt-4o-mini-2024-07-18"),
@@ -325,7 +336,7 @@ describe("buildSessionSummary — tokens and models", () => {
 			}),
 		])
 
-		expect(summary.models.map((model) => model.model).sort()).toEqual([
+		expect(Arr.map(summary.models, (model) => model.model).sort()).toEqual([
 			"anthropic/claude-sonnet-4.5",
 			"gpt-4o-2024-08-06",
 			"openai/gpt-4o-mini",
@@ -421,7 +432,7 @@ describe("buildSessionSummary — tokens and models", () => {
 				durationMs: 5 * SECOND,
 				genAi: { usageInputTokens: 312, usageOutputTokens: 28, usageReasoningOutputTokens: 0 },
 			}),
-			...[1, 2].map((step) =>
+			...Arr.map([1, 2], (step) =>
 				makeSpan({
 					...vercel,
 					spanId: `step-${step}`,
@@ -478,7 +489,7 @@ describe("buildSessionSummary — tokens and models", () => {
 			},
 		]
 		const summary = summarize(
-			turns.flatMap(({ run, calls }, turn) => [
+			Arr.flatMap(turns, ({ run, calls }, turn) => [
 				agentSpan({
 					spanId: `run-${turn}`,
 					traceId: `trace-${turn}`,
@@ -487,7 +498,7 @@ describe("buildSessionSummary — tokens and models", () => {
 					durationMs: 5 * SECOND,
 					genAi: { usageInputTokens: run[0], usageOutputTokens: run[1] },
 				}),
-				...calls.flatMap(([input, output], step) => [
+				...Arr.flatMap(calls, ([input, output], step) => [
 					makeSpan({
 						spanId: `step-${turn}-${step}`,
 						traceId: `trace-${turn}`,
@@ -523,7 +534,7 @@ describe("buildSessionSummary — tokens and models", () => {
 			{ agent: [838, 193], chat: [365, 71] },
 		]
 		const summary = summarize(
-			turns.flatMap(({ agent, chat }, turn) => [
+			Arr.flatMap(turns, ({ agent, chat }, turn) => [
 				agentSpan({
 					spanId: `agent-${turn}`,
 					traceId: `trace-${turn}`,
@@ -562,7 +573,7 @@ describe("buildSessionSummary — tokens and models", () => {
 			llmSpan({ spanId: "c", startMs: 4 * SECOND, durationMs: SECOND, model: "claude-opus-4-1" }),
 		])
 
-		expect(summary.models.map((model) => [model.model, model.llmCalls])).toEqual([
+		expect(Arr.map(summary.models, (model) => [model.model, model.llmCalls])).toEqual([
 			["claude-opus-4-1", 2],
 			["claude-haiku-4-5", 1],
 		])
@@ -752,7 +763,7 @@ describe("buildSessionSummary — cache accounting", () => {
 		// The app's span represents the call and carries the gateway's price, so
 		// the per-model row adds up to the session's cost.
 		expect(
-			summary.models.map((model) => [model.model, model.llmCalls, model.tokens.total, model.cost]),
+			Arr.map(summary.models, (model) => [model.model, model.llmCalls, model.tokens.total, model.cost]),
 		).toEqual([["z-ai/glm-5.3-flash:nitro", 1, 110, 0.01]])
 	})
 
@@ -954,7 +965,7 @@ describe("countTurnTokens", () => {
 	it("adds up to the session total when every call reported its own usage", () => {
 		const turns = buildSessionTurns(perCall)
 
-		expect(turns.map((turn) => countTurnTokens(turn, turns).total)).toEqual([110, 220])
+		expect(Arr.map(turns, (turn) => countTurnTokens(turn, turns).total)).toEqual([110, 220])
 		expect(summarize(perCall).tokens.total).toBe(330)
 	})
 
@@ -963,7 +974,7 @@ describe("countTurnTokens", () => {
 		// id for the same reason); both totals are keyed by span id.
 		const duplicated = [...perCall, { ...perCall[1]! }]
 		const turns = buildSessionTurns(duplicated)
-		const total = turns.reduce((sum, turn) => sum + countTurnTokens(turn, turns).total, 0)
+		const total = Arr.reduce(turns, 0, (sum, turn) => sum + countTurnTokens(turn, turns).total)
 
 		expect(total).toBe(summarize(duplicated).tokens.total)
 		expect(total).toBe(330)
@@ -975,7 +986,7 @@ describe("countTurnTokens", () => {
 		const turns = buildSessionTurns(aggregateOnly)
 
 		expect(turns).toHaveLength(2)
-		expect(turns.map((turn) => countTurnTokens(turn, turns).total)).toEqual([0, 0])
+		expect(Arr.map(turns, (turn) => countTurnTokens(turn, turns).total)).toEqual([0, 0])
 	})
 })
 
@@ -1346,7 +1357,7 @@ describe("buildSessionSummary — work and failures", () => {
 			}),
 		])
 
-		expect(summary.failureGroups.map((group) => group.label).sort()).toEqual([
+		expect(Arr.map(summary.failureGroups, (group) => group.label).sort()).toEqual([
 			"error · sandbox_grep",
 			"tool_arguments · query_data",
 			"tool_unavailable · read_source_file",
@@ -1366,7 +1377,7 @@ describe("buildSessionSummary — work and failures", () => {
 			}),
 		])
 
-		expect(summary.failureGroups.map((group) => group.label)).toEqual(["content_filter"])
+		expect(Arr.map(summary.failureGroups, (group) => group.label)).toEqual(["content_filter"])
 	})
 
 	// A gateway attempt that a provider refused, then another provider served:
@@ -1443,7 +1454,9 @@ describe("buildSessionSummary — work and failures", () => {
 			}),
 		])
 
-		expect(summary.failureGroups.map((group) => group.label)).toEqual(["tool_arguments · sandbox_exec"])
+		expect(Arr.map(summary.failureGroups, (group) => group.label)).toEqual([
+			"tool_arguments · sandbox_exec",
+		])
 	})
 
 	it("does not read a max_tokens finish as a failure", () => {
@@ -1607,7 +1620,11 @@ describe("per-model cost, tools and failure groups", () => {
 
 		expect(summary.work.toolCalls).toBe(2)
 		expect(
-			summary.tools.map((tool) => [tool.name, tool.calls, tool.events.map((event) => event.spanId)]),
+			Arr.map(summary.tools, (tool) => [
+				tool.name,
+				tool.calls,
+				Arr.map(tool.events, (event) => event.spanId),
+			]),
 		).toEqual([
 			["delete_file", 1, ["resumed"]],
 			["get_weather", 1, ["other"]],
@@ -1644,8 +1661,8 @@ describe("per-model cost, tools and failure groups", () => {
 		])
 
 		expect(summary.work.toolCalls).toBe(2)
-		expect(summary.tools.map((tool) => [tool.name, tool.calls])).toEqual([["delete_file", 2]])
-		expect(summary.tools[0]!.events.map((event) => event.spanId)).toEqual(["no-result", "approved"])
+		expect(Arr.map(summary.tools, (tool) => [tool.name, tool.calls])).toEqual([["delete_file", 2]])
+		expect(Arr.map(summary.tools[0]!.events, (event) => event.spanId)).toEqual(["no-result", "approved"])
 		expect(summary.failures.errors).toBe(0)
 	})
 
@@ -1685,7 +1702,9 @@ describe("per-model cost, tools and failure groups", () => {
 			}),
 		])
 
-		expect(summary.tools.map((tool) => [tool.name, tool.calls, tool.totalMs, tool.slowestMs])).toEqual([
+		expect(
+			Arr.map(summary.tools, (tool) => [tool.name, tool.calls, tool.totalMs, tool.slowestMs]),
+		).toEqual([
 			["read_file", 2, 200, 100],
 			["run_tests", 1, 5 * SECOND, 5 * SECOND],
 		])
@@ -1701,7 +1720,10 @@ describe("per-model cost, tools and failure groups", () => {
 		])
 
 		expect(
-			summary.tools[0]?.events.map((event) => ({ ...event, startMs: event.startMs - summary.startMs })),
+			Arr.map(summary.tools[0]?.events, (event) => ({
+				...event,
+				startMs: event.startMs - summary.startMs,
+			})),
 		).toEqual([
 			{
 				spanId: "t1",
@@ -1746,7 +1768,7 @@ describe("per-model cost, tools and failure groups", () => {
 			}),
 		])
 
-		expect(summary.tools.map((tool) => [tool.name, tool.calls, tool.failed])).toEqual([
+		expect(Arr.map(summary.tools, (tool) => [tool.name, tool.calls, tool.failed])).toEqual([
 			["read_file", 2, 1],
 			["run_tests", 1, 1],
 		])
@@ -1779,8 +1801,8 @@ describe("per-model cost, tools and failure groups", () => {
 		])
 
 		expect(
-			summary.tools.flatMap((tool) =>
-				tool.events.map((event) => [event.errorLabel, event.errorDetail]),
+			Arr.flatMap(summary.tools, (tool) =>
+				Arr.map(tool.events, (event) => [event.errorLabel, event.errorDetail]),
 			),
 		).toEqual([
 			["SHARD_LOCKED", "shard 3 is locked by a running merge"],
@@ -1791,7 +1813,7 @@ describe("per-model cost, tools and failure groups", () => {
 	// A framework that records a stack trace as the tool's result would hand the
 	// ledger row an unbounded line; the status-message path has always clipped.
 	it("clips a failed call's message however the framework recorded it", () => {
-		const long = "x".repeat(400)
+		const long = Str.repeat(400)("x")
 		const summary = summarize([
 			agentSpan({ spanId: "a1", startMs: 0, durationMs: 10 * SECOND }),
 			toolSpan({
@@ -1833,7 +1855,9 @@ describe("per-model cost, tools and failure groups", () => {
 			}),
 		])
 
-		expect(summary.tools.map((tool) => tool.description)).toEqual(["Read a file from the repository."])
+		expect(Arr.map(summary.tools, (tool) => tool.description)).toEqual([
+			"Read a file from the repository.",
+		])
 	})
 
 	// The counts and the breakdown are two readings of one list, so a failure

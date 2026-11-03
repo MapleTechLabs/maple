@@ -1,10 +1,12 @@
 import { HttpApi, OpenApi } from "effect/http-api"
 import { AiModelsInternalApiGroup } from "./ai-models"
 import { AiSessionsInternalApiGroup } from "./ai-sessions"
+import { McpInternalApiGroup } from "./mcp"
 import { AiTriageApiGroup } from "./ai-triage"
 import { BillingApiGroup } from "./billing"
 import { CodeReviewApiGroup } from "./code-review"
 import { DemoApiGroup } from "./demo"
+import { DependencyScanApiGroup } from "./dependency-scan"
 import { DigestApiGroup } from "./digest"
 import { ErrorsApiGroup } from "./errors"
 import { IntegrationsApiGroup } from "./integrations"
@@ -49,9 +51,11 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(BillingApiGroup)
 	.add(CodeReviewApiGroup)
 	.add(DemoApiGroup)
+	.add(DependencyScanApiGroup)
 	.add(DigestApiGroup)
 	.add(ErrorsApiGroup)
 	.add(IntegrationsApiGroup)
+	.add(McpInternalApiGroup)
 	.add(OpenRouterKeyApiGroup)
 	.add(OrgClickHouseSettingsApiGroup)
 	.add(OrganizationsApiGroup)

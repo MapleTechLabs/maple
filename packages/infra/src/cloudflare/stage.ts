@@ -8,6 +8,7 @@ import {
 	type MapleRegion,
 	regionSuffix,
 } from "../region.ts"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /** An alchemy stage string that names no deployable Maple stage or instance. */
 export class MapleStageError extends Schema.TaggedError<MapleStageError>()("@maple/infra/MapleStageError", {
@@ -48,6 +49,8 @@ export interface MapleDomains {
 	 * every workspace re-approves on change. prd only.
 	 */
 	chat?: string
+	/** The status Worker serving customer pages at `/s/<slug>`. Previews only: prd has no domain yet. */
+	status?: string
 }
 
 /**
@@ -95,7 +98,7 @@ const PRD_DOMAINS_EU: MapleDomains = {
 }
 
 const mapleStageResult = (stage: string): Result.Result<MapleStage, MapleStageError> => {
-	const normalized = stage.trim().toLowerCase()
+	const normalized = Str.toLowerCase(Str.trim(stage))
 
 	if (normalized === "prd") {
 		return Result.succeed({ kind: "prd" })
@@ -121,7 +124,7 @@ const mapleStageResult = (stage: string): Result.Result<MapleStage, MapleStageEr
 
 	if (DEV_STAGE_RE.test(normalized)) {
 		// Cloudflare names allow only [a-z0-9-].
-		return Result.succeed({ kind: "dev", name: normalized.replaceAll("_", "-") })
+		return Result.succeed({ kind: "dev", name: Str.replaceAll("_", "-")(normalized) })
 	}
 
 	return Result.fail(
@@ -142,12 +145,12 @@ export function parseMapleStage(stage: string): MapleStage {
  * stage, so instances never share a plan. A `-eu` suffix always means the region. PR previews are US-only.
  */
 const mapleDeploymentResult = (raw: string): Result.Result<MapleDeployment, MapleStageError> => {
-	const normalized = raw.trim().toLowerCase()
+	const normalized = Str.toLowerCase(Str.trim(raw))
 	const match = normalized.match(REGION_STAGE_SUFFIX_RE)
 	const suffix = match?.[1]
 	const region: MapleRegion = suffix !== undefined && isMapleRegion(suffix) ? suffix : DEFAULT_MAPLE_REGION
 	return Result.flatMap(
-		mapleStageResult(match ? normalized.slice(0, -match[0].length) : normalized),
+		mapleStageResult(match ? Str.slice(0, -match[0].length)(normalized) : normalized),
 		(stage): Result.Result<MapleDeployment, MapleStageError> =>
 			stage.kind === "pr" && region !== DEFAULT_MAPLE_REGION
 				? Result.fail(
@@ -214,6 +217,7 @@ export function resolveMapleDomains({ stage, region }: MapleDeployment): MapleDo
 				sync: `sync-pr-${stage.prNumber}.maple.dev`,
 				electric: `electric-pr-${stage.prNumber}.maple.dev`,
 				landing: `landing-pr-${stage.prNumber}.maple.dev`,
+				status: `status-pr-${stage.prNumber}.maple.dev`,
 			}
 		case "dev":
 			return {}
@@ -223,8 +227,8 @@ export function resolveMapleDomains({ stage, region }: MapleDeployment): MapleDo
 /** Every regional instance's dashboard URL (prd only), for cross-region org redirects. */
 export function resolveRegionAppUrls(stage: MapleStage): Partial<Record<MapleRegion, string>> {
 	if (stage.kind !== "prd") return {}
-	return Object.fromEntries(
-		MAPLE_REGIONS.map((region) => [region, `https://${resolveMapleDomains({ stage, region }).web}`]),
+	return Rec.fromEntries(
+		Arr.map(MAPLE_REGIONS, (region) => [region, `https://${resolveMapleDomains({ stage, region }).web}`]),
 	)
 }
 
