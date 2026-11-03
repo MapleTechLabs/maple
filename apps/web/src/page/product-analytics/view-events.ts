@@ -97,7 +97,9 @@ const stats = (h: H, model: Model, rows: ReadonlyArray<EventRow>, isCapped: bool
 			subline:
 				top === undefined
 					? undefined
-					: `${formatNumber(top.persons)} ${pluralize(top.persons, "person", "people")}`,
+					: `${formatNumber(top.persons)} ${pluralize(top.persons, "person", "people")}${
+							isCapped ? ` · of the top ${EVENTS_LIMIT} names` : ""
+						}`,
 		}),
 	])
 }

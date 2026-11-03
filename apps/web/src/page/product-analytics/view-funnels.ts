@@ -243,41 +243,43 @@ const stepsTable = (h: H, rows: ReadonlyArray<FunnelRow>, keyBy: FunnelKeyBy, ha
 }
 
 const results = (h: H, model: Model): Html =>
-	AsyncData.matchData(model.funnel.data, {
-		onEmpty: () => statRailLoading(h, 4, 4),
-		onFailure: (failure) =>
-			errorState(h, {
-				failure,
-				title: "Couldn't run the funnel",
-				onRetry: Message.ClickedRetry({ slot: "funnel" }),
-			}),
-		onData: (rows) => {
-			const { keyBy, variant } = funnelOf(model.search)
-			// A bars answer still on screen while the drop-off details load draws as bars.
-			const hasDetails = rows
-				.slice(1)
-				.some((row) => row.p50Ms !== undefined || row.leavers !== undefined)
-			const isDropoff = variant === "dropoff" && (rows.length < 2 || hasDetails)
-			const entered = rows[0]?.value ?? 0
-			if (entered === 0)
-				return emptyPanel(h, "Nobody reached step 1 in this window", [
-					"Check the first step's name, widen the time range, or clear the filters.",
-				])
-			return vstack(h, { gap: "4" }, [
-				stats(h, rows),
-				panel(h, {}, [
-					panelHeader(h, {
-						title: isDropoff ? "Drop-off" : "Conversion",
-						scope: typography(h, { size: "2xs", tone: "muted" }, [
-							`${formatNumber(entered)} ${countNoun(keyBy, entered)} entered`,
-						]),
+	// A refetch after a Count by or view change would draw the old counts under the new labels.
+	AsyncData.isRefreshing(model.funnel.data)
+		? statRailLoading(h, 4, 4)
+		: AsyncData.matchData(model.funnel.data, {
+				onEmpty: () => statRailLoading(h, 4, 4),
+				onFailure: (failure) =>
+					errorState(h, {
+						failure,
+						title: "Couldn't run the funnel",
+						onRetry: Message.ClickedRetry({ slot: "funnel" }),
 					}),
-					panelChartBody(h, [chart(h, model, rows, isDropoff)]),
-				]),
-				panel(h, {}, [panelHeader(h, { title: "Steps" }), stepsTable(h, rows, keyBy, isDropoff)]),
-			])
-		},
-	})
+				onData: (rows) => {
+					const { keyBy, variant } = funnelOf(model.search)
+					const isDropoff = variant === "dropoff"
+					const entered = rows[0]?.value ?? 0
+					if (entered === 0)
+						return emptyPanel(h, "Nobody reached step 1 in this window", [
+							"Check the first step's name, widen the time range, or clear the filters.",
+						])
+					return vstack(h, { gap: "4" }, [
+						stats(h, rows),
+						panel(h, {}, [
+							panelHeader(h, {
+								title: isDropoff ? "Drop-off" : "Conversion",
+								scope: typography(h, { size: "2xs", tone: "muted" }, [
+									`${formatNumber(entered)} ${countNoun(keyBy, entered)} entered`,
+								]),
+							}),
+							panelChartBody(h, [chart(h, model, rows, isDropoff)]),
+						]),
+						panel(h, {}, [
+							panelHeader(h, { title: "Steps" }),
+							stepsTable(h, rows, keyBy, isDropoff),
+						]),
+					])
+				},
+			})
 
 export const funnelsTab = (h: H, model: Model): Html =>
 	vstack(h, { gap: "4" }, [

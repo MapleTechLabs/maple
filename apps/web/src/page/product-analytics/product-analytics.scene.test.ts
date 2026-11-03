@@ -88,6 +88,14 @@ describe("product analytics", () => {
 		})
 	})
 
+	test("names typed with stray spaces still match their events", () => {
+		const run = resolved({
+			tab: "funnels",
+			steps: [{ kind: "event", eventName: "signup " }],
+		}).commands?.find(({ name }) => name === "FetchProductAnalyticsFunnel")
+		expect(run?.args).toMatchObject({ input: { steps: [{ kind: "event", eventName: "signup" }] } })
+	})
+
 	test("paths wait for an anchor", () => {
 		expect(names(resolved({ tab: "paths" }).commands)).not.toContain("FetchProductAnalyticsPaths")
 		const run = resolved({
@@ -195,7 +203,7 @@ describe("product analytics", () => {
 		)
 	})
 
-	test("Back to another window mid-typing cancels the pause; the page's own write does not", () => {
+	test("Back to another window mid-typing restarts the pause; the page's own write keeps it", () => {
 		const start = resolved({ tab: "funnels", steps: [{ kind: "event", eventName: "" }] }).model
 		const typed = typing(start, "sig")
 		const back = routeChanged(
@@ -207,6 +215,12 @@ describe("product analytics", () => {
 		expect(
 			pageUpdate(back.model, Message.PausedTyping({ version: typed.model.typingVersion })).outMessage,
 		).toBeUndefined()
+		expect(names(back.commands)).toContain("WaitForProductAnalyticsTypingPause")
+		const landed24h = pageUpdate(back.model, Message.PausedTyping({ version: back.model.typingVersion }))
+		expect(searchOf(landed24h.outMessage)).toMatchObject({
+			timePreset: "24h",
+			steps: [{ kind: "event", eventName: "sig" }],
+		})
 
 		const committed = pageUpdate(
 			typed.model,

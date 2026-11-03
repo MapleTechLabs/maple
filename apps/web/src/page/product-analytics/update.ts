@@ -193,22 +193,28 @@ export const routeChanged = (
 ): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	// A definition this page did not write (Back, a row's Funnel button) replaces the drafts. Any
-	// route change the page did not ask for (Back to another window) cancels a pending typing pause.
+	// other route change the page did not ask for (Back to another window) restarts a pending typing
+	// pause, so a half-typed step lands in the entry now showing, once typing stops.
 	const isOwn = searchHref(route.search) === model.navigatedTo
-	const drafts =
-		committedOf(route.search) !== model.committed
-			? { ...draftsOf(route.search), typingVersion: model.typingVersion + 1 }
-			: isOwn
-				? {}
-				: { typingVersion: model.typingVersion + 1 }
+	const isNewDefinition = committedOf(route.search) !== model.committed
+	const typingVersion = model.typingVersion + 1
+	const drafts = isNewDefinition
+		? { ...draftsOf(route.search), typingVersion }
+		: isOwn
+			? {}
+			: { typingVersion }
 	const next: Model = { ...model, ...drafts, search: route.search }
-	return routeWindowStep(model.search, route.search, {
+	const isAhead = !isNewDefinition && !isOwn && committedOf(withDrafts(next)) !== committedOf(route.search)
+	const step = routeWindowStep(model.search, route.search, {
 		resolve: (): Return => ({
 			model: next,
 			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
 		}),
 		requestAll: (mode) => withRequests(next, context, mode),
 	})
+	return isAhead
+		? { ...step, commands: [...(step.commands ?? []), WaitForTypingPause({ version: typingVersion })] }
+		: step
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return =>

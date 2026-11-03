@@ -58,7 +58,7 @@ export const funnelOf = (search: Search): FunnelDefinition => ({
 /** The funnel's widget params, or `null` until a step has something to match on. */
 export const funnelParamsOf = (search: Search): ProductEventsFunnelWidgetParams | null => {
 	const funnel = funnelOf(search)
-	const steps = completedSteps(funnel.steps)
+	const steps = completedSteps(funnel.steps).map(trimmed)
 	if (steps.length === 0) return null
 	return {
 		...populationOf(search),
@@ -96,10 +96,22 @@ export const pathsParamsOf = (search: Search): ProductEventsPathsWidgetParams | 
 	if (anchorNameOf(paths.anchor) === "") return null
 	return {
 		...populationOf(search),
-		anchor: paths.anchor,
+		anchor: trimmed(paths.anchor),
 		direction: paths.direction,
 		depth: paths.depth,
 		branches: paths.branches,
+	}
+}
+
+/** A step as the query matches it: names typed with stray spaces still find their events. */
+const trimmed = <S extends FunnelStep>(step: S): S => {
+	switch (step.kind) {
+		case "event":
+			return { ...step, eventName: step.eventName.trim() }
+		case "page":
+			return { ...step, pagePath: step.pagePath.trim() }
+		case "session":
+			return { ...step, value: step.value.trim() }
 	}
 }
 
