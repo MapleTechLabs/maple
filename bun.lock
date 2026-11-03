@@ -622,7 +622,7 @@
     },
     "packages/browser": {
       "name": "@maple-dev/browser",
-      "version": "0.13.0",
+      "version": "0.14.0",
       "dependencies": {
         "@opentelemetry/api": "^1.10.0",
         "@opentelemetry/core": "^3.0.0",
