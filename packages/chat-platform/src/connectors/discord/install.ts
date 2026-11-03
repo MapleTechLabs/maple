@@ -1,5 +1,4 @@
 import { Effect, Schema } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	ChatInstallFailed,
 	ChatSettingsRejected,

@@ -12,7 +12,7 @@ import {
 	emptyTitle,
 } from "@maple/views/ui/empty"
 import { icon, type IconName } from "@maple/views/ui/icon"
-import { severityBadge, severityIcon } from "../../errors/kit/severity"
+import { severityBadge } from "../../errors/kit/severity"
 import { type Gate, issueSeverityOf, runLabelOf, runToneOf, SECURITY_SEVERITY_LABEL } from "./format"
 
 // Marks and states the Security Center's pages share.
@@ -25,20 +25,6 @@ export const runStatusBadge = <M>(h: HtmlBuilder<M>, run: RunState, detail?: str
 		detail === undefined ? runLabelOf(run) : `${runLabelOf(run)} · ${detail}`,
 	])
 }
-
-/** The errors hub's severity glyph; informational and "no severity" draw the unset blocks. */
-export const severityMark = <M>(
-	h: HtmlBuilder<M>,
-	severity: SecurityAuditSeverity | null,
-	size = 16,
-): Html =>
-	severity === "informational"
-		? // The unset glyph, named for what it is: role="img" makes the inner svg presentational.
-			h.span(
-				[h.Role("img"), h.AriaLabel("Informational"), h.Class("inline-flex")],
-				[severityIcon(h, null, size)],
-			)
-		: severityIcon(h, issueSeverityOf(severity), size)
 
 /** The errors kit's severity badge, so "High" is one colour everywhere; informational stays a quiet
  * "Info" chip (the shared badge draws nothing for an unset severity). */

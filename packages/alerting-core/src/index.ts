@@ -18,7 +18,6 @@ import type {
 	AlertComparator,
 	AlertEventType,
 	AlertEvaluationResult,
-	AlertEvaluationStatus,
 	AlertSeverity,
 } from "@maple/domain/http"
 export type { AlertComparator, AlertEventType, AlertEvaluationStatus } from "@maple/domain/http"

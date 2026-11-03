@@ -40,7 +40,6 @@ export type InfraSort = "saturation" | "cpu" | "memory" | "name" | "last_seen"
 export const iso = (value: DateTime.Utc): string => formatWarehouseDateTime(DateTime.toEpochMillis(value))
 const list = (value: string | undefined): ReadonlyArray<string> | undefined =>
 	value === undefined ? undefined : [value]
-const nonEmpty = (value: string): string | undefined => (value === "" ? undefined : value)
 
 const compileParams = (orgId: OrgId, window: InfraWindow) => ({
 	orgId,

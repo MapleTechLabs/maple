@@ -9,7 +9,6 @@ import {
 	SOURCE_LIMITS,
 	SourceNotFoundError,
 	SourcePersistenceError,
-	type SourceTokenStatus,
 	SourceValidationError,
 	SourceWithSecret,
 	type UpdateSourceRequest,
@@ -131,10 +130,7 @@ const normalizeSignals = Effect.fnUntraced(function* (signals: ReadonlyArray<Sou
 })
 
 /** The same signal set, in any order; `null` (every signal) only equals `null`. */
-const sameSignals = (
-	a: ReadonlyArray<SourceSignal> | null,
-	b: ReadonlyArray<SourceSignal> | null,
-): boolean =>
+const sameSignals = (a: ReadonlyArray<SourceSignal> | null, b: ReadonlyArray<SourceSignal> | null): boolean =>
 	a === null || b === null ? a === b : a.length === b.length && a.every((signal) => b.includes(signal))
 
 const normalizeRateLimit = Effect.fnUntraced(function* (rps: number | null) {

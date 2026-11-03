@@ -1,7 +1,7 @@
 import * as ClickHouseHttp from "@maple-dev/effect-clickhouse-http"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientError } from "effect/http"
 import { Context, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
-import { WarehouseConfigError, WarehouseUpstreamError, type WarehouseQueryRequest } from "@maple/domain/http"
+import { WarehouseConfigError, WarehouseUpstreamError } from "@maple/domain/http"
 import {
 	BackendDialect,
 	makeWarehouseExecutor,
@@ -22,7 +22,6 @@ import {
 	type WarehouseSqlClient,
 	type WarehouseTrustedRouteError,
 } from "@maple/query-engine/execution"
-import type { CompiledQueryInput } from "@maple/query-engine/ch"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
 import { Env } from "@maple/backend/platform/Env"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"

@@ -17,19 +17,6 @@ import {
 	resolveChdbConfigFile,
 } from "@maple/local-server/checkpoints"
 import { recoverExpected } from "../src/core/outcomes"
-import {
-	BackgroundServerSpawnError,
-	BackgroundServerTimeoutError,
-	CheckpointUnavailableError,
-	ServerOptionError,
-	ServerStopTimeoutError,
-} from "../src/commands/server-errors"
-import {
-	LocalStoreDirtyError,
-	LocalStoreIncompatibleError,
-	LocalStoreMigrationError,
-	LocalStoreSchemaStaleError,
-} from "@maple/local-server/store-errors"
 
 /** Run an effect, capturing anything written to stderr and restoring the real
  *  writer + exit code afterwards. */

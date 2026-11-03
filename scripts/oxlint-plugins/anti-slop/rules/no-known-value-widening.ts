@@ -10,8 +10,6 @@ import {
 
 import type { ESTree, Scope, SourceCode, Variable } from "@oxlint/plugins";
 
-type FunctionExpression = ESTree.ArrowFunctionExpression | ESTree.Function;
-
 const commentOwnerKinds = new Set([
 	"ExpressionStatement",
 	"PropertyDefinition",
@@ -117,35 +115,10 @@ function annotationTarget(
 		: classifyWideningTarget(annotation.typeAnnotation, environment);
 }
 
-function enclosingFunction(node: ESTree.Node): FunctionExpression | null {
-	let current: ESTree.Node | null = node.parent;
-	while (current !== null && current.type !== "Program") {
-		if (
-			current.type === "ArrowFunctionExpression" ||
-			current.type === "FunctionDeclaration" ||
-			current.type === "FunctionExpression"
-		) {
-			return current;
-		}
-		current = current.parent;
-	}
-	return null;
-}
-
 function sourceKeyName(sourceCode: SourceCode, key: ESTree.PropertyKey): string {
 	if (key.type === "Identifier" || key.type === "PrivateIdentifier") return key.name;
 	if (key.type === "Literal") return String(key.value);
 	return sourceCode.getText(key);
-}
-
-function functionName(sourceCode: SourceCode, owner: FunctionExpression | null): string {
-	if (owner === null) return "anonymous function";
-	if (owner.id !== null) return owner.id.name;
-	const parent = owner.parent;
-	if (parent.type === "VariableDeclarator" && parent.id.type === "Identifier")
-		return parent.id.name;
-	if (parent.type === "MethodDefinition") return sourceKeyName(sourceCode, parent.key);
-	return "anonymous function";
 }
 
 function isEmptyObjectExpression(expression: ESTree.Expression): boolean {

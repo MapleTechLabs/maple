@@ -1,10 +1,5 @@
 import { Clock, DateTime, Effect, Schema } from "effect"
-import {
-	ListSecurityFindingsOutput,
-	SECURITY_AREAS,
-	type SecurityArea,
-	type SecurityFindingRow,
-} from "@maple/domain/mcp-outputs"
+import { ListSecurityFindingsOutput, SECURITY_AREAS, type SecurityArea } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { truncate } from "../lib/format"

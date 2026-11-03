@@ -90,7 +90,3 @@ export const sectionsOf = (findings: ReadonlyArray<SecurityAuditFinding>): Reado
 					a.fingerprint.localeCompare(b.fingerprint),
 			),
 	})).filter((section) => section.rows.length > 0)
-
-/** The model's confidence in a confirmed finding; leads and rejections carry none. */
-export const confidenceOf = (finding: SecurityAuditFinding): "low" | "medium" | "high" | null =>
-	finding.record.verdict === "confirmed" ? finding.record.confidence.score : null

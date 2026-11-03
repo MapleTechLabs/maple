@@ -11,7 +11,6 @@ import {
 	decodeSignalProjectionSpec,
 	validateMapleCloudEvent,
 	type MapleCloudEvent,
-	type JsonValue,
 	type ProjectionFailure,
 	type SignalProjectionSpec,
 } from "@maple/eventing-core"
