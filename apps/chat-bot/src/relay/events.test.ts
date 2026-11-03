@@ -18,7 +18,7 @@ import {
 	type ChatSessionStub,
 	chatSessionClientFromStub,
 } from "@maple/domain/chat-session-stub"
-import { Effect, Fiber, Stream } from "effect"
+import { Effect, Fiber, Stream, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { chatTurnEvents, ChatSessionUnreachable } from "./events.ts"
 
@@ -44,7 +44,10 @@ const frames = (payload: string): ReadableStream<Uint8Array> => {
 const sse = (events: ReadonlyArray<ChatEvent>): ReadableStream<Uint8Array> =>
 	frames(
 		"retry: 1000\n\n" +
-			events.map((next) => `id: ${next.seq}\ndata: ${JSON.stringify(next)}\n\n`).join(""),
+			Arr.join(
+				Arr.map(events, (next) => `id: ${next.seq}\ndata: ${JSON.stringify(next)}\n\n`),
+				"",
+			),
 	)
 
 const promiseStub = (connections: ReadonlyArray<ReadonlyArray<ChatEvent>>): ChatSessionStub => {
@@ -84,7 +87,7 @@ describe("chatTurnEvents", () => {
 				).pipe(Stream.takeUntil((next) => next.type === "turn-end")),
 			)
 
-			expect(events.map((next) => next.seq)).toEqual([1, 2, 3])
+			expect(Arr.map(events, (next) => next.seq)).toEqual([1, 2, 3])
 		}),
 	)
 
@@ -106,7 +109,7 @@ describe("chatTurnEvents", () => {
 				),
 			)
 
-			expect(events.map((next) => next.seq)).toEqual([2])
+			expect(Arr.map(events, (next) => next.seq)).toEqual([2])
 		}),
 	)
 
@@ -150,7 +153,7 @@ describe("chatTurnEvents", () => {
 
 			// The turn was still running, so the answer continues on the next connection rather than
 			// ending on a dropped socket.
-			expect(events.map((next) => next.seq)).toEqual([3])
+			expect(Arr.map(events, (next) => next.seq)).toEqual([3])
 			// Nothing is lost: an event the dropped connection never finished delivering did not move
 			// the cursor, so the connection that follows asks for it again.
 			expect(cursors).toEqual([0, 0])

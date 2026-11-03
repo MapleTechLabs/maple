@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr, Record as Rec } from "effect"
 import { describe, expect, it } from "vitest"
 import { isIgnoredLockfilePath, lockfileKindOf, parseLockfile, type ParsedLockfile } from "./index.ts"
 
@@ -7,7 +7,7 @@ const parse = (path: string, content: string, manifests?: Record<string, string>
 		parseLockfile({
 			path,
 			content,
-			manifests: manifests === undefined ? undefined : new Map(Object.entries(manifests)),
+			manifests: manifests === undefined ? undefined : new Map(Rec.toEntries(manifests)),
 		}),
 	)
 
@@ -15,7 +15,7 @@ const failure = (path: string, content: string) =>
 	Effect.runPromise(Effect.flip(parseLockfile({ path, content })))
 
 const summary = (parsed: ParsedLockfile): ReadonlyArray<string> =>
-	parsed.packages.map((p) => `${p.name}@${p.version}:${p.relation}`)
+	Arr.map(parsed.packages, (p) => `${p.name}@${p.version}:${p.relation}`)
 
 describe("lockfileKindOf / isIgnoredLockfilePath", () => {
 	it.each([
@@ -103,58 +103,67 @@ describe("npm lockfile details", () => {
 	})
 
 	it("pnpm: v5 and v6 keys with peer suffixes and scopes", async () => {
-		const v5 = [
-			"lockfileVersion: 5.4",
-			"dependencies:",
-			"  '@emotion/react': 11.0.0_react@18.2.0",
-			"packages:",
-			"  /@emotion/react/11.0.0_react@18.2.0:",
-			"    dev: false",
-			"  /string_decoder/1.1.1:",
-			"    dev: true",
-			"  /react/18.2.0: {}",
-		].join("\n")
+		const v5 = Arr.join(
+			[
+				"lockfileVersion: 5.4",
+				"dependencies:",
+				"  '@emotion/react': 11.0.0_react@18.2.0",
+				"packages:",
+				"  /@emotion/react/11.0.0_react@18.2.0:",
+				"    dev: false",
+				"  /string_decoder/1.1.1:",
+				"    dev: true",
+				"  /react/18.2.0: {}",
+			],
+			"\n",
+		)
 		expect(summary(await parse("pnpm-lock.yaml", v5))).toEqual([
 			"@emotion/react@11.0.0:direct",
 			"react@18.2.0:transitive",
 			"string_decoder@1.1.1:dev",
 		])
-		const v6 = [
-			"lockfileVersion: '6.0'",
-			"devDependencies:",
-			"  '@testing-library/react':",
-			"    specifier: ^14",
-			"    version: 14.0.0(react-dom@18.2.0)(react@18.2.0)",
-			"packages:",
-			"  /@testing-library/react@14.0.0(react-dom@18.2.0)(react@18.2.0):",
-			"    dev: true",
-		].join("\n")
+		const v6 = Arr.join(
+			[
+				"lockfileVersion: '6.0'",
+				"devDependencies:",
+				"  '@testing-library/react':",
+				"    specifier: ^14",
+				"    version: 14.0.0(react-dom@18.2.0)(react@18.2.0)",
+				"packages:",
+				"  /@testing-library/react@14.0.0(react-dom@18.2.0)(react@18.2.0):",
+				"    dev: true",
+			],
+			"\n",
+		)
 		expect(summary(await parse("pnpm-lock.yaml", v6))).toEqual(["@testing-library/react@14.0.0:dev"])
 	})
 
 	it("pnpm v9: snapshots peer suffixes collapse onto the package", async () => {
-		const v9 = [
-			"lockfileVersion: '9.0'",
-			"importers:",
-			"  .:",
-			"    dependencies:",
-			"      '@tanstack/react-query':",
-			"        specifier: ^5",
-			"        version: 5.0.0(react@18.2.0)",
-			"      local:",
-			"        specifier: link:../local",
-			"        version: link:../local",
-			"packages:",
-			"  '@tanstack/react-query@5.0.0':",
-			"    resolution: {integrity: sha512-x}",
-			"  react@18.2.0:",
-			"    resolution: {integrity: sha512-y}",
-			"snapshots:",
-			"  '@tanstack/react-query@5.0.0(react@18.2.0)':",
-			"    dependencies:",
-			"      react: 18.2.0",
-			"  react@18.2.0: {}",
-		].join("\n")
+		const v9 = Arr.join(
+			[
+				"lockfileVersion: '9.0'",
+				"importers:",
+				"  .:",
+				"    dependencies:",
+				"      '@tanstack/react-query':",
+				"        specifier: ^5",
+				"        version: 5.0.0(react@18.2.0)",
+				"      local:",
+				"        specifier: link:../local",
+				"        version: link:../local",
+				"packages:",
+				"  '@tanstack/react-query@5.0.0':",
+				"    resolution: {integrity: sha512-x}",
+				"  react@18.2.0:",
+				"    resolution: {integrity: sha512-y}",
+				"snapshots:",
+				"  '@tanstack/react-query@5.0.0(react@18.2.0)':",
+				"    dependencies:",
+				"      react: 18.2.0",
+				"  react@18.2.0: {}",
+			],
+			"\n",
+		)
 		expect(summary(await parse("pnpm-lock.yaml", v9))).toEqual([
 			"@tanstack/react-query@5.0.0:direct",
 			"react@18.2.0:transitive",
@@ -162,19 +171,22 @@ describe("npm lockfile details", () => {
 	})
 
 	it("yarn v1: scoped multi-specifier headers, aliases and git entries", async () => {
-		const lock = [
-			"# yarn lockfile v1",
-			"",
-			'"@babel/code-frame@^7.0.0", "@babel/code-frame@^7.10.4":',
-			'  version "7.12.13"',
-			'  resolved "https://registry.yarnpkg.com/@babel/code-frame/-/code-frame-7.12.13.tgz"',
-			"",
-			'"pad@npm:left-pad@1.3.0":',
-			'  version "1.3.0"',
-			"",
-			'"mylib@github:me/mylib#abc":',
-			'  version "0.1.0"',
-		].join("\n")
+		const lock = Arr.join(
+			[
+				"# yarn lockfile v1",
+				"",
+				'"@babel/code-frame@^7.0.0", "@babel/code-frame@^7.10.4":',
+				'  version "7.12.13"',
+				'  resolved "https://registry.yarnpkg.com/@babel/code-frame/-/code-frame-7.12.13.tgz"',
+				"",
+				'"pad@npm:left-pad@1.3.0":',
+				'  version "1.3.0"',
+				"",
+				'"mylib@github:me/mylib#abc":',
+				'  version "0.1.0"',
+			],
+			"\n",
+		)
 		const parsed = await parse("yarn.lock", lock, {
 			"package.json": JSON.stringify({
 				devDependencies: { "@babel/code-frame": "^7.10.4" },
@@ -186,42 +198,48 @@ describe("npm lockfile details", () => {
 	})
 
 	it("yarn v1 rewritten by npm: quoted field names", async () => {
-		const lock = [
-			"# yarn lockfile v1",
-			"",
-			'"@babel/code-frame@^7.0.0", "@babel/code-frame@^7.8.3":',
-			'  "integrity" "sha512-a9gx=="',
-			'  "resolved" "https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.8.3.tgz"',
-			'  "version" "7.8.3"',
-			"  dependencies:",
-			'    "@babel/highlight" "^7.8.3"',
-		].join("\n")
+		const lock = Arr.join(
+			[
+				"# yarn lockfile v1",
+				"",
+				'"@babel/code-frame@^7.0.0", "@babel/code-frame@^7.8.3":',
+				'  "integrity" "sha512-a9gx=="',
+				'  "resolved" "https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.8.3.tgz"',
+				'  "version" "7.8.3"',
+				"  dependencies:",
+				'    "@babel/highlight" "^7.8.3"',
+			],
+			"\n",
+		)
 		expect(summary(await parse("yarn.lock", lock))).toEqual(["@babel/code-frame@7.8.3:unknown"])
 	})
 
 	it("yarn berry: an entry left twice by a merge is read, not rejected", async () => {
 		const entry = ['"ms@npm:^2.1.3":', "  version: 2.1.3", '  resolution: "ms@npm:2.1.3"']
-		const lock = ["__metadata:", "  version: 8", ...entry, ...entry].join("\n")
+		const lock = Arr.join(["__metadata:", "  version: 8", ...entry, ...entry], "\n")
 		expect(summary(await parse("yarn.lock", lock))).toEqual(["ms@2.1.3:unknown"])
 	})
 
 	it("yarn berry: patch entries resolve to the underlying npm version, workspaces are skipped", async () => {
-		const lock = [
-			"__metadata:",
-			"  version: 8",
-			'"resolve@npm:^1.20.0":',
-			"  version: 1.22.8",
-			'  resolution: "resolve@npm:1.22.8"',
-			'"resolve@patch:resolve@npm%3A^1.20.0#optional!builtin<compat/resolve>":',
-			"  version: 1.22.8",
-			'  resolution: "resolve@patch:resolve@npm%3A1.22.8#optional!builtin<compat/resolve>::version=1.22.8&hash=c3c19d"',
-			'"@scope/pkg@npm:2.0.0":',
-			"  version: 2.0.0",
-			'  resolution: "@scope/pkg@npm:2.0.0"',
-			'"app@workspace:.":',
-			"  version: 0.0.0-use.local",
-			'  resolution: "app@workspace:."',
-		].join("\n")
+		const lock = Arr.join(
+			[
+				"__metadata:",
+				"  version: 8",
+				'"resolve@npm:^1.20.0":',
+				"  version: 1.22.8",
+				'  resolution: "resolve@npm:1.22.8"',
+				'"resolve@patch:resolve@npm%3A^1.20.0#optional!builtin<compat/resolve>":',
+				"  version: 1.22.8",
+				'  resolution: "resolve@patch:resolve@npm%3A1.22.8#optional!builtin<compat/resolve>::version=1.22.8&hash=c3c19d"',
+				'"@scope/pkg@npm:2.0.0":',
+				"  version: 2.0.0",
+				'  resolution: "@scope/pkg@npm:2.0.0"',
+				'"app@workspace:.":',
+				"  version: 0.0.0-use.local",
+				'  resolution: "app@workspace:."',
+			],
+			"\n",
+		)
 		const parsed = await parse("yarn.lock", lock, {
 			"package.json": JSON.stringify({ name: "app", dependencies: { resolve: "^1.20.0" } }),
 		})
@@ -265,31 +283,34 @@ describe("npm lockfile details", () => {
 
 describe("pnpm 11 multi-document lockfiles", () => {
 	it("reads every document, the package manager's env document and the project's", async () => {
-		const lock = [
-			"---",
-			"lockfileVersion: '9.0'",
-			"importers:",
-			"  .:",
-			"    packageManagerDependencies:",
-			"      pnpm:",
-			"        specifier: 11.0.0",
-			"        version: 11.0.0",
-			"packages:",
-			"  pnpm@11.0.0:",
-			"    resolution: {integrity: sha512-x}",
-			"---",
-			"lockfileVersion: '9.0'",
-			"importers:",
-			"  .:",
-			"    dependencies:",
-			"      lodash:",
-			"        specifier: 4.17.15",
-			"        version: 4.17.15",
-			"packages:",
-			"  lodash@4.17.15:",
-			"    resolution: {integrity: sha512-y}",
-			"",
-		].join("\n")
+		const lock = Arr.join(
+			[
+				"---",
+				"lockfileVersion: '9.0'",
+				"importers:",
+				"  .:",
+				"    packageManagerDependencies:",
+				"      pnpm:",
+				"        specifier: 11.0.0",
+				"        version: 11.0.0",
+				"packages:",
+				"  pnpm@11.0.0:",
+				"    resolution: {integrity: sha512-x}",
+				"---",
+				"lockfileVersion: '9.0'",
+				"importers:",
+				"  .:",
+				"    dependencies:",
+				"      lodash:",
+				"        specifier: 4.17.15",
+				"        version: 4.17.15",
+				"packages:",
+				"  lodash@4.17.15:",
+				"    resolution: {integrity: sha512-y}",
+				"",
+			],
+			"\n",
+		)
 		expect(summary(await parse("pnpm-lock.yaml", lock))).toEqual(
 			expect.arrayContaining(["lodash@4.17.15:direct", "pnpm@11.0.0:transitive"]),
 		)
@@ -298,46 +319,52 @@ describe("pnpm 11 multi-document lockfiles", () => {
 
 describe("Cargo registries", () => {
 	it("keeps crates.io crates from either index and skips alternate registries", async () => {
-		const lock = [
-			"version = 4",
-			"[[package]]",
-			'name = "app"',
-			'version = "0.1.0"',
-			"[[package]]",
-			'name = "serde"',
-			'version = "1.0.0"',
-			'source = "sparse+https://index.crates.io/"',
-			"[[package]]",
-			'name = "time"',
-			'version = "0.1.43"',
-			'source = "registry+https://github.com/rust-lang/crates.io-index"',
-			"[[package]]",
-			'name = "internal"',
-			'version = "2.0.0"',
-			'source = "sparse+https://crates.example.com/index/"',
-			"",
-		].join("\n")
+		const lock = Arr.join(
+			[
+				"version = 4",
+				"[[package]]",
+				'name = "app"',
+				'version = "0.1.0"',
+				"[[package]]",
+				'name = "serde"',
+				'version = "1.0.0"',
+				'source = "sparse+https://index.crates.io/"',
+				"[[package]]",
+				'name = "time"',
+				'version = "0.1.43"',
+				'source = "registry+https://github.com/rust-lang/crates.io-index"',
+				"[[package]]",
+				'name = "internal"',
+				'version = "2.0.0"',
+				'source = "sparse+https://crates.example.com/index/"',
+				"",
+			],
+			"\n",
+		)
 		const parsed = await parse("Cargo.lock", lock)
-		expect(parsed.packages.map((p) => p.name).sort()).toEqual(["serde", "time"])
+		expect(Arr.map(parsed.packages, (p) => p.name).sort()).toEqual(["serde", "time"])
 		expect(parsed.warnings).toEqual(["skipped 1 git, path or alternate-registry packages"])
 	})
 })
 
 describe("yarn berry aliases", () => {
 	it("reports an npm: alias under the real package name", async () => {
-		const lock = [
-			"__metadata:",
-			"  version: 8",
-			"",
-			'"string-width-cjs@npm:string-width@^4.2.0":',
-			"  version: 4.2.3",
-			'  resolution: "string-width-cjs@npm:string-width@4.2.3"',
-			"",
-			'"@scoped/alias@npm:@babel/core@^7.0.0":',
-			"  version: 7.0.0",
-			'  resolution: "@scoped/alias@npm:@babel/core@7.0.0"',
-			"",
-		].join("\n")
+		const lock = Arr.join(
+			[
+				"__metadata:",
+				"  version: 8",
+				"",
+				'"string-width-cjs@npm:string-width@^4.2.0":',
+				"  version: 4.2.3",
+				'  resolution: "string-width-cjs@npm:string-width@4.2.3"',
+				"",
+				'"@scoped/alias@npm:@babel/core@^7.0.0":',
+				"  version: 7.0.0",
+				'  resolution: "@scoped/alias@npm:@babel/core@7.0.0"',
+				"",
+			],
+			"\n",
+		)
 		expect(summary(await parse("yarn.lock", lock))).toEqual(
 			expect.arrayContaining(["string-width@4.2.3:unknown", "@babel/core@7.0.0:unknown"]),
 		)
@@ -362,40 +389,46 @@ describe("package-lock v1 aliases", () => {
 
 describe("go.mod replace precedence", () => {
 	it("lets a version-specific replace win over a wildcard written before it", async () => {
-		const mod = [
-			"module example.com/app",
-			"go 1.22",
-			"require example.com/x v1.0.0",
-			"replace example.com/x => example.com/y v2.0.0",
-			"replace example.com/x v1.0.0 => example.com/z v3.0.0",
-		].join("\n")
+		const mod = Arr.join(
+			[
+				"module example.com/app",
+				"go 1.22",
+				"require example.com/x v1.0.0",
+				"replace example.com/x => example.com/y v2.0.0",
+				"replace example.com/x v1.0.0 => example.com/z v3.0.0",
+			],
+			"\n",
+		)
 		expect(summary(await parse("go.mod", mod))).toEqual(["example.com/z@v3.0.0:direct"])
 	})
 })
 
 describe("Go and Cargo details", () => {
 	it("go.mod: single-line requires, local replacements dropped, versioned replacements scoped", async () => {
-		const mod = [
-			"module example.com/app",
-			"",
-			"go 1.22",
-			"toolchain go1.22.1",
-			"",
-			"require github.com/a/b v1.2.3",
-			"require (",
-			'\t"github.com/c/d" v0.0.0-20191109021931-daa7c04131f5 // indirect',
-			"\tgithub.com/e/f v2.0.0+incompatible",
-			"\tgithub.com/local/x v1.0.0",
-			"\tgithub.com/g/h v1.1.0 // indirect; pinned",
-			")",
-			"exclude github.com/a/b v1.2.2",
-			"replace github.com/local/x => ../x",
-			"replace (",
-			"\tgithub.com/g/h v1.0.0 => github.com/g/h v1.0.1",
-			"\tgithub.com/e/f => github.com/fork/f v2.1.0+incompatible",
-			")",
-			"retract v0.1.0",
-		].join("\n")
+		const mod = Arr.join(
+			[
+				"module example.com/app",
+				"",
+				"go 1.22",
+				"toolchain go1.22.1",
+				"",
+				"require github.com/a/b v1.2.3",
+				"require (",
+				'\t"github.com/c/d" v0.0.0-20191109021931-daa7c04131f5 // indirect',
+				"\tgithub.com/e/f v2.0.0+incompatible",
+				"\tgithub.com/local/x v1.0.0",
+				"\tgithub.com/g/h v1.1.0 // indirect; pinned",
+				")",
+				"exclude github.com/a/b v1.2.2",
+				"replace github.com/local/x => ../x",
+				"replace (",
+				"\tgithub.com/g/h v1.0.0 => github.com/g/h v1.0.1",
+				"\tgithub.com/e/f => github.com/fork/f v2.1.0+incompatible",
+				")",
+				"retract v0.1.0",
+			],
+			"\n",
+		)
 		const parsed = await parse("go.mod", mod)
 		expect(summary(parsed)).toEqual([
 			"github.com/a/b@v1.2.3:direct",
@@ -404,44 +437,50 @@ describe("Go and Cargo details", () => {
 			"github.com/g/h@v1.1.0:transitive",
 		])
 		expect(parsed.warnings).toEqual(["github.com/local/x is replaced by a local directory"])
-		expect(parsed.packages.every((p) => p.ecosystem === "Go")).toBe(true)
+		expect(Arr.every(parsed.packages, (p) => p.ecosystem === "Go")).toBe(true)
 	})
 
 	it("go.sum: keeps module zip lines only", async () => {
-		const sum = [
-			"github.com/a/b v1.2.3 h1:abc=",
-			"github.com/a/b v1.2.3/go.mod h1:def=",
-			"github.com/c/d v0.1.0/go.mod h1:ghi=",
-		].join("\n")
+		const sum = Arr.join(
+			[
+				"github.com/a/b v1.2.3 h1:abc=",
+				"github.com/a/b v1.2.3/go.mod h1:def=",
+				"github.com/c/d v0.1.0/go.mod h1:ghi=",
+			],
+			"\n",
+		)
 		expect(summary(await parse("go.sum", sum))).toEqual(["github.com/a/b@v1.2.3:unknown"])
 	})
 
 	it("Cargo.lock: v1 style versioned member deps, git and path packages skipped", async () => {
-		const lock = [
-			"[[package]]",
-			'name = "app"',
-			'version = "0.1.0"',
-			'dependencies = ["serde 1.0.100 (registry+https://github.com/rust-lang/crates.io-index)", "mine", "local"]',
-			"",
-			"[[package]]",
-			'name = "serde"',
-			'version = "1.0.100"',
-			'source = "registry+https://github.com/rust-lang/crates.io-index"',
-			"",
-			"[[package]]",
-			'name = "serde"',
-			'version = "0.9.0"',
-			'source = "sparse+https://index.crates.io/"',
-			"",
-			"[[package]]",
-			'name = "mine"',
-			'version = "0.2.0"',
-			'source = "git+https://github.com/me/mine#abc"',
-			"",
-			"[[package]]",
-			'name = "local"',
-			'version = "0.1.0"',
-		].join("\n")
+		const lock = Arr.join(
+			[
+				"[[package]]",
+				'name = "app"',
+				'version = "0.1.0"',
+				'dependencies = ["serde 1.0.100 (registry+https://github.com/rust-lang/crates.io-index)", "mine", "local"]',
+				"",
+				"[[package]]",
+				'name = "serde"',
+				'version = "1.0.100"',
+				'source = "registry+https://github.com/rust-lang/crates.io-index"',
+				"",
+				"[[package]]",
+				'name = "serde"',
+				'version = "0.9.0"',
+				'source = "sparse+https://index.crates.io/"',
+				"",
+				"[[package]]",
+				'name = "mine"',
+				'version = "0.2.0"',
+				'source = "git+https://github.com/me/mine#abc"',
+				"",
+				"[[package]]",
+				'name = "local"',
+				'version = "0.1.0"',
+			],
+			"\n",
+		)
 		const parsed = await parse("Cargo.lock", lock)
 		expect(summary(parsed)).toEqual(["serde@0.9.0:transitive", "serde@1.0.100:direct"])
 		expect(parsed.warnings).toEqual(["skipped 1 git, path or alternate-registry packages"])

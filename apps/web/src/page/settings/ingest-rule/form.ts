@@ -13,7 +13,7 @@ import {
 	opsForField,
 	signalsForField,
 } from "@maple/domain/ingest-rules"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 // The editor's draft: text inputs stay strings until `specOf` turns the draft into a rule.
 
@@ -96,9 +96,9 @@ export const OP_LABELS = {
 
 /** Fields that exist on every chosen signal. */
 export const fieldsFor = (signals: ReadonlyArray<IngestRuleSignal>): ReadonlyArray<IngestRuleField> =>
-	IngestRuleField.literals.filter((field) => {
+	Arr.filter(IngestRuleField.literals, (field) => {
 		const only = signalsForField(field)
-		return signals.every((signal) => only.includes(signal))
+		return Arr.every(signals, (signal) => only.includes(signal))
 	})
 
 export const isKeyed = (field: IngestRuleField): boolean =>
@@ -119,19 +119,25 @@ export const defaultCondition = (id: number, field: IngestRuleField): ConditionD
 
 /** Comma-separated and trimmed; `\,` is a literal comma and `\\` a backslash, so values round-trip. */
 export const splitList = (text: string): ReadonlyArray<string> =>
-	Array.from(text.matchAll(/(?:\\.|[^,\\])+|\\$/gu), (match) =>
-		match[0].replace(/\\(.)/gu, "$1").trim(),
-	).filter((entry) => entry.length > 0)
+	Arr.filter(
+		Array.from(text.matchAll(/(?:\\.|[^,\\])+|\\$/gu), (match) =>
+			Str.trim(Str.replace(/\\(.)/gu, "$1")(match[0])),
+		),
+		(entry) => entry.length > 0,
+	)
 
 export const joinList = (values: ReadonlyArray<string>): string =>
-	values.map((value) => value.replace(/[\\,]/gu, (char) => `\\${char}`)).join(", ")
+	Arr.join(
+		Arr.map(values, (value) => value.replace(/[\\,]/gu, (char) => `\\${char}`)),
+		", ",
+	)
 
 /** One pattern per line, kept exactly as typed: a leading space can be part of a pattern. */
 export const splitLines = (text: string): ReadonlyArray<string> =>
-	text.split("\n").filter((line) => line.trim().length > 0)
+	Arr.filter(Str.split("\n")(text), (line) => Str.trim(line).length > 0)
 
 const conditionOf = (draft: ConditionDraft): IngestRuleCondition => {
-	const key = isKeyed(draft.field) ? { key: draft.key.trim() } : {}
+	const key = isKeyed(draft.field) ? { key: Str.trim(draft.key) } : {}
 	if (isPresenceOp(draft.op)) return { field: draft.field, op: draft.op, ...key }
 	if (isListOp(draft.op))
 		return { field: draft.field, op: draft.op, ...key, values: splitList(draft.values) }
@@ -140,7 +146,7 @@ const conditionOf = (draft: ConditionDraft): IngestRuleCondition => {
 
 /** `NaN` when the text is not a whole number. */
 export const keepPercentOf = (text: string): number =>
-	/^\d{1,3}$/u.test(text.trim()) ? Number(text.trim()) : Number.NaN
+	/^\d{1,3}$/u.test(Str.trim(text)) ? Number(Str.trim(text)) : Number.NaN
 
 const actionOf = (draft: Draft): IngestRuleAction =>
 	draft.actionType === "drop"
@@ -156,13 +162,13 @@ const actionOf = (draft: Draft): IngestRuleAction =>
 
 export const specOf = (draft: Draft): IngestRuleSpec => ({
 	signals: draft.signals,
-	conditions: draft.conditions.map(conditionOf),
+	conditions: Arr.map(draft.conditions, conditionOf),
 	action: actionOf(draft),
 })
 
 /** The validator's problems plus the one only the form can have: the name. */
 export const draftProblems = (draft: Draft): ReadonlyArray<string> => {
-	const name = draft.name.trim()
+	const name = Str.trim(draft.name)
 	return [
 		...(name.length === 0 ? ["give the rule a name"] : []),
 		...(name.length > INGEST_RULE_LIMITS.nameLength

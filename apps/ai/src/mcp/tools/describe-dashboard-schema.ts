@@ -1,5 +1,5 @@
 import type { McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { DescribeDashboardSchemaOutput } from "@maple/domain/mcp-outputs"
 import {
 	DASHBOARD_SCHEMA_SECTIONS,
@@ -17,31 +17,35 @@ const SECTIONS = [...DASHBOARD_SCHEMA_SECTIONS, "templates"] as const
 
 /** create_dashboard's templates, from the same definitions the web template gallery lists. */
 export const renderTemplatesSection = (): string =>
-	[
-		"# Dashboard templates",
-		"",
-		"Pass the id as create_dashboard `template`. `service`, `metric_name` and `metric_type` fill the parameters.",
-		"",
-		"| template | Charts | Required |",
-		"|---|---|---|",
-		...DASHBOARD_TEMPLATES.map((t) => {
-			const required = t.parameters
-				.filter((p) => p.required)
-				.map((p) => (p.key === "service_name" ? "service" : p.key))
-			return `| \`${t.id}\` | ${t.description} | ${required.join(", ") || "-"} |`
-		}),
-		"",
-		"`custom` takes `dashboard_json` instead.",
-	].join("\n")
+	Arr.join(
+		[
+			"# Dashboard templates",
+			"",
+			"Pass the id as create_dashboard `template`. `service`, `metric_name` and `metric_type` fill the parameters.",
+			"",
+			"| template | Charts | Required |",
+			"|---|---|---|",
+			...Arr.map(DASHBOARD_TEMPLATES, (t) => {
+				const required = Arr.map(
+					Arr.filter(t.parameters, (p) => p.required),
+					(p) => (p.key === "service_name" ? "service" : p.key),
+				)
+				return `| \`${t.id}\` | ${t.description} | ${Arr.join(required, ", ") || "-"} |`
+			}),
+			"",
+			"`custom` takes `dashboard_json` instead.",
+		],
+		"\n",
+	)
 
 const renderIndex = (): string =>
 	`${renderDashboardSchemaIndex()}\n\nAlso \`section: "templates"\`: the create_dashboard templates and what each charts.`
 
 /** The generated markdown opens with its own heading; the doc's title takes its place. */
 const splitHeading = (markdown: string): { readonly title: string; readonly body: string } => {
-	const [first = "", ...rest] = markdown.split("\n")
-	return first.startsWith("#")
-		? { title: first.replace(/^#+\s*/, ""), body: rest.join("\n").trim() }
+	const [first, ...rest] = Str.split("\n")(markdown)
+	return Str.startsWith("#")(first)
+		? { title: Str.replace(/^#+\s*/, "")(first), body: Str.trim(Arr.join(rest, "\n")) }
 		: { title: "Dashboard widget schema", body: markdown }
 }
 

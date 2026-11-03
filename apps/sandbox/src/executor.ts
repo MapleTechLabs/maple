@@ -13,7 +13,7 @@ import {
 	ExecutorUnavailable,
 } from "@maple/domain/executor"
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers"
-import { Effect, Schema, Semaphore } from "effect"
+import { Effect, Schema, Semaphore, String as Str } from "effect"
 import { type GatewayProps, gatewayFetch } from "./executor-gateway"
 import { EXECUTOR_PROBE_VERSION, GATEWAY_HOST, GATEWAY_TLS_HOST } from "./executor-probe"
 import { type ExecutorContainer, type ExecutorProbeReport, probeOnce } from "./executor-run"
@@ -42,7 +42,7 @@ const decoder = new TextDecoder()
 /** `exec()` passes on only `PATH`; the scripts expect the rest of what a login shell had. */
 const EXEC_ENV = { HOME: "/root", LANG: "C.UTF-8" }
 
-const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause)).slice(0, 500)
+const message = (cause: unknown) => Str.slice(0, 500)(cause instanceof Error ? cause.message : String(cause))
 
 const attempt = <A>(run: () => Promise<A>) => Effect.tryPromise({ try: run, catch: message })
 

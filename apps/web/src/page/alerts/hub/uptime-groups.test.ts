@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { downMonitor, httpMonitor, monitorId } from "../shared/uptime-test-monitors"
 import { groupMonitors, NO_NAMESPACE, serviceNamespaces } from "./uptime-groups"
+import { Array as Arr } from "effect"
 
 const row = (serviceName: string, serviceNamespace: string, spanCount: number) => ({
 	serviceName,
@@ -34,9 +35,9 @@ describe("monitor groups", () => {
 
 	test("named groups run A to Z, with unlinked and unseen services under No namespace last", () => {
 		expect(
-			groupMonitors([unlinked, shop, unseen, billing], namespaces).map(([namespace, monitors]) => [
+			Arr.map(groupMonitors([unlinked, shop, unseen, billing], namespaces), ([namespace, monitors]) => [
 				namespace,
-				monitors.map((monitor) => monitor.name),
+				Arr.map(monitors, (monitor) => monitor.name),
 			]),
 		).toEqual([
 			["billing", ["payments-api"]],
@@ -47,7 +48,7 @@ describe("monitor groups", () => {
 
 	test("a service named like an object built-in groups under No namespace", () => {
 		const builtIn = httpMonitor({ id: monitorId(6), name: "ctor", service_name: "constructor" })
-		expect(groupMonitors([builtIn, shop], namespaces).map(([namespace]) => namespace)).toEqual([
+		expect(Arr.map(groupMonitors([builtIn, shop], namespaces), ([namespace]) => namespace)).toEqual([
 			"shop",
 			NO_NAMESPACE,
 		])

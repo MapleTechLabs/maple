@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { buildSummaryLine } from "../../AlertDeliveryDispatch"
 import {
 	alertAccentColor,
@@ -20,22 +20,30 @@ const MAX_TEMPLATED_BODY_CHARS = 2000
 
 /** Card text paragraphs take a small HTML subset, so every dynamic value is escaped first. */
 const escapeHtml = (value: string): string =>
-	value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+	Str.replace(
+		/"/g,
+		"&quot;",
+	)(Str.replace(/>/g, "&gt;")(Str.replace(/</g, "&lt;")(Str.replace(/&/g, "&amp;")(value))))
 
 /**
  * A template's Markdown in card HTML, the same subset Telegram gets: `**b**` and `[t](url)`, with
  * http(s) links only. Escaped first, so only the tags built here reach Google Chat.
  */
 const markdownToCardHtml = (markdown: string): string =>
-	escapeHtml(markdown)
-		.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
-		.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, text: string, url: string) =>
+	Str.replace(
+		/\n/g,
+		"<br>",
+	)(
+		Str.replace(
+			/\*\*([^*]+)\*\*/g,
+			"<b>$1</b>",
+		)(escapeHtml(markdown)).replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, text: string, url: string) =>
 			/^https?:\/\//i.test(url) ? `<a href="${url}">${text}</a>` : match,
-		)
-		.replace(/\n/g, "<br>")
+		),
+	)
 
 /** `<users/all>` is Google Chat mention syntax; a rule name or template must never ping a space. */
-const neutralizeMentions = (value: string): string => value.replace(/<(?=users\/)/gi, "<\u200B")
+const neutralizeMentions = (value: string): string => Str.replace(/<(?=users\/)/gi, "<\u200B")(value)
 
 const paragraph = (html: string) => ({ textParagraph: { text: html } })
 
@@ -62,11 +70,14 @@ export const buildGoogleChatMessage = (input: RenderInput<Config>) => {
 	const lead = templated
 		? markdownToCardHtml(truncate(templated.body, MAX_TEMPLATED_BODY_CHARS))
 		: escapeHtml(buildSummaryLine(context, (value) => value))
-	const footer = [
-		...(context.sparkline ? [escapeHtml(context.sparkline)] : []),
-		...(context.incidentId ? [`Incident ${escapeHtml(context.incidentId)}`] : []),
-		...(context.sentAtMs != null ? [new Date(context.sentAtMs).toISOString()] : []),
-	].join("  \u{00B7}  ")
+	const footer = Arr.join(
+		[
+			...(context.sparkline ? [escapeHtml(context.sparkline)] : []),
+			...(context.incidentId ? [`Incident ${escapeHtml(context.incidentId)}`] : []),
+			...(context.sentAtMs != null ? [new Date(context.sentAtMs).toISOString()] : []),
+		],
+		"  \u{00B7}  ",
+	)
 	const details = templated
 		? []
 		: [

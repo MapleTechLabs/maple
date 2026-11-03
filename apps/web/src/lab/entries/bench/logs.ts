@@ -1,5 +1,5 @@
 import { FIXTURE_LOG_LINKS, LOGS_TABLE_BENCH_ROWS } from "@maple/views/fixtures/logs-table-bench-fixture"
-import { Effect, Option, Schema, Stream } from "effect"
+import { Effect, Option, Schema, Stream, Array as Arr } from "effect"
 import { Mount, Subscription, Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -57,7 +57,9 @@ const init = (flags: ViewerFlags): Update.Return<Model, Message> => {
 		model: {
 			stream: LogsStream.init(
 				"logs-bench",
-				LOGS_TABLE_BENCH_ROWS.map((log) => toLogRowView(log, PINNED_COLUMNS, time, FIXTURE_LOG_LINKS)),
+				Arr.map(LOGS_TABLE_BENCH_ROWS, (log) =>
+					toLogRowView(log, PINNED_COLUMNS, time, FIXTURE_LOG_LINKS),
+				),
 			),
 			timeZone: flags.timeZone,
 			toasts: initLabToasts(),

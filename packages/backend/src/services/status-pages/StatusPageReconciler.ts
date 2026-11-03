@@ -19,7 +19,7 @@ import {
 	StatusPageIncidentUpdateId,
 } from "@maple/domain/primitives"
 import { StatusPageKeys, statusFitsKind, type StatusPageOverlayEntry } from "@maple/domain/status-page"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { repairMissingAutoIncidents, repairOrphanedAutoIncidents } from "./auto-incidents"
@@ -106,9 +106,9 @@ const findTarget = (db: MapleDb, scope: PageScope, entry: StatusPageOverlayEntry
 						.limit(1),
 				)
 				.pipe(Effect.map((rows) => Option.fromNullishOr(rows[0])))
-		if (entry.incidentId.startsWith(OVERLAY_INCIDENT_PREFIX)) {
+		if (Str.startsWith(OVERLAY_INCIDENT_PREFIX)(entry.incidentId)) {
 			// `bg-<entry>`: the incident that entry opened (or updated) holds its update.
-			const openingEntryId = entry.incidentId.slice(OVERLAY_INCIDENT_PREFIX.length)
+			const openingEntryId = Str.slice(OVERLAY_INCIDENT_PREFIX.length)(entry.incidentId)
 			const [opening] = yield* db.run(
 				PG.from(StatusPageIncidentUpdates)
 					.select(($) => ({ incidentId: $.incidentId }))
@@ -127,11 +127,11 @@ const linkComponents = (
 	incidentId: StatusPageIncidentId,
 	requested: ReadonlyArray<string>,
 ) => {
-	const componentIds = scope.componentIds.filter((id) => requested.includes(id))
+	const componentIds = Arr.filter(scope.componentIds, (id) => requested.includes(id))
 	if (componentIds.length === 0) return Effect.void
 	return db.run(
 		PG.insertInto(StatusPageIncidentComponents)
-			.values(componentIds.map((componentId) => ({ incidentId, componentId, orgId: scope.orgId })))
+			.values(Arr.map(componentIds, (componentId) => ({ incidentId, componentId, orgId: scope.orgId })))
 			.onConflictDoNothing(),
 	)
 }

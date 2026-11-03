@@ -23,6 +23,9 @@ import {
 	Ref,
 	Result,
 	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
@@ -123,9 +126,9 @@ export const subTargetsFromGroup = (group: {
 	// `403 invalid signature`.
 	const labels: Record<string, string> = {}
 	const authParams = new URLSearchParams()
-	for (const [key, value] of Object.entries(sdLabels)) {
-		if (key.startsWith("__param_")) authParams.set(key.slice("__param_".length), value)
-		else if (!key.startsWith("__")) labels[key] = value
+	for (const [key, value] of Rec.toEntries(sdLabels)) {
+		if (Str.startsWith("__param_")(key)) authParams.set(Str.slice("__param_".length)(key), value)
+		else if (!Str.startsWith("__")(key)) labels[key] = value
 	}
 	// PlanetScale's current http_sd payload names the human-readable identity
 	// labels with a `_name` suffix. Keep those canonical upstream keys and emit
@@ -202,8 +205,11 @@ export const parseBranchFilters = (discoveryConfigJson: unknown): BranchFilters 
 
 /** exclude wins over include; an empty include list means "all branches". */
 export const branchPassesFilters = (name: string, filters: BranchFilters): boolean => {
-	if (filters.exclude.some((pattern) => globToRegExp(pattern).test(name))) return false
-	if (filters.include.length > 0 && !filters.include.some((pattern) => globToRegExp(pattern).test(name)))
+	if (Arr.some(filters.exclude, (pattern) => globToRegExp(pattern).test(name))) return false
+	if (
+		filters.include.length > 0 &&
+		!Arr.some(filters.include, (pattern) => globToRegExp(pattern).test(name))
+	)
 		return false
 	return true
 }

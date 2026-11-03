@@ -21,6 +21,7 @@ import {
 	type WidgetDataState,
 	type WidgetScenario,
 } from "./scenarios"
+import { Array as Arr } from "effect"
 
 // The widget lab's sections, each cell a widget built
 // from its scenario: the lab renders the dashboard tiles outside a dashboard.
@@ -64,10 +65,11 @@ export const toTileState = (state: WidgetDataState): TileState => {
 		case "ready":
 			return {
 				_tag: "Ready",
-				data: Array.isArray(state.data)
+				data: Arr.isArray(state.data)
 					? {
 							_tag: "Rows",
-							rows: state.data.filter(
+							rows: Arr.filter(
+								state.data,
 								(row): row is Record<string, unknown> =>
 									typeof row === "object" && row !== null,
 							),
@@ -100,7 +102,7 @@ const cellsOf = <S extends WidgetScenario>(
 	height: number,
 	label: (scenario: S) => string = (scenario) => scenario.label,
 ): ReadonlyArray<Cell> =>
-	scenarios.map((scenario, index) => ({
+	Arr.map(scenarios, (scenario, index) => ({
 		id: `${prefix}-${index}`,
 		label: label(scenario),
 		height,
@@ -110,7 +112,7 @@ const cellsOf = <S extends WidgetScenario>(
 		rowLimit: scenario.rowLimit,
 	}))
 
-const statSparklineCells: ReadonlyArray<Cell> = statSparklineScenarios.map((scenario, index) => ({
+const statSparklineCells: ReadonlyArray<Cell> = Arr.map(statSparklineScenarios, (scenario, index) => ({
 	id: `stat-spark-${index}`,
 	label: scenario.label,
 	height: 220,
@@ -123,7 +125,7 @@ const statSparklineCells: ReadonlyArray<Cell> = statSparklineScenarios.map((scen
 }))
 
 /** The standalone trend lines: a card with just the sparkline in it. */
-export const SPARKLINE_SAMPLES = sparklineSamples.map((sample, index) => ({
+export const SPARKLINE_SAMPLES = Arr.map(sparklineSamples, (sample, index) => ({
 	id: `spark-${index}`,
 	label: sample.label,
 	color: sample.color,
@@ -245,6 +247,7 @@ export const LATER_SECTIONS: ReadonlyArray<Section> = [
 	},
 ]
 
-export const ALL_CELLS: ReadonlyArray<Cell> = [...SECTIONS, ...LATER_SECTIONS].flatMap(
+export const ALL_CELLS: ReadonlyArray<Cell> = Arr.flatMap(
+	[...SECTIONS, ...LATER_SECTIONS],
 	(section) => section.cells,
 )

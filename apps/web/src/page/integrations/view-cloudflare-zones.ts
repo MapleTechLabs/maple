@@ -14,6 +14,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // "Manage zones": which of each connected account's zones Maple collects.
 
@@ -41,8 +42,11 @@ const zoneRow = (h: H, accountId: string, zone: ZoneChoice["zones"][number]): Ht
 }
 
 const accountSection = (h: H, account: ZoneChoice, query: string, isMulti: boolean): Html => {
-	const shown = account.zones.filter((zone) => query === "" || zone.name.toLowerCase().includes(query))
-	const watched = account.zones.filter((zone) => zone.watched).length
+	const shown = Arr.filter(
+		account.zones,
+		(zone) => query === "" || Str.includes(query)(Str.toLowerCase(zone.name)),
+	)
+	const watched = Arr.filter(account.zones, (zone) => zone.watched).length
 	const switchInputId = `cf-zones-new-${account.accountId}`
 	const selectLink = (label: string, value: boolean) =>
 		button(
@@ -104,16 +108,16 @@ const accountSection = (h: H, account: ZoneChoice, query: string, isMulti: boole
 							"flex max-h-64 flex-col overflow-y-auto overscroll-contain rounded-md border border-border-subtle py-1",
 						),
 					],
-					shown.map((zone) => zoneRow(h, account.accountId, zone)),
+					Arr.map(shown, (zone) => zoneRow(h, account.accountId, zone)),
 				),
 	])
 }
 
 export const zonesDialog = (h: H, model: Model): Html => {
 	const card = model.cloudflareCard
-	const query = card.zoneDraftSearch.trim().toLowerCase()
+	const query = Str.toLowerCase(Str.trim(card.zoneDraftSearch))
 	const isMulti = card.zoneDraft.length > 1
-	const zoneCount = card.zoneDraft.reduce((sum, account) => sum + account.zones.length, 0)
+	const zoneCount = Arr.reduce(card.zoneDraft, 0, (sum, account) => sum + account.zones.length)
 	return formDialog(h, {
 		slotId: "cloudflare-zones",
 		model: card.zoneDialog,
@@ -138,7 +142,7 @@ export const zonesDialog = (h: H, model: Model): Html => {
 						}),
 					]
 				: []),
-			...card.zoneDraft.map((account) => accountSection(h, account, query, isMulti)),
+			...Arr.map(card.zoneDraft, (account) => accountSection(h, account, query, isMulti)),
 			...(card.zoneSaveError === null
 				? []
 				: [

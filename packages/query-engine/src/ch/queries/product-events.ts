@@ -26,7 +26,7 @@ import type {
 	ColumnDefs,
 	JoinedColumnAccessor,
 } from "@maple-dev/effect-orm/clickhouse"
-import { type DateTime, Result, Schema } from "effect"
+import { type DateTime, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { ProductEvents, IdentityLinks, SessionReplays, orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
 import { replaysWhere, needsSessionSemiJoin, type ProductEventsFilters } from "./web-analytics"
@@ -310,7 +310,7 @@ export function eventStepCondition($: EventsAccessor, step: FunnelStep): CH.Cond
 	switch (step.kind) {
 		case "event": {
 			let cond = $.EventName.eq(step.eventName)
-			for (const [key, value] of Object.entries(step.attributeEquals ?? {})) {
+			for (const [key, value] of Rec.toEntries(step.attributeEquals ?? {})) {
 				cond = cond.and($.Attributes.get(key).eq(value))
 			}
 			return cond
@@ -361,7 +361,7 @@ function stepFlags(
 	steps: ReadonlyArray<FunnelStep>,
 	value: (step: FunnelStep, index: number) => CH.Expr<number>,
 ): Record<string, CH.Expr<number>> {
-	return Object.fromEntries(steps.map((step, index) => [stepColumn(index), value(step, index)]))
+	return Rec.fromEntries(Arr.map(steps, (step, index) => [stepColumn(index), value(step, index)]))
 }
 
 /**
@@ -397,7 +397,7 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 	// `host` is a session dimension too, but product_events carries it on every
 	// browser row, so it is read there rather than joined in.
 	const sessionDimension =
-		dim !== undefined && !dim.startsWith("attribute:") && dim !== "host"
+		dim !== undefined && !Str.startsWith("attribute:")(dim) && dim !== "host"
 			? (dim as FunnelSessionDimension)
 			: undefined
 
@@ -432,7 +432,7 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 
 	const dimExpr = ($: OpenJoinAccessor<typeof ProductEvents.columns>): CH.Expr<string> | undefined => {
 		if (dim === undefined) return undefined
-		if (dim.startsWith("attribute:")) return $.Attributes.get(dim.slice("attribute:".length))
+		if (Str.startsWith("attribute:")(dim)) return $.Attributes.get(Str.slice("attribute:".length)(dim))
 		if (dim === "host") return $.Host
 		return compileFnCall<string>("coalesce", $.sd.Value, CH.lit(""))
 	}
@@ -450,9 +450,10 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 		})
 		.where(($) => {
 			const key = personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
-			const stepConditions = opts.steps
-				.map((step) => eventStepCondition($, step))
-				.filter((cond): cond is CH.Condition => cond !== undefined)
+			const stepConditions = Arr.filter(
+				Arr.map(opts.steps, (step) => eventStepCondition($, step)),
+				(cond): cond is CH.Condition => cond !== undefined,
+			)
 			const anyStep = stepConditions.length === 0 ? undefined : CH.or(...stepConditions)
 			return [
 				$.OrgId.eq(orgIdParam),
@@ -478,7 +479,7 @@ function sessionEntryBranch(plan: FunnelPlan, step: Extract<FunnelStep, { kind: 
 	const keyBy = opts.keyBy
 	const dim = breakdownBy
 	const sessionDimension =
-		dim !== undefined && !dim.startsWith("attribute:") ? (dim as FunnelSessionDimension) : undefined
+		dim !== undefined && !Str.startsWith("attribute:")(dim) ? (dim as FunnelSessionDimension) : undefined
 
 	let base: OpenJoinQuery<typeof SessionReplays.columns> = from(SessionReplays, "s")
 	if (keyBy === "person") {
@@ -530,7 +531,7 @@ function sessionEntryBranch(plan: FunnelPlan, step: Extract<FunnelStep, { kind: 
  */
 function levelsQuery(plan: FunnelPlan) {
 	const { opts } = plan
-	const hasEventStep = opts.steps.some((step) => step.kind !== "session")
+	const hasEventStep = Arr.some(opts.steps, (step) => step.kind !== "session")
 	const source = plan.sessionStep
 		? hasEventStep
 			? fromUnion(
@@ -543,7 +544,9 @@ function levelsQuery(plan: FunnelPlan) {
 	return source
 		.select(($) => {
 			const ts = $.ts as CH.Expr<number>
-			const conditions = opts.steps.map((_, index) => ($[stepColumn(index)] as CH.Expr<number>).eq(1))
+			const conditions = Arr.map(opts.steps, (_, index) =>
+				($[stepColumn(index)] as CH.Expr<number>).eq(1),
+			)
 			const row = {
 				key: $.key as CH.Expr<string>,
 				level: CH.windowFunnel(opts.windowSeconds * 1000)(ts, ...conditions),
@@ -873,8 +876,13 @@ function chainQuery(plan: FunnelPlan) {
 	const perPerson = fromQuery(eventsBranch(plan), "funnel_events")
 		.select(($) => {
 			const ts = $.ts as CH.Expr<number>
-			const conditions = opts.steps.map((_, index) => ($[stepColumn(index)] as CH.Expr<number>).eq(1))
-			const tuple = ["ts", "seq", ...opts.steps.map((_, index) => stepColumn(index))].join(", ")
+			const conditions = Arr.map(opts.steps, (_, index) =>
+				($[stepColumn(index)] as CH.Expr<number>).eq(1),
+			)
+			const tuple = Arr.join(
+				["ts", "seq", ...Arr.map(opts.steps, (_, index) => stepColumn(index))],
+				", ",
+			)
 			return {
 				key: $.key as CH.Expr<string>,
 				level: CH.windowFunnel(windowMs)(ts, ...conditions),
@@ -885,8 +893,8 @@ function chainQuery(plan: FunnelPlan) {
 		.groupBy("key")
 
 	return fromQuery(perPerson, "chain_events").select(($) => {
-		const times = Object.fromEntries(
-			opts.steps.map((_, index) => {
+		const times = Rec.fromEntries(
+			Arr.map(opts.steps, (_, index) => {
 				// Tuple element index: 1 is `ts`, 2 is `seq`, k + 3 is the flag of step k (0-based).
 				const flagIndex = index + 3
 				// A step only counts once the previous one was found: with `t_{k-1}`
@@ -942,12 +950,15 @@ export function productEventsFunnelTimingQuery(
 	const n = opts.steps.length
 
 	const quantileArray = (q: number): string =>
-		`[0, ${Array.from({ length: n - 1 }, (_, i) => {
-			const step = i + 2
-			const to = stepTimeColumn(step - 1)
-			const fromCol = stepTimeColumn(step - 2)
-			return `ifNotFinite(quantileIf(${q})(toFloat64(${to} - ${fromCol}), level >= ${step} AND ${to} > 0), 0)`
-		}).join(", ")}]`
+		`[0, ${Arr.join(
+			Array.from({ length: n - 1 }, (_, i) => {
+				const step = i + 2
+				const to = stepTimeColumn(step - 1)
+				const fromCol = stepTimeColumn(step - 2)
+				return `ifNotFinite(quantileIf(${q})(toFloat64(${to} - ${fromCol}), level >= ${step} AND ${to} > 0), 0)`
+			}),
+			", ",
+		)}]`
 
 	const totals = fromQuery(chainQuery(plan), "chain").select(() => ({
 		p50s: CH.rawExpr<ReadonlyArray<number>>(quantileArray(0.5), T.array(T.float64)),
@@ -995,7 +1006,10 @@ export function productEventsFunnelLeaversQuery(
 	const first = opts.steps[0]
 	const plan: FunnelPlan = { opts, filters, sessionStep: first?.kind === "session" ? first : undefined }
 	const n = opts.steps.length
-	const timeColumns = opts.steps.map((_, index) => stepTimeColumn(index)).join(", ")
+	const timeColumns = Arr.join(
+		Arr.map(opts.steps, (_, index) => stepTimeColumn(index)),
+		", ",
+	)
 
 	const dropped = fromQuery(chainQuery(plan), "chain")
 		.select(($) => ({

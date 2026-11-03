@@ -56,6 +56,7 @@ import { createMapleScraper } from "./apps/scraper/alchemy.run.ts"
 import Landing from "./apps/landing/src/worker.ts"
 import LocalUi from "./apps/local-ui/src/worker.ts"
 import Web from "./apps/web/src/worker.ts"
+import { Array as Arr } from "effect"
 
 // Infisical defines CLOUDFLARE_DEFAULT_ACCOUNT_ID; alchemy reads CLOUDFLARE_ACCOUNT_ID.
 if (!process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_DEFAULT_ACCOUNT_ID) {
@@ -77,7 +78,7 @@ const asConfigError = (error: { readonly message: string }) =>
 const appendStepOutputs = (lines: string[]): void => {
 	const file = process.env.GITHUB_OUTPUT
 	if (file) {
-		appendFileSync(file, `${lines.join("\n")}\n`)
+		appendFileSync(file, `${Arr.join(lines, "\n")}\n`)
 	}
 }
 

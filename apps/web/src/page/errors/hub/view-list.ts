@@ -1,5 +1,5 @@
 import type { ErrorSignal } from "../../../lib/models/error-signal"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { errorState } from "@maple/views/ui/error-state"
@@ -60,8 +60,7 @@ export const pagingFooter = (h: H, paging: PagingState): ReadonlyArray<Html> => 
 		isFailed: paging === "failed",
 		onLoadMore: Message.ClickedLoadMore(),
 		className: stripClass("block"),
-		children:
-			paging === "failed" ? [h.span([], ["Couldn't load more errors."])] : [],
+		children: paging === "failed" ? [h.span([], ["Couldn't load more errors."])] : [],
 	})
 	return footer === null ? [] : [footer]
 }
@@ -124,11 +123,11 @@ const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> 
 			...bulkBar(h, model),
 		]
 	}
-	const ids = signals.map((signal) => signal.id)
+	const ids = Arr.map(signals, (signal) => signal.id)
 	const selection: HeaderSelection =
 		model.selectedIds.length === 0
 			? "none"
-			: ids.every((id) => model.selectedIds.includes(id))
+			: Arr.every(ids, (id) => model.selectedIds.includes(id))
 				? "all"
 				: "some"
 	return [
@@ -138,7 +137,7 @@ const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> 
 				signalHeader(h, selection),
 				h.div(
 					[h.Role("list"), h.Class("divide-y divide-border-subtle"), h.OnMount(MountRowSelect())],
-					signals.map((signal, index) =>
+					Arr.map(signals, (signal, index) =>
 						h.div(
 							[h.Key(signal.id), h.Role("listitem")],
 							[memoRow(h, signal, index, inputs.rowState(signal))],

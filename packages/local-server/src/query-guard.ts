@@ -2,7 +2,7 @@
 // the text, the canonical statement is what runs, and read statements carry
 // `readonly = 1` plus result caps, so enforcement does not rest on a regex.
 
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Chdb } from "./chdb"
 
 /** Body prefix clients map to a clean "not allowed" error. */
@@ -28,7 +28,7 @@ export const CLIENT_QUERY_LIMITS = {
 } as const
 
 // Settings a compiled Maple query may carry (query-engine `settingToCh`).
-const CAPPED_SETTINGS = new Set<string>(Object.keys(CLIENT_QUERY_LIMITS))
+const CAPPED_SETTINGS = new Set<string>(Rec.keys(CLIENT_QUERY_LIMITS))
 const ALLOWED_SETTINGS = new Set<string>([
 	...CAPPED_SETTINGS,
 	"max_threads",
@@ -102,7 +102,7 @@ const scanWords = (sql: string): ReadonlyArray<Word> | undefined => {
 			if (j >= sql.length) return undefined
 			if (c !== "'")
 				words.push({
-					text: sql.slice(i + 1, j),
+					text: Str.slice(i + 1, j)(sql),
 					start: i,
 					end: j + 1,
 					depth,
@@ -120,7 +120,7 @@ const scanWords = (sql: string): ReadonlyArray<Word> | undefined => {
 			let j = i + 1
 			while (j < sql.length && isWordPart(sql.charAt(j))) j++
 			words.push({
-				text: sql.slice(i, j),
+				text: Str.slice(i, j)(sql),
 				start: i,
 				end: j,
 				depth,
@@ -143,12 +143,12 @@ type Assignment = readonly [name: string, value: number]
 /** `name = <integer>, ...` or undefined when the tail is anything else. */
 const parseAssignments = (tail: string): ReadonlyArray<Assignment> | undefined => {
 	const assignments: Assignment[] = []
-	for (const part of tail.split(",")) {
+	for (const part of Str.split(",")(tail)) {
 		const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\d+)\s*$/.exec(part)
 		const name = match?.[1]
 		const value = match?.[2]
 		if (name === undefined || value === undefined) return undefined
-		assignments.push([name.toLowerCase(), Number(value)])
+		assignments.push([Str.toLowerCase(name), Number(value)])
 	}
 	return assignments
 }
@@ -162,7 +162,7 @@ interface Peeled {
 const peelTerminalClauses = (canonical: string, words: ReadonlyArray<Word>): Peeled => {
 	let body = canonical
 	const settings: Assignment[] = []
-	const topLevel = () => words.filter((word) => word.depth === 0 && word.end <= body.length)
+	const topLevel = () => Arr.filter(words, (word) => word.depth === 0 && word.end <= body.length)
 	const keyword = (word: Word | undefined, text: string) =>
 		word !== undefined && !word.quoted && word.text === text
 	const peelSettings = () => {
@@ -170,10 +170,10 @@ const peelTerminalClauses = (canonical: string, words: ReadonlyArray<Word>): Pee
 			.reverse()
 			.find((word) => keyword(word, "SETTINGS"))
 		if (last === undefined) return
-		const parsed = parseAssignments(body.slice(last.end))
+		const parsed = parseAssignments(Str.slice(last.end)(body))
 		if (parsed === undefined) return
 		settings.push(...parsed)
-		body = body.slice(0, last.start).trimEnd()
+		body = Str.trimEnd(Str.slice(0, last.start)(body))
 	}
 	const peelFormat = () => {
 		const top = topLevel()
@@ -186,7 +186,7 @@ const peelTerminalClauses = (canonical: string, words: ReadonlyArray<Word>): Pee
 			name.end !== body.length
 		)
 			return
-		body = body.slice(0, format.start).trimEnd()
+		body = Str.trimEnd(Str.slice(0, format.start)(body))
 	}
 	peelSettings()
 	peelFormat()
@@ -197,7 +197,7 @@ const peelTerminalClauses = (canonical: string, words: ReadonlyArray<Word>): Pee
 const settingsClause = (
 	requested: ReadonlyArray<Assignment>,
 ): Result.Result<string, ReadOnlyQueryRejected> => {
-	const merged = new Map<string, number>(Object.entries(CLIENT_QUERY_LIMITS))
+	const merged = new Map<string, number>(Rec.toEntries(CLIENT_QUERY_LIMITS))
 	for (const [name, value] of requested) {
 		if (!ALLOWED_SETTINGS.has(name)) return reject(`setting ${name} is not allowed`)
 		const ceiling = merged.get(name)
@@ -205,16 +205,16 @@ const settingsClause = (
 		if (!CAPPED_SETTINGS.has(name) || ceiling === undefined) merged.set(name, value)
 		else if (value > 0 && value < ceiling) merged.set(name, value)
 	}
-	const parts = [...merged].map(([name, value]) => `${name} = ${value}`)
+	const parts = Arr.map([...merged], ([name, value]) => `${name} = ${value}`)
 	// Applied in order, so readonly comes last; after it no setting may change.
-	return Result.succeed([...parts, "output_format_json_array_of_rows = 1", "readonly = 1"].join(", "))
+	return Result.succeed(Arr.join([...parts, "output_format_json_array_of_rows = 1", "readonly = 1"], ", "))
 }
 
-const escapeLiteral = (value: string) => value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")
+const escapeLiteral = (value: string) => Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))
 
 // The wrapper query is noise in a syntax error about the client's SQL.
 const cleanParseError = (message: string) =>
-	message.replace(/:? In scope SELECT formatQuerySingleLine\([\s\S]*?(\s\([A-Z_]+\))?$/, "$1")
+	Str.replace(/:? In scope SELECT formatQuerySingleLine\([\s\S]*?(\s\([A-Z_]+\))?$/, "$1")(message)
 
 /** Canonicalize `sql` with the engine parser and build the statement to run. */
 export const prepareLocalQuery = (
@@ -223,15 +223,15 @@ export const prepareLocalQuery = (
 	options: { readonly allowWrites: boolean },
 ): Result.Result<PreparedLocalQuery, ReadOnlyQueryRejected | LocalQueryInvalid> =>
 	Result.gen(function* () {
-		if (sql.includes("\0")) return yield* reject("NUL bytes are not allowed")
+		if (Str.includes("\0")(sql)) return yield* reject("NUL bytes are not allowed")
 		const canonical = yield* Result.try({
 			try: () =>
-				db
-					.query(
+				Str.trim(
+					db.query(
 						`SELECT formatQuerySingleLine('${escapeLiteral(sql)}')\nFORMAT RawBLOB\nSETTINGS readonly = 1, max_execution_time = 5`,
 						"RawBLOB",
-					)
-					.trim(),
+					),
+				),
 			catch: (error) => {
 				const message = error instanceof Error ? error.message : String(error)
 				return /Multi-statements are not allowed/.test(message)
@@ -244,17 +244,20 @@ export const prepareLocalQuery = (
 		if (words === undefined || first === undefined)
 			return yield* reject("could not tokenize the statement")
 		for (const [index, word] of words.entries()) {
-			if (word.callee && DENIED_FUNCTIONS.has(word.text.toLowerCase()))
+			if (word.callee && DENIED_FUNCTIONS.has(Str.toLowerCase(word.text)))
 				return yield* reject(`function ${word.text} is not allowed`)
 			if (word.text === "INTO" && words[index + 1]?.text === "OUTFILE")
 				return yield* reject("INTO OUTFILE is not allowed")
 		}
-		const leading = canonical.startsWith("(") ? "SELECT" : first.text
+		const leading = Str.startsWith("(")(canonical) ? "SELECT" : first.text
 		if (!READ_STATEMENTS.has(leading)) {
 			if (options.allowWrites) {
 				// The canonical form drops an INSERT's inline rows (and their unscanned
 				// expressions), so only INSERT ... SELECT survives canonicalization intact.
-				if (first.text === "INSERT" && !words.some((word) => !word.quoted && word.text === "SELECT"))
+				if (
+					first.text === "INSERT" &&
+					!Arr.some(words, (word) => !word.quoted && word.text === "SELECT")
+				)
 					return yield* reject("INSERT with inline data is not allowed; use INSERT ... SELECT")
 				return { kind: "write" as const, sql: canonical }
 			}
@@ -262,7 +265,7 @@ export const prepareLocalQuery = (
 				`only SELECT, WITH, SHOW, DESCRIBE, EXISTS and EXPLAIN statements are allowed`,
 			)
 		}
-		if (leading === "EXPLAIN" && words.some((word) => WRITE_KEYWORDS.has(word.text)))
+		if (leading === "EXPLAIN" && Arr.some(words, (word) => WRITE_KEYWORDS.has(word.text)))
 			return yield* reject("EXPLAIN is only allowed for read statements")
 		const peeled = peelTerminalClauses(canonical, words)
 		// Schema inference reads whatever a table function points at, and

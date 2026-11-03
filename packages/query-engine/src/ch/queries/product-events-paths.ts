@@ -21,7 +21,7 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import { param, from, fromQuery, inSubquery, table } from "@maple-dev/effect-orm/clickhouse"
 import type { CHQuery, ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 import { ProductEvents, orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
 import {
@@ -99,7 +99,7 @@ function validate(opts: ProductEventsPathsOpts): ProductEventsFunnelError | unde
 		})
 	}
 	const anchorName = opts.anchor.kind === "event" ? opts.anchor.eventName : opts.anchor.pagePath
-	if (anchorName.trim() === "") {
+	if (Str.trim(anchorName) === "") {
 		return new ProductEventsFunnelError({
 			reason: "NoSteps",
 			message: "paths need an anchor event or page",
@@ -190,10 +190,13 @@ function pathEventsBranch(opts: ProductEventsPathsOpts, filters: ProductEventsFi
 		.where(($) => {
 			const ts = $.ts as CH.Expr<number>
 			const anchorTs = $.a.anchorTs as CH.Expr<number>
-			const narrowing = [
-				includeCondition($.kind as CH.Expr<string>, include),
-				exclude.length > 0 ? CH.notInList($.name as CH.Expr<string>, exclude) : undefined,
-			].filter((cond): cond is CH.Condition => cond !== undefined)
+			const narrowing = Arr.filter(
+				[
+					includeCondition($.kind as CH.Expr<string>, include),
+					exclude.length > 0 ? CH.notInList($.name as CH.Expr<string>, exclude) : undefined,
+				],
+				(cond): cond is CH.Condition => cond !== undefined,
+			)
 			const narrowed = narrowing.reduce<CH.Condition | undefined>(
 				(acc, cond) => (acc ? acc.and(cond) : cond),
 				undefined,

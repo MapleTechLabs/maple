@@ -22,7 +22,7 @@ import {
 } from "@maple/web-data/alerts/incident-timeline"
 import { incidentTitle, isQueryIncident } from "@maple/web-data/alerts/overview-derive"
 import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Chart from "@maple/views/charts/chart"
@@ -80,17 +80,21 @@ export const headerTitle = <M>(
 		isUptime || isQuery
 			? incidentTitle(incident)
 			: `${signalTitle(incident.signalType)} ${formatSignalValue(incident.signalType, incident.lastObservedValue)}${group != null ? ` on ${group}` : ""}`
-	const subline = (
-		isUptime
-			? ["Uptime check", group]
-			: [
-					isQuery ? group : `Rule ${rule?.name ?? incident.ruleName}`,
-					`${isQuery ? "value" : signalLabels[incident.signalType].toLowerCase()} ${conditionPhrase(incident)}${rule != null ? ` over ${rule.windowMinutes}m` : ""}`,
-					rule != null && rule.environments.length > 0 ? rule.environments.join(", ") : null,
-				]
+	const subline = Arr.join(
+		Arr.filter(
+			isUptime
+				? ["Uptime check", group]
+				: [
+						isQuery ? group : `Rule ${rule?.name ?? incident.ruleName}`,
+						`${isQuery ? "value" : Str.toLowerCase(signalLabels[incident.signalType])} ${conditionPhrase(incident)}${rule != null ? ` over ${rule.windowMinutes}m` : ""}`,
+						rule != null && rule.environments.length > 0
+							? Arr.join(rule.environments, ", ")
+							: null,
+					],
+			(part) => part != null,
+		),
+		" · ",
 	)
-		.filter((part) => part != null)
-		.join(" · ")
 	return h.div(
 		[h.Class("min-w-0 space-y-2")],
 		[

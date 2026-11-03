@@ -16,6 +16,7 @@
 import { matchesGlob } from "@maple/domain/glob"
 import type { V2PlanetScaleBranch } from "@maple/domain/http/v2"
 import type { PlanetScaleBranchStat } from "@maple/web-data/warehouse/service-map"
+import { Array as Arr, String as Str } from "effect"
 
 export { matchesGlob }
 
@@ -43,8 +44,8 @@ export const isExcluded = (
 	excludeBranches: ReadonlyArray<string>,
 ): boolean => {
 	// An include list, when present, is authoritative: anything outside it is excluded.
-	if (includeBranches.length > 0 && !includeBranches.some((p) => matchesGlob(p, name))) return true
-	return excludeBranches.some((p) => matchesGlob(p, name))
+	if (includeBranches.length > 0 && !Arr.some(includeBranches, (p) => matchesGlob(p, name))) return true
+	return Arr.some(excludeBranches, (p) => matchesGlob(p, name))
 }
 
 /**
@@ -58,8 +59,8 @@ export function mergeBranchCandidates(
 	includeBranches: ReadonlyArray<string> = [],
 	excludeBranches: ReadonlyArray<string> = [],
 ): ReadonlyArray<BranchCandidate> {
-	const statByName = new Map(stats.map((row) => [row.branch, row]))
-	const candidates: BranchCandidate[] = inventoryBranches.map((branch) => ({
+	const statByName = new Map(Arr.map(stats, (row) => [row.branch, row]))
+	const candidates: BranchCandidate[] = Arr.map(inventoryBranches, (branch) => ({
 		name: branch.name,
 		production: branch.production,
 		ready: branch.ready,
@@ -68,7 +69,7 @@ export function mergeBranchCandidates(
 		unknownToInventory: false,
 	}))
 
-	const known = new Set(candidates.map((c) => c.name))
+	const known = new Set(Arr.map(candidates, (c) => c.name))
 	for (const row of stats) {
 		if (row.branch === "" || known.has(row.branch)) continue
 		known.add(row.branch)
@@ -101,18 +102,18 @@ export function defaultBranch(
 	candidates: ReadonlyArray<BranchCandidate>,
 ): { readonly branch: BranchCandidate; readonly role: "production" | "busiest" } | null {
 	if (candidates.length === 0) return null
-	const production = candidates.filter((c) => c.production)
+	const production = Arr.filter(candidates, (c) => c.production)
 	if (production.length > 0) {
 		// A promote in flight can briefly show two production branches; the busier
 		// one is the one actually serving. Both keep their badge in the table —
 		// this picks a default, it does not hide the anomaly.
 		const branch = [...production].sort(
-			(a, b) => connectionsOf(b) - connectionsOf(a) || a.name.localeCompare(b.name),
+			(a, b) => connectionsOf(b) - connectionsOf(a) || Str.localeCompare(b.name)(a.name),
 		)[0]!
 		return { branch, role: "production" }
 	}
 	const branch = [...candidates].sort(
-		(a, b) => connectionsOf(b) - connectionsOf(a) || a.name.localeCompare(b.name),
+		(a, b) => connectionsOf(b) - connectionsOf(a) || Str.localeCompare(b.name)(a.name),
 	)[0]!
 	return { branch, role: "busiest" }
 }
@@ -162,6 +163,6 @@ export function orderBranches(candidates: ReadonlyArray<BranchCandidate>): Reado
 		if (a.production !== b.production) return a.production ? -1 : 1
 		const diff = connectionsOf(b) - connectionsOf(a)
 		if (diff !== 0) return diff
-		return a.name.localeCompare(b.name)
+		return Str.localeCompare(b.name)(a.name)
 	})
 }

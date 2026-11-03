@@ -6,6 +6,7 @@ import {
 	middleTruncateTailStyles,
 } from "@maple/ui/styles/ui/middle-truncate"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr } from "effect"
 
 // Port of packages/ui/src/components/ui/middle-truncate.tsx: keeps the last `tail` characters
 // visible and ellipsizes the middle. Pure CSS; the full value is always in `title`.
@@ -30,7 +31,7 @@ export const middleTruncate = <M>(h: HtmlBuilder<M>, options: MiddleTruncateOpti
 		return h.span(attributes, [h.span([h.Class(middleTruncateHeadStyles)], [options.text])])
 	}
 	return h.span(attributes, [
-		h.span([h.Class(middleTruncateHeadStyles)], [chars.slice(0, -tail).join("")]),
-		h.span([h.Class(middleTruncateTailStyles)], [chars.slice(-tail).join("")]),
+		h.span([h.Class(middleTruncateHeadStyles)], [Arr.join(chars.slice(0, -tail), "")]),
+		h.span([h.Class(middleTruncateTailStyles)], [Arr.join(chars.slice(-tail), "")]),
 	])
 }

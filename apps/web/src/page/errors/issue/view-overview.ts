@@ -14,17 +14,18 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `IssueExceptionPanel` and `IssueStats`: what broke, then how often and since when.
 
 type H = HtmlBuilder<Message>
 
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`, "g")
-const stripAnsi = (text: string): string => text.replace(ANSI_ESCAPE, "")
+const stripAnsi = (text: string): string => Str.replace(ANSI_ESCAPE, "")(text)
 
 /** A frame path breaks after each `/` rather than mid-word. */
 const breakablePath = (h: H, path: string): ReadonlyArray<Html | string> =>
-	path.split("/").flatMap((part, index) => (index === 0 ? [part] : [h.wbr([]), `/${part}`]))
+	Arr.flatMap(Str.split("/")(path), (part, index) => (index === 0 ? [part] : [h.wbr([]), `/${part}`]))
 
 /** The labelled sub-box of a panel body (the finding page's "Root cause"). */
 export const issueField = (h: H, label: string, children: ReadonlyArray<Html>): Html =>

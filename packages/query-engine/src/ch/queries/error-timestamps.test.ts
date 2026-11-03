@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Array as Arr, Record as Rec } from "effect"
 import { compile } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 import {
@@ -169,10 +169,11 @@ describe("error queries decode timestamps to DateTime.Utc", () => {
 				const compiled = yield* compileCase
 				expect(compiled.rowSchemaSource).toBe("derived")
 				const [decoded] = yield* compiled.decodeRows([row])
-				const actual = Object.fromEntries(
-					Object.entries(decoded ?? {})
-						.filter(([key]) => key in fields)
-						.map(([key, value]) => [key, iso(value)]),
+				const actual = Rec.fromEntries(
+					Arr.map(
+						Arr.filter(Object.entries(decoded ?? {}), ([key]) => key in fields),
+						([key, value]) => [key, iso(value)],
+					),
 				)
 				expect(actual).toEqual(fields)
 			}),

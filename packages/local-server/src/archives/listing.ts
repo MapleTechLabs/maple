@@ -18,6 +18,7 @@ import {
 import { ARCHIVE_SIGNALS, type ArchiveSignalName } from "./signals"
 import { withMaintenanceLock } from "../checkpoints"
 import { decodeJsonSync, encodeJson } from "../json"
+import { Array as Arr, String as Str } from "effect"
 
 // Archive read-side: listing, active-path resolution, and catalog rebuild.
 //
@@ -61,7 +62,7 @@ export interface ArchiveListing {
 
 /** Sum the byte sizes of a generation's shard records. */
 const shardBytes = (manifest: Pick<ArchiveGenerationManifest, "shards">): number =>
-	manifest.shards.reduce((sum, shard) => sum + shard.bytes, 0)
+	Arr.reduce(manifest.shards, 0, (sum, shard) => sum + shard.bytes)
 
 /**
  * List the active generation for every (signal, range) that has an `active.json`
@@ -80,7 +81,7 @@ export const listActiveGenerations = (archiveDir: string): ArchiveListing => {
 		if (!existsSync(sRoot)) continue
 		let ranges: string[]
 		try {
-			ranges = readdirSync(sRoot).filter((entry) => /^\d{4}-\d{2}-\d{2}$/.test(entry))
+			ranges = Arr.filter(readdirSync(sRoot), (entry) => /^\d{4}-\d{2}-\d{2}$/.test(entry))
 		} catch (error) {
 			errors.push({
 				signal: signal.name,
@@ -131,7 +132,7 @@ export const listActiveGenerations = (archiveDir: string): ArchiveListing => {
 			// explicit `archive verify`, which streams every shard with bounded memory.
 			let shardPaths: string[]
 			try {
-				shardPaths = manifest.shards.map((shard) => {
+				shardPaths = Arr.map(manifest.shards, (shard) => {
 					const p = shardFilePath(archiveDir, signal.name, rangeDate, generationId, shard.name)
 					assertNoSymlinkSync(archiveDir, p, "archive shard")
 					assertRealFileSync(p, "archive shard")
@@ -224,7 +225,7 @@ const verifyGenerationSummaries = async (
 			if (actualSha !== shard.sha256) {
 				throw new Error(
 					`shard ${summary.signal}/${summary.rangeStart}/${shard.name} SHA-256 mismatch: ` +
-						`manifest ${shard.sha256.slice(0, 16)}…, actual ${actualSha.slice(0, 16)}…`,
+						`manifest ${Str.slice(0, 16)(shard.sha256)}…, actual ${Str.slice(0, 16)(actualSha)}…`,
 				)
 			}
 			shardCount++
@@ -247,14 +248,22 @@ export const verifyActiveGenerations = async (
 	signal?: ArchiveSignalName,
 ): Promise<ArchiveVerification> => {
 	const listing = listActiveGenerations(archiveDir)
-	const relevantErrors = signal ? listing.errors.filter((error) => error.signal === signal) : listing.errors
+	const relevantErrors = signal
+		? Arr.filter(listing.errors, (error) => error.signal === signal)
+		: listing.errors
 	if (relevantErrors.length > 0) {
-		const detail = relevantErrors
-			.map((error) => `${error.signal}/${error.rangeStart || "(root)"}: ${error.error}`)
-			.join("; ")
+		const detail = Arr.join(
+			Arr.map(
+				relevantErrors,
+				(error) => `${error.signal}/${error.rangeStart || "(root)"}: ${error.error}`,
+			),
+			"; ",
+		)
 		throw new Error(`refusing archive integrity verification: ${detail}`)
 	}
-	const active = signal ? listing.active.filter((summary) => summary.signal === signal) : listing.active
+	const active = signal
+		? Arr.filter(listing.active, (summary) => summary.signal === signal)
+		: listing.active
 	return verifyGenerationSummaries(archiveDir, active, signal ? [signal] : listing.signals)
 }
 
@@ -267,16 +276,22 @@ export const verifyActiveGeneration = async (
 	rangeDate: string,
 ): Promise<ArchiveVerification> => {
 	const listing = listActiveGenerations(archiveDir)
-	const relevantErrors = listing.errors.filter(
+	const relevantErrors = Arr.filter(
+		listing.errors,
 		(error) => error.signal === signal && (error.rangeStart === "" || error.rangeStart === rangeDate),
 	)
 	if (relevantErrors.length > 0) {
-		const detail = relevantErrors
-			.map((error) => `${error.signal}/${error.rangeStart || "(root)"}: ${error.error}`)
-			.join("; ")
+		const detail = Arr.join(
+			Arr.map(
+				relevantErrors,
+				(error) => `${error.signal}/${error.rangeStart || "(root)"}: ${error.error}`,
+			),
+			"; ",
+		)
 		throw new Error(`refusing archive integrity verification: ${detail}`)
 	}
-	const active = listing.active.filter(
+	const active = Arr.filter(
+		listing.active,
 		(summary) => summary.signal === signal && summary.rangeStart === rangeDate,
 	)
 	if (active.length !== 1) {
@@ -297,20 +312,21 @@ export const verifyActiveGeneration = async (
  */
 export const activeParquetPaths = (archiveDir: string, signal: ArchiveSignalName): ReadonlyArray<string> => {
 	const listing = listActiveGenerations(archiveDir)
-	const relevantErrors = listing.errors.filter((e) => e.signal === signal)
+	const relevantErrors = Arr.filter(listing.errors, (e) => e.signal === signal)
 	if (relevantErrors.length > 0) {
-		const detail = relevantErrors
-			.map((e) => `${e.signal}/${e.rangeStart || "(root)"}: ${e.error}`)
-			.join("; ")
+		const detail = Arr.join(
+			Arr.map(relevantErrors, (e) => `${e.signal}/${e.rangeStart || "(root)"}: ${e.error}`),
+			"; ",
+		)
 		throw new Error(
 			`refusing to return active Parquet paths for ${signal}: ${relevantErrors.length} malformed range(s) — ` +
 				`${detail}. Run 'maple archive rebuild ${signal}' or inspect the archive.`,
 		)
 	}
-	const forSignal = listing.active
-		.filter((summary) => summary.signal === signal)
-		.sort((a, b) => a.rangeStart.localeCompare(b.rangeStart))
-	return forSignal.flatMap((summary) => summary.shardPaths)
+	const forSignal = Arr.filter(listing.active, (summary) => summary.signal === signal).sort((a, b) =>
+		Str.localeCompare(b.rangeStart)(a.rangeStart),
+	)
+	return Arr.flatMap(forSignal, (summary) => summary.shardPaths)
 }
 
 export interface CatalogEntry {
@@ -324,7 +340,10 @@ export interface CatalogEntry {
 }
 
 const serializeCatalogEntries = (entries: ReadonlyArray<CatalogEntry>): string =>
-	`${entries.map((entry) => encodeJson({ ...entry, formatVersion: 1 as const })).join("\n")}\n`
+	`${Arr.join(
+		Arr.map(entries, (entry) => encodeJson({ ...entry, formatVersion: 1 as const })),
+		"\n",
+	)}\n`
 
 /**
  * Read every authoritative manifest for a signal and derive the exact canonical
@@ -340,7 +359,7 @@ export const authoritativeCatalogEntries = (
 	if (!existsSync(sRoot)) return []
 	let ranges: string[]
 	try {
-		ranges = readdirSync(sRoot).filter((entry) => /^\d{4}-\d{2}-\d{2}$/.test(entry))
+		ranges = Arr.filter(readdirSync(sRoot), (entry) => /^\d{4}-\d{2}-\d{2}$/.test(entry))
 	} catch (error) {
 		throw new Error(`archive catalog rebuild: signal root unreadable: ${messageOf(error)}`)
 	}

@@ -13,12 +13,14 @@ const isPoints = Schema.is(Schema.toType(Schema.Array(SparklinePoint)))
 
 /** Legacy caches the previews as `ReadonlyMap<metricName, points>`. */
 export const sparklinesToCached = (sparklines: ReadonlyArray<MetricSparkline>) =>
-	new Map(sparklines.map((sparkline) => [sparkline.metricName, sparkline.points]))
+	new Map(Array.map(sparklines, (sparkline) => [sparkline.metricName, sparkline.points]))
 
 export const sparklinesFromCached = (value: CacheValue): Option.Option<ReadonlyArray<MetricSparkline>> => {
 	if (!(value instanceof Map)) return Option.none()
-	const entries = Array.fromIterable(value.entries()).map(([metricName, points]) =>
-		typeof metricName === "string" && isPoints(points) ? Option.some({ metricName, points }) : Option.none(),
+	const entries = Array.map(Array.fromIterable(value.entries()), ([metricName, points]) =>
+		typeof metricName === "string" && isPoints(points)
+			? Option.some({ metricName, points })
+			: Option.none(),
 	)
 	return Option.all(entries)
 }

@@ -1,5 +1,6 @@
 import type { McpCallRow, McpServerOverview, McpServerRow, McpToolDetail } from "../page/mcp/data"
 import type { ToolSeriesPoint } from "../page/agent-sessions/tools-kit/model"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `/lab/mcp`: `maple-ai`'s MCP spans from Nov 1, 2026 09:33 to 12:35 UTC, as the warehouse holds them
 // (`mcp.method.name` SERVER spans, 15-minute buckets). The spec spans start at 09:33; there is nothing
@@ -49,7 +50,7 @@ const CLIENT_ERRORS = new Map<string, Readonly<Record<number, number>>>([
 const split = (
 	byClient: Readonly<Record<string, Readonly<Record<number, number>>>>,
 ): ReadonlyArray<ToolSeriesPoint> =>
-	Object.entries(byClient).flatMap(([client, buckets]) =>
+	Arr.flatMap(Rec.toEntries(byClient), ([client, buckets]) =>
 		Array.from({ length: BUCKETS }, (_, index) => ({
 			bucket: bucketAt(index),
 			seriesKey: client,
@@ -411,7 +412,7 @@ export const MCP_SERVERS: ReadonlyArray<McpServerRow> = [
 		topClient: "curl",
 		topClientShare: 279 / 387,
 		lastCallMs: at(12, 31),
-		spark: SERVER_SERIES.map((point) => point.calls),
+		spark: Arr.map(SERVER_SERIES, (point) => point.calls),
 	},
 ]
 

@@ -14,7 +14,7 @@
 import { createPrivateKey, createPublicKey, sign } from "node:crypto"
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { Config, Console, Effect, Option, Schema } from "effect"
+import { Config, Console, Effect, Option, Schema, String as Str } from "effect"
 import {
 	MAPLE_RELEASE_PUBLIC_KEY,
 	parseChecksumManifest,
@@ -50,8 +50,8 @@ export const signReleaseManifest = (
 	input: SigningInput,
 ): Effect.Effect<SigningOutcome, ReleaseSigningError> =>
 	Effect.gen(function* () {
-		const embedded = input.embeddedPublicKey.trim()
-		if (embedded !== input.installerPublicKey.trim()) {
+		const embedded = Str.trim(input.embeddedPublicKey)
+		if (embedded !== Str.trim(input.installerPublicKey)) {
 			return yield* failWith(
 				"MAPLE_RELEASE_PUBLIC_KEY in apps/cli/src/core/release-signature.ts and release_public_key in scripts/install.sh differ",
 			)

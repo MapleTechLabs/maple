@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Record as Rec } from "effect"
 import { compile, compileUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	metricsTimeseriesQuery,
@@ -636,7 +636,7 @@ describe("metric rows decode buckets to DateTime.Utc", () => {
 			}),
 	}
 
-	for (const [name, bucket] of Object.entries(cases)) {
+	for (const [name, bucket] of Rec.toEntries(cases)) {
 		it.effect(name, () =>
 			Effect.gen(function* () {
 				expect(DateTime.toEpochMillis(yield* bucket())).toBe(tenAm)

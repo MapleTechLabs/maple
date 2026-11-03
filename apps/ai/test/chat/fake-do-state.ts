@@ -13,14 +13,15 @@ import { readdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { DatabaseSync, type SQLInputValue, type SQLOutputValue } from "node:sqlite"
 import { CHAT_SESSION_MIGRATIONS } from "../../src/chat/ChatSession"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 const migrationsDir = path.resolve(import.meta.dirname, "../../../..", CHAT_SESSION_MIGRATIONS)
 
 /** Every migration file, in order, as alchemy's `apply` runs them (minus its history table). */
 export const applyChatSessionMigrations = (sql: SqlStorage): void => {
-	for (const file of readdirSync(migrationsDir)
-		.filter((name) => name.endsWith(".sql"))
-		.toSorted()) {
+	for (const file of Arr.filter(readdirSync(migrationsDir), (name) =>
+		Str.endsWith(".sql")(name),
+	).toSorted()) {
 		sql.exec(readFileSync(path.join(migrationsDir, file), "utf8"))
 	}
 }
@@ -42,8 +43,8 @@ type Row = Record<string, SqlStorageValue>
 
 /** `node:sqlite` hands back bigints and byte arrays; DO storage hands back numbers and buffers. */
 const toStorageRow = (row: Record<string, SQLOutputValue>): Row =>
-	Object.fromEntries(
-		Object.entries(row).map(([key, value]) => [
+	Rec.fromEntries(
+		Arr.map(Rec.toEntries(row), ([key, value]) => [
 			key,
 			typeof value === "bigint"
 				? Number(value)
@@ -58,7 +59,7 @@ class FakeCursor<T extends Row> implements SqlStorageCursor<T> {
 	columnNames: string[]
 	private index = 0
 	constructor(private readonly rows: Array<T> = []) {
-		this.columnNames = rows[0] === undefined ? [] : Object.keys(rows[0])
+		this.columnNames = rows[0] === undefined ? [] : Rec.keys(rows[0])
 	}
 	get rowsRead(): number {
 		return this.rows.length
@@ -109,7 +110,7 @@ class FakeSqlStorage implements SqlStorage {
 	exec<T extends Row>(statement: string, ...bindings: Array<SQLInputValue>): SqlStorageCursor<T> {
 		// A migration file is several statements in one string; `node:sqlite`
 		// splits those only through `exec`, while parameterised statements need `prepare`.
-		if (bindings.length === 0 && /;\s*\S/.test(statement.trim())) {
+		if (bindings.length === 0 && /;\s*\S/.test(Str.trim(statement))) {
 			this.db.exec(statement)
 			return new FakeCursor<T>()
 		}
@@ -118,7 +119,7 @@ class FakeSqlStorage implements SqlStorage {
 		// assigned seq without a second `SELECT MAX(seq)`, and `run()` would swallow the row.
 		if (/^\s*(select|pragma)/i.test(statement) || /\breturning\b/i.test(statement)) {
 			// SAFETY: `exec<T>` is unchecked in the real runtime too; the caller names its row shape.
-			return new FakeCursor(prepared.all(...bindings).map(toStorageRow) as Array<T>)
+			return new FakeCursor(Arr.map(prepared.all(...bindings), toStorageRow) as Array<T>)
 		}
 		prepared.run(...bindings)
 		return new FakeCursor<T>()

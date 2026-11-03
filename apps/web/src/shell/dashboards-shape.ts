@@ -26,7 +26,7 @@ export const pinnedDashboardRows = <Message>(
 			(rows) =>
 				toMessage(
 					Arr.sort(
-						rows.map((row) => ({ id: row.id, name: row.name, updated_at: row.updated_at })),
+						Arr.map(rows, (row) => ({ id: row.id, name: row.name, updated_at: row.updated_at })),
 						byUpdatedDesc,
 					),
 				),

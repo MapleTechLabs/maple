@@ -161,10 +161,13 @@ const scrapeStatus = (statuses: Statuses, targetType: "prometheus" | "planetscal
 	fold(
 		statuses.scrapeTargets,
 		(data): CardStatus => {
-			const targets = data.filter((target) => target.target_type === targetType)
+			const targets = Array.filter(data, (target) => target.target_type === targetType)
 			if (targets.length === 0) return NOT_CONNECTED
-			const failing = targets.some((target) => target.enabled && target.last_scrape_error !== null)
-			const enabled = targets.filter((target) => target.enabled).length
+			const failing = Array.some(
+				targets,
+				(target) => target.enabled && target.last_scrape_error !== null,
+			)
+			const enabled = Array.filter(targets, (target) => target.enabled).length
 			const noun = targetType === "planetscale" ? "org" : "target"
 			return {
 				label: `${countLabel(targets.length, noun)} · ${enabled} enabled`,
@@ -200,7 +203,7 @@ const githubStatus = (statuses: Statuses) =>
 			if (status.state === "disconnected") return { label: "Deactivated", variant: "warn" }
 			if (status.state === "suspended") return { label: "Suspended", variant: "warn" }
 			if (!status.connected) return NOT_CONNECTED
-			const count = status.repositories.filter((repo) => repo.status === "active").length
+			const count = Array.filter(status.repositories, (repo) => repo.status === "active").length
 			return { label: count > 0 ? countLabel(count, "repo") : "Connected", variant: "ok" }
 		},
 		unavailableStatus,
@@ -318,16 +321,18 @@ const gcpOverview = (statuses: Statuses, nowMs: number) =>
 		(status): IntegrationOverview => {
 			const connectors = status.connectors
 			if (connectors.length === 0) return SET_UP
-			const states = connectors.map((connector) => gcpConnectionState(connector, nowMs))
-			const count = (state: (typeof states)[number]) => states.filter((entry) => entry === state).length
+			const states = Array.map(connectors, (connector) => gcpConnectionState(connector, nowMs))
+			const count = (state: (typeof states)[number]) =>
+				Array.filter(states, (entry) => entry === state).length
 			const worst = gcpWorstState(states)
 			const lastData = maxMs(
-				connectors
-					.flatMap((connector) => [
+				Array.map(
+					Array.flatMap(connectors, (connector) => [
 						connector.logs_enabled ? connector.last_log_received_at : null,
 						connector.metrics_enabled ? connector.last_metrics_received_at : null,
-					])
-					.map(isoMs),
+					]),
+					isoMs,
+				),
 			)
 			return {
 				kind: "connected",
@@ -337,14 +342,18 @@ const gcpOverview = (statuses: Statuses, nowMs: number) =>
 					connectors.length === 1 && connectors[0] !== undefined
 						? gcpScopeLabel(connectors[0])
 						: countLabel(connectors.length, "connection"),
-				stat: [
-					connectors.some((connector) => connector.logs_enabled) ? "Logs" : null,
-					connectors.some((connector) => connector.metrics_enabled)
-						? "Metrics and resources"
-						: null,
-				]
-					.filter((part) => part !== null)
-					.join(" · "),
+				stat: Array.join(
+					Array.filter(
+						[
+							Array.some(connectors, (connector) => connector.logs_enabled) ? "Logs" : null,
+							Array.some(connectors, (connector) => connector.metrics_enabled)
+								? "Metrics and resources"
+								: null,
+						],
+						(part) => part !== null,
+					),
+					" · ",
+				),
 				lastSyncLabel: worst === "waiting" ? null : syncedLabel(lastData, nowMs, "last data"),
 				issue:
 					worst === "attention"
@@ -358,7 +367,7 @@ const gcpOverview = (statuses: Statuses, nowMs: number) =>
 	)
 
 const worstAwsCondition = (connections: ReadonlyArray<V2AwsConnection>, nowMs: number) => {
-	const conditions = connections.map((connection) => awsConditionOf(connection, nowMs))
+	const conditions = Array.map(connections, (connection) => awsConditionOf(connection, nowMs))
 	return AWS_CONDITION_RANK.find((condition) => conditions.includes(condition)) ?? "receiving"
 }
 
@@ -367,8 +376,10 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 		statuses.aws,
 		(status): IntegrationOverview => {
 			if (status.connections.length === 0) return CONNECT
-			const conditions = status.connections.map((connection) => awsConditionOf(connection, nowMs))
-			const failing = conditions.filter((condition) => condition === "failing").length
+			const conditions = Array.map(status.connections, (connection) =>
+				awsConditionOf(connection, nowMs),
+			)
+			const failing = Array.filter(conditions, (condition) => condition === "failing").length
 			const worst = worstAwsCondition(status.connections, nowMs)
 			const issue =
 				worst === "failing"
@@ -381,7 +392,7 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 				worst === "setup" || worst === "waiting"
 					? { health: "pending", stateLabel: AWS_CONDITION_LABEL[worst] }
 					: attentionOr(issue)
-			const receiving = conditions.filter((condition) => condition === "receiving").length
+			const receiving = Array.filter(conditions, (condition) => condition === "receiving").length
 			const accounts = countLabel(status.connections.length, "account")
 			return {
 				kind: "connected",
@@ -389,7 +400,11 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 				context: status.connections.length === 1 ? (status.connections[0]?.account_id ?? null) : null,
 				stat: conditions.includes("setup") ? accounts : `${receiving} of ${accounts} sending metrics`,
 				lastSyncLabel: syncedLabel(
-					maxMs(status.connections.map((connection) => isoMs(connection.metrics_last_received_at))),
+					maxMs(
+						Array.map(status.connections, (connection) =>
+							isoMs(connection.metrics_last_received_at),
+						),
+					),
 					nowMs,
 					"last data",
 				),
@@ -404,7 +419,10 @@ const railwayOverview = (statuses: Statuses, nowMs: number) =>
 		statuses.railway,
 		(status): IntegrationOverview => {
 			if (!status.connected) return CONNECT
-			const failing = status.environments.filter((environment) => environment.lastError != null).length
+			const failing = Array.filter(
+				status.environments,
+				(environment) => environment.lastError != null,
+			).length
 			const issue = status.authFailed
 				? "Token rejected"
 				: failing > 0
@@ -433,7 +451,7 @@ const supabaseOverview = (statuses: Statuses, nowMs: number) =>
 				: status.lastDiscoveryError !== null
 					? "Project discovery failing"
 					: null
-			const collecting = status.projects.filter((project) => project.metricsEnabled).length
+			const collecting = Array.filter(status.projects, (project) => project.metricsEnabled).length
 			return {
 				kind: "connected",
 				...attentionOr(issue),
@@ -452,8 +470,8 @@ const cloudflareOverview = (statuses: Statuses, nowMs: number) =>
 		(status): IntegrationOverview => {
 			if (!status.connected) return CONNECT
 			const zones = status.zones
-			const enabledZones = zones.filter((zone) => zone.enabled).length
-			const erroringZones = zones.filter((zone) => zone.enabled && zone.lastError != null).length
+			const enabledZones = Array.filter(zones, (zone) => zone.enabled).length
+			const erroringZones = Array.filter(zones, (zone) => zone.enabled && zone.lastError != null).length
 			const workersFailing = status.workers?.enabled === true && status.workers.lastError != null
 			const issue = !status.analyticsCapable
 				? "Update access"
@@ -472,9 +490,9 @@ const cloudflareOverview = (statuses: Statuses, nowMs: number) =>
 				kind: "connected",
 				...attentionOr(issue),
 				context: status.accountName,
-				stat: statParts.length > 0 ? statParts.join(" · ") : null,
+				stat: statParts.length > 0 ? Array.join(statParts, " · ") : null,
 				lastSyncLabel: syncedLabel(
-					maxMs([...zones.map((zone) => zone.lastSyncedAt), status.workers?.lastSyncedAt]),
+					maxMs([...Array.map(zones, (zone) => zone.lastSyncedAt), status.workers?.lastSyncedAt]),
 					nowMs,
 				),
 				issue,
@@ -487,10 +505,11 @@ const scrapeOverview = (statuses: Statuses, nowMs: number, targetType: "promethe
 	fold(
 		statuses.scrapeTargets,
 		(data): IntegrationOverview => {
-			const targets = data.filter((target) => target.target_type === targetType)
+			const targets = Array.filter(data, (target) => target.target_type === targetType)
 			if (targets.length === 0) return targetType === "prometheus" ? SET_UP : CONNECT
-			const enabled = targets.filter((target) => target.enabled).length
-			const failing = targets.filter(
+			const enabled = Array.filter(targets, (target) => target.enabled).length
+			const failing = Array.filter(
+				targets,
 				(target) => target.enabled && target.last_scrape_error !== null,
 			).length
 			const noun = targetType === "planetscale" ? "org" : "target"
@@ -501,7 +520,7 @@ const scrapeOverview = (statuses: Statuses, nowMs: number, targetType: "promethe
 				context: countLabel(targets.length, `scrape ${noun}`),
 				stat: `${enabled} of ${targets.length} enabled`,
 				lastSyncLabel: syncedLabel(
-					maxMs(targets.map((t) => isoMs(t.last_scrape_at))),
+					maxMs(Array.map(targets, (t) => isoMs(t.last_scrape_at))),
 					nowMs,
 					"scraped",
 				),
@@ -541,7 +560,7 @@ const planetscaleOverview = (statuses: Statuses, nowMs: number) => {
 							? "Branch metrics on"
 							: null,
 				lastSyncLabel: syncedLabel(
-					maxMs([metricsLastCollectedAt(status), status.last_inventory_at].map(isoMs)),
+					maxMs(Array.map([metricsLastCollectedAt(status), status.last_inventory_at], isoMs)),
 					nowMs,
 				),
 				issue,
@@ -597,9 +616,9 @@ const githubOverview = (statuses: Statuses, nowMs: number) =>
 			if (status.state === "disconnected") return halted("Deactivated", "Reinstall the app")
 			if (status.state === "suspended") return halted("Suspended", "Suspended on GitHub")
 			if (!status.connected) return CONNECT
-			const active = status.repositories.filter((repo) => repo.status === "active")
+			const active = Array.filter(status.repositories, (repo) => repo.status === "active")
 			const removed = status.repositories.length - active.length
-			const failing = active.filter((repo) => repo.lastSyncError != null).length
+			const failing = Array.filter(active, (repo) => repo.lastSyncError != null).length
 			const issue =
 				failing > 0
 					? `${countLabel(failing, "repo")} failing`
@@ -611,7 +630,7 @@ const githubOverview = (statuses: Statuses, nowMs: number) =>
 				...attentionOr(issue),
 				context,
 				stat: active.length > 0 ? `${countLabel(active.length, "repo")} synced` : null,
-				lastSyncLabel: syncedLabel(maxMs(active.map((repo) => repo.lastSyncedAt)), nowMs),
+				lastSyncLabel: syncedLabel(maxMs(Array.map(active, (repo) => repo.lastSyncedAt)), nowMs),
 				issue,
 			}
 		},
@@ -674,13 +693,13 @@ export const summaryOf = (
 	statuses: Statuses,
 	nowMs: number,
 ): { readonly connected: number; readonly attention: number } | null => {
-	const values = HUB_CATALOG.map((entry) => overviewOf(statuses, nowMs, entry.id))
-	if (values.some((value) => value === null)) return null
+	const values = Array.map(HUB_CATALOG, (entry) => overviewOf(statuses, nowMs, entry.id))
+	if (Array.some(values, (value) => value === null)) return null
 	const connected = Array.filter(values, (value): value is ConnectedOverview => value?.kind === "connected")
 	if (connected.length === 0) return null
 	return {
 		connected: connected.length,
-		attention: connected.filter((value) => value.health === "attention").length,
+		attention: Array.filter(connected, (value) => value.health === "attention").length,
 	}
 }
 

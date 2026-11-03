@@ -18,6 +18,7 @@ import { type ErrorDetail, Message, type Model } from "./error-modal-model"
 import type { ModalInputs } from "./view-error-modal"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The rail of `ToolErrorModal`: the variants a group folded, where it happens, which sessions hit it.
 
@@ -26,11 +27,7 @@ type BreakdownRow = ErrorDetail["breakdown"][number]
 
 const RAIL_TITLE = "font-mono text-xs font-medium text-foreground"
 
-const variantText = (
-	h: H,
-	message: string,
-	difference: VariantDifference | undefined,
-): ReadonlyArray<Html> =>
+const variantText = (h: H, message: string, difference: VariantDifference | undefined): ReadonlyArray<Html> =>
 	difference === undefined || difference.middle === ""
 		? [typography(h, { tone: "muted", truncate: true }, [unwrapToolErrorText(message).text])]
 		: [
@@ -53,8 +50,10 @@ const variantsSection = (
 	differences: ReadonlyMap<string, VariantDifference>,
 	selected: string | undefined,
 ): Html => {
-	const max = Math.max(1, ...detail.variants.map((row) => row.calls))
-	const isOnlyIndex = [...differences.values()].every((difference) => /^\[\d+\]$/.test(difference.middle))
+	const max = Math.max(1, ...Arr.map(detail.variants, (row) => row.calls))
+	const isOnlyIndex = Arr.every([...differences.values()], (difference) =>
+		/^\[\d+\]$/.test(difference.middle),
+	)
 	return h.section(
 		[h.Class("flex flex-col gap-2 border-b border-border p-4")],
 		[
@@ -68,7 +67,7 @@ const variantsSection = (
 					),
 				],
 			),
-			...detail.variants.map((row) => {
+			...Arr.map(detail.variants, (row) => {
 				const isSelected = row.message === selected
 				return pressable(
 					h,
@@ -249,7 +248,7 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 							[skeleton(h, "h-10"), skeleton(h, "h-10")],
 						),
 					]
-				: detail.sessions.map((row) => {
+				: Arr.map(detail.sessions, (row) => {
 						const isSelected = row.sessionId === selected
 						return selectableRow(
 							h,
@@ -365,14 +364,11 @@ export const railView = (
 /** The group's pairs folded to one key, the three busiest first. */
 const fold = (rows: ReadonlyArray<BreakdownRow>, keyOf: (row: BreakdownRow) => string) =>
 	[
-		...rows
-			.reduce(
-				(totals, row) => totals.set(keyOf(row), (totals.get(keyOf(row)) ?? 0) + row.calls),
-				new Map<string, number>(),
-			)
-			.entries(),
+		...Arr.reduce(rows, new Map<string, number>(), (totals, row) =>
+			totals.set(keyOf(row), (totals.get(keyOf(row)) ?? 0) + row.calls),
+		).entries(),
 	]
-		.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+		.sort((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0]))
 		.slice(0, 3)
 
 const breakdown = (
@@ -384,7 +380,7 @@ const breakdown = (
 	const max = rows[0]?.[1] ?? 1
 	return vstack(h, { gap: "1.5" }, [
 		eyebrow(h, { variant: "mono", className: "leading-3.5" }, [label]),
-		...rows.map(([key, calls], index) =>
+		...Arr.map(rows, ([key, calls], index) =>
 			h.div(
 				[h.Key(key), h.Class("flex items-center gap-2.5 font-mono text-xs leading-4")],
 				[

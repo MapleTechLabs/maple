@@ -1,5 +1,5 @@
 import { parseBucketMs } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
@@ -38,10 +38,10 @@ export const SPARK_TOKENS = {
 
 /** Every token the API tab paints on canvas; resolved once by the page's theme Mount. */
 export const API_THEME_TOKENS = [
-	...Object.values(SPARK_TOKENS),
+	...Rec.values(SPARK_TOKENS),
 	"--severity-info",
 	"--muted-foreground",
-	...LATENCY_SERIES.map((series) => series.token),
+	...Arr.map(LATENCY_SERIES, (series) => series.token),
 	"--border",
 	"--background",
 ]
@@ -122,12 +122,12 @@ const StatusChartView = Submodel.defineView<Chart.Model, Chart.Message, StatusCh
 /** Latency rows on the window's axis; a bucket without requests has no latency, so it is a gap. */
 const latencyRows = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number, window: WindowMs) => {
 	const byTime = new Map(
-		buckets.flatMap((bucket) => {
+		Arr.flatMap(buckets, (bucket) => {
 			const ms = parseBucketMs(bucket.bucket)
 			return ms === null ? [] : [[ms, bucket] as const]
 		}),
 	)
-	return bucketAxis(buckets, bucketSeconds, window).map((ms) => {
+	return Arr.map(bucketAxis(buckets, bucketSeconds, window), (ms) => {
 		const bucket = byTime.get(ms)
 		return {
 			bucket: new Date(ms).toISOString(),
@@ -166,8 +166,8 @@ export const latencyChart = <M>(
 				colors: {
 					border: resolveColor(options.context.theme, "--border"),
 					background: resolveColor(options.context.theme, "--background"),
-					...Object.fromEntries(
-						LATENCY_SERIES.map((series) => [
+					...Rec.fromEntries(
+						Arr.map(LATENCY_SERIES, (series) => [
 							series.key,
 							resolveColor(options.context.theme, series.token),
 						]),

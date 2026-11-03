@@ -10,7 +10,7 @@ import {
 	type ChatTarget,
 } from "@maple/chat-platform"
 import { ChatWorkspaceId, OrgId } from "@maple/domain/http"
-import { ConfigProvider, Duration, Effect, Fiber, Layer, Schema } from "effect"
+import { ConfigProvider, Duration, Effect, Fiber, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
@@ -372,7 +372,7 @@ describe("ChatAlertPoster", () => {
 		})
 		// A platform refuses a message whose image it cannot fetch.
 		const hasImage = (blocks: ReadonlyArray<ChatBlock>) =>
-			blocks.some((block) => block.kind === "alert" && block.imageUrl !== null)
+			Arr.some(blocks, (block) => block.kind === "alert" && block.imageUrl !== null)
 		const postCard = (card: ChatBlock) =>
 			Effect.gen(function* () {
 				const poster = yield* ChatAlertPoster

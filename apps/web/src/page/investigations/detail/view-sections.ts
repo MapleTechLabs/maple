@@ -37,6 +37,7 @@ import { Message } from "./message"
 import type { Escalation, LogBucket, Model, OverviewRow, TracesRow } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // The Overview's lower sections and the Evidence tab: `ImpactStrip`, `SignalsCard`, `InvestigationMeta`,
 // `FollowUpComposer`, `CauseRecap`, `EvidenceTab` and `EvidenceChips`.
@@ -46,14 +47,17 @@ type H = HtmlBuilder<Message>
 const link = (h: H, href: string, className: string, children: ReadonlyArray<Html | string>): Html =>
 	h.a([h.Href(href), h.Class(className)], children)
 
-const STRIP = [
-	"grid shrink-0 gap-y-5 px-1",
-	"grid-cols-2 xl:grid-cols-4",
-	"[&>*]:border-l [&>*]:pl-6",
-	"[&>*:nth-child(odd)]:border-l-0 [&>*:nth-child(odd)]:pl-0",
-	"xl:[&>*:nth-child(odd)]:border-l xl:[&>*:nth-child(odd)]:pl-6",
-	"xl:[&>*:first-child]:border-l-0 xl:[&>*:first-child]:pl-0",
-].join(" ")
+const STRIP = Arr.join(
+	[
+		"grid shrink-0 gap-y-5 px-1",
+		"grid-cols-2 xl:grid-cols-4",
+		"[&>*]:border-l [&>*]:pl-6",
+		"[&>*:nth-child(odd)]:border-l-0 [&>*:nth-child(odd)]:pl-0",
+		"xl:[&>*:nth-child(odd)]:border-l xl:[&>*:nth-child(odd)]:pl-6",
+		"xl:[&>*:first-child]:border-l-0 xl:[&>*:first-child]:pl-0",
+	],
+	" ",
+)
 
 const factLane = (h: H, label: string, children: ReadonlyArray<Html>): Html =>
 	vstack(h, { gap: "1.5", shrink: true }, [
@@ -94,7 +98,7 @@ export const impactStrip = (h: H, investigation: V2Investigation, timeZone: stri
 					? h.span([h.Class("text-muted-foreground")], ["None recorded"])
 					: h.span(
 							[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1.5")],
-							services.map((service) =>
+							Arr.map(services, (service) =>
 								h.keyed("span")(
 									service,
 									[h.Class(hstackClass({ gap: "1.5" }))],
@@ -159,26 +163,27 @@ const segment = (h: H, share: number, color: string): ReadonlyArray<Html> =>
 
 const logsRow = (h: H, points: ReadonlyArray<typeof LogBucket.Type>): Html => {
 	if (points.length === 0) return rowNote(h, "Logs", "No logs in this window")
-	const bars = points.map((point) => {
-		const entries = Object.entries(point.series)
-		const total = entries.reduce((sum, [, count]) => sum + count, 0)
-		const errors = entries
-			.filter(([severity]) => ["ERROR", "FATAL"].includes(severity.toUpperCase()))
-			.reduce((sum, [, count]) => sum + count, 0)
-		const warnings = entries
-			.filter(([severity]) => ["WARN", "WARNING"].includes(severity.toUpperCase()))
-			.reduce((sum, [, count]) => sum + count, 0)
+	const bars = Arr.map(points, (point) => {
+		const entries = Rec.toEntries(point.series)
+		const total = Arr.reduce(entries, 0, (sum, [, count]) => sum + count)
+		const errors = Arr.reduce(
+			Arr.filter(entries, ([severity]) => ["ERROR", "FATAL"].includes(Str.toUpperCase(severity))),
+			0,
+			(sum, [, count]) => sum + count,
+		)
+		const warnings = Arr.reduce(
+			Arr.filter(entries, ([severity]) => ["WARN", "WARNING"].includes(Str.toUpperCase(severity))),
+			0,
+			(sum, [, count]) => sum + count,
+		)
 		return { bucket: point.bucket, total, errors, warnings }
 	})
-	const totals = bars.reduce(
-		(sum, bar) => ({
-			lines: sum.lines + bar.total,
-			errors: sum.errors + bar.errors,
-			warnings: sum.warnings + bar.warnings,
-		}),
-		{ lines: 0, errors: 0, warnings: 0 },
-	)
-	const peak = Math.max(...bars.map((bar) => bar.total), 1)
+	const totals = Arr.reduce(bars, { lines: 0, errors: 0, warnings: 0 }, (sum, bar) => ({
+		lines: sum.lines + bar.total,
+		errors: sum.errors + bar.errors,
+		warnings: sum.warnings + bar.warnings,
+	}))
+	const peak = Math.max(...Arr.map(bars, (bar) => bar.total), 1)
 	return vstack(h, { gap: "2.5" }, [
 		hstack(h, { align: "baseline", wrap: true, className: "gap-x-4 gap-y-1" }, [
 			rowLabel(h, "Logs"),
@@ -198,7 +203,7 @@ const logsRow = (h: H, points: ReadonlyArray<typeof LogBucket.Type>): Html => {
 		]),
 		h.div(
 			[h.Class("flex h-10 items-end gap-px"), h.AriaHidden(true)],
-			bars.map((bar) =>
+			Arr.map(bars, (bar) =>
 				h.keyed("span")(
 					bar.bucket,
 					[
@@ -313,16 +318,23 @@ const escalation = (h: H, model: Model): ReadonlyArray<Html> =>
 
 const escalationPair = (h: H, attempt: typeof Escalation.Type | null): ReadonlyArray<Html> => {
 	if (attempt === null) return []
-	const failedCount = attempt.destinations.filter((destination) => destination.status === "failed").length
+	const failedCount = Arr.filter(
+		attempt.destinations,
+		(destination) => destination.status === "failed",
+	).length
 	return [
 		pair(h, "Escalation", [
 			h.span(
 				[
 					h.Class(attempt.status === "failed" ? "text-severity-error" : "text-foreground"),
 					h.Title(
-						attempt.destinations
-							.map((destination) => `${destination.name}: ${destination.status}`)
-							.join("\n"),
+						Arr.join(
+							Arr.map(
+								attempt.destinations,
+								(destination) => `${destination.name}: ${destination.status}`,
+							),
+							"\n",
+						),
 					),
 				],
 				[
@@ -338,7 +350,7 @@ const escalationPair = (h: H, attempt: typeof Escalation.Type | null): ReadonlyA
 }
 
 const referenceLink = (h: H, label: string, url: string): Html =>
-	url.startsWith("/")
+	Str.startsWith("/")(url)
 		? link(h, url, "truncate text-primary hover:underline active:underline", [label])
 		: h.a(
 				[
@@ -403,7 +415,7 @@ export const investigationMeta = (h: H, model: Model, investigation: V2Investiga
 								]),
 							]
 						: []),
-					...snapshot.references.map((reference) =>
+					...Arr.map(snapshot.references, (reference) =>
 						pair(h, reference.label, [referenceLink(h, reference.label, reference.url)]),
 					),
 					...(issueId ? escalation(h, model) : []),
@@ -447,16 +459,11 @@ type EvidenceItem = NonNullable<V2Investigation["report"]>["evidence"][number]
 export type TipTrigger = (id: string) => ReadonlyArray<ChildAttribute>
 
 /** `EvidenceChips`: the traces (full id on a tooltip) and log patterns behind a finding. */
-export const evidenceChips = (
-	h: H,
-	item: EvidenceItem,
-	place: ChipPlace,
-	trigger: TipTrigger,
-): Html | null =>
+export const evidenceChips = (h: H, item: EvidenceItem, place: ChipPlace, trigger: TipTrigger): Html | null =>
 	item.traceIds.length === 0 && item.logPatterns.length === 0
 		? null
 		: hstack(h, { gap: "1.5", wrap: true }, [
-				...item.traceIds.map((traceId) =>
+				...Arr.map(item.traceIds, (traceId) =>
 					h.keyed("a")(
 						traceId,
 						[
@@ -476,7 +483,7 @@ export const evidenceChips = (
 						],
 					),
 				),
-				...item.logPatterns.map((pattern) =>
+				...Arr.map(item.logPatterns, (pattern) =>
 					inlineCode(
 						h,
 						{ className: "bg-surface-strong px-1.5 py-0.5 text-2xs text-muted-foreground" },
@@ -514,7 +521,7 @@ const hasContent = (item: EvidenceItem) =>
 
 /** `EvidenceTab`. */
 export const evidenceTab = (h: H, investigation: V2Investigation, trigger: TipTrigger): Html => {
-	const evidence = (investigation.report?.evidence ?? []).filter(hasContent)
+	const evidence = Arr.filter(investigation.report?.evidence ?? [], hasContent)
 	if (evidence.length === 0)
 		return h.div(
 			[h.Class("flex shrink-0 flex-col gap-6")],
@@ -529,7 +536,7 @@ export const evidenceTab = (h: H, investigation: V2Investigation, trigger: TipTr
 				]),
 			],
 		)
-	const traceCount = evidence.reduce((total, item) => total + item.traceIds.length, 0)
+	const traceCount = Arr.reduce(evidence, 0, (total, item) => total + item.traceIds.length)
 	return h.div(
 		[h.Class("flex shrink-0 flex-col gap-6")],
 		[
@@ -541,7 +548,7 @@ export const evidenceTab = (h: H, investigation: V2Investigation, trigger: TipTr
 				}),
 				h.ol(
 					[h.Class("flex flex-col border-t")],
-					evidence.map((item, index) => {
+					Arr.map(evidence, (item, index) => {
 						const chips = evidenceChips(h, item, "evidence", trigger)
 						return h.keyed("li")(
 							`${index}:${item.note}`,
@@ -553,7 +560,7 @@ export const evidenceTab = (h: H, investigation: V2Investigation, trigger: TipTr
 											"mt-0.5 w-5.5 shrink-0 font-mono text-xs font-medium text-muted-foreground tabular-nums",
 										),
 									],
-									[String(index + 1).padStart(2, "0")],
+									[Str.padStart(2, "0")(String(index + 1))],
 								),
 								h.div(
 									[h.Class("flex min-w-0 flex-1 flex-col gap-2")],

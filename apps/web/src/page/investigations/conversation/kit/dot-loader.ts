@@ -1,6 +1,7 @@
 import "../../../../components/dotmatrix-loader.css"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr } from "effect"
 
 // The dot loader over `Dotm3x3_6`: a 3×3 matrix of 4 px square dots breathing out from its
 // centre. Each dot carries the animation class and the reduced-motion resting opacity inline:
@@ -95,7 +96,7 @@ export const dotLoader = <M>(h: HtmlBuilder<M>, options: DotLoaderOptions = {}):
 								"grid-template-rows": "repeat(3, minmax(0, 1fr))",
 							}),
 						],
-						[0, 1, 2, 3, 4, 5, 6, 7, 8].map((index) => dot(h, index)),
+						Arr.map([0, 1, 2, 3, 4, 5, 6, 7, 8], (index) => dot(h, index)),
 					),
 				],
 			),

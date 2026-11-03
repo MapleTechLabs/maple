@@ -3,6 +3,7 @@ import { drawPlant, placer } from "./maple-scenery"
 import type { Blob } from "./maple-scenery-field"
 import { hash, type Prototypes, type Sketch } from "./maple-scenery-sketch"
 import type { Vec3 } from "./types"
+import { Array as Arr } from "effect"
 
 /** The meadow floor's height; terrain steps up from here. */
 const BASE = -0.15
@@ -19,7 +20,7 @@ function terrace(
 	side: (nx: number, nz: number) => string,
 ) {
 	const ring = layer.outline
-	ring.forEach(([ax, az], k) => {
+	Arr.forEach(ring, ([ax, az], k) => {
 		const [bx, bz] = ring[(k + 1) % ring.length] ?? [ax, az]
 		// Fan wound so the top faces up; walls wound so they face outward.
 		sketch.flat([layer.cx, y1, layer.cz, bx, y1, bz, ax, y1, az], top)
@@ -38,24 +39,24 @@ export function drawHill(sketch: Sketch, stock: Prototypes, palette: InkPalette,
 	const foot = hill[0],
 		crown = hill.at(-1)
 	if (!foot || !crown) return
-	const heights = hill.map((_, i) => 0.34 + hash(i, foot.cx) * 0.14)
-	const level = (i: number) => BASE + heights.slice(0, i).reduce((sum, h) => sum + h, 0)
+	const heights = Arr.map(hill, (_, i) => 0.34 + hash(i, foot.cx) * 0.14)
+	const level = (i: number) => BASE + Arr.reduce(heights.slice(0, i), 0, (sum, h) => sum + h)
 	// The steep face is the side the upper steps crowd toward.
 	const sx = crown.cx - foot.cx,
 		sz = crown.cz - foot.cz
 	const reach = Math.hypot(sx, sz) || 1
 	const steepness = (nx: number, nz: number) => (nx * sx + nz * sz) / reach
 	const moss = fade(palette.plinth, palette.evergreen, 0.35)
-	hill.forEach((layer, i) =>
+	Arr.forEach(hill, (layer, i) =>
 		terrace(sketch, layer, level(i), level(i + 1), moss, (nx, nz) =>
 			steepness(nx, nz) > 0.1 || i > 1 ? palette.stone : palette.soil,
 		),
 	)
-	hill.forEach((layer, i) => {
+	Arr.forEach(hill, (layer, i) => {
 		const next = hill[i + 1]
 		const y = level(i + 1)
 		// Exposed ledges: rocks half sunk along each step's steep rim.
-		layer.outline.forEach(([x, z], k) => {
+		Arr.forEach(layer.outline, ([x, z], k) => {
 			const [nx, nz] = [x - layer.cx, z - layer.cz]
 			const n = Math.hypot(nx, nz) || 1
 			if (k % 3 !== 0 || steepness(nx / n, nz / n) < 0.3) return
@@ -89,7 +90,7 @@ export function drawMound(
 ) {
 	const top = fade(palette.plinth, palette.evergreen, 0.15)
 	const rise = 0.2
-	layers.forEach((layer, i) =>
+	Arr.forEach(layers, (layer, i) =>
 		terrace(sketch, layer, BASE + i * rise, BASE + (i + 1) * rise, top, () => palette.soil),
 	)
 	const crown = layers.at(-1)
@@ -113,7 +114,7 @@ export function drawMound(
 /** The lake: open water with an inked shore, reeds in clumps along it and a few lily pads. */
 export function drawLake(sketch: Sketch, stock: Prototypes, palette: InkPalette, lake: Blob) {
 	const y = BASE + 0.018
-	lake.outline.forEach(([ax, az], k) => {
+	Arr.forEach(lake.outline, ([ax, az], k) => {
 		const [bx, bz] = lake.outline[(k + 1) % lake.outline.length] ?? [ax, az]
 		sketch.flat([lake.cx, y, lake.cz, bx, y, bz, ax, y, az], palette.water)
 		sketch.lines([ax, y, az, bx, y, bz])
@@ -191,13 +192,17 @@ function drawStep(
 	y: number,
 	open: (angle: number, depth: number) => readonly [number, number] | null,
 ) {
-	const spots = Array.from({ length: 12 }, (_, k) => open((k / 12) * Math.PI * 2 + i, 0.62))
-		.filter((spot): spot is readonly [number, number] => spot !== null)
+	const spots = Arr.filter(
+		Array.from({ length: 12 }, (_, k) => open((k / 12) * Math.PI * 2 + i, 0.62)),
+		(spot): spot is readonly [number, number] => spot !== null,
+	)
 		.sort(([ax, az], [bx, bz]) => hash(ax, az) - hash(bx, bz))
-		.filter(([x, z], k, all) => all.slice(0, k).every(([ox, oz]) => Math.hypot(x - ox, z - oz) > 0.8))
+		.filter(([x, z], k, all) =>
+			Arr.every(all.slice(0, k), ([ox, oz]) => Math.hypot(x - ox, z - oz) > 0.8),
+		)
 	const top = i === count - 1
 	const trees = top ? 0 : i === 0 || i === count - 2 ? 2 : 1
-	spots.slice(0, trees).forEach(([x, z], k) => {
+	Arr.forEach(spots.slice(0, trees), ([x, z], k) => {
 		const kind = i === 0 ? "maple" : k % 2 === 0 ? "pine" : "spruce"
 		drawPlant(
 			sketch,
@@ -239,7 +244,7 @@ function drawStair(
 			: best,
 	)
 	const [ox, oz] = [Math.cos(gentle), Math.sin(gentle)]
-	hill.forEach((layer, i) => {
+	Arr.forEach(hill, (layer, i) => {
 		const r = layer.radiusAt(gentle)
 		const x = layer.cx + ox * r,
 			z = layer.cz + oz * r

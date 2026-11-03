@@ -8,6 +8,7 @@ import {
 	metricsSum,
 	traces,
 } from "./datasources"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /**
  * Schema-parity contract for the Rust ingest service.
@@ -124,15 +125,15 @@ function metricCommonKeys(): string[] {
 
 function topLevelKey(jsonPath: string): string | null {
 	// `$.foo` / `$.foo[:]` / `$.foo.bar.baz`  ->  `foo`
-	if (!jsonPath.startsWith("$.")) return null
-	const tail = jsonPath.slice(2)
+	if (!Str.startsWith("$.")(jsonPath)) return null
+	const tail = Str.slice(2)(jsonPath)
 	const head = tail.split(/[.[]/, 1)[0]
 	return head || null
 }
 
 function emittedTopLevelKeys(datasource: AnyDatasource): Set<string> {
 	const keys = new Set<string>()
-	for (const column of Object.values(datasource.options.schema)) {
+	for (const column of Rec.values(datasource.options.schema)) {
 		if (getColumnType(column).modifiers.defaultExpression !== undefined) continue
 		const path = getColumnJsonPath(column)
 		if (!path) continue
@@ -143,8 +144,8 @@ function emittedTopLevelKeys(datasource: AnyDatasource): Set<string> {
 }
 
 function diff(a: Set<string>, b: Set<string>): { missing: string[]; extra: string[] } {
-	const missing = [...a].filter((k) => !b.has(k)).sort()
-	const extra = [...b].filter((k) => !a.has(k)).sort()
+	const missing = Arr.filter([...a], (k) => !b.has(k)).sort()
+	const extra = Arr.filter([...b], (k) => !a.has(k)).sort()
 	return { missing, extra }
 }
 

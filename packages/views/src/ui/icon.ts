@@ -8,6 +8,7 @@ import {
 	type IconName,
 	type IconNode,
 } from "./icons.generated"
+import { Array as Arr, String as Str } from "effect"
 
 export type { IconName } from "./icons.generated"
 
@@ -32,13 +33,13 @@ const renderNode = <Message>(
 	size: string,
 	id: string,
 ): Html => {
-	const own = attributes.flatMap(([name, value]): ReadonlyArray<Attribute<Message>> => {
+	const own = Arr.flatMap(attributes, ([name, value]): ReadonlyArray<Attribute<Message>> => {
 		if (options.removedAttributes?.includes(name) === true) return []
 		if (value === ICON_CLASS_MARK)
 			return options.className === undefined || options.className === ""
 				? []
 				: [h.Class(options.className)]
-		return [h.Attribute(name, value === ICON_SIZE_MARK ? size : value.replaceAll(ICON_ID_MARK, id))]
+		return [h.Attribute(name, value === ICON_SIZE_MARK ? size : Str.replaceAll(ICON_ID_MARK, id)(value))]
 	})
 	const root = tag === "svg"
 	return h[tag](
@@ -47,13 +48,16 @@ const renderNode = <Message>(
 			...(root && options.style !== undefined ? [h.Style(options.style)] : []),
 			...(root ? (options.attributes ?? []) : []),
 		],
-		children.map((child) => renderNode(h, child, {}, size, id)),
+		Arr.map(children, (child) => renderNode(h, child, {}, size, id)),
 	)
 }
 
 /** A generated icon with its size, class, style and attributes. */
-export const icon = <Message>(h: HtmlBuilder<Message>, name: IconName, options: IconOptions<Message> = {}): Html =>
-	iconNode(h, ICON_TREES[name], name, options)
+export const icon = <Message>(
+	h: HtmlBuilder<Message>,
+	name: IconName,
+	options: IconOptions<Message> = {},
+): Html => iconNode(h, ICON_TREES[name], name, options)
 
 /** One tree drawn without the `ICON_TREES` lookup (`control-icons`), so a bundle keeps only it. */
 export const iconNode = <Message>(
@@ -61,7 +65,8 @@ export const iconNode = <Message>(
 	tree: IconNode,
 	name: IconName,
 	options: IconOptions<Message> = {},
-): Html => renderNode(h, tree, options, String(options.size ?? ICON_DEFAULT_SIZES[name] ?? 24), options.id ?? name)
+): Html =>
+	renderNode(h, tree, options, String(options.size ?? ICON_DEFAULT_SIZES[name] ?? 24), options.id ?? name)
 
 /** `style={{ color }}` when the call site has a colour. */
 export const iconColor = (color: string | undefined): Pick<IconOptions<never>, "style"> =>

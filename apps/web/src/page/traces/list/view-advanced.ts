@@ -17,6 +17,7 @@ import { autocompleteOf, isSuggesting } from "./advanced"
 import { ADVANCED_TEXTAREA_ID, MountSuggestions, MountWhereEditor } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { Array as Arr } from "effect"
 
 // The advanced filter dialog around `WhereClauseEditor`.
 
@@ -39,7 +40,7 @@ export const suggestionList = (h: H, model: Model): ReadonlyArray<Html> => {
 				),
 				h.OnMount(MountSuggestions()),
 			],
-			suggestions.map((suggestion, index) => {
+			Arr.map(suggestions, (suggestion, index) => {
 				const isActive = index === model.advanced.activeIndex
 				return pressable(
 					h,
@@ -47,7 +48,9 @@ export const suggestionList = (h: H, model: Model): ReadonlyArray<Html> => {
 						onClick: Message.ClickedAdvancedSuggestion({ index }),
 						className: cn(
 							"flex w-full items-center justify-between gap-2 px-2 py-1 text-left text-xs",
-							isActive ? "bg-accent text-accent-foreground" : "hover:bg-surface-sunken active:bg-surface-sunken",
+							isActive
+								? "bg-accent text-accent-foreground"
+								: "hover:bg-surface-sunken active:bg-surface-sunken",
 						),
 						attributes: [
 							h.Key(suggestion.id),
@@ -111,7 +114,7 @@ const editor = (h: H, model: Model): Html => {
 											"px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] break-words whitespace-pre-wrap",
 										),
 									],
-									tokenizeWhereClause(draft).map((token) =>
+									Arr.map(tokenizeWhereClause(draft), (token) =>
 										h.span(
 											[h.Style({ color: WHERE_CLAUSE_TOKEN_COLOR[token.type] })],
 											[token.text],
@@ -138,7 +141,7 @@ const warningsOf = (h: H, draft: string): ReadonlyArray<Html> => {
 						[
 							h.ul(
 								[h.Class("space-y-1")],
-								warnings.map((warning) => h.li([], [warning])),
+								Arr.map(warnings, (warning) => h.li([], [warning])),
 							),
 						],
 						"text-severity-warn",

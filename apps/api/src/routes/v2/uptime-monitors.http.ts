@@ -10,7 +10,7 @@ import {
 	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
 import type { V2UptimeMonitor } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Array as Arr, Record as Rec } from "effect"
 import { UPTIME_REDACTED_HEADER_VALUE } from "@maple/domain/uptime"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
@@ -53,7 +53,7 @@ const toV2UptimeMonitor = (monitor: UptimeMonitorRecord): V2UptimeMonitor => ({
 						error: monitor.state.lastCheck.error,
 						trace_id: monitor.state.lastCheck.traceId,
 					},
-		recent: monitor.state.recent.map((check) => ({
+		recent: Arr.map(monitor.state.recent, (check) => ({
 			at: isoTimestamp(check.at),
 			ok: check.ok,
 			duration_ms: check.durationMs,
@@ -69,8 +69,8 @@ const forReader = (monitor: V2UptimeMonitor, canWrite: boolean): V2UptimeMonitor
 	if (canWrite) return monitor
 	const readable = { ...monitor, heartbeat_url: null }
 	if (readable.config.type !== "http" || readable.config.headers === undefined) return readable
-	const headers = Object.fromEntries(
-		Object.keys(readable.config.headers).map((name) => [name, UPTIME_REDACTED_HEADER_VALUE]),
+	const headers = Rec.fromEntries(
+		Arr.map(Rec.keys(readable.config.headers), (name) => [name, UPTIME_REDACTED_HEADER_VALUE]),
 	)
 	return { ...readable, config: { ...readable.config, headers } }
 }
@@ -100,7 +100,7 @@ export const HttpV2UptimeMonitorsLive = HttpApiBuilder.group(MapleApiV2, "uptime
 					const monitors = yield* service.list(tenant.orgId)
 					const canWrite = isAdmin(tenant.roles)
 					const page = yield* paginateArray(
-						monitors.map((monitor) => forReader(toV2UptimeMonitor(monitor), canWrite)),
+						Arr.map(monitors, (monitor) => forReader(toV2UptimeMonitor(monitor), canWrite)),
 						query,
 					)
 					return { object: "list" as const, ...page }

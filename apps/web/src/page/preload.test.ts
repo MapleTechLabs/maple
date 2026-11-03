@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "./contract"
 import * as Preload from "./preload"
@@ -33,7 +33,7 @@ describe("intent preload", () => {
 	})
 
 	test("the trace page preloads its span hierarchy only", () => {
-		expect(preloaded().map((command) => command.name)).toEqual(["FetchSpanHierarchy"])
+		expect(Arr.map(preloaded(), (command) => command.name)).toEqual(["FetchSpanHierarchy"])
 	})
 
 	test("a page instance holds every key it asks for, and a new one releases the rest", () => {
@@ -48,7 +48,11 @@ describe("intent preload", () => {
 	})
 
 	test("an open instance's new window releases the keys no slot stands on any more", () => {
-		const nextWindow = preloadRoute(AppRoute.Trace({ traceId: "a".repeat(32), search: {} }), context, 0)
+		const nextWindow = preloadRoute(
+			AppRoute.Trace({ traceId: Str.repeat(32)("a"), search: {} }),
+			context,
+			0,
+		)
 		const nextKey = Option.getOrThrow(Preload.keyOfCommand(nextWindow[0]!))
 		const entered = Preload.held(Preload.init(), holder, preloaded(), () => [keyOf()])
 		const moved = Preload.held(entered.model, holder, nextWindow, () =>

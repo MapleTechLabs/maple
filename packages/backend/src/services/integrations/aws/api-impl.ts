@@ -6,7 +6,7 @@
 import * as Credentials from "@distilled.cloud/aws/Credentials"
 import { UnknownAwsError } from "@distilled.cloud/aws/Errors"
 import * as IAM from "@distilled.cloud/aws/iam"
-import { Duration, Effect, Redacted, Schema, Stream } from "effect"
+import { Duration, Effect, Redacted, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { AwsApiError } from "./errors"
 
@@ -69,7 +69,7 @@ const decodeStsAnswer = Schema.decodeUnknownEffect(StsAnswer)
  * provider" and read as disconnected.
  */
 const stsError = (code: string, detail: string | undefined): AwsApiError => {
-	const message = `AssumeRoleWithWebIdentity: ${detail === undefined || detail === "" ? code : detail.slice(0, 300)}`
+	const message = `AssumeRoleWithWebIdentity: ${detail === undefined || detail === "" ? code : Str.slice(0, 300)(detail)}`
 	if (THROTTLE_CODES.has(code)) return new AwsApiError({ message, kind: "throttled", code })
 	const setupMissing =
 		code === "InvalidIdentityToken" &&
@@ -207,8 +207,8 @@ export const checkRole = Effect.fn("AwsApi.checkRole")(function* (
 	)
 	return {
 		accountId: /^arn:aws:sts::([0-9]{12}):/u.exec(sessionArn)?.[1] ?? "",
-		tags: (role.Role.Tags ?? []).map((tag) => ({ key: tag.Key, value: tag.Value })),
-		attachedPolicyNames: attached.flatMap((policy) =>
+		tags: Arr.map(role.Role.Tags ?? [], (tag) => ({ key: tag.Key, value: tag.Value })),
+		attachedPolicyNames: Arr.flatMap(attached, (policy) =>
 			policy.PolicyName === undefined ? [] : [policy.PolicyName],
 		),
 	} satisfies AwsRoleReport

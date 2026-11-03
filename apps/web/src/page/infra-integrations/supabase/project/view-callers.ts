@@ -13,6 +13,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { keyedBody, panelEmpty, panelLink, sectionPanel } from "../panel"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // "Services calling this project": the org's client spans to the project's API and pooler.
 
@@ -26,7 +27,7 @@ const trend = (h: H, caller: SupabaseProjectCaller, window: SparkWindow | null):
 				[h.Class("h-5 w-24 text-chart-p50")],
 				[
 					windowSparkline(h, {
-						points: caller.series.map((bucket) => ({
+						points: Arr.map(caller.series, (bucket) => ({
 							bucket: bucket.bucket,
 							value: bucket.calls,
 						})),
@@ -49,7 +50,9 @@ const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: Spa
 		[
 			h.a(
 				[
-					h.Class("flex w-0 min-w-40 flex-1 items-center gap-2 text-xs hover:text-primary active:text-primary"),
+					h.Class(
+						"flex w-0 min-w-40 flex-1 items-center gap-2 text-xs hover:text-primary active:text-primary",
+					),
 					h.Href(
 						hrefOf(
 							AppRoute.Service({
@@ -65,9 +68,9 @@ const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: Spa
 				],
 				[
 					statusDot(h, { tone: "custom", className: "bg-chart-1" }),
-					typography(h, { mono: true, truncate: true, attributes: [h.Title(caller.serviceName)] },
-						[caller.serviceName],
-					),
+					typography(h, { mono: true, truncate: true, attributes: [h.Title(caller.serviceName)] }, [
+						caller.serviceName,
+					]),
 				],
 			),
 			h.span(
@@ -134,8 +137,8 @@ export const callersPanel = (h: H, model: Model, spark: SparkWindow | null): Htm
 						: dataTable(
 								h,
 								{ ariaLabel: "Services calling this project", className: "border-b-0" },
-								HEAD.map((column) => columnHead(h, column)),
-								response.callers.map((caller) => callerRow(h, model, caller, spark)),
+								Arr.map(HEAD, (column) => columnHead(h, column)),
+								Arr.map(response.callers, (caller) => callerRow(h, model, caller, spark)),
 							),
 			}),
 		],

@@ -30,6 +30,7 @@ import { workersCard, zoneBoard } from "./view-cloudflare-board"
 import { zonesDialog } from "./view-cloudflare-zones"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The connected `CloudflareAccountCard` and `CloudflareStatCards`.
 
@@ -45,7 +46,7 @@ const accountsStrip = (h: H, accounts: ReadonlyArray<ConnectedAccountEntry>): Ht
 				}),
 				h.ul(
 					[h.Class("divide-y divide-border-subtle")],
-					accounts.map((account) =>
+					Arr.map(accounts, (account) =>
 						item(h, { variant: "flush", size: "lg", className: "py-2.5", tag: "li" }, [
 							itemMedia(h, {}, [
 								icon(h, "CloudflareMonoIcon", {
@@ -105,12 +106,12 @@ const statCards = (h: H, usage: CloudflareUsageResponse | null): Html => {
 	if (usage === null)
 		return h.div(
 			[h.Class("flex flex-col gap-3 sm:flex-row")],
-			[0, 1, 2].map(() => skeleton(h, "h-[104px] flex-1 rounded-md")),
+			Arr.map([0, 1, 2], () => skeleton(h, "h-[104px] flex-1 rounded-md")),
 		)
 	const workerServices = workerServicesOf(usage)
 	const totalPoints = usage.totalRequests > 0 ? toRowUsage(usage, usage.services).points : undefined
-	const active = workerServices.filter((service) => service.totalRequests > 0)
-	const invocations = workerServices.reduce((sum, service) => sum + service.totalRequests, 0)
+	const active = Arr.filter(workerServices, (service) => service.totalRequests > 0)
+	const invocations = Arr.reduce(workerServices, 0, (sum, service) => sum + service.totalRequests)
 	const workerPoints = invocations > 0 ? toRowUsage(usage, workerServices).points : undefined
 	return statRail(h, { columns: 3 }, [
 		statRailItem(h, {

@@ -4,7 +4,7 @@
 // strings (`'YYYY-MM-DD HH:MM:SS'`, UTC); chDB returns tz-less UTC strings too.
 // Everything the user reads is rendered in the browser's local zone.
 
-import { DateTime } from "effect"
+import { DateTime, Array as Arr, String as Str } from "effect"
 import { computeBucketSeconds, formatWarehouseDateTime } from "@maple/query-engine"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
@@ -49,7 +49,7 @@ const MINUTE_MS = 60 * 1000
 const END_PAD_MS = 60 * MINUTE_MS
 
 export function isRangeKey(value: string | null | undefined): value is string {
-	return TIME_RANGES.some((range) => range.key === value)
+	return Arr.some(TIME_RANGES, (range) => range.key === value)
 }
 
 export function resolveRange(key: string | undefined): TimeRange {
@@ -88,7 +88,7 @@ export function parseClickHouseDateTime(chDateTime: WarehouseTime): number | nul
 	return Number.isFinite(ms) && ms > 0 ? ms : null
 }
 
-const pad = (value: number, width = 2) => String(value).padStart(width, "0")
+const pad = (value: number, width = 2) => Str.padStart(width, "0")(String(value))
 
 function isSameLocalDay(a: Date, b: Date): boolean {
 	return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()

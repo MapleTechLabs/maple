@@ -2,7 +2,7 @@
 import { describe, it } from "@effect/vitest"
 import { createHash } from "node:crypto"
 import { sha256File } from "@maple/local-server/checkpoint-digest"
-import { Clock, Duration, Effect, Exit, Option } from "effect"
+import { Clock, Duration, Effect, Exit, Option, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { deepStrictEqual, match, ok, rejects, strictEqual, throws } from "node:assert"
 import {
@@ -230,15 +230,15 @@ describe("writeBackupConfig", () => {
 			const runtimePath = join(dataDir, "runtime.xml")
 			writeBackupConfig(runtimePath)
 			const runtime = readFileSync(runtimePath, "utf8")
-			ok(runtime.includes("<allowed_disk>default</allowed_disk>"))
-			ok(runtime.includes("<allowed_path>backups</allowed_path>"))
+			ok(Str.includes("<allowed_disk>default</allowed_disk>")(runtime))
+			ok(Str.includes("<allowed_path>backups</allowed_path>")(runtime))
 			strictEqual(lstatSync(runtimePath).mode & 0o777, 0o600)
 
 			const restorePath = join(dataDir, "restore.xml")
 			writeBackupConfig(restorePath, join(dataDir, "source & <store>"))
 			const restore = readFileSync(restorePath, "utf8")
-			ok(restore.includes("<allowed_disk>src</allowed_disk>"))
-			ok(restore.includes("source &amp; &lt;store&gt;"))
+			ok(Str.includes("<allowed_disk>src</allowed_disk>")(restore))
+			ok(Str.includes("source &amp; &lt;store&gt;")(restore))
 		})
 	})
 })
@@ -993,13 +993,13 @@ describe("live restore transaction reconciliation", () => {
 			ok(!existsSync(restoreTransactionPath(dataDir)))
 			const siblingNames = readdirSync(dirname(dataDir))
 			ok(
-				siblingNames.some((name) =>
-					name.startsWith(`${basename(dataDir)}.restore-${operationId}.quarantine-`),
+				Arr.some(siblingNames, (name) =>
+					Str.startsWith(`${basename(dataDir)}.restore-${operationId}.quarantine-`)(name),
 				),
 			)
 			ok(
-				siblingNames.some((name) =>
-					name.startsWith(`${basename(dataDir)}.restore-transaction.json.quarantine-`),
+				Arr.some(siblingNames, (name) =>
+					Str.startsWith(`${basename(dataDir)}.restore-transaction.json.quarantine-`)(name),
 				),
 			)
 		})

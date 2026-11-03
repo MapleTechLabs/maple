@@ -2,7 +2,7 @@ import { strictEqual } from "node:assert"
 import { mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import { describe, it } from "vitest"
 import {
 	ensureEventConsumerToken,
@@ -41,7 +41,7 @@ describe("local event consumer authorization", () => {
 			} catch (error) {
 				message = error instanceof Error ? error.message : String(error)
 			}
-			strictEqual(message.includes("not a real file"), true)
+			strictEqual(Str.includes("not a real file")(message), true)
 		} finally {
 			rmSync(parent, { recursive: true, force: true })
 		}

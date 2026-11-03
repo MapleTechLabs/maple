@@ -1,4 +1,4 @@
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData, type Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { Resources } from "../../../platform/resources"
@@ -61,7 +61,7 @@ export const remember = <A>(
 export const mergeSteps = <Patch, M>(steps: ReadonlyArray<Step<Patch, M>>): Step<Patch, M> =>
 	steps.reduce<Step<Patch, M>>(
 		(acc, step) => {
-			const isDuplicate = step.keys.length > 0 && step.keys.every((key) => acc.keys.includes(key))
+			const isDuplicate = step.keys.length > 0 && Arr.every(step.keys, (key) => acc.keys.includes(key))
 			return {
 				patch: { ...acc.patch, ...step.patch },
 				commands: isDuplicate ? acc.commands : [...acc.commands, ...step.commands],

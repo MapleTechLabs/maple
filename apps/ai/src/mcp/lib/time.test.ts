@@ -1,5 +1,5 @@
 import { warehouseDateTime, type WarehouseDateTime } from "@maple/query-engine"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { toInputSchema } from "../tools/registry"
 import { WarehouseTimeInput } from "@maple/query-engine"
@@ -75,8 +75,8 @@ describe("resolveTimeRange", () => {
 		const { st, et } = resolveTimeRange(undefined, undefined)
 		expect(st).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
 		expect(et).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
-		const startMs = new Date(st.replace(" ", "T") + "Z").getTime()
-		const endMs = new Date(et.replace(" ", "T") + "Z").getTime()
+		const startMs = new Date(Str.replace(" ", "T")(st) + "Z").getTime()
+		const endMs = new Date(Str.replace(" ", "T")(et) + "Z").getTime()
 		expect((endMs - startMs) / 3_600_000).toBeCloseTo(6, 0)
 	})
 
@@ -92,8 +92,8 @@ describe("resolveTimeRange", () => {
 
 	it("preserves numeric third-arg as defaultHours (back-compat)", () => {
 		const { st, et } = resolveTimeRange(undefined, undefined, 1)
-		const startMs = new Date(st.replace(" ", "T") + "Z").getTime()
-		const endMs = new Date(et.replace(" ", "T") + "Z").getTime()
+		const startMs = new Date(Str.replace(" ", "T")(st) + "Z").getTime()
+		const endMs = new Date(Str.replace(" ", "T")(et) + "Z").getTime()
 		expect((endMs - startMs) / 3_600_000).toBeCloseTo(1, 0)
 	})
 
@@ -151,7 +151,7 @@ describe("resolveWindow", () => {
 			st: "2026-08-20 15:00:00",
 			et: "2026-08-20 17:04:05",
 		})
-		expect(result._tag === "Resolved" && result.notices.join()).toContain("in the future")
+		expect(result._tag === "Resolved" && Arr.join(result.notices, ",")).toContain("in the future")
 	})
 
 	it("reads the last 15 minutes for a start_time minutes ahead of server now, and says so", () => {
@@ -161,7 +161,7 @@ describe("resolveWindow", () => {
 			st: "2026-08-20 16:49:05",
 			et: "2026-08-20 17:04:05",
 		})
-		expect(result._tag === "Resolved" && result.notices.join()).toContain("ahead of server now")
+		expect(result._tag === "Resolved" && Arr.join(result.notices, ",")).toContain("ahead of server now")
 	})
 
 	it("rejects a start_time that is not in the past, naming server now", () => {
@@ -176,7 +176,7 @@ describe("resolveWindow", () => {
 
 	it("warns on a window shorter than a minute", () => {
 		const result = resolve("2026-08-20 15:00:00", "2026-08-20 15:00:14")
-		expect(result._tag === "Resolved" && result.notices.join()).toContain("only 14s wide")
+		expect(result._tag === "Resolved" && Arr.join(result.notices, ",")).toContain("only 14s wide")
 	})
 
 	it("defaults start_time relative to end_time, not to now", () => {
@@ -190,7 +190,7 @@ describe("resolveWindow", () => {
 			st: "2026-08-07 23:59:59",
 			et: "2026-08-14 23:59:59",
 		})
-		const notice = result._tag === "Resolved" ? result.notices.join() : ""
+		const notice = result._tag === "Resolved" ? Arr.join(result.notices, ",") : ""
 		expect(notice).toContain("at most 7 days")
 		expect(notice).not.toContain("query_data")
 	})

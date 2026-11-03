@@ -1,4 +1,4 @@
-import { Effect, Queue, Stream } from "effect"
+import { Effect, Queue, Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import { MinimapMessage } from "./turn-minimap"
 
@@ -50,7 +50,7 @@ export const MountTurnMinimap = Mount.defineStream("MountChatTurnMinimap", {
 					resize.observe(element)
 					const intersection = new IntersectionObserver(
 						(entries) => {
-							entries.forEach((entry) => {
+							Arr.forEach(entries, (entry) => {
 								const id = entry.target.getAttribute("data-message-id")
 								if (id === null) return
 								if (entry.isIntersecting) visible.add(id)

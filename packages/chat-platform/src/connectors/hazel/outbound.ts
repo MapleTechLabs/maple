@@ -22,7 +22,7 @@
  * live socket.
  */
 import { ChatConversationKey } from "@maple/primitives"
-import { Array as Arr, Clock, Duration, Effect, Option, Redacted, Schema } from "effect"
+import { Array as Arr, Clock, Duration, Effect, Option, Redacted, Schema, String as Str } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import type { ConnectorConfig, InboundAction, InboundMessage } from "../../ingress"
 import {
@@ -102,8 +102,8 @@ interface Streamed {
 /** The cheapest action that takes the live text from `previous` to `next`, or none at all. */
 const textUpdate = (previous: string | undefined, next: string): LiveAction | null => {
 	if (previous === next) return null
-	if (previous !== undefined && next.startsWith(previous))
-		return { _tag: "AppendText", text: next.slice(previous.length) }
+	if (previous !== undefined && Str.startsWith(previous)(next))
+		return { _tag: "AppendText", text: Str.slice(previous.length)(next) }
 	return { _tag: "SetText", text: next }
 }
 
@@ -170,14 +170,14 @@ interface Person {
 const MENTION = /@\[userId:([0-9a-f-]{36})\]/gu
 
 const mentionedIds = (text: string): ReadonlyArray<string> =>
-	Array.from(text.matchAll(MENTION)).flatMap((match) => (match[1] === undefined ? [] : [match[1]]))
+	Arr.flatMap(Array.from(text.matchAll(MENTION)), (match) => (match[1] === undefined ? [] : [match[1]]))
 
 /**
  * A conversation's key: the channel (or thread) id without its dashes, which the key's charset
  * refuses. Hazel ids are UUIDs, so nothing is lost.
  */
 const decodeConversationKey = (channelId: string) =>
-	Schema.decodeUnknownOption(ChatConversationKey)(channelId.replaceAll("-", ""))
+	Schema.decodeUnknownOption(ChatConversationKey)(Str.replaceAll("-", "")(channelId))
 
 /** The thread when the turn is in one, the channel otherwise — on Hazel both are channel ids. */
 const channelOf = (target: ChatTarget): string => target.threadId ?? target.channelId
@@ -426,11 +426,11 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 						"history",
 						"/organizations/{organization_id}/users",
 						HttpClientRequest.get(
-							`${API_BASE}/organizations/${encodeURIComponent(workspaceId)}/users?ids=${encodeURIComponent(ids.join(","))}`,
+							`${API_BASE}/organizations/${encodeURIComponent(workspaceId)}/users?ids=${encodeURIComponent(Arr.join(ids, ","))}`,
 						),
 					).pipe(
 						Effect.flatMap((response) => read("history", response, Users, "no list of people")),
-						Effect.map((users) => new Map(users.data.map((user) => [user.id, user]))),
+						Effect.map((users) => new Map(Arr.map(users.data, (user) => [user.id, user]))),
 					)
 
 		return {
@@ -494,10 +494,13 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 					),
 				)
 				const page = yield* read("history", response, HistoryPage, "no list of messages")
-				const messages = Arr.getSomes(page.data.map((raw) => decodeHistoryMessage(raw)))
+				const messages = Arr.getSomes(Arr.map(page.data, (raw) => decodeHistoryMessage(raw)))
 				const ids = [
 					...new Set(
-						messages.flatMap((message) => [message.authorId, ...mentionedIds(message.content)]),
+						Arr.flatMap(messages, (message) => [
+							message.authorId,
+							...mentionedIds(message.content),
+						]),
 					),
 				]
 				// Names are best effort: a page with "Someone" in it beats no context at all.
@@ -505,7 +508,7 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 					Effect.orElseSucceed((): ReadonlyMap<string, Person> => new Map()),
 				)
 				return Arr.getSomes(
-					messages.map((message): Option.Option<ChatHistoryMessage> => {
+					Arr.map(messages, (message): Option.Option<ChatHistoryMessage> => {
 						const at = Date.parse(message.createdAt)
 						if (Number.isNaN(at)) return Option.none()
 						const author = names.get(message.authorId)

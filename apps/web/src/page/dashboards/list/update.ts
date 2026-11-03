@@ -1,4 +1,4 @@
-import { Option, Result } from "effect"
+import { Option, Result, Array as Arr, String as Str } from "effect"
 import { behindToast } from "../kit/store"
 import { Command } from "foldkit"
 import { AppRoute, hrefOf } from "../../../route"
@@ -72,7 +72,7 @@ export const routeChanged = (model: Model, route: Route): Return => {
 		model: {
 			...model,
 			search: route.search,
-			searchDraft: query === model.searchDraft.trim() ? model.searchDraft : query,
+			searchDraft: query === Str.trim(model.searchDraft) ? model.searchDraft : query,
 			tagFilter: { ...model.tagFilter, selected: tagsOf(route.search) },
 		},
 	}
@@ -244,7 +244,7 @@ type WarningToast = Readonly<{ type: "warning"; title: string; description: stri
 const warningsToast = (warnings: ReadonlyArray<string>): WarningToast => ({
 	type: "warning",
 	title: `Imported with ${countLabel(warnings.length, "warning")}`,
-	description: `${warnings.slice(0, 3).join("\n")}${warnings.length > 3 ? `\n+${warnings.length - 3} more` : ""}`,
+	description: `${Arr.join(warnings.slice(0, 3), "\n")}${warnings.length > 3 ? `\n+${warnings.length - 3} more` : ""}`,
 })
 
 /**
@@ -304,7 +304,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ElapsedSearchDebounce: ({ generation }) => {
 			if (generation !== model.searchGeneration) return { model }
-			const trimmed = model.searchDraft.trim()
+			const trimmed = Str.trim(model.searchDraft)
 			return trimmed === queryOf(model.search)
 				? { model }
 				: navigateSearch(model, { q: trimmed === "" ? undefined : trimmed })
@@ -355,7 +355,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}),
 		ToggledFavorite: ({ id }) => {
 			const favorites = model.favorites.includes(id)
-				? model.favorites.filter((favorite) => favorite !== id)
+				? Arr.filter(model.favorites, (favorite) => favorite !== id)
 				: [...model.favorites, id]
 			return {
 				model: { ...model, favorites },
@@ -375,7 +375,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotDeleteDialogMessage: ({ message: inner }) =>
 			model.isDeleting
 				? { model }
-				: dialogStep(model, model.deleteDialog, inner, (deleteDialog) => ({ deleteDialog }), wrapDelete),
+				: dialogStep(
+						model,
+						model.deleteDialog,
+						inner,
+						(deleteDialog) => ({ deleteDialog }),
+						wrapDelete,
+					),
 		ClickedConfirmDelete: () => {
 			const pending = model.pendingDelete
 			if (pending === null || model.isDeleting) return { model }

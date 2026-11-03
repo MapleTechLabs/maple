@@ -3,7 +3,7 @@
  * parent and the only writer: state lives in a `Ref`, every change goes through `mutate` under a
  * single permit, and the store sees each new snapshot before the next decision.
  */
-import { Effect, Ref, type Schema, Semaphore } from "effect"
+import { Effect, Ref, type Schema, Semaphore, Array as Arr, String as Str } from "effect"
 import type { ExecutionProfile } from "../ecosystems"
 import type { AgentContext, ExecutionPolicy } from "../prompts"
 import type { Candidate, UncoveredSurface } from "../results"
@@ -124,7 +124,7 @@ export const withEstimate = (
 export const discardSummary = (paths: ReadonlyArray<string>): string =>
 	paths.length === 0
 		? "result is not exactly one JSON object for its contract"
-		: `result broke its contract at: ${paths.slice(0, 8).join(", ")}${paths.length > 8 ? ` (+${paths.length - 8} more)` : ""}`
+		: `result broke its contract at: ${Arr.join(paths.slice(0, 8), ", ")}${paths.length > 8 ? ` (+${paths.length - 8} more)` : ""}`
 
 type Attempt<A> =
 	| { readonly _tag: "Decoded"; readonly value: A }
@@ -331,7 +331,7 @@ export const makeEngine = (input: AuditRunInput) =>
 				const answer = yield* call(role, agentId, prompt)
 				if (answer === undefined) return NO_TEXT
 				const unread = answer.toolCalls === 0
-				if (answer.text.trim() === "" || unread) {
+				if (Str.trim(answer.text) === "" || unread) {
 					yield* event({
 						_tag: "Agent",
 						role,

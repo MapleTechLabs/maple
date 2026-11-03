@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 /**
  * What the logs search box does with what you typed.
  *
@@ -20,14 +21,14 @@ export function parseLogSearch(raw: string | undefined): LogSearchQuery | undefi
 
 	// Quotes are the escape hatch: they force a text search for something that
 	// would otherwise read as an id (a trace id printed inside a message).
-	if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
-		const quoted = value.slice(1, -1)
+	if (value.length >= 2 && Str.startsWith('"')(value) && Str.endsWith('"')(value)) {
+		const quoted = Str.slice(1, -1)(value)
 		return quoted === "" ? undefined : { kind: "text", text: quoted }
 	}
 
-	if (TRACE_ID.test(value)) return { kind: "trace", traceId: value.toLowerCase() }
+	if (TRACE_ID.test(value)) return { kind: "trace", traceId: Str.toLowerCase(value) }
 	const fromHeader = TRACEPARENT.exec(value)?.[1]
-	if (fromHeader) return { kind: "trace", traceId: fromHeader.toLowerCase() }
+	if (fromHeader) return { kind: "trace", traceId: Str.toLowerCase(fromHeader) }
 
 	return { kind: "text", text: value }
 }

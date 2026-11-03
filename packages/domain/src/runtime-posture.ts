@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 // Runtime posture for the Security Center's Runtimes tab: which language runtime a service reports
 // (`process.runtime.*`, `telemetry.sdk.language`) and how its version stands against the release
 // cycles endoflife.date publishes. Pure, so the web bundle and the API share it.
@@ -59,11 +60,11 @@ const NODE_EMULATORS = new Map<string, RuntimeProduct>([
 
 /** The product a service runs on, undefined when Maple does not track it. */
 export function runtimeProductOf(runtimeName: string, sdkLanguage: string): RuntimeProduct | undefined {
-	const name = runtimeName.trim().toLowerCase()
+	const name = Str.toLowerCase(Str.trim(runtimeName))
 	if (UNVERSIONED_RUNTIMES.has(name)) return undefined
 	const byName = BY_RUNTIME_NAME.find(([pattern]) => pattern.test(name))
 	if (byName !== undefined) return byName[1]
-	const language = sdkLanguage.trim().toLowerCase()
+	const language = Str.toLowerCase(Str.trim(sdkLanguage))
 	// A Node.js SDK may run on Bun or Deno, so `nodejs` only counts with the runtime name above.
 	return name === "" || language === "php" ? BY_SDK_LANGUAGE.get(language) : undefined
 }
@@ -73,15 +74,15 @@ export function runtimeProductOf(runtimeName: string, sdkLanguage: string): Runt
  * prefix, Java's `17.0.9+9` its build, and `1.8.0_392` and `8u392-b08` become `8.0.392`.
  */
 export function normalizeRuntimeVersion(raw: string): string | undefined {
-	const java8 = /^1\.(\d+)\.(\d+)_(\d+)/.exec(raw.trim())
+	const java8 = /^1\.(\d+)\.(\d+)_(\d+)/.exec(Str.trim(raw))
 	if (java8 !== null) return `${java8[1]}.${java8[2]}.${java8[3]}`
-	const update = /^(\d+)u(\d+)/.exec(raw.trim())
+	const update = /^(\d+)u(\d+)/.exec(Str.trim(raw))
 	if (update !== null) return `${update[1]}.0.${update[2]}`
-	const match = /(\d+(?:\.\d+)*)/.exec(raw.trim().replace(/^(v|go)/i, ""))
+	const match = /(\d+(?:\.\d+)*)/.exec(Str.replace(/^(v|go)/i, "")(Str.trim(raw)))
 	return match?.[1]
 }
 
-const parts = (version: string) => version.split(".").map((part) => Number.parseInt(part, 10))
+const parts = (version: string) => Arr.map(Str.split(".")(version), (part) => Number.parseInt(part, 10))
 
 /** Numeric dotted comparison; a missing segment counts as 0. */
 export function compareVersions(a: string, b: string): number {
@@ -109,13 +110,13 @@ export function releaseCycleOf(
 	releases: ReadonlyArray<RuntimeRelease>,
 	version: string,
 ): RuntimeRelease | undefined {
-	return releases
-		.filter((release) => version === release.cycle || version.startsWith(`${release.cycle}.`))
-		.reduce<RuntimeRelease | undefined>(
-			(best, release) =>
-				best === undefined || release.cycle.length > best.cycle.length ? release : best,
-			undefined,
-		)
+	return Arr.filter(
+		releases,
+		(release) => version === release.cycle || Str.startsWith(`${release.cycle}.`)(version),
+	).reduce<RuntimeRelease | undefined>(
+		(best, release) => (best === undefined || release.cycle.length > best.cycle.length ? release : best),
+		undefined,
+	)
 }
 
 export type RuntimePosture =
@@ -152,7 +153,7 @@ export function runtimePosture(
 	const product = runtimeProductOf(input.runtimeName, input.sdkLanguage)
 	if (product === undefined) return { status: "untracked" }
 	const version = normalizeRuntimeVersion(input.runtimeVersion)
-	const emulator = NODE_EMULATORS.get((input.executableName ?? "").trim().toLowerCase())
+	const emulator = NODE_EMULATORS.get(Str.toLowerCase(Str.trim(input.executableName ?? "")))
 	if (product === "nodejs" && emulator !== undefined) {
 		return { status: "emulated", product: emulator, version: version ?? "" }
 	}

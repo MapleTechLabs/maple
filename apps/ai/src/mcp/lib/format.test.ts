@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { formatDelta, formatPointsDelta, tableCell } from "./format"
+import { String as Str } from "effect"
 
 describe("formatDelta", () => {
 	it("reports a change against a window that measured something", () => {
@@ -37,7 +38,7 @@ describe("tableCell", () => {
 	})
 
 	it("clips before escaping, so a cut cannot leave a trailing backslash", () => {
-		expect(tableCell("|".repeat(20), 10)).toBe("\\|\\|\\|\\|\\|\\|\\|...")
+		expect(tableCell(Str.repeat(20)("|"), 10)).toBe("\\|\\|\\|\\|\\|\\|\\|...")
 	})
 
 	it("keeps text within the ceiling whole", () => {

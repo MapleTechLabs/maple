@@ -3,6 +3,7 @@
 // `severity` and `q` from the hash query.
 
 import { timestampMs } from "./output"
+import { Array as Arr, String as Str } from "effect"
 
 /** The logs page's range picks, narrowest first (apps/local-ui/src/lib/time.ts). */
 const UI_RANGES: ReadonlyArray<readonly [key: string, ms: number]> = [
@@ -13,7 +14,7 @@ const UI_RANGES: ReadonlyArray<readonly [key: string, ms: number]> = [
 	["30d", 30 * 24 * 3_600_000],
 ]
 
-const uiBase = (baseUrl: string): string => `${baseUrl.replace(/\/+$/, "")}/#`
+const uiBase = (baseUrl: string): string => `${Str.replace(/\/+$/, "")(baseUrl)}/#`
 
 export const traceLink = (baseUrl: string, traceId: string): string =>
 	`${uiBase(baseUrl)}/traces/${encodeURIComponent(traceId)}`
@@ -51,11 +52,11 @@ export const withTraceLinks = <A extends { readonly traceId: string }>(
 	baseUrl: string,
 	rows: ReadonlyArray<A>,
 ): ReadonlyArray<A & { readonly url: string }> =>
-	rows.map((row) => ({ ...row, url: traceLink(baseUrl, row.traceId) }))
+	Arr.map(rows, (row) => ({ ...row, url: traceLink(baseUrl, row.traceId) }))
 
 /** Logs with a trace get a `traceUrl`; logs carry no id the UI can open on its own. */
 export const withLogTraceLinks = <A extends { readonly traceId: string }>(
 	baseUrl: string,
 	logs: ReadonlyArray<A>,
 ): ReadonlyArray<A & { readonly traceUrl?: string }> =>
-	logs.map((log) => (log.traceId === "" ? log : { ...log, traceUrl: traceLink(baseUrl, log.traceId) }))
+	Arr.map(logs, (log) => (log.traceId === "" ? log : { ...log, traceUrl: traceLink(baseUrl, log.traceId) }))

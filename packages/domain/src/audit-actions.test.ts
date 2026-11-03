@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { auditActionLabel, auditActions, AuditResources, auditResourceLabel } from "./audit-actions"
+import { Record as Rec } from "effect"
 
 describe("audit action labels", () => {
 	it("labels every action in the catalog with a readable sentence, not the raw action", () => {
@@ -15,7 +16,7 @@ describe("audit action labels", () => {
 	})
 
 	it("labels every resource type in the catalog", () => {
-		for (const type of Object.keys(AuditResources)) {
+		for (const type of Rec.keys(AuditResources)) {
 			expect(auditResourceLabel(type), type).not.toBeNull()
 		}
 	})

@@ -12,7 +12,7 @@ import {
 	V2OrganizationAccessDenied,
 	V2RateLimited,
 } from "@maple/domain/http/v2"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Effect, Layer, Option, Schema, String as Str } from "effect"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ORG_SELECTION_HEADER } from "@maple/auth"
 import { makeResolveTenant } from "./AuthService"
@@ -39,14 +39,14 @@ const apiKeyDefaultRoles = [decodeRoleNameSync("root")] as const
 const getBearerToken = (headers: Record<string, string | undefined>): string | undefined => {
 	const header = headers["authorization"] ?? headers["Authorization"]
 	if (!header) return undefined
-	const [scheme, token] = header.split(" ")
-	if (!scheme || !token || scheme.toLowerCase() !== "bearer") return undefined
+	const [scheme, token] = Str.split(" ")(header)
+	if (!scheme || !token || Str.toLowerCase(scheme) !== "bearer") return undefined
 	return token
 }
 
 /** The access token of an RFC 9449 `Authorization: DPoP <token>` request. */
 const getDpopToken = (headers: Record<string, string | undefined>): string | undefined => {
-	const [scheme, token] = (headers["authorization"] ?? "").split(" ")
+	const [scheme, token] = Str.split(" ")(headers["authorization"] ?? "")
 	return scheme?.toLowerCase() === "dpop" && token !== undefined && token.length > 0 ? token : undefined
 }
 

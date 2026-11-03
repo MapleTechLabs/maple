@@ -4,7 +4,7 @@
  * as invalid input naming the parameter.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import {
 	ComparePeriodsOutput,
 	DescribeWarehouseTablesOutput,
@@ -87,7 +87,7 @@ describe("services, metrics and query tools on define", () => {
 		expect(Schema.decodeUnknownSync(DiagnoseServiceOutput)(result.structuredContent).serviceName).toBe(
 			"checkout",
 		)
-		expect(issuedSql.join("\n")).toContain("checkout")
+		expect(Arr.join(issuedSql, "\n")).toContain("checkout")
 	})
 
 	it("states the real 6-hour query_data default", async () => {
@@ -153,7 +153,7 @@ describe("services, metrics and query tools on define", () => {
 			environments: ["production"],
 		})
 		expect(result.isError, markdown(result)).toBeUndefined()
-		const sql = issuedSql.join("\n")
+		const sql = Arr.join(issuedSql, "\n")
 		expect(sql).toContain("FROM metrics_gauge")
 		expect(sql).toContain("with_deltas")
 		expect(sql).toContain("k8s.pod.name")
@@ -180,7 +180,7 @@ describe("services, metrics and query tools on define", () => {
 			service: "jobs",
 		})
 		expect(result.isError, markdown(result)).toBeUndefined()
-		const sql = issuedSql.join("\n")
+		const sql = Arr.join(issuedSql, "\n")
 		expect(sql).toContain("FROM metrics_gauge")
 		expect(sql).toContain("'worker_busy'")
 		expect(sql).toContain("'jobs'")
@@ -197,7 +197,7 @@ describe("services, metrics and query tools on define", () => {
 			service: "jobs",
 		})
 		expect(result.isError, markdown(result)).toBeUndefined()
-		const sql = issuedSql.join("\n")
+		const sql = Arr.join(issuedSql, "\n")
 		expect(sql).toContain("FROM metric_catalog")
 		expect(sql).toContain("'jobs'")
 		expect(sql).not.toContain("attribute_keys_hourly")

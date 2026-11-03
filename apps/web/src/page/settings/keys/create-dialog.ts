@@ -4,7 +4,7 @@ import {
 	type ApiKeyCreateOptions,
 	buildApiKeyCreatePayload,
 } from "../../../components/settings/api-key-create-payload"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { trackProduct } from "../../../data/analytics"
@@ -147,10 +147,10 @@ export const TrackKeyCreated = Command.define("TrackApiKeyCreated", {
 const levelOf = (model: Model, family: string): ScopeLevel => model.scopeLevels[family] ?? "none"
 
 export const selectedFamilyCount = (model: Model): number =>
-	SCOPE_FAMILIES.filter((family) => levelOf(model, family.id) !== "none").length
+	Arr.filter(SCOPE_FAMILIES, (family) => levelOf(model, family.id) !== "none").length
 
 const scopesOf = (model: Model): ReadonlyArray<V2Scope> =>
-	SCOPE_FAMILIES.flatMap((family) => {
+	Arr.flatMap(SCOPE_FAMILIES, (family) => {
 		const level = levelOf(model, family.id)
 		return level === "read" || level === "write" ? [`${family.id}:${level}`] : []
 	})
@@ -161,11 +161,11 @@ const restrictedScopes = (model: Model): ReadonlyArray<V2Scope> | undefined =>
 const isMissingScopes = (model: Model): boolean => restrictedScopes(model)?.length === 0
 
 export const canCreate = (model: Model): boolean =>
-	model.name.value.trim().length > 0 && !isMissingScopes(model) && !model.isCreating
+	Str.trim(model.name.value).length > 0 && !isMissingScopes(model) && !model.isCreating
 
 /** A disabled Create says which field is missing. */
 export const blockedReason = (model: Model): string | null =>
-	model.name.value.trim().length === 0
+	Str.trim(model.name.value).length === 0
 		? "Name the key so you can tell it apart later."
 		: isMissingScopes(model)
 			? "Give at least one resource family read or write access."
@@ -236,7 +236,7 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedAllScopes: ({ level }) => ({
 			model: {
 				...model,
-				scopeLevels: Object.fromEntries(SCOPE_FAMILIES.map((family) => [family.id, level])),
+				scopeLevels: Rec.fromEntries(Arr.map(SCOPE_FAMILIES, (family) => [family.id, level])),
 			},
 		}),
 		ClickedClearScopes: () => ({ model: { ...model, scopeLevels: {} } }),

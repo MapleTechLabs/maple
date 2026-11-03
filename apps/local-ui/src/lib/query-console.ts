@@ -2,7 +2,7 @@
 // formatting, CSV/JSON export and the starter queries.
 
 import { LocalQueryFailed, LocalQueryUnreachable, type LocalQueryRow } from "@maple/query-engine/local"
-import { Formatter, Option, Schema } from "effect"
+import { Formatter, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { LOCAL_ORG_ID } from "./constants"
 
 const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
@@ -54,7 +54,9 @@ const PLAIN_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 /** A table name as SQL: bare when it can be, backtick-quoted otherwise. */
 export function quoteIdentifier(name: string): string {
-	return PLAIN_IDENTIFIER.test(name) ? name : `\`${name.replace(/\\/g, "\\\\").replace(/`/g, "\\`")}\``
+	return PLAIN_IDENTIFIER.test(name)
+		? name
+		: `\`${Str.replace(/`/g, "\\`")(Str.replace(/\\/g, "\\\\")(name))}\``
 }
 
 export function tablePreviewSql(table: string): string {
@@ -68,7 +70,7 @@ export interface LocalTable {
 
 /** `system.tables` rows to names; `total_rows` arrives as a number, a quoted UInt64, or null. */
 export function parseTables(rows: ReadonlyArray<LocalQueryRow>): ReadonlyArray<LocalTable> {
-	return rows.flatMap((row) => {
+	return Arr.flatMap(rows, (row) => {
 		const name = row.name
 		if (typeof name !== "string") return []
 		const total = Number(row.total_rows)
@@ -79,7 +81,7 @@ export function parseTables(rows: ReadonlyArray<LocalQueryRow>): ReadonlyArray<L
 /** Column names in first-seen order across every row. */
 export function inferColumns(rows: ReadonlyArray<LocalQueryRow>): ReadonlyArray<string> {
 	const seen = new Set<string>()
-	for (const row of rows) for (const key of Object.keys(row)) seen.add(key)
+	for (const row of rows) for (const key of Rec.keys(row)) seen.add(key)
 	return [...seen]
 }
 
@@ -110,7 +112,7 @@ export function formatCell(value: unknown): string {
 }
 
 export function truncateCell(text: string, max = CELL_TRUNCATE_LENGTH): string {
-	return text.length > max ? `${text.slice(0, max)}…` : text
+	return text.length > max ? `${Str.slice(0, max)(text)}…` : text
 }
 
 /** Text a spreadsheet would evaluate as a formula; numbers are exempt so negatives stay numeric. */
@@ -120,14 +122,20 @@ const csvField = (value: unknown): string => {
 	if (value === null || value === undefined) return ""
 	const formatted = formatCell(value)
 	const text = typeof value === "string" && FORMULA_TRIGGER.test(formatted) ? `'${formatted}` : formatted
-	return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+	return /[",\r\n]/.test(text) ? `"${Str.replace(/"/g, '""')(text)}"` : text
 }
 
 /** RFC 4180 CSV with a header row; nulls are empty fields. */
 export function toCsv(rows: ReadonlyArray<LocalQueryRow>, columns = inferColumns(rows)): string {
-	const lines = [columns.map(csvField).join(",")]
-	for (const row of rows) lines.push(columns.map((column) => csvField(row[column])).join(","))
-	return `${lines.join("\r\n")}\r\n`
+	const lines = [Arr.join(Arr.map(columns, csvField), ",")]
+	for (const row of rows)
+		lines.push(
+			Arr.join(
+				Arr.map(columns, (column) => csvField(row[column])),
+				",",
+			),
+		)
+	return `${Arr.join(lines, "\r\n")}\r\n`
 }
 
 export function toJson(rows: ReadonlyArray<LocalQueryRow>): string {
@@ -144,8 +152,8 @@ const READ_ONLY_PREFIX = "read-only query endpoint: "
 /** A failed run as a heading plus the server's own message. */
 export function describeQueryError(error: unknown): QueryErrorDescription {
 	if (error instanceof LocalQueryFailed) {
-		if (error.detail.startsWith(READ_ONLY_PREFIX))
-			return { title: "Query not allowed", detail: error.detail.slice(READ_ONLY_PREFIX.length) }
+		if (Str.startsWith(READ_ONLY_PREFIX)(error.detail))
+			return { title: "Query not allowed", detail: Str.slice(READ_ONLY_PREFIX.length)(error.detail) }
 		return {
 			title: error.status === 400 ? "Query failed" : `Query failed (${error.status})`,
 			detail: error.detail || error.message,

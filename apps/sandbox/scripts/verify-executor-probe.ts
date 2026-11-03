@@ -15,7 +15,7 @@
  * holds every capability (probe v1: CapEff 000001ffffffffff) and a writable cgroup2 root. Exits
  * non-zero when either run has a check that did not behave as expected.
  */
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { execFileSync, spawnSync } from "node:child_process"
 import {
 	type AssessedCheck,
@@ -65,13 +65,20 @@ const report = (title: string, checks: ReadonlyArray<AssessedCheck>, expectation
 	console.log(`\n== ${title}`)
 	for (const check of checks) {
 		const mark = unexpected.includes(check) ? "!!" : expectation.unanswerable?.has(check.id) ? "--" : "  "
-		const output = (check.output ?? "").trim().replaceAll("\n", "\n             ")
+		const output = Str.replaceAll("\n", "\n             ")(Str.trim(check.output ?? ""))
 		console.log(
-			`${mark} ${check.verdict.padEnd(8)}  ${check.id}  (exit ${check.exitCode ?? "-"})\n             ${output}`,
+			`${mark} ${Str.padEnd(8)(check.verdict)}  ${check.id}  (exit ${check.exitCode ?? "-"})\n             ${output}`,
 		)
 	}
 	console.log(
-		`${checks.length - unexpected.length}/${checks.length} as expected${unexpected.length > 0 ? `; unexpected: ${unexpected.map((check) => check.id).join(", ")}` : ""}`,
+		`${checks.length - unexpected.length}/${checks.length} as expected${
+			unexpected.length > 0
+				? `; unexpected: ${Arr.join(
+						Arr.map(unexpected, (check) => check.id),
+						", ",
+					)}`
+				: ""
+		}`,
 	)
 	return unexpected.length
 }
@@ -132,7 +139,10 @@ if (!process.argv.includes("--isolated")) {
 		leaks: new Set([
 			"egress-dns",
 			"egress-https",
-			...EGRESS_CHECK_IDS.filter((id) => id.startsWith("egress-") && id !== "egress-http-ipv6"),
+			...Arr.filter(
+				EGRESS_CHECK_IDS,
+				(id) => Str.startsWith("egress-")(id) && id !== "egress-http-ipv6",
+			),
 		]),
 	})
 }

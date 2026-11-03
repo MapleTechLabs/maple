@@ -18,7 +18,7 @@ import {
 	ReviewSignalCase,
 	snapshotComment,
 } from "@maple/backend/services/pr-review/review-signal-corpus"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { run } from "./pr-review-local"
 
 const CORPUS_DIR = fileURLToPath(
@@ -57,14 +57,16 @@ const snapshot = (owner: string, repo: string, number: number): boolean => {
 		? Option.match(decodePullRequest(pr.stdout), { onNone: () => "", onSome: (item) => item.title })
 		: ""
 	const byReviewer = (comments: ReturnType<typeof list>) =>
-		comments
-			.filter((comment) => comment.user?.login === REVIEWER)
-			.sort((a, b) => a.created_at.localeCompare(b.created_at))
-	const summaries = byReviewer(
-		list(`repos/${owner}/${repo}/issues/${number}/comments?per_page=100`),
-	).filter((comment) => isReviewSummary(comment.body ?? ""))
+		Arr.filter(comments, (comment) => comment.user?.login === REVIEWER).sort((a, b) =>
+			Str.localeCompare(b.created_at)(a.created_at),
+		)
+	const summaries = Arr.filter(
+		byReviewer(list(`repos/${owner}/${repo}/issues/${number}/comments?per_page=100`)),
+		(comment) => isReviewSummary(comment.body ?? ""),
+	)
 	if (summaries.length === 0) return false
-	const inline = byReviewer(list(`repos/${owner}/${repo}/pulls/${number}/comments?per_page=100`)).filter(
+	const inline = Arr.filter(
+		byReviewer(list(`repos/${owner}/${repo}/pulls/${number}/comments?per_page=100`)),
 		(comment) => comment.in_reply_to_id === undefined || comment.in_reply_to_id === null,
 	)
 	const item: ReviewSignalCase = {
@@ -72,8 +74,8 @@ const snapshot = (owner: string, repo: string, number: number): boolean => {
 		repo: `${owner}/${repo}`,
 		number,
 		title,
-		summaries: summaries.map((comment) => snapshotComment(comment.created_at, comment.body ?? "")),
-		inline: inline.map((comment) => snapshotComment(comment.created_at, comment.body ?? "")),
+		summaries: Arr.map(summaries, (comment) => snapshotComment(comment.created_at, comment.body ?? "")),
+		inline: Arr.map(inline, (comment) => snapshotComment(comment.created_at, comment.body ?? "")),
 	}
 	if (!existsSync(CORPUS_DIR)) mkdirSync(CORPUS_DIR, { recursive: true })
 	// Generated, so compact: the labels are the file people read and edit.
@@ -84,7 +86,7 @@ const snapshot = (owner: string, repo: string, number: number): boolean => {
 
 export const snapshotRange = (argv: ReadonlyArray<string>) => {
 	const [slug = "", from = "", to = from] = argv
-	const [owner, repo] = slug.split("/")
+	const [owner, repo] = Str.split("/")(slug)
 	const first = Number(from)
 	const last = Number(to)
 	if (
@@ -97,8 +99,9 @@ export const snapshotRange = (argv: ReadonlyArray<string>) => {
 		console.error("usage: review:signal <owner/repo> <first pull request> [last pull request]")
 		return process.exit(1)
 	}
-	const written = Array.from({ length: last - first + 1 }, (_, i) => first + i).filter((number) =>
-		snapshot(owner, repo, number),
+	const written = Arr.filter(
+		Array.from({ length: last - first + 1 }, (_, i) => first + i),
+		(number) => snapshot(owner, repo, number),
 	)
 	console.log(`${written.length} cases in ${CORPUS_DIR}`)
 }

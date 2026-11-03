@@ -8,7 +8,17 @@
  * written to `seed-demo/.last-seed.json`; screenshots pin their time ranges to it.
  */
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
-import { Clock, Console, DateTime, Effect, FileSystem, Option, Schema } from "effect"
+import {
+	Clock,
+	Console,
+	DateTime,
+	Effect,
+	FileSystem,
+	Option,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { Command, Flag } from "effect/cli"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
@@ -86,7 +96,7 @@ const checkWarehouseRouting = Effect.fn("seedDemo.checkWarehouseRouting")(functi
 		yield* Console.warn("  ! could not run psql; skipped the BYO ClickHouse check")
 		return
 	}
-	const chUrl = output.value.trim()
+	const chUrl = Str.trim(output.value)
 	if (chUrl !== "") {
 		return yield* new SeedPreflightError({
 			message:
@@ -187,7 +197,7 @@ const resetDemo = Effect.fn("seedDemo.reset")(function* (orgId: string, incident
 				"-v",
 				"ON_ERROR_STOP=1",
 				"-c",
-				`TRUNCATE ${ERROR_STATE_TABLES.join(", ")} CASCADE`,
+				`TRUNCATE ${Arr.join(ERROR_STATE_TABLES, ", ")} CASCADE`,
 				"-c",
 				`INSERT INTO error_tick_states (org_id, processed_through, bootstrap_completed, updated_at)
 				 VALUES ('${orgId}', '${watermark}', true, now())
@@ -218,7 +228,10 @@ const post = Effect.fn("seedDemo.post")(
 			.pipe(Effect.mapError((cause) => new SeedIngestError({ message: cause.message, path })))
 		if (response.status >= 300) {
 			const text = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
-			return yield* new SeedIngestError({ message: `${response.status}: ${text.slice(0, 300)}`, path })
+			return yield* new SeedIngestError({
+				message: `${response.status}: ${Str.slice(0, 300)(text)}`,
+				path,
+			})
 		}
 	},
 	Effect.retry({ times: 3, schedule: Schedule.exponential("250 millis") }),
@@ -228,26 +241,26 @@ const chunk = <T>(items: ReadonlyArray<T>, size: number): ReadonlyArray<Readonly
 	Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size))
 
 const requestsFor = (out: WindowOutput) => [
-	...out.spans.flatMap((group) =>
-		chunk(group.items, SPANS_PER_REQUEST).map((spans) => ({
+	...Arr.flatMap(out.spans, (group) =>
+		Arr.map(chunk(group.items, SPANS_PER_REQUEST), (spans) => ({
 			path: "/v1/traces",
 			body: resourceSpans(group.resource.attributes, spans),
 		})),
 	),
-	...out.logs.map((group) => ({
+	...Arr.map(out.logs, (group) => ({
 		path: "/v1/logs",
 		body: resourceLogs(group.resource.attributes, group.items),
 	})),
-	...out.metrics.map((group) => ({
+	...Arr.map(out.metrics, (group) => ({
 		path: "/v1/metrics",
 		body: resourceMetrics(group.resource.attributes, group.items),
 	})),
 ]
 
 const count = <T>(groups: ReadonlyArray<Grouped<T>>) =>
-	groups.reduce((total, group) => total + group.items.length, 0)
+	Arr.reduce(groups, 0, (total, group) => total + group.items.length)
 
-const clock = (ms: number) => new Date(ms).toTimeString().slice(0, 5)
+const clock = (ms: number) => Str.slice(0, 5)(new Date(ms).toTimeString())
 
 // ── command ─────────────────────────────────────────────────────────────────
 
@@ -316,7 +329,7 @@ const seed = Command.make(
 					}),
 				)
 			: Option.none()
-		const target: Target = { endpoint: flags.endpoint.replace(/\/$/, ""), key: flags.key }
+		const target: Target = { endpoint: Str.replace(/\/$/, "")(flags.endpoint), key: flags.key }
 		const anchor = Option.match(previous, {
 			onSome: (state) => DateTime.toEpochMillis(state.anchor),
 			onNone: () =>
@@ -400,8 +413,8 @@ const seed = Command.make(
 					})
 				}
 				yield* Console.log(
-					`  ${clock(from)}  ${String(out.traceCount).padStart(6)} traces  ${String(out.errorTraceCount).padStart(4)} failed  ` +
-						`${String(spans).padStart(7)} spans  ${String(logs).padStart(6)} logs`,
+					`  ${clock(from)}  ${Str.padStart(6)(String(out.traceCount))} traces  ${Str.padStart(4)(String(out.errorTraceCount))} failed  ` +
+						`${Str.padStart(7)(String(spans))} spans  ${Str.padStart(6)(String(logs))} logs`,
 				)
 			})
 		const windows = Array.from({ length: hours }, (_, i) => anchor - hours * HOUR + i * HOUR)

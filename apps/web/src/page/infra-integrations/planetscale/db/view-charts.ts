@@ -15,6 +15,7 @@ import { scopeChip } from "../../kit/scope-chip"
 import type { TimeseriesRow } from "../data"
 import { Message, type Model } from "./model"
 import { grid as gridLayout } from "@maple/views/ui/grid"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `PlanetScaleChart` cards and the chart section of `PlanetScaleDatabaseData`.
 
@@ -35,7 +36,7 @@ export const CHART_TOKENS = [
 	"--muted-foreground",
 	"--severity-warn",
 	"--severity-error",
-	...Object.values(METRIC_COLORS),
+	...Rec.values(METRIC_COLORS),
 ]
 
 const LEAD: PlanetScaleMetric = "storageUsedPercent"
@@ -74,7 +75,10 @@ export const branchScope = (
 	return h.span(
 		[h.Class("flex flex-wrap items-center gap-1")],
 		[
-			scopeChip(h, {}, [options.selected.slice(0, 2).join(", "), ...(extra > 0 ? [` +${extra}`] : [])]),
+			scopeChip(h, {}, [
+				Arr.join(options.selected.slice(0, 2), ", "),
+				...(extra > 0 ? [` +${extra}`] : []),
+			]),
 			scopeChip(h, { tone: "muted", trigger: options.trigger(`${options.idPrefix}-fallback`) }, [
 				options.surface === "chart"
 					? "showing all branches"
@@ -106,8 +110,8 @@ const metricCard = (
 	isWaiting: boolean,
 	context: ChartsContext,
 ): Html => {
-	const points = buckets.map((row) => ({ bucket: row.bucket, value: row[metric] }))
-	const hasValues = points.some((point) => point.value !== null)
+	const points = Arr.map(buckets, (row) => ({ bucket: row.bucket, value: row[metric] }))
+	const hasValues = Arr.some(points, (point) => point.value !== null)
 	return chartCard(
 		h,
 		{
@@ -166,7 +170,7 @@ const grid = (h: H, children: ReadonlyArray<Html>): Html =>
 const loadingCharts = (h: H): Html =>
 	grid(
 		h,
-		[LEAD, ...GRID].map((metric) => loadingCard(h, metric)),
+		Arr.map([LEAD, ...GRID], (metric) => loadingCard(h, metric)),
 	)
 
 /** The chart section: skeletons until the series and the chart runtime are in, then the five cards. */
@@ -182,7 +186,7 @@ export const chartsSection = (
 			? loadingCharts(h)
 			: grid(
 					h,
-					[LEAD, ...GRID].map((metric) =>
+					Arr.map([LEAD, ...GRID], (metric) =>
 						metricCard(h, model, metric, buckets, isWaiting, { ...context, theme }),
 					),
 				)

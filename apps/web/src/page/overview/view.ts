@@ -1,9 +1,14 @@
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
-import { FAILURE_KEY_SEPARATOR, failureKey, isSameFailure, type LoadFailure } from "@maple/views/data/load-failure"
+import {
+	FAILURE_KEY_SEPARATOR,
+	failureKey,
+	isSameFailure,
+	type LoadFailure,
+} from "@maple/views/data/load-failure"
 import { errorState } from "@maple/views/ui/error-state"
 import * as Select from "@maple/views/ui/select"
 import * as SelectView from "@maple/views/ui/select-view"
@@ -69,7 +74,10 @@ const headerActions = (h: H, model: Model): Html => {
 		view: SelectView.view,
 		toParentMessage: toSelect,
 		viewInputs: {
-			entries: environmentItems(model).map((item): SelectView.SelectEntry => ({ _tag: "Item", item })),
+			entries: Arr.map(environmentItems(model), (item): SelectView.SelectEntry => ({
+				_tag: "Item",
+				item,
+			})),
 			size: "sm",
 			toView: (parts) => hstack(h, { gap: "2" }, [...parts, controls]),
 		},
@@ -123,9 +131,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const nowMs = model.nowMs ?? 0
 	const environments = environmentFilter(model)
 	const failures = pageFailures(model)
-	const pageFailureKeys = failures.map(({ failure }) => failureKey(failure)).join(FAILURE_KEY_SEPARATOR)
+	const pageFailureKeys = Arr.join(
+		Arr.map(failures, ({ failure }) => failureKey(failure)),
+		FAILURE_KEY_SEPARATOR,
+	)
 	const isExplained = (failure: LoadFailure) =>
-		failures.some((page) => isSameFailure(page.failure, failure))
+		Arr.some(failures, (page) => isSameFailure(page.failure, failure))
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
@@ -140,7 +151,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								toParentMessage: (message) => Message.GotSetupMessage({ message }),
 							}),
 						]),
-				...failures.map(({ failure, title, onRetry }) =>
+				...Arr.map(failures, ({ failure, title, onRetry }) =>
 					errorState(h, { failure, title, variant: "row", onRetry, className: "mb-4" }),
 				),
 				healthOverview(h, { model, slice, nowMs }),

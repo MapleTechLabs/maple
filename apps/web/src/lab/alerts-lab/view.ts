@@ -13,6 +13,7 @@ import { underlineTabClass, underlineTabStrip } from "../../page/kit/underline-t
 import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import type { Model } from "./model"
+import { Array as Arr } from "effect"
 
 type AlertsTab = "inbox" | "rules" | "routing"
 
@@ -68,7 +69,7 @@ const alertsFrame = <M>(h: HtmlBuilder<M>, tab: AlertsTab, data: AlertsOverviewR
 					underlineTabStrip(
 						h,
 						{ label: "Alerts sections", bleed: false, divided: false },
-						ALERTS_TABS.map((entry) => {
+						Arr.map(ALERTS_TABS, (entry) => {
 							const count = counts.get(entry.value) ?? 0
 							return h.span(
 								[h.Class(underlineTabClass(entry.value === tab))],
@@ -170,12 +171,13 @@ export const hubSections = Submodel.defineView<HubModel, HubMessage, HubInputs>(
 									),
 									h.ul(
 										[h.Class("divide-y")],
-										fixture.destinations.map((destination) =>
+										Arr.map(fixture.destinations, (destination) =>
 											destinationRow(h, hub, routing, {
 												destination,
-												recent: fixture.deliveries
-													.filter((event) => event.destinationId === destination.id)
-													.slice(0, HEALTH_WINDOW),
+												recent: Arr.filter(
+													fixture.deliveries,
+													(event) => event.destinationId === destination.id,
+												).slice(0, HEALTH_WINDOW),
 											}),
 										),
 									),

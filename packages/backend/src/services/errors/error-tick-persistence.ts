@@ -162,7 +162,7 @@ const promoteCandidates = (
 			tx.run(
 				PG.insertInto(ErrorFingerprintCandidates)
 					.values(
-						chunk.map((row) => ({
+						Arr.map(chunk, (row) => ({
 							orgId: input.orgId,
 							fingerprintHash: row.fingerprintHash,
 							serviceName: row.serviceName,
@@ -209,7 +209,7 @@ const promoteCandidates = (
 			),
 		)
 
-		const ready = upserted.filter((row) => row.occurrenceCount >= PROMOTION_MIN_OCCURRENCES)
+		const ready = Arr.filter(upserted, (row) => row.occurrenceCount >= PROMOTION_MIN_OCCURRENCES)
 		if (ready.length === 0) return []
 
 		yield* Effect.forEach(
@@ -218,13 +218,13 @@ const promoteCandidates = (
 				tx.run(
 					PG.deleteFrom(ErrorFingerprintCandidates).where(($) => [
 						$.orgId.eq(input.orgId),
-						$.fingerprintHash.in_(...chunk.map((row) => row.fingerprintHash)),
+						$.fingerprintHash.in_(...Arr.map(chunk, (row) => row.fingerprintHash)),
 					]),
 				),
 			{ discard: true },
 		)
 
-		return ready.map((row) => ({
+		return Arr.map(ready, (row) => ({
 			fingerprintHash: row.fingerprintHash,
 			serviceName: row.serviceName,
 			exceptionType: row.exceptionType,
@@ -274,7 +274,7 @@ export const isRegression = (
 	// the signal, and it must not be masked by old clients in the same window.
 	// A window with no build information at all cannot be ruled out either.
 	if (row.serviceVersions.length === 0) return true
-	return row.serviceVersions.some((version) => !prior.resolvedVersionsJson.includes(version))
+	return Arr.some(row.serviceVersions, (version) => !prior.resolvedVersionsJson.includes(version))
 }
 
 /**
@@ -287,9 +287,9 @@ const mergeVersions = (
 	existing: ReadonlyArray<string>,
 	observed: ReadonlyArray<string>,
 ): ReadonlyArray<string> => {
-	const fresh = observed.filter((version) => version !== "")
+	const fresh = Arr.filter(observed, (version) => version !== "")
 	if (fresh.length === 0) return existing
-	const next = [...existing.filter((version) => !fresh.includes(version)), ...new Set(fresh)]
+	const next = [...Arr.filter(existing, (version) => !fresh.includes(version)), ...new Set(fresh)]
 	return next.length > MAX_TRACKED_VERSIONS ? next.slice(next.length - MAX_TRACKED_VERSIONS) : next
 }
 
@@ -379,7 +379,7 @@ const openNotificationsEnabled = (
 
 const buildNotificationRows = (input: PersistErrorTickWindowInput, payload: NotificationPayload) => {
 	const deliveryKey = `err:${input.orgId}:${payload.incidentId}:${payload.kind}`
-	return input.destinationIds.map((destinationId) => ({
+	return Arr.map(input.destinationIds, (destinationId) => ({
 		id: randomUUID(),
 		orgId: input.orgId,
 		destinationId,
@@ -439,7 +439,7 @@ export const persistErrorTickWindow = (
 			if (held.length === 0) return yield* claimLost(input.orgId, "preflight")
 
 			const rows = mergeScanRows(input.rows)
-			const fingerprints = rows.map((row) => row.fingerprintHash)
+			const fingerprints = Arr.map(rows, (row) => row.fingerprintHash)
 			const existingIssues = yield* inChunks(fingerprints, (chunk) =>
 				tx.run(
 					PG.from(ErrorIssues)
@@ -447,7 +447,7 @@ export const persistErrorTickWindow = (
 						.where(($) => [$.orgId.eq(input.orgId), $.fingerprintHash.in_(...chunk)]),
 				),
 			)
-			const issueByFingerprint = new Map(existingIssues.map((row) => [row.fingerprintHash, row]))
+			const issueByFingerprint = new Map(Arr.map(existingIssues, (row) => [row.fingerprintHash, row]))
 
 			// The cursor row lock makes this evaluator the only writer of error-kind
 			// issues for the org, so the prefetch is authoritative: a fingerprint
@@ -461,10 +461,10 @@ export const persistErrorTickWindow = (
 			const promoted = yield* promoteCandidates(
 				tx,
 				input,
-				rows.filter((row) => !issueByFingerprint.has(row.fingerprintHash)),
+				Arr.filter(rows, (row) => !issueByFingerprint.has(row.fingerprintHash)),
 				windowEnd,
 			)
-			const promotedByFingerprint = new Map(promoted.map((row) => [row.fingerprintHash, row]))
+			const promotedByFingerprint = new Map(Arr.map(promoted, (row) => [row.fingerprintHash, row]))
 
 			const applicable: Array<{
 				readonly row: ErrorTickScanRow
@@ -531,7 +531,7 @@ export const persistErrorTickWindow = (
 					tx.run(
 						PG.insertInto(ErrorIssues)
 							.values(
-								chunk.map(({ row, prior }) => ({
+								Arr.map(chunk, ({ row, prior }) => ({
 									id: input.makeIssueId(),
 									orgId: input.orgId,
 									fingerprintHash: row.fingerprintHash,
@@ -591,7 +591,7 @@ export const persistErrorTickWindow = (
 					),
 				)
 
-				const idByFingerprint = new Map(upserted.map((row) => [row.fingerprintHash, row.id]))
+				const idByFingerprint = new Map(Arr.map(upserted, (row) => [row.fingerprintHash, row.id]))
 
 				const resolvedRows = yield* Effect.forEach(applicable, (entry) => {
 					const issueId = idByFingerprint.get(entry.row.fingerprintHash)
@@ -650,9 +650,10 @@ export const persistErrorTickWindow = (
 				// `triage`: an issue that was fixed and came back is not the same thing
 				// as one nobody has looked at, and flattening the two is what let the
 				// same bug be picked up and fixed again from scratch.
-				const regressedIds = observed
-					.filter((entry) => entry.wasRegression)
-					.map((entry) => entry.issueId)
+				const regressedIds = Arr.map(
+					Arr.filter(observed, (entry) => entry.wasRegression),
+					(entry) => entry.issueId,
+				)
 				yield* Effect.forEach(
 					chunks(regressedIds),
 					(chunk) =>
@@ -678,14 +679,16 @@ export const persistErrorTickWindow = (
 				// hashes are not live yet (a self-hosted warehouse that has not applied the
 				// view, or a deploy gap), so it comes back with its state intact. A resolved
 				// one stays archived unless the occurrence is a regression, handled above.
-				const restoredIds = resolvedRows
-					.filter(
+				const restoredIds = Arr.map(
+					Arr.filter(
+						resolvedRows,
 						(entry) =>
 							entry.prior !== undefined &&
 							entry.prior.archivedAt !== null &&
 							entry.prior.workflowState !== "done",
-					)
-					.map((entry) => entry.issueId)
+					),
+					(entry) => entry.issueId,
+				)
 				yield* Effect.forEach(
 					chunks(restoredIds),
 					(chunk) =>
@@ -698,7 +701,7 @@ export const persistErrorTickWindow = (
 				)
 			}
 
-			const observedIssueIds = observed.map((entry) => entry.issueId)
+			const observedIssueIds = Arr.map(observed, (entry) => entry.issueId)
 			const states = yield* inChunks(observedIssueIds, (chunk) =>
 				tx.run(
 					PG.from(ErrorIssueStates)
@@ -706,7 +709,7 @@ export const persistErrorTickWindow = (
 						.where(($) => [$.orgId.eq(input.orgId), $.issueId.in_(...chunk)]),
 				),
 			)
-			const stateByIssue = new Map(states.map((row) => [row.issueId, row]))
+			const stateByIssue = new Map(Arr.map(states, (row) => [row.issueId, row]))
 
 			const refreshing: Array<{
 				readonly incidentId: ErrorIncidentId
@@ -736,7 +739,8 @@ export const persistErrorTickWindow = (
 				(chunk) =>
 					Effect.gen(function* () {
 						const incidentValues = Orm.sql.join(
-							chunk.map(
+							Arr.map(
+								chunk,
 								(item) =>
 									Orm.sql`(${item.incidentId}::text, ${msToSqlTimestamp(item.row.lastSeenMs)}::timestamptz, ${item.row.count}::integer)`,
 							),
@@ -751,7 +755,8 @@ export const persistErrorTickWindow = (
 			`)
 
 						const stateValues = Orm.sql.join(
-							chunk.map(
+							Arr.map(
+								chunk,
 								(item) =>
 									Orm.sql`(${item.issueId}::text, ${msToSqlTimestamp(item.row.lastSeenMs)}::timestamptz)`,
 							),
@@ -779,7 +784,7 @@ export const persistErrorTickWindow = (
 					tx.run(
 						PG.insertInto(ErrorIssueStates)
 							.values(
-								chunk.map((item) => ({
+								Arr.map(chunk, (item) => ({
 									orgId: input.orgId,
 									issueId: item.entry.issueId,
 									lastObservedOccurrenceAt: item.entry.row.lastSeenMs,
@@ -803,9 +808,10 @@ export const persistErrorTickWindow = (
 				)
 
 				const claimedIncidentByIssue = new Map(
-					claimed.map((row) => [row.issueId, row.openIncidentId]),
+					Arr.map(claimed, (row) => [row.issueId, row.openIncidentId]),
 				)
-				const opened = claiming.filter(
+				const opened = Arr.filter(
+					claiming,
 					(item) => claimedIncidentByIssue.get(item.entry.issueId) === item.incidentId,
 				)
 
@@ -815,7 +821,7 @@ export const persistErrorTickWindow = (
 						(chunk) =>
 							tx.run(
 								PG.insertInto(ErrorIncidents).values(
-									chunk.map((item) => ({
+									Arr.map(chunk, (item) => ({
 										id: item.incidentId,
 										orgId: input.orgId,
 										issueId: item.entry.issueId,
@@ -881,17 +887,19 @@ export const persistErrorTickWindow = (
 							.set({ status: "resolved", resolvedAt: windowEnd, updatedAt: windowEnd })
 							.where(($) => [
 								$.orgId.eq(input.orgId),
-								$.id.in_(...chunk.map((incident) => incident.id)),
+								$.id.in_(...Arr.map(chunk, (incident) => incident.id)),
 								$.status.eq("open"),
 							])
 							.returning("id"),
 					),
 				)
-				const flippedIds = new Set(flipped.map((row) => row.id))
+				const flippedIds = new Set(Arr.map(flipped, (row) => row.id))
 				incidentsResolved = flippedIds.size
 
 				if (flippedIds.size > 0) {
-					const resolvedIncidents = staleIncidents.filter((incident) => flippedIds.has(incident.id))
+					const resolvedIncidents = Arr.filter(staleIncidents, (incident) =>
+						flippedIds.has(incident.id),
+					)
 					// Match on `open_incident_id` too: a state pointing at some other
 					// incident must not be cleared by this one resolving. An incident and
 					// its issue share a chunk, so chunking leaves the pairing intact.
@@ -903,8 +911,8 @@ export const persistErrorTickWindow = (
 									.set({ openIncidentId: null, updatedAt: windowEnd })
 									.where(($) => [
 										$.orgId.eq(input.orgId),
-										$.issueId.in_(...chunk.map((incident) => incident.issueId)),
-										$.openIncidentId.in_(...chunk.map((incident) => incident.id)),
+										$.issueId.in_(...Arr.map(chunk, (incident) => incident.issueId)),
+										$.openIncidentId.in_(...Arr.map(chunk, (incident) => incident.id)),
 									]),
 							),
 						{ discard: true },
@@ -912,7 +920,7 @@ export const persistErrorTickWindow = (
 
 					if (input.policy.enabled && input.policy.notifyOnResolve) {
 						const staleIssueIds = [
-							...new Set(resolvedIncidents.map((incident) => incident.issueId)),
+							...new Set(Arr.map(resolvedIncidents, (incident) => incident.issueId)),
 						]
 						const staleIssues = yield* inChunks(staleIssueIds, (chunk) =>
 							tx.run(
@@ -921,7 +929,7 @@ export const persistErrorTickWindow = (
 									.where(($) => [$.orgId.eq(input.orgId), $.id.in_(...chunk)]),
 							),
 						)
-						const staleIssueById = new Map(staleIssues.map((issue) => [issue.id, issue]))
+						const staleIssueById = new Map(Arr.map(staleIssues, (issue) => [issue.id, issue]))
 						for (const incident of resolvedIncidents) {
 							const issue = staleIssueById.get(incident.issueId)
 							if (!issue) continue

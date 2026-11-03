@@ -38,7 +38,18 @@ import {
 	type InboundWorkspaceRemoved,
 	WORKSPACE_CREDENTIALS,
 } from "@maple/chat-platform"
-import { Context, Duration, Effect, Logger, Option, References, Schema, Tracer } from "effect"
+import {
+	Context,
+	Duration,
+	Effect,
+	Logger,
+	Option,
+	References,
+	Schema,
+	Tracer,
+	Array as Arr,
+	Record as Rec,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { ConversationNotRecorded, FOLLOW_UP_WINDOW_MS } from "./conversation.ts"
 import { relayInboundEvent, relayWithWorkspace, WorkspaceLookupFailed, type RelayPorts } from "./turn.ts"
@@ -163,7 +174,10 @@ const event = (seq: number, input: ChatEventInput): ChatEvent =>
 const sse = (events: ReadonlyArray<ChatEvent>): ReadableStream<Uint8Array> => {
 	const payload =
 		"retry: 1000\n\n" +
-		events.map((next) => `id: ${next.seq}\ndata: ${JSON.stringify(next)}\n\n`).join("")
+		Arr.join(
+			Arr.map(events, (next) => `id: ${next.seq}\ndata: ${JSON.stringify(next)}\n\n`),
+			"",
+		)
 	const bytes = new TextEncoder().encode(payload)
 	// Cut mid-frame, so the decoder's buffer is exercised rather than assumed.
 	const cut = Math.floor(bytes.length / 2)
@@ -350,13 +364,16 @@ const CHART_FENCE = '```chart\n{"type":"ranked","unit":"count","data":[{"name":"
 const blocksOf = (calls: Chat["calls"]): ReadonlyArray<ChatBlock> => calls[calls.length - 1]?.blocks ?? []
 
 const prose = (blocks: ReadonlyArray<ChatBlock>): string =>
-	blocks
-		.filter((block) => block.kind === "prose")
-		.map((block) => block.markdown)
-		.join("\n")
+	Arr.join(
+		Arr.map(
+			Arr.filter(blocks, (block) => block.kind === "prose"),
+			(block) => block.markdown,
+		),
+		"\n",
+	)
 
 const notices = (blocks: ReadonlyArray<ChatBlock>): ReadonlyArray<string> =>
-	blocks.flatMap((block) => (block.kind === "notice" ? [block.text] : []))
+	Arr.flatMap(blocks, (block) => (block.kind === "notice" ? [block.text] : []))
 
 const target: ChatTarget = { workspaceId: WORKSPACE, channelId: CONVERSATION }
 
@@ -398,7 +415,7 @@ describe("relaying a mention", () => {
 			// A placeholder first, then the answer, in the conversation the connector opened.
 			expect(platform.calls[0]?.verb).toBe("post")
 			expect(platform.calls[0]?.ref.target).toEqual(target)
-			expect(platform.calls.map((call) => call.verb)).toContain("edit")
+			expect(Arr.map(platform.calls, (call) => call.verb)).toContain("edit")
 			expect(prose(blocksOf(platform.calls))).toBe("Checkout is slow.")
 			expect(platform.threads).toEqual(["message-1"])
 		}),
@@ -601,9 +618,9 @@ describe("relaying a mention", () => {
 
 			const everything = JSON.stringify({
 				logs,
-				spans: spans.map((span) => ({
+				spans: Arr.map(spans, (span) => ({
 					name: span.name,
-					attributes: Object.fromEntries(span.attributes),
+					attributes: Rec.fromEntries(span.attributes),
 					// A failed span records the failure as an event, which is the other place a cause
 					// would be rendered.
 					events: span.events,
@@ -612,7 +629,7 @@ describe("relaying a mention", () => {
 			expect(everything).not.toContain(mention.text)
 			expect(everything).not.toContain(mention.author.displayName)
 			// The failure is still reported — by what it was, not by what it carried.
-			expect(logs.join("")).toContain("ChatOutboundError")
+			expect(Arr.join(logs, "")).toContain("ChatOutboundError")
 		}),
 	)
 
@@ -917,11 +934,12 @@ const decidedTranscript = (output: string, isError?: boolean): ReadonlyArray<Cha
 			...(isError === true ? { isError: true } : undefined),
 		},
 	]
-	inputs.forEach((input, index) => transcript.add(event(index + 1, input), 0))
+	Arr.forEach(inputs, (input, index) => transcript.add(event(index + 1, input), 0))
 	return transcript.messages
 }
 
-const approvals = (blocks: ReadonlyArray<ChatBlock>) => blocks.filter((block) => block.kind === "approval")
+const approvals = (blocks: ReadonlyArray<ChatBlock>) =>
+	Arr.filter(blocks, (block) => block.kind === "approval")
 
 /**
  * Why a click was refused, off the span.
@@ -940,9 +958,9 @@ const refusalReason = (effect: Effect.Effect<void>) =>
 			},
 		})
 		yield* effect.pipe(Effect.provideContext(Context.make(Tracer.Tracer, tracer)))
-		return spans
-			.flatMap((span) => [span.attributes.get("maple.chat.approval")])
-			.find((value) => value !== undefined)
+		return Arr.flatMap(spans, (span) => [span.attributes.get("maple.chat.approval")]).find(
+			(value) => value !== undefined,
+		)
 	})
 
 describe("settling an approval somebody clicked", () => {
@@ -1039,7 +1057,7 @@ describe("settling an approval somebody clicked", () => {
 
 			expect(agent.settlements).toEqual([])
 			// Only the clicker sees it: it is about their account, not the conversation.
-			expect(platform.calls.map((call) => call.verb)).toEqual(["whisper"])
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["whisper"])
 			const text = prose(blocksOf(platform.calls))
 			expect(text).toContain("**Link your Testchat account to Maple to approve this.**")
 			expect(text).toContain("(https://app.maple.dev/integrations)")
@@ -1055,7 +1073,7 @@ describe("settling an approval somebody clicked", () => {
 			yield* relayInboundEvent(click(), deployment.ports)
 
 			// An unanswered click reads as a broken button, which is worse than a public notice.
-			expect(platform.calls.map((call) => call.verb)).toEqual(["post"])
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["post"])
 			expect(prose(blocksOf(platform.calls))).toContain("https://app.maple.dev/integrations")
 		}),
 	)
@@ -1099,7 +1117,7 @@ describe("settling an approval somebody clicked", () => {
 			// this session's log, so it cannot be settled from here.
 			yield* relayInboundEvent(click({ channelId: "otherchannel" }), deployment.ports)
 
-			expect(agent.settlements.map((settlement) => settlement.sessionId)).toEqual([
+			expect(Arr.map(agent.settlements, (settlement) => settlement.sessionId)).toEqual([
 				`${ORG}:bot-${TESTCHAT}-otherchannel`,
 			])
 		}),
@@ -1188,9 +1206,9 @@ describe("settling an approval somebody clicked", () => {
 
 			const everything = JSON.stringify({
 				logs,
-				spans: spans.map((span) => ({
+				spans: Arr.map(spans, (span) => ({
 					name: span.name,
-					attributes: Object.fromEntries(span.attributes),
+					attributes: Rec.fromEntries(span.attributes),
 					events: span.events,
 				})),
 			})
@@ -1215,12 +1233,12 @@ describe("settling an approval somebody clicked", () => {
 			// The session refused to settle it twice, so nothing re-ran — but the re-render still
 			// happens, which is what fixes a message whose first update never landed.
 			expect(agent.settlements).toHaveLength(1)
-			expect(platform.calls.map((call) => call.verb)).toEqual(["edit"])
+			expect(Arr.map(platform.calls, (call) => call.verb)).toEqual(["edit"])
 			expect(approvals(platform.calls.at(-1)?.blocks ?? [])[0]).toMatchObject({
 				outcome: { approved: true },
 			})
 			// And it says nothing out loud: a second click is not worth a message of its own.
-			expect(platform.calls.every((call) => call.verb === "edit")).toBe(true)
+			expect(Arr.every(platform.calls, (call) => call.verb === "edit")).toBe(true)
 		}),
 	)
 

@@ -10,7 +10,7 @@
  * The script refuses to run against anything but a development instance
  * (`sk_test_…`), so it cannot mint a session for a real user on a live one.
  */
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -24,7 +24,7 @@ if (!secretKey) {
 	console.error("CLERK_SECRET_KEY is not set. Run from the repo root so .env.local is loaded.")
 	process.exit(2)
 }
-if (!secretKey.startsWith("sk_test_")) {
+if (!Str.startsWith("sk_test_")(secretKey)) {
 	console.error(
 		"CLERK_SECRET_KEY is not a development key (sk_test_…). This script only signs in to dev instances.",
 	)

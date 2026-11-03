@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { SupabaseIntegrationStatus } from "@maple/domain/http"
 import { SupabaseProjectRef } from "@maple/domain/primitives"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../contract"
@@ -150,7 +150,7 @@ describe("supabase connect flow", () => {
 				message: IntegrationMessage.ToggledSupabaseMetrics({ ref: REF, enabled: true }),
 			}),
 		)
-		expect((flipped.commands ?? []).map(({ name }) => name)).toContain("SetSupabaseProjectMetrics")
+		expect(Arr.map(flipped.commands ?? [], ({ name }) => name)).toContain("SetSupabaseProjectMetrics")
 		scene(
 			{ update: pageUpdate, view },
 			given(flipped.model),

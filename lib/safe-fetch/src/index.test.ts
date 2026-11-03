@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest"
-import { Effect, Exit, Fiber, Result } from "effect"
+import { Effect, Exit, Fiber, Result, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientError } from "effect/http"
 import {
@@ -247,7 +247,7 @@ describe("guard", () => {
 			)
 			assert.strictEqual(response.status, 200)
 			assert.deepStrictEqual(
-				seen.map((s) => [s.url, s.method, s.body]),
+				Arr.map(seen, (s) => [s.url, s.method, s.body]),
 				[
 					["https://api1.example.com/x", "POST", "payload"],
 					["https://api2.example.com/y", "POST", "payload"],
@@ -365,7 +365,7 @@ describe("guard", () => {
 				Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
 			)
 			assert.strictEqual(signals.length, 2)
-			assert.isTrue(signals.every((signal) => signal.aborted))
+			assert.isTrue(Arr.every(signals, (signal) => signal.aborted))
 		}),
 	)
 
@@ -441,7 +441,7 @@ const postThroughStrictGuard = (fakeFetch: typeof fetch) =>
 	).pipe(Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, fakeFetch))
 
 const hopsOf = (seen: ReadonlyArray<SeenHop>) =>
-	seen.map((hop) => [hop.url, hop.method, hop.body, hop.apiKey])
+	Arr.map(seen, (hop) => [hop.url, hop.method, hop.body, hop.apiKey])
 
 describe("guard with strictRedirects", () => {
 	it.effect("drops every configured header and the body on a cross-origin 302", () =>

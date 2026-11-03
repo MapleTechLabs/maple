@@ -10,6 +10,7 @@ import type { Model } from "./model"
 import type { SpanEventData } from "../trace-source"
 import { hstack } from "@maple/views/ui/stack"
 import { dividedList } from "@maple/views/ui/rule"
+import { Array as Arr, Record as Rec } from "effect"
 
 // The span's events section.
 
@@ -21,14 +22,14 @@ const eventAttributes = (
 	eventId: string,
 	attributes: Readonly<Record<string, string>>,
 ) => {
-	const entries = Object.entries(attributes)
+	const entries = Rec.toEntries(attributes)
 	return entries.length === 0
 		? []
 		: [
 				keyValueList(
 					h,
 					{ className: "gap-0.5 text-2xs" },
-					entries.map(([key, value]) => {
+					Arr.map(entries, ([key, value]) => {
 						const id = `${eventId}:attr:${key}`
 						return keyValue(
 							h,
@@ -153,8 +154,10 @@ export const spanEventsSection = (h: H, model: Model, events: ReadonlyArray<Span
 				[h.Class("space-y-1")],
 				[
 					heading(h, { level: 4, variant: "label" }, ["Events (", String(events.length), ")"]),
-					dividedList(h, { as: "ul" },
-						events.map((event, index) => eventRow(h, model, event, index)),
+					dividedList(
+						h,
+						{ as: "ul" },
+						Arr.map(events, (event, index) => eventRow(h, model, event, index)),
 					),
 				],
 			)

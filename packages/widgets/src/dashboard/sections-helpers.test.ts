@@ -14,6 +14,7 @@ import {
 	DASHBOARD_MAX_TABS_PER_SECTION,
 	type DashboardSection,
 } from "./shared/sections"
+import { Array as Arr } from "effect"
 
 interface TestWidget {
 	id: string
@@ -31,7 +32,7 @@ const widget = (id: string, sectionId?: string, tabId?: string): TestWidget => {
 const section = (id: string, tabIds: ReadonlyArray<string>): DashboardSection => ({
 	id,
 	title: id,
-	tabs: tabIds.map((tabId) => ({ id: tabId, title: tabId })),
+	tabs: Arr.map(tabIds, (tabId) => ({ id: tabId, title: tabId })),
 })
 
 describe("containerKeyOf", () => {
@@ -83,9 +84,9 @@ describe("groupWidgetsByContainer", () => {
 			widgets: [widget("a", "s1", "t1"), widget("b"), widget("c", "s1", "t1"), widget("d", "s1", "t2")],
 			sections: [section("s1", ["t1", "t2"])],
 		}
-		expect(widgetsInTab(doc, "s1", "t1").map((w) => w.id)).toEqual(["a", "c"])
-		expect(widgetsInTab(doc, "s1", "t2").map((w) => w.id)).toEqual(["d"])
-		expect(rootWidgets(doc).map((w) => w.id)).toEqual(["b"])
+		expect(Arr.map(widgetsInTab(doc, "s1", "t1"), (w) => w.id)).toEqual(["a", "c"])
+		expect(Arr.map(widgetsInTab(doc, "s1", "t2"), (w) => w.id)).toEqual(["d"])
+		expect(Arr.map(rootWidgets(doc), (w) => w.id)).toEqual(["b"])
 	})
 
 	// An empty group must still render — otherwise adding a group and then
@@ -99,7 +100,7 @@ describe("groupWidgetsByContainer", () => {
 	// tiles on the floor.
 	it("falls back to root for a widget addressing a missing container", () => {
 		const doc = { widgets: [widget("a", "gone", "t1")], sections: [section("s1", ["t1"])] }
-		expect(rootWidgets(doc).map((w) => w.id)).toEqual(["a"])
+		expect(Arr.map(rootWidgets(doc), (w) => w.id)).toEqual(["a"])
 	})
 })
 

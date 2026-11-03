@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, String as Str } from "effect"
 import { WarehouseUpstreamError } from "@maple/domain/http"
 import { getSessionTraces } from "./session-replays"
 import { WarehouseExecutor } from "./WarehouseExecutor"
@@ -25,8 +25,8 @@ interface MockResponses {
  */
 const makeExecutor = (captured: Captured, responses: MockResponses): WarehouseExecutorApi => {
 	const rowsFor = (sql: string): ReadonlyArray<Record<string, unknown>> => {
-		if (sql.includes("session_events")) return responses.activity ?? []
-		if (sql.includes("FROM trace_index")) return responses.summaries ?? []
+		if (Str.includes("session_events")(sql)) return responses.activity ?? []
+		if (Str.includes("FROM trace_index")(sql)) return responses.summaries ?? []
 		return responses.detail ?? []
 	}
 	return {
@@ -102,7 +102,7 @@ const sessionRow = (overrides: Record<string, unknown> = {}): Record<string, unk
 })
 
 /** The recorded SQL for the query that reads `table`, if it ran. */
-const sqlFor = (captured: Captured, table: string) => captured.sqls.find((s) => s.includes(table))
+const sqlFor = (captured: Captured, table: string) => captured.sqls.find((s) => Str.includes(table)(s))
 
 describe("getSessionTraces", () => {
 	it.effect("returns null and runs no summaries query when the session is missing", () =>

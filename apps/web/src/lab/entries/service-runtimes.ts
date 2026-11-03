@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Effect, Option, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import type { HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -105,7 +105,7 @@ const ANSWERS: ReadonlyArray<Answer> = [
 		(key) => PageMessage.CompletedFetchUptimeMonitors({ key, result: Result.succeed([]), isAdmin: true }),
 	),
 	(model) =>
-		Object.entries(model.commits).flatMap(([sha, data]) => {
+		Arr.flatMap(Rec.toEntries(model.commits), ([sha, data]) => {
 			const commit = RUNTIMES_COMMITS.get(sha)
 			return AsyncData.isLoading(data) && commit !== undefined
 				? [PageMessage.CompletedFetchCommit({ sha, result: Result.succeed(commit) })]
@@ -113,7 +113,8 @@ const ANSWERS: ReadonlyArray<Answer> = [
 		}),
 ]
 
-const answers = (model: PageModel): ReadonlyArray<PageMessage> => ANSWERS.flatMap((answer) => answer(model))
+const answers = (model: PageModel): ReadonlyArray<PageMessage> =>
+	Arr.flatMap(ANSWERS, (answer) => answer(model))
 
 /** Answers pending reads until none is left (an answer can start the next read). */
 const settle = (
@@ -140,7 +141,7 @@ const step = (result: PageReturn<PageModel, PageMessage>): Return => {
 	return {
 		model: { page: settled.model },
 		commands: Command.mapMessages(
-			(settled.commands ?? []).filter((command) => !isRead(command.name)),
+			Arr.filter(settled.commands ?? [], (command) => !isRead(command.name)),
 			(message) => Message.GotPageMessage({ message }),
 		),
 	}

@@ -1,6 +1,6 @@
 import { BillingCustomer, BillingSubscription } from "@maple/domain/http"
 import type { V2OnboardingChecklist } from "@maple/domain/http/v2"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { expect as expectView, given, role, scene, text } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -15,7 +15,7 @@ import * as Checklist from "./onboarding-checklist"
 import * as SupportChannel from "./support-channel"
 
 const names = (result: { readonly commands?: ReadonlyArray<{ readonly name: string }> }) =>
-	(result.commands ?? []).map((command) => command.name)
+	Arr.map(result.commands ?? [], (command) => command.name)
 
 const checklist = (status: V2OnboardingChecklist["status"]): V2OnboardingChecklist => ({
 	object: "onboarding_checklist",

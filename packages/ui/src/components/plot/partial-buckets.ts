@@ -1,4 +1,5 @@
 import { inferBucketSeconds, parseBucketMs } from "../../lib/format"
+import { Array as Arr } from "effect"
 
 /**
  * A row that can be tested for partiality. `partial` is the authoritative flag
@@ -84,7 +85,7 @@ export function trimEmptyTrailingBuckets<T extends PartialCandidateRow>(
 	const isEmptyRow =
 		options?.isEmpty ??
 		((row: T): boolean =>
-			valueKeys.every((key) => {
+			Arr.every(valueKeys, (key) => {
 				const value = (row as Record<string, unknown>)[key]
 				return value === null || value === undefined || value === 0
 			}))

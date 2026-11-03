@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { tinybirdProjectManifest } from "../generated/tinybird-project-manifest"
+import { Array as Arr, Record as Rec } from "effect"
 
 const RETENTION_DAYS = {
 	alert_checks: 365,
@@ -73,10 +74,10 @@ const ZERO_RETENTION_DATASOURCES = ["service_map_edges_hourly_ingest"] as const
 
 describe("Tinybird retention matrix", () => {
 	it("assigns every stored datasource to the intended 30/90/365-day tier", () => {
-		const actualNames = tinybirdProjectManifest.datasources.map(({ name }) => name).sort()
-		expect(actualNames).toEqual([...Object.keys(RETENTION_DAYS), ...ZERO_RETENTION_DATASOURCES].sort())
+		const actualNames = Arr.map(tinybirdProjectManifest.datasources, ({ name }) => name).sort()
+		expect(actualNames).toEqual([...Rec.keys(RETENTION_DAYS), ...ZERO_RETENTION_DATASOURCES].sort())
 
-		for (const [name, expectedDays] of Object.entries(RETENTION_DAYS)) {
+		for (const [name, expectedDays] of Rec.toEntries(RETENTION_DAYS)) {
 			const datasource = tinybirdProjectManifest.datasources.find(
 				(candidate) => candidate.name === name,
 			)

@@ -4,7 +4,7 @@ import { spanStartMs } from "@maple/ui/lib/span-tree"
 import type { SpanNode } from "@maple/ui/lib/types"
 import { cn } from "@maple/ui/lib/utils"
 import { Mount } from "foldkit"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { type ChildAttribute, createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "../ui/button"
 import { XmarkIcon } from "../ui/control-icons"
@@ -97,7 +97,7 @@ const minimap = <M>(h: HtmlBuilder<M>, input: FlamegraphInput, focused: SpanNode
 		[
 			h.div(
 				[h.Class("absolute inset-x-3 inset-y-1"), h.DataAttribute("flame-minimap-track", "")],
-				bars.map((bar) =>
+				Arr.map(bars, (bar) =>
 					h.div([
 						h.Class("absolute opacity-80"),
 						h.Style({
@@ -215,7 +215,7 @@ const footer = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<string>): Html =>
 			h.div(
 				[h.Class("flex items-center gap-3")],
 				[
-					...services.map((service) =>
+					...Arr.map(services, (service) =>
 						h.div(
 							[h.Class("flex items-center gap-1.5")],
 							[serviceDot(h, service), h.span([h.Class("font-medium")], [service])],
@@ -260,7 +260,7 @@ const barsLayer = <M>(
 			h.Style({ height: px(layout.totalLanes * (ROW_HEIGHT + ROW_GAP) + 8) }),
 		],
 		[
-			...TICKS.map((pct) =>
+			...Arr.map(TICKS, (pct) =>
 				h.div([
 					h.Class(
 						"absolute top-0 bottom-0 border-l border-dashed border-foreground/[0.06] pointer-events-none",
@@ -268,7 +268,7 @@ const barsLayer = <M>(
 					h.Style({ left: `${pct}%` }),
 				]),
 			),
-			...layout.bars.map((bar) =>
+			...Arr.map(layout.bars, (bar) =>
 				barView(
 					h,
 					bar,
@@ -304,7 +304,7 @@ const body = <M>(
 		[
 			h.div(
 				[h.Class("sticky top-0 z-10 flex h-10 items-end border-b bg-background/95 px-3 pb-2")],
-				TICKS.map((pct) =>
+				Arr.map(TICKS, (pct) =>
 					h.div(
 						[
 							h.Class("absolute text-2xs font-medium text-muted-foreground"),
@@ -338,7 +338,9 @@ export const view = <M>(
 		return emptyMessage(h, { className: "border p-8 text-sm" }, ["No spans found for this trace"])
 	const focused = focusedSpan(model, inputs.input)
 	const layout = flamegraphBars(inputs.input, Option.getOrUndefined(focused))
-	const bySpanId = new Map(layout.bars.map((bar) => [barTriggerId(model.id, bar.span.spanId), bar.span]))
+	const bySpanId = new Map(
+		Arr.map(layout.bars, (bar) => [barTriggerId(model.id, bar.span.spanId), bar.span]),
+	)
 	return h.submodel({
 		slotId: model.tooltip.id,
 		model: model.tooltip,

@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
-import { Effect, Layer, Option } from "effect"
+import { Effect, Layer, Option, Array as Arr } from "effect"
 import { type ObjectStore, ReplayBlobBucket } from "@maple/backend/platform/bindings"
 import { ReplayBlobStore, replayObjectKey } from "./ReplayBlobStore"
 
@@ -132,7 +132,7 @@ describe("ReplayBlobStore.hydrate", () => {
 					Array.from({ length: 20 }, (_, seq) => ({ chunkSeq: seq, events: "" })),
 				),
 			)
-			expect(result.map((chunk) => chunk.events)).toEqual(
+			expect(Arr.map(result, (chunk) => chunk.events)).toEqual(
 				Array.from({ length: 20 }, (_, seq) => `[${seq}]`),
 			)
 		}),

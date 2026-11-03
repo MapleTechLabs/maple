@@ -16,6 +16,7 @@ import { confidenceMeter } from "../kit"
 import { elapsedBetween } from "./derive"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `VerdictCard` and `RunProgress`: the verdict and the run's progress.
 
@@ -51,7 +52,7 @@ const shell = <M>(
 			]),
 			h.div(
 				[h.Class("flex min-w-0 flex-1 flex-col gap-3 px-7 py-6")],
-				children.filter((child): child is Html => child !== null),
+				Arr.filter(children, (child): child is Html => child !== null),
 			),
 			h.div(
 				[
@@ -91,10 +92,10 @@ const bigStat = <M>(h: HtmlBuilder<M>, elapsed: { value: string; unit: string } 
 
 /** A heading never ends in a full stop, even when it is a promoted summary sentence. */
 const asHeading = (text: string | null): string | null =>
-	text === null ? null : text.trim().replace(/\.$/, "")
+	text === null ? null : Str.replace(/\.$/, "")(Str.trim(text))
 
 const repeatsHeading = (heading: string | null, text: string): boolean =>
-	text.trim().length === 0 || asHeading(text) === heading
+	Str.trim(text).length === 0 || asHeading(text) === heading
 
 const body = <M>(h: HtmlBuilder<M>, heading: string | null, text: string): Html | null =>
 	repeatsHeading(heading, text)
@@ -124,12 +125,15 @@ const mechanism = <M>(h: HtmlBuilder<M>, heading: string | null, text: string): 
 // Identifiers: backticked spans, SCREAMING_SNAKE names, service-like kebab names (checkout-api)
 // and short commit shas (hex with a digit and a letter). The rest of an action is prose.
 const IDENTIFIER = new RegExp(
-	[
-		"(`[^`]+`",
-		"\\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\\b",
-		"\\b[a-z][a-z0-9]*(?:-[a-z0-9]+)*-(?:api|svc|service|worker|gateway|web|server|proxy|db|queue|consumer|producer)\\b",
-		"\\b(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{5,40}\\b)",
-	].join("|"),
+	Arr.join(
+		[
+			"(`[^`]+`",
+			"\\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\\b",
+			"\\b[a-z][a-z0-9]*(?:-[a-z0-9]+)*-(?:api|svc|service|worker|gateway|web|server|proxy|db|queue|consumer|producer)\\b",
+			"\\b(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{5,40}\\b)",
+		],
+		"|",
+	),
 )
 
 // A chip followed by punctuation ("checkout-api's", "8f21c,") drops its right padding, so the
@@ -137,13 +141,13 @@ const IDENTIFIER = new RegExp(
 const PUNCTUATION_AFTER = /^['’.,;:!?)]/
 
 const actionText = <M>(h: HtmlBuilder<M>, action: string): Children => {
-	const parts = action.split(IDENTIFIER).filter((part) => part.length > 0)
-	return parts.map((part, index) =>
+	const parts = Arr.filter(Str.split(IDENTIFIER)(action), (part) => part.length > 0)
+	return Arr.map(parts, (part, index) =>
 		IDENTIFIER.test(part)
 			? inlineCode(
 					h,
 					{ className: PUNCTUATION_AFTER.test(parts[index + 1] ?? "") ? "pr-px" : undefined },
-					[part.replace(/^`|`$/g, "")],
+					[Str.replace(/^`|`$/g, "")(part)],
 				)
 			: part,
 	)
@@ -158,7 +162,7 @@ const nextActions = <M>(h: HtmlBuilder<M>, actions: ReadonlyArray<string>): Html
 					eyebrow(h, {}, ["What to do"]),
 					h.ol(
 						[h.Class(vstackClass({ gap: "2" }))],
-						actions.map((action, index) =>
+						Arr.map(actions, (action, index) =>
 							h.keyed("li")(
 								String(index),
 								[
@@ -283,7 +287,7 @@ const runProgress = <M>(
 			]),
 			h.ol(
 				[h.Class("flex flex-col")],
-				steps.map((step, index) => {
+				Arr.map(steps, (step, index) => {
 					const isLast = index === steps.length - 1
 					return h.keyed("li")(
 						`${step.at}-${step.tool}-${index}`,
@@ -411,7 +415,7 @@ const partialList = <M>(
 		vstack(
 			h,
 			{ gap: "1.5", as: "ul" },
-			visible.map((item) =>
+			Arr.map(visible, (item) =>
 				h.keyed("li")(
 					item,
 					[h.Class(cn("flex gap-2 text-sm leading-6", tone))],
@@ -437,10 +441,13 @@ const inconclusive = <M>(h: HtmlBuilder<M>, investigation: V2Investigation): Htm
 	const unchecked = report?.unchecked ?? []
 	const headline =
 		asHeading(reportHeadline(report)) ?? "No cause was established, and this run recorded no partial"
-	const lists = [
-		partialList(h, "Ruled out", ruledOut, "CircleXmarkIcon", "text-foreground"),
-		partialList(h, "Couldn't check", unchecked, "CircleQuestionIcon", "text-muted-foreground"),
-	].filter((list): list is Html => list !== null)
+	const lists = Arr.filter(
+		[
+			partialList(h, "Ruled out", ruledOut, "CircleXmarkIcon", "text-foreground"),
+			partialList(h, "Couldn't check", unchecked, "CircleQuestionIcon", "text-muted-foreground"),
+		],
+		(list): list is Html => list !== null,
+	)
 	return shell(
 		h,
 		"bg-severity-warn",

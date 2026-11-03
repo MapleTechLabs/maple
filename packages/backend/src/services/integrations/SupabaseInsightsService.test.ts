@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -124,9 +124,10 @@ const connect = (world: World) =>
 	})
 
 const insightCalls = (world: World) =>
-	world.state.calls
-		.filter((call) => /\/(advisors\/|database\/query)/.test(call.path))
-		.map((call) => call.path.replace(/^\/v1\/projects\//, ""))
+	Arr.map(
+		Arr.filter(world.state.calls, (call) => /\/(advisors\/|database\/query)/.test(call.path)),
+		(call) => Str.replace(/^\/v1\/projects\//, "")(call.path),
+	)
 
 const run = <A, E>(
 	testDb: TestDb,
@@ -158,18 +159,23 @@ describe("SupabaseInsightsService", () => {
 					`${REF_A}/advisors/security`,
 					`${REF_A}/database/query/read-only`,
 				])
-				const queryCall = world.state.calls.find((call) => call.path.endsWith("/read-only"))
+				const queryCall = world.state.calls.find((call) => Str.endsWith("/read-only")(call.path))
 				assert.deepStrictEqual(JSON.parse(queryCall?.body ?? "{}"), { query: TOP_QUERIES_SQL })
 
 				const result = yield* insights.getInsights(ORG, asRef(REF_A))
 				assert.deepStrictEqual(
-					result.advisors.error.map((lint) => [lint.advisor, lint.name, lint.schema, lint.object]),
+					Arr.map(result.advisors.error, (lint) => [
+						lint.advisor,
+						lint.name,
+						lint.schema,
+						lint.object,
+					]),
 					[["security", "rls_disabled_in_public", "public", "orders"]],
 				)
 				assert.strictEqual(result.advisors.warn.length, 0)
 				// The undecodable lint is dropped, its sibling kept.
 				assert.deepStrictEqual(
-					result.advisors.info.map((lint) => [lint.advisor, lint.name, lint.objectType]),
+					Arr.map(result.advisors.info, (lint) => [lint.advisor, lint.name, lint.objectType]),
 					[["performance", "unindexed_foreign_keys", "table"]],
 				)
 				assert.deepStrictEqual(result.topQueries, [

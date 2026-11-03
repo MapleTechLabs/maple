@@ -1,5 +1,16 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
-import { Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
+import {
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
 import type { BillingCustomerId, BillingLimitType, UpdateBillingUsageAlert } from "@maple/domain/http"
@@ -126,15 +137,16 @@ const MODEL_RECORD_FIELDS = new Set(["balances", "flags", "total"])
 
 const OPAQUE_FIELDS = new Set(["metadata", "properties", "grouped_values", "values", "filter_by"])
 
-const toCamel = (key: string): string => key.replace(/_([a-z0-9])/g, (_, char: string) => char.toUpperCase())
+const toCamel = (key: string): string =>
+	key.replace(/_([a-z0-9])/g, (_, char: string) => Str.toUpperCase(char))
 
 export const camelizeKeys = (value: unknown, renameOwnKeys = true): unknown => {
 	// An array has no own keys to protect, so its items rename normally even when
 	// it sits under a model-record field.
-	if (Array.isArray(value)) return value.map((item) => camelizeKeys(item, true))
+	if (Arr.isArray(value)) return Arr.map(value, (item) => camelizeKeys(item, true))
 	if (value === null || typeof value !== "object") return value
 	const out: Record<string, unknown> = {}
-	for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+	for (const [key, child] of Rec.toEntries(value as Record<string, unknown>)) {
 		out[renameOwnKeys ? toCamel(key) : key] = OPAQUE_FIELDS.has(key)
 			? child
 			: camelizeKeys(child, !MODEL_RECORD_FIELDS.has(key))
@@ -173,10 +185,10 @@ const decodeJson = Schema.decodeEffect(JsonBody)
 /** Total, synchronous JSON parse: `None` where `JSON.parse` would have thrown. */
 const parseJsonOption = Schema.decodeUnknownOption(JsonBody)
 
-const trimTrailingSlash = (url: string) => url.replace(/\/+$/, "")
+const trimTrailingSlash = (url: string) => Str.replace(/\/+$/, "")(url)
 
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 		? (value as Record<string, unknown>)
 		: undefined
 
@@ -397,7 +409,7 @@ const callUpdateBillingControls = (
 						billing_controls: {
 							...(controls.spendLimits !== undefined
 								? {
-										spend_limits: controls.spendLimits.map((limit) => ({
+										spend_limits: Arr.map(controls.spendLimits, (limit) => ({
 											feature_id: limit.featureId,
 											enabled: limit.enabled,
 											limit_type: limit.limitType,
@@ -407,7 +419,7 @@ const callUpdateBillingControls = (
 								: undefined),
 							...(controls.usageAlerts !== undefined
 								? {
-										usage_alerts: controls.usageAlerts.map((alert) => ({
+										usage_alerts: Arr.map(controls.usageAlerts, (alert) => ({
 											feature_id: alert.featureId,
 											enabled: alert.enabled,
 											threshold: alert.threshold,

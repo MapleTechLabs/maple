@@ -5,6 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
 import { WORKFLOW_LABEL, workflowRingIcon } from "./workflow"
+import { String as Str } from "effect"
 
 // The signal state and investigation chips.
 
@@ -37,8 +38,8 @@ export const investigationChip = <M>(
 			attributes: [
 				h.Title(
 					investigation.confidence
-						? `Maple ${label.toLowerCase()} — ${investigation.confidence} confidence`
-						: `Maple ${label.toLowerCase()}`,
+						? `Maple ${Str.toLowerCase(label)} — ${investigation.confidence} confidence`
+						: `Maple ${Str.toLowerCase(label)}`,
 				),
 			],
 		},

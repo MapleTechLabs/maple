@@ -64,7 +64,7 @@ import {
 	RAW_SQL_ENDPOINT,
 	toWidgetRequest,
 } from "@maple/widgets/dashboard"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -268,8 +268,8 @@ const WIDGET_NOT_ON_DASHBOARD = "That widget is not on this dashboard."
 
 /** Every where-clause the board could interpolate a variable into. */
 const boardWhereClauses = (document: DashboardDocument): ReadonlyArray<string> =>
-	document.widgets.flatMap((widget) =>
-		(dataSourceQuerySet(widget.dataSource)?.queries ?? []).flatMap((query) =>
+	Arr.flatMap(document.widgets, (widget) =>
+		Arr.flatMap(dataSourceQuerySet(widget.dataSource)?.queries ?? [], (query) =>
 			typeof query.whereClause === "string" ? [query.whereClause] : [],
 		),
 	)

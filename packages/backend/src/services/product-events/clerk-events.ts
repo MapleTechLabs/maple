@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import type { ProductEventInput } from "./ProductEventsService"
 
 /**
@@ -91,10 +91,7 @@ const emailDomain = (data: ClerkUserCreatedData): string | undefined => {
 		addresses[0]
 	const at = primary?.email_address?.lastIndexOf("@") ?? -1
 	if (primary?.email_address === undefined || at < 0) return undefined
-	const domain = primary.email_address
-		.slice(at + 1)
-		.trim()
-		.toLowerCase()
+	const domain = Str.toLowerCase(Str.trim(Str.slice(at + 1)(primary.email_address)))
 	return domain.length > 0 ? domain : undefined
 }
 
@@ -102,7 +99,7 @@ const emailDomain = (data: ClerkUserCreatedData): string | undefined => {
 const signUpSource = (data: ClerkUserCreatedData): string => {
 	const provider = data.external_accounts?.find((entry) => entry.provider !== undefined)?.provider
 	if (provider === undefined || provider.length === 0) return "email"
-	return provider.startsWith("oauth_") ? provider.slice("oauth_".length) : provider
+	return Str.startsWith("oauth_")(provider) ? Str.slice("oauth_".length)(provider) : provider
 }
 
 export const signupCompletedEvent = (

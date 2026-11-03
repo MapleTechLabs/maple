@@ -1,5 +1,5 @@
 import { ChatApplyRequest } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import { MapleAiClient } from "../../../platform/api-clients"
 import { writeClipboard } from "../../kit/clipboard"
@@ -18,7 +18,7 @@ export const LoadHistory = Command.define("LoadChatHistory", {
 		loadHistory(sessionId).pipe(
 			Effect.mapBoth({
 				onSuccess: (history) => ({
-					messages: history.messages.map(historyMessageToUIMessage),
+					messages: Arr.map(history.messages, historyMessageToUIMessage),
 					cursor: history.cursor,
 					running: history.running,
 				}),
@@ -110,7 +110,7 @@ export const DownloadCode = Command.define("DownloadChatCode", {
 	messages: [Message.CompletedCodeAction],
 	execute: ({ code, language }) =>
 		Effect.as(
-			saveFile(`file.${EXTENSIONS.get(language.toLowerCase()) ?? "txt"}`, code, "text/plain"),
+			saveFile(`file.${EXTENSIONS.get(Str.toLowerCase(language)) ?? "txt"}`, code, "text/plain"),
 			Message.CompletedCodeAction(),
 		),
 })

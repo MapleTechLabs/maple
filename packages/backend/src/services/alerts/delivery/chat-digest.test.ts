@@ -1,5 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { buildChatDigestBlocks, type ChatDigestItem } from "./chat-digest"
+import { String as Str } from "effect"
 
 const item = (n: number): ChatDigestItem => ({
 	ruleName: `Rule [${n}]`,
@@ -18,7 +19,7 @@ describe("buildChatDigestBlocks", () => {
 		)
 		assert.strictEqual(card?.kind, "alert")
 		if (card?.kind !== "alert") return
-		const lines = card.summary.split("\n")
+		const lines = Str.split("\n")(card.summary)
 		assert.lengthOf(lines, 11)
 		assert.include(lines[0], "[Rule 1](https://app.test/services/checkout?n=1)")
 		assert.include(lines[0], "Critical")

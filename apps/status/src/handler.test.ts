@@ -17,6 +17,7 @@ import {
 	putOverlayEntry,
 	send,
 } from "./test-support"
+import { Array as Arr, String as Str } from "effect"
 
 const PAGE = "https://status.acme.example/"
 const TOKEN = "mstat_correct-horse-battery-staple"
@@ -237,7 +238,7 @@ describe("break-glass updates", () => {
 	it("keeps an earlier post on the page when a lagging KV list has not returned it yet", async () => {
 		expect((await send(fake, update(TOKEN))).status).toBe(303)
 		// The first post's key is in KV but missing from `list`, as right after a write in another colo.
-		fake.kv.forEach((_, key) => key.startsWith("overlay:") && fake.unlisted.add(key))
+		fake.kv.forEach((_, key) => Str.startsWith("overlay:")(key) && fake.unlisted.add(key))
 		const second = postForm(`${PAGE}_manage`, [
 			["token", TOKEN],
 			["incidentId", "new"],
@@ -308,11 +309,11 @@ describe("break-glass updates", () => {
 		const bad = [
 			[["status", "on_fire"]],
 			[["body", ""]],
-			[["title", "x".repeat(201)]],
+			[["title", Str.repeat(201)("x")]],
 			[["componentIds", "not-a-component"]],
 		] as const
 		const statuses = await Promise.all(
-			bad.map(async (fields) => {
+			Arr.map(bad, async (fields) => {
 				const form = new Map<string, string>([
 					["token", TOKEN],
 					["incidentId", "new"],
@@ -426,7 +427,7 @@ describe("break-glass updates", () => {
 	})
 
 	it("answers 413 to an oversized body sent chunked, without a content-length", async () => {
-		const chunk = new TextEncoder().encode(`body=${"x".repeat(8 * 1024)}`)
+		const chunk = new TextEncoder().encode(`body=${Str.repeat(8 * 1024)("x")}`)
 		const stream = new ReadableStream<Uint8Array>({
 			start(controller) {
 				Array.from({ length: 5 }, () => controller.enqueue(chunk))

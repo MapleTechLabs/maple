@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Scope } from "effect"
+import { Effect, Exit, Layer, Scope, Array as Arr, Record as Rec, String as Str } from "effect"
 import { afterEach, expect, vi } from "vitest"
 import { make, WorkerEnvironment } from "./index.js"
 
@@ -24,7 +24,7 @@ const setupFetch = (responder: (url: string) => Response = () => new Response(nu
 		const initHeaders = init?.headers
 		if (initHeaders instanceof Headers) {
 			initHeaders.forEach((v, k) => (headers[k] = v))
-		} else if (Array.isArray(initHeaders)) {
+		} else if (Arr.isArray(initHeaders)) {
 			for (const [k, v] of initHeaders) headers[k] = v
 		} else if (initHeaders) {
 			Object.assign(headers, initHeaders)
@@ -57,7 +57,7 @@ describe("MapleCloudflareSDK.make", () => {
 
 		await telemetry.flush(env)
 
-		const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))
+		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
 		expect(traceCall).toBeDefined()
 		expect(traceCall!.url).toBe("https://collector.test/v1/traces")
 		expect(traceCall!.headers.authorization).toBe("Bearer secret")
@@ -68,9 +68,9 @@ describe("MapleCloudflareSDK.make", () => {
 			}>
 		}
 		const spans = body.resourceSpans[0].scopeSpans[0].spans
-		expect(spans.map((s) => s.name).sort()).toEqual(["op-1", "op-2"])
+		expect(Arr.map(spans, (s) => s.name).sort()).toEqual(["op-1", "op-2"])
 		const attrs = body.resourceSpans[0].resource.attributes
-		const attrMap = Object.fromEntries(attrs.map((a) => [a.key, a.value.stringValue]))
+		const attrMap = Rec.fromEntries(Arr.map(attrs, (a) => [a.key, a.value.stringValue]))
 		expect(attrMap["service.name"]).toBe("unit-test")
 		expect(attrMap["maple.sdk.type"]).toBe("cloudflare")
 		// Dual-emit: legacy key for Tinybird MVs + OTel-canonical key for new
@@ -99,7 +99,7 @@ describe("MapleCloudflareSDK.make", () => {
 
 		await telemetry.flush(env)
 
-		const logCall = calls.find((c) => c.url.endsWith("/v1/logs"))
+		const logCall = calls.find((c) => Str.endsWith("/v1/logs")(c.url))
 		expect(logCall).toBeDefined()
 		const body = logCall!.body as {
 			resourceLogs: Array<{
@@ -126,7 +126,7 @@ describe("MapleCloudflareSDK.make", () => {
 		// defaulting here, not the no-op behavior.
 		await telemetry.flush({ MAPLE_INGEST_KEY: "secret" })
 
-		const tracesCall = calls.find((c) => c.url.endsWith("/v1/traces"))
+		const tracesCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
 		expect(tracesCall?.url).toBe("https://ingest.maple.dev/v1/traces")
 	})
 
@@ -216,7 +216,7 @@ describe("MapleCloudflareSDK.make", () => {
 		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush(env)
 
-		const call = calls.find((c) => c.url.endsWith("/v1/traces"))
+		const call = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
 		expect(call?.url).toBe("https://override.test/v1/traces")
 		expect(call?.headers.authorization).toBe("Bearer override-key")
 	})
@@ -261,12 +261,12 @@ describe("MapleCloudflareSDK.make", () => {
 
 		await telemetry.flush(env)
 
-		const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))
+		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
 		expect(traceCall, "expected the deferred span to be POSTed by the awaited flush").toBeDefined()
 		const body = traceCall!.body as {
 			resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 		}
-		expect(body.resourceSpans[0].scopeSpans[0].spans.map((s) => s.name)).toEqual(["deferred-op"])
+		expect(Arr.map(body.resourceSpans[0].scopeSpans[0].spans, (s) => s.name)).toEqual(["deferred-op"])
 	})
 
 	it("overlapping flushes export every span exactly once", async () => {
@@ -297,16 +297,17 @@ describe("MapleCloudflareSDK.make", () => {
 		const second = telemetry.flush(env)
 		await Promise.all([first, second])
 
-		const exported = calls
-			.filter((c) => c.url.endsWith("/v1/traces"))
-			.map((c) => {
+		const exported = Arr.map(
+			Arr.filter(calls, (c) => Str.endsWith("/v1/traces")(c.url)),
+			(c) => {
 				const body = c.body as {
 					resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 				}
-				return body.resourceSpans.flatMap((rs) =>
-					rs.scopeSpans.flatMap((ss) => ss.spans.map((s) => s.name)),
+				return Arr.flatMap(body.resourceSpans, (rs) =>
+					Arr.flatMap(rs.scopeSpans, (ss) => Arr.map(ss.spans, (s) => s.name)),
 				)
-			})
+			},
+		)
 		expect(exported).toEqual([["overlap-a"], ["overlap-b"]])
 	})
 
@@ -340,14 +341,15 @@ describe("MapleCloudflareSDK.make", () => {
 		])
 
 		expect(settled, "the later flush must not wait on the stuck one").toBe(true)
-		const names = calls
-			.filter((c) => c.url.endsWith("/v1/traces"))
-			.map((c) => {
+		const names = Arr.map(
+			Arr.filter(calls, (c) => Str.endsWith("/v1/traces")(c.url)),
+			(c) => {
 				const body = c.body as {
 					resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 				}
-				return body.resourceSpans[0]?.scopeSpans[0]?.spans.map((s) => s.name)
-			})
+				return Arr.map(body.resourceSpans[0]?.scopeSpans[0]?.spans, (s) => s.name)
+			},
+		)
 		expect(names).toEqual([["stuck-op"], ["later-op"]])
 	})
 
@@ -378,13 +380,15 @@ describe("MapleCloudflareSDK.make requestLayer", () => {
 					yield* Scope.close(scope, Exit.void)
 				}),
 			)
-			const traces = calls.filter((call) => call.url === "https://collector.test/v1/traces")
+			const traces = Arr.filter(calls, (call) => call.url === "https://collector.test/v1/traces")
 			expect(traces).toHaveLength(1)
 			expect(traces[0]?.headers.authorization).toBe("Bearer secret")
 			const body = traces[0]?.body as {
 				resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 			}
-			expect(body.resourceSpans[0]?.scopeSpans[0]?.spans.map((span) => span.name)).toEqual(["op-1"])
+			expect(Arr.map(body.resourceSpans[0]?.scopeSpans[0]?.spans, (span) => span.name)).toEqual([
+				"op-1",
+			])
 		} finally {
 			restore()
 		}

@@ -10,7 +10,7 @@ import {
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { currentRegion } from "../../../lib/region"
 import { isUnexpectedError } from "@maple/web-data/lib/error-messages"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -39,7 +39,7 @@ type Return = PageReturn<Model, Message>
 export const DEFAULT_MODEL = "default"
 export const DEFAULT_MODEL_LABEL = "Maple default"
 /** The EU instance only serves models with an in-region provider. */
-export const MODEL_OPTIONS = PR_REVIEW_MODELS.filter((model) => currentRegion !== "eu" || model.eu)
+export const MODEL_OPTIONS = Arr.filter(PR_REVIEW_MODELS, (model) => currentRegion !== "eu" || model.eu)
 export const modelLabel = (value: string) =>
 	value === DEFAULT_MODEL
 		? DEFAULT_MODEL_LABEL
@@ -82,14 +82,27 @@ const withDefaults = (settings: PrReviewOrgSettings, defaults: PrReviewRepositor
 	})
 
 /** Records `settings` as this tab's and writes it now, or after the save in flight. */
-const enqueueSave = (model: Model, purpose: SavePurpose, label: string, settings: PrReviewOrgSettings): Return => {
+const enqueueSave = (
+	model: Model,
+	purpose: SavePurpose,
+	label: string,
+	settings: PrReviewOrgSettings,
+): Return => {
 	const next: Model = { ...model, localSettings: settings }
 	return model.savingSettings === null
 		? {
 				model: { ...next, savingSettings: purpose, sentSettings: settings },
 				commands: [SaveSettings({ purpose, label, settings })],
 			}
-		: { model: { ...next, queuedSaves: [...model.queuedSaves.filter((queued) => queued.purpose !== purpose), { purpose, label }] } }
+		: {
+				model: {
+					...next,
+					queuedSaves: [
+						...Arr.filter(model.queuedSaves, (queued) => queued.purpose !== purpose),
+						{ purpose, label },
+					],
+				},
+			}
 }
 
 /**
@@ -108,7 +121,13 @@ const settleSave = (model: Model, context: PageContext, purpose: SavePurpose, is
 	const [head, ...rest] = model.queuedSaves
 	return head === undefined
 		? readSettings(
-				{ ...model, localSettings: kept, savingSettings: null, sentSettings: null, confirmedSettings: confirmed },
+				{
+					...model,
+					localSettings: kept,
+					savingSettings: null,
+					sentSettings: null,
+					confirmedSettings: confirmed,
+				},
 				context,
 				"Supersede",
 			)
@@ -126,7 +145,7 @@ const settleSave = (model: Model, context: PageContext, purpose: SavePurpose, is
 }
 
 export const currentModel = (settings: PrReviewOrgSettings) =>
-	settings.model !== undefined && MODEL_OPTIONS.some((model) => model.id === settings.model)
+	settings.model !== undefined && Arr.some(MODEL_OPTIONS, (model) => model.id === settings.model)
 		? settings.model
 		: DEFAULT_MODEL
 
@@ -168,7 +187,7 @@ const readConfig = (
 export const activeRepositories = (model: Model): ReadonlyArray<GithubRepoSummary> =>
 	Option.match(AsyncData.getData(model.githubStatus.data), {
 		onNone: () => [],
-		onSome: (status) => status.repositories.filter((repo) => repo.status === "active"),
+		onSome: (status) => Arr.filter(status.repositories, (repo) => repo.status === "active"),
 	})
 
 /** A row's switch: the optimistic value while one is held, else the server's. */
@@ -317,8 +336,12 @@ const pickModel = (model: Model, value: string): Return =>
 		onNone: () => ({ model }),
 		onSome: (settings) => {
 			// Controlled by the saved value: the trigger shows it until the refetch says otherwise.
-			const reverted = { ...model, modelSelect: { ...model.modelSelect, value: currentModel(settings) } }
-			if (value === currentModel(baseSettings(model)) || model.isSavingModel || !model.isAdmin) return { model: reverted }
+			const reverted = {
+				...model,
+				modelSelect: { ...model.modelSelect, value: currentModel(settings) },
+			}
+			if (value === currentModel(baseSettings(model)) || model.isSavingModel || !model.isAdmin)
+				return { model: reverted }
 			const picked = isModel(value) ? value : undefined
 			return enqueueSave(
 				{ ...reverted, isSavingModel: true },
@@ -334,7 +357,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchSettings: ({ key, result }) => {
 			const settings = Keyed.accept(model.settings, key, result)
 			// The server has caught up with this tab's writes once none is in flight.
-			const isSettled = settings !== model.settings && model.savingSettings === null && AsyncData.isSuccess(settings.data)
+			const isSettled =
+				settings !== model.settings &&
+				model.savingSettings === null &&
+				AsyncData.isSuccess(settings.data)
 			const next = settingsArrived({
 				...model,
 				settings,
@@ -351,8 +377,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next: Model = {
 				...model,
 				githubStatus,
-				optimistic: Object.fromEntries(
-					Object.entries(model.optimistic).filter(
+				optimistic: Rec.fromEntries(
+					Arr.filter(
+						Rec.toEntries(model.optimistic),
 						([id, entry]) => serverValueOf(githubStatus.data, id) === entry.server,
 					),
 				),
@@ -385,7 +412,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedSaveSettings: ({ purpose, label, result }) => {
 			const failure = result._tag === "Failure" ? Option.some(result.failure) : Option.none()
-			const refetch = (next: Model): Return => settleSave(next, context, purpose, Option.isSome(failure))
+			const refetch = (next: Model): Return =>
+				settleSave(next, context, purpose, Option.isSome(failure))
 			if (purpose === "model") {
 				const saved = refetch({ ...model, isSavingModel: false })
 				return {
@@ -444,14 +472,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						commands: [SetPrReview({ repositoryId, fullName, isEnabled })],
 					},
 		CompletedSetPrReview: ({ repositoryId, fullName, isEnabled, result }) => {
-			const busy = model.busy.filter((id) => id !== repositoryId)
+			const busy = Arr.filter(model.busy, (id) => id !== repositoryId)
 			if (result._tag === "Failure")
 				return {
 					model: {
 						...model,
 						busy,
-						optimistic: Object.fromEntries(
-							Object.entries(model.optimistic).filter(([id]) => id !== repositoryId),
+						optimistic: Rec.fromEntries(
+							Arr.filter(Rec.toEntries(model.optimistic), ([id]) => id !== repositoryId),
 						),
 					},
 					outMessage: toast(

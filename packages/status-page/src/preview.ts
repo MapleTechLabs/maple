@@ -16,6 +16,7 @@ import {
 	type StatusPageSnapshotIncident,
 	type StatusPageSnapshotPage,
 } from "@maple/domain/status-page"
+import { Array as Arr } from "effect"
 
 export interface PreviewComponent {
 	readonly id: StatusPageComponentId
@@ -43,8 +44,8 @@ export const previewSnapshot = (input: {
 	readonly incidents: ReadonlyArray<StatusPageSnapshotIncident>
 	readonly nowMs: number
 }): StatusPageSnapshot => {
-	const active = input.incidents.filter(isActiveIncident)
-	const emptyDays = lastDays(input.nowMs, STATUS_PAGE_WINDOW_DAYS).map((day) => ({
+	const active = Arr.filter(input.incidents, isActiveIncident)
+	const emptyDays = Arr.map(lastDays(input.nowMs, STATUS_PAGE_WINDOW_DAYS), (day) => ({
 		day,
 		checks: 0,
 		failures: 0,
@@ -57,7 +58,7 @@ export const previewSnapshot = (input: {
 		generatedAt: input.nowMs,
 		page: input.page,
 		breakGlassTokenSha256: null,
-		components: input.components.map((component) => {
+		components: Arr.map(input.components, (component) => {
 			const baseStatus = deriveComponentStatus({
 				monitorStatus: component.monitorStatus,
 				manualStatus: component.manualStatus,
@@ -72,9 +73,10 @@ export const previewSnapshot = (input: {
 				status: deriveComponentStatus({
 					monitorStatus: component.monitorStatus,
 					manualStatus: component.manualStatus,
-					incidentStatuses: active
-						.filter((incident) => incident.componentIds.includes(component.id))
-						.map(incidentComponentStatus),
+					incidentStatuses: Arr.map(
+						Arr.filter(active, (incident) => incident.componentIds.includes(component.id)),
+						incidentComponentStatus,
+					),
 				}),
 				showUptime: component.showUptime,
 				monitored: component.monitored,
@@ -82,15 +84,19 @@ export const previewSnapshot = (input: {
 			}
 		}),
 		incidents: input.incidents,
-		incidentHistory: input.incidents
-			.filter((incident) => !(incident.kind === "maintenance" && incident.status === "scheduled"))
-			.map((incident) => ({
+		incidentHistory: Arr.map(
+			Arr.filter(
+				input.incidents,
+				(incident) => !(incident.kind === "maintenance" && incident.status === "scheduled"),
+			),
+			(incident) => ({
 				id: incident.id,
 				title: incident.title,
 				kind: incident.kind,
 				impact: incident.impact,
 				startedAt: incident.startedAt,
 				resolvedAt: incident.resolvedAt,
-			})),
+			}),
+		),
 	}
 }

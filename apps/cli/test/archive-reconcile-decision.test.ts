@@ -8,6 +8,7 @@ import {
 	type ReconciliationSnapshot,
 } from "@maple/local-server/archives/reconcile"
 import type { CreateOperationIntent, GcOperationIntent } from "@maple/local-server/archives/journal"
+import { String as Str } from "effect"
 
 // Exhaustive transition-table tests for the pure decision function (Gate 3b r5).
 // These test the SOLE branch logic with NO I/O: every (kind, phase, topology)
@@ -50,9 +51,9 @@ const gcIntent = (
 		rangeStart: "2026-06-01",
 		generationId: randomUUID(),
 		createdAt: "2026-06-02T00:00:00.000Z",
-		manifestSha256: "b".repeat(64),
+		manifestSha256: Str.repeat(64)("b"),
 		bytes: 100,
-		shards: [{ name: "00.parquet", bytes: 100, sha256: "c".repeat(64) }],
+		shards: [{ name: "00.parquet", bytes: 100, sha256: Str.repeat(64)("c") }],
 		recordedActiveGenerationId: randomUUID(),
 	}))
 	return {

@@ -34,7 +34,7 @@ import {
 	minimizeFiles,
 } from "@maple/backend/services/pr-review/merge-checklist-corpus"
 import { privacyFindings } from "@maple/backend/services/pr-review/telemetry/privacy"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { fetchPullRequest, nameAtBase, run } from "./pr-review-local"
 
 const CORPUS_DIR = fileURLToPath(
@@ -79,7 +79,9 @@ const verdictFor = (owner: string, repo: string, name: string): NameVerdict => {
 		onSome: ({ items }) =>
 			searchVerdict(
 				name,
-				items.map((item) => ({ snippets: (item.text_matches ?? []).map((match) => match.fragment) })),
+				Arr.map(items, (item) => ({
+					snippets: Arr.map(item.text_matches ?? [], (match) => match.fragment),
+				})),
 			),
 	})
 }
@@ -90,10 +92,10 @@ const usage = (): never => {
 }
 
 export const checklistLocally = (argv: ReadonlyArray<string>) => {
-	const positional = argv.filter((arg) => !arg.startsWith("--"))
+	const positional = Arr.filter(argv, (arg) => !Str.startsWith("--")(arg))
 	const search = !argv.includes("--no-search")
 	const fromUrl = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(positional[0] ?? "")
-	const [owner = "", repo = ""] = fromUrl ? [fromUrl[1], fromUrl[2]] : (positional[0] ?? "").split("/")
+	const [owner, repo = ""] = fromUrl ? [fromUrl[1], fromUrl[2]] : Str.split("/")(positional[0] ?? "")
 	const number = Number(fromUrl ? fromUrl[3] : positional[1])
 	if (!owner || !repo || !Number.isInteger(number) || number < 1) usage()
 
@@ -102,7 +104,10 @@ export const checklistLocally = (argv: ReadonlyArray<string>) => {
 	const detected = detectMergeSteps(files)
 	const verdicts = new Map<string, NameVerdict>(
 		search
-			? detected.names.slice(0, MAX_SEARCHES).map(({ name }) => [name, verdictFor(owner, repo, name)])
+			? Arr.map(detected.names.slice(0, MAX_SEARCHES), ({ name }) => [
+					name,
+					verdictFor(owner, repo, name),
+				])
 			: [],
 	)
 	const checklist = buildChecklist({ detected, verdicts, reviewer: [], isIgnored: () => false })
@@ -112,22 +117,22 @@ export const checklistLocally = (argv: ReadonlyArray<string>) => {
 	for (const candidate of detected.names) {
 		const verdict = verdicts.get(candidate.name) ?? "unverified"
 		console.log(
-			`  ${verdict.padEnd(10)} ${candidate.kind.padEnd(6)} ${candidate.name}  ${candidate.path}:${candidate.line}${candidate.ci ? "  (CI)" : ""}`,
+			`  ${Str.padEnd(10)(verdict)} ${Str.padEnd(6)(candidate.kind)} ${candidate.name}  ${candidate.path}:${candidate.line}${candidate.ci ? "  (CI)" : ""}`,
 		)
 	}
 	console.log(`\nFile steps (${detected.steps.length}):`)
-	for (const step of detected.steps) console.log(`  ${step.kind.padEnd(10)} ${step.path}`)
+	for (const step of detected.steps) console.log(`  ${Str.padEnd(10)(step.kind)} ${step.path}`)
 	if (checklist.trace.cut > 0) console.log(`\n${checklist.trace.cut} steps past the cap were cut.`)
 	const section = renderBeforeMerge(
 		checklist.steps,
 		(path, line) =>
 			`https://github.com/${owner}/${repo}/blob/${pr.head.sha}/${path}${line === undefined ? "" : `#L${line}`}`,
 	)
-	console.log(`\n${section.length === 0 ? "Nothing before merge." : section.join("\n")}`)
+	console.log(`\n${section.length === 0 ? "Nothing before merge." : Arr.join(section, "\n")}`)
 	const privacy = privacyFindings(files)
 	console.log(`\nPrivacy scan (${privacy.length}):`)
 	for (const finding of privacy) {
-		console.log(`  ${finding.severity.padEnd(8)} ${finding.path}:${finding.line}  ${finding.title}`)
+		console.log(`  ${Str.padEnd(8)(finding.severity)} ${finding.path}:${finding.line}  ${finding.title}`)
 	}
 }
 
@@ -149,15 +154,15 @@ const snapshot = (
 	}
 	const minimized = minimizeFiles(files)
 	const detected = detectMergeSteps(files)
-	const verdicts = Object.fromEntries(
-		detected.names.map(({ name }) => [name, nameAtBase(dir, pr.base.sha, name)] as const),
+	const verdicts = Rec.fromEntries(
+		Arr.map(detected.names, ({ name }) => [name, nameAtBase(dir, pr.base.sha, name)] as const),
 	)
 	// The cut patches must decide exactly what the full ones do, or the case measures nothing.
 	const full = checklistKeys({ files, verdicts })
 	const cut = checklistKeys({ files: minimized, verdicts })
-	if (full.join("\n") !== cut.join("\n")) {
+	if (Arr.join(full, "\n") !== Arr.join(cut, "\n")) {
 		console.error(
-			`Cut patches change the checklist:\n  full: ${full.join(", ")}\n  cut:  ${cut.join(", ")}`,
+			`Cut patches change the checklist:\n  full: ${Arr.join(full, ", ")}\n  cut:  ${Arr.join(cut, ", ")}`,
 		)
 		return process.exit(1)
 	}
@@ -183,8 +188,8 @@ const snapshot = (
 	// Generated, so compact: the labels are the file people read and edit.
 	writeFileSync(path, `${encodeCase(item)}\n`)
 	console.log(`${path}\n${pr.html_url} · ${pr.title}`)
-	for (const [name, verdict] of Object.entries(verdicts)) console.log(`  ${verdict.padEnd(10)} ${name}`)
-	console.log(`Detectors list: ${full.length === 0 ? "nothing" : full.join(", ")}`)
+	for (const [name, verdict] of Rec.toEntries(verdicts)) console.log(`  ${Str.padEnd(10)(verdict)} ${name}`)
+	console.log(`Detectors list: ${full.length === 0 ? "nothing" : Arr.join(full, ", ")}`)
 	if (!labelled)
 		console.log(
 			`Label it in ${LABELS}: "${id}": { "expected": [...], "acceptable": [...], "note": "..." }`,

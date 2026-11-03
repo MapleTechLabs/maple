@@ -3,7 +3,7 @@ import { formatDuration, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { traceHrefFrom } from "./peek"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { TracesSearch } from "../../../route/search"
@@ -33,7 +33,7 @@ export const traceHref = (search: Search, row: TraceRow): string =>
 const displayName = (row: TraceRow): string => {
 	const name = row.rootName !== "" ? row.rootName : row.rootSpanName !== "" ? row.rootSpanName : "Unknown"
 	const screenName = row.rootAttributes["screen.name"]
-	return screenName !== undefined && screenName !== "" && !name.includes(screenName)
+	return screenName !== undefined && screenName !== "" && !Str.includes(screenName)(name)
 		? `${name} · ${screenName}`
 		: name
 }
@@ -54,34 +54,32 @@ const rootSpanCell = (
 	return tableCell(
 		h,
 		[
-			vstack(h, { shrink: true },
-				[
-					// A plain click peeks (`MountPeekRows`); modified, middle and right clicks follow the link.
-					rowLink(h, {
-						href: traceHref(search, row),
-						label: `Open trace ${row.traceId}`,
-						attributes: [h.DataAttribute("peek-index", String(index)), h.Tabindex(-1)],
-					}),
-					httpSpanLabel(h, {
-						spanName: displayName(row),
-						spanAttributes: row.rootAttributes,
-						spanKind: row.rootKind,
-						textClassName: "text-xs",
-					}),
-					truncatedText(h, { text: stamp, className: typographyClass({ size: "3xs", tone: "muted" }) }, [
+			vstack(h, { shrink: true }, [
+				// A plain click peeks (`MountPeekRows`); modified, middle and right clicks follow the link.
+				rowLink(h, {
+					href: traceHref(search, row),
+					label: `Open trace ${row.traceId}`,
+					attributes: [h.DataAttribute("peek-index", String(index)), h.Tabindex(-1)],
+				}),
+				httpSpanLabel(h, {
+					spanName: displayName(row),
+					spanAttributes: row.rootAttributes,
+					spanKind: row.rootKind,
+					textClassName: "text-xs",
+				}),
+				truncatedText(
+					h,
+					{ text: stamp, className: typographyClass({ size: "3xs", tone: "muted" }) },
+					[
 						h.span([h.Class("hidden @min-[480px]/page:inline")], [stamp, " "]),
 						h.span(
 							[h.Class("text-foreground-subtle")],
-							[
-								"(",
-								listRelativeTime(h, { value: epochMs, nowMs, timeZone }),
-								")",
-							],
+							["(", listRelativeTime(h, { value: epochMs, nowMs, timeZone }), ")"],
 						),
 						h.span([h.Class("@min-[480px]/page:hidden")], [" · ", duration]),
-					]),
-				],
-			),
+					],
+				),
+			]),
 		],
 		CELL,
 	)

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, it } from "vitest"
 import type { MapleCloudEvent, SignalProjectionSpec } from "@maple/eventing-core"
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import {
 	eventingControlPath,
 	restoreControlSnapshot,
@@ -59,7 +59,7 @@ const event = (overrides: Partial<MapleCloudEvent> = {}): MapleCloudEvent => ({
 	...overrides,
 })
 
-const SOURCE_FINGERPRINT = `sha256:${"a".repeat(64)}`
+const SOURCE_FINGERPRINT = `sha256:${Str.repeat(64)("a")}`
 
 describe("LocalEventingControlStore", () => {
 	it("records bounded outbox and consumer telemetry without identifiers or payloads", async () =>
@@ -126,7 +126,7 @@ describe("LocalEventingControlStore", () => {
 					sensitiveEvent.id,
 					claim.leaseToken!,
 				])
-					strictEqual(serialized.includes(forbidden), false)
+					strictEqual(Str.includes(forbidden)(serialized), false)
 			} finally {
 				await store.close()
 			}
@@ -196,7 +196,7 @@ describe("LocalEventingControlStore", () => {
 				run(store.markReady([event().id]))
 				deepStrictEqual(run(store.listStaged()).events, [])
 				deepStrictEqual(
-					run(store.listReady()).events.map(({ event }) => event),
+					Arr.map(run(store.listReady()).events, ({ event }) => event),
 					[event()],
 				)
 			} finally {
@@ -232,7 +232,7 @@ describe("LocalEventingControlStore", () => {
 								"otel.log",
 								sourced.source,
 								sourced.sourceoccurrenceid!,
-								`sha256:${"b".repeat(64)}`,
+								`sha256:${Str.repeat(64)("b")}`,
 							),
 						),
 					/staged source occurrence collision/,
@@ -264,7 +264,7 @@ describe("LocalEventingControlStore", () => {
 			store = await openStore(dataDir)
 			deepStrictEqual(run(store.loadEnabledProjections("tenant-a")), [projection()])
 			deepStrictEqual(
-				run(store.listReady()).events.map(({ event }) => event),
+				Arr.map(run(store.listReady()).events, ({ event }) => event),
 				[event()],
 			)
 			const snapshot = join(dataDir, "backups", "snapshot", "control.sqlite")
@@ -285,7 +285,7 @@ describe("LocalEventingControlStore", () => {
 			try {
 				deepStrictEqual(run(restoredStore.loadEnabledProjections("tenant-a")), [projection()])
 				deepStrictEqual(
-					run(restoredStore.listReady()).events.map(({ event }) => event),
+					Arr.map(run(restoredStore.listReady()).events, ({ event }) => event),
 					[event()],
 				)
 			} finally {
@@ -315,7 +315,7 @@ describe("LocalEventingControlStore", () => {
 				try {
 					deepStrictEqual(run(recovered.loadEnabledProjections("tenant-a")), [projection()])
 					deepStrictEqual(
-						run(recovered.listStaged()).events.map((row) => row.event),
+						Arr.map(run(recovered.listStaged()).events, (row) => row.event),
 						[event()],
 					)
 				} finally {
@@ -347,7 +347,7 @@ describe("LocalEventingControlStore", () => {
 				try {
 					deepStrictEqual(run(restoredStore.loadEnabledProjections("tenant-a")), [projection()])
 					deepStrictEqual(
-						run(restoredStore.listReady()).events.map(({ event }) => event),
+						Arr.map(run(restoredStore.listReady()).events, ({ event }) => event),
 						[event()],
 					)
 				} finally {
@@ -375,7 +375,7 @@ describe("LocalEventingControlStore", () => {
 				strictEqual(firstPage.nextCursor, firstPage.events[0]?.sequence)
 				const secondPage = run(store.listReady(1, firstPage.nextCursor!))
 				deepStrictEqual(
-					[...firstPage.events, ...secondPage.events].map(({ event }) => event.id),
+					Arr.map([...firstPage.events, ...secondPage.events], ({ event }) => event.id),
 					[event().id, second.id],
 				)
 				strictEqual(secondPage.nextCursor, null)
@@ -404,7 +404,7 @@ describe("LocalEventingControlStore", () => {
 
 				const initialPage = run(store.listReady(1))
 				deepStrictEqual(
-					initialPage.events.map(({ event }) => event.id),
+					Arr.map(initialPage.events, ({ event }) => event.id),
 					[second.id],
 				)
 				const cursor = initialPage.events[0]!.sequence
@@ -412,7 +412,7 @@ describe("LocalEventingControlStore", () => {
 				run(store.markReady([first.id]))
 				const recoveredPage = run(store.listReady(1, cursor))
 				deepStrictEqual(
-					recoveredPage.events.map(({ event }) => event.id),
+					Arr.map(recoveredPage.events, ({ event }) => event.id),
 					[first.id],
 				)
 				strictEqual(recoveredPage.events[0]!.sequence > cursor, true)
@@ -478,7 +478,7 @@ describe("LocalEventingControlStore", () => {
 				)
 				strictEqual(firstClaim.leaseToken?.length, 64)
 				deepStrictEqual(
-					firstClaim.events.map(({ event }) => event.id),
+					Arr.map(firstClaim.events, ({ event }) => event.id),
 					[event().id, second.id],
 				)
 				throws(
@@ -491,7 +491,7 @@ describe("LocalEventingControlStore", () => {
 							store.acknowledgeClaim(
 								"tenant-a",
 								"automation",
-								"0".repeat(64),
+								Str.repeat(64)("0"),
 								firstClaim.throughSequence!,
 								"2026-08-13T12:00:03.000Z",
 							),
@@ -516,7 +516,7 @@ describe("LocalEventingControlStore", () => {
 					store.claimReady("tenant-a", "automation", 2, 10, "2026-08-13T12:00:12.000Z"),
 				)
 				deepStrictEqual(
-					retry.events.map(({ event }) => event.id),
+					Arr.map(retry.events, ({ event }) => event.id),
 					[event().id, second.id],
 				)
 				strictEqual(retry.leaseToken === firstClaim.leaseToken, false)
@@ -537,7 +537,7 @@ describe("LocalEventingControlStore", () => {
 					},
 				)
 				deepStrictEqual(
-					run(store.listReady()).events.map(({ event }) => event.id),
+					Arr.map(run(store.listReady()).events, ({ event }) => event.id),
 					[third.id],
 				)
 				throws(
@@ -600,13 +600,13 @@ describe("LocalEventingControlStore", () => {
 					2,
 				)
 				deepStrictEqual(
-					run(store.listReady()).events.map(({ event }) => event.id),
+					Arr.map(run(store.listReady()).events, ({ event }) => event.id),
 					[third.id],
 				)
 				run(store.disableConsumer("tenant-a", "automation-b"))
 				deepStrictEqual(run(store.listReady()).events, [])
 				deepStrictEqual(
-					run(store.listStaged()).events.map(({ event }) => event.id),
+					Arr.map(run(store.listStaged()).events, ({ event }) => event.id),
 					[stranded.id],
 				)
 			} finally {
@@ -681,6 +681,6 @@ describe("LocalEventingControlStore", () => {
 			mkdirSync(join(dataDir, "control"), { recursive: true })
 			symlinkSync(join(dataDir, "target.sqlite"), controlPath)
 			await rejects(() => openStore(dataDir), /not a real file/)
-			strictEqual(controlPath.endsWith("control/eventing.sqlite"), true)
+			strictEqual(Str.endsWith("control/eventing.sqlite")(controlPath), true)
 		}))
 })

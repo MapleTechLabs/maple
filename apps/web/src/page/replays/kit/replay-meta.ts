@@ -1,5 +1,5 @@
 import { videoSegmentPayload } from "../../../components/replays/engine/video-engine"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 
 // A replay's derived meta, why it cannot play, and the marker maps. rrweb's enum values are
 // inlined: @rrweb/types loads in the Mount.
@@ -258,16 +258,16 @@ export const deriveRangeMeta = (
  */
 export const combineRangeMetas = (originMs: number, ranges: ReadonlyArray<RangeMeta>): ReplayMeta => {
 	const sorted = ranges.toSorted((a, b) => a.fromChunkSeq - b.fromChunkSeq)
-	const adjacent = sorted.flatMap((range, i) => {
+	const adjacent = Arr.flatMap(sorted, (range, i) => {
 		const prev = sorted[i - 1]
 		return prev !== undefined && prev.toChunkSeq + 1 === range.fromChunkSeq ? [{ prev, range }] : []
 	})
-	const gaps = adjacent.flatMap(({ prev, range }) =>
+	const gaps = Arr.flatMap(adjacent, ({ prev, range }) =>
 		prev.lastMs !== null && range.firstMs !== null && range.firstMs - prev.lastMs > IDLE_THRESHOLD_MS
 			? [{ start: prev.lastMs, end: range.firstMs }]
 			: [],
 	)
-	const navs = adjacent.flatMap(({ prev, range }) =>
+	const navs = Arr.flatMap(adjacent, ({ prev, range }) =>
 		prev.lastHref !== null && range.firstHref !== null && range.firstHref.href !== prev.lastHref
 			? [{ ms: range.firstHref.ms, kind: "nav" as const }]
 			: [],
@@ -276,10 +276,10 @@ export const combineRangeMetas = (originMs: number, ranges: ReadonlyArray<RangeM
 		recordedWidth: 1280,
 		recordedHeight: 720,
 		startTime: originMs,
-		actionMarkers: [...sorted.flatMap((range) => range.actionMarkers), ...navs].toSorted(
+		actionMarkers: [...Arr.flatMap(sorted, (range) => range.actionMarkers), ...navs].toSorted(
 			(a, b) => a.ms - b.ms,
 		),
-		inactiveIntervals: [...sorted.flatMap((range) => range.inactiveIntervals), ...gaps].toSorted(
+		inactiveIntervals: [...Arr.flatMap(sorted, (range) => range.inactiveIntervals), ...gaps].toSorted(
 			(a, b) => a.start - b.start,
 		),
 	}

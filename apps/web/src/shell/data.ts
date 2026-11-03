@@ -1,6 +1,6 @@
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import { InfraPresenceRequest } from "@maple/domain/http"
-import { Clock, Effect, Option, Record, Schema } from "effect"
+import { Clock, Effect, Option, Record, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { lastHourWindow } from "../data/infra-surfaces"
 import { MapleInternalApiClient } from "../platform/api-clients"
@@ -71,9 +71,10 @@ export const LoadNamespaces = Command.define("LoadNamespaces", {
 				endTime: formatWarehouseDateTime(now),
 			})
 			const response = yield* loadServicesFacets(range, { orgId })
-			const namespaces = response.data.namespaces
-				.map((facet) => facet.name)
-				.filter((name) => name !== "")
+			const namespaces = Arr.filter(
+				Arr.map(response.data.namespaces, (facet) => facet.name),
+				(name) => name !== "",
+			)
 			return Message.SucceededLoadNamespaces({ orgId, namespaces })
 		}).pipe(failed(Message.FailedLoadNamespaces({ orgId }))),
 })

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { AgentTranscriptRow } from "@maple/domain/mcp-outputs"
 import { distinguishingOpenings, earliestFailure, failureTimeline } from "../get-agent-session-transcript"
+import { Array as Arr } from "effect"
 
 type Row = typeof AgentTranscriptRow.Type
 
@@ -37,7 +38,7 @@ describe("failureTimeline", () => {
 				...span("cause"),
 			},
 		]
-		expect(failureTimeline(rows).map((row) => row.spanId)).toEqual(["cause", "step", "anchor"])
+		expect(Arr.map(failureTimeline(rows), (row) => row.spanId)).toEqual(["cause", "step", "anchor"])
 	})
 })
 

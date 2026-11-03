@@ -25,6 +25,7 @@ import {
 	type GcpMetricPoint,
 	type GcpMetricReader,
 } from "./tabs"
+import { Array as Arr, Record as Rec } from "effect"
 
 const point = (
 	keys: ReadonlyArray<string>,
@@ -38,16 +39,16 @@ const API = ["api", "acme-prod", "europe-west1"]
 const WORKER = ["worker", "acme-prod", "europe-west1"]
 
 const valuesOf = (service: (typeof GCP_INFRA_SERVICE_IDS)[number], points: ReadonlyArray<GcpMetricPoint>) =>
-	gcpWorkloads(service, points).map((workload) =>
-		Object.fromEntries(
-			GCP_INFRA_COLUMNS[service].map((spec, index) => [spec.label, workload.values[index]]),
+	Arr.map(gcpWorkloads(service, points), (workload) =>
+		Rec.fromEntries(
+			Arr.map(GCP_INFRA_COLUMNS[service], (spec, index) => [spec.label, workload.values[index]]),
 		),
 	)
 
 describe("GCP_INFRA_COLUMNS", () => {
 	it("reads only metrics the tab's query returns", () => {
 		for (const service of GCP_INFRA_SERVICE_IDS) {
-			const known = new Set(gcpInfraMetrics(service).map((metric) => metric.name))
+			const known = new Set(Arr.map(gcpInfraMetrics(service), (metric) => metric.name))
 			const read: Array<string> = []
 			const recorder: GcpMetricReader = {
 				total: (metric) => {
@@ -62,7 +63,7 @@ describe("GCP_INFRA_COLUMNS", () => {
 			for (const spec of GCP_INFRA_COLUMNS[service]) spec.value(recorder)
 			expect(read.length, service).toBeGreaterThan(0)
 			expect(
-				read.filter((metric) => !known.has(metric)),
+				Arr.filter(read, (metric) => !known.has(metric)),
 				service,
 			).toEqual([])
 		}
@@ -70,7 +71,7 @@ describe("GCP_INFRA_COLUMNS", () => {
 
 	it("labels every column uniquely in its service", () => {
 		for (const service of GCP_INFRA_SERVICE_IDS) {
-			const labels = GCP_INFRA_COLUMNS[service].map((spec) => spec.label)
+			const labels = Arr.map(GCP_INFRA_COLUMNS[service], (spec) => spec.label)
 			expect(new Set(labels).size, service).toBe(labels.length)
 		}
 	})
@@ -89,7 +90,7 @@ describe("gcpWorkloads", () => {
 			point(API, "gcp.cloud_run.container.cpu.utilization", "0.95", 30, 60),
 			point(WORKER, "gcp.cloud_run.container.instance.count", "active", 60, 60),
 		])
-		expect(rows.map((row) => row.keys)).toEqual([API, WORKER])
+		expect(Arr.map(rows, (row) => row.keys)).toEqual([API, WORKER])
 		expect(rows[0]?.values).toEqual([1000, 0.1, 0.125, 0.5, 3, 0.5, undefined])
 		// A workload with no requests still has a row: counters read zero, the rest are absent.
 		expect(rows[1]?.values).toEqual([0, undefined, undefined, undefined, 1, undefined, undefined])
@@ -210,7 +211,7 @@ describe("workload identity", () => {
 			location: "us-central1-a",
 		})
 		for (const id of GCP_INFRA_SERVICE_IDS) {
-			const keys = GCP_INFRA_SERVICES[id].identity.map(([label]) => `a ${label}`)
+			const keys = Arr.map(GCP_INFRA_SERVICES[id].identity, ([label]) => `a ${label}`)
 			expect(gcpWorkloadKeys(id, keys[0], gcpWorkloadSearch(id, keys)), id).toEqual(keys)
 		}
 	})
@@ -221,12 +222,18 @@ describe("workload identity", () => {
 	})
 
 	it("knows which services have a region to filter by", () => {
-		expect(GCP_INFRA_SERVICE_IDS.filter((id) => !gcpHasRegion(id))).toEqual(["pubsub", "loadBalancing"])
+		expect(Arr.filter(GCP_INFRA_SERVICE_IDS, (id) => !gcpHasRegion(id))).toEqual([
+			"pubsub",
+			"loadBalancing",
+		])
 	})
 
 	it("marks the columns that are totals over the range", () => {
 		expect(
-			GCP_INFRA_COLUMNS.computeEngine.filter((spec) => spec.total).map((spec) => spec.label),
+			Arr.map(
+				GCP_INFRA_COLUMNS.computeEngine.filter((spec) => spec.total),
+				(spec) => spec.label,
+			),
 		).toEqual(["Network in", "Network out", "Disk read", "Disk write"])
 	})
 
@@ -262,11 +269,11 @@ describe("formatGcpValue", () => {
 describe("gcpServiceView", () => {
 	it("lists every service in exactly the view it names", () => {
 		for (const service of GCP_INFRA_SERVICE_IDS) {
-			const views = Object.entries(GCP_VIEW_SERVICES).filter(([, services]) =>
-				services.some((listed) => listed === service),
+			const views = Arr.filter(Rec.toEntries(GCP_VIEW_SERVICES), ([, services]) =>
+				Arr.some(services, (listed) => listed === service),
 			)
 			expect(
-				views.map(([view]) => view),
+				Arr.map(views, ([view]) => view),
 				service,
 			).toEqual([gcpServiceView(service)])
 		}

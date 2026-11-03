@@ -30,6 +30,7 @@
  */
 
 import { renderToolDoc, type DocBlock, type ToolDoc } from "../lib/tool-doc"
+import { Array as Arr, String as Str } from "effect"
 
 /** Line ceiling. Enough rows to see a distribution; far short of enough to reason over one by one. */
 export const MAX_TOOL_OUTPUT_LINES = 2_000
@@ -67,7 +68,7 @@ export const countLines = (text: string): number => {
 	if (text.length === 0) return 0
 	let lines = 1
 	for (let i = text.indexOf("\n"); i !== -1; i = text.indexOf("\n", i + 1)) lines++
-	return text.endsWith("\n") ? lines - 1 : lines
+	return Str.endsWith("\n")(text) ? lines - 1 : lines
 }
 
 /** Keep the first `maxLines` lines, dropping the newline that would have terminated the last one. */
@@ -80,7 +81,7 @@ const sliceToLines = (text: string, maxLines: number): string => {
 		if (next === -1) return text
 		cut = next
 	}
-	return text.slice(0, cut)
+	return Str.slice(0, cut)(text)
 }
 
 /**
@@ -185,9 +186,13 @@ const clipBlock = (block: DocBlock, fits: (block: DocBlock) => boolean): Clipped
 			return clip(block.entries, "fields", (entries) => ({ ...block, entries }))
 		case "code":
 		case "text": {
-			const lines = block.text.split("\n")
-			if (lines.length > 1) return clip(lines, "lines", (kept) => ({ ...block, text: kept.join("\n") }))
-			return clip(Array.from(block.text), "characters", (kept) => ({ ...block, text: kept.join("") }))
+			const lines = Str.split("\n")(block.text)
+			if (lines.length > 1)
+				return clip(lines, "lines", (kept) => ({ ...block, text: Arr.join(kept, "\n") }))
+			return clip(Array.from(block.text), "characters", (kept) => ({
+				...block,
+				text: Arr.join(kept, ""),
+			}))
 		}
 		case "heading":
 			return undefined
@@ -202,7 +207,7 @@ const budgetNotice = (maxChars: number, clipped: ClippedBlock | undefined, omitt
 		...(omitted === 0 ? [] : [`${omitted} later section${omitted === 1 ? "" : "s"} omitted`]),
 	]
 	return (
-		`[Output budget reached (${formatNumberOfChars(maxChars)} characters): ${parts.join("; ")}. ` +
+		`[Output budget reached (${formatNumberOfChars(maxChars)} characters): ${Arr.join(parts, "; ")}. ` +
 		"Narrow the request to see the rest: lower `limit`, add filters (service, environment, " +
 		"attributes), page with `offset`, or shorten the time range.]"
 	)
@@ -243,7 +248,7 @@ export const renderToolDocWithinBudget = (tool: ToolDoc, maxChars: number = MAX_
 	if (text.length <= maxChars) return text
 	// Head and tail alone over budget: hard cut, leaving room for the cut's own marker.
 	const cut = truncateToolOutput(text, { maxBytes: Math.max(0, maxChars - HARD_CUT_MARKER_RESERVE) }).text
-	return cut.length <= maxChars ? cut : cut.slice(0, maxChars)
+	return cut.length <= maxChars ? cut : Str.slice(0, maxChars)(cut)
 }
 
 /**

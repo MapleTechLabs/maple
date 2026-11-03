@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 // The span-volume fixture of `TreemapSpike` and its
 // service palette, kept apart from the definition so the lab page can build the legend.
 
@@ -36,7 +37,9 @@ export const TREEMAP_ROWS: ReadonlyArray<TreemapRow> = [
 export const TILE_TOKENS = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5", "--background"]
 
 /** The services in first-seen order. */
-export const TREEMAP_SERVICES: ReadonlyArray<string> = [...new Set(TREEMAP_ROWS.map((row) => row.service))]
+export const TREEMAP_SERVICES: ReadonlyArray<string> = [
+	...new Set(Arr.map(TREEMAP_ROWS, (row) => row.service)),
+]
 
 /** `serviceColor`'s token: the palette by first-seen service order. */
 export const serviceToken = (service: string): string =>

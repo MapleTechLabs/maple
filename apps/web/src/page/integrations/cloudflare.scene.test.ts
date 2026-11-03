@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { PageContext } from "../contract"
@@ -12,7 +12,7 @@ const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 describe("cloudflare card", () => {
 	test("entering the card reads its usage and loads the chart runtime", () => {

@@ -11,7 +11,7 @@ import {
 	toQueryBuilderDataSource,
 	toQueryBuilderMetricType,
 } from "@maple/query-model"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { FormulaDraft, QueryDraft } from "./editor-state"
 
 // Stored query sets read back into editor drafts, and the predicates over them
@@ -19,7 +19,7 @@ import type { FormulaDraft, QueryDraft } from "./editor-state"
 
 /** `toQueryGroupByArray`: a stored draft with no group-by list groups by service. */
 const groupByOf = (groupBy: ReadonlyArray<string> | undefined): Array<string> =>
-	groupBy === undefined ? ["service.name"] : groupBy.filter((item) => item.trim().length > 0)
+	groupBy === undefined ? ["service.name"] : Arr.filter(groupBy, (item) => Str.trim(item).length > 0)
 
 /** `normalizeLoadedQuery`: every field filled from the stored draft or the defaults. */
 const normalizeLoadedQuery = (raw: QueryBuilderQueryDraftPayload, index: number): QueryDraft => {
@@ -70,10 +70,14 @@ export const loadQueryDrafts = (set: {
 	readonly queries: ReadonlyArray<QueryBuilderQueryDraftPayload>
 	readonly formulas?: ReadonlyArray<QueryBuilderFormulaPayload> | undefined
 }): { queries: ReadonlyArray<QueryDraft>; formulas: ReadonlyArray<FormulaDraft> } => ({
-	queries: set.queries
-		.filter((query) => typeof query.id === "string" && typeof query.whereClause === "string")
-		.map(normalizeLoadedQuery),
-	formulas: (set.formulas ?? []).map((formula, index) => ({
+	queries: Arr.map(
+		Arr.filter(
+			set.queries,
+			(query) => typeof query.id === "string" && typeof query.whereClause === "string",
+		),
+		normalizeLoadedQuery,
+	),
+	formulas: Arr.map(set.formulas ?? [], (formula, index) => ({
 		...formula,
 		name: formula.name || formulaLabel(index),
 		hidden: formula.hidden ?? false,
@@ -83,7 +87,8 @@ export const loadQueryDrafts = (set: {
 export const isVisibleQuery = (query: QueryDraft): boolean => query.enabled !== false && !query.hidden
 
 export const hasActiveGroupBy = (query: QueryDraft): boolean =>
-	query.addOns.groupBy && query.groupBy.some((g) => g.trim() !== "" && g.trim().toLowerCase() !== "none")
+	query.addOns.groupBy &&
+	Arr.some(query.groupBy, (g) => Str.trim(g) !== "" && Str.toLowerCase(Str.trim(g)) !== "none")
 
 /** `inferDisplayUnitForQuery`. */
 export const inferDisplayUnitForQuery = (query: QueryDraft): string | undefined => {
@@ -94,7 +99,7 @@ export const inferDisplayUnitForQuery = (query: QueryDraft): string | undefined 
 		return query.aggregation === "count" ? "number" : undefined
 	}
 	if (query.dataSource === "logs" || query.dataSource === "product_events") return "number"
-	const lower = query.metricName.toLowerCase()
+	const lower = Str.toLowerCase(query.metricName)
 	if (/\b(error[._ -]?rate|percentage|percent)\b/.test(lower)) return "percent"
 	if (/[._](seconds|s)$/.test(lower) || /\b(duration[._]seconds)\b/.test(lower)) return "duration_s"
 	if (/\b(duration|latency|response[._]time)\b/.test(lower)) return "duration_ms"
@@ -107,9 +112,9 @@ export const inferDisplayUnitForQuery = (query: QueryDraft): string | undefined 
 
 /** `inferDefaultUnitForQueries`: the unit every visible query agrees on, if any. */
 export const inferDefaultUnitForQueries = (queries: ReadonlyArray<QueryDraft>): string | undefined => {
-	const units = queries.filter(isVisibleQuery).map(inferDisplayUnitForQuery)
+	const units = Arr.map(Arr.filter(queries, isVisibleQuery), inferDisplayUnitForQuery)
 	const [first] = units
-	return first !== undefined && units.every((unit) => unit === first) ? first : undefined
+	return first !== undefined && Arr.every(units, (unit) => unit === first) ? first : undefined
 }
 
 const TRACES_AGGREGATION_TITLES = new Map([
@@ -135,14 +140,17 @@ export const deriveDefaultWidgetTitle = (queries: ReadonlyArray<QueryDraft>): st
 	const query = queries.find(isVisibleQuery) ?? queries[0]
 	if (query === undefined) return "Untitled"
 	const groupBy = hasActiveGroupBy(query)
-		? query.groupBy
-				.map((g) => g.trim())
-				.filter((g) => g !== "" && g.toLowerCase() !== "none")
-				.join(", ")
+		? Arr.join(
+				Arr.filter(
+					Arr.map(query.groupBy, (g) => Str.trim(g)),
+					(g) => g !== "" && Str.toLowerCase(g) !== "none",
+				),
+				", ",
+			)
 		: ""
 	const bySuffix = groupBy === "" ? "" : ` by ${groupBy}`
 	if (query.dataSource === "metrics") {
-		const metric = query.metricName.trim()
+		const metric = Str.trim(query.metricName)
 		return metric === "" ? "Metric" : `${query.aggregation} of ${metric}${bySuffix}`
 	}
 	if (query.dataSource === "logs") return `Count of logs${bySuffix}`
@@ -164,10 +172,10 @@ const uniqueName = (taken: ReadonlyArray<string>, base: string): string => {
 export const toSeriesFieldOptions = (
 	state: Readonly<{ queries: ReadonlyArray<QueryDraft>; formulas: ReadonlyArray<FormulaDraft> }>,
 ): ReadonlyArray<string> =>
-	[...state.queries, ...state.formulas]
-		.filter((entry) => !entry.hidden)
-		.map((entry) => entry.legend.trim() || entry.name)
-		.reduce<ReadonlyArray<string>>((options, base) => [...options, uniqueName(options, base)], [])
+	Arr.map(
+		Arr.filter([...state.queries, ...state.formulas], (entry) => !entry.hidden),
+		(entry) => Str.trim(entry.legend) || entry.name,
+	).reduce<ReadonlyArray<string>>((options, base) => [...options, uniqueName(options, base)], [])
 
 /** A pre-query-builder widget's route params, the fields `legacyQueryDraft` reads. */
 const LegacyParams = Schema.Struct({
@@ -176,7 +184,10 @@ const LegacyParams = Schema.Struct({
 	bucketSeconds: Schema.optional(Schema.Unknown),
 	groupBy: Schema.optional(Schema.Unknown),
 	filters: Schema.optional(
-		Schema.Struct({ metricName: Schema.optional(Schema.Unknown), metricType: Schema.optional(Schema.Unknown) }),
+		Schema.Struct({
+			metricName: Schema.optional(Schema.Unknown),
+			metricType: Schema.optional(Schema.Unknown),
+		}),
 	),
 })
 const decodeLegacyParams = Schema.decodeUnknownOption(LegacyParams)
@@ -186,15 +197,19 @@ const NO_PARAMS: typeof LegacyParams.Type = {}
 export const legacyQueryDraft = (raw: Readonly<Record<string, unknown>>): QueryDraft => {
 	const params = Option.getOrElse(decodeLegacyParams(raw), () => NO_PARAMS)
 	const fallback = createQueryDraft(0)
-	const groupBy = Array.isArray(params.groupBy)
-		? params.groupBy.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+	const groupBy = Arr.isArray(params.groupBy)
+		? Arr.filter(
+				params.groupBy,
+				(item): item is string => typeof item === "string" && Str.trim(item).length > 0,
+			)
 		: ["service.name"]
 	const base = {
 		...fallback,
 		whereClause: formatFiltersAsWhereClause({ ...raw }),
 		aggregation: typeof params.metric === "string" ? params.metric : fallback.aggregation,
-		stepInterval: typeof params.bucketSeconds === "number" ? String(params.bucketSeconds) : fallback.stepInterval,
-		addOns: { ...fallback.addOns, groupBy: Array.isArray(params.groupBy) && params.groupBy.length > 0 },
+		stepInterval:
+			typeof params.bucketSeconds === "number" ? String(params.bucketSeconds) : fallback.stepInterval,
+		addOns: { ...fallback.addOns, groupBy: Arr.isArray(params.groupBy) && params.groupBy.length > 0 },
 		groupBy,
 	}
 	if (params.source === "metrics") {
@@ -217,8 +232,9 @@ export const hiddenSeriesBaseNames = (
 	formulas: ReadonlyArray<FormulaDraft>,
 ): Array<string> => [
 	...new Set(
-		[...queries, ...formulas]
-			.filter((entry) => entry.hidden)
-			.map((entry) => entry.legend.trim() || entry.name),
+		Arr.map(
+			Arr.filter([...queries, ...formulas], (entry) => entry.hidden),
+			(entry) => Str.trim(entry.legend) || entry.name,
+		),
 	),
 ]

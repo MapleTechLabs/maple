@@ -5,6 +5,7 @@
 
 import { debugEnabled } from "@maple/local-server/debug-log"
 import { dim, gray } from "./style"
+import { Array as Arr, String as Str } from "effect"
 
 /** Emit a debug line to stderr (no-op unless debug is enabled). */
 export const debugLog = (label: string, detail?: string): void => {
@@ -15,4 +16,5 @@ export const debugLog = (label: string, detail?: string): void => {
 
 /** Whether warehouse diagnostics should reach stderr: `--debug` or an explicit `--log-level`. */
 export const verboseLogging = (): boolean =>
-	debugEnabled() || process.argv.some((arg) => arg === "--log-level" || arg.startsWith("--log-level="))
+	debugEnabled() ||
+	Arr.some(process.argv, (arg) => arg === "--log-level" || Str.startsWith("--log-level=")(arg))

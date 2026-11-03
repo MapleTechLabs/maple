@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Effect, Fiber, Ref, Stream } from "effect"
+import { Effect, Fiber, Ref, Stream, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { expect } from "vitest"
@@ -48,8 +48,8 @@ describe("tailEvents", () => {
 			])
 			expect(requests).toBe(3)
 			expect(
-				outputs.map((output) =>
-					output._tag === "Events" ? output.events.map((event) => event.type) : output._tag,
+				Arr.map(outputs, (output) =>
+					output._tag === "Events" ? Arr.map(output.events, (event) => event.type) : output._tag,
 				),
 			).toEqual([["text-delta"], ["turn-end"]])
 		}),
@@ -80,7 +80,7 @@ describe("tailEvents", () => {
 			yield* TestClock.adjust("1 minute")
 			const outputs = yield* Fiber.join(fiber)
 			expect(yield* Ref.get(requests)).toBe(6)
-			expect(outputs.map((output) => output._tag)).toEqual(["Events"])
+			expect(Arr.map(outputs, (output) => output._tag)).toEqual(["Events"])
 		}),
 	)
 

@@ -3,7 +3,7 @@
 // more than one tool prints. These are the `maple_ai.*` agent traces, not the
 // browser session replays `search_sessions` serves.
 
-import { Effect } from "effect"
+import { Effect, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	AI_SESSION_SPANS_MAX_SPANS,
 	GetAiSessionSpansRequest,
@@ -53,16 +53,16 @@ const PAYLOAD_FIELDS = [
 ] as const satisfies ReadonlyArray<AiGenAiField>
 
 const clipText = (value: string, chars: number): string =>
-	value.length <= chars ? value : `${value.slice(0, chars)}…`
+	value.length <= chars ? value : `${Str.slice(0, chars)(value)}…`
 
 /** BOUNDARY: every string inside a captured value, cut. The shape is the
  *  vendor's own JSON, which this walks rather than parses. */
 const clipStrings = (value: unknown, chars: number): unknown => {
 	if (typeof value === "string") return clipText(value, chars)
-	if (Array.isArray(value)) return value.map((entry) => clipStrings(entry, chars))
+	if (Arr.isArray(value)) return Arr.map(value, (entry) => clipStrings(entry, chars))
 	if (typeof value === "object" && value !== null) {
-		return Object.fromEntries(
-			Object.entries(value).map(([key, entry]) => [key, clipStrings(entry, chars)]),
+		return Rec.fromEntries(
+			Arr.map(Rec.toEntries(value), ([key, entry]) => [key, clipStrings(entry, chars)]),
 		)
 	}
 	return value
@@ -82,7 +82,7 @@ const keptMessages = (messages: ReadonlyArray<unknown>): ReadonlyArray<unknown> 
 		}
 	}
 	const first = messages.findIndex(hasUserText)
-	return messages.filter((_, i) => i === first || i === newest || i === last)
+	return Arr.filter(messages, (_, i) => i === first || i === newest || i === last)
 }
 
 /** A span's content cut to what a whole-session read retains; a tool needing
@@ -92,8 +92,8 @@ export function clipSpanContent(span: AiSessionSpan): AiSessionSpan {
 	for (const field of MESSAGE_FIELDS) {
 		const value = genAi[field]
 		if (value === undefined) continue
-		genAi[field] = Array.isArray(value)
-			? keptMessages(value).map((message) => clipStrings(message, MESSAGE_TEXT_CHARS))
+		genAi[field] = Arr.isArray(value)
+			? Arr.map(keptMessages(value), (message) => clipStrings(message, MESSAGE_TEXT_CHARS))
 			: clipStrings(value, MESSAGE_TEXT_CHARS)
 	}
 	for (const field of PAYLOAD_FIELDS) {
@@ -228,7 +228,7 @@ export const loadAgentSessionSpans = Effect.fn("McpAgentSessions.loadAgentSessio
 						}
 						if (page === undefined)
 							return Effect.succeed({ ...state, truncated: "too_large" as const })
-						const spans = [...state.spans, ...page.data.map(clipSpanContent)]
+						const spans = [...state.spans, ...Arr.map(page.data, clipSpanContent)]
 						if (page.nextCursor === undefined)
 							return Effect.succeed({ ...state, spans, after: undefined })
 						return readPage({

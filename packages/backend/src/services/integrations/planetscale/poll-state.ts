@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto"
 import { IntegrationsPersistenceError, type OrgId } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PlanetscalePollState } from "@maple/db/tables"
-import { Clock, Duration, Effect } from "effect"
+import { Clock, Duration, Effect, Array as Arr } from "effect"
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 
@@ -110,7 +110,7 @@ export const makePlanetScalePollState = (database: DatabaseApi, service: string)
 					.where(($) => [$.orgId.eq(orgId), $.dataset.eq(dataset)]),
 			),
 		)
-		return new Map(rows.map((row) => [row.databaseId, row.lastSuccessAt]))
+		return new Map(Arr.map(rows, (row) => [row.databaseId, row.lastSuccessAt]))
 	})
 
 	/**

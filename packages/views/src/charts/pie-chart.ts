@@ -9,7 +9,7 @@ import { cellText } from "@maple/ui/components/charts/_shared/breakdown-rows"
 import { EMPTY_VALUE, formatNumber, formatPercent, formatValueByUnit } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { Message, Model } from "./chart"
@@ -55,7 +55,7 @@ const asFiniteNumber = (value: unknown): number => {
 const pickValueField = (rows: ReadonlyArray<Record<string, unknown>>): string => {
 	const first = rows[0]
 	if (first === undefined) return "value"
-	return Object.keys(first).find((key) => key !== "name" && typeof first[key] === "number") ?? "value"
+	return Rec.keys(first).find((key) => key !== "name" && typeof first[key] === "number") ?? "value"
 }
 
 const fmtValue = (value: number, unit: string | undefined): string =>
@@ -67,17 +67,23 @@ const clamp = (value: number, lo: number, hi: number): number =>
 /** The `rows`/`colorTokens`/`total` memo: parsed, positive, long tail bucketed into "Other". */
 const pieRowsOf = (source: ReadonlyArray<Record<string, unknown>>) => {
 	const valueField = pickValueField(source)
-	const parsed: CategoricalRow[] = source
-		.map((row) => {
-			const raw = cellText(row.name).trim()
+	const parsed: CategoricalRow[] = Arr.filter(
+		Arr.map(source, (row) => {
+			const raw = Str.trim(cellText(row.name))
 			return { name: raw === "" ? "(no value)" : raw, value: asFiniteNumber(row[valueField]) }
-		})
-		.filter((row) => row.value > 0)
+		}),
+		(row) => row.value > 0,
+	)
 	const rows = bucketCategorical(parsed, MAX_CATEGORICAL)
-	const total = rows.reduce((sum, row) => sum + row.value, 0)
-	const byName = resolveSeriesColors(rows.map((row) => row.name).filter((name) => name !== OTHER_LABEL))
+	const total = Arr.reduce(rows, 0, (sum, row) => sum + row.value)
+	const byName = resolveSeriesColors(
+		Arr.filter(
+			Arr.map(rows, (row) => row.name),
+			(name) => name !== OTHER_LABEL,
+		),
+	)
 	const colorTokens = new Map(
-		rows.map((row) => [
+		Arr.map(rows, (row) => [
 			row.name,
 			row.name === OTHER_LABEL ? OTHER_COLOR : (byName.get(row.name) ?? OTHER_COLOR),
 		]),
@@ -200,7 +206,7 @@ export const view = Submodel.defineView<Model, Message, PieChartInputs>((model, 
 	const { rows, colorTokens, total } = pieRowsOf(inputs.data)
 	const { unit } = inputs
 	const background = resolveColor(inputs.theme, "--background")
-	const pieRows: ReadonlyArray<PieSliceRow> = rows.map((row) => ({
+	const pieRows: ReadonlyArray<PieSliceRow> = Arr.map(rows, (row) => ({
 		...row,
 		color: resolveColor(inputs.theme, colorTokens.get(row.name) ?? OTHER_COLOR, SLICE_FALLBACK),
 	}))
@@ -222,7 +228,7 @@ export const view = Submodel.defineView<Model, Message, PieChartInputs>((model, 
 		showLegend && inputs.legend === "right" && model.containerWidth - tableLegendW >= TABLE_MIN_PIE_W
 	const chipLegend = showLegend && !tableLegend
 
-	const series: ReadonlyArray<PlotLegendSeries> = pieRows.map((row) => ({
+	const series: ReadonlyArray<PlotLegendSeries> = Arr.map(pieRows, (row) => ({
 		key: row.name,
 		label: row.collapsedCount ? `${row.name} +${row.collapsedCount}` : row.name,
 		color: row.color,

@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { AlertRuleUpsertRequest, MAX_ALERT_WINDOW_MINUTES } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { ALERT_TEMPLATES, getAlertTemplate } from "./index"
 
 const DESTINATIONS = ["11111111-1111-4111-8111-111111111111"]
@@ -8,10 +8,11 @@ const DESTINATIONS = ["11111111-1111-4111-8111-111111111111"]
 const decode = Schema.decodeUnknownSync(AlertRuleUpsertRequest)
 
 const buildAll = (values: Record<string, string> = {}) =>
-	ALERT_TEMPLATES.flatMap((template) =>
-		template
-			.build({ values, destinationIds: DESTINATIONS, enabled: true })
-			.map((rule) => ({ templateId: template.id, rule })),
+	Arr.flatMap(ALERT_TEMPLATES, (template) =>
+		Arr.map(template.build({ values, destinationIds: DESTINATIONS, enabled: true }), (rule) => ({
+			templateId: template.id,
+			rule,
+		})),
 	)
 
 describe("PlanetScale alert templates", () => {
@@ -46,7 +47,7 @@ describe("PlanetScale alert templates", () => {
 		const lag = getAlertTemplate("ps-replica-lag")!
 		const rules = lag.build({ values: {}, destinationIds: DESTINATIONS, enabled: true })
 		assert.strictEqual(rules.length, 2)
-		const metrics = rules.map((rule) =>
+		const metrics = Arr.map(rules, (rule) =>
 			rule.queryBuilderDraft !== null && rule.queryBuilderDraft !== undefined
 				? (rule.queryBuilderDraft as { metricName?: string }).metricName
 				: undefined,

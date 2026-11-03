@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Result } from "effect"
+import { Result, String as Str } from "effect"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	productEventsFunnelQuery,
@@ -25,7 +25,7 @@ const STEPS: ReadonlyArray<FunnelStep> = [
 ]
 const REFERRAL: FunnelStep = { kind: "session", dimension: "referrerHost", value: "news.ycombinator.com" }
 
-const oneLine = (sql: string): string => sql.replace(/\s+/g, " ")
+const oneLine = (sql: string): string => Str.replace(/\s+/g, " ")(sql)
 
 const rejection = (built: Result.Result<unknown, ProductEventsFunnelError>) =>
 	Result.isFailure(built) ? built.failure : undefined

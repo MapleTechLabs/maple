@@ -1,4 +1,5 @@
 import type { ClickHouseColumnDrift, ClickHouseTableDiffEntry } from "@maple/domain/http"
+import { Array as Arr, String as Str } from "effect"
 
 export interface SchemaApplyPlan {
 	/** Tables and materialized views Apply will create. */
@@ -21,17 +22,17 @@ const describeDrift = (drift: ClickHouseColumnDrift): string | null =>
 
 /** Mirrors the apply workflow's additive pass (`reconcileSchemaSnapshot`): it never drops or retypes. */
 export function schemaApplyPlan(entries: ReadonlyArray<ClickHouseTableDiffEntry>): SchemaApplyPlan {
-	const create = entries.flatMap((entry) => (entry.status === "missing" ? [entry.name] : []))
-	const addColumns = entries.flatMap((entry) => {
+	const create = Arr.flatMap(entries, (entry) => (entry.status === "missing" ? [entry.name] : []))
+	const addColumns = Arr.flatMap(entries, (entry) => {
 		if (entry.status !== "drifted" || entry.kind !== "table") return []
-		const columns = entry.columnDrifts.flatMap((drift) =>
+		const columns = Arr.flatMap(entry.columnDrifts, (drift) =>
 			drift.kind === "missing" ? [drift.column] : [],
 		)
 		return columns.length > 0 ? [{ name: entry.name, columns }] : []
 	})
-	const unresolved = entries.flatMap((entry) => {
+	const unresolved = Arr.flatMap(entries, (entry) => {
 		if (entry.status === "wrong_kind") {
-			return [{ name: entry.name, reason: `exists as a ${entry.actualKind.replace("_", " ")}` }]
+			return [{ name: entry.name, reason: `exists as a ${Str.replace("_", " ")(entry.actualKind)}` }]
 		}
 		if (entry.status !== "drifted") return []
 		// Views are never altered, so even their missing columns stay unresolved.
@@ -48,7 +49,7 @@ export type SchemaDiffStatus = ClickHouseTableDiffEntry["status"]
 export function schemaDiffCounts(
 	entries: ReadonlyArray<ClickHouseTableDiffEntry>,
 ): Record<SchemaDiffStatus, number> {
-	const count = (status: SchemaDiffStatus) => entries.filter((entry) => entry.status === status).length
+	const count = (status: SchemaDiffStatus) => Arr.filter(entries, (entry) => entry.status === status).length
 	return {
 		up_to_date: count("up_to_date"),
 		missing: count("missing"),

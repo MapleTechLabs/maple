@@ -4,6 +4,7 @@ import type {
 	StatusPageIncidentStatus,
 } from "@maple/domain/primitives"
 import type { StatusPageDayBar, StatusPageDayState } from "@maple/domain/status-page"
+import { Array as Arr, String as Str } from "effect"
 
 export const COMPONENT_STATUS_LABEL = {
 	operational: "Operational",
@@ -41,7 +42,7 @@ export const IMPACT_LABEL = {
 
 export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-const pad = (value: number): string => String(value).padStart(2, "0")
+const pad = (value: number): string => Str.padStart(2, "0")(String(value))
 
 /** `Oct 28, 2026`, UTC: rendering at the edge must not depend on the colo's locale. */
 export const formatDate = (ms: number): string => {
@@ -57,7 +58,7 @@ export const formatDateTime = (ms: number): string => {
 
 /** `YYYY-MM-DD` day of a bar, as `Oct 28, 2026`. */
 export const formatDay = (day: string): string => {
-	const [year = 1970, month = 1, date = 1] = day.split("-").map(Number)
+	const [year, month = 1, date = 1] = Arr.map(Str.split("-")(day), Number)
 	return formatDate(Date.UTC(year, month - 1, date))
 }
 
@@ -75,7 +76,7 @@ export const formatAge = (ageMs: number): string => {
 export const formatPercent = (percent: number): string => {
 	// Rounds off float error first: 99.84 must not floor from 99.83999999999999.
 	const floored = Math.floor(Number((percent * 100).toFixed(6))) / 100
-	return `${floored.toFixed(2).replace(/\.?0+$/u, "")}%`
+	return `${Str.replace(/\.?0+$/u, "")(floored.toFixed(2))}%`
 }
 
 export const DAY_STATE_LABEL = {

@@ -2,7 +2,7 @@ import { shortId } from "@maple/ui/lib/ids"
 import { addLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
 import { parseLogSearch } from "../../../lib/logs/log-search-query"
 import { computeBucketSeconds } from "@maple/web-data/warehouse/timeseries-utils"
-import { Option, Result } from "effect"
+import { Option, Result, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -94,10 +94,13 @@ const firstPageOf = (model: Model) => Option.getOrUndefined(AsyncData.getData(mo
 
 /** `ListFooter`'s line: the count, scoped by the trace and the search. */
 const footerOf = (model: Model, shown: number): string => {
-	const scope = [
-		model.search.traceId ? ` in trace ${shortId(model.search.traceId, "trace")}` : "",
-		model.search.search ? ` matching “${model.search.search}”` : "",
-	].join("")
+	const scope = Arr.join(
+		[
+			model.search.traceId ? ` in trace ${shortId(model.search.traceId, "trace")}` : "",
+			model.search.search ? ` matching “${model.search.search}”` : "",
+		],
+		"",
+	)
 	return listFooterText(model.locale, {
 		shown,
 		noun: `logs${scope}`,
@@ -118,7 +121,7 @@ const LOG_LINKS: LogRowLinks = {
 const rowsOf = (model: Model, context: PageContext) => {
 	const time = logTimeFormat(context.timeZone)
 	const pinned = model.search.columns ?? []
-	return allLogs(firstPageOf(model), model.pagination).map((log) =>
+	return Arr.map(allLogs(firstPageOf(model), model.pagination), (log) =>
 		toLogRowView(log, pinned, time, LOG_LINKS),
 	)
 }
@@ -305,10 +308,10 @@ const toggledFacet = (search: Search, facet: Facet, name: string): Search => {
 	return {
 		...search,
 		[EXCLUDED_OF[facet]]: excluded.includes(name)
-			? listOrUndefined(excluded.filter((v) => v !== name))
+			? listOrUndefined(Arr.filter(excluded, (v) => v !== name))
 			: search[EXCLUDED_OF[facet]],
 		[facet]: listOrUndefined(
-			selected.includes(name) ? selected.filter((v) => v !== name) : [...selected, name],
+			selected.includes(name) ? Arr.filter(selected, (v) => v !== name) : [...selected, name],
 		),
 	}
 }
@@ -318,9 +321,9 @@ const excludedFacet = (search: Search, facet: Facet, name: string): Search => {
 	const excluded = search[EXCLUDED_OF[facet]] ?? []
 	return {
 		...search,
-		[facet]: listOrUndefined(selected.filter((v) => v !== name)),
+		[facet]: listOrUndefined(Arr.filter(selected, (v) => v !== name)),
 		[EXCLUDED_OF[facet]]: listOrUndefined(
-			excluded.includes(name) ? excluded.filter((v) => v !== name) : [...excluded, name],
+			excluded.includes(name) ? Arr.filter(excluded, (v) => v !== name) : [...excluded, name],
 		),
 	}
 }
@@ -396,7 +399,10 @@ export const routeChanged = (
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const next = setStreamRows({ ...model, search: route.search }, context)
 	// A moved window re-resolves, unsnapped after a Reload; any other change reads under the kept one.
-	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	const resolve = (): Return => ({
+		model: next,
+		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+	})
 	return routeWindowStep(model.search, route.search, {
 		resolve,
 		requestAll: (mode) =>
@@ -417,7 +423,12 @@ const foldStreamOut = (model: Model, out: LogsStream.OutMessage, context: PageCo
 			const hasInfra = hasInfraCorrelations(row.log)
 			const opened = LogDetail.open(model.detail, row.log, context, hasInfra)
 			return liftChild(
-				{ ...model, detail: opened.model, detailInfra: detailInfraFor(context), selectedIndex: index },
+				{
+					...model,
+					detail: opened.model,
+					detailInfra: detailInfraFor(context),
+					selectedIndex: index,
+				},
 				opened.commands,
 				(m) => Message.GotDetailMessage({ message: m }),
 			)
@@ -532,7 +543,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		MountedFilterRail: () => {
 			if (model.isFilterRailMounted) return { model }
 			const mounted = { ...model, isFilterRailMounted: true }
-			return mounted.window === null ? { model: mounted } : requestAll(mounted, context, mounted.window, "Load")
+			return mounted.window === null
+				? { model: mounted }
+				: requestAll(mounted, context, mounted.window, "Load")
 		},
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
@@ -567,7 +580,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				model,
 				withoutChips(
 					model.search,
-					logFilterChips(model.search).filter((chip) => chipId(chip) === id),
+					Arr.filter(logFilterChips(model.search), (chip) => chipId(chip) === id),
 				),
 			),
 		ClickedClearExclusions: () =>
@@ -575,7 +588,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				model,
 				withoutChips(
 					model.search,
-					logFilterChips(model.search).filter((chip) => chip.negated),
+					Arr.filter(logFilterChips(model.search), (chip) => chip.negated),
 				),
 			),
 		ClickedClearFilterChips: () =>
@@ -666,7 +679,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						model: { ...lifted.model, detail: shown.model, detailInfra: detailInfraFor(context) },
 						commands: [
 							...(lifted.commands ?? []),
-							...Command.mapMessages(shown.commands ?? [], (m) => Message.GotDetailMessage({ message: m })),
+							...Command.mapMessages(shown.commands ?? [], (m) =>
+								Message.GotDetailMessage({ message: m }),
+							),
 						],
 					}
 				},
@@ -687,7 +702,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		// `setColumns`: the picked keys in `?columns`, none leaves the URL.
 		ToggledColumn: ({ key }) => {
 			const pinned = model.search.columns ?? []
-			const next = pinned.includes(key) ? pinned.filter((k) => k !== key) : [...pinned, key]
+			const next = pinned.includes(key) ? Arr.filter(pinned, (k) => k !== key) : [...pinned, key]
 			return navigate(model, { ...model.search, columns: next.length > 0 ? next : undefined })
 		},
 		GotRefreshMenuMessage: ({ message: inner }) => {
@@ -722,7 +737,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		PressedVolumeChart: () =>
 			Option.match(model.volumeChart.activeKey, {
 				onNone: () => ({ model }),
-				onSome: (bucket) => ({ model: { ...model, volumeBrush: { left: bucket, right: null, isSelecting: true } } }),
+				onSome: (bucket) => ({
+					model: { ...model, volumeBrush: { left: bucket, right: null, isSelecting: true } },
+				}),
 			}),
 		ReleasedVolumeChart: () => {
 			const { left, right, isSelecting } = model.volumeBrush

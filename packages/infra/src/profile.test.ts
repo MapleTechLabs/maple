@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { parseMapleDeployment } from "./cloudflare/stage.ts"
 import { resolveMapleProfile } from "./profile.ts"
+import { Array as Arr, Record as Rec } from "effect"
 
 const profile = (raw: string) => resolveMapleProfile(parseMapleDeployment(raw))
 const DEPLOYMENTS = ["prd", "prd-eu", "pr-12", "dev-alice", "dev-alice-eu"]
@@ -39,7 +40,7 @@ describe("resolveMapleProfile", () => {
 	// Every stage deploys into the same AWS account: one owner per account-region control.
 	it("puts the AWS security baseline on the prd instances alone, with one account trail", () => {
 		expect(
-			Object.fromEntries(DEPLOYMENTS.map((raw) => [raw, profile(raw).deploys.awsSecurityBaseline])),
+			Rec.fromEntries(Arr.map(DEPLOYMENTS, (raw) => [raw, profile(raw).deploys.awsSecurityBaseline])),
 		).toEqual({
 			prd: "account",
 			"prd-eu": "regional",

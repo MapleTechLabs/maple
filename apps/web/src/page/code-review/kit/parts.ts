@@ -9,6 +9,7 @@ import { badge } from "@maple/views/ui/display"
 import { sectionHeading } from "../../kit/section-heading"
 import { typography } from "@maple/views/ui/typography"
 import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // Small pieces the Code Review tabs share: the sheet `Section`, `BulletList`, `CiResultBadge` and
 // `TraceLink`.
@@ -24,7 +25,7 @@ export const bulletList = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<string>): 
 				"flex list-disc flex-col gap-1 pl-5 text-sm text-muted-foreground marker:text-foreground-faint",
 			),
 		],
-		items.map((item) => h.li([], [item])),
+		Arr.map(items, (item) => h.li([], [item])),
 	)
 
 /** A run's result; a rerun says which attempt it was. */

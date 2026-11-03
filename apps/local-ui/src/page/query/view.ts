@@ -4,7 +4,7 @@ import { kbd } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { spinner } from "@maple/views/ui/spinner"
 import { textarea } from "@maple/views/ui/textarea"
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import { scrollRegion } from "@maple/views/ui/scroll-region"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -107,7 +107,7 @@ const editor = (h: HtmlBuilder<Message>, model: Model, sql: string): Html =>
 							h,
 							{
 								size: "sm",
-								isDisabled: sql.trim() === "",
+								isDisabled: Str.trim(sql) === "",
 								attributes: [h.OnClick(Message.ClickedRun())],
 							},
 							["Run"],

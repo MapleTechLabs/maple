@@ -23,6 +23,7 @@ import { lockfileIssue, scanButton, scanState, scanSummary, severityTally } from
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { stripClass } from "@maple/views/ui/rule"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // One repository's pane: its latest scan, then its open findings as the package bumps that clear
 // them (the first to make on top) or as the advisories table.
@@ -34,9 +35,12 @@ const muted = (h: H, text: string, className?: string): Html =>
 	typography(h, { size: "xs", tone: "muted", className }, [text])
 
 const advisoryNames = (findings: ReadonlyArray<DependencyFindingView>): string =>
-	findings
-		.map((finding) => displayAdvisoryId({ id: finding.advisoryId, aliases: finding.aliases }))
-		.join(", ")
+	Arr.join(
+		Arr.map(findings, (finding) =>
+			displayAdvisoryId({ id: finding.advisoryId, aliases: finding.aliases }),
+		),
+		", ",
+	)
 
 const bumpCell = (h: H, step: UpgradeStep): Html =>
 	vstack(h, { gap: "0", shrink: true, as: "span", className: "max-w-72" }, [
@@ -52,9 +56,9 @@ const bumpCell = (h: H, step: UpgradeStep): Html =>
 					numeric: true,
 					tone: "muted",
 					truncate: true,
-					attributes: [h.Title(step.installed.join(", "))],
+					attributes: [h.Title(Arr.join(step.installed, ", "))],
 				},
-				[step.installed.join(", ")],
+				[Arr.join(step.installed, ", ")],
 			),
 			...(step.target === null
 				? []
@@ -98,7 +102,7 @@ const runningCell = (h: H, step: UpgradeStep, notRunning: string): Html => {
 					shrink: true,
 					as: "span",
 					className: "max-w-48",
-					attributes: [h.Title(step.services.join(", "))],
+					attributes: [h.Title(Arr.join(step.services, ", "))],
 				},
 				[
 					typography(h, { size: "sm", truncate: true }, [
@@ -141,7 +145,7 @@ const stepAdvisories = (h: H, step: UpgradeStep): Html =>
 					vstack(
 						h,
 						{ gap: "0.5", as: "ul", className: "w-0 min-w-full py-1 pl-28" },
-						[...step.fixes, ...step.unfixed].map((finding) =>
+						Arr.map([...step.fixes, ...step.unfixed], (finding) =>
 							h.li(
 								[h.Key(finding.id)],
 								[
@@ -209,7 +213,7 @@ const stepRow = (h: H, step: UpgradeStep, notRunning: string, isExpanded: boolea
 				h,
 				[
 					h.span(
-						[h.Class("flex min-w-0 max-w-56 flex-col"), h.Title(step.lockfiles.join("\n"))],
+						[h.Class("flex min-w-0 max-w-56 flex-col"), h.Title(Arr.join(step.lockfiles, "\n"))],
 						[
 							middleTruncate(h, {
 								text: step.lockfiles[0] ?? "",
@@ -276,7 +280,7 @@ const planPanel = (
 						]),
 						tableBody(
 							h,
-							plan.flatMap((step) => {
+							Arr.flatMap(plan, (step) => {
 								const isExpanded = model.expandedPackages.includes(step.key)
 								return [
 									stepRow(h, step, notRunning, isExpanded),
@@ -315,7 +319,7 @@ const repositoryActions = (h: H, model: Model, repository: DependencyScanReposit
 /** What the latest scan read, and what kept it from reading everything. */
 const scanDetail = (h: H, repository: DependencyScanRepository, clock: Clock): Html => {
 	const scan = repository.latestScan
-	const issues = (scan?.lockfiles ?? []).filter((lockfile) => lockfile.status !== "parsed")
+	const issues = Arr.filter(scan?.lockfiles ?? [], (lockfile) => lockfile.status !== "parsed")
 	return vstack(h, { gap: "1.5" }, [
 		scan === null ? muted(h, "Scanned on the next push, or now.") : scanSummary(h, scan, clock),
 		...(scan?.error === null || scan?.error === undefined
@@ -326,7 +330,7 @@ const scanDetail = (h: H, repository: DependencyScanRepository, clock: Clock): H
 			: [
 					h.ul(
 						[h.Class("flex flex-col gap-1")],
-						issues.map((lockfile) => lockfileIssue(h, lockfile)),
+						Arr.map(issues, (lockfile) => lockfileIssue(h, lockfile)),
 					),
 				]),
 	])

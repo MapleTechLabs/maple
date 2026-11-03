@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Fiber, Layer, Redacted, Schema } from "effect"
+import { ConfigProvider, Effect, Fiber, Layer, Redacted, Schema, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -53,7 +53,7 @@ const makeFetch =
 	(handler: (body: URLSearchParams) => Response): typeof globalThis.fetch =>
 	async (input, init) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-		if (url.startsWith(TOKEN_URL)) {
+		if (Str.startsWith(TOKEN_URL)(url)) {
 			const text = await new Response(init?.body ?? "").text()
 			return handler(new URLSearchParams(text))
 		}
@@ -331,7 +331,7 @@ describe("refresh interruption", () => {
 		})
 		const fetch = Layer.succeed(FetchHttpClient.Fetch, async (input) => {
 			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			if (!url.startsWith(TOKEN_URL)) return jsonResponse({ error: "not_found" }, 404)
+			if (!Str.startsWith(TOKEN_URL)(url)) return jsonResponse({ error: "not_found" }, 404)
 			refreshPosts += 1
 			signalStarted()
 			await new Promise((resolve) => setTimeout(resolve, 50))
@@ -363,7 +363,7 @@ describe("refresh timeout", () => {
 		// First POST never answers (until aborted); the next one succeeds.
 		const fetch = Layer.succeed(FetchHttpClient.Fetch, async (input, init) => {
 			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			if (!url.startsWith(TOKEN_URL)) return jsonResponse({ error: "not_found" }, 404)
+			if (!Str.startsWith(TOKEN_URL)(url)) return jsonResponse({ error: "not_found" }, 404)
 			counters.posts += 1
 			if (counters.posts > 1) return freshTokens()
 			signalStarted()

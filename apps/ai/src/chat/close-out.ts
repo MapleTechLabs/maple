@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { ChatMessage } from "@maple/domain/chat-session"
 
 /** How much of one tool's output the close-out turn is shown. */
@@ -38,21 +38,25 @@ export const withToolTranscript = (history: ReadonlyArray<ChatMessage>): Readonl
 		}
 		rendered.set(index, { calls: kept, omitted: message.toolCalls.length - kept.length })
 	}
-	return history.map((message, index) => {
+	return Arr.map(history, (message, index) => {
 		const evidence = rendered.get(index)
 		if (evidence === undefined) return message
 		return new ChatMessage({
 			...message,
-			text: [
-				message.text,
-				"Evidence gathered so far:",
-				...(evidence.omitted > 0
-					? [`(${evidence.omitted} earlier tool calls left out for length.)`]
-					: []),
-				...evidence.calls,
-			]
-				.filter((part) => part !== "")
-				.join("\n\n"),
+			text: Arr.join(
+				Arr.filter(
+					[
+						message.text,
+						"Evidence gathered so far:",
+						...(evidence.omitted > 0
+							? [`(${evidence.omitted} earlier tool calls left out for length.)`]
+							: []),
+						...evidence.calls,
+					],
+					(part) => part !== "",
+				),
+				"\n\n",
+			),
 		})
 	})
 }
@@ -70,5 +74,7 @@ const renderToolValue = (value: unknown): string => {
 					onNone: () => Option.getOrElse(encodeJson(value), () => String(value)),
 					onSome: (result) => result.text,
 				})
-	return text.length > CLOSE_OUT_TOOL_OUTPUT_CHARS ? `${text.slice(0, CLOSE_OUT_TOOL_OUTPUT_CHARS)}…` : text
+	return text.length > CLOSE_OUT_TOOL_OUTPUT_CHARS
+		? `${Str.slice(0, CLOSE_OUT_TOOL_OUTPUT_CHARS)(text)}…`
+		: text
 }

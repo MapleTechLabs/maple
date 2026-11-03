@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Array as Arr } from "effect"
 import { HttpApiMiddleware } from "effect/http-api"
 import {
 	ApiRequestValidationError,
@@ -23,9 +23,12 @@ const ApiSchemaErrorTransformLive = HttpApiMiddleware.layerSchemaErrorTransform(
 					operation: endpoint.identifier,
 					errorType: `@maple/api/routes/v1/V1ResponseSchemaError/${schemaError.kind}`,
 					summary: "Response failed its declared HTTP schema",
-					message: details.map(({ line }) => line).join("; "),
+					message: Arr.join(
+						Arr.map(details, ({ line }) => line),
+						"; ",
+					),
 					status: 500,
-					detail: details.map(({ line }) => line),
+					detail: Arr.map(details, ({ line }) => line),
 					cause: schemaError.cause,
 				}).pipe(Effect.andThen(Effect.fail(sanitized())))
 			}
@@ -34,7 +37,7 @@ const ApiSchemaErrorTransformLive = HttpApiMiddleware.layerSchemaErrorTransform(
 				new ApiRequestValidationError({
 					message: summarizeSchemaError(schemaError.kind, details),
 					...(!(first === undefined || first.path === "") ? { param: first.path } : undefined),
-					details: details.map(({ line }) => line),
+					details: Arr.map(details, ({ line }) => line),
 				}),
 			)
 		}),

@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { FACE_TONE } from "./appearance"
 import type { Vec3 } from "./types"
+import { Array as Arr, Record as Rec } from "effect"
 
 // The pure half of the scenery kit, so the drawings can be shared outside the 3D scene.
 
@@ -102,7 +103,7 @@ export function prototypes() {
 		cap: new THREE.CylinderGeometry(0.25, 1, 1, 7),
 		bud: new THREE.OctahedronGeometry(0.2, 0),
 	}
-	const dispose = () => Object.values(stock).forEach((piece) => piece.dispose())
+	const dispose = () => Arr.forEach(Rec.values(stock), (piece) => piece.dispose())
 	return { ...stock, dispose }
 }
 

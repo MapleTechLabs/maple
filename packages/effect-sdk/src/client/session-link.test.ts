@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import { afterEach, expect } from "vitest"
 import { make } from "./flushable.js"
 import { clearIdentity, identify } from "./user.js"
@@ -38,7 +38,7 @@ const baseConfig = {
 }
 
 const firstSpanAttrs = (calls: Array<FetchCall>) => {
-	const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))!
+	const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))!
 	const span = (
 		traceCall.body as {
 			resourceSpans: Array<{

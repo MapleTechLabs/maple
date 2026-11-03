@@ -57,6 +57,7 @@ import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
+import { Array as Arr, String as Str } from "effect"
 
 // `InvestigationsHub` and `InvestigationTable`: the investigations list page.
 
@@ -72,11 +73,11 @@ const bar = (h: H, model: Model, isAccent = false, placeholder?: string): Html =
 		placeholder,
 	})
 
-const KIND_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = KIND_FILTER_VALUES.map((value) => ({
+const KIND_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(KIND_FILTER_VALUES, (value) => ({
 	_tag: "Item",
 	item: { value, label: KIND_FILTER_LABEL[value] },
 }))
-const SORT_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = SORT_OPTIONS.map((option) => ({
+const SORT_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(SORT_OPTIONS, (option) => ({
 	_tag: "Item",
 	item: { value: option.value, label: option.label },
 }))
@@ -95,7 +96,7 @@ const toolbar = (
 	isKnown: boolean,
 	isFramed: boolean,
 ): Html => {
-	const activeCount = all.filter(isActive).length
+	const activeCount = Arr.filter(all, isActive).length
 	const counts = new Map([
 		["active", activeCount],
 		["history", all.length - activeCount],
@@ -405,7 +406,7 @@ const hubHero = (h: H, model: Model): Html => {
 			vstack(
 				h,
 				{ gap: "2", as: "ul" },
-				HERO_SUGGESTIONS.map((suggestion) =>
+				Arr.map(HERO_SUGGESTIONS, (suggestion) =>
 					h.li(
 						[h.Key(suggestion)],
 						[
@@ -515,7 +516,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const visible = visibleOf(model, all)
 	const isLoadingMore = isLoadingMoreOf(model)
 	const hasMore = nextCursorOf(model) !== null || isLoadingMore
-	const isFiltered = (model.search.q ?? "").trim().length > 0 || model.search.kind !== undefined
+	const isFiltered = Str.trim(model.search.q ?? "").length > 0 || model.search.kind !== undefined
 	const notice = budgetNotice(h, model, timeZone)
 	const body = AsyncData.match(model.firstPage.data, {
 		onIdle: () => tableSkeleton(h),
@@ -542,7 +543,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			[
 				h.ul(
 					[h.Class("flex flex-col"), h.OnMount(MountInvestigationRows())],
-					visible.map((investigation) => row(h, investigation, model.nowMs, timeZone)),
+					Arr.map(visible, (investigation) => row(h, investigation, model.nowMs, timeZone)),
 				),
 				...(hasMore
 					? [

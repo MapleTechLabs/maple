@@ -1,7 +1,8 @@
 import type { SpanHierarchyOutput, ListLogsOutput } from "@maple/domain/tinybird"
 import { FIXTURES } from "./utils"
+import { String as Str } from "effect"
 
-const hex = (n: number): string => n.toString(16).padStart(16, "0")
+const hex = (n: number): string => Str.padStart(16, "0")(n.toString(16))
 
 /** Total spans in the synthetic large trace (> MAX_OVERVIEW_SPANS=100 to force the cap). */
 export const LARGE_TRACE_SPAN_COUNT = 150
@@ -251,7 +252,7 @@ export const makeAiTraceSpanRows = (): ReadonlyArray<Record<string, unknown>> =>
 export const makePartialAiTraceSpanRows = (): ReadonlyArray<Record<string, unknown>> =>
 	Array.from({ length: PARTIAL_AI_TRACE_SPANS }, (_, index) =>
 		aiSpanRow({
-			spanId: `c${index.toString(16).padStart(15, "0")}`,
+			spanId: `c${Str.padStart(15, "0")(index.toString(16))}`,
 			spanName: "chat gpt-5",
 			// The first span is the LLM call that requested `call_1`; the tool span
 			// that answered it is not in this trace's first page.

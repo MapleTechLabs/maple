@@ -35,6 +35,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { swatch } from "@maple/views/ui/swatch"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -200,24 +201,28 @@ const body = (h: H, inputs: ToolsTableInputs): ReadonlyArray<Html> => {
 		return [skeletonList(h, { rows: 3, rowClassName: "h-[38px]", className: "gap-1.5 px-2.5 py-3" })]
 	if (inputs.rows.length === 0)
 		return [emptyMessage(h, { className: "py-12 font-mono" }, ["No tool calls in this window"])]
-	const prepared: ReadonlyArray<Prepared> = inputs.rows.map((row) => ({
+	const prepared: ReadonlyArray<Prepared> = Arr.map(inputs.rows, (row) => ({
 		...row,
 		errorRate: errorRate(row),
 	}))
-	const maxErrorRate = prepared.reduce((max, row) => Math.max(max, row.errorRate), 0)
+	const maxErrorRate = Arr.reduce(prepared, 0, (max, row) => Math.max(max, row.errorRate))
 	const linkSearch = toolDetailLinkSearch(inputs.search)
-	return sortRows(prepared, inputs.sort, (row, key) => SORT_FIELDS.get(key)?.(row)).map((row) =>
-		row.key === ""
-			? toolTableRow(h, { attributes: [h.Key(row.key)] }, cells(h, row, inputs, maxErrorRate))
-			: toolTableRow(
-					h,
-					{
-						isSelected: row.key === inputs.search.tool,
-						href: hrefOf(AppRoute.AgentSessionTool({ toolName: row.key, search: linkSearch })),
-						attributes: [h.Key(row.key)],
-					},
-					cells(h, row, inputs, maxErrorRate),
-				),
+	return Arr.map(
+		sortRows(prepared, inputs.sort, (row, key) => SORT_FIELDS.get(key)?.(row)),
+		(row) =>
+			row.key === ""
+				? toolTableRow(h, { attributes: [h.Key(row.key)] }, cells(h, row, inputs, maxErrorRate))
+				: toolTableRow(
+						h,
+						{
+							isSelected: row.key === inputs.search.tool,
+							href: hrefOf(
+								AppRoute.AgentSessionTool({ toolName: row.key, search: linkSearch }),
+							),
+							attributes: [h.Key(row.key)],
+						},
+						cells(h, row, inputs, maxErrorRate),
+					),
 	)
 }
 

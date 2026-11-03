@@ -20,6 +20,7 @@ import type { QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
 import { type MetricOption, metricsBody } from "./metrics-body"
 import { addOnSections, ADD_ON_KEYS, addOnToggles, panelSelect, textInput, whereClauseEditor } from "./parts"
+import { Array as Arr, String as Str } from "effect"
 
 // `QueryPanel` and `QueryPanelShell`: one query's builder panel and its frame.
 
@@ -87,7 +88,10 @@ const header = (h: H, model: Model, inputs: QueryPanelInputs): Html => {
 					cn(
 						badgeVariants({
 							variant: "outline",
-							className: cn("font-mono text-2xs text-white border-0 shrink-0", queryBadgeColor(index)),
+							className: cn(
+								"font-mono text-2xs text-white border-0 shrink-0",
+								queryBadgeColor(index),
+							),
 						}),
 					),
 				),
@@ -112,13 +116,16 @@ const header = (h: H, model: Model, inputs: QueryPanelInputs): Html => {
 		model,
 		`source:${query.id}`,
 		query.dataSource,
-		QUERY_BUILDER_DATA_SOURCES.map((value) => ({ value, label: SOURCE_LABEL[value] })),
+		Arr.map(QUERY_BUILDER_DATA_SOURCES, (value) => ({ value, label: SOURCE_LABEL[value] })),
 		{
 			size: "sm",
 			className: "w-36 border-none bg-transparent shadow-none px-1",
 			ariaLabel: "Query source",
 			toView: (parts) =>
-				h.div([h.Class("flex items-center gap-2 px-3 py-2 bg-surface-sunken")], [...leading, ...parts, ...trailing]),
+				h.div(
+					[h.Class("flex items-center gap-2 px-3 py-2 bg-surface-sunken")],
+					[...leading, ...parts, ...trailing],
+				),
 		},
 	)
 }
@@ -150,7 +157,7 @@ const body = (h: H, model: Model, inputs: QueryPanelInputs): ReadonlyArray<Html>
 					h,
 					model,
 					`spans:${query.id}`,
-					query.whereClause.includes("root_only = true") ? "root" : "all",
+					Str.includes("root_only = true")(query.whereClause) ? "root" : "all",
 					SPAN_OPTIONS,
 					{ size: "sm", className: "w-32 shrink-0", toView: whereRow },
 				)
@@ -164,8 +171,14 @@ const body = (h: H, model: Model, inputs: QueryPanelInputs): ReadonlyArray<Html>
 					[
 						...parts,
 						h.span([h.Class("text-xs text-muted-foreground")], ["every"]),
-						textInput(h, `step-${query.id}`, query.stepInterval, intervalPlaceholder, "h-8 w-24 text-xs", (value) =>
-							Message.ChangedText({ queryId: query.id, field: "stepInterval", value }),
+						textInput(
+							h,
+							`step-${query.id}`,
+							query.stepInterval,
+							intervalPlaceholder,
+							"h-8 w-24 text-xs",
+							(value) =>
+								Message.ChangedText({ queryId: query.id, field: "stepInterval", value }),
 						),
 						h.span([h.Class("text-xs text-muted-foreground")], ["seconds"]),
 					],
@@ -183,7 +196,12 @@ const warningList = (h: H, warnings: ReadonlyArray<string>): ReadonlyArray<Html>
 					icon(h, "CircleWarningIcon", { size: 14 }),
 					alertDescription(
 						h,
-						[h.ul([h.Class("space-y-1")], warnings.map((warning) => h.li([], [warning])))],
+						[
+							h.ul(
+								[h.Class("space-y-1")],
+								Arr.map(warnings, (warning) => h.li([], [warning])),
+							),
+						],
 						"text-severity-warn",
 					),
 				]),

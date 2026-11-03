@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId } from "@maple/domain/http"
 import { ONBOARDING_REWARD_WINDOW_MS } from "@maple/domain/onboarding-checklist"
@@ -301,7 +301,9 @@ describe("OnboardingChecklistService.read", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const service = yield* OnboardingChecklistService
-			assert.isFalse((yield* service.read(tenant)).steps.some((s) => s.id === "join_slack_channel"))
+			assert.isFalse(
+				Arr.some((yield* service.read(tenant)).steps, (s) => s.id === "join_slack_channel"),
+			)
 			world.supportChannel = "not_created"
 			const offered = (yield* service.read(tenant)).steps.at(-1)
 			assert.deepStrictEqual(offered, { id: "join_slack_channel", completed: false, optional: true })
@@ -552,8 +554,8 @@ describe("OnboardingChecklistService.claim", () => {
 				[Effect.result(service.claim(tenant)), Effect.result(service.claim(tenant))],
 				{ concurrency: 2 },
 			)
-			const won = outcomes.filter((outcome) => outcome._tag === "Success")
-			const lost = outcomes.filter((outcome) => outcome._tag === "Failure")
+			const won = Arr.filter(outcomes, (outcome) => outcome._tag === "Success")
+			const lost = Arr.filter(outcomes, (outcome) => outcome._tag === "Failure")
 			assert.strictEqual(won.length, 1)
 			assert.strictEqual(lost.length, 1)
 			const loser = lost[0]

@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Schema, SchemaGetter } from "effect"
+import { Schema, SchemaGetter, Array as Arr, Record as Rec } from "effect"
 import {
 	ActorId,
 	AlertDestinationId,
@@ -129,8 +129,10 @@ export const MACHINE_OWNED_WORKFLOW_STATES: ReadonlySet<WorkflowState> = new Set
 export const allowedTransitionsForAll = (from: Iterable<WorkflowState>): ReadonlyArray<WorkflowState> => {
 	const rows = Array.from(from, (state) => WORKFLOW_TRANSITIONS[state])
 	if (rows.length === 0) return []
-	return WORKFLOW_STATE_ORDER.filter(
-		(target) => !MACHINE_OWNED_WORKFLOW_STATES.has(target) && rows.every((row) => row.includes(target)),
+	return Arr.filter(
+		WORKFLOW_STATE_ORDER,
+		(target) =>
+			!MACHINE_OWNED_WORKFLOW_STATES.has(target) && Arr.every(rows, (row) => row.includes(target)),
 	)
 }
 
@@ -186,14 +188,23 @@ export const canReachInReview = (from: WorkflowState): boolean =>
  * an instruction to make a call that could only fail.
  */
 export const describeWorkflowTransitions = (): string =>
-	Object.entries(WORKFLOW_TRANSITIONS)
-		.map(
-			([from, targets]) =>
-				[from, targets.filter((target) => !MACHINE_OWNED_WORKFLOW_STATES.has(target))] as const,
-		)
-		.filter(([, targets]) => targets.length > 0)
-		.map(([from, targets]) => `${from}→(${targets.join("|")})`)
-		.join("; ")
+	Arr.join(
+		Arr.map(
+			Arr.filter(
+				Arr.map(
+					Rec.toEntries(WORKFLOW_TRANSITIONS),
+					([from, targets]) =>
+						[
+							from,
+							Arr.filter(targets, (target) => !MACHINE_OWNED_WORKFLOW_STATES.has(target)),
+						] as const,
+				),
+				([, targets]) => targets.length > 0,
+			),
+			([from, targets]) => `${from}→(${Arr.join(targets, "|")})`,
+		),
+		"; ",
+	)
 
 export const ActorType = Schema.Literals(["user", "agent"]).annotate({
 	identifier: "@maple/ActorType",

@@ -2,7 +2,7 @@
 // request encoding and response decoding run.
 import { describe, expect, it } from "@effect/vitest"
 import { beforeEach, vi } from "vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { HttpApiClient, OpenApi } from "effect/http-api"
 import {
@@ -148,7 +148,7 @@ describe("replay v2 HTTP adapters", () => {
 				.mockResolvedValueOnce(json(page([event], "next-events")))
 				.mockResolvedValueOnce(json(page([{ ...event, seq: 2 }])))
 			const result = yield* getSessionTranscript({ data: { sessionId, windowStart: window.startTime } })
-			expect(result.data.map((event) => event.seq)).toEqual([1, 2])
+			expect(Arr.map(result.data, (event) => event.seq)).toEqual([1, 2])
 			expect(result.data[0]).toMatchObject({ attributes: '{"plan":"pro"}', level: "", netStatus: 0 })
 			const url = new URL(requestUrl(mocks.fetch.mock.calls[1]![0]))
 			expect(url.pathname).toBe(`/v2/session_replays/${publicId}/transcript`)

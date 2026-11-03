@@ -1,6 +1,7 @@
 import { type AnnotationSegment, parseAnnotations } from "@maple/domain/chat-annotations"
 import { stripChatContext } from "@maple/domain/chat-preamble"
 import type { UIMessage } from "./ui-message"
+import { Array as Arr, String as Str } from "effect"
 
 // Rich text: prose split at inline `<<maple:…>>`
 // cards. Only the markdown segments need the (async) parser.
@@ -22,15 +23,15 @@ export const markdownBodies = (text: string): ReadonlyArray<string> => {
 	const body = richTextSegments(text)
 	return body._tag === "Plain"
 		? [body.text]
-		: body.segments.flatMap((segment) =>
-				segment.type === "text" && segment.content.trim() !== "" ? [segment.content] : [],
+		: Arr.flatMap(body.segments, (segment) =>
+				segment.type === "text" && Str.trim(segment.content) !== "" ? [segment.content] : [],
 			)
 }
 
 /** Every markdown body a transcript renders: prose (preamble stripped) and sub-agent answers. */
 export const transcriptMarkdown = (messages: ReadonlyArray<UIMessage>): ReadonlyArray<string> =>
-	messages.flatMap((message) =>
-		message.parts.flatMap((part) => {
+	Arr.flatMap(messages, (message) =>
+		Arr.flatMap(message.parts, (part) => {
 			if (part._tag === "text") {
 				const text = stripChatContext(part.text)
 				return text === "" ? [] : markdownBodies(text)
@@ -38,8 +39,8 @@ export const transcriptMarkdown = (messages: ReadonlyArray<UIMessage>): Readonly
 			if (part._tag === "task")
 				return [
 					...(part.answer === undefined ? [] : [part.answer]),
-					...part.messages.flatMap((child) =>
-						child.parts.flatMap((leaf) =>
+					...Arr.flatMap(part.messages, (child) =>
+						Arr.flatMap(child.parts, (leaf) =>
 							leaf._tag === "text" && leaf.text !== "" ? [leaf.text] : [],
 						),
 					),

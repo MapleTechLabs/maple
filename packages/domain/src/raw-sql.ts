@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { maskLiteralsAndComments } from "@maple-dev/effect-orm/sql"
 
 /** Blanks literals and comments, keeping positions, so text searches only see SQL. */
@@ -57,7 +57,7 @@ const DENY_LIST = [
 	"KILL",
 ] as const
 
-const DENY_LIST_RE = new RegExp(`\\b(${DENY_LIST.join("|")})\\b`, "i")
+const DENY_LIST_RE = new RegExp(`\\b(${Arr.join(DENY_LIST, "|")})\\b`, "i")
 
 /**
  * `INTO OUTFILE` is a SELECT terminal clause, so it slips past the deny list's
@@ -131,7 +131,7 @@ const READER_NAMES = new Set([
 	"primes",
 ])
 const isReaderName = (name: string): boolean =>
-	READER_NAMES.has(name) || READER_PREFIXES.some((prefix) => name.startsWith(prefix))
+	READER_NAMES.has(name) || Arr.some(READER_PREFIXES, (prefix) => Str.startsWith(prefix)(name))
 
 interface SqlToken {
 	readonly v: string
@@ -212,7 +212,7 @@ const tokenizeSql = (sql: string): ReadonlyArray<SqlToken> => {
 				if (d === "\\") {
 					// Decoded as the server does, so `\x73ystem` and `sys\Ntem` both read as `system`.
 					const e = sql.charAt(i + 1)
-					const hex = sql.slice(i + 2, i + 4)
+					const hex = Str.slice(i + 2, i + 4)(sql)
 					if ((e === "x" || e === "X") && HEX2_RE.test(hex)) {
 						body += String.fromCharCode(Number.parseInt(hex, 16))
 						i += 4
@@ -233,11 +233,11 @@ const tokenizeSql = (sql: string): ReadonlyArray<SqlToken> => {
 					i++
 				}
 			}
-			tokens.push({ v: body.toLowerCase(), ident: true })
+			tokens.push({ v: Str.toLowerCase(body), ident: true })
 		} else if (IDENT_START_RE.test(c)) {
 			let j = i + 1
 			while (j < n && IDENT_PART_RE.test(sql.charAt(j))) j++
-			tokens.push({ v: sql.slice(i, j).toLowerCase(), ident: true })
+			tokens.push({ v: Str.toLowerCase(Str.slice(i, j)(sql)), ident: true })
 			i = j
 		} else {
 			tokens.push({ v: c, ident: false })
@@ -337,10 +337,10 @@ const disallowedTableFunction = (sql: string): string | null => {
 				(dotted || !ALLOWED_TABLE_FUNCTIONS.has(t.v))
 			) {
 				return dotted
-					? tokens
-							.slice(i, j + 1)
-							.map((x) => x.v)
-							.join("")
+					? Arr.join(
+							Arr.map(tokens.slice(i, j + 1), (x) => x.v),
+							"",
+						)
 					: t.v
 			}
 			armed = false
@@ -397,7 +397,8 @@ const disallowedServerFunction = (sql: string): string | null => {
 			next !== undefined &&
 			!next.ident &&
 			next.v === "(" &&
-			(SERVER_READER_NAMES.has(t.v) || SERVER_READER_PREFIXES.some((prefix) => t.v.startsWith(prefix)))
+			(SERVER_READER_NAMES.has(t.v) ||
+				Arr.some(SERVER_READER_PREFIXES, (prefix) => Str.startsWith(prefix)(t.v)))
 		)
 	})
 	return hit?.v ?? null
@@ -515,13 +516,14 @@ const orgFilterEscapes = (masked: string, start: number, end: number): boolean =
 		const { open, close } = enclosingGroup(masked, atomStart, atomEnd)
 		const lo = open + 1
 		const flat = flattenGroups(masked, lo, close)
-		const left = flat.slice(0, atomStart - lo)
-		const right = flat.slice(atomEnd - lo)
+		const left = Str.slice(0, atomStart - lo)(flat)
+		const right = Str.slice(atomEnd - lo)(flat)
 		const starts = [...left.matchAll(CLAUSE_START_RE)]
 		const lastStart = starts.at(-1)
-		const leftClause = lastStart === undefined ? left : left.slice(lastStart.index + lastStart[0].length)
+		const leftClause =
+			lastStart === undefined ? left : Str.slice(lastStart.index + lastStart[0].length)(left)
 		const endMatch = right.match(CLAUSE_END_RE)
-		const rightClause = endMatch?.index === undefined ? right : right.slice(0, endMatch.index)
+		const rightClause = endMatch?.index === undefined ? right : Str.slice(0, endMatch.index)(right)
 		if (/\bOR\b/i.test(leftClause) || /\bOR\b/i.test(rightClause) || /\bNOT\s*$/i.test(leftClause)) {
 			return true
 		}
@@ -530,7 +532,7 @@ const orgFilterEscapes = (masked: string, start: number, end: number): boolean =
 		// arguments; a clause keyword means a subquery, which is its own scope.
 		const keywordBound =
 			(lastStart !== undefined && lastStart[0] !== ",") || (endMatch !== null && endMatch[0] !== ",")
-		const before = masked.slice(0, Math.max(open, 0))
+		const before = Str.slice(0, Math.max(open, 0))(masked)
 		const isCall = open >= 0 && /[A-Za-z0-9_]\s*$/.test(before) && !BOOLEAN_KEYWORD_RE.test(before)
 		if (!keywordBound && isCall) return true
 		if (lastStart !== undefined || endMatch !== null || open < 0) return false
@@ -543,7 +545,7 @@ const IDENT = "[A-Za-z_][A-Za-z0-9_]*"
 // A clause word after a table is never its alias: `FROM traces JOIN logs l` must still bind `l`.
 const NOT_ALIAS =
 	"(?!(?:WHERE|PREWHERE|FINAL|SAMPLE|ARRAY|GLOBAL|ANY|ALL|INNER|LEFT|RIGHT|FULL|CROSS|OUTER|SEMI|ANTI|ASOF|JOIN|ON|USING|GROUP|ORDER|LIMIT|UNION|SETTINGS|FORMAT)\\b)"
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+const escapeRe = (s: string) => Str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")(s)
 
 /**
  * Whether `alias` names a real table read in a FROM/JOIN (`FROM traces t`, `JOIN db.logs AS l`,
@@ -552,8 +554,8 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
  */
 const aliasBindsTable = (masked: string, alias: string): boolean => {
 	const ctes = new Set(
-		[...masked.matchAll(new RegExp(`(?:\\bWITH|,)\\s*(${IDENT})\\s+AS\\s*\\(`, "gi"))].map((m) =>
-			(m[1] ?? "").toLowerCase(),
+		Arr.map([...masked.matchAll(new RegExp(`(?:\\bWITH|,)\\s*(${IDENT})\\s+AS\\s*\\(`, "gi"))], (m) =>
+			Str.toLowerCase(m[1] ?? ""),
 		),
 	)
 	const a = escapeRe(alias)
@@ -566,7 +568,7 @@ const aliasBindsTable = (masked: string, alias: string): boolean => {
 		`\\s*,\\s*(?:${IDENT}\\.)?(${IDENT})(?:\\s+(?:AS\\s+)?${NOT_ALIAS}(${IDENT}))?(?=[\\s,)]|$)`,
 		"iy",
 	)
-	const bindings = [...masked.matchAll(binding)].flatMap((m) => {
+	const bindings = Arr.flatMap([...masked.matchAll(binding)], (m) => {
 		const items: Array<readonly [string, string | undefined]> = [[m[1] ?? "", m[2]]]
 		if (!/^FROM/i.test(m[0])) return items
 		commaItem.lastIndex = (m.index ?? 0) + m[0].length
@@ -577,7 +579,7 @@ const aliasBindsTable = (masked: string, alias: string): boolean => {
 	})
 	for (const [table, bound] of bindings) {
 		const names = bound === undefined ? [table] : [table, bound]
-		if (names.some((n) => new RegExp(`^${a}$`, "i").test(n)) && !ctes.has(table.toLowerCase())) {
+		if (Arr.some(names, (n) => new RegExp(`^${a}$`, "i").test(n)) && !ctes.has(Str.toLowerCase(table))) {
 			return true
 		}
 	}
@@ -595,7 +597,7 @@ const orgFilterIssue = (sql: string, masked: string): RawSqlIssue | null => {
 			)
 		}
 		// Offsets are shared with the masked text; a macro inside a literal or comment is inert.
-		if (masked.startsWith("$__orgFilter", match.index)) {
+		if (Str.startsWith("$__orgFilter", match.index)(masked)) {
 			if (alias !== undefined && !aliasBindsTable(masked, alias)) {
 				return issue(
 					"InvalidMacro",
@@ -644,10 +646,10 @@ export const rawSqlIssue = (
 	const maskedSql = maskLiteralsAndComments(sql)
 	const unmasked = UNMASKED_SYNTAX.find(([pattern]) => pattern.test(maskedSql))
 	if (unmasked !== undefined) return issue("DisallowedStatement", unmasked[1])
-	if (!maskedSql.includes("$__orgFilter")) {
+	if (!Str.includes("$__orgFilter")(maskedSql)) {
 		return issue(
 			"MissingOrgFilter",
-			sql.includes("$__orgFilter")
+			Str.includes("$__orgFilter")(sql)
 				? "$__orgFilter must appear in the query itself, not inside a comment or string literal."
 				: "SQL must reference $__orgFilter so the query is scoped to your org.",
 		)
@@ -656,10 +658,10 @@ export const rawSqlIssue = (
 	// `$__timeFilter(` sits in a comment expands to nothing and then rescans all
 	// of history on every evaluation, which is the cost the requirement exists to
 	// prevent.
-	if (options.workload === "alert" && !maskedSql.includes("$__timeFilter(")) {
+	if (options.workload === "alert" && !Str.includes("$__timeFilter(")(maskedSql)) {
 		return issue(
 			"InvalidMacro",
-			sql.includes("$__timeFilter(")
+			Str.includes("$__timeFilter(")(sql)
 				? "$__timeFilter(...) must appear in the query itself, not inside a comment or string literal."
 				: "Raw SQL alerts must reference $__timeFilter(...) to bound alert reads.",
 		)
@@ -671,7 +673,7 @@ export const rawSqlIssue = (
 	for (const macro of ["$__timeFilter", "$__timeGroup"] as const) {
 		const pattern = new RegExp(`\\${macro}\\(([^)]*)\\)`, "g")
 		for (const match of sql.matchAll(pattern)) {
-			const column = match[1].trim()
+			const column = Str.trim(match[1])
 			if (!COLUMN_IDENT_RE.test(column)) {
 				return issue(
 					"InvalidMacro",
@@ -681,9 +683,9 @@ export const rawSqlIssue = (
 		}
 	}
 
-	const unknownMacro = [...sql.matchAll(/\$__\w+/g)]
-		.map((match) => match[0])
-		.find((name) => !RAW_SQL_MACROS.includes(name as (typeof RAW_SQL_MACROS)[number]))
+	const unknownMacro = Arr.map([...sql.matchAll(/\$__\w+/g)], (match) => match[0]).find(
+		(name) => !RAW_SQL_MACROS.includes(name as (typeof RAW_SQL_MACROS)[number]),
+	)
 	if (unknownMacro !== undefined) {
 		return issue("UnresolvedMacro", `Unknown macro ${unknownMacro}. ${SUPPORTED_MACROS_HELP}`)
 	}
@@ -692,8 +694,8 @@ export const rawSqlIssue = (
 	// "multiple statements" is a false error on the most common way to end a query.
 	let masked = maskedSql
 	const terminatorMatch = masked.match(/;\s*$/)
-	if (terminatorMatch?.index !== undefined) masked = masked.slice(0, terminatorMatch.index)
-	if (masked.includes(";")) {
+	if (terminatorMatch?.index !== undefined) masked = Str.slice(0, terminatorMatch.index)(masked)
+	if (Str.includes(";")(masked)) {
 		return issue("MultipleStatements", "Multiple SQL statements are not allowed. Remove ';' separators.")
 	}
 
@@ -709,7 +711,7 @@ export const rawSqlIssue = (
 	if (denyMatch) {
 		return issue(
 			"DisallowedStatement",
-			`Statement keyword '${denyMatch[1].toUpperCase()}' is not allowed in raw SQL.`,
+			`Statement keyword '${Str.toUpperCase(denyMatch[1])}' is not allowed in raw SQL.`,
 		)
 	}
 	if (INTO_OUTFILE_RE.test(masked)) {
@@ -785,7 +787,7 @@ export const RawSqlText = Schema.String.check(
 export const rawAlertSqlSelectsSamples = (sql: string): boolean => {
 	// Masking keeps offsets (a quoted alias becomes spaces), so read the alias from the original text.
 	for (const match of maskLiteralsAndComments(sql).matchAll(/\bAS\s/gi)) {
-		const alias = sql.slice(match.index + match[0].length).trimStart()
+		const alias = Str.trimStart(Str.slice(match.index + match[0].length)(sql))
 		if (/^(?:samples|`samples`|"samples")(?![A-Za-z0-9_])/.test(alias)) return true
 	}
 	return false
@@ -807,7 +809,7 @@ export interface RawAlertPerformanceHint {
 	readonly line: number
 }
 
-const lineAt = (sql: string, index: number): number => sql.slice(0, index).split("\n").length
+const lineAt = (sql: string, index: number): number => Str.split("\n")(Str.slice(0, index)(sql)).length
 
 /**
  * Cheap, text-only guesses at what makes an alert query slow. Logs and traces are
@@ -829,19 +831,16 @@ export const rawAlertPerformanceHints = (sql: string): ReadonlyArray<RawAlertPer
 				]
 			: []
 	// Masking keeps offsets, so the pattern's literal is read from the original text.
-	const bodyHints = Array.from(masked.matchAll(/\bBody\s+(?:NOT\s+)?I?LIKE\b/gi))
-		.filter((match) =>
-			sql
-				.slice(match.index + match[0].length)
-				.trimStart()
-				.startsWith("'%"),
-		)
-		.slice(0, 1)
-		.map((match): RawAlertPerformanceHint => ({
+	const bodyHints = Arr.map(
+		Arr.filter(Array.from(masked.matchAll(/\bBody\s+(?:NOT\s+)?I?LIKE\b/gi)), (match) =>
+			Str.startsWith("'%")(Str.trimStart(Str.slice(match.index + match[0].length)(sql))),
+		).slice(0, 1),
+		(match): RawAlertPerformanceHint => ({
 			code: "body_wildcard_match",
 			message:
 				"A `Body` match starting with `%` reads every log body in the window. Match a structured attribute instead, e.g. `LogAttributes['event'] = 'webhook.failed'`, or filter on a service first.",
 			line: lineAt(sql, match.index),
-		}))
+		}),
+	)
 	return [...serviceHint, ...bodyHints]
 }

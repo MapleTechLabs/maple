@@ -11,6 +11,7 @@ import {
 } from "@maple/domain/billing"
 import { sentenceCasePlanName } from "./plans"
 import { formatQuoteUnits, quoteUnits } from "./usage"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /**
  * The billing page's spend model: one place that turns the Autumn snapshot plus
@@ -230,16 +231,17 @@ export function buildSpendModel({
 	// This is what makes usage-based pricing correct on a custom plan.
 	const basePlan = activeSub ? resolveSubscriptionPlan(activeSub, catalog) : null
 	// An add-on we cannot resolve stays a charge (unpriced) so the spend reads as partial.
-	const addOnSubs = customer.subscriptions
-		.filter((sub) => sub.addOn === true && sub.status === "active")
-		.map((sub) => ({ sub, plan: resolveSubscriptionPlan(sub, catalog) }))
-	const addOns = addOnSubs.flatMap(({ plan }) => (plan === null ? [] : [plan]))
+	const addOnSubs = Arr.map(
+		Arr.filter(customer.subscriptions, (sub) => sub.addOn === true && sub.status === "active"),
+		(sub) => ({ sub, plan: resolveSubscriptionPlan(sub, catalog) }),
+	)
+	const addOns = Arr.flatMap(addOnSubs, ({ plan }) => (plan === null ? [] : [plan]))
 	const charges: BaseCharge[] =
 		activeSub === undefined
 			? []
 			: [
 					chargeOf("plan", activeSub, basePlan),
-					...addOnSubs.map(({ sub, plan }) => chargeOf("addOn", sub, plan)),
+					...Arr.map(addOnSubs, ({ sub, plan }) => chargeOf("addOn", sub, plan)),
 				]
 
 	// A plan we can't price (neither expanded nor in the catalog) must read as
@@ -249,7 +251,7 @@ export function buildSpendModel({
 			? 0
 			: !isPricedPlan(basePlan)
 				? null
-				: charges.reduce((sum, charge) => sum + (charge.dollars ?? 0), 0)
+				: Arr.reduce(charges, 0, (sum, charge) => sum + (charge.dollars ?? 0))
 
 	const pricing: Record<string, FeatureUsagePricing> = {}
 	const billingUnitsByFeature: Record<string, number> = {}
@@ -273,9 +275,9 @@ export function buildSpendModel({
 	}
 
 	const spend = cycleSpend({ baseDollars, features: pricing })
-	const unpricedAddOn = charges.some((charge) => charge.kind === "addOn" && charge.dollars === null)
+	const unpricedAddOn = Arr.some(charges, (charge) => charge.kind === "addOn" && charge.dollars === null)
 
-	const features: FeatureSpend[] = SPEND_FEATURES.map((featureId) => {
+	const features: FeatureSpend[] = Arr.map(SPEND_FEATURES, (featureId) => {
 		const entry = pricing[featureId]
 		const overUnits =
 			entry.unlimited || entry.included == null ? 0 : Math.max(0, entry.used - entry.included)
@@ -311,7 +313,7 @@ export function buildSpendModel({
 		projectedCents: projectCycleSpend({
 			baseDollars,
 			features: pricing,
-			cycleUsage: Object.fromEntries(SPEND_FEATURES.map((id) => [id, usage?.[id]?.sum ?? undefined])),
+			cycleUsage: Rec.fromEntries(Arr.map(SPEND_FEATURES, (id) => [id, usage?.[id]?.sum ?? undefined])),
 			elapsedMs,
 			totalMs: cycle.endMs - cycle.startMs,
 		}),
@@ -325,7 +327,8 @@ export function buildSpendModel({
 		basePlan,
 		addOns,
 		isCustomPlan:
-			activeSub !== undefined && !catalog.some((plan) => plan.id === activeSub.planId && !plan.addOn),
+			activeSub !== undefined &&
+			!Arr.some(catalog, (plan) => plan.id === activeSub.planId && !plan.addOn),
 		charges,
 	}
 }
@@ -340,12 +343,12 @@ export interface CostLine {
 
 /** "Logs, traces and product events": a feature list as one sentence-case phrase. */
 const joinFeatureLabels = (labels: ReadonlyArray<string>): string => {
-	const lower = labels.map((label) => label.toLowerCase())
+	const lower = Arr.map(labels, (label) => Str.toLowerCase(label))
 	const phrase =
 		lower.length <= 1
 			? (lower[0] ?? "")
-			: `${lower.slice(0, -1).join(", ")} and ${lower[lower.length - 1]}`
-	return phrase.charAt(0).toUpperCase() + phrase.slice(1)
+			: `${Arr.join(lower.slice(0, -1), ", ")} and ${lower[lower.length - 1]}`
+	return Str.toUpperCase(phrase.charAt(0)) + Str.slice(1)(phrase)
 }
 
 /**
@@ -358,14 +361,15 @@ export function costBreakdown(model: SpendModel): ReadonlyArray<CostLine> {
 		charge.interval === null ? "Base price" : `Base price per ${charge.interval}`
 	// An unpriceable plan leaves `baseCents` at 0, so no fixed fee can be itemized.
 	const baseKnown = isPricedPlan(model.basePlan)
-	const addOnLines = model.charges
-		.filter((charge) => charge.kind === "addOn")
-		.map((charge) => ({
+	const addOnLines = Arr.map(
+		Arr.filter(model.charges, (charge) => charge.kind === "addOn"),
+		(charge) => ({
 			key: charge.key,
 			label: `${sentenceCasePlanName(charge.name)} add-on`,
 			detail: detailOf(charge),
 			cents: baseKnown && charge.dollars !== null ? Math.round(charge.dollars * 100) : null,
-		}))
+		}),
+	)
 	const plan = model.charges.find((charge) => charge.kind === "plan")
 	const planLine =
 		plan === undefined
@@ -376,11 +380,12 @@ export function costBreakdown(model: SpendModel): ReadonlyArray<CostLine> {
 						label: `${sentenceCasePlanName(plan.name)} plan`,
 						detail: detailOf(plan),
 						cents: baseKnown
-							? model.baseCents - addOnLines.reduce((sum, line) => sum + (line.cents ?? 0), 0)
+							? model.baseCents -
+								Arr.reduce(addOnLines, 0, (sum, line) => sum + (line.cents ?? 0))
 							: null,
 					},
 				]
-	const drivers = model.features.filter((feature) => feature.overageCents > 0)
+	const drivers = Arr.filter(model.features, (feature) => feature.overageCents > 0)
 	return [
 		...planLine,
 		...addOnLines,
@@ -390,7 +395,7 @@ export function costBreakdown(model: SpendModel): ReadonlyArray<CostLine> {
 			detail:
 				drivers.length === 0
 					? "Nothing past what's included so far"
-					: `${joinFeatureLabels(drivers.map((feature) => feature.label))} past what's included, per feature in Usage`,
+					: `${joinFeatureLabels(Arr.map(drivers, (feature) => feature.label))} past what's included, per feature in Usage`,
 			cents: model.overageCents,
 		},
 	]
@@ -468,7 +473,7 @@ export function buildCumulativeSeries({
 		{ used: number; included: number; rate: number; scale: number }
 	>()
 	for (const feature of model.features) {
-		const warehouseTotal = daily.days.reduce((sum, day) => sum + volumeOf(day, feature.featureId), 0)
+		const warehouseTotal = Arr.reduce(daily.days, 0, (sum, day) => sum + volumeOf(day, feature.featureId))
 		byFeature.set(feature.featureId, {
 			used: 0,
 			included: feature.unlimited
@@ -494,7 +499,7 @@ export function buildCumulativeSeries({
 	const lastDayMs = lastDay ? Date.parse(`${lastDay.date}T00:00:00Z`) : todayMs
 	const projectedTotal = model.projectedCents / 100
 
-	return daily.days.map((day) => {
+	return Arr.map(daily.days, (day) => {
 		const dayMs = Date.parse(`${day.date}T00:00:00Z`)
 		const future = dayMs > todayMs
 

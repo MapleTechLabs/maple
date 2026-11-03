@@ -4,7 +4,7 @@
  * Build-time only: nothing under `templates/` is imported by `src/`, so the
  * Worker runtime never loads Foldkit.
  */
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { renderToString } from "foldkit/experimental/server"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
@@ -64,10 +64,10 @@ export function renderUnit(unit: Unit): Promise<string> {
 			{ isHydratable: false },
 		),
 	).then(({ html }) => {
-		if (!html.startsWith(open) || !html.endsWith(close)) {
+		if (!Str.startsWith(open)(html) || !Str.endsWith(close)(html)) {
 			throw new Error(`Rendered unit is not wrapped in its ${unit.context} carrier`)
 		}
-		return html.slice(open.length, html.length - close.length).replace(SLOT_ELEMENT, "[[#$2]]")
+		return Str.replace(SLOT_ELEMENT, "[[#$2]]")(Str.slice(open.length, html.length - close.length)(html))
 	})
 }
 
@@ -75,16 +75,19 @@ const MARK_SRC = "https://maple.dev/brand/logo/maple-mark-amber-256.png"
 
 /** Doctype and head around a page body, as react-email used to emit them. */
 export function documentShell(body: string): string {
-	return [
-		'<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">',
-		'<html dir="ltr" lang="en"><head>',
-		'<meta content="text/html; charset=UTF-8" http-equiv="Content-Type" />',
-		'<meta name="x-apple-disable-message-reformatting" />',
-		`<link rel="preload" as="image" href="${MARK_SRC}" />`,
-		'</head><body style="background-color:#141210;margin:0;padding:0;">',
-		body,
-		"</body></html>",
-	].join("")
+	return Arr.join(
+		[
+			'<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">',
+			'<html dir="ltr" lang="en"><head>',
+			'<meta content="text/html; charset=UTF-8" http-equiv="Content-Type" />',
+			'<meta name="x-apple-disable-message-reformatting" />',
+			`<link rel="preload" as="image" href="${MARK_SRC}" />`,
+			'</head><body style="background-color:#141210;margin:0;padding:0;">',
+			body,
+			"</body></html>",
+		],
+		"",
+	)
 }
 
 export { MARK_SRC }

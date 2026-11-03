@@ -9,7 +9,18 @@
  */
 import * as PlanetScale from "@distilled.cloud/planetscale"
 import { IntegrationsUpstreamError } from "@maple/domain/http"
-import { Duration, Effect, Layer, Redacted, Schedule, Schema, Stream } from "effect"
+import {
+	Duration,
+	Effect,
+	Layer,
+	Redacted,
+	Schedule,
+	Schema,
+	Stream,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
 
 /** Per HTTP request, body included, so a paginated listing gets the budget once per page. */
@@ -95,8 +106,8 @@ export type PlanetScaleApiError =
 	| PlanetScaleForbiddenError
 	| IntegrationsUpstreamError
 
-const STATUS_BY_TAG: Record<string, number> = Object.fromEntries(
-	Object.entries(PlanetScale.HTTP_STATUS_MAP).map(([status, error]) => [error.name, Number(status)]),
+const STATUS_BY_TAG: Record<string, number> = Rec.fromEntries(
+	Arr.map(Rec.toEntries(PlanetScale.HTTP_STATUS_MAP), ([status, error]) => [error.name, Number(status)]),
 )
 
 const toApiError =
@@ -121,7 +132,7 @@ const toApiError =
 		const status = STATUS_BY_TAG[error._tag]
 		const detail = error.message === "" ? "" : `: ${error.message}`
 		return new IntegrationsUpstreamError({
-			message: `PlanetScale API ${operation} failed (${error._tag})${detail}`.slice(0, 500),
+			message: Str.slice(0, 500)(`PlanetScale API ${operation} failed (${error._tag})${detail}`),
 			...(status === undefined ? undefined : { status }),
 			cause: error,
 		})
@@ -153,7 +164,7 @@ export const runPlanetScale = <A, E extends SdkError>(
 				accessToken: Redacted.make(target.accessToken),
 				// Operations take the organization in their input; this field is unused.
 				organization: "",
-				apiBaseUrl: `${target.apiBaseUrl.replace(/\/$/, "")}/v1`,
+				apiBaseUrl: `${Str.replace(/\/$/, "")(target.apiBaseUrl)}/v1`,
 			}),
 			Layer.succeed(HttpClient.HttpClient, withRequestTimeout(httpClient, options.timeoutRetries ?? 0)),
 			// The SDK's default policy retries 5xx and 429 until our timeout fires; callers own
@@ -189,7 +200,7 @@ export const collectPages = <I, Item, E>(
 		Effect.map((pages) => {
 			const last = pages.at(-1)
 			return {
-				items: pages.flatMap((page) => page.data),
+				items: Arr.flatMap(pages, (page) => page.data),
 				// Lenient bodies may omit `next_page`; the SDK stops paging on it either way.
 				complete: last === undefined || last.next_page == null,
 			}

@@ -70,7 +70,7 @@ export const HttpV2AttributeMappingsLive = HttpApiBuilder.group(MapleApiV2, "att
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const response = yield* listMappings(tenant.orgId)
-					const page = yield* paginateArray(response.mappings.map(toV2AttributeMapping), query)
+					const page = yield* paginateArray(Arr.map(response.mappings, toV2AttributeMapping), query)
 					return { object: "list" as const, ...page }
 				}),
 			)

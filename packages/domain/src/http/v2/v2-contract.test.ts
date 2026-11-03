@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Predicate, Result, Schema } from "effect"
+import { Effect, Predicate, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { MapleApiV2 } from "./api"
 import { V2AlertDestinationCreateParams } from "./alert-destinations"
 import { V2AlertIncident } from "./alert-incidents"
@@ -651,9 +651,10 @@ describe("scopes", () => {
 	// derivation cannot classify is a 500, so every declared one must classify.
 	it("classifies every scope-protected v2 route template", () => {
 		let checked = 0
-		for (const group of Object.values(MapleApiV2.groups)) {
+		for (const group of Rec.values(MapleApiV2.groups)) {
 			for (const endpoint of Object.values(group.endpoints)) {
-				const scoped = Array.from(endpoint.middlewares).some(
+				const scoped = Arr.some(
+					Array.from(endpoint.middlewares),
 					(middleware) =>
 						Predicate.hasProperty(middleware, "key") &&
 						Predicate.isString(middleware.key) &&
@@ -736,7 +737,7 @@ describe("telemetry contracts", () => {
 	it("round-trips the synthetic composite log ID", () => {
 		const internal = JSON.stringify(["2026-07-15 12:00:00.123", "00112233445566778899AABBCCDDEEFF"])
 		const wire = Schema.encodeSync(LogPublicId)(internal)
-		expect(wire.startsWith("log_")).toBe(true)
+		expect(Str.startsWith("log_")(wire)).toBe(true)
 		expect(Schema.decodeSync(LogPublicId)(wire)).toBe(internal)
 	})
 

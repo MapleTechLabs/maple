@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId, SupabaseProjectUpdateRequest } from "@maple/domain/http"
@@ -168,18 +168,23 @@ const logsRow = (testDb: TestDb, ref = REF_A) =>
 	).pipe(Effect.map((row) => row!))
 
 const logsCalls = (world: World, ref = REF_A) =>
-	world.supabase.state.calls.filter((call) => call.path === `/v1/projects/${ref}/analytics/endpoints/logs`)
+	Arr.filter(
+		world.supabase.state.calls,
+		(call) => call.path === `/v1/projects/${ref}/analytics/endpoints/logs`,
+	)
 
 const sentRecords = (world: World) =>
-	world.ingest.bodies.flatMap((body) =>
-		body.resourceLogs.flatMap((resource) => resource.scopeLogs.flatMap((scope) => scope.logRecords)),
+	Arr.flatMap(world.ingest.bodies, (body) =>
+		Arr.flatMap(body.resourceLogs, (resource) =>
+			Arr.flatMap(resource.scopeLogs, (scope) => scope.logRecords),
+		),
 	)
 
 const uidOf = (record: { attributes: ReadonlyArray<{ key: string; value: { stringValue: string } }> }) =>
 	record.attributes.find((attribute) => attribute.key === "log.record.uid")?.value.stringValue
 
 /** `2026-10-21T17:55:00.000000`-style column text for an epoch ms. */
-const columnTime = (ms: number) => new Date(ms).toISOString().replace("Z", "000")
+const columnTime = (ms: number) => Str.replace("Z", "000")(new Date(ms).toISOString())
 
 const row = (id: string, ms: number, overrides: Partial<FakeLogRow> = {}): FakeLogRow => ({
 	id,
@@ -229,7 +234,7 @@ describe("SupabaseLogsService", () => {
 					assert.strictEqual(logsCalls(world, REF_B).length, 0)
 
 					const records = sentRecords(world)
-					assert.deepStrictEqual(records.map(uidOf), [fixture.id])
+					assert.deepStrictEqual(Arr.map(records, uidOf), [fixture.id])
 					assert.strictEqual(records[0]!.severityText, "ERROR")
 					assert.strictEqual(records[0]!.timeUnixNano, `${(ENABLED_FROM + 30_000) / 1000}123456000`)
 					assert.strictEqual(records[0]!.body.stringValue, fixture.event_message)
@@ -241,8 +246,8 @@ describe("SupabaseLogsService", () => {
 							[ORG],
 						),
 					)
-					const resource = Object.fromEntries(
-						world.ingest.bodies[0]!.resourceLogs[0]!.resource.attributes.map((attribute) => [
+					const resource = Rec.fromEntries(
+						Arr.map(world.ingest.bodies[0]!.resourceLogs[0]!.resource.attributes, (attribute) => [
 							attribute.key,
 							attribute.value.stringValue,
 						]),
@@ -281,7 +286,7 @@ describe("SupabaseLogsService", () => {
 			const testDb = createTestDb(trackedDbs)
 			const world = makeWorld()
 			const distinct = Array.from({ length: 2997 }, (_, i) =>
-				row(`r-${String(i).padStart(4, "0")}`, ENABLED_FROM + i),
+				row(`r-${Str.padStart(4, "0")(String(i))}`, ENABLED_FROM + i),
 			)
 			// Auth logs carry whole seconds, so several rows share one timestamp across a page edge.
 			const shared = Array.from({ length: 5 }, (_, i) =>
@@ -304,7 +309,7 @@ describe("SupabaseLogsService", () => {
 
 					yield* TestClock.adjust(minute)
 					yield* logs.pollAllOrgs()
-					const ids = sentRecords(world).map(uidOf)
+					const ids = Arr.map(sentRecords(world), uidOf)
 					assert.strictEqual(ids.length, 3002)
 					assert.strictEqual(new Set(ids).size, 3002)
 					const caughtUp = yield* logsRow(testDb)
@@ -376,7 +381,7 @@ describe("SupabaseLogsService", () => {
 				world.ingest.status = 200
 				yield* TestClock.adjust(minute)
 				yield* logs.pollAllOrgs()
-				assert.deepStrictEqual(sentRecords(world).map(uidOf), ["a"])
+				assert.deepStrictEqual(Arr.map(sentRecords(world), uidOf), ["a"])
 				const recovered = yield* logsRow(testDb)
 				assert.deepStrictEqual([recovered.watermark, recovered.error], [HORIZON + minute, null])
 			}),
@@ -388,7 +393,7 @@ describe("SupabaseLogsService", () => {
 		const world = makeWorld()
 		// Three rows per millisecond, so the first chunk edge (row 250) splits a millisecond.
 		world.supabase.state.logs = Array.from({ length: 600 }, (_, i) =>
-			row(`r-${String(i).padStart(4, "0")}`, ENABLED_FROM + Math.floor(i / 3)),
+			row(`r-${Str.padStart(4, "0")(String(i))}`, ENABLED_FROM + Math.floor(i / 3)),
 		)
 		world.ingest.failRequest = 2
 		return run(
@@ -406,7 +411,7 @@ describe("SupabaseLogsService", () => {
 
 				yield* TestClock.adjust(minute)
 				yield* logs.pollAllOrgs()
-				const ids = sentRecords(world).map(uidOf)
+				const ids = Arr.map(sentRecords(world), uidOf)
 				assert.strictEqual(ids.length, 600)
 				assert.strictEqual(new Set(ids).size, 600)
 				const recovered = yield* logsRow(testDb)
@@ -435,7 +440,7 @@ describe("SupabaseLogsService", () => {
 				yield* TestClock.adjust(minute)
 				yield* logs.pollAllOrgs()
 				assert.strictEqual(logsCalls(world).length, 2)
-				assert.deepStrictEqual(sentRecords(world).map(uidOf), ["a"])
+				assert.deepStrictEqual(Arr.map(sentRecords(world), uidOf), ["a"])
 			}),
 		)
 	})
@@ -464,7 +469,7 @@ describe("SupabaseLogsService", () => {
 				yield* TestClock.setTime(NOW + 61 * minute)
 				yield* logs.pollAllOrgs()
 				assert.isAbove(logsCalls(world).length, 1)
-				assert.deepStrictEqual(sentRecords(world).map(uidOf), ["a"])
+				assert.deepStrictEqual(Arr.map(sentRecords(world), uidOf), ["a"])
 			}),
 		)
 	})

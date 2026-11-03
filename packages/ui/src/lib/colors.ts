@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 /**
  * Chart color Tailwind classes for depth-based coloring in visualizations.
  * Maps to Tailwind classes: bg-chart-1 through bg-chart-5
@@ -182,8 +183,8 @@ export function calculateSelfTime(
 	const spanEndMs = spanStartMs + span.durationMs
 
 	// Calculate total time covered by children (accounting for overlaps)
-	const childIntervals = children
-		.map((child) => {
+	const childIntervals = Arr.filter(
+		Arr.map(children, (child) => {
 			const childStartMs = new Date(child.startTime).getTime() + (child.clockSkewMs ?? 0)
 			const childEndMs = childStartMs + child.durationMs
 			// Clamp to parent span boundaries
@@ -191,8 +192,9 @@ export function calculateSelfTime(
 				start: Math.max(childStartMs, spanStartMs),
 				end: Math.min(childEndMs, spanEndMs),
 			}
-		})
-		.filter((i) => i.end > i.start)
+		}),
+		(i) => i.end > i.start,
+	)
 
 	if (childIntervals.length === 0) return span.durationMs
 
@@ -208,7 +210,7 @@ export function calculateSelfTime(
 		}
 	}
 
-	const childrenTime = merged.reduce((sum, i) => sum + (i.end - i.start), 0)
+	const childrenTime = Arr.reduce(merged, 0, (sum, i) => sum + (i.end - i.start))
 	return Math.max(0, span.durationMs - childrenTime)
 }
 
@@ -254,7 +256,8 @@ export const TOKEN_FALLBACK: Readonly<Record<string, string>> = {
  * {@link DEFAULT_TOKEN_FALLBACK} when unmapped.
  */
 export function tokenFallback(token: string): string {
-	const inner = token.startsWith("var(") && token.endsWith(")") ? token.slice(4, -1).trim() : token
-	const name = inner.startsWith("--color-") ? `--${inner.slice("--color-".length)}` : inner
-	return Object.hasOwn(TOKEN_FALLBACK, name) ? TOKEN_FALLBACK[name] : DEFAULT_TOKEN_FALLBACK
+	const inner =
+		Str.startsWith("var(")(token) && Str.endsWith(")")(token) ? Str.trim(Str.slice(4, -1)(token)) : token
+	const name = Str.startsWith("--color-")(inner) ? `--${Str.slice("--color-".length)(inner)}` : inner
+	return Rec.has(TOKEN_FALLBACK, name) ? TOKEN_FALLBACK[name] : DEFAULT_TOKEN_FALLBACK
 }

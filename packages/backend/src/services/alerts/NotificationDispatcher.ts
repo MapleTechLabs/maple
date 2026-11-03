@@ -9,7 +9,7 @@ import {
 	type AlertSignalType,
 	type OrgId,
 } from "@maple/domain/http"
-import { DateTime, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { DateTime, Clock, Context, Effect, Layer, Option, Redacted, Schema, Array as Arr } from "effect"
 import { HttpClient } from "effect/http"
 import { dispatchDelivery as dispatchDeliveryImpl } from "./delivery/dispatch"
 import type { DispatchContext } from "./delivery/context"
@@ -258,7 +258,7 @@ const make: Effect.Effect<
 				return {
 					delivered: 0,
 					failed: destinationIds.length,
-					destinations: destinationIds.map((destinationId): NotificationDestinationResult => ({
+					destinations: Arr.map(destinationIds, (destinationId): NotificationDestinationResult => ({
 						destinationId,
 						destinationName: null,
 						status: "failed",
@@ -267,7 +267,7 @@ const make: Effect.Effect<
 				}
 			}
 
-			const rowsById = new Map(rowsOption.value.map((row) => [row.id, row]))
+			const rowsById = new Map(Arr.map(rowsOption.value, (row) => [row.id, row]))
 			const results = yield* Effect.forEach(
 				destinationIds,
 				(destinationId) => {
@@ -324,8 +324,8 @@ const make: Effect.Effect<
 			)
 
 			return {
-				delivered: results.filter((result) => result.status === "delivered").length,
-				failed: results.filter((result) => result.status === "failed").length,
+				delivered: Arr.filter(results, (result) => result.status === "delivered").length,
+				failed: Arr.filter(results, (result) => result.status === "failed").length,
 				destinations: results,
 			}
 		},

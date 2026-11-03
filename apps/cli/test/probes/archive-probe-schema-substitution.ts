@@ -8,6 +8,7 @@
 
 import { ArchiveProbe } from "../archive-probe-helpers"
 import { compareSchema } from "@maple/local-server/archives/export"
+import { Array as Arr } from "effect"
 
 const h = ArchiveProbe.create("schema-substitution")
 
@@ -22,7 +23,7 @@ const source = [
 ]
 
 const parquetFrom = (overrides: Record<string, string>) =>
-	source.map((c) => ({ name: c.name, type: overrides[c.name] ?? c.type }))
+	Arr.map(source, (c) => ({ name: c.name, type: overrides[c.name] ?? c.type }))
 
 try {
 	// 1. Valid round-trip must be accepted.

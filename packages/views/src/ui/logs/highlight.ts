@@ -1,5 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { rowClass } from "./styles"
+import { Array as Arr, String as Str } from "effect"
 
 const MAX_MATCHES = 40
 
@@ -11,21 +12,21 @@ export const splitOnMatches = (
 	text: string,
 	query: string,
 ): ReadonlyArray<{ text: string; match: boolean }> => {
-	const needle = query.trim().toLowerCase()
+	const needle = Str.toLowerCase(Str.trim(query))
 	if (needle === "") return [{ text, match: false }]
-	const haystack = text.toLowerCase()
+	const haystack = Str.toLowerCase(text)
 	const segments: Array<{ text: string; match: boolean }> = []
 	const step = (cursor: number, found: number): number => {
 		if (found >= MAX_MATCHES) return cursor
 		const at = haystack.indexOf(needle, cursor)
 		if (at === -1) return cursor
-		if (at > cursor) segments.push({ text: text.slice(cursor, at), match: false })
-		segments.push({ text: text.slice(at, at + needle.length), match: true })
+		if (at > cursor) segments.push({ text: Str.slice(cursor, at)(text), match: false })
+		segments.push({ text: Str.slice(at, at + needle.length)(text), match: true })
 		return step(at + needle.length, found + 1)
 	}
 	const cursor = step(0, 0)
 	if (segments.length === 0) return [{ text, match: false }]
-	if (cursor < text.length) segments.push({ text: text.slice(cursor), match: false })
+	if (cursor < text.length) segments.push({ text: Str.slice(cursor)(text), match: false })
 	return segments
 }
 
@@ -37,7 +38,7 @@ export const highlightedText = <Message>(
 ): ReadonlyArray<Html | string> =>
 	query === undefined || query === ""
 		? [text]
-		: splitOnMatches(text, query).map((segment) =>
+		: Arr.map(splitOnMatches(text, query), (segment) =>
 				segment.match
 					? h.mark(
 							[

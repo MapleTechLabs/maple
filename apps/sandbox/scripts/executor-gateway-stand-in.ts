@@ -8,7 +8,7 @@
  * Also `executor:local`'s gateway, with the audited clone's git directory mounted as fixture.git.
  */
 import { spawn } from "node:child_process"
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import { gatewayFetch } from "../src/executor-gateway.ts"
 
 const projectRoot = process.argv[2] ?? "/fixture"
@@ -22,7 +22,7 @@ const gitBackend = async (request: Request): Promise<Response> => {
 			GIT_PROJECT_ROOT: projectRoot,
 			GIT_HTTP_EXPORT_ALL: "1",
 			PATH_INFO: url.pathname,
-			QUERY_STRING: url.search.slice(1),
+			QUERY_STRING: Str.slice(1)(url.search),
 			REQUEST_METHOD: request.method,
 			CONTENT_TYPE: request.headers.get("content-type") ?? "",
 			HTTP_CONTENT_ENCODING: request.headers.get("content-encoding") ?? "",
@@ -41,11 +41,11 @@ const gitBackend = async (request: Request): Promise<Response> => {
 	const split = output.indexOf("\r\n\r\n")
 	const headers = new Headers()
 	let status = 200
-	for (const line of output.subarray(0, split).toString().split("\r\n")) {
+	for (const line of Str.split("\r\n")(output.subarray(0, split).toString())) {
 		const at = line.indexOf(":")
-		const name = line.slice(0, at).trim()
-		const value = line.slice(at + 1).trim()
-		if (name.toLowerCase() === "status") status = Number.parseInt(value, 10)
+		const name = Str.trim(Str.slice(0, at)(line))
+		const value = Str.trim(Str.slice(at + 1)(line))
+		if (Str.toLowerCase(name) === "status") status = Number.parseInt(value, 10)
 		else headers.set(name, value)
 	}
 	return new Response(output.subarray(split + 4), { status, headers })

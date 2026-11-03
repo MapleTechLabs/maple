@@ -121,7 +121,7 @@ const itemRefOf = (entry: MenuItemEntry): ItemRef =>
 
 /** The highlightable entries in document order. */
 export const itemRefs = (entries: ReadonlyArray<MenuEntry>): ReadonlyArray<ItemRef> =>
-	entries.flatMap((entry): ReadonlyArray<ItemRef> => {
+	Array.flatMap(entries, (entry): ReadonlyArray<ItemRef> => {
 		switch (entry._tag) {
 			case "Item":
 				return [itemRefOf(entry)]
@@ -130,7 +130,7 @@ export const itemRefs = (entries: ReadonlyArray<MenuEntry>): ReadonlyArray<ItemR
 			case "Checkbox":
 				return [{ kind: "Checkbox", value: entry.value }]
 			case "RadioGroup":
-				return entry.items.map((item) => ({ kind: "Radio", value: item.value }))
+				return Array.map(entry.items, (item) => ({ kind: "Radio", value: item.value }))
 			case "Group":
 				return itemRefs(entry.entries)
 			case "Separator":
@@ -180,7 +180,7 @@ const renderEntries = (
 	start: number,
 ): ReadonlyArray<Html> => {
 	const offsets = Array.scan(entries, start, (index, entry) => index + countOf(entry))
-	return entries.map((entry, position) => renderEntry(h, model, entry, offsets[position] ?? start))
+	return Array.map(entries, (entry, position) => renderEntry(h, model, entry, offsets[position] ?? start))
 }
 
 const row = (model: Model, index: number, item: ItemRef) => ({
@@ -209,7 +209,10 @@ const withItemTooltip = (
 			triggerIds: [id],
 			toContent: () => tooltip.content,
 			toView: ({ trigger, portal }) =>
-				h.div([...trigger(id)], [item, ...(portal !== null && model.itemTooltip.triggerId === id ? [portal] : [])]),
+				h.div(
+					[...trigger(id)],
+					[item, ...(portal !== null && model.itemTooltip.triggerId === id ? [portal] : [])],
+				),
 		},
 	})
 }
@@ -261,7 +264,7 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 			const labelId = `${model.id}-group-${index}`
 			return menuRadioGroup(h, entry.label === undefined ? undefined : labelId, [
 				...(entry.label === undefined ? [] : [menuLabel(h, labelId, [entry.label])]),
-				...entry.items.map((item, offset) =>
+				...Array.map(entry.items, (item, offset) =>
 					menuCheckableItem(
 						h,
 						{
@@ -318,8 +321,13 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 						: [h.div([h.Class(entry.itemsClassName)], rows)]),
 			],
 		})
-	const subClassName = Option.getOrUndefined(Option.flatMapNullishOr(maybeEntry, (entry) => entry.className))
-	const separatorAfter = Option.match(maybeEntry, { onNone: () => undefined, onSome: (entry) => entry.separatorAfter })
+	const subClassName = Option.getOrUndefined(
+		Option.flatMapNullishOr(maybeEntry, (entry) => entry.className),
+	)
+	const separatorAfter = Option.match(maybeEntry, {
+		onNone: () => undefined,
+		onSome: (entry) => entry.separatorAfter,
+	})
 	const placement = [
 		h.DataAttribute("align", submenu.align),
 		h.DataAttribute("open", ""),
@@ -336,10 +344,10 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 			[
 				h.div(
 					[
-					h.Class(cn(dropdownMenuPositionerStyles, !model.isOpen && "pointer-events-none")),
-					...placement,
-					h.Role("presentation"),
-				],
+						h.Class(cn(dropdownMenuPositionerStyles, !model.isOpen && "pointer-events-none")),
+						...placement,
+						h.Role("presentation"),
+					],
 					[
 						h.div(
 							[
@@ -356,12 +364,14 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 								keyHandler(h, SUBMENU_KEYS, (key) =>
 									Message.PressedSubmenuKey({
 										key,
-										values: items.map((item) => (item.isDisabled === true ? null : item.value)),
+										values: Array.map(items, (item) =>
+											item.isDisabled === true ? null : item.value,
+										),
 									}),
 								),
 							],
 							body(
-								items.flatMap((item, index) => [
+								Array.flatMap(items, (item, index) => [
 									menuItem(
 										h,
 										{

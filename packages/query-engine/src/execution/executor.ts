@@ -1,4 +1,17 @@
-import { Cause, Clock, Deferred, Duration, Effect, HashMap, Option, Ref, Schedule, Schema } from "effect"
+import {
+	Cause,
+	Clock,
+	Deferred,
+	Duration,
+	Effect,
+	HashMap,
+	Option,
+	Ref,
+	Schedule,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { trackOutboundSlot } from "@maple/cache"
 import {
 	MAX_RAW_SQL_RESULT_BYTES,
@@ -169,11 +182,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  */
 const rowBelongsTo = (row: unknown, orgId: string): boolean => {
 	if (!isRecord(row)) return false
-	const tags = [
-		row.OrgId,
-		isRecord(row.resource_attributes) ? row.resource_attributes.maple_org_id : undefined,
-	].filter((tag) => tag !== undefined)
-	return tags.length > 0 && tags.every((tag) => tag === orgId)
+	const tags = Arr.filter(
+		[row.OrgId, isRecord(row.resource_attributes) ? row.resource_attributes.maple_org_id : undefined],
+		(tag) => tag !== undefined,
+	)
+	return tags.length > 0 && Arr.every(tags, (tag) => tag === orgId)
 }
 
 /**
@@ -304,7 +317,10 @@ WHERE database = currentDatabase() AND table IN ('logs', 'traces')`,
 						"columns",
 						`SELECT table, name
 FROM system.columns
-WHERE database = currentDatabase() AND table IN (${["logs", "traces", ...OPTIONAL_ROLLUP_TABLES].map((table) => `'${table}'`).join(", ")})`,
+WHERE database = currentDatabase() AND table IN (${Arr.join(
+							Arr.map(["logs", "traces", ...OPTIONAL_ROLLUP_TABLES], (table) => `'${table}'`),
+							", ",
+						)})`,
 					).pipe(
 						Effect.flatMap((rows) =>
 							Schema.decodeUnknownEffect(WarehouseColumnMetadataSchema)(rows),
@@ -850,7 +866,7 @@ WHERE name = 'enable_full_text_index'`,
 		yield* Effect.annotateCurrentSpan("pipe", payload.pipeName)
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 
-		if (!tenant.orgId || tenant.orgId.trim() === "") {
+		if (!tenant.orgId || Str.trim(tenant.orgId) === "") {
 			return yield* new WarehouseScopeError({
 				pipeName: payload.pipeName,
 				message: "org_id must not be empty",
@@ -944,7 +960,7 @@ WHERE name = 'enable_full_text_index'`,
 		tenantScope: TenantScope,
 		context: string,
 	) {
-		if (!tenant.orgId || tenant.orgId.trim() === "") {
+		if (!tenant.orgId || Str.trim(tenant.orgId) === "") {
 			return yield* new WarehouseScopeError({
 				pipeName: context,
 				message: `org_id must not be empty (${context})`,
@@ -1214,7 +1230,7 @@ WHERE name = 'enable_full_text_index'`,
 		const label = `ingest:${datasource}`
 		// Writes skip the DSL's OrgId filter, and some callers forward rows a
 		// per-org warehouse returned, so every row must belong to the writer.
-		if (!rows.every((row) => rowBelongsTo(row, tenant.orgId))) {
+		if (!Arr.every(rows, (row) => rowBelongsTo(row, tenant.orgId))) {
 			return yield* new WarehouseScopeError({
 				pipeName: label,
 				message: `Refused to ingest rows whose OrgId is not the writing org (${datasource})`,

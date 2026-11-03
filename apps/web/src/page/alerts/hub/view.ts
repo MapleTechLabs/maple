@@ -1,6 +1,6 @@
 import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
 import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
@@ -48,7 +48,7 @@ const tabBar = (
 	return linkTabStrip(
 		h,
 		"Alerts sections",
-		ALERTS_TABS.map((tab) => {
+		Arr.map(ALERTS_TABS, (tab) => {
 			const count =
 				tab.value === "uptime"
 					? Option.getOrUndefined(monitorCount)
@@ -219,7 +219,10 @@ const hubBody = (
 				onAddDestination: model.isAdmin ? Message.ClickedNewDestination() : undefined,
 			})
 			// An org with only uptime monitors has no visible rules but may have open incidents to show.
-			const hasUptimeIncidents = data.openIncidents.some((incident) => incident.signalType === "uptime")
+			const hasUptimeIncidents = Arr.some(
+				data.openIncidents,
+				(incident) => incident.signalType === "uptime",
+			)
 			if (tab === "inbox")
 				return data.rules.length === 0 && !hasUptimeIncidents ? emptyState : inboxTab(h, data)
 			return rulesTab(h, model, {

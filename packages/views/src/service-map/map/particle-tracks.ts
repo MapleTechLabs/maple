@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 // copied: packages/ui/src/components/service-map/service-map-particles.tsx (the budget and
 // sampling half), which cannot be imported here because it is a React module.
 
@@ -33,8 +34,8 @@ export const allocateParticleBudget = (
 	specs: ReadonlyArray<EdgeParticleSpec>,
 	maxTotal = MAX_TOTAL_PARTICLES,
 ) => {
-	const desired = specs.map((spec) => [spec.id, desiredParticles(spec.callsPerSecond)] as const)
-	const totalDesired = desired.reduce((sum, [, d]) => sum + d, 0)
+	const desired = Arr.map(specs, (spec) => [spec.id, desiredParticles(spec.callsPerSecond)] as const)
+	const totalDesired = Arr.reduce(desired, 0, (sum, [, d]) => sum + d)
 	const result = new Map<string, number>()
 	if (totalDesired <= maxTotal || totalDesired === 0) {
 		for (const [id, d] of desired) result.set(id, d)
@@ -118,7 +119,7 @@ export const compileTracks = (
 ): ReadonlyArray<Track> => {
 	const budget = allocateParticleBudget(specs)
 	const livePaths = new Set<string>()
-	const tracks = specs.flatMap((spec) => {
+	const tracks = Arr.flatMap(specs, (spec) => {
 		livePaths.add(spec.path)
 		const count = budget.get(spec.id) ?? 0
 		if (count <= 0 || !spec.path) return []

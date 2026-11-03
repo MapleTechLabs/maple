@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import type { Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
@@ -85,8 +85,8 @@ const toggledHidden = (
 	key: string,
 	keys: ReadonlyArray<string>,
 ): ReadonlyArray<string> => {
-	if (hidden.includes(key)) return hidden.filter((candidate) => candidate !== key)
-	const remaining = keys.filter((candidate) => candidate !== key && !hidden.includes(candidate)).length
+	if (hidden.includes(key)) return Arr.filter(hidden, (candidate) => candidate !== key)
+	const remaining = Arr.filter(keys, (candidate) => candidate !== key && !hidden.includes(candidate)).length
 	return remaining === 0 ? hidden : [...hidden, key]
 }
 

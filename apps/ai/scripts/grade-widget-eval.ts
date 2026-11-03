@@ -15,7 +15,7 @@
  *   bun run --cwd apps/api scripts/grade-widget-eval.ts <submission.json>
  */
 import { readFileSync } from "node:fs"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { DashboardWidgetSchema, WIDGET_TYPES, type PanelType } from "@maple/domain/http"
 import { validateWidgetRenderability } from "@/mcp/lib/validate-widget-renderability"
 import { TASKS } from "./widget-eval-tasks"
@@ -39,8 +39,8 @@ interface Grade {
 const panelTypeOf = (widget: { visualization: string; display: { chartId?: string } }): PanelType => {
 	if (widget.visualization !== "chart") return widget.visualization as PanelType
 	const chartId = widget.display.chartId ?? ""
-	if (chartId.includes("bar")) return "bar"
-	if (chartId.includes("area")) return "area"
+	if (Str.includes("bar")(chartId)) return "bar"
+	if (Str.includes("area")(chartId)) return "area"
 	return "line"
 }
 
@@ -55,7 +55,7 @@ const grade = (submission: Submission): Grade => {
 		return {
 			taskId: submission.taskId,
 			decodes: false,
-			decodeError: String(error).split("\n").slice(0, 3).join(" "),
+			decodeError: Arr.join(Str.split("\n")(String(error)).slice(0, 3), " "),
 			fatal: [],
 			warnings: [],
 			expectationFailures: ["not evaluated — the widget does not decode"],
@@ -87,9 +87,12 @@ const grade = (submission: Submission): Grade => {
 }
 
 const submissions = decodeSubmissions(readFileSync(process.argv[2]!, "utf8"))
-const grades = submissions.map(grade)
+const grades = Arr.map(submissions, grade)
 
-const clean = grades.filter((g) => g.decodes && g.fatal.length === 0 && g.expectationFailures.length === 0)
+const clean = Arr.filter(
+	grades,
+	(g) => g.decodes && g.fatal.length === 0 && g.expectationFailures.length === 0,
+)
 
 for (const g of grades) {
 	const verdict = !g.decodes
@@ -109,5 +112,5 @@ for (const g of grades) {
 }
 
 console.log(
-	`\n=== ${clean.length}/${grades.length} clean · ${grades.filter((g) => !g.decodes).length} decode failures · ${grades.filter((g) => g.decodes && g.fatal.length > 0).length} rejected · ${grades.filter((g) => g.decodes && g.fatal.length === 0 && g.expectationFailures.length > 0).length} wrong-but-saved`,
+	`\n=== ${clean.length}/${grades.length} clean · ${Arr.filter(grades, (g) => !g.decodes).length} decode failures · ${Arr.filter(grades, (g) => g.decodes && g.fatal.length > 0).length} rejected · ${Arr.filter(grades, (g) => g.decodes && g.fatal.length === 0 && g.expectationFailures.length > 0).length} wrong-but-saved`,
 )

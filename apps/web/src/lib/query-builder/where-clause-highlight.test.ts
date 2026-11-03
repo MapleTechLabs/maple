@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest"
 
 import { tokenizeWhereClause } from "./where-clause-highlight"
+import { Array as Arr } from "effect"
 
 describe("tokenizeWhereClause", () => {
 	it("round-trips the input text", () => {
 		const input = 'service.name = "checkout" AND attr.http.route != "/health"'
 		const tokens = tokenizeWhereClause(input)
-		expect(tokens.map((token) => token.text).join("")).toBe(input)
+		expect(
+			Arr.join(
+				Arr.map(tokens, (token) => token.text),
+				"",
+			),
+		).toBe(input)
 	})
 
 	it("classifies keys, operators, strings, and AND", () => {
@@ -48,7 +54,12 @@ describe("tokenizeWhereClause", () => {
 	it("handles unterminated quotes without dropping text", () => {
 		const input = 'service.name = "check'
 		const tokens = tokenizeWhereClause(input)
-		expect(tokens.map((token) => token.text).join("")).toBe(input)
+		expect(
+			Arr.join(
+				Arr.map(tokens, (token) => token.text),
+				"",
+			),
+		).toBe(input)
 		expect(tokens[tokens.length - 1]).toEqual({ text: '"check', type: "string" })
 	})
 

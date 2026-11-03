@@ -1,4 +1,4 @@
-import { Exit, Option, Schema } from "effect"
+import { Exit, Option, Schema, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	appendRecentCheck,
@@ -203,14 +203,17 @@ describe("effectiveAssertions", () => {
 describe("isMapleService", () => {
 	it("matches the maple-services namespace, and uptime checks recorded before it by name", () => {
 		expect(
-			[
-				{ serviceName: "anything", serviceNamespace: "maple-services" },
-				{ serviceName: "maple-uptime", serviceNamespace: "" },
-				{ serviceName: "checkout-api", serviceNamespace: "" },
-				{ serviceName: "checkout-api", serviceNamespace: "payments" },
-				// A user's own service that happens to share the name, in its own namespace.
-				{ serviceName: "maple-uptime", serviceNamespace: "payments" },
-			].map(isMapleService),
+			Arr.map(
+				[
+					{ serviceName: "anything", serviceNamespace: "maple-services" },
+					{ serviceName: "maple-uptime", serviceNamespace: "" },
+					{ serviceName: "checkout-api", serviceNamespace: "" },
+					{ serviceName: "checkout-api", serviceNamespace: "payments" },
+					// A user's own service that happens to share the name, in its own namespace.
+					{ serviceName: "maple-uptime", serviceNamespace: "payments" },
+				],
+				isMapleService,
+			),
 		).toEqual([true, true, false, false, false])
 	})
 })

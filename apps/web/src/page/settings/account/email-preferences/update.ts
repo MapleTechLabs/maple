@@ -1,6 +1,6 @@
 import { type DigestSubscriptionResponse, UpsertDigestSubscriptionRequest } from "@maple/domain/http"
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
-import { Clock, Effect, Option, Predicate, Result, Schema } from "effect"
+import { Clock, Effect, Option, Predicate, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { loadServicesFacets } from "../../../../data/services-facets-probe"
@@ -27,7 +27,7 @@ export const DIGEST_DAYS = [
 
 export const DIGEST_HOURS = Array.from({ length: 24 }, (_, hour) => ({
 	value: hour,
-	label: `${String(hour).padStart(2, "0")}:00`,
+	label: `${Str.padStart(2, "0")(String(hour))}:00`,
 }))
 
 /** The draft for someone with no subscription: the server's Monday 09:00, in the browser's zone. */
@@ -46,8 +46,8 @@ export const sameDigestDraft = (a: DigestDraft, b: DigestDraft): boolean =>
 	a.dayOfWeek === b.dayOfWeek &&
 	a.sendHour === b.sendHour &&
 	a.timezone === b.timezone &&
-	sorted(a.namespaces).join("\u0000") === sorted(b.namespaces).join("\u0000") &&
-	sorted(a.environments).join("\u0000") === sorted(b.environments).join("\u0000") &&
+	Arr.join(sorted(a.namespaces), "\u0000") === Arr.join(sorted(b.namespaces), "\u0000") &&
+	Arr.join(sorted(a.environments), "\u0000") === Arr.join(sorted(b.environments), "\u0000") &&
 	a.namespaces.length === b.namespaces.length &&
 	a.environments.length === b.environments.length
 
@@ -59,7 +59,7 @@ export const digestTimeZoneOptions = (
 ): ReadonlyArray<string> => {
 	const zones = new Set([...supported, "UTC", saved])
 	if (browserZone !== null && browserZone !== "") zones.add(browserZone)
-	return [...zones].sort((a, b) => (a === "UTC" ? -1 : b === "UTC" ? 1 : a.localeCompare(b)))
+	return [...zones].sort((a, b) => (a === "UTC" ? -1 : b === "UTC" ? 1 : Str.localeCompare(b)(a)))
 }
 
 // COMMANDS
@@ -105,8 +105,14 @@ const FetchFacets = Command.define("FetchDigestScopeFacets", {
 		const response = yield* loadServicesFacets(range)
 		// The facets carry an empty-string entry for "not reported", which a digest cannot pin to.
 		return {
-			namespaces: response.data.namespaces.map((item) => item.name).filter((name) => name !== ""),
-			environments: response.data.environments.map((item) => item.name).filter((name) => name !== ""),
+			namespaces: Arr.filter(
+				Arr.map(response.data.namespaces, (item) => item.name),
+				(name) => name !== "",
+			),
+			environments: Arr.filter(
+				Arr.map(response.data.environments, (item) => item.name),
+				(name) => name !== "",
+			),
 		}
 	}).pipe(
 		Effect.orElseSucceed(() => ({ namespaces: [], environments: [] })),

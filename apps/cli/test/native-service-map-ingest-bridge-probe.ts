@@ -2,16 +2,16 @@
 import { Chdb } from "@maple/local-server/chdb"
 import { LOCAL_SCHEMA_SQL } from "@maple/local-server/schema-identity"
 import { markStoreClosedDurable, markStoreOpenDurable } from "@maple/local-server/store-version"
+import { Array as Arr, String as Str } from "effect"
 
 const [dataDir, configFile] = process.argv.slice(2)
 if (!dataDir || !configFile)
 	throw new Error("usage: native-service-map-ingest-bridge-probe.ts <data-dir> <config-file>")
 
 const firstRow = <A>(jsonEachRow: string): A => {
-	const line = jsonEachRow
-		.split("\n")
-		.map((candidate) => candidate.trim())
-		.find((candidate) => candidate.length > 0)
+	const line = Arr.map(Str.split("\n")(jsonEachRow), (candidate) => Str.trim(candidate)).find(
+		(candidate) => candidate.length > 0,
+	)
 	if (!line) throw new Error("native service-map bridge query returned no rows")
 	return JSON.parse(line) as A
 }

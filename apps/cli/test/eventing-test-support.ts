@@ -1,4 +1,4 @@
-import { Context, Effect, Exit, Metric, Scope } from "effect"
+import { Context, Effect, Exit, Metric, Scope, Array as Arr } from "effect"
 import type { ProjectorRegistry } from "@maple/eventing-core"
 import {
 	LocalEventingControlStore,
@@ -57,7 +57,7 @@ export const metricRecorder = () => {
 			Effect.provideService(effect, Metric.MetricRegistry, registry),
 		/** `operation:outcome` pairs of every eventing counter with a non-zero count. */
 		operationOutcomes: (): string[] =>
-			Metric.snapshotUnsafe(context).flatMap((snapshot) =>
+			Arr.flatMap(Metric.snapshotUnsafe(context), (snapshot) =>
 				snapshot.id === "maple.eventing.operations_total" &&
 				snapshot.type === "Counter" &&
 				Number(snapshot.state.count) > 0
@@ -65,7 +65,7 @@ export const metricRecorder = () => {
 					: [],
 			),
 		attributes: (): string =>
-			JSON.stringify(Metric.snapshotUnsafe(context).map(({ attributes }) => attributes)),
+			JSON.stringify(Arr.map(Metric.snapshotUnsafe(context), ({ attributes }) => attributes)),
 	}
 }
 

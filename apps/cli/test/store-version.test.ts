@@ -21,6 +21,7 @@ import {
 	storeMarkerPath,
 	storeOpenMarkerPath,
 } from "@maple/local-server/store-version"
+import { String as Str } from "effect"
 
 // Each test gets a throwaway parent dir; the data dir is a child of it so the
 // markers (written beside the data dir) land in the temp tree, not on $HOME.
@@ -120,7 +121,7 @@ describe("clean-shutdown sentinel", () => {
 				)
 				child!.stdout?.on("data", (chunk: Buffer) => {
 					stdout += chunk.toString()
-					if (stdout.includes("ready\n")) {
+					if (Str.includes("ready\n")(stdout)) {
 						clearTimeout(timeout)
 						resolve()
 					}
@@ -131,7 +132,7 @@ describe("clean-shutdown sentinel", () => {
 				})
 				child!.once("exit", (code, signal) => {
 					clearTimeout(timeout)
-					if (!stdout.includes("ready\n"))
+					if (!Str.includes("ready\n")(stdout))
 						reject(new Error(`sentinel child exited before becoming ready (${code ?? signal})`))
 				})
 			})
@@ -291,7 +292,7 @@ describe("newerStoreSchemaVersion", () => {
 	const markerAt = (version: number) =>
 		makeStoreMarker("0.9.0", "2026-01-01T00:00:00.000Z", "0123456789abcdef", {
 			schemaVersion: version,
-			schemaDigest: "a".repeat(64),
+			schemaDigest: Str.repeat(64)("a"),
 		})
 
 	it("reports a store written by a newer maple, and nothing else", () => {

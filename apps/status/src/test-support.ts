@@ -6,7 +6,7 @@ import {
 	type StatusPageSnapshot,
 } from "@maple/domain/status-page"
 import { FIXTURE_NOW, FIXTURE_PAGE_ID } from "@maple/status-page/fixtures"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { handleRequest } from "./handler"
 import { type CachedValue, type StatusEnv, type StatusStorage, StatusStorageError } from "./ports"
 
@@ -44,8 +44,10 @@ export const makeFakeStorage = () => {
 		kvPut: (key, value) => guard("kv-put", key, () => void kv.set(key, value)),
 		kvList: (prefix, limit) =>
 			guard("kv", prefix, () => {
-				const listed = [...kv.keys()]
-					.filter((key) => key.startsWith(prefix) && !unlisted.has(key))
+				const listed = Arr.filter(
+					[...kv.keys()],
+					(key) => Str.startsWith(prefix)(key) && !unlisted.has(key),
+				)
 					.sort()
 					.slice(0, limit)
 				const raced = duringList.run
@@ -99,9 +101,12 @@ export const putOverlayEntry = (fake: FakeStorage, entry: StatusPageOverlayEntry
 
 /** Every break-glass entry stored for the fixture page, in key order. */
 export const overlayEntries = (fake: FakeStorage): ReadonlyArray<StatusPageOverlayEntry> =>
-	[...fake.kv.entries()]
-		.filter(([key]) => key.startsWith(StatusPageKeys.overlayPage(FIXTURE_PAGE_ID)))
-		.flatMap(([, raw]) => Option.toArray(decodeStatusPageOverlayEntryJson(raw)))
+	Arr.flatMap(
+		Arr.filter([...fake.kv.entries()], ([key]) =>
+			Str.startsWith(StatusPageKeys.overlayPage(FIXTURE_PAGE_ID))(key),
+		),
+		([, raw]) => Option.toArray(decodeStatusPageOverlayEntryJson(raw)),
+	)
 
 /** Runs one request through the handler; ids count up so nonces and entry ids are predictable. */
 export const send = (
@@ -122,5 +127,5 @@ export const postForm = (url: string, fields: ReadonlyArray<readonly [string, st
 	new Request(url, {
 		method: "POST",
 		headers: { "content-type": "application/x-www-form-urlencoded", "cf-connecting-ip": ip },
-		body: new URLSearchParams(fields.map(([name, value]) => [name, value])).toString(),
+		body: new URLSearchParams(Arr.map(fields, ([name, value]) => [name, value])).toString(),
 	})

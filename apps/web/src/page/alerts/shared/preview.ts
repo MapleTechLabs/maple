@@ -10,7 +10,7 @@ import {
 import { mapBuilderChartFailure } from "@maple/web-data/alerts/preview-failure"
 import { displayError } from "@maple/web-data/lib/error-messages"
 import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { MapleApiV2Client } from "../../../platform/api-clients"
@@ -29,8 +29,8 @@ const isPreviewQueryReady = (form: RuleFormState): boolean => {
 	if (!Number.isFinite(Number(form.threshold))) return false
 	if (isRangeComparator(form.comparator) && !Number.isFinite(Number(form.thresholdUpper))) return false
 	if (form.signalType === "raw_query") {
-		const sql = form.rawQuerySql.trim()
-		if (sql.length === 0 || !sql.includes("$__orgFilter")) return false
+		const sql = Str.trim(form.rawQuerySql)
+		if (sql.length === 0 || !Str.includes("$__orgFilter")(sql)) return false
 	}
 	return deriveRuleQueryIssues(form).length === 0
 }

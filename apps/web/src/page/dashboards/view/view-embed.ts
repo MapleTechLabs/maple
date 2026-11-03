@@ -22,6 +22,7 @@ import { boardShareOf, chartShareOf, embedUrl, ShareMessage } from "./share"
 import { shareLinkRow } from "./view-share"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The embed widget dialog.
 
@@ -30,27 +31,33 @@ type H = HtmlBuilder<Message>
 const wrap = (message: ShareMessage) => Message.GotShareMessage({ message })
 
 /** `YYYY-MM-DD HH:MM:SS` in UTC, the only shape the share API accepts. */
-const warehouseDateTime = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ")
+const warehouseDateTime = (ms: number) => Str.replace("T", " ")(Str.slice(0, 19)(new Date(ms).toISOString()))
 
 const iframeSnippet = (h: H, model: Model, url: string): Html => {
-	const html = [
-		"<iframe",
-		`  src="${url}"`,
-		'  width="100%"',
-		'  height="400"',
-		'  style="border: 0"',
-		'  loading="lazy"',
-		"></iframe>",
-	].join("\n")
-	const jsx = [
-		"<iframe",
-		`  src="${url}"`,
-		'  width="100%"',
-		"  height={400}",
-		"  style={{ border: 0 }}",
-		'  loading="lazy"',
-		"/>",
-	].join("\n")
+	const html = Arr.join(
+		[
+			"<iframe",
+			`  src="${url}"`,
+			'  width="100%"',
+			'  height="400"',
+			'  style="border: 0"',
+			'  loading="lazy"',
+			"></iframe>",
+		],
+		"\n",
+	)
+	const jsx = Arr.join(
+		[
+			"<iframe",
+			`  src="${url}"`,
+			'  width="100%"',
+			"  height={400}",
+			"  style={{ border: 0 }}",
+			'  loading="lazy"',
+			"/>",
+		],
+		"\n",
+	)
 	const copy = {
 		copy: model.sharing.snippetCopy,
 		toCopyMessage: (message: Parameters<typeof ShareMessage.GotSnippetCopyMessage>[0]["message"]) =>
@@ -188,7 +195,7 @@ const urlOptions = (h: H, model: Model, context: PageContext): Html => {
 						unavailable: true,
 					},
 				]
-			: definitions.map((variable) => ({
+			: Arr.map(definitions, (variable) => ({
 					key: `var-${variable.name}`,
 					icon: "BracketsCurlyIcon" as const,
 					param: `var-${variable.name}`,
@@ -210,7 +217,7 @@ const urlOptions = (h: H, model: Model, context: PageContext): Html => {
 			),
 			h.ul(
 				[h.Class("divide-y divide-border overflow-hidden rounded-md border")],
-				options.map((option) =>
+				Arr.map(options, (option) =>
 					h.li(
 						[
 							h.Class(

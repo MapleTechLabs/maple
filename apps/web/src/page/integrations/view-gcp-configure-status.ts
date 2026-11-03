@@ -19,6 +19,7 @@ import { externalLink } from "./view-gcp-configure-parts"
 import { SMALL } from "./view-gcp-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `RunStatus` (what Maple has heard from the script) and `Applied` (the confirmed run).
 
@@ -85,7 +86,7 @@ export const runStatus = (
 	const reported = connector.setup_reported_at !== options.opened.seen
 	const running = gcpSetupRunning(connector, options.nowMs)
 	const metricsState = gcpMetricsState(connector, options.nowMs)
-	const rows = CAPABILITY_IDS.flatMap((capability) => {
+	const rows = Arr.flatMap(CAPABILITY_IDS, (capability) => {
 		const { title, flag, run } = CAPABILITIES[capability]
 		const wanted = connector[flag]
 		const applied =
@@ -108,7 +109,7 @@ export const runStatus = (
 				: (error ?? CONFIRMED_BY[capability][confirmed ? "done" : "waiting"])
 		return [{ capability, title, detail, state, error }]
 	})
-	const done = rows.filter((row) => row.state === "done").length
+	const done = Arr.filter(rows, (row) => row.state === "done").length
 	const reporting = done > 0 || running
 	return h.div(
 		[
@@ -165,7 +166,7 @@ export const runStatus = (
 				? overdueHelp(h)
 				: h.ul(
 						[h.Class("flex flex-col gap-1.5 pl-6")],
-						rows.map((row) =>
+						Arr.map(rows, (row) =>
 							h.li(
 								[
 									h.Class(
@@ -243,7 +244,7 @@ export const applied = (h: H, connector: V2GcpConnector, created: boolean, nowMs
 			]),
 			h.ul(
 				[h.Class("w-full divide-y divide-border-subtle rounded-md border text-left")],
-				rows.map((row) =>
+				Arr.map(rows, (row) =>
 					h.li(
 						[h.Class("flex items-center gap-3 px-4 py-2.5")],
 						[

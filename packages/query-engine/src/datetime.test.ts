@@ -34,6 +34,7 @@ import {
 	zonedDateParts,
 	zonedPartsToEpochMs,
 } from "./datetime"
+import { Array as Arr, String as Str } from "effect"
 
 describe("warehouseDateTimeToIso", () => {
 	it("appends Z to a tz-less space-separated DateTime", () => {
@@ -298,7 +299,7 @@ describe("alertWindowBucketSeconds", () => {
 
 describe("alertEvaluationIntervalMinutes", () => {
 	it("checks a fifth of the window, from every minute up to every five", () => {
-		expect([1, 5, 9, 10, 15, 30, 60, 1440].map(alertEvaluationIntervalMinutes)).toEqual([
+		expect(Arr.map([1, 5, 9, 10, 15, 30, 60, 1440], alertEvaluationIntervalMinutes)).toEqual([
 			1, 1, 1, 2, 3, 5, 5, 5,
 		])
 	})
@@ -375,14 +376,14 @@ describe("alertQueryLimits", () => {
 	})
 
 	it("stays under the query engine's 30s ceiling at every interval", () => {
-		expect(Math.max(...[1, 5, 10, 15, 30, 60].map((n) => alertQueryLimits(n).timeSeconds))).toBeLessThan(
-			30,
-		)
+		expect(
+			Math.max(...Arr.map([1, 5, 10, 15, 30, 60], (n) => alertQueryLimits(n).timeSeconds)),
+		).toBeLessThan(30)
 	})
 
 	it("never lowers a limit as the interval grows", () => {
-		const limits = [1, 5, 10, 15, 30, 60].map(alertQueryLimits)
-		for (const [a, b] of limits.slice(1).map((limit, i) => [limits[i]!, limit] as const)) {
+		const limits = Arr.map([1, 5, 10, 15, 30, 60], alertQueryLimits)
+		for (const [a, b] of Arr.map(limits.slice(1), (limit, i) => [limits[i]!, limit] as const)) {
 			expect(b.timeSeconds).toBeGreaterThanOrEqual(a.timeSeconds)
 			expect(b.memoryBytes).toBeGreaterThanOrEqual(a.memoryBytes)
 		}
@@ -408,7 +409,7 @@ describe("isAlertRuleDue", () => {
 	it("runs a 3-minute rule every third minute once it has been claimed", () => {
 		const due = dueMinutes(base)
 		expect(due).toHaveLength(10)
-		expect(new Set(due.map((n) => n % 3)).size).toBe(1)
+		expect(new Set(Arr.map(due, (n) => n % 3)).size).toBe(1)
 	})
 
 	it("runs a 1-minute rule every minute", () => {
@@ -418,7 +419,7 @@ describe("isAlertRuleDue", () => {
 	it("runs a 10-minute rule three times in 30 minutes", () => {
 		const due = dueMinutes({ ruleId: "rule-a", intervalMinutes: 10 })
 		expect(due).toHaveLength(3)
-		expect(new Set(due.map((n) => n % 10)).size).toBe(1)
+		expect(new Set(Arr.map(due, (n) => n % 10)).size).toBe(1)
 	})
 
 	it("spreads rules sharing an interval across its minutes", () => {
@@ -494,7 +495,7 @@ describe("formatWarehouseDateTimeMs", () => {
 
 	it("agrees with the second-precision variant up to the decimal point", () => {
 		const ms = AT("2026-03-08T14:30:05.789Z")
-		expect(formatWarehouseDateTimeMs(ms).startsWith(formatWarehouseDateTime(ms))).toBe(true)
+		expect(Str.startsWith(formatWarehouseDateTime(ms))(formatWarehouseDateTimeMs(ms))).toBe(true)
 	})
 })
 

@@ -6,7 +6,7 @@ import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/work
  */
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import type { HttpEffect } from "alchemy/Http"
-import { Cause, Config, Context, Effect, Exit, Layer, Option, Scope } from "effect"
+import { Cause, Config, Context, Effect, Exit, Layer, Option, Scope, String as Str } from "effect"
 import { FetchHttpClient, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import {
 	API_CORS_RESPONSE_HEADERS,
@@ -136,10 +136,10 @@ export const makeAppGraphs = (isolate: Context.Context<never>, ports: ApiPortsLa
 
 const pathOf = (url: string): string => {
 	const query = url.indexOf("?")
-	return query === -1 ? url : url.slice(0, query)
+	return query === -1 ? url : Str.slice(0, query)(url)
 }
 
-const isV2Path = (path: string): boolean => path === "/v2" || path.startsWith("/v2/")
+const isV2Path = (path: string): boolean => path === "/v2" || Str.startsWith("/v2/")(path)
 
 /** The route graph could not finish bootstrapping: the canonical v2 fallback, or a plain 504 for the rest. */
 const unavailableResponse = (path: string) =>
@@ -232,7 +232,7 @@ export const makeFetch = (
 			}
 
 			const selectedApp =
-				path === "/internal/query-engine" || path.startsWith("/internal/query-engine/")
+				path === "/internal/query-engine" || Str.startsWith("/internal/query-engine/")(path)
 					? queryApp
 					: app
 			const built = yield* Effect.exit(selectedApp)

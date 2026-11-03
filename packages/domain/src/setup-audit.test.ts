@@ -8,6 +8,7 @@ import {
 	runSetupAudit,
 } from "./setup-audit"
 import { buildIntegrationInventory, type IntegrationInventoryInputs } from "./integration-inventory"
+import { Array as Arr, String as Str } from "effect"
 
 const NOW = Date.UTC(2026, 6, 27, 12, 0, 0)
 const HOUR = 60 * 60_000
@@ -64,13 +65,13 @@ const withOrgTotals = (
 	}>,
 ) => {
 	const sum = (pick: (row: (typeof rows)[number]) => number) =>
-		rows.reduce((total, row) => total + pick(row), 0)
+		Arr.reduce(rows, 0, (total, row) => total + pick(row))
 	const totals = {
 		orgTraceCount: sum((row) => row.traceCount),
 		orgRootlessCount: sum((row) => row.rootlessCount),
 		orgSampledRootlessCount: sum((row) => row.sampledRootlessCount),
 	}
-	return rows.map((row) => ({ ...row, ...totals }))
+	return Arr.map(rows, (row) => ({ ...row, ...totals }))
 }
 
 const healthyWarehouse: WarehouseAuditInputs = {
@@ -166,14 +167,14 @@ const check = (report: ReturnType<typeof runSetupAudit>, id: string): AuditCheck
 describe("runSetupAudit — baseline", () => {
 	it("passes every check for a healthy org", () => {
 		const report = runSetupAudit(inputs())
-		const failures = report.checks.filter((row) => row.status !== "pass")
+		const failures = Arr.filter(report.checks, (row) => row.status !== "pass")
 		expect(failures).toEqual([])
 		expect(report.summary.pass).toBe(SETUP_AUDIT_CHECKS.length)
 		expect(report.dataStatus).toBe("ok")
 	})
 
 	it("uses unique check ids", () => {
-		const ids = SETUP_AUDIT_CHECKS.map((row) => row.id)
+		const ids = Arr.map(SETUP_AUDIT_CHECKS, (row) => row.id)
 		expect(new Set(ids).size).toBe(ids.length)
 	})
 
@@ -181,7 +182,7 @@ describe("runSetupAudit — baseline", () => {
 		// Findings always lead with a count, so a hardcoded singular verb reads as "3 services
 		// emits …". Drive every check to fail with both one and several affected items, then scan
 		// each generated sentence. This is the guard that catches copy regressions in new checks.
-		const failing = [1, 3].flatMap((n) => {
+		const failing = Arr.flatMap([1, 3], (n) => {
 			const each = <T>(build: (index: number) => T) => Array.from({ length: n }, (_, i) => build(i))
 			const config: ConfigAuditInputs = {
 				...healthyConfig,
@@ -316,7 +317,7 @@ describe("runSetupAudit — baseline", () => {
 		})
 
 		// Every check must actually have produced a sentence, or the guard proves nothing.
-		const sentences = failing.filter((row) => row.status === "fail" && row.detail !== null)
+		const sentences = Arr.filter(failing, (row) => row.status === "fail" && row.detail !== null)
 
 		const singularVerbAfterPluralNoun =
 			/\b\d+ [a-z][a-z .\-_*`]*s (is|has|emits|sends|receives|appears|uses|starts|logs|arrives|duplicates|marks)\b/
@@ -353,11 +354,14 @@ describe("runSetupAudit — baseline", () => {
 		// Config checks still evaluate.
 		expect(check(report, "CFG-ALERT-01").status).toBe("pass")
 		// Exactly the telemetry-backed checks skip, and nothing else.
-		const needsWarehouse = SETUP_AUDIT_CHECKS.filter((row) => row.needsWarehouse === true)
+		const needsWarehouse = Arr.filter(SETUP_AUDIT_CHECKS, (row) => row.needsWarehouse === true)
 		expect(report.summary.skip).toBe(needsWarehouse.length)
-		expect(report.checks.filter((row) => row.status === "skip").map((row) => row.id)).toEqual(
-			needsWarehouse.map((row) => row.id),
-		)
+		expect(
+			Arr.map(
+				Arr.filter(report.checks, (row) => row.status === "skip"),
+				(row) => row.id,
+			),
+		).toEqual(Arr.map(needsWarehouse, (row) => row.id))
 	})
 
 	it("counts each failure under its own severity", () => {
@@ -501,13 +505,13 @@ describe("CFG-ALERT-04 — destinations delivered on last test", () => {
 		const report = runSetupAudit(
 			inputs({
 				alertDestinations: [
-					{ id: "dest-1", name: "#alerts", enabled: true, lastTestError: "x".repeat(500) },
+					{ id: "dest-1", name: "#alerts", enabled: true, lastTestError: Str.repeat(500)("x") },
 				],
 			}),
 		)
 		const note = check(report, "CFG-ALERT-04").affected[0]?.note ?? ""
 		expect(note).toHaveLength(160)
-		expect(note.endsWith("…")).toBe(true)
+		expect(Str.endsWith("…")(note)).toBe(true)
 	})
 
 	it("ignores a disabled destination that failed its test", () => {
@@ -1232,7 +1236,7 @@ describe("LOG-03 — logs are structured", () => {
 	it("stays quiet below the volume floor even with no attributes", () => {
 		const report = telemetry({
 			serviceUsage: [{ serviceName: "api", logCount: 100, traceCount: 900, metricCount: 0 }],
-			attributeKeys: healthyWarehouse.attributeKeys.filter((row) => row.scope !== "log"),
+			attributeKeys: Arr.filter(healthyWarehouse.attributeKeys, (row) => row.scope !== "log"),
 		})
 		expect(check(report, "LOG-03").status).toBe("pass")
 	})
@@ -1240,7 +1244,7 @@ describe("LOG-03 — logs are structured", () => {
 	it("flags high log volume with no structured fields", () => {
 		const report = telemetry({
 			serviceUsage: [{ serviceName: "api", logCount: 50_000, traceCount: 900, metricCount: 0 }],
-			attributeKeys: healthyWarehouse.attributeKeys.filter((row) => row.scope !== "log"),
+			attributeKeys: Arr.filter(healthyWarehouse.attributeKeys, (row) => row.scope !== "log"),
 		})
 		const result = check(report, "LOG-03")
 		expect(result.status).toBe("fail")
@@ -1274,7 +1278,7 @@ describe("LOG-04 — standard severities", () => {
 
 describe("resource-attribute coverage", () => {
 	const withoutResourceKey = (key: string) =>
-		telemetry({ attributeKeys: healthyWarehouse.attributeKeys.filter((row) => row.key !== key) })
+		telemetry({ attributeKeys: Arr.filter(healthyWarehouse.attributeKeys, (row) => row.key !== key) })
 
 	it("RES-02 flags a missing service.version", () => {
 		expect(check(withoutResourceKey("service.version"), "RES-02").status).toBe("fail")
@@ -1287,7 +1291,7 @@ describe("resource-attribute coverage", () => {
 	it("RES-05 requires the semconv revision key — the retired deployment.commit_sha no longer counts", () => {
 		const legacy = telemetry({
 			attributeKeys: [
-				...healthyWarehouse.attributeKeys.filter((row) => row.key !== "vcs.ref.head.revision"),
+				...Arr.filter(healthyWarehouse.attributeKeys, (row) => row.key !== "vcs.ref.head.revision"),
 				resourceKey("deployment.commit_sha"),
 			],
 		})
@@ -1306,7 +1310,7 @@ describe("resource-attribute coverage", () => {
 		})
 		const result = check(invented, "RES-06")
 		expect(result.status).toBe("fail")
-		expect(result.affected.map((entity) => entity.name).sort()).toEqual([
+		expect(Arr.map(result.affected, (entity) => entity.name).sort()).toEqual([
 			"deployment.commit_sha",
 			"env",
 			"git.repo",
@@ -1550,7 +1554,7 @@ describe("trace completeness", () => {
 		) =>
 			traces({
 				rootless: withOrgTotals(
-					rows.map(([entryService, traceCount, rootlessCount, sampledRootlessCount = 0]) => ({
+					Arr.map(rows, ([entryService, traceCount, rootlessCount, sampledRootlessCount = 0]) => ({
 						entryService,
 						traceCount,
 						rootlessCount,
@@ -1579,7 +1583,7 @@ describe("trace completeness", () => {
 			expect(result.status).toBe("fail")
 			expect(result.severity).toBe("warn")
 			expect(result.detail).toContain("0.25% of traces have no root span: 20 of 8000 traces")
-			expect(result.affected.map((entity) => entity.name)).toEqual(["api"])
+			expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["api"])
 			expect(result.affected[0]?.note).toBe("0.5% of traces starting here have no root (20 of 4000)")
 			expect(report.summary.warn).toBe(1)
 		})
@@ -1589,7 +1593,7 @@ describe("trace completeness", () => {
 			const result = check(report, "TRC-02")
 			expect(result.severity).toBe("critical")
 			expect(result.detail).toContain("1.2% of traces")
-			expect(result.affected.map((entity) => entity.name)).toEqual(["worker", "api", "cli"])
+			expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["worker", "api", "cli"])
 			expect(report.summary.critical).toBe(1)
 			expect(report.summary.warn).toBe(0)
 		})
@@ -1660,13 +1664,13 @@ describe("trace completeness", () => {
 			const result = check(rootless(["api", 800, 800], ["checkout", 800, 796]), "TRC-02")
 			expect(result.severity).toBe("critical")
 			expect(result.detail).toContain("created upstream of your instrumented services")
-			expect(result.affected.map((entity) => entity.name)).toEqual(["api", "checkout"])
+			expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["api", "checkout"])
 		})
 
 		it("names the service when one dominant service is the whole problem", () => {
 			const result = check(rootless(["gateway-fronted", 9_700, 9_700], ["billing", 300, 0]), "TRC-02")
 			expect(result.detail).toContain("97% of traces have no root span")
-			expect(result.affected.map((entity) => entity.name)).toEqual(["gateway-fronted"])
+			expect(Arr.map(result.affected, (entity) => entity.name)).toEqual(["gateway-fronted"])
 		})
 	})
 })

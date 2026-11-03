@@ -7,6 +7,7 @@ import {
 	type SpanHierarchyRow,
 } from "../span-tree"
 import type { Span, SpanNode } from "../types"
+import { Array as Arr } from "effect"
 
 function row(overrides: Partial<SpanHierarchyRow> & { spanId: string }): SpanHierarchyRow {
 	return {
@@ -45,7 +46,7 @@ describe("dedupeBySpanId", () => {
 			span({ spanId: "b" }),
 		]
 		const deduped = dedupeBySpanId(spans)
-		expect(deduped.map((s) => s.spanId)).toEqual(["a", "b"])
+		expect(Arr.map(deduped, (s) => s.spanId)).toEqual(["a", "b"])
 		expect(deduped[0].spanName).toBe("first")
 	})
 })
@@ -62,7 +63,7 @@ describe("buildSpanTree", () => {
 		expect(tree).toHaveLength(1)
 		expect(tree[0].spanId).toBe("root")
 		expect(tree[0].depth).toBe(0)
-		expect(tree[0].children.map((c) => c.spanId)).toEqual(["early-child", "late-child"])
+		expect(Arr.map(tree[0].children, (c) => c.spanId)).toEqual(["early-child", "late-child"])
 		expect(tree[0].children[0].depth).toBe(1)
 		expect(tree[0].children[0].children[0].spanId).toBe("grandchild")
 		expect(tree[0].children[0].children[0].depth).toBe(2)
@@ -86,7 +87,7 @@ describe("buildSpanTree", () => {
 		expect(tree[0].children).toHaveLength(1)
 		expect(tree[0].children[0].children).toHaveLength(1)
 
-		const ids = flatten(tree).map((n) => n.spanId)
+		const ids = Arr.map(flatten(tree), (n) => n.spanId)
 		expect(ids).toEqual(["root", "child", "grandchild"])
 		expect(new Set(ids).size).toBe(ids.length)
 	})
@@ -112,7 +113,7 @@ describe("buildSpanTree", () => {
 		expect(tree).toHaveLength(1)
 		expect(tree[0].isMissing).toBe(true)
 		expect(tree[0].spanId).toBe("gone")
-		expect(tree[0].children.map((c) => c.spanId)).toEqual(["orphan-1", "orphan-2"])
+		expect(Arr.map(tree[0].children, (c) => c.spanId)).toEqual(["orphan-1", "orphan-2"])
 		expect(tree[0].children[0].depth).toBe(1)
 	})
 })
@@ -125,7 +126,7 @@ describe("buildTraceDetail", () => {
 			row({ spanId: "child", parentSpanId: "root", durationMs: 10, serviceName: "other" }),
 		])
 
-		expect(detail.spans.map((s) => s.spanId)).toEqual(["root", "child"])
+		expect(Arr.map(detail.spans, (s) => s.spanId)).toEqual(["root", "child"])
 		expect(detail.rootSpans).toHaveLength(1)
 		expect(detail.rootSpans[0].children).toHaveLength(1)
 		expect(detail.totalDurationMs).toBe(50)

@@ -7,7 +7,7 @@ import {
 	type IssueSeverity,
 } from "@maple/domain/http"
 import { AlertDestinationId } from "@maple/domain/primitives"
-import { Array, Effect, Option, Result, Schema } from "effect"
+import { Array, Effect, Option, Result, Schema, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
@@ -64,8 +64,8 @@ export const init = (isAdmin: boolean): Return => ({
 		isDirty: false,
 		revision: 0,
 		isSaving: false,
-		confidenceSelects: Object.fromEntries(
-			SEVERITY_ORDER.map((severity) => [
+		confidenceSelects: Rec.fromEntries(
+			Array.map(SEVERITY_ORDER, (severity) => [
 				severity,
 				Select.init(`escalation-confidence-${severity}`, { value: "any", selectedIndex: 0 }),
 			]),
@@ -114,7 +114,8 @@ const asChoice = Schema.decodeUnknownOption(ConfidenceChoice)
 const requestOf = (draft: PolicyDraft) =>
 	new IssueEscalationPolicyUpsertRequest({
 		enabled: draft.enabled,
-		rules: SEVERITY_ORDER.filter((severity) => draft[severity].destinationIds.length > 0).map(
+		rules: Array.map(
+			Array.filter(SEVERITY_ORDER, (severity) => draft[severity].destinationIds.length > 0),
 			(severity) => {
 				const minConfidence = draft[severity].minConfidence
 				return new IssueEscalationPolicyRule({
@@ -212,7 +213,7 @@ export const update = (model: Model, message: Message): Return =>
 			edit(model, (draft) => {
 				const ids = draft[severity].destinationIds
 				const next = ids.includes(destinationId)
-					? ids.filter((id) => id !== destinationId)
+					? Array.filter(ids, (id) => id !== destinationId)
 					: [...ids, destinationId]
 				return { ...draft, [severity]: { ...draft[severity], destinationIds: next } }
 			}),

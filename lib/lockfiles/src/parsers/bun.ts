@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { isRegistryVersion, pkg, splitNameAt } from "../internal/collect.ts"
 import { decodeJson, stripTrailingCommas } from "../internal/decode.ts"
 import type { LockedPackage, LockfileInput, Relation } from "../types.ts"
@@ -23,9 +23,9 @@ const BunLock = Schema.Struct({
 
 /** Package keys are install paths of dependency names (`express/debug`, `@fx/a/lodash`); split them. */
 const keySegments = (key: string): ReadonlyArray<string> =>
-	key.split("/").reduce<Array<string>>((segments, part) => {
+	Str.split("/")(key).reduce<Array<string>>((segments, part) => {
 		const last = segments.at(-1)
-		if (last !== undefined && last.startsWith("@") && !last.includes("/"))
+		if (last !== undefined && Str.startsWith("@")(last) && !Str.includes("/")(last))
 			segments[segments.length - 1] = `${last}/${part}`
 		else segments.push(part)
 		return segments
@@ -38,36 +38,37 @@ interface DepNames {
 
 const namesOf = (workspaces: ReadonlyArray<Workspace>): DepNames => ({
 	direct: new Set(
-		workspaces.flatMap((w) => [
-			...Object.keys(w.dependencies ?? {}),
-			...Object.keys(w.optionalDependencies ?? {}),
-			...Object.keys(w.peerDependencies ?? {}),
+		Arr.flatMap(workspaces, (w) => [
+			...Rec.keys(w.dependencies ?? {}),
+			...Rec.keys(w.optionalDependencies ?? {}),
+			...Rec.keys(w.peerDependencies ?? {}),
 		]),
 	),
-	dev: new Set(workspaces.flatMap((w) => Object.keys(w.devDependencies ?? {}))),
+	dev: new Set(Arr.flatMap(workspaces, (w) => Rec.keys(w.devDependencies ?? {}))),
 })
 
 export const parseBunLock = Effect.fn("lockfiles.parseBunLock")(function* (input: LockfileInput) {
 	const lock = yield* decodeJson(BunLock, input.path, stripTrailingCommas(input.content))
-	const workspaces = Object.values(lock.workspaces ?? {})
+	const workspaces = Rec.values(lock.workspaces ?? {})
 	const all = namesOf(workspaces)
 	const byWorkspaceName = new Map(
-		workspaces.flatMap((w): ReadonlyArray<readonly [string, DepNames]> =>
+		Arr.flatMap(workspaces, (w): ReadonlyArray<readonly [string, DepNames]> =>
 			w.name === undefined ? [] : [[w.name, namesOf([w])]],
 		),
 	)
-	const entries = Object.entries(lock.packages ?? {}).map(([key, entry]) => ({
+	const entries = Arr.map(Rec.toEntries(lock.packages ?? {}), ([key, entry]) => ({
 		key,
 		spec: typeof entry[0] === "string" ? splitNameAt(entry[0]) : undefined,
 	}))
-	const skipped = entries.filter(
+	const skipped = Arr.filter(
+		entries,
 		({ spec }) =>
-			spec === undefined || !(isRegistryVersion(spec.rest) || spec.rest.startsWith("workspace:")),
+			spec === undefined || !(isRegistryVersion(spec.rest) || Str.startsWith("workspace:")(spec.rest)),
 	).length
-	const packages = entries.flatMap(({ key, spec }): ReadonlyArray<LockedPackage> => {
+	const packages = Arr.flatMap(entries, ({ key, spec }): ReadonlyArray<LockedPackage> => {
 		if (spec === undefined || !isRegistryVersion(spec.rest)) return []
 		const segments = keySegments(key)
-		const parent = segments.slice(0, -1).join("/")
+		const parent = Arr.join(segments.slice(0, -1), "/")
 		const depName = segments.at(-1) ?? ""
 		const scope = parent === "" ? all : byWorkspaceName.get(parent)
 		const relation: Relation =

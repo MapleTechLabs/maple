@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /**
  * A bounded CBOR (RFC 8949) decoder for App Attest attestation objects: definite-length
  * integers, byte and text strings, arrays, maps and simple values. Anything else, or anything
@@ -81,7 +82,8 @@ const decodeItem = (bytes: Uint8Array, offset: number, depth: number): Decoded |
 			)
 			return {
 				value: new Map(
-					pairs.filter(
+					Arr.filter(
+						pairs,
 						(pair): pair is readonly [CborValue, CborValue] =>
 							pair[0] !== undefined && pair[1] !== undefined,
 					),

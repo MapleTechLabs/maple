@@ -10,7 +10,7 @@ import {
 	type StatusPageTheme,
 	type ResolvedStatusPageThemeTokens,
 } from "@maple/domain/status-page"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { safeColor } from "./escape"
 
 const isPreset = Schema.is(StatusPageThemePreset)
@@ -19,7 +19,7 @@ const isRadius = Schema.is(StatusPageThemeRadius)
 const isFont = Schema.is(StatusPageThemeFont)
 
 const hexOrNull = (value: string | null): string | null =>
-	value !== null && STATUS_PAGE_HEX_COLOR_PATTERN.test(value) ? value.toLowerCase() : null
+	value !== null && STATUS_PAGE_HEX_COLOR_PATTERN.test(value) ? Str.toLowerCase(value) : null
 
 /** The theme with anything outside its schema replaced by the default, so no stray string reaches CSS. */
 export const safeTheme = (theme: StatusPageTheme): StatusPageTheme => ({
@@ -61,11 +61,14 @@ const TOKEN_NAMES = [
 ] as const satisfies ReadonlyArray<keyof ResolvedStatusPageThemeTokens>
 
 /** `okTint` as `ok-tint`. */
-const cssName = (name: string): string => name.replace(/[A-Z]/gu, (letter) => `-${letter.toLowerCase()}`)
+const cssName = (name: string): string => name.replace(/[A-Z]/gu, (letter) => `-${Str.toLowerCase(letter)}`)
 
 /** One scheme's CSS variables; `safeColor` drops any token that is not a hex colour. */
 export const tokenVariables = (tokens: ResolvedStatusPageThemeTokens): string =>
-	TOKEN_NAMES.flatMap((name) => {
-		const value = safeColor(tokens[name])
-		return value === null ? [] : [`--${cssName(name)}:${value}`]
-	}).join(";")
+	Arr.join(
+		Arr.flatMap(TOKEN_NAMES, (name) => {
+			const value = safeColor(tokens[name])
+			return value === null ? [] : [`--${cssName(name)}:${value}`]
+		}),
+		";",
+	)

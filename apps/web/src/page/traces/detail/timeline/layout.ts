@@ -15,6 +15,7 @@ import {
 import { getValueHue } from "@maple/ui/lib/colors"
 import { spanStartMs } from "@maple/ui/lib/span-tree"
 import type { SpanNodeData } from "@maple/views/traces/trace-data"
+import { Array as Arr, String as Str } from "effect"
 
 // copied: the pure layout half of packages/ui/src/components/traces/use-trace-timeline.ts (a React
 // module), over the Model's readonly tree.
@@ -57,7 +58,7 @@ export interface Bar {
 
 /** `countDescendants`. */
 export const countDescendants = (node: SpanNodeData): number =>
-	node.children.reduce((sum, child) => sum + 1 + countDescendants(child), 0)
+	Arr.reduce(node.children, 0, (sum, child) => sum + 1 + countDescendants(child))
 
 /** `layoutSpans`: the visible rows, depth-first, collapsed subtrees skipped. */
 export const layoutSpans = (
@@ -90,9 +91,9 @@ export const layoutSpans = (
 			hasChildren,
 		}
 		bars.push(bar)
-		if (!isCollapsed) node.children.forEach(visit)
+		if (!isCollapsed) Arr.forEach(node.children, visit)
 	}
-	rootSpans.forEach(visit)
+	Arr.forEach(rootSpans, visit)
 	return bars
 }
 
@@ -104,14 +105,14 @@ export const collectParentIdsByLevel = (rootSpans: ReadonlyArray<SpanNodeData>):
 		const level = byLevel.get(node.depth) ?? new Set<string>()
 		level.add(node.spanId)
 		byLevel.set(node.depth, level)
-		node.children.forEach(visit)
+		Arr.forEach(node.children, visit)
 	}
-	rootSpans.forEach(visit)
+	Arr.forEach(rootSpans, visit)
 	return byLevel
 }
 
 const allSpans = (rootSpans: ReadonlyArray<SpanNodeData>): ReadonlyArray<SpanNodeData> =>
-	rootSpans.flatMap((node) => [node, ...allSpans(node.children)])
+	Arr.flatMap(rootSpans, (node) => [node, ...allSpans(node.children)])
 
 export const countSpans = (rootSpans: ReadonlyArray<SpanNodeData>): number => allSpans(rootSpans).length
 
@@ -122,14 +123,16 @@ export const traceBounds = (
 	totalDurationMs: number,
 ): { traceStartMs: number; traceEndMs: number } => {
 	const reportedStart = new Date(traceStartTime).getTime()
-	const finite = allSpans(rootSpans)
-		.map((node) => ({ start: spanStartMs(node), duration: node.durationMs }))
-		.filter(({ start }) => Number.isFinite(start))
-	const start = finite.length === 0 ? reportedStart : Math.min(reportedStart, ...finite.map((s) => s.start))
+	const finite = Arr.filter(
+		Arr.map(allSpans(rootSpans), (node) => ({ start: spanStartMs(node), duration: node.durationMs })),
+		({ start }) => Number.isFinite(start),
+	)
+	const start =
+		finite.length === 0 ? reportedStart : Math.min(reportedStart, ...Arr.map(finite, (s) => s.start))
 	const end =
 		finite.length === 0
 			? reportedStart + totalDurationMs
-			: Math.max(reportedStart + totalDurationMs, ...finite.map((s) => s.start + s.duration))
+			: Math.max(reportedStart + totalDurationMs, ...Arr.map(finite, (s) => s.start + s.duration))
 	return { traceStartMs: start, traceEndMs: end <= start ? start + 1 : end }
 }
 
@@ -184,7 +187,7 @@ const lastMatches: Array<{ bars: ReadonlyArray<Bar>; query: string; matches: Rea
 
 /** The span ids matching `query`, reused while the bars and query are the same. */
 export const computeSearchMatches = (bars: ReadonlyArray<Bar>, query: string): ReadonlySet<string> => {
-	if (query.trim() === "") return NO_MATCHES
+	if (Str.trim(query) === "") return NO_MATCHES
 	const last = lastMatches[0]
 	if (last !== undefined && last.bars === bars && last.query === query) return last.matches
 	const matches = searchMatches(bars, query)
@@ -193,16 +196,18 @@ export const computeSearchMatches = (bars: ReadonlyArray<Bar>, query: string): R
 }
 
 const searchMatches = (bars: ReadonlyArray<Bar>, query: string): ReadonlySet<string> => {
-	const q = query.toLowerCase()
+	const q = Str.toLowerCase(query)
 	return new Set(
-		bars
-			.filter(
+		Arr.map(
+			Arr.filter(
+				bars,
 				(bar) =>
-					bar.span.spanName.toLowerCase().includes(q) ||
-					bar.span.serviceName.toLowerCase().includes(q) ||
-					bar.span.spanId.toLowerCase().includes(q),
-			)
-			.map((bar) => bar.span.spanId),
+					Str.includes(q)(Str.toLowerCase(bar.span.spanName)) ||
+					Str.includes(q)(Str.toLowerCase(bar.span.serviceName)) ||
+					Str.includes(q)(Str.toLowerCase(bar.span.spanId)),
+			),
+			(bar) => bar.span.spanId,
+		),
 	)
 }
 
@@ -241,7 +246,7 @@ export const collectMinimapSpans = (
 ): { spans: ReadonlyArray<MinimapSpan>; maxDepth: number } => {
 	const statusPreset = isStatusCodePreset(colorBy)
 	const nodes = allSpans(rootSpans)
-	const spans = nodes.map((node): MinimapSpan => {
+	const spans = Arr.map(nodes, (node): MinimapSpan => {
 		const leftPercent = ((spanStartMs(node) - domainStartMs) / domainDurationMs) * 100
 		const widthPercent = (node.durationMs / domainDurationMs) * 100
 		const isError = node.statusCode === "Error"
@@ -265,6 +270,6 @@ export const collectMinimapSpans = (
 	// Errors last, painted on top of same-position siblings (a stable sort).
 	return {
 		spans: [...spans].sort((a, b) => Number(a.isError) - Number(b.isError)),
-		maxDepth: nodes.reduce((max, node) => Math.max(max, node.depth), 0),
+		maxDepth: Arr.reduce(nodes, 0, (max, node) => Math.max(max, node.depth)),
 	}
 }

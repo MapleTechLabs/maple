@@ -11,6 +11,7 @@ import { widgetFrame } from "./tile-shell"
 import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
 import { vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, Record as Rec } from "effect"
 
 // The stat widget, with its trend sparkline when
 // `display.sparkline` names a series (`StatSparkline`).
@@ -38,24 +39,26 @@ export const thresholdColor = (
 }
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 /** `StatSparkline`'s values: the first finite numeric column (not `bucket`) of the series rows. */
 export const sparklineValues = (state: WidgetDataState | null | undefined): ReadonlyArray<number> => {
 	const rows =
 		state?._tag === "Ready" && state.data !== null && state.data._tag === "Rows" ? state.data.rows : []
-	const valueKey = rows
-		.flatMap((row) =>
+	const valueKey = Arr.map(
+		Arr.flatMap(rows, (row) =>
 			isRecord(row)
-				? Object.entries(row).filter(
+				? Arr.filter(
+						Rec.toEntries(row),
 						([key, value]) =>
 							key !== "bucket" && typeof value === "number" && Number.isFinite(value),
 					)
 				: [],
-		)
-		.map(([key]) => key)[0]
+		),
+		([key]) => key,
+	)[0]
 	if (valueKey === undefined) return []
-	return rows.map((row) => {
+	return Arr.map(rows, (row) => {
 		const value = isRecord(row) ? row[valueKey] : undefined
 		return typeof value === "number" && Number.isFinite(value) ? value : 0
 	})

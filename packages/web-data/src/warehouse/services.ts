@@ -1,4 +1,4 @@
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import {
 	QueryEngineExecuteRequest,
 	coerceServiceOverviewRows,
@@ -168,9 +168,12 @@ const getServiceHealthSnapshotEffect = Effect.fn("QueryEngine.getServiceHealthSn
 	)
 
 	return {
-		data: response.data
-			.filter((row) => scope.memberServices === null || scope.memberServices.has(row.serviceName))
-			.map((row): ServiceHealthSnapshot => ({
+		data: Arr.map(
+			Arr.filter(
+				response.data,
+				(row) => scope.memberServices === null || scope.memberServices.has(row.serviceName),
+			),
+			(row): ServiceHealthSnapshot => ({
 				serviceName: row.serviceName,
 				environment: row.environment || "unknown",
 				requestCount: row.requestCount,
@@ -178,7 +181,8 @@ const getServiceHealthSnapshotEffect = Effect.fn("QueryEngine.getServiceHealthSn
 				errorRate: row.requestCount > 0 ? row.errorCount / row.requestCount : 0,
 				p95LatencyMs: row.p95LatencyMs,
 				throughput: row.requestCount / durationSeconds,
-			})),
+			}),
+		),
 	}
 })
 
@@ -212,7 +216,7 @@ const BASELINE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 // Snap a "YYYY-MM-DD HH:mm:ss" datetime down to the hour so the request
 // payload — and therefore the API-side cache key and the web atom key — stays
 // stable for up to an hour regardless of small range changes.
-const floorToHour = (dateTime: string) => `${dateTime.slice(0, 13)}:00:00`
+const floorToHour = (dateTime: string) => `${Str.slice(0, 13)(dateTime)}:00:00`
 
 const warehouseDateTimeToMs = parseWarehouseDateTime
 
@@ -247,7 +251,7 @@ const getServiceHealthBaselineEffect = Effect.fn("QueryEngine.getServiceHealthBa
 	)
 
 	const result: ServiceHealthBaselineResult = {
-		data: response.data.map((row) => ({
+		data: Arr.map(response.data, (row) => ({
 			serviceName: row.serviceName,
 			serviceNamespace: row.serviceNamespace,
 			environment: row.environment,
@@ -268,7 +272,7 @@ export interface ServiceTimeSeriesPoint {
 }
 
 function sortByBucket<T extends { bucket: string }>(rows: T[]): T[] {
-	return rows.toSorted((left, right) => left.bucket.localeCompare(right.bucket))
+	return rows.toSorted((left, right) => Str.localeCompare(right.bucket)(left.bucket))
 }
 
 function fillServiceApdexPoints(
@@ -287,7 +291,7 @@ function fillServiceApdexPoints(
 		byBucket.set(toIsoBucket(point.bucket), point)
 	}
 
-	const filled = timeline.map((bucket) => {
+	const filled = Arr.map(timeline, (bucket) => {
 		const existing = byBucket.get(bucket)
 		if (existing) {
 			return existing
@@ -452,7 +456,7 @@ const getServiceApdexTimeSeriesEffect = Effect.fn("QueryEngine.getServiceApdexTi
 		}),
 	)
 
-	const points = result.data.map((row) => ({
+	const points = Arr.map(result.data, (row) => ({
 		bucket: toIsoBucket(row.bucket),
 		apdexScore: row.apdexScore,
 		totalCount: row.totalCount,

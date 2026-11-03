@@ -19,6 +19,7 @@ import {
 } from "./findings"
 import { securitySeverityBadge } from "./parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // The findings list the run page and the Findings tab share, laid out like Linear's issue list:
 // severity tabs on top, collapsible groups, one dense line per finding.
@@ -111,7 +112,7 @@ export type SeverityTabsOptions<M> = Readonly<{
 
 /** One click per severity; a bucket with nothing in it stays out of the way unless it is picked. */
 export const severityTabs = <M>(h: HtmlBuilder<M>, options: SeverityTabsOptions<M>): Html => {
-	const total = SCORED_BUCKETS.reduce((sum, bucket) => sum + options.counts[bucket], 0)
+	const total = Arr.reduce(SCORED_BUCKETS, 0, (sum, bucket) => sum + options.counts[bucket])
 	return segmentedSelect<SeverityBucket | "all", M>(h, {
 		size: "sm",
 		ariaLabel: options.label,
@@ -120,7 +121,11 @@ export const severityTabs = <M>(h: HtmlBuilder<M>, options: SeverityTabsOptions<
 		onChange: (value) => options.onPick(value === "all" ? null : value),
 		options: [
 			{ value: "all", label: `All ${total}` },
-			...SCORED_BUCKETS.filter((bucket) => options.counts[bucket] > 0 || options.active === bucket).map(
+			...Arr.map(
+				Arr.filter(
+					SCORED_BUCKETS,
+					(bucket) => options.counts[bucket] > 0 || options.active === bucket,
+				),
 				(bucket) => ({
 					value: bucket,
 					label: `${BUCKET_LABEL[bucket]} ${options.counts[bucket]}`,
@@ -231,7 +236,7 @@ const unverifiedNote = <M>(
 	h: HtmlBuilder<M>,
 	rows: ReadonlyArray<SecurityAuditFinding>,
 ): ReadonlyArray<Html> => {
-	const count = rows.filter(isUnverified).length
+	const count = Arr.filter(rows, isUnverified).length
 	return count === 0 ? [] : [trailingText(h, count === rows.length ? "unverified" : `${count} unverified`)]
 }
 
@@ -239,7 +244,7 @@ const unverifiedNote = <M>(
 export const findingGroups = <M>(h: HtmlBuilder<M>, options: FindingGroupsOptions<M>): Html =>
 	h.div(
 		[h.AriaLabel(options.label), h.Class("-mb-px flex flex-col")],
-		options.sections.map(({ bucket, rows }) => {
+		Arr.map(options.sections, ({ bucket, rows }) => {
 			const isCollapsed = options.collapsed.includes(bucket)
 			const hint = SECTION_HINT[bucket]
 			return h.section(
@@ -283,7 +288,7 @@ export const findingGroups = <M>(h: HtmlBuilder<M>, options: FindingGroupsOption
 						: [
 								h.ul(
 									[h.Class("flex flex-col")],
-									rows.map((finding) => findingRow(h, options.row(finding))),
+									Arr.map(rows, (finding) => findingRow(h, options.row(finding))),
 								),
 							]),
 				],

@@ -18,17 +18,19 @@ import { type MetaInputs, metaStrip, type TooltipParts, tooltipContent, triggerI
 import { contextPanel, errorBanner, showsErrorBanner, traceTimeline } from "./view-panels"
 import { typography } from "@maple/views/ui/typography"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `LogDetailSheet`: hero, meta strip and the tabbed panels in a right-hand sheet.
 
 type H = HtmlBuilder<Message>
 
-export type ViewInputs = MetaInputs & Readonly<{
-	/** The attributes' Filter actions (`ChoseAttributeFilter`), where the app can filter by them. */
-	canFilter: boolean
-	/** The Infrastructure tab's body, built by the app that can back it (`open`'s `hasInfra`). */
-	infraTab?: (() => Html) | undefined
-}>
+export type ViewInputs = MetaInputs &
+	Readonly<{
+		/** The attributes' Filter actions (`ChoseAttributeFilter`), where the app can filter by them. */
+		canFilter: boolean
+		/** The Infrastructure tab's body, built by the app that can back it (`open`'s `hasInfra`). */
+		infraTab?: (() => Html) | undefined
+	}>
 
 const TAB_ICONS = new Map<string, IconName>([
 	["attributes", "CircleInfoIcon"],
@@ -112,7 +114,7 @@ const tabs = (h: H, model: Model, log: LogRecord, inputs: ViewInputs): Html =>
 		view: TabsView.view,
 		viewInputs: {
 			variant: "underline",
-			labels: model.tabs.values.map((value) => TAB_LABELS.get(value) ?? value),
+			labels: Arr.map(model.tabs.values, (value) => TAB_LABELS.get(value) ?? value),
 			className: vstackClass({ grow: true, className: "min-h-0" }),
 			listClassName: "shrink-0 px-4",
 			panelClassName: "flex-1 min-h-0 mt-0",
@@ -128,7 +130,11 @@ const tabs = (h: H, model: Model, log: LogRecord, inputs: ViewInputs): Html =>
 	})
 
 /** The copy controls' one Tooltip around `render`; each trigger keeps its portal beside it. */
-const withTooltip = (h: H, model: Model, render: (tooltip: TooltipParts) => ReadonlyArray<Html | null>): Html =>
+const withTooltip = (
+	h: H,
+	model: Model,
+	render: (tooltip: TooltipParts) => ReadonlyArray<Html | null>,
+): Html =>
 	h.submodel({
 		slotId: `${model.tooltip.id}-slot`,
 		model: model.tooltip,
@@ -141,7 +147,8 @@ const withTooltip = (h: H, model: Model, render: (tooltip: TooltipParts) => Read
 					[h.Class("contents")],
 					render({
 						trigger,
-						portalFor: (id) => (portal !== null && model.tooltip.triggerId === id ? [portal] : []),
+						portalFor: (id) =>
+							portal !== null && model.tooltip.triggerId === id ? [portal] : [],
 					}),
 				),
 		},
@@ -155,7 +162,7 @@ const content = (
 	inputs: ViewInputs,
 	close: ReadonlyArray<ChildAttribute>,
 ) => [
-	DialogView.dialogTitle(h, "sheet", model.dialog.id, ["Log: ", log.body.slice(0, 80)], "sr-only"),
+	DialogView.dialogTitle(h, "sheet", model.dialog.id, ["Log: ", Str.slice(0, 80)(log.body)], "sr-only"),
 	withTooltip(h, model, (tooltip) => [
 		heroHeader(h, model, log, close),
 		metaStrip(h, model, log, inputs, tooltip),

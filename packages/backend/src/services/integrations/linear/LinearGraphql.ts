@@ -1,6 +1,6 @@
 /** One Linear GraphQL call. Linear reports most failures in an `errors` array, so the codes decide, not the status. */
 import { IntegrationsRevokedError, IntegrationsUpstreamError } from "@maple/domain/http"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 
 export const LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
@@ -47,7 +47,10 @@ export const isNotFound = (error: LinearGraphqlError) =>
 	error.code === "ENTITY_NOT_FOUND" || /entity not found|could not find referenced/i.test(error.message)
 
 const errorSummary = (errors: ReadonlyArray<LinearGraphqlError>) =>
-	errors.map((error) => error.message).join("; ")
+	Arr.join(
+		Arr.map(errors, (error) => error.message),
+		"; ",
+	)
 
 /**
  * A rejected token fails `IntegrationsRevokedError`, which the caller's refresh-and-retry keys on.
@@ -96,18 +99,18 @@ export const linearGraphql = Effect.fn("Linear.graphql", { kind: "client" })(fun
 	const errors: ReadonlyArray<LinearGraphqlError> = Option.match(envelope, {
 		onNone: () => [],
 		onSome: (body) =>
-			(body.errors ?? []).map((error) => ({
+			Arr.map(body.errors ?? [], (error) => ({
 				message: error.extensions?.userPresentableMessage ?? error.message,
 				code: error.extensions?.code ?? null,
 			})),
 	})
 
-	if (status === 401 || errors.some(isAuthError)) {
+	if (status === 401 || Arr.some(errors, isAuthError)) {
 		return yield* new IntegrationsRevokedError({
 			message: "Linear rejected the access token. Reconnect Linear.",
 		})
 	}
-	if (status === 429 || errors.some((error) => error.code === "RATELIMITED")) {
+	if (status === 429 || Arr.some(errors, (error) => error.code === "RATELIMITED")) {
 		return yield* new IntegrationsUpstreamError({ message: "Linear rate limit reached", status: 429 })
 	}
 	if (Option.isNone(envelope) || (status >= 300 && errors.length === 0)) {

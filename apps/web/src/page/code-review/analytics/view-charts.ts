@@ -13,6 +13,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { repositoryList } from "./view-lists"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `VolumeCard` and `IssuesCard`.
 
@@ -29,7 +30,7 @@ const SEVERITY_LABELS = {
 export const SEVERITY_SERIES = { critical: "Critical", warn: "Warning", info: "Note" } as const
 
 const entries = (labels: Readonly<Record<string, string>>): ReadonlyArray<SelectEntry> =>
-	Object.entries(labels).map(([value, label]) => ({ _tag: "Item", item: { value, label } }))
+	Arr.map(Rec.toEntries(labels), ([value, label]) => ({ _tag: "Item", item: { value, label } }))
 
 const panelSelect = (
 	h: H,
@@ -84,11 +85,12 @@ const isVolumeMetric = (value: string): value is keyof typeof VOLUME_LABELS => v
 const isSeverity = (value: string): value is keyof typeof SEVERITY_SERIES => value in SEVERITY_SERIES
 
 const topRepositories = (analytics: CodeReviewAnalytics, by: "reviews" | "findings") =>
-	analytics.repositories
-		.filter((repo) => repo[by] > 0)
-		.toSorted((a, b) => b[by] - a[by])
-		.slice(0, 5)
-		.map((repo) => ({ key: repo.repositoryId, name: repo.fullName, value: repo[by] }))
+	Arr.map(
+		Arr.filter(analytics.repositories, (repo) => repo[by] > 0)
+			.toSorted((a, b) => b[by] - a[by])
+			.slice(0, 5),
+		(repo) => ({ key: repo.repositoryId, name: repo.fullName, value: repo[by] }),
+	)
 
 export const volumeCard = (
 	h: H,
@@ -99,7 +101,7 @@ export const volumeCard = (
 ): Html => {
 	const metric = isVolumeMetric(model.volumeSelect.value) ? model.volumeSelect.value : "pullRequests"
 	const label = VOLUME_LABELS[metric]
-	const rows = analytics.series.map((point) => ({
+	const rows = Arr.map(analytics.series, (point) => ({
 		bucket: bucketIso(point.bucket),
 		[label]: point[metric],
 	}))
@@ -121,7 +123,7 @@ export const volumeCard = (
 }
 
 const severityRows = (analytics: CodeReviewAnalytics, severity: string) =>
-	analytics.series.map((point) =>
+	Arr.map(analytics.series, (point) =>
 		isSeverity(severity)
 			? { bucket: bucketIso(point.bucket), [SEVERITY_SERIES[severity]]: point[severity] }
 			: {

@@ -3,7 +3,7 @@ import { METRIC_TYPE_COLORS } from "@maple/web/page/metrics/shared"
 import { filterSection } from "@maple/views/ui/filters/filter-section"
 import type * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { filterSidebarBody, filterSidebarHeader } from "@maple/views/ui/filters/filter-sidebar"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "./message"
@@ -31,9 +31,9 @@ export const sidebar = (
 ): Html => {
 	const summary = Option.getOrElse(AsyncData.getData(model.summary.data), () => [])
 	// A stable sort: equal counts keep the summary's order.
-	const typeFacets = summary
-		.map((row) => ({ name: row.metricType, count: row.metricCount }))
-		.toSorted((a, b) => b.count - a.count)
+	const typeFacets = Arr.map(summary, (row) => ({ name: row.metricType, count: row.metricCount })).toSorted(
+		(a, b) => b.count - a.count,
+	)
 	const serviceFacets = Option.match(AsyncData.getData(model.list.data), {
 		onNone: () => [],
 		onSome: (data) => data.serviceFacets,
@@ -69,7 +69,7 @@ export const sidebar = (
 		...filterSidebarBody(
 			h,
 			"metrics-filters",
-			sections.filter((section) => section !== null),
+			Arr.filter(sections, (section) => section !== null),
 		),
 	])
 }

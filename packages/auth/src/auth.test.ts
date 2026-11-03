@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { createHmac } from "node:crypto"
-import { Effect, Exit, Option, Redacted, Schema } from "effect"
+import { Effect, Exit, Option, Redacted, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { AuthorizationUnavailableError, OrgId, RoleName, UserId } from "@maple/domain/http"
 import {
@@ -65,7 +65,7 @@ const validClaims = {
 }
 // The baseline minus one claim, so a negative test isolates the claim it names.
 const withoutClaim = (key: keyof typeof validClaims) =>
-	Object.fromEntries(Object.entries(validClaims).filter(([name]) => name !== key))
+	Rec.fromEntries(Arr.filter(Rec.toEntries(validClaims), ([name]) => name !== key))
 const atFixedTime = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 	Effect.gen(function* () {
 		yield* TestClock.adjust(`${clockSeconds} seconds`)
@@ -204,7 +204,7 @@ describe("makeResolveTenant", () => {
 	it.effect("rejects self-hosted requests with invalid token signature", () =>
 		Effect.gen(function* () {
 			const token = signClaims(validClaims)
-			const data = token.slice(0, token.lastIndexOf("."))
+			const data = Str.slice(0, token.lastIndexOf("."))(token)
 			const forged = `${data}.${createHmac("sha256", "not-the-root-password").update(data).digest("base64url")}`
 
 			assert.isTrue(Exit.isSuccess(yield* resolveSignedToken(token)))
@@ -846,7 +846,7 @@ describe("self-hosted session temporal boundaries", () => {
 
 describe("self-hosted session lifetime", () => {
 	const decodeTokenClaims = (token: string): Record<string, unknown> => {
-		const payload = token.split(".")[1] ?? ""
+		const payload = Str.split(".")(token)[1] ?? ""
 		return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"))
 	}
 

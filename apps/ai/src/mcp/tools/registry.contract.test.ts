@@ -6,44 +6,50 @@ import { describe, expect, it } from "vitest"
 import { mapleToolCatalog, inputSchemaOf, toOutputSchema } from "./registry"
 import { MUTATING_TOOL_NAMES } from "./mutating"
 import { McpToolOutputs } from "@maple/domain/mcp-outputs"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /** Parameter names that were retired for one spelling per concept. They live on only as aliases. */
 const RETIRED_PARAMETERS = new Set(["service_name", "service_names", "since", "until"])
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 const properties = (
 	schema: Readonly<Record<string, unknown>>,
 ): ReadonlyArray<readonly [string, Readonly<Record<string, unknown>>]> =>
 	isRecord(schema.properties)
-		? Object.entries(schema.properties).flatMap(([name, value]) =>
+		? Arr.flatMap(Rec.toEntries(schema.properties), ([name, value]) =>
 				isRecord(value) ? [[name, value] as const] : [],
 			)
 		: []
 
 describe("MCP tool catalog contract", () => {
 	it("declares every tool with typed output and hints", () => {
-		const legacy = mapleToolCatalog
-			.filter((tool) => tool.outputSchema === undefined || tool.hints === undefined)
-			.map((tool) => tool.name)
+		const legacy = Arr.map(
+			Arr.filter(
+				mapleToolCatalog,
+				(tool) => tool.outputSchema === undefined || tool.hints === undefined,
+			),
+			(tool) => tool.name,
+		)
 		expect(legacy).toEqual([])
 	})
 
 	// Directory listings (Claude's connector directory) reject tools without a title.
 	it("gives every tool a distinct title", () => {
-		const titles = mapleToolCatalog.map((tool) => tool.title.trim())
-		expect(titles.filter((title) => title === "")).toEqual([])
-		expect(titles.filter((title, index) => titles.indexOf(title) !== index)).toEqual([])
+		const titles = Arr.map(mapleToolCatalog, (tool) => Str.trim(tool.title))
+		expect(Arr.filter(titles, (title) => title === "")).toEqual([])
+		expect(Arr.filter(titles, (title, index) => titles.indexOf(title) !== index)).toEqual([])
 	})
 
 	it("declares each tool's output as the schema the domain catalog lists for it", () => {
 		const catalog: Readonly<Record<string, unknown>> = McpToolOutputs
-		const mismatched = mapleToolCatalog
-			.filter((tool) => catalog[tool.name] !== tool.outputSchema)
-			.map((tool) => tool.name)
+		const mismatched = Arr.map(
+			Arr.filter(mapleToolCatalog, (tool) => catalog[tool.name] !== tool.outputSchema),
+			(tool) => tool.name,
+		)
 		expect(mismatched).toEqual([])
-		expect(Object.keys(catalog).sort()).toEqual(mapleToolCatalog.map((tool) => tool.name).sort())
+		expect(Rec.keys(catalog).sort()).toEqual(Arr.map(mapleToolCatalog, (tool) => tool.name).sort())
 	})
 
 	it("publishes an object-rooted output schema for every tool", () => {
@@ -51,7 +57,8 @@ describe("MCP tool catalog contract", () => {
 			if (tool.outputSchema === undefined) continue
 			const document = toOutputSchema(tool.outputSchema)
 			// A `$ref` root points into `$defs`; follow it to the type a client sees.
-			const ref = typeof document.$ref === "string" ? document.$ref.replace("#/$defs/", "") : undefined
+			const ref =
+				typeof document.$ref === "string" ? Str.replace("#/$defs/", "")(document.$ref) : undefined
 			const defs = isRecord(document.$defs) ? document.$defs : {}
 			const root = ref === undefined ? document : defs[ref]
 			expect(isRecord(root) ? root.type : undefined, tool.name).toBe("object")
@@ -59,10 +66,10 @@ describe("MCP tool catalog contract", () => {
 	})
 
 	it("marks exactly the approval-gated tools as mutating", () => {
-		const mutating = mapleToolCatalog
-			.filter((tool) => tool.hints !== undefined && !tool.hints.readOnly)
-			.map((tool) => tool.name)
-			.sort()
+		const mutating = Arr.map(
+			Arr.filter(mapleToolCatalog, (tool) => tool.hints !== undefined && !tool.hints.readOnly),
+			(tool) => tool.name,
+		).sort()
 		expect(mutating).toEqual([...MUTATING_TOOL_NAMES].sort())
 	})
 
@@ -71,7 +78,7 @@ describe("MCP tool catalog contract", () => {
 		for (const tool of mapleToolCatalog) {
 			for (const [name, property] of properties(inputSchemaOf(tool))) {
 				if (RETIRED_PARAMETERS.has(name)) offenders.push(`${tool.name}.${name}: retired name`)
-				if (typeof property.description !== "string" || property.description.trim() === "") {
+				if (typeof property.description !== "string" || Str.trim(property.description) === "") {
 					offenders.push(`${tool.name}.${name}: no description`)
 				}
 			}
@@ -101,8 +108,8 @@ describe("MCP tool catalog contract", () => {
 	it("points every alias at a parameter the tool has", () => {
 		const offenders: Array<string> = []
 		for (const tool of mapleToolCatalog) {
-			const names = new Set(properties(inputSchemaOf(tool)).map(([name]) => name))
-			for (const [from, to] of Object.entries(tool.aliases)) {
+			const names = new Set(Arr.map(properties(inputSchemaOf(tool)), ([name]) => name))
+			for (const [from, to] of Rec.toEntries(tool.aliases)) {
 				if (!names.has(to)) offenders.push(`${tool.name}: ${from} -> ${to}`)
 				if (names.has(from)) offenders.push(`${tool.name}: alias ${from} shadows a parameter`)
 			}

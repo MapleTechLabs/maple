@@ -17,6 +17,7 @@ import { openCloudShellButton, type ScriptFailure, SMALL, scriptBlock, step } fr
 import { disconnectConfirm } from "./view-disconnect"
 import { removalItem } from "./view-gcp-setup-methods"
 import { typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr, String as Str } from "effect"
 
 // `GcpDisconnectDialog`, and the `ConfirmDialog`s of `GcpConnection` and `GcpIntegrationCard`.
 
@@ -43,7 +44,10 @@ const quietDisconnect = (h: H, model: Model, connector: V2GcpConnector): Html =>
 						[],
 						[
 							h.dt([h.Class("font-medium")], ["In Maple"]),
-							h.dd([h.Class(typographyClass({ tone: "muted", className: "text-pretty" }))], ["Removes the connection."]),
+							h.dd(
+								[h.Class(typographyClass({ tone: "muted", className: "text-pretty" }))],
+								["Removes the connection."],
+							),
 						],
 					),
 					h.div(
@@ -76,13 +80,20 @@ const settledScript = (model: Model): string | null => {
 
 /** What the cleanup deletes: only the capabilities a run may have set up. */
 const deletesText = (connector: V2GcpConnector): string =>
-	`${[
-		connector.applied_logs_enabled === false ? null : "the log sink, subscription, topic and push service account",
-		connector.applied_metrics_enabled === false ? null : "the read-only service account and its roles",
-	]
-		.filter((part) => part !== null)
-		.join(", and ")
-		.replace(/^./, (first) => first.toUpperCase())}.`
+	`${Arr.join(
+		Arr.filter(
+			[
+				connector.applied_logs_enabled === false
+					? null
+					: "the log sink, subscription, topic and push service account",
+				connector.applied_metrics_enabled === false
+					? null
+					: "the read-only service account and its roles",
+			],
+			(part) => part !== null,
+		),
+		", and ",
+	).replace(/^./, (first) => Str.toUpperCase(first))}.`
 
 /** `GcpDisconnectDialog`: the cleanup script first, then the disconnect. */
 const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZone: string): Html => {
@@ -156,10 +167,15 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 												[
 													h.dt([h.Class("text-foreground")], ["Deletes"]),
 													h.dd(
-														[h.Class(typographyClass({ tone: "muted", className: "text-pretty" }))],
 														[
-															deletesText(connector),
+															h.Class(
+																typographyClass({
+																	tone: "muted",
+																	className: "text-pretty",
+																}),
+															),
 														],
+														[deletesText(connector)],
 													),
 													h.dt([h.Class("text-foreground")], ["Keeps"]),
 													h.dd(
@@ -182,10 +198,19 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 											h.details(
 												[h.Class("text-xs/5")],
 												[
-													h.summary([h.Class("cursor-pointer text-foreground")], ["Delete them in the console instead"]),
+													h.summary(
+														[h.Class("cursor-pointer text-foreground")],
+														["Delete them in the console instead"],
+													),
 													h.ol(
-														[h.Class("mt-2 flex list-decimal flex-col gap-2 pl-5")],
-														gcpRemovalList(connector, "all").map((item) => removalItem(h, model, item)),
+														[
+															h.Class(
+																"mt-2 flex list-decimal flex-col gap-2 pl-5",
+															),
+														],
+														Arr.map(gcpRemovalList(connector, "all"), (item) =>
+															removalItem(h, model, item),
+														),
 													),
 												],
 											),

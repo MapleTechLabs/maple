@@ -1,7 +1,7 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
 import { MapleInternalApi } from "@maple/domain/http"
@@ -50,7 +50,7 @@ const withApi = (answers: Readonly<Record<string, () => Response>>) => {
 	const fetch: typeof globalThis.fetch = async (input) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		const path = new URL(url, "http://api.test").pathname
-		const answer = Object.entries(answers).find(([suffix]) => path.endsWith(suffix))?.[1]
+		const answer = Rec.toEntries(answers).find(([suffix]) => Str.endsWith(suffix)(path))?.[1]
 		return answer === undefined ? Promise.reject(new Error(`unmocked ${path}`)) : answer()
 	}
 	return <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -76,10 +76,10 @@ const breakdown = (value: number) =>
 
 const answer = (series: ReadonlyArray<unknown>) =>
 	executeQueryEngineMock.mockImplementation((operation: string) => {
-		if (operation.endsWith(".series"))
+		if (Str.endsWith(".series")(operation))
 			return Effect.succeed({ result: { kind: "timeseries", data: series } })
-		if (operation.endsWith(".p50_duration")) return breakdown(110)
-		if (operation.endsWith(".p95_duration")) return breakdown(240)
+		if (Str.endsWith(".p50_duration")(operation)) return breakdown(110)
+		if (Str.endsWith(".p95_duration")(operation)) return breakdown(240)
 		return breakdown(900)
 	})
 
@@ -152,7 +152,7 @@ describe("getUptimeCheckStats", () => {
 				}),
 			)
 			assert.deepStrictEqual(
-				stats.samples.map((sample) => [sample.at, sample.ok, sample.statusCode, sample.phases]),
+				Arr.map(stats.samples, (sample) => [sample.at, sample.ok, sample.statusCode, sample.phases]),
 				[
 					["2026-02-01T00:19:00.000Z", false, null, null],
 					["2026-02-01T00:20:00.000Z", true, 200, phases],

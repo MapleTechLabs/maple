@@ -6,7 +6,7 @@ import {
 	tooltipPositionerStyles,
 	tooltipViewportStyles,
 } from "@maple/ui/styles/ui/tooltip"
-import { Duration, Effect, Number, Option, Schema, Stream } from "effect"
+import { Duration, Effect, Number, Option, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount, Submodel, type Update } from "foldkit"
 import {
 	type Attribute,
@@ -297,7 +297,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		])
 	// Built here, not when `toView` asks: handlers bind to the boundary that builds them.
 	const triggers = new Map(
-		(inputs.triggerIds ?? [triggerId(model.id)]).map(
+		Arr.map(
+			inputs.triggerIds ?? [triggerId(model.id)],
 			(id): readonly [string, ReadonlyArray<ChildAttribute>] => [id, attributesOf(id)],
 		),
 	)

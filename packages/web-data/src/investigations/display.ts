@@ -1,6 +1,7 @@
 import type { IssueSeverity } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import { String as Str } from "effect"
 
 // Investigation display logic shared by apps/web (`components/investigations/`) and the Foldkit app.
 
@@ -117,7 +118,7 @@ export function investigationFinding(investigation: V2Investigation): Investigat
 
 /** Case-insensitive match across what the row renders, plus the suspected cause the row no longer prints. */
 export function matchesQuery(investigation: V2Investigation, query: string): boolean {
-	const needle = query.trim().toLowerCase()
+	const needle = Str.toLowerCase(Str.trim(query))
 	if (!needle) return true
 	const finding = investigationFinding(investigation)
 	const haystack = [
@@ -183,7 +184,7 @@ export function sortInvestigations(
 			if (right === null) return -1
 			return direction === "desc" ? right - left : left - right
 		}
-		return updatedWeight(b) - updatedWeight(a) || a.id.localeCompare(b.id)
+		return updatedWeight(b) - updatedWeight(a) || Str.localeCompare(b.id)(a.id)
 	})
 }
 
@@ -196,7 +197,7 @@ export interface Elapsed {
 	unit: string
 }
 
-const pad = (n: number) => String(n).padStart(2, "0")
+const pad = (n: number) => Str.padStart(2, "0")(String(n))
 
 /**
  * A duration split into the number and its unit, so the number can carry the

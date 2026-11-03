@@ -1,11 +1,15 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { mintOrgReadJwt } from "@maple/backend/services/auth/tinybird-jwt"
+import { Array as Arr, String as Str } from "effect"
 
 const enabled = process.env.TINYBIRD_LOCAL_E2E === "1"
-const apiBase = (process.env.TINYBIRD_LOCAL_E2E_URL ?? "http://127.0.0.1:7181").replace(/\/$/, "")
-const gatewayBase = (process.env.TINYBIRD_LOCAL_E2E_GATEWAY_URL ?? "http://127.0.0.1:7182").replace(/\/$/, "")
-const workspaceName = `RawSqlE2E_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+const apiBase = Str.replace(/\/$/, "")(process.env.TINYBIRD_LOCAL_E2E_URL ?? "http://127.0.0.1:7181")
+const gatewayBase = Str.replace(
+	/\/$/,
+	"",
+)(process.env.TINYBIRD_LOCAL_E2E_GATEWAY_URL ?? "http://127.0.0.1:7182")
+const workspaceName = `RawSqlE2E_${Date.now()}_${Str.slice(2, 8)(Math.random().toString(36))}`
 const datasource = "raw_sql_e2e"
 
 interface LocalTokens {
@@ -26,7 +30,7 @@ let workspaceSigningKey: string | undefined
 
 const responseJson = async <T>(response: Response): Promise<T> => {
 	const text = await response.text()
-	if (!response.ok) throw new Error(`Tinybird ${response.status}: ${text.slice(0, 500)}`)
+	if (!response.ok) throw new Error(`Tinybird ${response.status}: ${Str.slice(0, 500)(text)}`)
 	return JSON.parse(text) as T
 }
 
@@ -56,13 +60,16 @@ const createWorkspace = async (localTokens: LocalTokens): Promise<LocalWorkspace
 }
 
 const buildDatasource = async (target: LocalWorkspace): Promise<void> => {
-	const datafile = [
-		"SCHEMA >",
-		"    OrgId String `json:$.OrgId`,",
-		"    value UInt64 `json:$.value`",
-		'ENGINE "MergeTree"',
-		'ENGINE_SORTING_KEY "OrgId"',
-	].join("\n")
+	const datafile = Arr.join(
+		[
+			"SCHEMA >",
+			"    OrgId String `json:$.OrgId`,",
+			"    value UInt64 `json:$.value`",
+			'ENGINE "MergeTree"',
+			'ENGINE_SORTING_KEY "OrgId"',
+		],
+		"\n",
+	)
 	const form = new FormData()
 	form.append("data_project://", new Blob([datafile], { type: "text/plain" }), `${datasource}.datasource`)
 	const response = await fetch(`${apiBase}/v1/build`, {
@@ -83,7 +90,7 @@ const ingestFixtures = async (target: LocalWorkspace): Promise<void> => {
 			Authorization: `Bearer ${target.token}`,
 			"Content-Type": "application/x-ndjson",
 		},
-		body: ['{"OrgId":"org_a","value":1}', '{"OrgId":"org_b","value":2}'].join("\n"),
+		body: Arr.join(['{"OrgId":"org_a","value":1}', '{"OrgId":"org_b","value":2}'], "\n"),
 	})
 	await responseJson<Record<string, unknown>>(response)
 }
@@ -102,7 +109,7 @@ const loadWorkspaceSigningKey = async (target: LocalWorkspace): Promise<string> 
 	const adminToken = body.tokens.find(
 		(candidate) =>
 			candidate.name === "workspace admin token" &&
-			candidate.scopes.some((scope) => scope.type === "ADMIN"),
+			Arr.some(candidate.scopes, (scope) => scope.type === "ADMIN"),
 	)
 	if (!adminToken) throw new Error("Tinybird Local did not return a workspace admin token")
 	return adminToken.token
@@ -183,13 +190,12 @@ describe.skipIf(!enabled)("Tinybird Local raw-SQL JWT E2E", () => {
 			})
 			const text = await response.text()
 			if (!response.ok) {
-				throw new Error(`Tinybird gateway ${response.status}: ${text.slice(0, 500)}`)
+				throw new Error(`Tinybird gateway ${response.status}: ${Str.slice(0, 500)(text)}`)
 			}
-			const rows = text
-				.trim()
-				.split("\n")
-				.filter(Boolean)
-				.map((line) => JSON.parse(line) as Record<string, unknown>)
+			const rows = Arr.map(
+				Arr.filter(Str.split("\n")(Str.trim(text)), Boolean),
+				(line) => JSON.parse(line) as Record<string, unknown>,
+			)
 			assert.deepStrictEqual(rows, [{ OrgId: "org_a", value: 1 }])
 		}
 	})

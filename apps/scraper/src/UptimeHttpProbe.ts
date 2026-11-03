@@ -1,4 +1,15 @@
-import { Clock, Context, Duration, Effect, Layer, Option, Ref, Result, type Schema } from "effect"
+import {
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Ref,
+	Result,
+	type Schema,
+	String as Str,
+} from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	effectiveAssertions,
@@ -49,7 +60,7 @@ export interface UptimeHttpProbeApi {
 const needsUnreadBody = (assertion: UptimeAssertion, prefix: string | null): boolean =>
 	assertion._tag === "json_path" ||
 	(assertion._tag === "body" &&
-		(assertion.op === "not_contains" || prefix === null || !prefix.includes(assertion.value)))
+		(assertion.op === "not_contains" || prefix === null || !Str.includes(assertion.value)(prefix)))
 
 export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttpProbeApi>()(
 	"@maple/scraper/UptimeHttpProbe",

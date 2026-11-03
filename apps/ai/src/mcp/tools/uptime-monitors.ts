@@ -3,7 +3,7 @@
  * heartbeat pings. Anyone may list them; creating, changing and deleting is admin-only, like
  * the REST routes, since a monitor makes Maple request an operator-chosen host on a schedule.
  */
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import {
 	DeleteUptimeMonitorOutput,
 	ListUptimeMonitorsOutput,
@@ -101,8 +101,8 @@ const decodeDestinations = (raw: ReadonlyArray<string> | undefined) =>
 const resolveMonitor = Effect.fnUntraced(function* (tool: string, orgId: OrgId, ref: string) {
 	const service = yield* UptimeMonitorsService
 	const monitors = yield* service.list(orgId).pipe(Effect.mapError(toMcpUptimeError(tool)))
-	const id = decodePublicId(PublicIdPrefixes.uptimeMonitor, ref.trim()) ?? ref.trim()
-	const matches = monitors.filter((monitor) => monitor.id === id || monitor.name === ref.trim())
+	const id = decodePublicId(PublicIdPrefixes.uptimeMonitor, Str.trim(ref)) ?? Str.trim(ref)
+	const matches = Arr.filter(monitors, (monitor) => monitor.id === id || monitor.name === Str.trim(ref))
 	const [monitor] = matches
 	if (monitor === undefined) {
 		return yield* new McpInvalidInputError({
@@ -112,7 +112,10 @@ const resolveMonitor = Effect.fnUntraced(function* (tool: string, orgId: OrgId, 
 	}
 	if (matches.length > 1) {
 		return yield* new McpInvalidInputError({
-			message: `${matches.length} uptime monitors match "${ref}"; pass one's id instead: ${matches.map((m) => m.id).join(", ")}.`,
+			message: `${matches.length} uptime monitors match "${ref}"; pass one's id instead: ${Arr.join(
+				Arr.map(matches, (m) => m.id),
+				", ",
+			)}.`,
 			parameter: "monitor",
 		})
 	}
@@ -127,7 +130,7 @@ const lastCheckCell = (row: typeof UptimeMonitorRow.Type) => {
 	if (check === null) return "not checked yet"
 	const code = check.statusCode === null ? "" : ` ${check.statusCode}`
 	const took = check.durationMs === null ? "" : ` in ${Math.round(check.durationMs)} ms`
-	return `${check.ok ? "ok" : "failed"}${code}${took} at ${check.at.slice(0, 19)}`
+	return `${check.ok ? "ok" : "failed"}${code}${took} at ${Str.slice(0, 19)(check.at)}`
 }
 
 /** For a monitor that is down: its failing check's trace, then the service it belongs to. */
@@ -138,7 +141,7 @@ const downNext = (row: typeof UptimeMonitorRow.Type): ReadonlyArray<NextCall> =>
 					"inspect_trace",
 					{
 						trace_id: row.lastCheck.traceId,
-						timestamp: row.lastCheck.at.slice(0, 19).replace("T", " "),
+						timestamp: Str.replace("T", " ")(Str.slice(0, 19)(row.lastCheck.at)),
 					},
 					`the failing check of "${row.name}"`,
 				),
@@ -174,7 +177,7 @@ const renderMonitor = (title: string, row: typeof UptimeMonitorRow.Type) => ({
 				row.kind === "heartbeat" ? undefined : `${row.failuresToDown} failed checks in a row`,
 			],
 			["Service", row.serviceName ?? undefined],
-			["Destinations", row.destinationIds.length === 0 ? "none" : row.destinationIds.join(", ")],
+			["Destinations", row.destinationIds.length === 0 ? "none" : Arr.join(row.destinationIds, ", ")],
 			["Last check", lastCheckCell(row)],
 			[
 				"Recent uptime",
@@ -267,16 +270,15 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 				.list(tenant.orgId)
 				.pipe(Effect.mapError(toMcpUptimeError("list_uptime_monitors")))
 			const canWrite = isAdmin(tenant.roles)
-			const rows = monitors.map((monitor) => toMonitorRow(monitor, canWrite))
+			const rows = Arr.map(monitors, (monitor) => toMonitorRow(monitor, canWrite))
 			const count = (status: keyof typeof STATUS_ORDER) =>
-				rows.filter((row) => row.status === status).length
-			const shown = rows
-				.filter(
-					(row) =>
-						(params.status === undefined || row.status === params.status) &&
-						(params.service === undefined || row.serviceName === params.service),
-				)
-				.toSorted((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status])
+				Arr.filter(rows, (row) => row.status === status).length
+			const shown = Arr.filter(
+				rows,
+				(row) =>
+					(params.status === undefined || row.status === params.status) &&
+					(params.service === undefined || row.serviceName === params.service),
+			).toSorted((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status])
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "result.rowCount": shown.length })
 			return {
 				monitors: shown,
@@ -326,7 +328,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 									"Error",
 									"Trace",
 								],
-								output.monitors.map((row) => [
+								Arr.map(output.monitors, (row) => [
 									row.name,
 									row.kind,
 									row.target,
@@ -338,10 +340,10 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 								]),
 							),
 						],
-			next: output.monitors
-				.filter((row) => row.status === "down")
-				.slice(0, 3)
-				.flatMap(downNext),
+			next: Arr.flatMap(
+				Arr.filter(output.monitors, (row) => row.status === "down").slice(0, 3),
+				downNext,
+			),
 		}),
 	})
 

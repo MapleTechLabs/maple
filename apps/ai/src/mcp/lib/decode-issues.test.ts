@@ -1,16 +1,18 @@
 import { describe, expect, it } from "vitest"
-import { Exit, Schema } from "effect"
+import { Exit, Schema, Array as Arr, Record as Rec } from "effect"
 import { toInputSchema } from "../tools/registry"
 import { argumentWarnings, formatDecodeFailure, normalizeArguments, suggestParameter } from "./decode-issues"
 import * as P from "./params"
 
 const failureFor = (tool: string, schema: Schema.Codec<unknown, unknown, never, unknown>, input: unknown) => {
 	const published = toInputSchema(schema)
-	const properties = Object.keys((published.properties ?? {}) as object)
+	const properties = Rec.keys((published.properties ?? {}) as object)
 	const normalized = normalizeArguments(input, properties)
 	const exit = Schema.decodeUnknownExit(schema)(normalized.args)
 	if (!Exit.isFailure(exit)) throw new Error("expected a decode failure")
-	const error = exit.cause.reasons.flatMap((reason) => (reason._tag === "Fail" ? [reason.error] : []))[0]
+	const error = Arr.flatMap(exit.cause.reasons, (reason) =>
+		reason._tag === "Fail" ? [reason.error] : [],
+	)[0]
 	if (!Schema.isSchemaError(error)) throw new Error("expected a SchemaError")
 	return formatDecodeFailure(tool, error, published, normalized)
 }
@@ -151,7 +153,7 @@ describe("argument normalization", () => {
 			nowMs,
 		)
 		expect(normalized.args).toEqual({ start_time: "2026-08-20 11:04:05", service: "api" })
-		expect(argumentWarnings(normalized, "error_detail").join()).toContain(
+		expect(Arr.join(argumentWarnings(normalized, "error_detail"), ",")).toContain(
 			"start_time=2026-08-20 11:04:05",
 		)
 		expect(normalizeArguments({ lookback: "last 2 days" }, known, {}, new Map(), nowMs).args).toEqual({
@@ -188,7 +190,7 @@ describe("argument normalization", () => {
 		for (const key of ["min_duration", "window", "duration"]) {
 			const normalized = normalizeArguments({ [key]: "5m" }, known, {}, new Map(), nowMs)
 			expect(normalized.args).toEqual({})
-			expect(normalized.unknown.map((entry) => entry.key)).toEqual([key])
+			expect(Arr.map(normalized.unknown, (entry) => entry.key)).toEqual([key])
 		}
 	})
 
@@ -230,16 +232,16 @@ describe("argument normalization", () => {
 		for (const value of ["0h", "99999999999w", "5000d"]) {
 			const normalized = normalizeArguments({ time_range: value }, ["start_time"], {}, new Map(), nowMs)
 			expect(normalized.args).toEqual({})
-			expect(normalized.unknown.map((entry) => entry.key)).toEqual(["time_range"])
+			expect(Arr.map(normalized.unknown, (entry) => entry.key)).toEqual(["time_range"])
 		}
 	})
 
 	it("does not map a list onto a parameter that takes one value", () => {
 		const normalized = normalizeArguments({ services: ["api", "web"] }, ["service"])
 		expect(normalized.args).toEqual({})
-		expect(normalized.unknown.map((entry) => entry.key)).toEqual(["services"])
+		expect(Arr.map(normalized.unknown, (entry) => entry.key)).toEqual(["services"])
 		expect(
-			normalizeArguments({ services: "api,web" }, ["service"]).unknown.map((entry) => entry.key),
+			Arr.map(normalizeArguments({ services: "api,web" }, ["service"]).unknown, (entry) => entry.key),
 		).toEqual(["services"])
 		expect(normalizeArguments({ services: "api" }, ["service"]).args).toEqual({ service: "api" })
 	})

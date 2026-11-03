@@ -4,6 +4,7 @@ import { socketIngress } from "../../ingress.ts"
 import { BOT_TOKEN_CONFIG, GATEWAY_URL } from "./api.ts"
 import { gatewayProtocol, type GatewayState } from "./gateway.ts"
 import { SESSION_CONFLICT_REASON } from "./gateway-payloads.ts"
+import { Array as Arr } from "effect"
 
 const config: ConnectorConfig = new Map([[BOT_TOKEN_CONFIG, "hzl_bot_token"]])
 const NOW = 1_700_000_000_000
@@ -146,14 +147,17 @@ describe("dispatch", () => {
 	})
 
 	it("keeps the first line's indentation when the mention sits alone above it", () => {
-		const texts = [
-			`@[userId:${BOT_USER}]\n    Error: pool exhausted`,
-			`is @[userId:${BOT_USER}] around?`,
-			`  @[userId:${BOT_USER}] hi`,
-		].map((content) => {
-			const step = gatewayProtocol.onFrame(ready(), dispatch([messageCreate(content)]), NOW, config)
-			return step.events?.[0]?.type === "message" ? step.events[0].text : undefined
-		})
+		const texts = Arr.map(
+			[
+				`@[userId:${BOT_USER}]\n    Error: pool exhausted`,
+				`is @[userId:${BOT_USER}] around?`,
+				`  @[userId:${BOT_USER}] hi`,
+			],
+			(content) => {
+				const step = gatewayProtocol.onFrame(ready(), dispatch([messageCreate(content)]), NOW, config)
+				return step.events?.[0]?.type === "message" ? step.events[0].text : undefined
+			},
+		)
 		expect(texts).toEqual(["    Error: pool exhausted", "is around?", "hi"])
 	})
 

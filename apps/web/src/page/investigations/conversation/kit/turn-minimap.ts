@@ -1,6 +1,6 @@
 import { stripChatContext } from "@maple/domain/chat-preamble"
 import { cn } from "@maple/ui/lib/utils"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { icon } from "@maple/views/ui/icon"
@@ -24,7 +24,7 @@ export const TURN_MINIMAP_MIN_ITEMS = 2
 export type TurnItem = Readonly<{ id: string; userText: string | null; assistantText: string | null }>
 
 const compactPreview = (text: string): string | null => {
-	const compact = text.replace(/\s+/gu, " ").trim()
+	const compact = Str.trim(Str.replace(/\s+/gu, " ")(text))
 	return compact.length > 0 ? compact : null
 }
 
@@ -50,7 +50,7 @@ export const deriveTurnMinimap = (
 			: acc
 	}, [])
 	const turnByRowId = new Map(
-		rows.flatMap((row, index) => {
+		Arr.flatMap(rows, (row, index) => {
 			const turns = deriveTurnCount(rows.slice(0, index + 1))
 			return turns > 0 ? [[row.id, turns - 1] as const] : []
 		}),
@@ -59,8 +59,10 @@ export const deriveTurnMinimap = (
 }
 
 const deriveTurnCount = (rows: ReadonlyArray<TranscriptRow>): number =>
-	rows.filter((row) => row.kind === "message" && row.message.role === "user" && !isMachineTurn(row.message))
-		.length
+	Arr.filter(
+		rows,
+		(row) => row.kind === "message" && row.message.role === "user" && !isMachineTurn(row.message),
+	).length
 
 const resolveCurrentTurnIndex = (
 	visibleIds: ReadonlyArray<string>,
@@ -160,7 +162,7 @@ export const turnMinimap = <M>(
 	if (items.length < TURN_MINIMAP_MIN_ITEMS) return h.empty
 	const currentIndex = resolveCurrentTurnIndex(state.visibleIds, turnByRowId)
 	const visibleTurns = new Set(
-		state.visibleIds.flatMap((id) => Option.toArray(Option.fromNullishOr(turnByRowId.get(id)))),
+		Arr.flatMap(state.visibleIds, (id) => Option.toArray(Option.fromNullishOr(turnByRowId.get(id)))),
 	)
 	const active = state.activeIndex !== null && state.activeIndex < items.length ? state.activeIndex : null
 	const activeItem = active === null ? undefined : items[active]
@@ -214,7 +216,7 @@ export const turnMinimap = <M>(
 						},
 						[
 							h.div([h.Class("absolute top-0 start-3 h-full w-px bg-border-subtle")], []),
-							...items.map((item, index) =>
+							...Arr.map(items, (item, index) =>
 								h.span(
 									[
 										h.AriaHidden(true),

@@ -28,6 +28,7 @@ import {
 } from "./sessions-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // A session list row: its org button, tags and badges.
 
@@ -59,34 +60,40 @@ const sessionTags = <M>(
 	tags: ReadonlyArray<SessionTag>,
 	onFilter: ((tag: SessionTag) => M) | undefined,
 ): ReadonlyArray<Html> =>
-	SESSION_TAG_ORDER.filter((tag) => tags.includes(tag)).map((tag) => {
-		return onFilter === undefined
-			? badge(
-					h,
-					{
-						pill: true,
-						size: "xs",
-						className: SESSION_TAG_STYLES[tag],
-						attributes: [h.Title(SESSION_TAG_DESCRIPTIONS[tag])],
-					},
-					[SESSION_TAG_LABELS[tag]],
-				)
-			: badge(
-					h,
-					{
-						pill: true,
-						size: "xs",
-						className: cn(
-							SESSION_TAG_STYLES[tag],
-							"hover:ring-1 active:ring-1 hover:ring-border active:ring-border",
-						),
-						onClick: onFilter(tag),
-						clickOptions: { propagation: "Stop" },
-						attributes: tooltipTrigger(h, `${SESSION_TAG_DESCRIPTIONS[tag]}. Click to filter.`),
-					},
-					[SESSION_TAG_LABELS[tag]],
-				)
-	})
+	Arr.map(
+		Arr.filter(SESSION_TAG_ORDER, (tag) => tags.includes(tag)),
+		(tag) => {
+			return onFilter === undefined
+				? badge(
+						h,
+						{
+							pill: true,
+							size: "xs",
+							className: SESSION_TAG_STYLES[tag],
+							attributes: [h.Title(SESSION_TAG_DESCRIPTIONS[tag])],
+						},
+						[SESSION_TAG_LABELS[tag]],
+					)
+				: badge(
+						h,
+						{
+							pill: true,
+							size: "xs",
+							className: cn(
+								SESSION_TAG_STYLES[tag],
+								"hover:ring-1 active:ring-1 hover:ring-border active:ring-border",
+							),
+							onClick: onFilter(tag),
+							clickOptions: { propagation: "Stop" },
+							attributes: tooltipTrigger(
+								h,
+								`${SESSION_TAG_DESCRIPTIONS[tag]}. Click to filter.`,
+							),
+						},
+						[SESSION_TAG_LABELS[tag]],
+					)
+		},
+	)
 
 const sessionBadges = <M>(h: HtmlBuilder<M>, session: SessionRow): ReadonlyArray<Html> => [
 	...(session.errorCount > 0 ? [errorCountPill(h, session.errorCount)] : []),

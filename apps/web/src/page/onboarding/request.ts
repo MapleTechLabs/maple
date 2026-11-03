@@ -1,4 +1,4 @@
-import { DateTime, Effect, Option, Predicate } from "effect"
+import { DateTime, Effect, Option, Predicate, String as Str } from "effect"
 
 /**
  * An endpoint error's own `message` (the JSON body
@@ -7,7 +7,7 @@ import { DateTime, Effect, Option, Predicate } from "effect"
 export const endpointMessage = (error: unknown, fallback: string): string =>
 	Predicate.hasProperty(error, "_tag") &&
 	typeof error._tag === "string" &&
-	error._tag.startsWith("@maple/http/errors/") &&
+	Str.startsWith("@maple/http/errors/")(error._tag) &&
 	Predicate.hasProperty(error, "message") &&
 	typeof error.message === "string" &&
 	error.message.length > 0

@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import type { VariantProps } from "class-variance-authority"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr } from "effect"
 
 export { eyebrowVariants }
 
@@ -32,7 +33,7 @@ export const eyebrow = <Message>(
 	options: EyebrowOptions<Message>,
 	rawChildren: ReadonlyArray<Html | string>,
 ): Html => {
-	const children = rawChildren.flatMap((child) => withHint(h, child))
+	const children = Arr.flatMap(rawChildren, (child) => withHint(h, child))
 	const attributes = [
 		h.Class(cn(eyebrowVariants({ variant: options.variant }), options.className)),
 		h.DataAttribute("slot", "eyebrow"),

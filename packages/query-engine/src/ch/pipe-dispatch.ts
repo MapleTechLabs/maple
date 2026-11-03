@@ -89,7 +89,11 @@ const paramText = (value: unknown): string | undefined => {
 	if (typeof value === "string") return value
 	if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint")
 		return value.toString()
-	if (Array.isArray(value)) return value.map((item: unknown) => paramText(item) ?? "").join(",")
+	if (A.isArray(value))
+		return A.join(
+			A.map(value, (item: unknown) => paramText(item) ?? ""),
+			",",
+		)
 	return undefined
 }
 
@@ -818,7 +822,7 @@ export function compilePipeQuery(
 			),
 			Match.when("span_search", () => {
 				const httpMethod = str("http_method")
-				const passedFilters = Array.isArray(params.attribute_filters)
+				const passedFilters = A.isArray(params.attribute_filters)
 					? (params.attribute_filters as AttributeFilter[])
 					: undefined
 				// `--http-method` is just an equality filter on the `http.method`
@@ -840,7 +844,7 @@ export function compilePipeQuery(
 							maxDurationMs: int("max_duration_ms"),
 							environments: strList("deployment_env"),
 							attributeFilters,
-							resourceAttributeFilters: Array.isArray(params.resource_attribute_filters)
+							resourceAttributeFilters: A.isArray(params.resource_attribute_filters)
 								? (params.resource_attribute_filters as AttributeFilter[])
 								: undefined,
 							traceId: str("trace_id"),

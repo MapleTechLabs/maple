@@ -1,6 +1,7 @@
 import { formatCompact } from "@maple/views/ui/filters/range-format"
 import { excludedOf, type Search } from "./derive"
 import type { Facet } from "./message"
+import { Array as Arr } from "effect"
 
 // The search edits the list's controls make (`onFilterChange`, `toggleOption`, `applyWhereClause`).
 
@@ -15,10 +16,10 @@ export const toggledFacet = (search: Search, facet: Facet, name: string): Search
 	return {
 		...search,
 		[excludedParam]: excluded.includes(name)
-			? listOrUndefined(excluded.filter((v) => v !== name))
+			? listOrUndefined(Arr.filter(excluded, (v) => v !== name))
 			: search[excludedParam],
 		[facet]: listOrUndefined(
-			selected.includes(name) ? selected.filter((v) => v !== name) : [...selected, name],
+			selected.includes(name) ? Arr.filter(selected, (v) => v !== name) : [...selected, name],
 		),
 	}
 }
@@ -30,10 +31,10 @@ export const excludedFacet = (search: Search, facet: Facet, name: string): Searc
 	return {
 		...search,
 		[facet]: selected.includes(name)
-			? listOrUndefined(selected.filter((v) => v !== name))
+			? listOrUndefined(Arr.filter(selected, (v) => v !== name))
 			: search[facet],
 		[excludedParam]: listOrUndefined(
-			excluded.includes(name) ? excluded.filter((v) => v !== name) : [...excluded, name],
+			excluded.includes(name) ? Arr.filter(excluded, (v) => v !== name) : [...excluded, name],
 		),
 	}
 }

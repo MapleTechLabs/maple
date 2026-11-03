@@ -1,4 +1,4 @@
-import { Result } from "effect"
+import { Result, String as Str } from "effect"
 import { assert, describe, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
 import {
@@ -127,8 +127,10 @@ describe("PlanetScaleWebhookQueue", () => {
 		})
 		const empty = withPayload("")
 		const envelopeBytes = planetScaleWebhookQueueJobBytes(empty)
-		const atCap = withPayload("x".repeat(MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES - envelopeBytes))
-		const oversized = withPayload("x".repeat(MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES - envelopeBytes + 1))
+		const atCap = withPayload(Str.repeat(MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES - envelopeBytes)("x"))
+		const oversized = withPayload(
+			Str.repeat(MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES - envelopeBytes + 1)("x"),
+		)
 		assert.strictEqual(planetScaleWebhookQueueJobBytes(atCap), MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES)
 		assert.strictEqual(
 			planetScaleWebhookQueueJobBytes(oversized),

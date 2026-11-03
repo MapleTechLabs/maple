@@ -1,7 +1,7 @@
 import { taxIdExampleFor, taxIdLabel } from "@maple/domain/billing-tax-ids"
 import type { BillingProfile, BillingTaxId } from "@maple/domain/http"
 import { verificationBadge } from "../../../../lib/billing/billing-profile"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -80,7 +80,10 @@ const addTaxRow = (h: H, model: Model, profile: BillingProfile): Html => {
 				view: SelectView.view,
 				toParentMessage: (message) => Message.GotTaxTypeMessage({ message }),
 				viewInputs: {
-					entries: TYPE_OPTIONS.map((item): SelectView.SelectEntry => ({ _tag: "Item", item })),
+					entries: Arr.map(TYPE_OPTIONS, (item): SelectView.SelectEntry => ({
+						_tag: "Item",
+						item,
+					})),
 					ariaLabel: "Tax ID type",
 					size: "sm",
 					className: "w-48",
@@ -133,7 +136,7 @@ const taxIdsEditor = (h: H, model: Model, profile: BillingProfile): Html =>
 						: [
 								h.ul(
 									[h.Class("divide-y divide-border-subtle text-sm")],
-									profile.taxIds.map((taxId) =>
+									Arr.map(profile.taxIds, (taxId) =>
 										h.li(
 											[h.Key(taxId.id), h.Class("flex items-center gap-3 py-1.5")],
 											[

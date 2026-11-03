@@ -11,7 +11,7 @@ import {
 	tabsStyles,
 	tabsTabStyles,
 } from "@maple/ui/styles/ui/tabs"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineView } from "foldkit/submodel"
 import { type IndicatorRect, MeasureTabIndicator, Message, type Model, panelId, TabKey, tabId } from "./tabs"
@@ -52,14 +52,17 @@ const stateAttributes = (h: H, model: Model) => [
 ]
 
 const indicatorStyle = (rect: IndicatorRect): string =>
-	[
-		`--active-tab-left: ${rect.left}px;`,
-		`--active-tab-right: ${rect.right}px;`,
-		`--active-tab-top: ${rect.top}px;`,
-		`--active-tab-bottom: ${rect.bottom}px;`,
-		`--active-tab-width: ${rect.width}px;`,
-		`--active-tab-height: ${rect.height}px;`,
-	].join(" ")
+	Arr.join(
+		[
+			`--active-tab-left: ${rect.left}px;`,
+			`--active-tab-right: ${rect.right}px;`,
+			`--active-tab-top: ${rect.top}px;`,
+			`--active-tab-bottom: ${rect.bottom}px;`,
+			`--active-tab-width: ${rect.width}px;`,
+			`--active-tab-height: ${rect.height}px;`,
+		],
+		" ",
+	)
 
 const isTabKey = Schema.is(TabKey)
 
@@ -135,7 +138,7 @@ const tabList = (h: H, model: Model, inputs: TabsViewInputs, panelValues: Readon
 			h.OnMount(MeasureTabIndicator()),
 		],
 		[
-			...model.values.map((value, index) =>
+			...Arr.map(model.values, (value, index) =>
 				tab(
 					h,
 					model,
@@ -179,7 +182,7 @@ export const view = defineView<Model, Message, TabsViewInputs>((model, inputs, h
 		inputs.hasPanel ??
 		((value: string) =>
 			value === model.selected ? content !== undefined : inputs.panel(value) !== undefined)
-	const panelValues = model.values.filter(hasPanel)
+	const panelValues = Arr.filter(model.values, hasPanel)
 	return h.div(
 		[
 			h.Class(cn(tabsStyles, inputs.className)),

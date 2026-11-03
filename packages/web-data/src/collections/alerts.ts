@@ -202,7 +202,9 @@ export const rowToAlertRuleDocument = (
 	statesByRuleId: Map<string, AlertRuleStateRow>,
 ): AlertRuleDocument => {
 	const state = statesByRuleId.get(row.id)
-	const destinationIds = safeParseStringArray(row.destination_ids_json).map((id) => decodeDestinationId(id))
+	const destinationIds = Arr.map(safeParseStringArray(row.destination_ids_json), (id) =>
+		decodeDestinationId(id),
+	)
 	// Rows written before tiers carry none: they are one tier from the legacy columns.
 	const legacyTier = legacyAlertThreshold({
 		severity: asSeverity(row.severity),
@@ -351,7 +353,7 @@ export const rowToAlertDestinationDocument = (
 /** The live rows as documents, without rows of an unknown type. */
 export const rowsToAlertDestinationDocuments = (
 	rows: ReadonlyArray<AlertDestinationRow>,
-): ReadonlyArray<AlertDestinationDocument> => Arr.getSomes(rows.map(rowToAlertDestinationDocument))
+): ReadonlyArray<AlertDestinationDocument> => Arr.getSomes(Arr.map(rows, rowToAlertDestinationDocument))
 
 const destinationDocument = (
 	row: AlertDestinationRow,

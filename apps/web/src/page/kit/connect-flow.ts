@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow, eyebrowVariants } from "@maple/views/ui/eyebrow"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { spinner } from "@maple/views/ui/spinner"
+import { Array as Arr } from "effect"
 
 // The parts every source's connect flow is built from: the step card, its status row, the rail
 // beside it and the Go live checklist. `/sources/new` frames them; each source fills them in.
@@ -69,7 +70,7 @@ export type ChoiceTileOptions<M> = Readonly<{
 export const choiceTiles = <M>(h: HtmlBuilder<M>, tiles: ReadonlyArray<ChoiceTileOptions<M>>): Html =>
 	h.div(
 		[h.Class("grid grid-cols-1 gap-3 @2xl/page:grid-cols-2")],
-		tiles.map((tile) => {
+		Arr.map(tiles, (tile) => {
 			const body = [
 				h.span(
 					[h.Class("flex items-center justify-between gap-2")],
@@ -79,11 +80,7 @@ export const choiceTiles = <M>(h: HtmlBuilder<M>, tiles: ReadonlyArray<ChoiceTil
 							? []
 							: [
 									h.span(
-										[
-											h.Class(
-												cn(eyebrowVariants({ variant: "mono" }), "text-primary"),
-											),
-										],
+										[h.Class(cn(eyebrowVariants({ variant: "mono" }), "text-primary"))],
 										[tile.tag],
 									),
 								]),
@@ -164,9 +161,13 @@ export const foundChips = <M>(
 ): Html =>
 	h.ul(
 		[h.Class("flex flex-wrap gap-1.5")],
-		chips.map((chip) =>
+		Arr.map(chips, (chip) =>
 			h.li(
-				[h.Class("rounded-sm border border-border-subtle bg-surface-sunken px-1.5 py-0.5 font-mono text-2xs")],
+				[
+					h.Class(
+						"rounded-sm border border-border-subtle bg-surface-sunken px-1.5 py-0.5 font-mono text-2xs",
+					),
+				],
 				[
 					chip.label,
 					...(chip.detail === undefined
@@ -201,7 +202,7 @@ export const flowRail = <M>(h: HtmlBuilder<M>, options: RailOptions): Html =>
 					eyebrow(h, { variant: "label" }, [options.eyebrow]),
 					h.ul(
 						[h.Class("flex flex-col gap-3.5")],
-						options.items.map((item) =>
+						Arr.map(options.items, (item) =>
 							h.li(
 								[h.Class("flex gap-2.5")],
 								[
@@ -259,7 +260,9 @@ export const flowRail = <M>(h: HtmlBuilder<M>, options: RailOptions): Html =>
 													h.Href(options.docs.href),
 													h.Target("_blank"),
 													h.Rel("noreferrer"),
-													h.Class("text-foreground hover:underline active:underline"),
+													h.Class(
+														"text-foreground hover:underline active:underline",
+													),
 												],
 												[options.docs.label],
 											),
@@ -305,8 +308,8 @@ const checkGlyph = <M>(h: HtmlBuilder<M>, state: CheckState): Html =>
 
 /** What a screen reader hears when polling moves a row: counts only, so ticking times stay quiet. */
 const checklistSummary = (rows: ReadonlyArray<CheckRow>): string => {
-	const done = rows.filter((row) => row.state === "done").length
-	const failed = rows.filter((row) => row.state === "failed").length
+	const done = Arr.filter(rows, (row) => row.state === "done").length
+	const failed = Arr.filter(rows, (row) => row.state === "failed").length
 	return `${done} of ${rows.length} checks done${failed === 0 ? "" : `, ${failed} ${failed === 1 ? "needs" : "need"} attention`}.`
 }
 
@@ -336,7 +339,7 @@ export const liveChecklist = <M>(
 			),
 			h.ol(
 				[h.Class("flex flex-col")],
-				options.rows.map((row) =>
+				Arr.map(options.rows, (row) =>
 					h.li(
 						[
 							h.Class("flex gap-3 border-t border-border-subtle px-5 py-3 first:border-t-0"),
@@ -395,7 +398,9 @@ export const whereToFind = <M>(h: HtmlBuilder<M>, label: string, href: string): 
 			h.Href(href),
 			h.Target("_blank"),
 			h.Rel("noreferrer"),
-			h.Class("inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground"),
+			h.Class(
+				"inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground",
+			),
 		],
 		[label, icon(h, "ExternalLinkIcon", { size: 12 })],
 	)

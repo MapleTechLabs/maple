@@ -1,4 +1,5 @@
 import { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
+import { Record as Rec, String as Str } from "effect"
 
 // Cross-widget dashboard controls live in the URL so a view is shareable and
 // deep-linkable. Two families share that space:
@@ -36,12 +37,12 @@ export type DashboardControlParams = VariableSearchParams & DashboardViewParams
  */
 export function variableValuesFromSearch(search: Record<string, unknown>): Record<string, string> {
 	const values: Record<string, string> = {}
-	for (const [key, value] of Object.entries(search)) {
-		if (!key.startsWith(VARIABLE_PARAM_PREFIX)) continue
+	for (const [key, value] of Rec.toEntries(search)) {
+		if (!Str.startsWith(VARIABLE_PARAM_PREFIX)(key)) continue
 		if (typeof value === "string") {
-			values[key.slice(VARIABLE_PARAM_PREFIX.length)] = value
+			values[Str.slice(VARIABLE_PARAM_PREFIX.length)(key)] = value
 		} else if (typeof value === "number" || typeof value === "boolean") {
-			values[key.slice(VARIABLE_PARAM_PREFIX.length)] = String(value)
+			values[Str.slice(VARIABLE_PARAM_PREFIX.length)(key)] = String(value)
 		}
 	}
 	return values
@@ -64,7 +65,7 @@ export function parseRefreshIntervalSeconds(value: unknown): DashboardRefreshInt
 	const seconds =
 		typeof value === "number"
 			? value
-			: typeof value === "string" && value.trim() !== ""
+			: typeof value === "string" && Str.trim(value) !== ""
 				? Number(value)
 				: Number.NaN
 	return REFRESH_INTERVAL_VALUES.has(seconds) ? (seconds as DashboardRefreshIntervalSeconds) : undefined
@@ -99,8 +100,8 @@ export function resolveRefreshIntervalSeconds(
 export function pickDashboardControlParams(search: Record<string, unknown>): DashboardControlParams {
 	const params: Record<string, unknown> = {}
 
-	for (const [key, value] of Object.entries(search)) {
-		if (key.startsWith(VARIABLE_PARAM_PREFIX)) {
+	for (const [key, value] of Rec.toEntries(search)) {
+		if (Str.startsWith(VARIABLE_PARAM_PREFIX)(key)) {
 			params[key] = value
 		}
 	}

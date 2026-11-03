@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { StatusPageComponentId } from "../../primitives"
 import { DEFAULT_STATUS_PAGE_THEME } from "../../status-page"
 import { diffStatusPageConfig, StatusPageConfig, statusPageConfigVersion } from "./status-pages"
@@ -101,7 +101,7 @@ describe("diffStatusPageConfig", () => {
 				name: " Acme ",
 				description: "  ",
 				theme: { ...DEFAULT_STATUS_PAGE_THEME, accent: " #1A2B3C" },
-				components: current.components.map((component) => ({
+				components: Arr.map(current.components, (component) => ({
 					...component,
 					name: ` ${component.name} `,
 					group: "",
@@ -167,7 +167,7 @@ describe("statusPageConfigVersion", () => {
 	})
 
 	it("changes when a component changes, is added or moves", () => {
-		const renamed = current.components.map((component) =>
+		const renamed = Arr.map(current.components, (component) =>
 			component.id === API ? { ...component, name: "API v2" } : component,
 		)
 		expect(statusPageConfigVersion({ ...current, components: renamed })).not.toBe(version)
@@ -181,7 +181,7 @@ describe("statusPageConfigVersion", () => {
 
 	it("ignores key order", () => {
 		const reordered: StatusPageConfig = {
-			components: current.components.map((component) => ({
+			components: Arr.map(current.components, (component) => ({
 				show_uptime: component.show_uptime,
 				manual_status: component.manual_status,
 				monitor_id: component.monitor_id,
@@ -217,7 +217,7 @@ describe("statusPageConfigVersion", () => {
 				name: " Acme ",
 				description: "  ",
 				theme: { ...DEFAULT_STATUS_PAGE_THEME, accent: " #1A2B3C" },
-				components: current.components.map((component) => ({
+				components: Arr.map(current.components, (component) => ({
 					id: component.id,
 					name: ` ${component.name}`,
 				})),

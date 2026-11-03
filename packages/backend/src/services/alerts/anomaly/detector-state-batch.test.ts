@@ -5,6 +5,7 @@ import {
 	DETECTOR_STATE_UPSERT_CHUNK,
 	effectiveOtherStates,
 } from "./detector-state-batch"
+import { Array as Arr } from "effect"
 
 const row = (detectorKey: string, marker: number) => ({ detectorKey, marker })
 
@@ -33,12 +34,12 @@ describe("batchDetectorStates", () => {
 
 	it("splits into chunks at the boundary", () => {
 		const rows = Array.from({ length: 5 }, (_, i) => row(`k${i}`, i))
-		expect(batchDetectorStates(rows, 2).map((chunk) => chunk.length)).toEqual([2, 2, 1])
+		expect(Arr.map(batchDetectorStates(rows, 2), (chunk) => chunk.length)).toEqual([2, 2, 1])
 	})
 
 	it("does not split an exact multiple into a trailing empty chunk", () => {
 		const rows = Array.from({ length: 4 }, (_, i) => row(`k${i}`, i))
-		expect(batchDetectorStates(rows, 2).map((chunk) => chunk.length)).toEqual([2, 2])
+		expect(Arr.map(batchDetectorStates(rows, 2), (chunk) => chunk.length)).toEqual([2, 2])
 	})
 
 	it("chunks by deduped size, not input size", () => {
@@ -67,7 +68,7 @@ describe("effectiveOtherStates", () => {
 			currentDetectorKey: "a",
 			incidentId: "inc_1",
 		})
-		expect(others.map((r) => r.detectorKey)).toEqual(["b"])
+		expect(Arr.map(others, (r) => r.detectorKey)).toEqual(["b"])
 	})
 
 	it("drops a sibling whose buffered write already released the incident", () => {
@@ -95,7 +96,7 @@ describe("effectiveOtherStates", () => {
 			currentDetectorKey: "a",
 			incidentId: "inc_1",
 		})
-		expect(forA.map((r) => r.detectorKey)).toEqual(["b"])
+		expect(Arr.map(forA, (r) => r.detectorKey)).toEqual(["b"])
 		pending.push({ detectorKey: "a", openIncidentId: null })
 
 		const forB = effectiveOtherStates({

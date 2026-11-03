@@ -1,10 +1,14 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import type { ClerkUserResource } from "../../../platform/clerk"
 
 // What the `/account` tabs read from Clerk's `useUser().user`, as plain data. Writes look the
 // resource up again by id when they run (clerk-js resources are not data).
 
-export const AccountEmail = Schema.Struct({ id: Schema.String, email: Schema.String, isVerified: Schema.Boolean })
+export const AccountEmail = Schema.Struct({
+	id: Schema.String,
+	email: Schema.String,
+	isVerified: Schema.Boolean,
+})
 export type AccountEmail = typeof AccountEmail.Type
 
 export const AccountPasskey = Schema.Struct({
@@ -53,18 +57,18 @@ export const toAccountUser = (user: ClerkUserResource): AccountUser => ({
 	hasImage: user.hasImage,
 	primaryEmail: user.primaryEmailAddress?.emailAddress ?? null,
 	primaryEmailAddressId: user.primaryEmailAddressId,
-	emails: user.emailAddresses.map((address) => ({
+	emails: Arr.map(user.emailAddresses, (address) => ({
 		id: address.id,
 		email: address.emailAddress,
 		isVerified: isVerified(address.verification),
 	})),
-	passkeys: user.passkeys.map((passkey) => ({
+	passkeys: Arr.map(user.passkeys, (passkey) => ({
 		id: passkey.id,
 		name: passkey.name,
 		createdAtMs: passkey.createdAt.getTime(),
 		lastUsedAtMs: passkey.lastUsedAt === null ? null : passkey.lastUsedAt.getTime(),
 	})),
-	externalAccounts: user.externalAccounts.map((account) => ({
+	externalAccounts: Arr.map(user.externalAccounts, (account) => ({
 		id: account.id,
 		provider: account.provider,
 		emailAddress: account.emailAddress,

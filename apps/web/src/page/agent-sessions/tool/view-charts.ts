@@ -2,7 +2,7 @@ import { formatWarehouseDateTime } from "@maple/query-engine"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { errorRate } from "@maple/web-data/lib/tool-analytics"
-import { Option, Record } from "effect"
+import { Option, Record, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
 import type { ThemeColors } from "@maple/views/charts/theme-colors"
@@ -70,9 +70,9 @@ export const GRID_TOKENS = [
 ]
 
 const rowsOf = (series: ReadonlyArray<ToolSeriesPoint>) =>
-	series
-		.toSorted((a, b) => a.bucket - b.bucket)
-		.map((bucket) => ({
+	Arr.map(
+		series.toSorted((a, b) => a.bucket - b.bucket),
+		(bucket) => ({
 			bucket: formatWarehouseDateTime(bucket.bucket),
 			calls: bucket.calls,
 			errorRate: errorRate(bucket),
@@ -80,7 +80,8 @@ const rowsOf = (series: ReadonlyArray<ToolSeriesPoint>) =>
 			p90: bucket.p90,
 			p95: bucket.p95,
 			callsPerSession: bucket.sessions > 0 ? bucket.calls / bucket.sessions : 0,
-		}))
+		}),
+	)
 
 const cell = (
 	h: H,
@@ -106,7 +107,7 @@ const cell = (
 				action:
 					spec.series.length > 1
 						? seriesLegend(h, {
-								items: spec.series.map((entry) => ({
+								items: Arr.map(spec.series, (entry) => ({
 									key: entry.key,
 									label: entry.label,
 									color: `var(${entry.token})`,
@@ -156,6 +157,6 @@ export const detailCharts = (
 			h.Class(cn("grid @min-[900px]/page:grid-cols-2", refreshingClass(options.isWaiting))),
 			...(options.isWaiting ? [h.AriaBusy(true)] : []),
 		],
-		CELLS.map((spec) => cell(h, spec, rows, options.charts, options.theme, options.timeZone)),
+		Arr.map(CELLS, (spec) => cell(h, spec, rows, options.charts, options.theme, options.timeZone)),
 	)
 }

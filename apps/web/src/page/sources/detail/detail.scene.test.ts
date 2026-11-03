@@ -7,7 +7,7 @@ import {
 	V2Source,
 	V2SourceUsage,
 } from "@maple/domain/http/v2"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import {
 	all,
 	expect as expectView,
@@ -42,7 +42,7 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 const NOW = Date.UTC(2026, 9, 1, 12)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const resolveTheme = Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
 
 const UUID = "0199a0e1-0000-7000-8000-000000000002"
@@ -84,10 +84,14 @@ const route = (tab?: "setup" | "connection" | "settings", sourceId = PUBLIC_ID) 
 
 const loaded = (row: V2Source, tab?: "setup" | "connection" | "settings"): Model => {
 	const entered = init(route(tab), context).model
-	return [
-		Message.ReadClock({ nowMs: NOW }),
-		Message.CompletedFetchList({ key: entered.list.key ?? "", result: Result.succeed([row]) }),
-	].reduce((model, message) => pageUpdate(model, message).model, entered)
+	return Arr.reduce(
+		[
+			Message.ReadClock({ nowMs: NOW }),
+			Message.CompletedFetchList({ key: entered.list.key ?? "", result: Result.succeed([row]) }),
+		],
+		entered,
+		(model, message) => pageUpdate(model, message).model,
+	)
 }
 
 describe("source detail", () => {
@@ -95,7 +99,10 @@ describe("source detail", () => {
 		const entered = init(route(undefined, "nope"), context)
 		expect(names(entered.commands)).toEqual(expect.arrayContaining(["ReadSourceClock"]))
 		expect(names(entered.commands)).not.toContain("FetchSourceDetailList")
-		expect(breadcrumbsOf(entered.model).map((crumb) => crumb.label)).toEqual(["Sources", "Not found"])
+		expect(Arr.map(breadcrumbsOf(entered.model), (crumb) => crumb.label)).toEqual([
+			"Sources",
+			"Not found",
+		])
 		scene(
 			{ update: pageUpdate, view },
 			given(entered.model),
@@ -111,7 +118,10 @@ describe("source detail", () => {
 			Message.CompletedFetchList({ key: entered.list.key ?? "", result: Result.succeed([source()]) }),
 		)
 		expect(names(step.commands)).toEqual(["FetchSourceUsage"])
-		expect(breadcrumbsOf(step.model).map((crumb) => crumb.label)).toEqual(["Sources", "Checkout API"])
+		expect(Arr.map(breadcrumbsOf(step.model), (crumb) => crumb.label)).toEqual([
+			"Sources",
+			"Checkout API",
+		])
 		scene(
 			{ update: pageUpdate, view },
 			given(step.model),
@@ -190,16 +200,20 @@ describe("source detail", () => {
 			Message.CompletedResume({ result: Result.succeed(source()) }),
 		)
 		expect(names(resumed.commands)).toEqual(["FetchSourceDetailList"])
-		const final = [
-			Message.CompletedFetchList({
-				key: resumed.model.list.key ?? "",
-				result: Result.succeed([source()]),
-			}),
-			Message.CompletedFetchList({
-				key: paused.list.key ?? "",
-				result: Result.succeed([source({ status: "paused" })]),
-			}),
-		].reduce((model, message) => pageUpdate(model, message).model, resumed.model)
+		const final = Arr.reduce(
+			[
+				Message.CompletedFetchList({
+					key: resumed.model.list.key ?? "",
+					result: Result.succeed([source()]),
+				}),
+				Message.CompletedFetchList({
+					key: paused.list.key ?? "",
+					result: Result.succeed([source({ status: "paused" })]),
+				}),
+			],
+			resumed.model,
+			(model, message) => pageUpdate(model, message).model,
+		)
 		expect(Option.map(sourceOf(final), (row) => row.status)).toEqual(Option.some("active"))
 	})
 

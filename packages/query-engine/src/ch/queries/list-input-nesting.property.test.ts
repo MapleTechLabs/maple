@@ -2,7 +2,7 @@
 // `.or()` / `.and()` once per list item nests one level per item and reaches it at a few hundred,
 // so a list input must never make the SQL deeper. Fixtures use one or two items and cannot see it.
 import { describe, expect, it } from "@effect/vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { ciActorStatsQuery } from "./ci-runs"
 import { logsCountQuery } from "./logs"
@@ -29,7 +29,11 @@ const listSize = Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum:
 
 const items = <A>(n: number, make: (i: number) => A): ReadonlyArray<A> =>
 	Array.from({ length: n }, (_, i) => make(i))
-const words = (n: number) => items(n + 2, (i) => `word${i}`).join(" ")
+const words = (n: number) =>
+	Arr.join(
+		items(n + 2, (i) => `word${i}`),
+		" ",
+	)
 const orGroup = (n: number) => ({
 	key: "http.route",
 	value: "/0",

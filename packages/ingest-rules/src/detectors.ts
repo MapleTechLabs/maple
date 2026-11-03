@@ -1,4 +1,5 @@
 import type { IngestRuleDetector } from "@maple/domain/ingest-rules"
+import { Array as Arr, String as Str } from "effect"
 
 // Detector regexes and post-checks, character for character the table in docs/ingest-rules.md.
 // ASCII classes and bounded quantifiers only, so the Rust engine matches the same text.
@@ -12,31 +13,29 @@ const isAsciiAlnum = (char: string | undefined) => char !== undefined && /^[A-Za
 const isDigit = (char: string | undefined) => char !== undefined && char >= "0" && char <= "9"
 const bounded = (text: string, start: number, end: number) =>
 	!isAsciiAlnum(text[start - 1]) && !isAsciiAlnum(text[end])
-const digitsOf = (match: string) => match.replace(/[^0-9]/g, "")
+const digitsOf = (match: string) => Str.replace(/[^0-9]/g, "")(match)
 
 const luhn = (digits: string): boolean => {
-	const sum = Array.from(digits)
-		.reverse()
-		.reduce((total, char, index) => {
-			const doubled = index % 2 === 1 ? Number(char) * 2 : Number(char)
-			return total + (doubled > 9 ? doubled - 9 : doubled)
-		}, 0)
+	const sum = Arr.reduce(Array.from(digits).reverse(), 0, (total, char, index) => {
+		const doubled = index % 2 === 1 ? Number(char) * 2 : Number(char)
+		return total + (doubled > 9 ? doubled - 9 : doubled)
+	})
 	return sum % 10 === 0
 }
 
 const ibanValid = (raw: string): boolean => {
-	const compact = raw.replace(/ /g, "")
-	const rotated = compact.slice(4) + compact.slice(0, 4)
-	const remainder = Array.from(rotated).reduce((acc, char) => {
+	const compact = Str.replace(/ /g, "")(raw)
+	const rotated = Str.slice(4)(compact) + Str.slice(0, 4)(compact)
+	const remainder = Arr.reduce(Array.from(rotated), 0, (acc, char) => {
 		const code = isDigit(char) ? char : String(char.charCodeAt(0) - 55)
-		return Array.from(code).reduce((inner, digit) => (inner * 10 + Number(digit)) % 97, acc)
-	}, 0)
+		return Arr.reduce(Array.from(code), acc, (inner, digit) => (inner * 10 + Number(digit)) % 97)
+	})
 	return remainder === 1
 }
 
 const isIpv6Address = (match: string): boolean => {
-	const colons = match.split(":").length - 1
-	const doubles = match.split("::").length - 1
+	const colons = Str.split(":")(match).length - 1
+	const doubles = Str.split("::")(match).length - 1
 	const hasHex = /[0-9A-Fa-f]/.test(match)
 	if (!hasHex) return false
 	if (doubles === 1) return colons <= 7
@@ -53,7 +52,7 @@ export const DETECTORS = {
 	credit_card: {
 		regex: /[0-9](?:[ -]?[0-9]){12,18}/gu,
 		accept: (text, start, end) => {
-			const digits = digitsOf(text.slice(start, end))
+			const digits = digitsOf(Str.slice(start, end)(text))
 			return bounded(text, start, end) && digits.length >= 13 && digits.length <= 19 && luhn(digits)
 		},
 	},
@@ -78,18 +77,18 @@ export const DETECTORS = {
 			bounded(text, start, end) &&
 			text[start - 1] !== ":" &&
 			text[end] !== ":" &&
-			isIpv6Address(text.slice(start, end)),
+			isIpv6Address(Str.slice(start, end)(text)),
 	},
 	phone: {
 		regex: /\+[0-9][0-9 ().-]{6,18}[0-9]|\(?[0-9]{3}\)?[ .-][0-9]{3}[ .-][0-9]{4}/gu,
 		accept: (text, start, end) => {
-			const digits = digitsOf(text.slice(start, end)).length
+			const digits = digitsOf(Str.slice(start, end)(text)).length
 			return bounded(text, start, end) && digits >= 10 && digits <= 15
 		},
 	},
 	iban: {
 		regex: /[A-Z]{2}[0-9]{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?/gu,
-		accept: (text, start, end) => bounded(text, start, end) && ibanValid(text.slice(start, end)),
+		accept: (text, start, end) => bounded(text, start, end) && ibanValid(Str.slice(start, end)(text)),
 	},
 } satisfies Record<IngestRuleDetector, Detector>
 

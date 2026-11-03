@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import type { QueryEngineResult } from "@maple/domain/query-engine"
 import type { QueryBuilderQueryDraftPayload, QuerySet } from "@maple/query-model"
 import { LAB_EMPTY_RANGE_STRATEGY } from "./bucketing"
@@ -182,7 +182,7 @@ describe("runQuerySetWindow", () => {
 
 			assert.strictEqual(result.queryResults[0].status, "success")
 			assert.isTrue(result.diagnostics[0].fallbackUsed)
-			assert.include(result.queryResults[0].warnings.join(" "), "used fallback window")
+			assert.include(Arr.join(result.queryResults[0].warnings, " "), "used fallback window")
 		}),
 	)
 
@@ -329,7 +329,7 @@ describe("runTimeseriesQuerySet", () => {
 				})
 
 				assert.deepStrictEqual(
-					requests.map((r) => r.startTime),
+					Arr.map(requests, (r) => r.startTime),
 					[WINDOW.startTime, "2026-01-01 23:00:00"],
 				)
 				assert.deepStrictEqual(result.rows, [
@@ -385,7 +385,7 @@ describe("runTimeseriesQuerySet", () => {
 				// Primary succeeded on its first try, so the only other request is the
 				// single un-widened previous window.
 				assert.deepStrictEqual(
-					requests.map((r) => r.startTime),
+					Arr.map(requests, (r) => r.startTime),
 					[WINDOW.startTime, "2026-01-01 23:00:00"],
 				)
 			}),

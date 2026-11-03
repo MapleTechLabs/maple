@@ -2,7 +2,7 @@ import { activeFilterChips } from "../../components/analytics/filters"
 import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { TONE_BORDER, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
@@ -91,7 +91,7 @@ const tabs = (h: H, model: Model): Html => {
 	return underlineTabStrip(
 		h,
 		{ label: "Analytics views", navigation: true },
-		(["overview", "ai"] as const).map((tab) => {
+		Arr.map(["overview", "ai"] as const, (tab) => {
 			const isCurrent = tab === active
 			// TanStack's partial search match: Overview's link (no `tab`) matches every tab.
 			const isLinkActive = tab === "overview" || isCurrent
@@ -121,7 +121,7 @@ const chipsRow = (h: H, model: Model): ReadonlyArray<Html> => {
 	if (chips.length === 0) return []
 	return [
 		hstack(h, { gap: "1.5", wrap: true }, [
-			...chips.map((chip) =>
+			...Arr.map(chips, (chip) =>
 				badge(
 					h,
 					{

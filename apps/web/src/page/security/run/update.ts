@@ -1,5 +1,5 @@
 import type { SecurityAuditEvent } from "@maple/domain/http"
-import { Option, Result } from "effect"
+import { Option, Result, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -210,7 +210,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				newestHeld !== undefined &&
 				oldest !== undefined &&
 				page.length >= EVENTS_PAGE &&
-				!page.some((event) => event.id === newestHeld.id) &&
+				!Arr.some(page, (event) => event.id === newestHeld.id) &&
 				oldest.at >= newestHeld.at
 			if (!isGap) return { model: merged }
 			const gap = { cursor: oldest, until: newestHeld }
@@ -238,7 +238,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						oldest === undefined ||
 						isStuck ||
 						events.length < EVENTS_PAGE ||
-						events.some((event) => event.id === gap.id) ||
+						Arr.some(events, (event) => event.id === gap.id) ||
 						oldest.at < gap.at
 					return isClosed
 						? startQueuedGap({ ...merged, gapUntil: null })
@@ -294,14 +294,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...model,
 				severity: bucket,
 				collapsed:
-					bucket === null ? model.collapsed : model.collapsed.filter((held) => held !== bucket),
+					bucket === null
+						? model.collapsed
+						: Arr.filter(model.collapsed, (held) => held !== bucket),
 			},
 		}),
 		ToggledSection: ({ bucket }) => ({
 			model: {
 				...model,
 				collapsed: model.collapsed.includes(bucket)
-					? model.collapsed.filter((held) => held !== bucket)
+					? Arr.filter(model.collapsed, (held) => held !== bucket)
 					: [...model.collapsed, bucket],
 			},
 		}),

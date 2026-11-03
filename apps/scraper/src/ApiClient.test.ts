@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Exit, Fiber, Layer, Redacted } from "effect"
+import { Duration, Effect, Exit, Fiber, Layer, Redacted, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { ApiClient } from "./ApiClient"
@@ -254,7 +254,7 @@ describe("ApiClient", () => {
 			assert.lengthOf(yield* Fiber.join(fiber), 1)
 			const attempts = endedSpansNamed(tracer.ended, "GET")
 			assert.lengthOf(attempts, 2)
-			assert.isTrue(attempts.every((span) => Exit.isSuccess(span.exit)))
+			assert.isTrue(Arr.every(attempts, (span) => Exit.isSuccess(span.exit)))
 			assert.strictEqual(attempts[0]!.attributes.get("http.response.status_code"), 200)
 			assert.isString(attempts[0]!.attributes.get("maple.attempt.error"))
 		}).pipe(Effect.provide(TestLayer)),

@@ -12,7 +12,7 @@ import {
 	tableRow,
 } from "@maple/views/ui/table"
 import { errorRateValue, latencyValue } from "@maple/views/ui/values"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { heading } from "@maple/views/ui/heading"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -83,12 +83,12 @@ const operationsBody = (h: HtmlBuilder<Message>, model: Model, range: string): H
 				tableHeader(h, [
 					tableRow(h, [
 						tableHead(h, ["Operation"]),
-						...HEADERS.map((header) => tableHead(h, [header], "text-right")),
+						...Arr.map(HEADERS, (header) => tableHead(h, [header], "text-right")),
 					]),
 				]),
 				tableBody(
 					h,
-					operations.map((op) => operationRow(h, model.serviceName, range, op)),
+					Arr.map(operations, (op) => operationRow(h, model.serviceName, range, op)),
 				),
 			]),
 		],

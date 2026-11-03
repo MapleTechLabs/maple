@@ -4,6 +4,7 @@ import { formatDurationFromMs, formatNumber, formatPercent, tableCell } from "./
 import { doc, type DocBlock } from "./tool-doc"
 import { HOT_THRESHOLD, LIMIT_THRESHOLD, pressure } from "./infra"
 import { parseWarehouseDateTime } from "@maple/query-engine"
+import { Array as Arr } from "effect"
 
 /** "21:54 to 22:54 UTC (1 hour)": the window with its length, so a default is visible. */
 export const windowText = (range: { readonly start: string; readonly end: string }): string => {
@@ -115,18 +116,19 @@ export const statusOf = (row: InfraEntityRow, kind: InfraKind): string => {
 		["cpu", row.cpuPeak ?? row.cpu],
 		["disk", row.disk],
 	]
-	const hot = resources
-		.flatMap(([resource, level]) =>
-			level !== undefined && level >= HOT_THRESHOLD ? [{ resource, level }] : [],
-		)
-		.sort((a, b) => b.level - a.level)
+	const hot = Arr.flatMap(resources, ([resource, level]) =>
+		level !== undefined && level >= HOT_THRESHOLD ? [{ resource, level }] : [],
+	).sort((a, b) => b.level - a.level)
 	const worst = hot[0]
 	const restartText = row.restarts ? `${row.restarts} restart${row.restarts === 1 ? "" : "s"}` : ""
 	if (worst === undefined) return restartText
 	// Hosts have no limit to be at; their 90% is just high.
 	const label = worst.level >= LIMIT_THRESHOLD ? (kind === "hosts" ? "HIGH" : "AT LIMIT") : "hot"
 	const restarts = restartText === "" ? "" : `; ${restartText}`
-	return `${label}: ${hot.map((h) => pressureText(kind, h.resource, h.level)).join(", ")}${restarts}`
+	return `${label}: ${Arr.join(
+		Arr.map(hot, (h) => pressureText(kind, h.resource, h.level)),
+		", ",
+	)}${restarts}`
 }
 
 const owner = (row: InfraEntityRow): string =>
@@ -148,7 +150,7 @@ export const kindTable = (section: InfraKindSection): DocBlock => {
 					"Status",
 					"Last seen",
 				],
-				rows.map((r) => [
+				Arr.map(rows, (r) => [
 					tableCell(r.name),
 					pct(r.cpu),
 					pct(r.memory),
@@ -171,7 +173,7 @@ export const kindTable = (section: InfraKindSection): DocBlock => {
 					"Memory of limit avg → peak",
 					"Status",
 				],
-				rows.map((r) => [
+				Arr.map(rows, (r) => [
 					tableCell(r.name),
 					r.namespace ?? "",
 					owner(r),
@@ -185,7 +187,7 @@ export const kindTable = (section: InfraKindSection): DocBlock => {
 		case "nodes":
 			return doc.table(
 				["Node", "Cluster", "CPU cores in use (avg)", "Uptime", "Last seen"],
-				rows.map((r) => [
+				Arr.map(rows, (r) => [
 					tableCell(r.name),
 					r.cluster ?? "",
 					cores(r.cpuCores),
@@ -205,7 +207,7 @@ export const kindTable = (section: InfraKindSection): DocBlock => {
 					"Memory of limit (avg)",
 					"Status",
 				],
-				rows.map((r) => [
+				Arr.map(rows, (r) => [
 					tableCell(r.name),
 					r.workloadKind ?? "",
 					r.namespace ?? "",
@@ -219,7 +221,7 @@ export const kindTable = (section: InfraKindSection): DocBlock => {
 		case "containers":
 			return doc.table(
 				["Container", "Host", "Image", "CPU avg → peak", "Memory avg → peak", "Uptime", "Status"],
-				rows.map((r) => [
+				Arr.map(rows, (r) => [
 					tableCell(r.name),
 					r.host ?? "",
 					tableCell(r.image ?? "", 50),
@@ -242,7 +244,7 @@ export const kindTable = (section: InfraKindSection): DocBlock => {
 					"Origin p95",
 					"Status",
 				],
-				rows.map((r) => [
+				Arr.map(rows, (r) => [
 					tableCell(r.name),
 					count(r.requests),
 					pct(r.errorRate),
@@ -266,7 +268,7 @@ export const kindTable = (section: InfraKindSection): DocBlock => {
 					"CPU p99",
 					"Status",
 				],
-				rows.map((r) => [
+				Arr.map(rows, (r) => [
 					tableCell(r.name),
 					tableCell(r.project ?? "", 14),
 					count(r.requests),
@@ -289,7 +291,7 @@ export const kindTable = (section: InfraKindSection): DocBlock => {
 					"Status",
 					"Last seen",
 				],
-				rows.map((r) => [
+				Arr.map(rows, (r) => [
 					tableCell(r.name),
 					`${r.project ?? ""} / ${r.environment ?? ""}`,
 					count(r.replicas),
@@ -311,7 +313,7 @@ export const kindTable = (section: InfraKindSection): DocBlock => {
 					"Replica lag (worst)",
 					"Status",
 				],
-				rows.map((r) => [
+				Arr.map(rows, (r) => [
 					tableCell(r.name),
 					pct(r.cpuPeak),
 					pct(r.memoryPeak),
@@ -394,18 +396,21 @@ export const summaryLine = (section: InfraKindSection, status?: string): string 
 	]
 	// A cut list must say whether it cut anything that matters.
 	const flagged = (s?.saturated ?? 0) + (s?.elevated ?? 0) + (s?.unbounded ?? 0)
-	const flaggedShown = section.rows.filter((row) => statusOf(row, section.kind) !== "").length
+	const flaggedShown = Arr.filter(section.rows, (row) => statusOf(row, section.kind) !== "").length
 	const coverage =
 		status === undefined && total !== undefined && showing < total && flagged > 0
 			? flaggedShown >= flagged
 				? " Every flagged one is shown."
 				: ` ${formatNumber(flagged - flaggedShown)} flagged not shown: pass kind="${section.kind}" to list them.`
 			: ""
-	return `${parts.filter((part) => part !== undefined).join(", ")}.${coverage} ${KIND_BASIS[section.kind]}`
+	return `${Arr.join(
+		Arr.filter(parts, (part) => part !== undefined),
+		", ",
+	)}.${coverage} ${KIND_BASIS[section.kind]}`
 }
 
 /** The row an agent should look at first: closest to a limit, when anything is hot. */
 export const hottest = (section: InfraKindSection): InfraEntityRow | undefined =>
-	[...section.rows]
-		.filter((row) => !row.unbounded && pressure(row).level >= HOT_THRESHOLD)
-		.sort((a, b) => pressure(b).level - pressure(a).level)[0]
+	Arr.filter([...section.rows], (row) => !row.unbounded && pressure(row).level >= HOT_THRESHOLD).sort(
+		(a, b) => pressure(b).level - pressure(a).level,
+	)[0]

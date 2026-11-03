@@ -1,7 +1,7 @@
 import { addLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
 import * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import type { ColumnOption } from "@maple/views/ui/logs/logs-stream-toolbar"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { canExtend } from "@maple/views/data/keyed"
 import { queryOf } from "../../route"
@@ -21,7 +21,10 @@ import type { UpdateReturn } from "./update"
 
 /** Every loaded row, newest first (`logs.data?.pages.flat()`). */
 export const rowsOf = (model: Model): ReadonlyArray<LocalLog> =>
-	Option.match(AsyncData.getData(model.logs.data), { onNone: () => [], onSome: (data) => data.pages.flat() })
+	Option.match(AsyncData.getData(model.logs.data), {
+		onNone: () => [],
+		onSome: (data) => data.pages.flat(),
+	})
 
 const toStream = (message: LogsStream.Message) => Message.GotStreamMessage({ message })
 
@@ -37,7 +40,10 @@ export const syncStream = (before: Model, step: UpdateReturn, context: PageConte
 	if (!isNewData && sameColumns(after.columns, columns)) return step
 	const rows = toStreamRows(rowsOf(after), columns, context.timeFormat.timeZone)
 	const isAppend = isNewData && isNextPage(dataOf(before), dataOf(after))
-	const result = isNewData && !isAppend ? LogsStream.replaceRows(after.stream, rows) : LogsStream.setRows(after.stream, rows)
+	const result =
+		isNewData && !isAppend
+			? LogsStream.replaceRows(after.stream, rows)
+			: LogsStream.setRows(after.stream, rows)
 	const columnOptions = isNewData ? columnOptionsOf(rowsOf(after)) : after.columnOptions
 	return {
 		...step,
@@ -49,18 +55,18 @@ export const syncStream = (before: Model, step: UpdateReturn, context: PageConte
 /** What the Columns picker offers: every attribute key in the loaded logs, the most common first. */
 const columnOptionsOf = (logs: ReadonlyArray<LocalLog>): ReadonlyArray<ColumnOption> => {
 	const counts = new Map<string, number>()
-	logs.forEach((log) =>
-		new Set([...Object.keys(log.logAttributes), ...Object.keys(log.resourceAttributes)]).forEach((key) =>
+	Arr.forEach(logs, (log) =>
+		new Set([...Rec.keys(log.logAttributes), ...Rec.keys(log.resourceAttributes)]).forEach((key) =>
 			counts.set(key, (counts.get(key) ?? 0) + 1),
 		),
 	)
-	return [...counts]
-		.map(([name, count]) => ({ name, count }))
-		.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+	return Arr.map([...counts], ([name, count]) => ({ name, count })).sort(
+		(a, b) => b.count - a.count || Str.localeCompare(b.name)(a.name),
+	)
 }
 
 const sameColumns = (a: ReadonlyArray<string>, b: ReadonlyArray<string>) =>
-	a.length === b.length && a.every((key, index) => key === b[index])
+	a.length === b.length && Arr.every(a, (key, index) => key === b[index])
 
 type Pages = Readonly<{ pages: ReadonlyArray<ReadonlyArray<LocalLog>> }>
 
@@ -69,14 +75,21 @@ const isNextPage = (before: Pages | null, after: Pages | null): boolean =>
 	before !== null &&
 	after !== null &&
 	after.pages.length > before.pages.length &&
-	before.pages.every((page, index) => after.pages[index] === page)
+	Arr.every(before.pages, (page, index) => after.pages[index] === page)
 
 /** The stream rendered the last loaded row, so the next page is wanted. */
 export const loadMoreIfAtEnd = (model: Model, context: PageContext): UpdateReturn => {
 	const data = Option.getOrNull(AsyncData.getData(model.logs.data))
 	const maybeBounds = boundsOf(model, context)
 	const lastRendered = model.stream.window.at(-1)?.index ?? -1
-	if (data === null || !data.hasNextPage || model.isFetchingNextPage || !canExtend(model.logs) || model.logs.key === null) return { model }
+	if (
+		data === null ||
+		!data.hasNextPage ||
+		model.isFetchingNextPage ||
+		!canExtend(model.logs) ||
+		model.logs.key === null
+	)
+		return { model }
 	if (Option.isNone(maybeBounds) || lastRendered < rowsOf(model).length - 1) return { model }
 	const cursor = nextCursor(data.pages[data.pages.length - 1] ?? [])
 	if (cursor === undefined) return { model }
@@ -111,7 +124,9 @@ export const appendPage = (model: Model, key: string, page: ReadonlyArray<LocalL
 			logs: {
 				...model.logs,
 				key,
-				data: AsyncData.Success({ data: { pages: [...current.pages, page], hasNextPage: nextCursor(page) !== undefined } }),
+				data: AsyncData.Success({
+					data: { pages: [...current.pages, page], hasNextPage: nextCursor(page) !== undefined },
+				}),
 			},
 		}),
 	})
@@ -122,7 +137,9 @@ export const SHEET_ID = "log-detail-sheet"
 const toSheet = (message: LogSheet.Message) => Message.GotLogSheetMessage({ message })
 
 const filterBy = (context: PageContext, filter: Parameters<typeof addLogAttributeFilter>[1]) =>
-	replaceParams(context.location, { attrs: addLogAttributeFilter([...filtersOf(queryOf(context.location)).attrs], filter) })
+	replaceParams(context.location, {
+		attrs: addLogAttributeFilter([...filtersOf(queryOf(context.location)).attrs], filter),
+	})
 
 /** Folds a sheet step into the page: its attribute filters and picked logs are the page's. */
 export const liftSheet = (model: Model, step: LogSheet.Return, context: PageContext): UpdateReturn => {
@@ -162,11 +179,19 @@ const foldStreamOut = (model: Model, out: LogsStream.OutMessage, context: PageCo
 export const foldStream = (model: Model, message: LogsStream.Message, context: PageContext): UpdateReturn => {
 	const result = LogsStream.update(model.stream, message)
 	const streamed = { ...model, stream: result.model }
-	const out = result.outMessage === undefined ? { model: streamed } : foldStreamOut(streamed, result.outMessage, context)
-	const more = message._tag === "ChangedVirtualWindow" ? loadMoreIfAtEnd(out.model, context) : { model: out.model }
+	const out =
+		result.outMessage === undefined
+			? { model: streamed }
+			: foldStreamOut(streamed, result.outMessage, context)
+	const more =
+		message._tag === "ChangedVirtualWindow" ? loadMoreIfAtEnd(out.model, context) : { model: out.model }
 	return {
 		model: more.model,
-		commands: [...Command.mapMessages(result.commands ?? [], toStream), ...(out.commands ?? []), ...(more.commands ?? [])],
+		commands: [
+			...Command.mapMessages(result.commands ?? [], toStream),
+			...(out.commands ?? []),
+			...(more.commands ?? []),
+		],
 		outMessage: out.outMessage,
 	}
 }

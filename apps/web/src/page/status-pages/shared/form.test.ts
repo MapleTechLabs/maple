@@ -8,6 +8,7 @@ import {
 	settingsPayload,
 	themeFormOf,
 } from "./form"
+import { String as Str } from "effect"
 
 const saved: SettingsForm = {
 	name: "Acme!",
@@ -83,7 +84,7 @@ describe("URL fields", () => {
 	})
 
 	it("refuses a link longer than the service stores", () => {
-		const long = `https://acme.example/${"a".repeat(2048)}`
+		const long = `https://acme.example/${Str.repeat(2048)("a")}`
 		expect(settingsIssues({ ...saved, termsUrl: long }).termsUrl).toBe("Keep it under 2048 characters.")
 	})
 })

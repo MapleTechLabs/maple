@@ -6,10 +6,10 @@ import {
 	SandboxRunExited,
 } from "@maple/domain/sandbox"
 import { EXECUTOR_DESTROY_PATH, EXECUTOR_PREPARE_PATH, EXECUTOR_RUN_PATH } from "@maple/domain/executor"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { handle, type SandboxHandleEnv } from "./handle"
 
-const SHA = "a".repeat(40)
+const SHA = Str.repeat(40)("a")
 const TOKEN = "ghs_secret_token"
 const SERVICE_TOKEN = "service-token"
 

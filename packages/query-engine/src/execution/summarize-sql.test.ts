@@ -1,6 +1,7 @@
 import { DB_QUERY_LABEL_SQL } from "@maple/domain/tinybird/db-query-shape-sql"
 import { describe, expect, it } from "vitest"
 import { SQL_TABLE_RE, SQL_VERB_RE, summarizeSql } from "./fingerprint"
+import { String as Str } from "effect"
 
 /**
  * Statements pulled verbatim from production `Database.execute` spans
@@ -85,7 +86,7 @@ describe("summarizeSql", () => {
  */
 describe("summarizeSql / ClickHouse parity", () => {
 	/** A JS regex source as it appears inside a ClickHouse string literal (CH halves `\\` for RE2). */
-	const asClickHouseLiteral = (re: RegExp) => re.source.replaceAll("\\", "\\\\")
+	const asClickHouseLiteral = (re: RegExp) => Str.replaceAll("\\", "\\\\")(re.source)
 
 	it("uses the same verb pattern as derivedStatementSummarySql", () => {
 		expect(DB_QUERY_LABEL_SQL).toContain(asClickHouseLiteral(SQL_VERB_RE))

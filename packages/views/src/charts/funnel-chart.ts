@@ -1,6 +1,6 @@
 import { formatNumber, formatPercent, formatValueByUnit } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { pressable } from "../ui/pressable"
@@ -57,7 +57,7 @@ const legendRow = (
 					h.Style({ "max-height": `${LEGEND_H}px` }),
 					h.DataAttribute("slot", "funnel-legend"),
 				],
-				legend.map((entry) =>
+				Arr.map(legend, (entry) =>
 					pressable(
 						h,
 						{
@@ -73,10 +73,7 @@ const legendRow = (
 								h.Title(entry.name),
 							],
 						},
-						[
-							swatch(h, { color: entry.color }),
-							h.span([h.Class("truncate")], [entry.name]),
-						],
+						[swatch(h, { color: entry.color }), h.span([h.Class("truncate")], [entry.name])],
 					),
 				),
 			),
@@ -115,7 +112,7 @@ const groupBars = (
 ): Html =>
 	h.div(
 		[h.Class("flex w-full flex-col gap-0.5"), h.DataAttribute("slot", "funnel-group-bars")],
-		stage.groups.map((group) =>
+		Arr.map(stage.groups, (group) =>
 			h.div(
 				[
 					h.Class("relative h-1.5 w-full overflow-hidden rounded-xs bg-foreground/5"),
@@ -142,8 +139,7 @@ const groupBars = (
 
 export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((model, inputs, h) => {
 	const { stages, legend } = funnelStages(inputs.data)
-	if (stages.length === 0)
-		return chartNoData(h, { className: inputs.className })
+	if (stages.length === 0) return chartNoData(h, { className: inputs.className })
 	const isGrouped = legend.length > 0
 	const rowFullH = isGrouped ? ROW_MIN_H + legend.length * GROUP_BAR_H + ROW_GAP : ROW_FULL_H
 	const chromeH = MORE_ROW_H + (isGrouped ? LEGEND_H : 0)
@@ -174,7 +170,7 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 		],
 		[
 			...(isGrouped ? [legendRow(h, legend, hoverGroup)] : []),
-			...visible.map((stage, i) => {
+			...Arr.map(visible, (stage, i) => {
 				const key = String(i)
 				const fade = hover !== null && hover !== key ? 0.55 : 1
 				return h.div(

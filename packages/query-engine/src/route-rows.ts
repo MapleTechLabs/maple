@@ -14,7 +14,7 @@
  * driver — the one input a shaper needs beyond its rows is the window's
  * duration, and the caller hands that in.
  */
-import { DateTime, Option, Schema } from "effect"
+import { DateTime, Option, Schema, Array as Arr } from "effect"
 import { SpanId, TraceId } from "@maple/domain"
 import { parseWarehouseDateTime, warehouseDateTimeToIso } from "./datetime"
 import { rowText } from "./row-text"
@@ -124,7 +124,7 @@ export interface ServiceOverview {
  */
 type RawCommitTuple = readonly [unknown, unknown, unknown, unknown]
 
-const isCommitTuple = (value: unknown): value is RawCommitTuple => Array.isArray(value) && value.length === 4
+const isCommitTuple = (value: unknown): value is RawCommitTuple => Arr.isArray(value) && value.length === 4
 
 /** A row timestamp as a string: decoded rows carry a `DateTime.Utc`, HTTP JSON the string. */
 const timeString = (value: unknown): string =>
@@ -155,8 +155,8 @@ export function coerceServiceOverviewRow(
 	const resolvedCount = resolveThroughput(spanCount, estimatedSpanCount, undefined)
 	const sampling = summarizeSampling(resolvedCount, spanCount, durationSeconds)
 
-	const rawCommits = Array.isArray(raw.commits) ? raw.commits : []
-	const commits: CommitBreakdown[] = rawCommits.filter(isCommitTuple).map((tuple) => {
+	const rawCommits = Arr.isArray(raw.commits) ? raw.commits : []
+	const commits: CommitBreakdown[] = Arr.map(Arr.filter(rawCommits, isCommitTuple), (tuple) => {
 		const commitSpanCount = Number(tuple[1] ?? 0)
 		return {
 			commitSha: rowText(tuple[0], "N/A"),
@@ -197,7 +197,7 @@ export function coerceServiceOverviewRows(
 	rows: ReadonlyArray<Record<string, unknown>>,
 	durationSeconds: number,
 ): ServiceOverview[] {
-	return rows.map((row) => coerceServiceOverviewRow(row, durationSeconds))
+	return Arr.map(rows, (row) => coerceServiceOverviewRow(row, durationSeconds))
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +223,7 @@ export interface ServiceUsageTotals {
 }
 
 export function coerceServiceUsageRows(rows: ReadonlyArray<Record<string, unknown>>): ServiceUsage[] {
-	return rows.map((row) => ({
+	return Arr.map(rows, (row) => ({
 		serviceName: rowText(row.serviceName),
 		totalLogs: Number(row.totalLogCount ?? 0),
 		totalTraces: Number(row.totalTraceCount ?? 0),
@@ -284,7 +284,7 @@ const toDate = (value: unknown): Date =>
 	DateTime.isDateTime(value) ? DateTime.toDateUtc(value) : new Date(warehouseDateTimeToIso(rowText(value)))
 
 export function coerceErrorsByTypeRows(rows: ReadonlyArray<Record<string, unknown>>): ErrorByType[] {
-	return rows.map((raw) => ({
+	return Arr.map(rows, (raw) => ({
 		fingerprintHash: rowText(raw.fingerprintHash),
 		errorLabel: rowText(raw.errorLabel),
 		sampleMessage: rowText(raw.sampleMessage),
@@ -375,5 +375,5 @@ export function coerceLogRow(raw: Record<string, unknown>): LogRow {
 }
 
 export function coerceLogRows(rows: ReadonlyArray<Record<string, unknown>>): LogRow[] {
-	return rows.map(coerceLogRow)
+	return Arr.map(rows, coerceLogRow)
 }

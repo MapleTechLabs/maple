@@ -1,5 +1,5 @@
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
@@ -41,7 +41,8 @@ const logEntry = (h: H, log: LogEntry, timeZone: string): Html =>
 	pressable(
 		h,
 		{
-			className: "block w-full p-2 text-left hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer",
+			className:
+				"block w-full p-2 text-left hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer",
 			onClick: Message.ClickedLog({ key: log.key }),
 		},
 		[
@@ -64,7 +65,8 @@ export const spanLogs = (h: H, model: Pick<Model, "logs">, timeZone: string, doc
 				rows: 3,
 				gap: "2",
 				className: "p-2",
-				renderRow: () => h.div([h.Class("space-y-1")], [skeleton(h, "h-3 w-24"), skeleton(h, "h-4 w-full")]),
+				renderRow: () =>
+					h.div([h.Class("space-y-1")], [skeleton(h, "h-3 w-24"), skeleton(h, "h-4 w-full")]),
 			}),
 		onFailure: (failure) =>
 			errorState(h, { failure, title: "Couldn't load logs", variant: "inline", className: "px-4" }),
@@ -76,7 +78,7 @@ export const spanLogs = (h: H, model: Pick<Model, "logs">, timeZone: string, doc
 					])
 				: h.div(
 						[h.Class("divide-y")],
-						logs.map((log) => logEntry(h, log, timeZone)),
+						Arr.map(logs, (log) => logEntry(h, log, timeZone)),
 					),
 	})
 
@@ -94,7 +96,7 @@ export const tabsView = (
 		view: TabsView.view,
 		viewInputs: {
 			variant: "underline",
-			labels: values.map((value) => TAB_LABELS[value].text),
+			labels: Arr.map(values, (value) => TAB_LABELS[value].text),
 			listClassName:
 				"sticky top-0 z-10 w-full justify-start overflow-x-auto overflow-y-hidden bg-background px-4 *:data-[slot=tabs-tab]:grow-0",
 			panelClassName: "mt-0",
@@ -105,7 +107,11 @@ export const tabsView = (
 					label,
 					...(count === null
 						? []
-						: [badge(h, { variant: "secondary", size: "xs", className: "ml-1 px-1.5" }, [count])]),
+						: [
+								badge(h, { variant: "secondary", size: "xs", className: "ml-1 px-1.5" }, [
+									count,
+								]),
+							]),
 				]
 			},
 			panel: (value) => panel(shownOf(value)),

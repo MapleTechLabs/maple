@@ -2,7 +2,18 @@ import { createClerkClient } from "@clerk/backend"
 import { EdgeCacheService } from "@maple/cache"
 import type { VerifiedOrgMembership } from "@maple/auth"
 import { AuthorizationUnavailableError, OrgId, RoleName, type UserId } from "@maple/domain/http"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Stream,
+	String as Str,
+} from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 
@@ -127,13 +138,13 @@ export const collectMemberships = Effect.fnUntraced(function* (
 		),
 	).pipe(Stream.runCollect)
 
-	const rows = pages.flatMap((page) => page.rows)
-	const truncated = pages.some((page) => page.truncated)
+	const rows = Arr.flatMap(pages, (page) => page.rows)
+	const truncated = Arr.some(pages, (page) => page.truncated)
 	// A Clerk role Maple does not model must not 500 an unrelated request —
 	// it simply is not a membership we can act on. Counted so the span says
 	// it happened rather than the count quietly disagreeing with Clerk.
 	const memberships = Arr.getSomes(
-		rows.map((row) =>
+		Arr.map(rows, (row) =>
 			Option.all({
 				orgId: decodeOrgIdOption(row.organization.id),
 				role: decodeRoleNameOption(row.role),
@@ -155,7 +166,7 @@ const make = Effect.gen(function* () {
 	const edgeCache = yield* EdgeCacheService
 
 	const clerk =
-		env.MAPLE_AUTH_MODE.toLowerCase() === "clerk" && Option.isSome(env.CLERK_SECRET_KEY)
+		Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk" && Option.isSome(env.CLERK_SECRET_KEY)
 			? createClerkClient({ secretKey: Redacted.value(env.CLERK_SECRET_KEY.value) })
 			: null
 

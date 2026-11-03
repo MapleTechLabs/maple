@@ -37,6 +37,7 @@ import type { Model } from "./model"
 import { activeKind, DEFAULT_PRESET, searchHref } from "./update"
 import { awsTable, awsTableLoading, type TableContext } from "./view-table"
 import { hstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `/infra/aws`: every streamed resource of the connected accounts, problems first.
 
@@ -56,7 +57,7 @@ const tabs = (h: H, model: Model, reads: ReadonlyArray<FleetRead>, active: AwsIn
 	viewTabStrip(
 		h,
 		"AWS resource kinds",
-		reads.map((read) => ({
+		Arr.map(reads, (read) => ({
 			id: read.kind,
 			title: `${AWS_INFRA_KINDS[read.kind].title} ${resourceViews(read).length}`,
 			href: searchHref({ ...model.search, tab: read.kind, scope: undefined }),
@@ -75,12 +76,12 @@ const band = (h: H, model: Model, kind: AwsInfraKindId, views: ReadonlyArray<Res
 			summary.needsLook === 0
 				? `Every ${noun} is healthy`
 				: `${summary.healthy} healthy · ${summary.needsLook} need a look`,
-		segments: (["ok", "warn", "crit", "idle"] as const).map((health) => ({
+		segments: Arr.map(["ok", "warn", "crit", "idle"] as const, (health) => ({
 			key: health,
 			count: summary.counts[health],
 			className: TONE_FILL[HEALTH_TONE[health]],
 		})),
-		cells: BAND_CELLS[kind].map((cell) => ({
+		cells: Arr.map(BAND_CELLS[kind], (cell) => ({
 			scope: cell.scope,
 			label: cell.label,
 			hint: cell.hint,
@@ -95,7 +96,7 @@ const band = (h: H, model: Model, kind: AwsInfraKindId, views: ReadonlyArray<Res
 const regionButtons = (h: H, model: Model, regions: ReadonlyArray<string>): ReadonlyArray<Html> =>
 	regions.length < 2
 		? []
-		: [undefined, ...regions].map((region) =>
+		: Arr.map([undefined, ...regions], (region) =>
 				button(
 					h,
 					{
@@ -210,7 +211,7 @@ const noMetrics = (h: H, status: AwsStatus): Html => {
 					integration: "aws",
 					actionLabel: "Connect AWS",
 				})
-	const streaming = status.connections.filter((connection) => connection.metric_stream !== null)
+	const streaming = Arr.filter(status.connections, (connection) => connection.metric_stream !== null)
 	if (streaming.length === 0)
 		return integrationNotConnected(h, {
 			icon: icon(h, "AwsIcon", { size: 16 }),
@@ -221,13 +222,15 @@ const noMetrics = (h: H, status: AwsStatus): Html => {
 			actionLabel: "Stream metrics",
 		})
 	const error = streaming.find((connection) => connection.metrics_last_error !== null)?.metrics_last_error
-	const regions = [...new Set(streaming.flatMap((connection) => connection.metric_stream?.regions ?? []))]
+	const regions = [
+		...new Set(Arr.flatMap(streaming, (connection) => connection.metric_stream?.regions ?? [])),
+	]
 	return integrationNotConnected(h, {
 		icon: icon(h, "AwsIcon", { size: 16 }),
 		title: "Waiting for the first metrics",
 		description:
 			error ??
-			`CloudWatch streams ${regions.join(", ")} once the stack is deployed again. Metrics land a few minutes after that.`,
+			`CloudWatch streams ${Arr.join(regions, ", ")} once the stack is deployed again. Metrics land a few minutes after that.`,
 		integration: "aws",
 		actionLabel: "Check the connection",
 		actionVariant: "outline",
@@ -252,7 +255,7 @@ const headerTabs = (h: H, model: Model): Html | undefined => {
 	const active = activeKind(model)
 	const reads = AsyncData.getOrElse(model.fleet.data, () => [])
 	if (!AsyncData.hasData(model.status.data) || active === undefined) return undefined
-	return reads.some((entry) => entry.kind === active) ? tabs(h, model, reads, active) : undefined
+	return Arr.some(reads, (entry) => entry.kind === active) ? tabs(h, model, reads, active) : undefined
 }
 
 const fleet = (h: H, model: Model, status: AwsStatus): Html =>
@@ -290,14 +293,19 @@ const description = (h: H, status: AwsStatus | null): Html | string => {
 	if (status === null || status.connections.length === 0)
 		return "CloudWatch metrics for every ECS service, instance, load balancer, database, function and queue."
 	const regions = [
-		...new Set(status.connections.flatMap((connection) => connection.metric_stream?.regions ?? [])),
+		...new Set(Arr.flatMap(status.connections, (connection) => connection.metric_stream?.regions ?? [])),
 	]
 	const mono = (text: string) => h.span([h.Class("font-mono text-xs text-foreground-soft")], [text])
 	return h.span(
 		[],
 		[
-			mono(status.connections.map((connection) => connection.account_id).join(" · ")),
-			...(regions.length === 0 ? [] : [" · ", mono(regions.join(", "))]),
+			mono(
+				Arr.join(
+					Arr.map(status.connections, (connection) => connection.account_id),
+					" · ",
+				),
+			),
+			...(regions.length === 0 ? [] : [" · ", mono(Arr.join(regions, ", "))]),
 			" · metrics every minute",
 		],
 	)

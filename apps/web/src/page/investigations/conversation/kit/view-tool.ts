@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Mount } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -89,9 +89,9 @@ const statusGlyph = <M>(h: HtmlBuilder<M>, status: ToolStatus, live: boolean, to
 }
 
 const argumentRows = <M>(h: HtmlBuilder<M>, record: Readonly<Record<string, unknown>>): ReadonlyArray<Html> =>
-	Object.entries(record)
-		.filter(([, value]) => value !== null && value !== undefined)
-		.map(([key, value]) =>
+	Arr.map(
+		Arr.filter(Rec.toEntries(record), ([, value]) => value !== null && value !== undefined),
+		([key, value]) =>
 			h.div(
 				[h.Class("flex gap-2")],
 				[
@@ -102,10 +102,10 @@ const argumentRows = <M>(h: HtmlBuilder<M>, record: Readonly<Record<string, unkn
 					),
 				],
 			),
-		)
+	)
 
 const panelContent = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>): ReadonlyArray<Html> => {
-	const record = Option.filter(inputRecord(part.input), (input) => Object.keys(input).length > 0)
+	const record = Option.filter(inputRecord(part.input), (input) => Rec.keys(input).length > 0)
 	const structured = extractStructuredData(part.output)
 	const outputText = extractOutputText(part.output)
 	return [
@@ -162,7 +162,7 @@ const panelContent = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>):
 }
 
 const hasPanel = (part: ToolPart): boolean =>
-	Option.exists(inputRecord(part.input), (input) => Object.keys(input).length > 0) ||
+	Option.exists(inputRecord(part.input), (input) => Rec.keys(input).length > 0) ||
 	Option.isSome(extractStructuredData(part.output)) ||
 	extractOutputText(part.output) !== null ||
 	part.errorText !== undefined
@@ -218,8 +218,8 @@ type Tally = { readonly label: string; readonly icon: ReturnType<typeof toolIcon
 const tally = (names: ReadonlyArray<string>): ReadonlyArray<Tally> =>
 	names.reduce<ReadonlyArray<Tally>>((acc, name) => {
 		const label = toolLabel(name)
-		return acc.some((entry) => entry.label === label)
-			? acc.map((entry) => (entry.label === label ? { ...entry, count: entry.count + 1 } : entry))
+		return Arr.some(acc, (entry) => entry.label === label)
+			? Arr.map(acc, (entry) => (entry.label === label ? { ...entry, count: entry.count + 1 } : entry))
 			: [...acc, { label, icon: toolIcon(name), count: 1 }]
 	}, [])
 
@@ -232,10 +232,10 @@ export const toolGroup = <M>(
 	keyHint: string,
 	host: PanelHost<M>,
 ): Html => {
-	const running = parts.filter((part) => deriveToolStatus(part.state) === "running")
-	const errorCount = parts.filter((part) => deriveToolStatus(part.state) === "error").length
+	const running = Arr.filter(parts, (part) => deriveToolStatus(part.state) === "running")
+	const errorCount = Arr.filter(parts, (part) => deriveToolStatus(part.state) === "error").length
 	const current = running[running.length - 1]
-	const tools = tally(parts.map((part) => part.toolName))
+	const tools = tally(Arr.map(parts, (part) => part.toolName))
 	const named = tools.slice(0, NAMED_TOOLS)
 	const hidden = tools.length - named.length
 	const line =
@@ -247,11 +247,13 @@ export const toolGroup = <M>(
 					...runningClock(h, host.clockMount),
 				])
 			: traceLine(h, {}, [
-					...named.map((tool) => traceIcon(h, [icon(h, tool.icon, { className: "size-3.5" })])),
+					...Arr.map(named, (tool) =>
+						traceIcon(h, [icon(h, tool.icon, { className: "size-3.5" })]),
+					),
 					traceTitle(
 						h,
 						[
-							...named.map((tool, index) =>
+							...Arr.map(named, (tool, index) =>
 								h.span(
 									[],
 									[
@@ -301,7 +303,7 @@ export const toolGroup = <M>(
 				content: () => [
 					trace(
 						h,
-						parts.map((part) => toolRow(h, part, host)),
+						Arr.map(parts, (part) => toolRow(h, part, host)),
 						"max-h-[55vh] overflow-y-auto",
 					),
 				],

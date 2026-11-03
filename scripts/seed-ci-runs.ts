@@ -21,7 +21,7 @@ import {
 	workflowJobToOtlp,
 	workflowRunToOtlp,
 } from "../packages/backend/src/services/integrations/ci-traces/otlp"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
@@ -53,7 +53,11 @@ const random = () => {
 	return seed / 2 ** 31
 }
 const between = (low: number, high: number) => low + random() * (high - low)
-const sha = () => Array.from({ length: 40 }, () => Math.floor(random() * 16).toString(16)).join("")
+const sha = () =>
+	Arr.join(
+		Array.from({ length: 40 }, () => Math.floor(random() * 16).toString(16)),
+		"",
+	)
 
 interface JobPlan {
 	readonly name: string
@@ -124,7 +128,7 @@ for (let i = 0; i < runCount; i++) {
 			const runStart = startedAt + (attempt - 1) * 20 * MIN
 			let cursor = runStart
 			let failed = false
-			const jobs = workflow.jobs.map((plan, jobIndex) => {
+			const jobs = Arr.map(workflow.jobs, (plan, jobIndex) => {
 				const queuedAt = cursor + between(0, 5_000)
 				// Runner waits spike in the afternoon (UTC), when everyone pushes.
 				const busy = new Date(queuedAt).getUTCHours() >= 13 && new Date(queuedAt).getUTCHours() <= 17
@@ -160,39 +164,42 @@ for (let i = 0; i < runCount; i++) {
 						queuedAtMs: Math.round(queuedAt),
 						startedAtMs: Math.round(started),
 						completedAtMs: Math.round(completed),
-						steps: [
-							{
-								number: 1,
-								name: "Set up job",
-								conclusion: "success",
-								start: started,
-								end: started + 2_000,
-							},
-							{
-								number: 2,
-								name: "Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
-								conclusion: "success",
-								start: started + 2_000,
-								end: started + 6_000,
-							},
-							{
-								number: 3,
-								name: `Run ${plan.name}`,
-								conclusion,
-								start: started + 6_000,
-								end: completed,
-							},
-						].map((step) => ({
-							number: step.number,
-							name: step.name,
-							conclusion: step.conclusion,
-							startedAtMs: Math.round(step.start),
-							completedAtMs: Math.round(step.end),
-						})),
+						steps: Arr.map(
+							[
+								{
+									number: 1,
+									name: "Set up job",
+									conclusion: "success",
+									start: started,
+									end: started + 2_000,
+								},
+								{
+									number: 2,
+									name: "Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+									conclusion: "success",
+									start: started + 2_000,
+									end: started + 6_000,
+								},
+								{
+									number: 3,
+									name: `Run ${plan.name}`,
+									conclusion,
+									start: started + 6_000,
+									end: completed,
+								},
+							],
+							(step) => ({
+								number: step.number,
+								name: step.name,
+								conclusion: step.conclusion,
+								startedAtMs: Math.round(step.start),
+								completedAtMs: Math.round(step.end),
+							}),
+						),
 					},
 				}
 			})
-			const completedAt = Math.max(...jobs.map((entry) => entry.job.completedAtMs))
+			const completedAt = Math.max(...Arr.map(jobs, (entry) => entry.job.completedAtMs))
 			cursor = completedAt
 			payloads.push(
 				workflowRunToOtlp({
@@ -216,7 +223,7 @@ for (let i = 0; i < runCount; i++) {
 					startedAtMs: Math.round(runStart),
 					completedAtMs: completedAt,
 				}),
-				...jobs.map(({ job, conclusion, plan }) =>
+				...Arr.map(jobs, ({ job, conclusion, plan }) =>
 					workflowJobToOtlp(
 						job,
 						conclusion === "failure" && plan.reason !== undefined
@@ -247,23 +254,23 @@ for (let i = 0; i < runCount; i++) {
 // OTLP to `traces` rows, as the ingest gateway writes them.
 const valueOf = (kv: OtlpKeyValue) => ("stringValue" in kv.value ? kv.value.stringValue : kv.value.intValue)
 const mapOf = (attributes: ReadonlyArray<OtlpKeyValue>) =>
-	Object.fromEntries(attributes.map((kv) => [kv.key, valueOf(kv)]))
+	Rec.fromEntries(Arr.map(attributes, (kv) => [kv.key, valueOf(kv)]))
 const timeOf = (nanos: string) => {
-	const ms = Number(nanos.slice(0, -6))
-	return `${new Date(ms).toISOString().slice(0, 19).replace("T", " ")}.${nanos.slice(-9).padStart(9, "0")}`
+	const ms = Number(Str.slice(0, -6)(nanos))
+	return `${Str.replace("T", " ")(Str.slice(0, 19)(new Date(ms).toISOString()))}.${Str.padStart(9, "0")(Str.slice(-9)(nanos))}`
 }
 const kindOf = (kind: number) => (kind === 2 ? "Server" : "Internal")
 const statusOf = (code: number) => (code === 2 ? "Error" : code === 1 ? "Ok" : "Unset")
 
-const rows = payloads.flatMap((payload) =>
-	payload.resourceSpans.flatMap((resourceSpan) => {
+const rows = Arr.flatMap(payloads, (payload) =>
+	Arr.flatMap(payload.resourceSpans, (resourceSpan) => {
 		const resource = {
 			...mapOf(resourceSpan.resource.attributes),
 			maple_org_id: org,
 			maple_ingest_source: "seed-ci-runs",
 		}
-		return resourceSpan.scopeSpans.flatMap((scopeSpan) =>
-			scopeSpan.spans.map((span) => ({
+		return Arr.flatMap(resourceSpan.scopeSpans, (scopeSpan) =>
+			Arr.map(scopeSpan.spans, (span) => ({
 				start_time: timeOf(span.startTimeUnixNano),
 				trace_id: span.traceId,
 				span_id: span.spanId,
@@ -283,9 +290,9 @@ const rows = payloads.flatMap((payload) =>
 				status_code: statusOf(span.status.code),
 				status_message: span.status.message,
 				span_attributes: mapOf(span.attributes),
-				events_timestamp: (span.events ?? []).map((event) => timeOf(event.timeUnixNano)),
-				events_name: (span.events ?? []).map((event) => event.name),
-				events_attributes: (span.events ?? []).map((event) => mapOf(event.attributes)),
+				events_timestamp: Arr.map(span.events ?? [], (event) => timeOf(event.timeUnixNano)),
+				events_name: Arr.map(span.events ?? [], (event) => event.name),
+				events_attributes: Arr.map(span.events ?? [], (event) => mapOf(event.attributes)),
 				links_trace_id: [],
 				links_span_id: [],
 				links_trace_state: [],
@@ -295,7 +302,7 @@ const rows = payloads.flatMap((payload) =>
 	}),
 )
 
-const runs = rows.filter((row) => row.parent_span_id === "").length
+const runs = Arr.filter(rows, (row) => row.parent_span_id === "").length
 console.log(`${runs} runs, ${rows.length} spans for ${org} (${repo}, last ${days} days)`)
 if (values["dry-run"]) {
 	console.log(encodeJsonPretty(rows.slice(0, 2)))
@@ -304,7 +311,7 @@ if (values["dry-run"]) {
 
 if (values.ingest !== undefined && values.key !== undefined) {
 	for (const payload of payloads) {
-		const response = await fetch(`${values.ingest.replace(/\/+$/, "")}/v1/traces`, {
+		const response = await fetch(`${Str.replace(/\/+$/, "")(values.ingest)}/v1/traces`, {
 			method: "POST",
 			headers: { "content-type": "application/json", authorization: `Bearer ${values.key}` },
 			body: encodeJson(payload),
@@ -326,11 +333,11 @@ if (!host || !token) {
 }
 const BATCH = 2_000
 for (let start = 0; start < rows.length; start += BATCH) {
-	const body = rows
-		.slice(start, start + BATCH)
-		.map((row) => encodeJson(row))
-		.join("\n")
-	const response = await fetch(`${host.replace(/\/+$/, "")}/v0/events?name=traces&wait=true`, {
+	const body = Arr.join(
+		Arr.map(rows.slice(start, start + BATCH), (row) => encodeJson(row)),
+		"\n",
+	)
+	const response = await fetch(`${Str.replace(/\/+$/, "")(host)}/v0/events?name=traces&wait=true`, {
 		method: "POST",
 		headers: { Authorization: `Bearer ${token}` },
 		body,

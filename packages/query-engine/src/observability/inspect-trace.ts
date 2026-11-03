@@ -1,4 +1,16 @@
-import { Array as Arr, Clock, DateTime, Effect, HashMap, HashSet, Option, Schema, pipe } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	DateTime,
+	Effect,
+	HashMap,
+	HashSet,
+	Option,
+	Schema,
+	pipe,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { TraceId, SpanId } from "@maple/domain"
 import type { SpanHierarchyOutput, ListLogsOutput } from "@maple/domain/tinybird"
 import * as CH from "../ch"
@@ -31,13 +43,13 @@ const extractKeyAttributes = (raw: string, keepAll: boolean): Effect.Effect<Reco
 	Schema.decodeUnknownEffect(StringRecordFromJson)(raw).pipe(
 		Effect.map((parsed) =>
 			pipe(
-				Object.entries(parsed),
+				Rec.toEntries(parsed),
 				Arr.filter(
 					([k, v]) =>
 						v !== "" &&
 						(keepAll ||
 							(!HashSet.has(SKIP_ATTR_KEYS, k) &&
-								!Arr.some(SKIP_ATTR_PREFIXES, (p) => k.startsWith(p)))),
+								!Arr.some(SKIP_ATTR_PREFIXES, (p) => Str.startsWith(p)(k)))),
 				),
 				Object.fromEntries,
 			),
@@ -49,7 +61,7 @@ const parseJsonAttributes = (raw: string): Effect.Effect<Record<string, string>>
 	Schema.decodeUnknownEffect(StringRecordFromJson)(raw).pipe(
 		Effect.map((parsed) =>
 			pipe(
-				Object.entries(parsed),
+				Rec.toEntries(parsed),
 				Arr.filter(([, v]) => v !== ""),
 				Object.fromEntries,
 			),
@@ -127,12 +139,13 @@ export const traceProbeWindows = (opts: {
 	const top = opts.coveredSinceMs
 	if (top !== undefined && top <= opts.oldestMs) return []
 	const starts = [
-		...PROBE_TIER_HOURS.map((hours) => opts.nowMs - hours * HOUR_MS).filter(
+		...Arr.filter(
+			Arr.map(PROBE_TIER_HOURS, (hours) => opts.nowMs - hours * HOUR_MS),
 			(edge) => edge > opts.oldestMs && (top === undefined || edge < top),
 		),
 		opts.oldestMs,
 	]
-	return starts.map((startMs, index) => ({ startMs, endMs: index === 0 ? top : starts[index - 1] }))
+	return Arr.map(starts, (startMs, index) => ({ startMs, endMs: index === 0 ? top : starts[index - 1] }))
 }
 
 const queryRangeToScan = (range: QueryRange) => ({ startTime: range.start_time, endTime: range.end_time })

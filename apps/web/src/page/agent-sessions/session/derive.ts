@@ -7,7 +7,7 @@ import {
 	type SessionToolResults,
 	type SessionTurn,
 } from "@maple/agent-sessions"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { type Model, SESSION_VIEWS, type SessionView } from "./model"
 
@@ -24,7 +24,7 @@ export type LoadProgress = Readonly<{
 /** First occurrence wins, page order kept. */
 const dedupeInOrder = (spans: ReadonlyArray<AiSessionSpan>): ReadonlyArray<AiSessionSpan> => {
 	const seen = new Set<string>()
-	return spans.filter((span) => {
+	return Arr.filter(spans, (span) => {
 		if (seen.has(span.spanId)) return false
 		seen.add(span.spanId)
 		return true
@@ -40,8 +40,8 @@ export const loadedSpans = (model: Model): ReadonlyArray<AiSessionSpan> => {
 	const isOwnKey = model.more.key === model.firstPage.key
 	return dedupeInOrder([
 		...first,
-		...(isOwnKey ? model.more.agentPages.flatMap((page) => page.data) : []),
-		...(isOwnKey ? model.more.appPages.flatMap((page) => page.data) : []),
+		...(isOwnKey ? Arr.flatMap(model.more.agentPages, (page) => page.data) : []),
+		...(isOwnKey ? Arr.flatMap(model.more.appPages, (page) => page.data) : []),
 	])
 }
 
@@ -63,7 +63,7 @@ export const progressOf = (model: Model, spans: ReadonlyArray<AiSessionSpan>): L
 		phase,
 		agentSpansComplete: agentDone,
 		loadedSpans: spans.length,
-		loadedAgentSpans: spans.filter((span) => span.isAiSpan).length,
+		loadedAgentSpans: Arr.filter(spans, (span) => span.isAiSpan).length,
 	}
 }
 
@@ -82,7 +82,7 @@ const buildSessionData = (model: Model): SessionData => {
 		spans,
 		turns,
 		summary: buildSessionSummary({ spans, turns }),
-		toolResults: sessionToolResults(turns.flatMap((turn) => turn.spans)),
+		toolResults: sessionToolResults(Arr.flatMap(turns, (turn) => turn.spans)),
 		progress: progressOf(model, spans),
 	}
 }
@@ -102,7 +102,8 @@ export const sessionData = (model: Model): SessionData => {
 	return data
 }
 
-const isSessionView = (value: string): value is SessionView => SESSION_VIEWS.some((view) => view === value)
+const isSessionView = (value: string): value is SessionView =>
+	Arr.some(SESSION_VIEWS, (view) => view === value)
 
 /** An unknown or absent `?view=` reads as the Overview: the param is a hint from a link. */
 export const viewOf = (view: string | undefined): SessionView =>

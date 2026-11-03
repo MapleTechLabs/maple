@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * Vendor ids the ingest gateway stamps (`AI_VENDORS` in
  * apps/ingest/src/ai_session.rs) → brand names. Listed here are the ids whose
@@ -33,12 +34,14 @@ const UNIDENTIFIED_PREFIX = "unknown:"
  * a newly stamped vendor still reads as a name rather than a raw id.
  */
 export function vendorLabel(vendorId: string): string {
-	if (!vendorId || vendorId.startsWith(UNIDENTIFIED_PREFIX)) return "Unidentified"
+	if (!vendorId || Str.startsWith(UNIDENTIFIED_PREFIX)(vendorId)) return "Unidentified"
 	const known = VENDOR_LABELS[vendorId]
 	if (known) return known
-	return vendorId
-		.split(/[_-]+/)
-		.filter(Boolean)
-		.map((word) => word[0]!.toUpperCase() + word.slice(1))
-		.join(" ")
+	return Arr.join(
+		Arr.map(
+			Arr.filter(Str.split(/[_-]+/)(vendorId), Boolean),
+			(word) => Str.toUpperCase(word[0]!) + Str.slice(1)(word),
+		),
+		" ",
+	)
 }

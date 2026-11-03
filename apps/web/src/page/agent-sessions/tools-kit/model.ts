@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import type { PresetValue } from "../../kit/time-controls"
 
 // Schemas for the tool analytics reads (`@maple/web-data/lib/tool-analytics` types), shared by
@@ -88,7 +88,7 @@ export const toolSelection = (
 	search: ToolSearch,
 	window: Readonly<{ startTime: string; endTime: string }>,
 ) => {
-	const needle = (search.q ?? "").trim()
+	const needle = Str.trim(search.q ?? "")
 	return {
 		startTime: window.startTime,
 		endTime: window.endTime,

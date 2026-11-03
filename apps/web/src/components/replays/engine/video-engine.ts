@@ -1,4 +1,5 @@
 import type { ReplayEngine, ReplayEngineCreateInput, ReplayEngineFactory } from "./replay-engine"
+import { Array as Arr } from "effect"
 
 // The video engine — mobile recordings.
 //
@@ -289,7 +290,7 @@ class VideoEngine implements ReplayEngine {
 		const appended = extractVideoSegments([event], this.streamStart)
 		if (appended.length === 0) return
 		for (const segment of appended) {
-			if (this.segments.some((existing) => existing.segmentId === segment.segmentId)) continue
+			if (Arr.some(this.segments, (existing) => existing.segmentId === segment.segmentId)) continue
 			this.segments.push(segment)
 		}
 		this.segments.sort((a, b) => a.startMs - b.startMs)

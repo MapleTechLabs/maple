@@ -15,7 +15,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import { DeviceCredentialId } from "@maple/domain/primitives"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { postgresSqlState } from "@maple/backend/platform/postgres-errors"
@@ -103,7 +103,7 @@ const decodeChallengeClaims = Schema.decodeUnknownOption(ChallengeClaims)
 const decodeCredentialId = Schema.decodeUnknownSync(DeviceCredentialId)
 
 const replayKey = (kind: string, ...parts: ReadonlyArray<string>) =>
-	base64url(sha256([kind, ...parts].join("\n")))
+	base64url(sha256(Arr.join([kind, ...parts], "\n")))
 
 const isLive = (row: DeviceCredentialRow, now: number) =>
 	row.revokedAt === null && row.expiresAt > now && row.hardExpiresAt > now

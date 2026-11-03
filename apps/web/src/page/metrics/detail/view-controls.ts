@@ -4,7 +4,7 @@ import {
 	tokenizeWhereClause,
 	WHERE_CLAUSE_TOKEN_COLOR,
 } from "../../../lib/query-builder/where-clause-highlight"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData as FoldkitAsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -136,7 +136,7 @@ const whereEditor = (h: H, model: Model): Html => {
 											"px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] break-words whitespace-pre-wrap",
 										),
 									],
-									tokenizeWhereClause(model.whereInput).map((token) =>
+									Arr.map(tokenizeWhereClause(model.whereInput), (token) =>
 										h.span(
 											[h.Style({ color: WHERE_CLAUSE_TOKEN_COLOR[token.type] })],
 											[token.text],
@@ -156,7 +156,7 @@ const whereEditor = (h: H, model: Model): Html => {
 const scopedKeys = (model: Model): ReadonlyArray<string> =>
 	Option.match(FoldkitAsyncData.getData(model.attributeKeys.data), {
 		onNone: () => [],
-		onSome: (rows) => rows.map((row) => row.attributeKey),
+		onSome: (rows) => Arr.map(rows, (row) => row.attributeKey),
 	})
 
 /** The structured query row: aggregation, where, group-by, step. */
@@ -173,7 +173,7 @@ export const queryControls = (
 			view: selectView,
 			toParentMessage: toAggregation,
 			viewInputs: {
-				entries: getMetricsAggregations(metricType, isMonotonic).map((option) => ({
+				entries: Arr.map(getMetricsAggregations(metricType, isMonotonic), (option) => ({
 					_tag: "Item" as const,
 					item: { value: option.value, label: option.label },
 				})),
@@ -192,7 +192,11 @@ export const queryControls = (
 			view: comboboxView,
 			toParentMessage: toGroupBy,
 			viewInputs: {
-				items: [GROUP_BY_NONE_LABEL, SERVICE_KEY, ...scopedKeys(model).map((key) => `attr.${key}`)],
+				items: [
+					GROUP_BY_NONE_LABEL,
+					SERVICE_KEY,
+					...Arr.map(scopedKeys(model), (key) => `attr.${key}`),
+				],
 				placeholder: "Search fields…",
 				emptyText: "",
 				className: "h-8 w-52 text-xs",

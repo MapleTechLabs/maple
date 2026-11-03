@@ -24,6 +24,7 @@ import {
 	type ActionTarget,
 } from "./action-target"
 import { formatTimeInTimezone } from "../lib/timezone-format"
+import { Array as Arr, String as Str } from "effect"
 
 /* -------------------------------------------------------------------------------------------------
  * Geometry
@@ -273,7 +274,7 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 			}
 		}
 		columns.push({ nodes, width })
-		upstream = nodes.map((node) => node.id)
+		upstream = Arr.map(nodes, (node) => node.id)
 		nextLabel = undefined
 	}
 
@@ -294,7 +295,7 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 				glyph: isAlert ? "check" : "issue",
 				eyebrow: isAlert ? "CHECK" : "ISSUE",
 				title: originTitle(investigation) ?? issueId ?? EMPTY_VALUE,
-				status: snapshot.status.toUpperCase(),
+				status: Str.toUpperCase(snapshot.status),
 				statusTone: "crit",
 				...(occurrences != null && Number.isFinite(occurrences)
 					? { detail: `· ${formatNumber(occurrences)} events` }
@@ -324,7 +325,7 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 						// The id is a 36-character UUID once the wire's `inc_…` public id
 						// is decoded. It belongs in the tooltip, not on a 146px node.
 						titleHint: subject.incident_id,
-						status: snapshot.status.toUpperCase(),
+						status: Str.toUpperCase(snapshot.status),
 						statusTone: "crit",
 						// No clock time beside the status any more — the footer states
 						// the same instant relatively, and carrying both put "10:12 AM"
@@ -452,7 +453,7 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 	if (proposing) {
 		nextLabel = "PROPOSES"
 		pushColumn(
-			actions.map((action, index) => ({
+			Arr.map(actions, (action, index) => ({
 				id: `action-${index}`,
 				type: "action" as const,
 				position: { x: 0, y: 0 },
@@ -460,7 +461,7 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 				height: ACTION_HEIGHT,
 				data: {
 					index,
-					ordinal: String(index + 1).padStart(2, "0"),
+					ordinal: Str.padStart(2, "0")(String(index + 1)),
 					text: action,
 					...classifyAction(action, routingContextFromInvestigation(investigation)),
 					promise: index === actions.length - 1 ? "PULL REQ · SOON" : "AUTOFIX · SOON",
@@ -479,7 +480,7 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 		 */
 		nextLabel = "PROPOSES"
 		pushColumn(
-			[0, 1].map((slot) => ({
+			Arr.map([0, 1], (slot) => ({
 				id: `action-ghost-${slot}`,
 				type: "actionGhost" as const,
 				position: { x: 0, y: 0 },
@@ -502,9 +503,9 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 	}
 	const columnHeight = (column: { nodes: Array<ProvenanceNode> }): number => {
 		const gap = isActionColumn(column) ? ACTION_GAP : COLUMN_GAP
-		return column.nodes.reduce((total, node, index) => total + node.height + (index ? gap : 0), 0)
+		return Arr.reduce(column.nodes, 0, (total, node, index) => total + node.height + (index ? gap : 0))
 	}
-	const height = Math.max(0, ...columns.map(columnHeight))
+	const height = Math.max(0, ...Arr.map(columns, columnHeight))
 
 	const actionHeading = proposing
 		? `PROPOSES · ${countLabel(actions.length, "ACTION", "ACTIONS")} BY IMPACT`
@@ -544,8 +545,8 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 	const openedMs = toEpochMs(investigation.created_at)
 
 	return {
-		nodes: [...headings, ...columns.flatMap((column) => column.nodes)],
-		edges: edges.map((edge) => (liveIds.has(edge.target) ? { ...edge, live: true } : edge)),
+		nodes: [...headings, ...Arr.flatMap(columns, (column) => column.nodes)],
+		edges: Arr.map(edges, (edge) => (liveIds.has(edge.target) ? { ...edge, live: true } : edge)),
 		width: Math.max(0, x - GUTTER),
 		height,
 		actionHeading,
@@ -578,7 +579,7 @@ const originTitle = (investigation: V2Investigation): string | null => {
  */
 const incidentTitle = (investigation: V2Investigation): string => {
 	const { snapshot, subject } = investigation
-	const signal = snapshot.facts.find((fact) => fact.label.toLowerCase() === "signal")?.value.trim()
+	const signal = snapshot.facts.find((fact) => Str.toLowerCase(fact.label) === "signal")?.value.trim()
 	if (signal) return signal
 	const scope = snapshot.scope?.trim()
 	if (scope) return scope

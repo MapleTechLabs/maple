@@ -35,6 +35,7 @@ import { isFormValid, parsedInterval } from "./update-prometheus"
 import { authField, credentialFields, textField } from "./view-prometheus-form"
 import { typography } from "@maple/views/ui/typography"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // Prometheus and WarpStream in the connect flow: save and probe an endpoint, name it, then watch
 // the first scheduled scrape land.
@@ -229,7 +230,7 @@ const failedRow = (
 							typography(h, { size: "xs", weight: "medium" }, ["How to fix it"]),
 							h.ul(
 								[h.Class("flex list-disc flex-col gap-1 pl-4 text-xs text-muted-foreground")],
-								diagnosis.fixes.map((fix) => h.li([], [fix])),
+								Arr.map(diagnosis.fixes, (fix) => h.li([], [fix])),
 							),
 						]),
 					]),
@@ -290,7 +291,7 @@ const connectStep = (h: H, model: Model, integration: ScrapeIntegration): Html =
 								size: "sm",
 								className: "w-fit",
 								isLoading: card.isSaving,
-								isDisabled: card.isSaving || card.form.url.value.trim() === "",
+								isDisabled: card.isSaving || Str.trim(card.form.url.value) === "",
 							},
 							[target === null ? "Save and probe" : "Save and probe again"],
 						),
@@ -308,7 +309,7 @@ const chooseStep = (h: H, model: Model, integration: ScrapeIntegration): Html =>
 	const card = model.prometheusCard
 	const target = flowTarget(model)
 	const saved = target !== null && isChoiceSaved(model, target)
-	const service = card.form.serviceName.value.trim() || card.form.name.value.trim()
+	const service = Str.trim(card.form.serviceName.value) || Str.trim(card.form.name.value)
 	return flowColumns(
 		h,
 		[
@@ -332,7 +333,7 @@ const chooseStep = (h: H, model: Model, integration: ScrapeIntegration): Html =>
 									field: "serviceName",
 									id: "scrape-service-name",
 									label: "Service name",
-									placeholder: card.form.name.value.trim() || "my-api-server",
+									placeholder: Str.trim(card.form.name.value) || "my-api-server",
 								}),
 								textField(h, model, {
 									field: "interval",
@@ -410,14 +411,17 @@ const liveRows = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string):
 				? {
 						state: "done",
 						title: "First data: metrics",
-						detail: [
-							latest.samples_scraped === null
-								? "Last scrape stored"
-								: `Last scrape read ${formatNumber(latest.samples_scraped)} samples`,
-							latest.duration_seconds === null
-								? ""
-								: ` in ${formatDuration(latest.duration_seconds * 1000)}`,
-						].join(""),
+						detail: Arr.join(
+							[
+								latest.samples_scraped === null
+									? "Last scrape stored"
+									: `Last scrape read ${formatNumber(latest.samples_scraped)} samples`,
+								latest.duration_seconds === null
+									? ""
+									: ` in ${formatDuration(latest.duration_seconds * 1000)}`,
+							],
+							"",
+						),
 						meta: relativeTime(h, { value: latest.timestamp, nowMs: model.nowMs, timeZone }),
 					}
 				: {

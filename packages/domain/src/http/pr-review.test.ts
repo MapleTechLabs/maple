@@ -17,6 +17,7 @@ import {
 	PrReviewReport,
 	scorePrReview,
 } from "./pr-review"
+import { Array as Arr } from "effect"
 
 describe("normalizePrReviewSubmission", () => {
 	it("keeps a finding that names a file and a new-side line", () => {
@@ -70,7 +71,7 @@ describe("normalizePrReviewSubmission", () => {
 			resolved: '["f1"]',
 		})
 		assert.deepEqual(
-			report.findings.map((finding) => finding.title),
+			Arr.map(report.findings, (finding) => finding.title),
 			["kept"],
 		)
 		assert.equal(report.coverage[0]?.unit, "GET /a")
@@ -91,7 +92,7 @@ describe("normalizePrReviewSubmission", () => {
 		})
 		assert.equal(droppedFindings, 3)
 		assert.deepEqual(
-			report.findings.map((finding) => finding.title),
+			Arr.map(report.findings, (finding) => finding.title),
 			["kept"],
 		)
 	})
@@ -106,7 +107,7 @@ describe("normalizePrReviewSubmission", () => {
 		})
 		assert.equal(droppedFindings, 2)
 		assert.deepEqual(
-			report.findings.map((finding) => finding.checkId),
+			Arr.map(report.findings, (finding) => finding.checkId),
 			["REN-DUAL"],
 		)
 	})
@@ -127,7 +128,7 @@ describe("normalizePrReviewSubmission", () => {
 		})
 		assert.equal(droppedFindings, 0)
 		assert.deepEqual(
-			report.findings.map((finding) => [finding.category, finding.checkId]),
+			Arr.map(report.findings, (finding) => [finding.category, finding.checkId]),
 			[
 				["security", undefined],
 				["correctness", undefined],
@@ -236,7 +237,7 @@ describe("normalizePrReviewSubmission", () => {
 describe("scorePrReview", () => {
 	const withFindings = (severities: ReadonlyArray<string>) =>
 		normalizePrReviewSubmission({
-			findings: severities.map((severity, line) => ({
+			findings: Arr.map(severities, (severity, line) => ({
 				path: "a.ts",
 				line: line + 1,
 				checkId: "SPAN-01",

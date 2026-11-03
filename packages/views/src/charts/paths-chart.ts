@@ -1,6 +1,6 @@
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message, type Model } from "./chart"
@@ -31,27 +31,48 @@ export interface PathsChartInputs {
 type H = HtmlBuilder<Message>
 
 const TWO_LINE_H = 26
-const HALO = { "paint-order": "stroke", stroke: "var(--card)", "stroke-width": "3", "stroke-linejoin": "round" }
+const HALO = {
+	"paint-order": "stroke",
+	stroke: "var(--card)",
+	"stroke-width": "3",
+	"stroke-linejoin": "round",
+}
 const CHAR_W = 6.6
 
 const attrs = (h: H, entries: Readonly<Record<string, string | number>>) =>
-	Object.entries(entries).map(([name, value]) => h.Attribute(name, String(value)))
+	Arr.map(Rec.toEntries(entries), ([name, value]) => h.Attribute(name, String(value)))
 
 const fillOpacity = (kind: PlacedNode["kind"], lit: boolean, dim: boolean): number =>
-	dim ? 0.05 : kind === "event" ? (lit ? 0.65 : 0.2) : kind === "end" ? (lit ? 0.3 : 0.07) : lit ? 0.4 : 0.12
+	dim
+		? 0.05
+		: kind === "event"
+			? lit
+				? 0.65
+				: 0.2
+			: kind === "end"
+				? lit
+					? 0.3
+					: 0.07
+				: lit
+					? 0.4
+					: 0.12
 
 type Labels = Readonly<{ truncate: (label: string) => string; showCounts: boolean }>
 
 const columnHeaders = (h: H, graph: PathsLayout, reverse: boolean): ReadonlyArray<Html> =>
-	graph.columns.map((column, index) => {
+	Arr.map(graph.columns, (column, index) => {
 		const last = index === graph.columns.length - 1
-		const firstId = [...graph.nodes.keys()].find((id) => id.startsWith(`${column}:`)) ?? ""
+		const firstId = [...graph.nodes.keys()].find((id) => Str.startsWith(`${column}:`)(id)) ?? ""
 		const x = graph.nodes.get(firstId)?.x ?? 0
 		const label = column === 0 ? "Anchor" : reverse ? `−${column}` : `Step ${column}`
 		const atRightEdge = reverse ? column === 0 : last
 		return h.text(
 			[
-				...attrs(h, { x: atRightEdge ? x + NODE_W : x, y: 10, "text-anchor": atRightEdge ? "end" : "start" }),
+				...attrs(h, {
+					x: atRightEdge ? x + NODE_W : x,
+					y: 10,
+					"text-anchor": atRightEdge ? "end" : "start",
+				}),
 				h.Class("fill-muted-foreground text-3xs font-medium uppercase tracking-wider"),
 			],
 			[label],
@@ -59,7 +80,7 @@ const columnHeaders = (h: H, graph: PathsLayout, reverse: boolean): ReadonlyArra
 	})
 
 const ribbons = (h: H, graph: PathsLayout, isLit: (link: PathLink) => boolean, hover: string | null) =>
-	graph.links.map((link) => {
+	Arr.map(graph.links, (link) => {
 		const kind = graph.nodes.get(link.target)?.kind ?? "event"
 		const lit = isLit(link)
 		return h.path([
@@ -79,13 +100,7 @@ const ribbons = (h: H, graph: PathsLayout, isLit: (link: PathLink) => boolean, h
 		])
 	})
 
-const nodeGroup = (
-	h: H,
-	node: PlacedNode,
-	reverse: boolean,
-	dim: boolean,
-	labels: Labels,
-): Html => {
+const nodeGroup = (h: H, node: PlacedNode, reverse: boolean, dim: boolean, labels: Labels): Html => {
 	const labelLeft = reverse ? node.column !== 0 : node.column === 0
 	const textX = labelLeft ? node.x + NODE_W + 6 : node.x - 6
 	const showText = node.h >= 9 || node.kind !== "event"
@@ -145,7 +160,9 @@ const nodeGroup = (
 											h.tspan(
 												[
 													...attrs(h, twoLine ? { x: textX, dy: 13 } : {}),
-													h.Class("fill-muted-foreground text-3xs font-normal tabular-nums"),
+													h.Class(
+														"fill-muted-foreground text-3xs font-normal tabular-nums",
+													),
 												],
 												[formatNumber(node.count)],
 											),
@@ -165,16 +182,17 @@ export const view = Submodel.defineView<Model, Message, PathsChartInputs>((model
 	const reverse = inputs.direction === "before"
 	const graph = width > 0 && height > 0 ? layoutPaths(nodes, links, width, height, reverse) : undefined
 	const anchor = nodes.find((node) => node.column === 0)
-	if (anchor === undefined || anchor.count <= 0)
-		return chartNoData(h, { className: inputs.className })
+	if (anchor === undefined || anchor.count <= 0) return chartNoData(h, { className: inputs.className })
 	const columnSpan =
-		graph !== undefined && graph.columns.length > 1 ? (width - NODE_W) / (graph.columns.length - 1) : width
+		graph !== undefined && graph.columns.length > 1
+			? (width - NODE_W) / (graph.columns.length - 1)
+			: width
 	const roomChars = Math.floor((columnSpan * 0.7 - 20) / CHAR_W)
 	const showCounts = roomChars >= 14
 	const maxChars = Math.max(6, showCounts ? roomChars - 6 : roomChars)
 	const labels: Labels = {
 		showCounts,
-		truncate: (label) => (label.length > maxChars ? `${label.slice(0, maxChars - 1)}…` : label),
+		truncate: (label) => (label.length > maxChars ? `${Str.slice(0, maxChars - 1)(label)}…` : label),
 	}
 	const hover = Option.getOrNull(model.activeKey)
 	const hoveredNode = hover === null ? undefined : graph?.nodes.get(hover)
@@ -198,16 +216,18 @@ export const view = Submodel.defineView<Model, Message, PathsChartInputs>((model
 							[
 								...columnHeaders(h, graph, reverse),
 								...ribbons(h, graph, isLit, hover),
-								...[...graph.nodes.values()].map((node) =>
+								...Arr.map([...graph.nodes.values()], (node) =>
 									nodeGroup(
 										h,
 										node,
 										reverse,
 										hover !== null &&
 											hover !== node.id &&
-											!links.some(
+											!Arr.some(
+												links,
 												(link) =>
-													isLit(link) && (link.source === node.id || link.target === node.id),
+													isLit(link) &&
+													(link.source === node.id || link.target === node.id),
 											),
 										labels,
 									),

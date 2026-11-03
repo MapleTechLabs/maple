@@ -1,6 +1,6 @@
 import { type DashboardDocument, PortableDashboardDocument } from "@maple/domain/http"
 import type { V2DashboardCreateParams } from "@maple/domain/http/v2"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 
 // The portable dashboard format and `importDashboard`'s payload. Stored widgets always carry a
 // valid layout, so normalisation is a copy.
@@ -74,7 +74,7 @@ export const parsePortable = (parsed: unknown) =>
 				? undefined
 				: { refreshIntervalSeconds: decoded.refreshIntervalSeconds }),
 			timeRange: decoded.timeRange,
-			widgets: decoded.widgets.map(stripWidgetTimeParams),
+			widgets: Arr.map(decoded.widgets, stripWidgetTimeParams),
 		}),
 	})
 
@@ -82,7 +82,7 @@ export const parsePortable = (parsed: unknown) =>
 export const isPersesDashboardJson = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" &&
 	value !== null &&
-	!Array.isArray(value) &&
+	!Arr.isArray(value) &&
 	"kind" in value &&
 	value.kind === "Dashboard" &&
 	"spec" in value &&
@@ -90,7 +90,7 @@ export const isPersesDashboardJson = (value: unknown): value is Record<string, u
 	value.spec !== null
 
 const sanitizeFilenameSegment = (value: string): string => {
-	const sanitized = value.replace(/[^a-zA-Z0-9-_ ]/g, "").trim()
+	const sanitized = Str.trim(Str.replace(/[^a-zA-Z0-9-_ ]/g, "")(value))
 	return sanitized.length > 0 ? sanitized : "dashboard"
 }
 

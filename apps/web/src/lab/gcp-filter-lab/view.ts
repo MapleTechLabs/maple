@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { gcpLogFilterChoice } from "../../components/integrations/gcp-connector-state"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -65,7 +65,7 @@ export const view = (model: Model, h: H): Html =>
 	dashboardPage(h, {}, [
 		h.div(
 			[h.Class("mx-auto flex w-full max-w-2xl flex-col gap-8 p-4")],
-			SCENARIOS.flatMap((scenario, index) => {
+			Arr.flatMap(SCENARIOS, (scenario, index) => {
 				const state = model.scenarios[index]
 				return state === undefined ? [] : [scenarioView(h, scenario, state, index)]
 			}),

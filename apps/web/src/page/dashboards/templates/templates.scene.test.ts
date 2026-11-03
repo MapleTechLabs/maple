@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { V2DashboardTemplate } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { CreateFromTemplate, FetchMetrics, FetchTemplates, WaitPreviewDelay } from "./command"
@@ -13,9 +13,9 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 
 const calls = (commands: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> | undefined) =>
-	(commands ?? []).map(({ name, args }) => ({ name, args }))
+	Arr.map(commands ?? [], ({ name, args }) => ({ name, args }))
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const template = (id: string, name: string) =>
 	Schema.decodeUnknownSync(Schema.toType(V2DashboardTemplate))({
@@ -71,10 +71,14 @@ describe("dashboard templates", () => {
 
 	test("create sends only filled, trimmed parameters and ignores a second click", () => {
 		const model = loaded({ template: TEMPLATES[0]?.id }).model
-		const filled = [
-			Message.ChangedParameter({ key: "service", value: "  checkout " }),
-			Message.ChangedParameter({ key: "env", value: "   " }),
-		].reduce((current, message) => pageUpdate(current, message).model, model)
+		const filled = Arr.reduce(
+			[
+				Message.ChangedParameter({ key: "service", value: "  checkout " }),
+				Message.ChangedParameter({ key: "env", value: "   " }),
+			],
+			model,
+			(current, message) => pageUpdate(current, message).model,
+		)
 		const created = pageUpdate(filled, Message.ClickedCreate({ templateId: "service-health" }))
 		expect(calls(created.commands)).toEqual([
 			{

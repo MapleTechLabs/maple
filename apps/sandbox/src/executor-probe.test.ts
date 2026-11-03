@@ -21,6 +21,7 @@ import {
 	udpDnsLeak,
 	unexpectedChecks,
 } from "./executor-probe"
+import { Array as Arr, String as Str } from "effect"
 
 const line = (id: string, exitCode: number, output: string) =>
 	`${PROBE_SENTINEL} ${id} ${exitCode} ${Buffer.from(output).toString("base64")}`
@@ -33,7 +34,8 @@ const CHECKS: ReadonlyArray<ProbeCheck> = [
 
 describe("parseProbe", () => {
 	it("decodes each result line and ignores everything else", () => {
-		const stdout = ["noise", line("egress", 7, "refused\nby policy"), "", line("gateway", 0, "")].join(
+		const stdout = Arr.join(
+			["noise", line("egress", 7, "refused\nby policy"), "", line("gateway", 0, "")],
 			"\n",
 		)
 		assert.deepStrictEqual(parseProbe(stdout), [
@@ -43,25 +45,27 @@ describe("parseProbe", () => {
 	})
 
 	it("keeps the last line for a repeated id and drops a malformed exit code", () => {
-		const stdout = [
-			line("egress", 0, "first"),
-			line("egress", 1, "second"),
-			`${PROBE_SENTINEL} gateway x`,
-		].join("\n")
+		const stdout = Arr.join(
+			[line("egress", 0, "first"), line("egress", 1, "second"), `${PROBE_SENTINEL} gateway x`],
+			"\n",
+		)
 		assert.deepStrictEqual(parseProbe(stdout), [{ id: "egress", exitCode: 1, output: "second" }])
 	})
 })
 
 describe("assessProbe", () => {
 	it("passes a check that behaved as expected and fails one that did not", () => {
-		const verdicts = assessProbe(
-			[
-				{ id: "egress", exitCode: 0, output: "connected" },
-				{ id: "gateway", exitCode: 0, output: "marker GET /probe" },
-				{ id: "kernel", exitCode: 0, output: "Linux" },
-			],
-			CHECKS,
-		).map((check) => [check.id, check.verdict])
+		const verdicts = Arr.map(
+			assessProbe(
+				[
+					{ id: "egress", exitCode: 0, output: "connected" },
+					{ id: "gateway", exitCode: 0, output: "marker GET /probe" },
+					{ id: "kernel", exitCode: 0, output: "Linux" },
+				],
+				CHECKS,
+			),
+			(check) => [check.id, check.verdict],
+		)
 		assert.deepStrictEqual(verdicts, [
 			["egress", "fail"],
 			["gateway", "pass"],
@@ -87,14 +91,14 @@ describe("assessProbe", () => {
 			[limit],
 		).concat(assessProbe([{ id: "limit", exitCode: 1, output: "started\nout of memory" }], [limit]))
 		assert.deepStrictEqual(
-			verdicts.map((check) => check.verdict),
+			Arr.map(verdicts, (check) => check.verdict),
 			["fail", "pass"],
 		)
 	})
 
 	it("reports a check with no result as missing", () => {
 		assert.deepStrictEqual(
-			assessProbe([], CHECKS).map((check) => check.verdict),
+			Arr.map(assessProbe([], CHECKS), (check) => check.verdict),
 			["missing", "missing", "missing"],
 		)
 	})
@@ -147,7 +151,7 @@ const runAsync = (command: string, env: Record<string, string> = {}) =>
 		let output = ""
 		child.stdout.on("data", (chunk) => (output += chunk))
 		child.stderr.on("data", (chunk) => (output += chunk))
-		child.on("close", (exitCode) => resolve({ exitCode, output: output.trim() }))
+		child.on("close", (exitCode) => resolve({ exitCode, output: Str.trim(output) }))
 	})
 
 /** The port a server listening on TCP was given. */
@@ -185,7 +189,7 @@ describe("rawHttpLeak against a runtime that may accept every connection", () =>
 		)
 		const result = await runAsync(httpTo(server.port))
 		assert.strictEqual(result.exitCode, 0)
-		assert.isTrue(result.output.startsWith(`${LEAKED} HTTP/1.1 301`))
+		assert.isTrue(Str.startsWith(`${LEAKED} HTTP/1.1 301`)(result.output))
 	})
 
 	it("reports blocked, with why, for each way a proxy can answer instead", async () => {
@@ -199,10 +203,10 @@ describe("rawHttpLeak against a runtime that may accept every connection", () =>
 		await refused[Symbol.asyncDispose]()
 
 		const results = await Promise.all(
-			[closes.port, hangs.port, errorPage.port, refusedPort].map((port) => runAsync(httpTo(port))),
+			Arr.map([closes.port, hangs.port, errorPage.port, refusedPort], (port) => runAsync(httpTo(port))),
 		)
 		assert.deepStrictEqual(
-			results.map((result) => [result.exitCode, result.output]),
+			Arr.map(results, (result) => [result.exitCode, result.output]),
 			[
 				[1, `${BLOCKED} connected, closed without answering`],
 				[1, `${BLOCKED} connected, no answer before timeout`],
@@ -257,11 +261,11 @@ describe.skipIf(!hasOpenssl)("tlsLeak", () => {
 		rmSync(dir, { recursive: true, force: true })
 
 		assert.deepStrictEqual(
-			[trusted, untrusted, otherName].map((result) => result.exitCode),
+			Arr.map([trusted, untrusted, otherName], (result) => result.exitCode),
 			[0, 1, 1],
 		)
 		assert.strictEqual(trusted.output, `${LEAKED} handshake with a trusted certificate for leak.test`)
-		assert.isTrue(untrusted.output.startsWith(`${BLOCKED} `))
+		assert.isTrue(Str.startsWith(`${BLOCKED} `)(untrusted.output))
 		assert.strictEqual(otherName.output, `${BLOCKED} ERR_TLS_CERT_ALTNAME_INVALID`)
 	})
 
@@ -271,7 +275,7 @@ describe.skipIf(!hasOpenssl)("tlsLeak", () => {
 			tlsLeak({ host: "127.0.0.1", port: closes.port, servername: "leak.test", timeoutMs: 2000 }),
 		)
 		assert.strictEqual(result.exitCode, 1)
-		assert.isTrue(result.output.startsWith(BLOCKED))
+		assert.isTrue(Str.startsWith(BLOCKED)(result.output))
 	})
 })
 
@@ -299,7 +303,7 @@ describe("udpDnsLeak", () => {
 	it("reports a leak for an answer with records, blocked for no answer or an empty reply", async () => {
 		const servers = await Promise.all([resolver(2), resolver("silent"), resolver(0)])
 		const results = await Promise.all(
-			servers.map((server) =>
+			Arr.map(servers, (server) =>
 				runAsync(
 					udpDnsLeak({
 						host: "127.0.0.1",
@@ -312,7 +316,7 @@ describe("udpDnsLeak", () => {
 		)
 		for (const server of servers) server.close()
 		assert.deepStrictEqual(
-			results.map((result) => [result.exitCode, result.output]),
+			Arr.map(results, (result) => [result.exitCode, result.output]),
 			[
 				[0, `${LEAKED} dns answer with 2 records`],
 				[1, `${BLOCKED} no answer before timeout`],
@@ -340,7 +344,7 @@ describe("unexpectedChecks", () => {
 			{ unanswerable: new Set(["gw"]) },
 		)
 		assert.deepStrictEqual(
-			flagged.map((c) => c.id),
+			Arr.map(flagged, (c) => c.id),
 			["b", "c"],
 		)
 	})
@@ -357,7 +361,7 @@ describe("unexpectedChecks", () => {
 			{ leaks: new Set(["caught", "blocked-anyway", "broken", "silent"]) },
 		)
 		assert.deepStrictEqual(
-			flagged.map((c) => c.id),
+			Arr.map(flagged, (c) => c.id),
 			["blocked-anyway", "broken", "silent"],
 		)
 	})

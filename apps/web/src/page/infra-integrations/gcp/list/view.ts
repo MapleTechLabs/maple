@@ -27,7 +27,7 @@ import { formatPercentColumn, pluralize } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import { pressable } from "@maple/views/ui/pressable"
@@ -131,12 +131,18 @@ const loadedDescription = (
 	views: ReadonlyArray<GcpView>,
 ): string | undefined => {
 	if (projects.length === 0) return intro.description
-	const kinds = views.filter((option) => option !== GCP_RESOURCES_TAB).map((option) => VIEW_LABEL[option])
-	return [
-		`${projects.length} ${pluralize(projects.length, "project")}`,
-		...(kinds.length === 0 ? [] : [kinds.join(", ")]),
-		"metrics every 5 minutes",
-	].join(" · ")
+	const kinds = Arr.map(
+		Arr.filter(views, (option) => option !== GCP_RESOURCES_TAB),
+		(option) => VIEW_LABEL[option],
+	)
+	return Arr.join(
+		[
+			`${projects.length} ${pluralize(projects.length, "project")}`,
+			...(kinds.length === 0 ? [] : [Arr.join(kinds, ", ")]),
+			"metrics every 5 minutes",
+		],
+		" · ",
+	)
 }
 
 /** `tabs` goes to the header's `tabs` slot, pinned under the title row. */
@@ -167,13 +173,14 @@ const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends 
 	const { rows, rules } = options
 	const scope = rules.scopes.find((candidate) => candidate === state.scope)
 	const query = state.q ?? ""
-	const needle = query.trim().toLowerCase()
+	const needle = Str.toLowerCase(Str.trim(query))
 	const shown = sortByAttention(
 		rules,
-		rows.filter(
+		Arr.filter(
+			rows,
 			(row) =>
 				(scope === undefined || rules.inScope(row, scope)) &&
-				(needle === "" || row.keys.join(" ").toLowerCase().includes(needle)),
+				(needle === "" || Str.includes(needle)(Str.toLowerCase(Arr.join(row.keys, " ")))),
 		),
 	)
 	const emptyMessage = options.failed
@@ -253,9 +260,9 @@ const projectsStrip = (
 ): Html =>
 	h.div(
 		[h.Class("flex flex-col overflow-hidden rounded-md border md:flex-row")],
-		projects
-			.toSorted((a, b) => (share.get(b) ?? 0) - (share.get(a) ?? 0))
-			.map((project) => {
+		Arr.map(
+			projects.toSorted((a, b) => (share.get(b) ?? 0) - (share.get(a) ?? 0)),
+			(project) => {
 				const fraction = share.get(project) ?? 0
 				const projectHealth = health.get(project)
 				const problem = projectHealth !== undefined && projectHealth.tone !== "ok"
@@ -301,7 +308,8 @@ const projectsStrip = (
 						),
 					],
 				)
-			}),
+			},
+		),
 	)
 
 const infraView = (h: H, model: Model, connectors: ReturnType<typeof metricsConnectors>): PageParts => {
@@ -329,7 +337,7 @@ const infraView = (h: H, model: Model, connectors: ReturnType<typeof metricsConn
 		return {
 			header: intro,
 			isFailed: true,
-			body: failures.map((failure) =>
+			body: Arr.map(failures, (failure) =>
 				errorState(h, {
 					failure,
 					title: "Couldn't load Google Cloud workloads",
@@ -529,7 +537,7 @@ export const gcpListPageParts = (h: H, input: ListPageInput): PageParts => {
 			? viewTabStrip(
 					h,
 					"Google Cloud views",
-					views.map((option) => ({
+					Arr.map(views, (option) => ({
 						id: option,
 						title:
 							option === GCP_RESOURCES_TAB || counts === null

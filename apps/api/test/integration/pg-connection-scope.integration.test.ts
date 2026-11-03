@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { makeMaplePgClient } from "@maple/db/client"
 import * as Orm from "@maple-dev/effect-orm/database"
-import { Effect, Schema, Tracer } from "effect"
+import { Effect, Schema, Tracer, Array as Arr, String as Str } from "effect"
 import * as Reactivity from "effect/reactivity/Reactivity"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import {
@@ -26,7 +26,7 @@ const PG_URL = process.env.MAPLE_TEST_PG_URL
 /** Admin connection targets `postgres`, so its own backend never pollutes the count. */
 const adminUrlFor = (url: string): { admin: string; database: string } => {
 	const parsed = new URL(url)
-	const database = parsed.pathname.replace(/^\//, "")
+	const database = Str.replace(/^\//, "")(parsed.pathname)
 	parsed.pathname = "/postgres"
 	return { admin: parsed.toString(), database }
 }
@@ -44,7 +44,7 @@ const makeRecordingTracer = () => {
 }
 
 const dbSpans = (spans: ReadonlyArray<Tracer.NativeSpan>) =>
-	spans.filter((span) => span.attributes.get("db.system.name") === "postgresql")
+	Arr.filter(spans, (span) => span.attributes.get("db.system.name") === "postgresql")
 
 /**
  * `describe.skipIf` still evaluates the body, so the setup below needs a URL it
@@ -154,13 +154,13 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 		// fiber; a single shared collector would put both statements on whichever
 		// span looked last. The unit suite can only assert the calls see different
 		// collectors; this asserts the consequence that actually matters.
-		const texts = dbSpans(spans).map((span) => {
+		const texts = Arr.map(dbSpans(spans), (span) => {
 			const text = span.attributes.get("db.query.text")
 			return typeof text === "string" ? text : ""
 		})
 		assert.strictEqual(texts.length, 2)
-		const alpha = texts.filter((text) => text.includes("alpha_marker"))
-		const beta = texts.filter((text) => text.includes("beta_marker"))
+		const alpha = Arr.filter(texts, (text) => Str.includes("alpha_marker")(text))
+		const beta = Arr.filter(texts, (text) => Str.includes("beta_marker")(text))
 		assert.strictEqual(alpha.length, 1)
 		assert.strictEqual(beta.length, 1)
 		assert.notInclude(alpha[0], "beta_marker")
@@ -201,12 +201,12 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 				{ concurrency },
 			),
 		)
-		const windows = results.map((rows) => rows[0]!)
+		const windows = Arr.map(results, (rows) => rows[0]!)
 
 		// Serialized, each statement starts after the previous one ended. Overlapped,
 		// every statement is running at once: the last start precedes the first end.
-		const lastStart = Math.max(...windows.map((w) => w.started_ms))
-		const firstEnd = Math.min(...windows.map((w) => w.ended_ms))
+		const lastStart = Math.max(...Arr.map(windows, (w) => w.started_ms))
+		const firstEnd = Math.min(...Arr.map(windows, (w) => w.ended_ms))
 		assert.isBelow(lastStart, firstEnd)
 		assert.isAtMost((await backends()) - baseline, MAX_CONNECTIONS)
 

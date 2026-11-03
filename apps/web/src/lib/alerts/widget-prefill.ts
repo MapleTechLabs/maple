@@ -1,9 +1,14 @@
 import type { QueryBuilderQueryDraftPayload } from "@maple/domain/http"
 
-import { normalizeRuleQueryDraft, rawSqlHasValueColumn, type RuleFormState } from "@maple/web-data/alerts/form-utils"
+import {
+	normalizeRuleQueryDraft,
+	rawSqlHasValueColumn,
+	type RuleFormState,
+} from "@maple/web-data/alerts/form-utils"
 import { buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
 import { SERIES_REDUCER_TO_ALERT_REDUCER, toQueryBuilderDataSource } from "@maple/query-model"
 import { dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "@maple/widgets/dashboard"
+import { Array as Arr, String as Str } from "effect"
 
 export type WidgetAlertPrefillNotice = {
 	severity: "warning" | "error"
@@ -50,11 +55,11 @@ function isEnabledVisibleQuery(query: QueryBuilderQueryDraftPayload): boolean {
 }
 
 function queryLabel(query: QueryBuilderQueryDraftPayload, index: number): string {
-	if (typeof query.legend === "string" && query.legend.trim().length > 0) {
-		return query.legend.trim()
+	if (typeof query.legend === "string" && Str.trim(query.legend).length > 0) {
+		return Str.trim(query.legend)
 	}
-	if (typeof query.name === "string" && query.name.trim().length > 0) {
-		return query.name.trim()
+	if (typeof query.name === "string" && Str.trim(query.name).length > 0) {
+		return Str.trim(query.name)
 	}
 	return `query ${index + 1}`
 }
@@ -63,9 +68,9 @@ function hasHiddenSeries(
 	widget: AlertableDashboardWidget,
 	queries: QueryBuilderQueryDraftPayload[],
 ): boolean {
-	if (queries.some((query) => query.hidden === true)) return true
+	if (Arr.some(queries, (query) => query.hidden === true)) return true
 	const hideSeries = record(dataSourceTransform(widget.dataSource)?.hideSeries)
-	return Array.isArray(hideSeries.baseNames) && hideSeries.baseNames.length > 0
+	return Arr.isArray(hideSeries.baseNames) && hideSeries.baseNames.length > 0
 }
 
 function comparisonEnabled(comparison: unknown): boolean {
@@ -104,13 +109,13 @@ export function createWidgetAlertPrefill(
 
 	if (rawSql !== null) {
 		const sql = rawSql.sql
-		if (sql.trim().length === 0) {
+		if (Str.trim(sql).length === 0) {
 			notices.push({
 				severity: "warning",
 				message: "This raw SQL chart has no SQL saved. Starting with an editable blank alert query.",
 			})
 		} else {
-			if (!sql.includes("$__orgFilter")) {
+			if (!Str.includes("$__orgFilter")(sql)) {
 				notices.push({
 					severity: "warning",
 					message:
@@ -152,7 +157,7 @@ export function createWidgetAlertPrefill(
 	}
 
 	if (querySet !== null) {
-		const queries = querySet.queries.filter(isQueryDraftPayload)
+		const queries = Arr.filter(querySet.queries, isQueryDraftPayload)
 		const selectedIndex = queries.findIndex(isEnabledVisibleQuery)
 		const selected =
 			selectedIndex >= 0
@@ -172,7 +177,7 @@ export function createWidgetAlertPrefill(
 			}
 		}
 
-		const visibleEnabledCount = queries.filter(isEnabledVisibleQuery).length
+		const visibleEnabledCount = Arr.filter(queries, isEnabledVisibleQuery).length
 		if (visibleEnabledCount > 1) {
 			notices.push({
 				severity: "warning",

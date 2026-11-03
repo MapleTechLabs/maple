@@ -1,6 +1,6 @@
 import type { V2Source } from "@maple/domain/http/v2"
 import type { PushSourcePlatform } from "@maple/domain/primitives"
-import { Option, Result } from "effect"
+import { Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { Resources } from "../../../platform/resources"
@@ -199,7 +199,7 @@ const readCreated = (
 
 const submit = (model: Model): Return => {
 	const outcome = Rules.rulesOutcome(model.rules)
-	const name = model.name.trim()
+	const name = Str.trim(model.name)
 	if (model.platform === null || model.isSaving || name.length === 0 || !outcome.valid) return { model }
 	const command: Cmd = CreateSource({
 		name,

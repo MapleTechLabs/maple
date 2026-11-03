@@ -30,6 +30,7 @@ import { MetricsGauge, MetricsSum, orgIdParam } from "../tables"
 import { containerRuntimeExpr, deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { avgIfOrZero, facetAttrExpr, maxIfOrZero, type FacetOutput } from "./query-helpers"
 import type { SortDirection } from "./infra"
+import { Array as Arr } from "effect"
 
 const CONTAINER_METRIC_NAMES = [
 	"container.cpu.utilization",
@@ -150,7 +151,7 @@ const containerFilterConditions = (
 	CH.when(opts.search, (v: string) =>
 		CH.positionCaseInsensitive($.ResourceAttributes.get("container.name"), CH.lit(v)).gt(0),
 	),
-	...CONTAINER_FACETS.flatMap(({ include, exclude, attr }) => {
+	...Arr.flatMap(CONTAINER_FACETS, ({ include, exclude, attr }) => {
 		const expr = attr === null ? deploymentEnvExpr($.ResourceAttributes) : $.ResourceAttributes.get(attr)
 		const included = opts[include]
 		const excluded = opts[exclude]
@@ -166,7 +167,7 @@ export function listContainersQuery(opts: ListContainersOpts = {}) {
 	const sortDir = opts.sortDir ?? (sortBy === "containerName" ? "asc" : "desc")
 	const orderBy: Array<[string, SortDirection]> = [
 		[sortBy, sortDir],
-		...CONTAINER_SORT_TIEBREAK.filter(([key]) => key !== sortBy),
+		...Arr.filter(CONTAINER_SORT_TIEBREAK, ([key]) => key !== sortBy),
 	]
 
 	const grouped = from(MetricsGauge)
@@ -467,7 +468,8 @@ export function containerSumTimeseriesQuery(opts: ContainerSumTimeseriesOpts) {
 			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
 			attributeValue: labels?.length
 				? CH.multiIf(
-						labels.map(
+						Arr.map(
+							labels,
 							([metricName, label]) => [$.MetricName.eq(metricName), CH.lit(label)] as const,
 						) as Array<[CH.Condition, CH.Expr<string>]>,
 						CH.lit(""),

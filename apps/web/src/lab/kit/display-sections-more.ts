@@ -14,6 +14,7 @@ import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { typography } from "@maple/views/ui/typography"
 import { ROWS } from "./display-sections"
 import { kitRow, kitSection } from "./kit-layout"
+import { Array as Arr } from "effect"
 
 // The second half of `/lab/kit/display`: values, loading states and tables.
 
@@ -97,7 +98,7 @@ export const tableSection = <M>(h: HtmlBuilder<M>): Html =>
 			]),
 			tableBody(
 				h,
-				ROWS.map((row) =>
+				Arr.map(ROWS, (row) =>
 					tableRow(h, [
 						tableCell(h, [row.service]),
 						tableCell(h, [row.rps], "text-right"),

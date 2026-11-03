@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Array as Arr, String as Str } from "effect"
 import { compile, compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	getSessionReplayQuery,
@@ -16,7 +16,7 @@ const baseParams = { orgId: OrgId.make("org_1") }
 const sessionParams = { orgId: OrgId.make("org_1"), sessionId: "sess_1" }
 const WINDOW = { startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 06:00:00" }
 /** The `facetType` literals a facets union emits, the values the sidebar groups rows by. */
-const facetTypes = (sql: string) => [...sql.matchAll(/'(\w+)' AS facetType/g)].map((m) => m[1])
+const facetTypes = (sql: string) => Arr.map([...sql.matchAll(/'(\w+)' AS facetType/g)], (m) => m[1])
 const UTC_WINDOW = {
 	startTime: DateTime.makeUnsafe("2026-06-24T04:00:00Z"),
 	endTime: DateTime.makeUnsafe("2026-06-25T06:00:00Z"),
@@ -230,7 +230,7 @@ describe("sessionReplaysFacetsQuery userId filter", () => {
 		// duration histogram / p50 / p95 / total / live — userId is applied to all
 		// of them (never excluded, unlike each branch's own dimension), so the
 		// distribution reflects the selected user rather than the whole org.
-		const occurrences = sql.split("UserId = 'user_123'").length - 1
+		const occurrences = Str.split("UserId = 'user_123'")(sql).length - 1
 		expect(occurrences).toBe(13)
 	})
 
@@ -290,13 +290,13 @@ describe("session replay identity columns", () => {
 		const q = sessionReplaysFacetsQuery({ groupName: "Acme Inc" })
 		const { sql } = compileUnionUnsafe(q, { ...baseParams, ...WINDOW })
 		// 13 branches, minus the group branch itself.
-		expect(sql.split("GroupName = 'Acme Inc'").length - 1).toBe(12)
+		expect(Str.split("GroupName = 'Acme Inc'")(sql).length - 1).toBe(12)
 	})
 
 	it("narrows every facet branch by the exact GroupId", () => {
 		const q = sessionReplaysFacetsQuery({ groupId: "org_acme" })
 		const { sql } = compileUnionUnsafe(q, { ...baseParams, ...WINDOW })
-		expect(sql.split("GroupId = 'org_acme'").length - 1).toBe(13)
+		expect(Str.split("GroupId = 'org_acme'")(sql).length - 1).toBe(13)
 	})
 
 	it("never offers an empty group as a facet option", () => {
@@ -511,9 +511,10 @@ describe("sessionReplaysFacetsQuery duration distribution", () => {
 			...baseParams,
 			...WINDOW,
 		})
-		const durationBranches = sql
-			.split("UNION ALL")
-			.filter((branch) => branch.includes("duration") && branch.includes("facetType"))
+		const durationBranches = Arr.filter(
+			Str.split("UNION ALL")(sql),
+			(branch) => Str.includes("duration")(branch) && Str.includes("facetType")(branch),
+		)
 		expect(durationBranches).toHaveLength(3)
 		for (const branch of durationBranches) {
 			expect(branch).toContain("BrowserName = 'Chrome'")
@@ -606,7 +607,7 @@ describe("sessionReplaysFacetsQuery header counts", () => {
 		// VisitorId has no facet branch of its own, so like userId it narrows all
 		// thirteen. Left out, the sidebar and header described the whole org while
 		// the list beside them showed one browser.
-		expect(sql.split("VisitorId = 'vis_abc'").length - 1).toBe(13)
+		expect(Str.split("VisitorId = 'vis_abc'")(sql).length - 1).toBe(13)
 	})
 
 	it("omits the visitor predicate when absent", () => {
@@ -621,7 +622,7 @@ describe("sessionReplaysFacetsQuery header counts", () => {
 describe("page visited filter", () => {
 	const PAGE_SUBQUERY =
 		"session_replays.SessionId IN (SELECT product_events.SessionId AS SessionId FROM product_events"
-	const flat = (sql: string) => sql.replace(/\s+/g, " ")
+	const flat = (sql: string) => Str.replace(/\s+/g, " ")(sql)
 
 	it("narrows every list branch to sessions that navigated to the exact path", () => {
 		const branches = [{}, { durationMinMs: 1_000 }, { activeTimeMinMs: 1_000 }, { eventType: "error" }]
@@ -658,7 +659,7 @@ describe("page visited filter", () => {
 		const q = sessionReplaysFacetsQuery({ pagePath: "/pricing" })
 		const { sql } = compileUnionUnsafe(q, { ...baseParams, ...WINDOW })
 		// 13 branches, minus the page branch itself.
-		expect(sql.split("PagePath = '/pricing'").length - 1).toBe(12)
+		expect(Str.split("PagePath = '/pricing'")(sql).length - 1).toBe(12)
 	})
 })
 
@@ -669,7 +670,7 @@ describe("page visited filter", () => {
 
 describe("session tags", () => {
 	const params = { ...baseParams, ...WINDOW }
-	const flat = (sql: string) => sql.replace(/\s+/g, " ")
+	const flat = (sql: string) => Str.replace(/\s+/g, " ")(sql)
 
 	it("puts the quality tier and new-visitor flag on every list row", () => {
 		const { sql } = compileUnsafe(sessionReplaysListQuery({}), params)
@@ -678,8 +679,10 @@ describe("session tags", () => {
 
 	it("ranks bot first, then bounce, idle, glance, and falls back to engaged", () => {
 		const { sql } = compileUnsafe(sessionReplaysListQuery({}), params)
-		const order = ["'bot'", "'bounce'", "'idle'", "'glance'", "'engaged'"].map((tag) => sql.indexOf(tag))
-		expect(order.every((position) => position > 0)).toBe(true)
+		const order = Arr.map(["'bot'", "'bounce'", "'idle'", "'glance'", "'engaged'"], (tag) =>
+			sql.indexOf(tag),
+		)
+		expect(Arr.every(order, (position) => position > 0)).toBe(true)
 		expect([...order].sort((a, b) => a - b)).toEqual(order)
 	})
 
@@ -711,7 +714,9 @@ describe("session tags", () => {
 
 	it("counts sessions per tag in one facet branch", () => {
 		const sql = flat(compileUnionUnsafe(sessionReplaysFacetsQuery({}), params).sql)
-		const tagBranch = sql.split("UNION ALL").find((branch) => branch.includes("'tag' AS facetType"))
+		const tagBranch = Str.split("UNION ALL")(sql).find((branch) =>
+			Str.includes("'tag' AS facetType")(branch),
+		)
 		expect(tagBranch).toContain(
 			"arrayJoin(arrayFilter(tag -> tag != '', [t.quality, if(t.signedIn = 1, 'signed_in', ''), if(t.newVisitor = 1, 'new_visitor', '')])) AS name",
 		)
@@ -719,11 +724,11 @@ describe("session tags", () => {
 
 	it("narrows every other facet branch by the selected tags, but not the tag branch", () => {
 		const sql = flat(compileUnionUnsafe(sessionReplaysFacetsQuery({ tags: ["engaged"] }), params).sql)
-		const branches = sql.split("UNION ALL")
-		const tagBranch = branches.find((branch) => branch.includes("'tag' AS facetType"))
+		const branches = Str.split("UNION ALL")(sql)
+		const tagBranch = branches.find((branch) => Str.includes("'tag' AS facetType")(branch))
 		expect(tagBranch).not.toContain("WHERE t.quality = 'engaged'")
 		// Every other branch, including the hand-written error one, is narrowed by it.
-		const narrowed = branches.filter((branch) => branch.includes("WHERE t.quality = 'engaged'"))
+		const narrowed = Arr.filter(branches, (branch) => Str.includes("WHERE t.quality = 'engaged'")(branch))
 		expect(narrowed.length).toBe(branches.length - 1)
 	})
 
@@ -731,7 +736,9 @@ describe("session tags", () => {
 		const sql = flat(
 			compileUnionUnsafe(sessionReplaysFacetsQuery({ tags: ["bot", "signed_in"] }), params).sql,
 		)
-		const tagBranch = sql.split("UNION ALL").find((branch) => branch.includes("'tag' AS facetType"))
+		const tagBranch = Str.split("UNION ALL")(sql).find((branch) =>
+			Str.includes("'tag' AS facetType")(branch),
+		)
 		// A tier is counted under the selected traits only: ticking a tier replaces the tier.
 		expect(tagBranch).toContain("if((t.quality != '' AND t.signedIn = 1), t.quality, '')")
 		// A trait is counted under the selected tier and the other selected traits.

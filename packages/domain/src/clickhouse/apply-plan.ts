@@ -8,7 +8,7 @@
  * step's `sql` in order; the Workflow additionally wraps each in a durable
  * `step.do(step.name, …)` for resumability + progress.
  */
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 
 import {
 	compileBackfillChunk,
@@ -53,7 +53,7 @@ const ident = (db: string, name: string): string => `\`${db}\`.\`${name}\``
 /** Format unix seconds as a UTC ClickHouse datetime literal. */
 const toChDateTime = (unixSeconds: number): string => {
 	const d = new Date(unixSeconds * 1000)
-	const p = (n: number): string => String(n).padStart(2, "0")
+	const p = (n: number): string => Str.padStart(2, "0")(String(n))
 	return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`
 }
 
@@ -62,8 +62,8 @@ const decodeJsonRow = Schema.decodeUnknownOption(
 )
 
 const parseFirstRow = (text: string): Record<string, unknown> | null => {
-	for (const line of text.split("\n")) {
-		const trimmed = line.trim()
+	for (const line of Str.split("\n")(text)) {
+		const trimmed = Str.trim(line)
 		if (trimmed.length === 0) continue
 		// The query is ours and asks for JSONEachRow, so a line that does not decode
 		// is a warning or a blank the server interleaved — skip to the next one.
@@ -107,7 +107,7 @@ export const expandBackfill = async (
 		const from = toChDateTime(w)
 		const to = toChDateTime(w + windowSeconds)
 		steps.push({
-			name: `backfill:${spec.target}:${from.slice(0, 10)}`,
+			name: `backfill:${spec.target}:${Str.slice(0, 10)(from)}`,
 			sql: compileBackfillChunk(spec, database, from, to),
 			backfill: true,
 		})

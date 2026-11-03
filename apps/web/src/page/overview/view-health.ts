@@ -30,6 +30,7 @@ import type { HealthSnapshot, Incident, Model } from "./model"
 import { alertFiringHero } from "./view-hero"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The service health overview: the alerts banner and
 // the health summary rail above the usage cards.
@@ -99,7 +100,7 @@ export type HealthOverviewInputs = Readonly<{
 /** `ServiceHealthOverview`: the banner once alerts are known; the rail loading, absent on error, counted on success. */
 export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: HealthOverviewInputs): Html => {
 	const incidents = AsyncData.getOrElse(model.incidents, () => [])
-	const open = incidents.filter((incident) => incident.status === "open")
+	const open = Arr.filter(incidents, (incident) => incident.status === "open")
 	const rules = AsyncData.getOrElse(model.rules, () => [])
 	// "All clear" claims to know: without live alerts (loading or sync down) the banner stays out.
 	const isAlertsKnown = AsyncData.isSuccess(model.incidents) && AsyncData.isSuccess(model.rules)
@@ -108,26 +109,22 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 		: [
 				alertFiringHero(h, {
 					openCount: open.length,
-					criticalCount: open.filter((incident) => incident.severity === "critical").length,
-					warningCount: open.filter((incident) => incident.severity === "warning").length,
-					rulesEnabled: rules.filter((enabled) => enabled).length,
+					criticalCount: Arr.filter(open, (incident) => incident.severity === "critical").length,
+					warningCount: Arr.filter(open, (incident) => incident.severity === "warning").length,
+					rulesEnabled: Arr.filter(rules, (enabled) => enabled).length,
 					rulesTotal: rules.length,
 				}),
 			]
 	const data = healthData(model)
 	return AsyncData.matchData(data, {
-		onEmpty: () =>
-			section(h, "mb-4 space-y-3", false, [
-				...banner,
-				statRailLoading(h, 4),
-			]),
+		onEmpty: () => section(h, "mb-4 space-y-3", false, [...banner, statRailLoading(h, 4)]),
 		// An empty section keeps no margin, or the page strip's gap above the usage rail doubles.
 		onFailure: () => section(h, banner.length > 0 ? "mb-4 space-y-3" : "space-y-3", false, banner),
 		onData: ([snapshot, anomalies, alerts]) => {
 			const counts = countByHealth(
 				enrichServices(
 					snapshot,
-					alerts.filter((incident) => incident.status === "open"),
+					Arr.filter(alerts, (incident) => incident.status === "open"),
 					anomalies,
 					nowMs,
 				),
@@ -170,29 +167,27 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 }
 
 const listHeader = <M>(h: HtmlBuilder<M>, slice: SliceSearch): Html =>
-	hstack(h, { justify: "between" },
-		[
-			h.div(
-				[],
-				[
-					eyebrow(h, { variant: "label", as: "h2" }, ["Services"]),
-					h.p(
-						[h.Class("mt-0.5 font-prose text-2xs text-foreground-subtle")],
-						["Status reflects active alerts and baseline anomalies."],
-					),
-				],
-			),
-			h.a(
-				[
-					h.Href(servicesHref(slice)),
-					h.Class(
-						"text-xs font-medium text-muted-foreground hover:text-foreground active:text-foreground",
-					),
-				],
-				["View all services →"],
-			),
-		],
-	)
+	hstack(h, { justify: "between" }, [
+		h.div(
+			[],
+			[
+				eyebrow(h, { variant: "label", as: "h2" }, ["Services"]),
+				h.p(
+					[h.Class("mt-0.5 font-prose text-2xs text-foreground-subtle")],
+					["Status reflects active alerts and baseline anomalies."],
+				),
+			],
+		),
+		h.a(
+			[
+				h.Href(servicesHref(slice)),
+				h.Class(
+					"text-xs font-medium text-muted-foreground hover:text-foreground active:text-foreground",
+				),
+			],
+			["View all services →"],
+		),
+	])
 
 const MAX_ROWS = 7
 
@@ -230,7 +225,7 @@ export const healthList = <M>(
 		onData: ([snapshot, anomalies, alerts]) => {
 			const rows = enrichServices(
 				snapshot,
-				alerts.filter((incident) => incident.status === "open"),
+				Arr.filter(alerts, (incident) => incident.status === "open"),
 				anomalies,
 				nowMs,
 			).slice(0, MAX_ROWS)
@@ -243,7 +238,7 @@ export const healthList = <M>(
 							? emptyState
 							: h.ul(
 									[h.Class("divide-y divide-border")],
-									rows.map((row) => serviceRow(h, row, slice)),
+									Arr.map(rows, (row) => serviceRow(h, row, slice)),
 								),
 					],
 					"overflow-hidden p-0",
@@ -332,19 +327,12 @@ const serviceRow = <M>(
 			listRow(h, {
 				href: serviceHref(slice, service),
 				leading: statusDot(h, { tone: HEALTH_TONE[health], size: "lg" }),
-				title: hstack(h, { gap: "2", shrink: true, as: "span" },
-					[
-						serviceDot(h, { serviceName: service.serviceName, size: "sm" }),
-						h.span(
-							[h.Class("truncate text-sm font-medium text-foreground")],
-							[service.serviceName],
-						),
-						badge(h, { variant: "muted", size: "xs", className: "shrink-0" }, [
-							service.environment,
-						]),
-						...(primary === undefined ? [] : [causeBadge(h, primary)]),
-					],
-				),
+				title: hstack(h, { gap: "2", shrink: true, as: "span" }, [
+					serviceDot(h, { serviceName: service.serviceName, size: "sm" }),
+					h.span([h.Class("truncate text-sm font-medium text-foreground")], [service.serviceName]),
+					badge(h, { variant: "muted", size: "xs", className: "shrink-0" }, [service.environment]),
+					...(primary === undefined ? [] : [causeBadge(h, primary)]),
+				]),
 				trailing: h.div(
 					[h.Class("flex shrink-0 items-center gap-5 font-mono text-xs tabular-nums")],
 					[

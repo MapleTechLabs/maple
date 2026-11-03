@@ -13,7 +13,7 @@ import {
 } from "@maple/domain/http/v2"
 import type { V2AuditLogEntry } from "@maple/domain/http/v2"
 import type { AuditLogEntry } from "@maple/backend/services/audit/audit-event"
-import { Cause, Effect, Option, Schema } from "effect"
+import { Cause, Effect, Option, Schema, Array as Arr } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
@@ -171,7 +171,8 @@ export const HttpV2AuditLogLive = HttpApiBuilder.group(MapleApiV2, "auditLog", (
 				Effect.map(
 					(all) =>
 						new Map(
-							all.map(
+							Arr.map(
+								all,
 								(member) =>
 									[
 										member.userId,
@@ -233,7 +234,7 @@ export const HttpV2AuditLogLive = HttpApiBuilder.group(MapleApiV2, "auditLog", (
 									? Effect.succeed([])
 									: directory(tenant.orgId).pipe(
 											Effect.map((known) =>
-												rows.map((row) => toV2AuditLogEntry(row, known)),
+												Arr.map(rows, (row) => toV2AuditLogEntry(row, known)),
 											),
 										),
 							),

@@ -9,7 +9,7 @@ import {
 import { rect } from "@tanstack/charts/rect"
 import { text } from "@tanstack/charts/text"
 import { tooltip } from "@tanstack/charts/tooltip"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { ChartTooltip } from "@maple/views/charts/chart-spec"
 import type { BuiltChart } from "@maple/views/charts/definitions/built-chart"
 import { MUTED_COLOR_AMOUNT } from "@maple/views/charts/definitions/plot-constants"
@@ -27,16 +27,13 @@ const compactCount = new Intl.NumberFormat("en-US", { notation: "compact", maxim
 const bumpLine = (points: ReadonlyArray<readonly [number, number]>): string => {
 	const [first, ...rest] = points
 	if (first === undefined) return ""
-	return rest.reduce(
-		(acc, point) => {
-			const midX = (acc.previous[0] + point[0]) / 2
-			return {
-				path: `${acc.path}C${midX},${acc.previous[1]},${midX},${point[1]},${point[0]},${point[1]}`,
-				previous: point,
-			}
-		},
-		{ path: `M${first[0]},${first[1]}`, previous: first },
-	).path
+	return Arr.reduce(rest, { path: `M${first[0]},${first[1]}`, previous: first }, (acc, point) => {
+		const midX = (acc.previous[0] + point[0]) / 2
+		return {
+			path: `${acc.path}C${midX},${acc.previous[1]},${midX},${point[1]},${point[0]},${point[1]}`,
+			previous: point,
+		}
+	}).path
 }
 
 const bumpX: ChartCurve = {
@@ -44,7 +41,7 @@ const bumpX: ChartCurve = {
 	area: (top, bottom) => {
 		if (top.length === 0) return ""
 		const back = [...bottom].reverse()
-		return `${bumpLine(top)}${bumpLine(back).replace("M", "L")}Z`
+		return `${bumpLine(top)}${Str.replace("M", "L")(bumpLine(back))}Z`
 	},
 }
 
@@ -56,12 +53,16 @@ const bandForEdge = (edge: SankeyEdge): (typeof FLOW_BANDS)[number]["key"] => {
 
 /** Every listed node some edge touches, then any service only the edges name. */
 const nodesOf = (edges: ReadonlyArray<SankeyEdge>): ReadonlyArray<SankeyNode> => {
-	const listed = SANKEY_NODES.filter((node) =>
-		edges.some((edge) => edge.sourceService === node.service || edge.targetService === node.service),
+	const listed = Arr.filter(SANKEY_NODES, (node) =>
+		Arr.some(edges, (edge) => edge.sourceService === node.service || edge.targetService === node.service),
 	)
-	const extra = [...new Set(edges.flatMap((edge) => [edge.sourceService, edge.targetService]))]
-		.filter((service) => !listed.some((node) => node.service === service))
-		.map((service) => ({ service }))
+	const extra = Arr.map(
+		Arr.filter(
+			[...new Set(Arr.flatMap(edges, (edge) => [edge.sourceService, edge.targetService]))],
+			(service) => !Arr.some(listed, (node) => node.service === service),
+		),
+		(service) => ({ service }),
+	)
 	return [...listed, ...extra]
 }
 
@@ -110,7 +111,7 @@ export const buildSankeySpike = (spec: SpikeSpec): BuiltChart<Datum, ChartValue,
 	const color = (token: string) => spec.colors[token] ?? ""
 	const muted = mutedOf(
 		spec,
-		FLOW_BANDS.map((band) => band.key),
+		Arr.map(FLOW_BANDS, (band) => band.key),
 	)
 	const bandColor = (band: (typeof FLOW_BANDS)[number]["key"]) =>
 		color(FLOW_BANDS.find((candidate) => candidate.key === band)?.token ?? "--chart-1")

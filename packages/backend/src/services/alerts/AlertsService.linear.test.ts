@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Duration, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Duration, Effect, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -208,7 +208,7 @@ describe("AlertsService with a Linear destination", () => {
 			)
 			assert.strictEqual(tested.message, "Linear team Engineering (ENG) is reachable")
 			assert.notInclude(
-				linear.operations.map((operation) => operation.name),
+				Arr.map(linear.operations, (operation) => operation.name),
 				"MapleIssueCreate",
 			)
 
@@ -278,11 +278,11 @@ describe("AlertsService with a Linear destination", () => {
 			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 
-			const comments = linear.operations.filter((operation) => operation.name === "MapleComment")
+			const comments = Arr.filter(linear.operations, (operation) => operation.name === "MapleComment")
 			assert.lengthOf(comments, 1)
 			assert.include(String(comments[0]!.variables.input?.body), "Resolved")
 			assert.lengthOf(
-				linear.operations.filter((operation) => operation.name === "MapleIssueCreate"),
+				Arr.filter(linear.operations, (operation) => operation.name === "MapleIssueCreate"),
 				1,
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: linear.fetch })))

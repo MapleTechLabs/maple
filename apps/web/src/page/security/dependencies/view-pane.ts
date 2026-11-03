@@ -8,6 +8,7 @@ import { linkTabStrip, type LinkTab } from "../../kit/underline-tabs"
 import { ALL_REPOSITORIES, dependenciesHref, type Digest } from "./derive"
 import { Message, type Model, type Pane } from "./model"
 import { advisoryDot } from "./view-repositories"
+import { Array as Arr } from "effect"
 
 // What both scopes share: the switcher that picks the scope, and the tabs between its views.
 
@@ -27,7 +28,7 @@ const switcherItem = (h: H, name: string, worst: AdvisorySeverity | null, open: 
  */
 export const scopeSwitcher = (h: H, model: Model, digest: Digest, detail: ReadonlyArray<Html>): Html => {
 	const byName = new Map(
-		digest.repositories.map((repository) => [repository.fullName, repository.id] as const),
+		Arr.map(digest.repositories, (repository) => [repository.fullName, repository.id] as const),
 	)
 	const itemOf = (label: string): Html => {
 		const repositoryId = byName.get(label)
@@ -42,7 +43,7 @@ export const scopeSwitcher = (h: H, model: Model, digest: Digest, detail: Readon
 			view: comboboxView,
 			toParentMessage: (message) => Message.GotRepositoryBoxMessage({ message }),
 			viewInputs: {
-				items: [ALL_REPOSITORIES, ...digest.ranked.map((repository) => repository.fullName)],
+				items: [ALL_REPOSITORIES, ...Arr.map(digest.ranked, (repository) => repository.fullName)],
 				ariaLabel: "Repository",
 				placeholder: `Search ${countLabel(digest.repositories.length, "repository", "repositories")}…`,
 				emptyText: "No repository matches",

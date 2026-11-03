@@ -5,7 +5,7 @@ import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
 import { truncate, formatNumber, toSecondTimestamp } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { SearchLogsOutput, type LogSearchFilters } from "@maple/domain/mcp-outputs"
 import { searchLogs } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -117,14 +117,14 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 					total: result.total,
 					...(hasMore ? { nextOffset: params.offset + result.logs.length } : undefined),
 				},
-				logs: result.logs.map((l) => ({
+				logs: Arr.map(result.logs, (l) => ({
 					timestamp: l.timestamp,
 					severityText: l.severityText,
 					serviceName: l.serviceName,
 					body: l.body,
 					...(l.traceId ? { traceId: l.traceId } : undefined),
 					...(l.spanId ? { spanId: l.spanId } : undefined),
-					...(Object.keys(l.keyAttributes).length > 0
+					...(Rec.keys(l.keyAttributes).length > 0
 						? { keyAttributes: l.keyAttributes }
 						: undefined),
 				})),
@@ -152,23 +152,29 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 					},
 				}
 			}
-			const lines = output.logs.map((log) => {
-				const time = log.timestamp.split(" ")[1] ?? log.timestamp
-				const sevUpper = log.severityText.toUpperCase()
+			const lines = Arr.map(output.logs, (log) => {
+				const time = Str.split(" ")(log.timestamp)[1] ?? log.timestamp
+				const sevUpper = Str.toUpperCase(log.severityText)
 				const marker = sevUpper === "ERROR" || sevUpper === "FATAL" ? "●" : " "
 				// Full ids: a prefix cannot be passed to inspect_trace / inspect_span.
 				const span = log.spanId ? ` span=${log.spanId}` : ""
 				const ref = log.traceId ? ` [trace=${log.traceId}${span}]` : ""
-				const attrs = Object.entries(log.keyAttributes ?? {})
-					.map(([k, v]) => `\n    ${k}: ${truncate(v, 300)}`)
-					.join("")
-				return `${marker} ${time} [${log.severityText.padEnd(5)}] ${log.serviceName}: ${truncate(log.body, 120)}${ref}${attrs}`
+				const attrs = Arr.join(
+					Arr.map(
+						Rec.toEntries(log.keyAttributes ?? {}),
+						([k, v]) => `\n    ${k}: ${truncate(v, 300)}`,
+					),
+					"",
+				)
+				return `${marker} ${time} [${Str.padEnd(5)(log.severityText)}] ${log.serviceName}: ${truncate(log.body, 120)}${ref}${attrs}`
 			})
 			const pagination = output.pagination
 			const nextOffset = pagination?.nextOffset
 			// One log per trace, so the hint carries a timestamp from inside that trace.
 			const traceLogs = [
-				...new Map(output.logs.flatMap((l) => (l.traceId ? [[l.traceId, l] as const] : []))).values(),
+				...new Map(
+					Arr.flatMap(output.logs, (l) => (l.traceId ? [[l.traceId, l] as const] : [])),
+				).values(),
 			].slice(0, 3)
 			const spanPivot = output.logs.find((l) => l.spanId && l.traceId)
 			return {
@@ -177,7 +183,7 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 						? `Logs (at least ${formatNumber(output.totalCount)}; the exact count did not finish)`
 						: `Logs (${formatNumber(output.totalCount)} total)`,
 				scope,
-				blocks: [doc.text(lines.join("\n"))],
+				blocks: [doc.text(Arr.join(lines, "\n"))],
 				...(nextOffset === undefined
 					? undefined
 					: {
@@ -203,7 +209,7 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 							},
 						}),
 				next: [
-					...traceLogs.map((l) =>
+					...Arr.map(traceLogs, (l) =>
 						doc.next(
 							"inspect_trace",
 							{ trace_id: l.traceId, timestamp: toSecondTimestamp(l.timestamp) },

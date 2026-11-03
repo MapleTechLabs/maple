@@ -4,7 +4,7 @@ import {
 	PrReviewRepositoryConfig,
 	type PrReviewSeverity,
 } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 // The review rules form state and its conversions.
 
@@ -66,7 +66,7 @@ export const stateFromConfig = (mode: Mode, config: PrReviewRepositoryConfig): F
 	const inherits = mode === "repository"
 	return {
 		instructions: config.instructions ?? "",
-		ignorePaths: (config.ignorePaths ?? []).join("\n"),
+		ignorePaths: Arr.join(config.ignorePaths ?? [], "\n"),
 		categories: config.categories ?? (inherits ? null : ALL_CATEGORIES),
 		minInlineSeverity: config.minInlineSeverity ?? (inherits ? INHERIT : BUILT_IN.minInlineSeverity),
 		reviewDrafts:
@@ -96,7 +96,9 @@ export const stateFromConfig = (mode: Mode, config: PrReviewRepositoryConfig): F
 }
 
 const sameCategories = (a: FormState["categories"], b: FormState["categories"]) =>
-	a === null || b === null ? a === b : a.length === b.length && a.every((category) => b.includes(category))
+	a === null || b === null
+		? a === b
+		: a.length === b.length && Arr.every(a, (category) => b.includes(category))
 
 export const sameState = (a: FormState, b: FormState) =>
 	a.instructions === b.instructions &&
@@ -112,13 +114,13 @@ export const sameState = (a: FormState, b: FormState) =>
 	sameCategories(a.categories, b.categories)
 
 const parseIgnorePaths = (text: string) =>
-	text
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0)
+	Arr.filter(
+		Arr.map(Str.split("\n")(text), (line) => Str.trim(line)),
+		(line) => line.length > 0,
+	)
 
 const checkLimit = (text: string, max: number, label: string): string | null => {
-	const trimmed = text.trim()
+	const trimmed = Str.trim(text)
 	if (trimmed === "") return null
 	const value = Number(trimmed)
 	return Number.isInteger(value) && value >= 1 && value <= max
@@ -130,7 +132,7 @@ const checkLimit = (text: string, max: number, label: string): string | null => 
 export const validate = (state: FormState): string | null => {
 	if (state.instructions.length > INSTRUCTIONS_MAX)
 		return `Instructions are limited to ${INSTRUCTIONS_MAX} characters.`
-	if (parseIgnorePaths(state.ignorePaths).some((path) => path.length > IGNORE_PATH_MAX))
+	if (Arr.some(parseIgnorePaths(state.ignorePaths), (path) => path.length > IGNORE_PATH_MAX))
 		return `Each ignored path is limited to ${IGNORE_PATH_MAX} characters.`
 	if (parseIgnorePaths(state.ignorePaths).length > 50) return "At most 50 ignored paths."
 	if (state.categories !== null && state.categories.length === 0) return "Pick at least one lens."
@@ -145,10 +147,10 @@ const FEEDBACK_SCOPES = ["organization", "repository", "off"] as const
 
 /** Inherited and built-in values are omitted, so later default changes still reach the config. */
 export const configFromState = (mode: Mode, state: FormState): PrReviewRepositoryConfig => {
-	const instructions = state.instructions.trim()
+	const instructions = Str.trim(state.instructions)
 	const ignorePaths = parseIgnorePaths(state.ignorePaths)
-	const limit = state.dailyLimit.trim()
-	const perPullRequest = state.automaticReviewLimit.trim()
+	const limit = Str.trim(state.dailyLimit)
+	const perPullRequest = Str.trim(state.automaticReviewLimit)
 	const org = mode === "organization"
 	const categories =
 		state.categories === null || (org && state.categories.length === ALL_CATEGORIES.length)

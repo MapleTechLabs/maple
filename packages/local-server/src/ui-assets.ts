@@ -3,7 +3,7 @@
 //   2. apps/local-ui/dist on disk — the dev fallback (`bun run … start`).
 // Returns `undefined` when no SPA is available (API-only mode).
 
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { join, sep } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -32,7 +32,7 @@ const MIME: Record<string, string> = {
 } satisfies Record<string, string>
 
 const mimeFor = (path: string): string =>
-	MIME[path.split(".").pop()?.toLowerCase() ?? ""] ?? "application/octet-stream"
+	MIME[Str.split(".")(path).pop()?.toLowerCase() ?? ""] ?? "application/octet-stream"
 
 /**
  * Build an `AssetResolver`, or `undefined` when no SPA is available.
@@ -71,7 +71,7 @@ export const resolveUiAssets = (): Effect.Effect<AssetResolver | undefined, neve
 					const body = yield* fs.readFile(join(distDir, rel))
 					// Normalize OS path separators to the URL-style forward slashes the
 					// server looks assets up by (e.g. "assets/app.js").
-					preloaded.set(rel.split(sep).join("/"), { body, contentType: mimeFor(rel) })
+					preloaded.set(Arr.join(Str.split(sep)(rel), "/"), { body, contentType: mimeFor(rel) })
 				}).pipe(Effect.ignore),
 			{ concurrency: "unbounded" },
 		)

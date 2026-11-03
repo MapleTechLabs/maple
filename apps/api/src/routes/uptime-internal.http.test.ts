@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import {
+	ConfigProvider,
+	Context,
+	Effect,
+	Layer,
+	ManagedRuntime,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { IngestKeysResponse, IsoDateTimeString, OrgId, UserId } from "@maple/domain/http"
 import type { UptimeMonitorId } from "@maple/domain/primitives"
@@ -24,7 +33,7 @@ const ingestKeysStub = Layer.succeed(OrgIngestKeysService, {
 	getOrCreateMany: (orgIds) =>
 		Effect.succeed(
 			new Map(
-				orgIds.map((orgId) => [
+				Arr.map(orgIds, (orgId) => [
 					orgId,
 					new IngestKeysResponse({
 						publicKey: `maple_pk_${orgId}`,
@@ -122,7 +131,7 @@ const createMonitors = Effect.gen(function* () {
 		createdBy: USER,
 	})
 	const url = heartbeat.heartbeatUrl ?? ""
-	return { http, heartbeat, token: url.slice(url.lastIndexOf("/") + 1) }
+	return { http, heartbeat, token: Str.slice(url.lastIndexOf("/") + 1)(url) }
 })
 
 const getMonitor = (id: UptimeMonitorId) =>

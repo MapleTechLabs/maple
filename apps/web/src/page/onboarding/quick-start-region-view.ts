@@ -8,6 +8,7 @@ import { icon } from "@maple/views/ui/icon"
 import { optionCard } from "./option-card"
 import { Message, type RegionChoice } from "./quick-start"
 import { regionFlag } from "./region-flag"
+import { Array as Arr } from "effect"
 
 // `StepRegion`: the first step for an org created without a region. This region continues here; the other
 // moves onboarding there.
@@ -88,7 +89,7 @@ export const regionStep = (h: H, choice: RegionChoice): Html =>
 						[h.Class("grid min-w-0 gap-3 sm:grid-cols-2")],
 						[
 							h.legend([h.Class("sr-only")], ["Data region"]),
-							...MapleRegion.literals.map((region) => regionCard(h, choice, region)),
+							...Arr.map(MapleRegion.literals, (region) => regionCard(h, choice, region)),
 						],
 					),
 					h.p(

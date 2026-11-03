@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { generateDemoRows } from "./fixtures"
+import { Array as Arr, String as Str } from "effect"
 
 describe("generateDemoRows metrics", () => {
 	const rows = generateDemoRows({ orgId: "org_test", hours: 2, ratePerHour: 10 })
@@ -8,14 +9,14 @@ describe("generateDemoRows metrics", () => {
 		expect(rows.metricGaugeRows.length).toBeGreaterThan(0)
 		expect(rows.metricSumRows.length).toBeGreaterThan(0)
 		// The demo dashboards chart these by name.
-		expect(rows.metricGaugeRows.map((r) => r.metric_name)).toEqual(
+		expect(Arr.map(rows.metricGaugeRows, (r) => r.metric_name)).toEqual(
 			expect.arrayContaining([
 				"process.runtime.nodejs.memory.heap.used",
 				"process.runtime.nodejs.handles",
 				"process.runtime.nodejs.eventloop.lag",
 			]),
 		)
-		expect(rows.metricSumRows.map((r) => r.metric_name)).toContain("process.runtime.nodejs.gc.count")
+		expect(Arr.map(rows.metricSumRows, (r) => r.metric_name)).toContain("process.runtime.nodejs.gc.count")
 	})
 
 	it("scopes every metric row to the org (maple_org_id drives OrgId)", () => {
@@ -46,7 +47,7 @@ describe("generateDemoRows metrics", () => {
 		const windowStart = now - 2 * 3600 * 1000 - 60_000
 		for (const row of rows.metricGaugeRows.slice(0, 20)) {
 			expect(row.timestamp).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/)
-			const ms = new Date(`${row.timestamp.replace(" ", "T")}Z`).getTime()
+			const ms = new Date(`${Str.replace(" ", "T")(row.timestamp)}Z`).getTime()
 			expect(ms).toBeGreaterThanOrEqual(windowStart)
 			expect(ms).toBeLessThanOrEqual(now + 60_000)
 		}

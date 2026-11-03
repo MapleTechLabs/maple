@@ -3,7 +3,7 @@
  * incidents, like the REST routes; an agent's incident starts as a draft unless it asks to publish,
  * because every update is public text on the customer's page.
  */
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import {
 	ApplyStatusPageConfigOutput,
 	GetStatusPageConfigOutput,
@@ -115,7 +115,7 @@ const toIncidentRow = (incident: StatusPageIncidentRecord): typeof StatusPageInc
 		resolvedAt: isoOrNull(incident.resolvedAt),
 		scheduledStart: isoOrNull(incident.scheduledStart),
 		scheduledEnd: isoOrNull(incident.scheduledEnd),
-		componentIds: incident.componentIds.map((id) =>
+		componentIds: Arr.map(incident.componentIds, (id) =>
 			encodePublicId(PublicIdPrefixes.statusPageComponent, id),
 		),
 		latestUpdate:
@@ -187,9 +187,9 @@ const pageIsDraft = Effect.fnUntraced(function* (tool: string, orgId: OrgId, pag
 const resolvePage = Effect.fnUntraced(function* (tool: string, orgId: OrgId, ref: string) {
 	const service = yield* StatusPagesService
 	const pages = yield* service.list(orgId).pipe(Effect.mapError(toMcpError(tool)))
-	const value = ref.trim()
+	const value = Str.trim(ref)
 	const id = decodePublicId(PublicIdPrefixes.statusPage, value) ?? value
-	const matches = pages.filter((page) => page.id === id || page.slug === value || page.name === value)
+	const matches = Arr.filter(pages, (page) => page.id === id || page.slug === value || page.name === value)
 	const [page] = matches
 	if (page === undefined) {
 		return yield* new McpInvalidInputError({
@@ -207,7 +207,7 @@ const resolvePage = Effect.fnUntraced(function* (tool: string, orgId: OrgId, ref
 })
 
 const decodeIncidentId = (ref: string) => {
-	const value = ref.trim()
+	const value = Str.trim(ref)
 	return Schema.decodeUnknownEffect(StatusPageIncidentId)(
 		decodePublicId(PublicIdPrefixes.statusPageIncident, value) ?? value,
 	).pipe(
@@ -227,13 +227,18 @@ const resolveComponents = (
 	refs: ReadonlyArray<string>,
 ): Effect.Effect<ReadonlyArray<StatusPageComponentId>, McpInvalidInputError> =>
 	Effect.forEach(refs, (ref) => {
-		const value = ref.trim()
+		const value = Str.trim(ref)
 		const id = decodePublicId(PublicIdPrefixes.statusPageComponent, value) ?? value
 		const found = components.find((component) => component.id === id || component.name === value)
 		return found === undefined
 			? Effect.fail(
 					new McpInvalidInputError({
-						message: `No component "${ref}" on this page. Its components: ${components.map((c) => c.name).join(", ") || "none"}.`,
+						message: `No component "${ref}" on this page. Its components: ${
+							Arr.join(
+								Arr.map(components, (c) => c.name),
+								", ",
+							) || "none"
+						}.`,
 						parameter: "components",
 					}),
 				)
@@ -313,7 +318,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				.list(tenant.orgId)
 				.pipe(Effect.mapError(toMcpError("list_status_pages")))
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "result.rowCount": pages.length })
-			return { pages: pages.map(toPageRow), total: pages.length }
+			return { pages: Arr.map(pages, toPageRow), total: pages.length }
 		}),
 		render: (output) => ({
 			title: "Status pages",
@@ -331,7 +336,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 					: [
 							doc.table(
 								["Name", "Slug", "Id", "Published", "Publish error"],
-								output.pages.map((page) => [
+								Arr.map(output.pages, (page) => [
 									page.name,
 									page.slug,
 									page.id,
@@ -346,15 +351,9 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 								]),
 							),
 						],
-			next: output.pages
-				.slice(0, 3)
-				.map((page) =>
-					doc.next(
-						"get_status_page",
-						{ page: page.slug },
-						`${page.name}'s components and incidents`,
-					),
-				),
+			next: Arr.map(output.pages.slice(0, 3), (page) =>
+				doc.next("get_status_page", { page: page.slug }, `${page.name}'s components and incidents`),
+			),
 		}),
 	})
 
@@ -387,7 +386,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			const probesSeenAt = yield* builder
 				.probesSeenAt(nowMs, tenant.orgId)
 				.pipe(Effect.mapError(toMcpError("get_status_page")))
-			const monitored = snapshot.components.some((component) => component.monitored)
+			const monitored = Arr.some(snapshot.components, (component) => component.monitored)
 			// No recent probe at all is the most delayed a monitored page can be, not "live now".
 			const freshness =
 				monitored && probesSeenAt === null
@@ -396,7 +395,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			return {
 				page: toPageRow(page),
 				overallStatus: overallStatus(snapshot),
-				components: snapshot.components.map((component) => {
+				components: Arr.map(snapshot.components, (component) => {
 					const record = records.find((candidate) => candidate.id === component.id)
 					return {
 						id: encodePublicId(PublicIdPrefixes.statusPageComponent, component.id),
@@ -410,7 +409,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 						manualStatus: record?.manualStatus ?? null,
 					}
 				}),
-				activeIncidents: incidents.map(toIncidentRow),
+				activeIncidents: Arr.map(incidents, toIncidentRow),
 				freshness: {
 					state: freshness._tag,
 					updatedAt: freshness.updatedAt === null ? null : iso(freshness.updatedAt),
@@ -423,7 +422,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			title: `Status page: ${output.page.name}`,
 			notices: [
 				// No suggested call: both follow-ups need a public message only the user can word.
-				...(output.activeIncidents.some((incident) => isActiveIncident(incident))
+				...(Arr.some(output.activeIncidents, (incident) => isActiveIncident(incident))
 					? [
 							"To update an open incident, call post_status_page_update (incident, status, message) or resolve_status_page_incident (incident, message) with wording the user approves.",
 						]
@@ -460,7 +459,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 					: [
 							doc.table(
 								["Component", "Group", "Status", "Monitor", "Id"],
-								output.components.map((c) => [
+								Arr.map(output.components, (c) => [
 									c.name,
 									c.group ?? "-",
 									c.status,
@@ -474,7 +473,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 					: [
 							doc.table(
 								["Title", "Kind", "Status", "Impact", "Published", "Id"],
-								output.activeIncidents.map((i) => [
+								Arr.map(output.activeIncidents, (i) => [
 									i.title,
 									i.kind,
 									i.status,
@@ -755,7 +754,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 					resourceId: page.id,
 					metadata: {
 						name: config.name,
-						fields_changed: changes.fields.join(","),
+						fields_changed: Arr.join(changes.fields, ","),
 						components_created: changes.created.length,
 						components_updated: changes.updated.length,
 						components_deleted: changes.deleted.length,
@@ -775,7 +774,8 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				updated.length === 0 &&
 				deleted.length === 0 &&
 				!reordered
-			const list = (names: ReadonlyArray<string>) => (names.length === 0 ? undefined : names.join(", "))
+			const list = (names: ReadonlyArray<string>) =>
+				names.length === 0 ? undefined : Arr.join(names, ", ")
 			return {
 				title: `Status page config applied: ${output.page.name}`,
 				notices: unchanged

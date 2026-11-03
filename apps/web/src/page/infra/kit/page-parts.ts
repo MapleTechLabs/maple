@@ -3,7 +3,14 @@ import { countLabel as nounCount } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "@maple/views/ui/empty"
+import {
+	empty,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyMessage,
+	emptyTitle,
+} from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
 import { pageTitle } from "@maple/views/ui/page-layout"
 import { searchInput } from "@maple/views/ui/search-input"
@@ -12,6 +19,7 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
+import { Array as Arr } from "effect"
 
 // `PageHero`, `SearchToolbar` and the infra empty states.
 
@@ -27,7 +35,7 @@ export type PageHeroOptions = Readonly<{
 	className?: string
 }>
 
-const isHtmlList = (value: Html | ReadonlyArray<Html>): value is ReadonlyArray<Html> => Array.isArray(value)
+const isHtmlList = (value: Html | ReadonlyArray<Html>): value is ReadonlyArray<Html> => Arr.isArray(value)
 
 const trailingOf = (trailing: PageHeroOptions["trailing"]): ReadonlyArray<Html> =>
 	trailing === undefined ? [] : isHtmlList(trailing) ? trailing : [trailing]

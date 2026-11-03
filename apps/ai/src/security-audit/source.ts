@@ -4,7 +4,7 @@
  * commit the run is pinned to, and every answer is bounded so a single call cannot fill a context.
  */
 import { SKILL_REFERENCE_FILES } from "@maple/security-audit"
-import { Context, Effect, Schema } from "effect"
+import { Context, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 import { toolHandlersWithContent } from "../platform/genai-spans"
 
@@ -130,11 +130,10 @@ const answer = (effect: Effect.Effect<SourceOutput, SourceReadError>) =>
  * `..` resolves lexically. "" is the root; undefined when the path climbs out of it.
  */
 export const normalizePath = (raw: string): string | undefined =>
-	raw
-		.trim()
-		.replaceAll("\\", "/")
-		.split("/")
-		.filter((part) => part !== "" && part !== ".")
+	Arr.filter(
+		Str.split("/")(Str.replaceAll("\\", "/")(Str.trim(raw))),
+		(part) => part !== "" && part !== ".",
+	)
 		.reduce<ReadonlyArray<string> | undefined>(
 			(parts, part) =>
 				parts === undefined
@@ -167,13 +166,16 @@ const MAX_SUGGESTIONS = 10
 const MAX_LISTING = 200
 
 const listing = (path: string, files: ReadonlyArray<string>, truncated: boolean) =>
-	[
-		`${path} is a directory. Tracked files under it:`,
-		...files.slice(0, MAX_LISTING),
-		...(files.length > MAX_LISTING || truncated
-			? ["[listing truncated: list_files a subdirectory]"]
-			: []),
-	].join("\n")
+	Arr.join(
+		[
+			`${path} is a directory. Tracked files under it:`,
+			...files.slice(0, MAX_LISTING),
+			...(files.length > MAX_LISTING || truncated
+				? ["[listing truncated: list_files a subdirectory]"]
+				: []),
+		],
+		"\n",
+	)
 
 /**
  * A read that failed, answered with what the model can do next: a directory's listing, a note that
@@ -181,26 +183,30 @@ const listing = (path: string, files: ReadonlyArray<string>, truncated: boolean)
  */
 const missedRead = (source: SourceReaderApi, path: string, error: SourceReadError) =>
 	Effect.gen(function* () {
-		const basename = path.slice(path.lastIndexOf("/") + 1)
+		const basename = Str.slice(path.lastIndexOf("/") + 1)(path)
 		if (SKILL_REFERENCE_FILES.has(basename))
 			return yield* Effect.fail<ToolFailure>({
 				message: `${path} is not a file of this repository: ${basename} is the audit's own method text, and what you need from it is already in your prompt. Read the target's files instead.`,
 			})
 		const found = yield* Effect.result(source.nearby(path, basename))
 		if (found._tag === "Failure") return yield* Effect.fail<ToolFailure>({ message: error.message })
-		const files = found.success.text.split("\n").filter((line) => line !== "")
-		const under = files.filter((file) => file.startsWith(`${path}/`))
+		const files = Arr.filter(Str.split("\n")(found.success.text), (line) => line !== "")
+		const under = Arr.filter(files, (file) => Str.startsWith(`${path}/`)(file))
 		if (under.length > 0) return listing(path, under, found.success.truncated)
-		const named = files
-			.filter((file) => file === basename || file.endsWith(`/${basename}`))
-			.slice(0, MAX_SUGGESTIONS)
+		const named = Arr.filter(
+			files,
+			(file) => file === basename || Str.endsWith(`/${basename}`)(file),
+		).slice(0, MAX_SUGGESTIONS)
 		return yield* Effect.fail<ToolFailure>({
-			message: [
-				error.message,
-				named.length === 0
-					? `No tracked file is named ${basename}. Use list_files on a parent directory to see what exists.`
-					: `Tracked files with the same name:\n${named.join("\n")}`,
-			].join("\n"),
+			message: Arr.join(
+				[
+					error.message,
+					named.length === 0
+						? `No tracked file is named ${basename}. Use list_files on a parent directory to see what exists.`
+						: `Tracked files with the same name:\n${Arr.join(named, "\n")}`,
+				],
+				"\n",
+			),
 		})
 	})
 

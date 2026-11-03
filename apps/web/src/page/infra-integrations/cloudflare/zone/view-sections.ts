@@ -18,6 +18,7 @@ import { panelScope, type Trigger } from "./view-scope"
 import { hstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // `CloudflareZoneDnsSection`, `CloudflareZoneSecuritySection` and their `StackedBreakdownChart`.
 
@@ -72,7 +73,7 @@ const stackedChart = (
 			scope: options.scope,
 			legend: seriesLegend(h, {
 				maxItems: MAX_LEGEND_CHIPS,
-				items: built.legend.map(({ name, label, color }) => ({
+				items: Arr.map(built.legend, ({ name, label, color }) => ({
 					key: name,
 					label,
 					title: label,
@@ -132,7 +133,7 @@ export const dnsSection = (
 			model,
 			{
 				title: "DNS queries by response code",
-				rows: data.buckets.map((bucket) => ({
+				rows: Arr.map(data.buckets, (bucket) => ({
 					bucket: bucket.bucket,
 					attributeValue: bucket.responseCode,
 					value: bucket.queries,
@@ -160,7 +161,7 @@ export const dnsSection = (
 			],
 			rows.length === 0
 				? [dataTableEmpty(h, ["No DNS queries in this window"])]
-				: rows.map((row) =>
+				: Arr.map(rows, (row) =>
 						h.div(
 							[h.Key(row.queryName), h.Class(ROW_CLASS)],
 							[
@@ -244,7 +245,7 @@ export const securitySection = (
 			model,
 			{
 				title: "Security events by action",
-				rows: data.buckets.map((bucket) => ({
+				rows: Arr.map(data.buckets, (bucket) => ({
 					bucket: bucket.bucket,
 					attributeValue: bucket.action,
 					value: bucket.events,
@@ -274,7 +275,7 @@ export const securitySection = (
 			],
 			rows.length === 0
 				? [dataTableEmpty(h, ["No security events in this window"])]
-				: rows.map((row) =>
+				: Arr.map(rows, (row) =>
 						h.div(
 							[
 								h.Key(`${row.source}:${row.action}:${row.ruleId}:${row.host}`),

@@ -13,7 +13,7 @@
  */
 import type { InboundEvent, InboundMessage } from "@maple/chat-platform"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, String as Str } from "effect"
 import { connectorRelayName, type ConnectorRelayClient } from "./relay/stub.ts"
 
 export interface InboundHandlerApi {
@@ -51,7 +51,7 @@ export class InboundHandler extends Context.Service<InboundHandler, InboundHandl
  * message in every channel the bot can see.
  */
 const worthRelaying = (message: InboundMessage): boolean =>
-	message.mentionsBot || (!message.author.isBot && message.text.trim() !== "")
+	message.mentionsBot || (!message.author.isBot && Str.trim(message.text) !== "")
 
 /**
  * The handler over one way of reaching the relay.

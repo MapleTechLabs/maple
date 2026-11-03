@@ -13,6 +13,7 @@ import {
 	traceIdHex,
 } from "./encode"
 import { decodeMetricsRequest, decodeTraceRequest, encodeMetricsRequest, encodeTraceRequest } from "./proto"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // Field-name set per datasource, parsed from the generated inputSchema string.
 // "start_time DateTime64(9), trace_id String, …" → { start_time, trace_id, … }
@@ -28,11 +29,11 @@ const schemaFields = (datasource: string): Set<string> => {
 		if (ch === "(") depth++
 		else if (ch === ")") depth--
 		if (ch === "," && depth === 0) {
-			fields.add(token.trim().split(/\s+/)[0]!)
+			fields.add(Str.split(/\s+/)(Str.trim(token))[0]!)
 			token = ""
 		} else token += ch
 	}
-	if (token.trim()) fields.add(token.trim().split(/\s+/)[0]!)
+	if (Str.trim(token)) fields.add(Str.split(/\s+/)(Str.trim(token))[0]!)
 	return fields
 }
 
@@ -202,7 +203,7 @@ const sampleLogsReq = () => ({
 	],
 })
 
-const keysOf = (batch: { ndjson: string }) => new Set(Object.keys(JSON.parse(batch.ndjson.split("\n")[0]!)))
+const keysOf = (batch: { ndjson: string }) => new Set(Rec.keys(JSON.parse(Str.split("\n")(batch.ndjson)[0]!)))
 
 describe("encoder output matches the chDB inputSchema", () => {
 	it("traces row keys == traces inputSchema", () => {
@@ -218,7 +219,7 @@ describe("encoder output matches the chDB inputSchema", () => {
 
 	it("each metric type's row keys == its inputSchema", () => {
 		const batches = encodeMetrics(sampleMetricsReq())
-		const byDs = new Map(batches.map((b) => [b.datasource, b]))
+		const byDs = new Map(Arr.map(batches, (b) => [b.datasource, b]))
 		for (const ds of [
 			"metrics_gauge",
 			"metrics_sum",
@@ -285,15 +286,15 @@ describe("value-level spot checks", () => {
 				},
 			],
 		})
-		const rows = batches
-			.find((batch) => batch.datasource === "metrics_histogram")!
-			.ndjson.split("\n")
-			.map((line) => JSON.parse(line))
-		expect(rows.map((row) => row.start_timestamp)).toEqual([
+		const rows = Arr.map(
+			Str.split("\n")(batches.find((batch) => batch.datasource === "metrics_histogram")!.ndjson),
+			(line) => JSON.parse(line),
+		)
+		expect(Arr.map(rows, (row) => row.start_timestamp)).toEqual([
 			"1970-01-01 00:00:00.000000000",
 			"1970-01-01 00:00:00.000000000",
 		])
-		expect(rows.map((row) => row.timestamp)).toEqual([
+		expect(Arr.map(rows, (row) => row.timestamp)).toEqual([
 			"2023-11-14 22:13:21.000000000",
 			"2023-11-14 22:13:21.000000000",
 		])
@@ -342,7 +343,7 @@ describe("OTLP/JSON hex ids", () => {
 	})
 
 	it("normalizes uppercase hex and treats all-zero / absent ids as unset", () => {
-		expect(traceIdHex(hex.toUpperCase(), "t")).toBe(hex)
+		expect(traceIdHex(Str.toUpperCase(hex), "t")).toBe(hex)
 		expect(spanIdHex("0000000000000000", "s")).toBe("")
 		expect(spanIdHex(b64("0000000000000000"), "s")).toBe("")
 		expect(spanIdHex("", "s")).toBe("")
@@ -412,7 +413,7 @@ describe("protobuf round-trip (proves vendored .proto field numbers)", () => {
 	it("metrics: object → protobuf → decode → encode preserves all four datasources", () => {
 		const bytes = encodeMetricsRequest(sampleMetricsReq())
 		const decoded = decodeMetricsRequest(bytes)
-		const datasources = new Set(encodeMetrics(decoded).map((b) => b.datasource))
+		const datasources = new Set(Arr.map(encodeMetrics(decoded), (b) => b.datasource))
 		expect(datasources).toEqual(
 			new Set(["metrics_gauge", "metrics_sum", "metrics_histogram", "metrics_exponential_histogram"]),
 		)

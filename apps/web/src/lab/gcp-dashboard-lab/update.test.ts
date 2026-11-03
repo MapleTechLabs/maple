@@ -5,6 +5,7 @@ import { Message } from "../../page/dashboards/view/message"
 import { optionsByNameOf, variablesOf } from "../../page/dashboards/view/plan"
 import { fixtureRows } from "./fixture"
 import { CONTEXT, init, update } from "./update"
+import { Array as Arr, Record as Rec } from "effect"
 
 const API = /^(FetchDashboard|SaveDashboard|UpdateDashboard)/
 const NOW = Date.UTC(2026, 9, 15)
@@ -19,7 +20,12 @@ describe("gcp dashboard lab", () => {
 	test("boots the template board without asking the API anything", () => {
 		const { model, commands } = opened()
 		expect(model.document?.name).toBe("Google Cloud")
-		expect(commands.map((command) => command.name).filter((name) => API.test(name))).toEqual([])
+		expect(
+			Arr.filter(
+				Arr.map(commands, (command) => command.name),
+				(name) => API.test(name),
+			),
+		).toEqual([])
 	})
 
 	test("the metric variables list the fixture's options, not loading", () => {
@@ -29,19 +35,30 @@ describe("gcp dashboard lab", () => {
 	})
 
 	test("a tab switch stays in the lab's own search", () => {
-		const next = update(opened().model, Message.ClickedSectionTab({ sectionId: "gcp-services", tabId: "gke" }))
+		const next = update(
+			opened().model,
+			Message.ClickedSectionTab({ sectionId: "gcp-services", tabId: "gke" }),
+		)
 		const document = next.model.document
 		const view = resolveSectionView(document?.sections ?? [], document?.widgets ?? [], next.model.search)
 		expect(view.activeTabs.get("gcp-services")).toBe("gke")
-		expect(next.commands.map((command) => command.name).filter((name) => API.test(name))).toEqual([])
+		expect(
+			Arr.filter(
+				Arr.map(next.commands, (command) => command.name),
+				(name) => API.test(name),
+			),
+		).toEqual([])
 	})
 
 	test("a picked project narrows the series of widgets that filter on it", () => {
-		const drafted = update(opened().model, Message.ChangedVariableDraft({ name: "project", value: "acme-staging" }))
+		const drafted = update(
+			opened().model,
+			Message.ChangedVariableDraft({ name: "project", value: "acme-staging" }),
+		)
 		const picked = update(drafted.model, Message.CommittedVariableDraft({ name: "project" })).model
 		expect(variableValuesFromSearch(picked.search).project).toBe("acme-staging")
 		const widget = picked.document?.widgets.find((candidate) => candidate.id === "run-requests")
 		const rows = widget === undefined ? [] : fixtureRows(widget, variablesOf(picked, CONTEXT).values)
-		expect(Object.keys(rows[0] ?? {}).toSorted()).toEqual(["bucket", "checkout"])
+		expect(Rec.keys(rows[0] ?? {}).toSorted()).toEqual(["bucket", "checkout"])
 	})
 })

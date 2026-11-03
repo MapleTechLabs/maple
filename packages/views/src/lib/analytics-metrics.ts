@@ -14,6 +14,7 @@ import type {
 	WebAnalyticsSummary,
 	WebAnalyticsTimeseriesPoint,
 } from "@maple/web-data/warehouse/web-analytics"
+import { Array as EArr, String as Str } from "effect"
 
 export type AnalyticsMetricKey =
 	| "visitors"
@@ -112,13 +113,13 @@ export function formatSessionDuration(ms: number): string {
 	const seconds = Math.round(ms / 1000)
 	if (seconds < 60) return `${seconds}s`
 	const minutes = Math.floor(seconds / 60)
-	return `${minutes}m ${String(seconds % 60).padStart(2, "0")}s`
+	return `${minutes}m ${Str.padStart(2, "0")(String(seconds % 60))}s`
 }
 
 const formatRatio = (value: number): string => (value > 0 ? value.toFixed(1) : EMPTY_VALUE)
 
 const sum = <T>(rows: ReadonlyArray<T>, pick: (row: T) => number): number =>
-	rows.reduce((total, row) => total + pick(row), 0)
+	EArr.reduce(rows, 0, (total, row) => total + pick(row))
 
 const ratio = (numerator: number, denominator: number): number =>
 	denominator > 0 ? numerator / denominator : 0
@@ -131,13 +132,13 @@ const fromTimeseries = (
 	source: AnalyticsMetricSource,
 	pick: (point: WebAnalyticsTimeseriesPoint) => number,
 ): ReadonlyArray<AnalyticsMetricPoint> =>
-	source.timeseries.map((point) => ({ bucket: point.bucket, value: pick(point) }))
+	EArr.map(source.timeseries, (point) => ({ bucket: point.bucket, value: pick(point) }))
 
 const fromPageviews = (
 	source: AnalyticsMetricSource,
 	pick: (point: WebAnalyticsPageviewsPoint) => number,
 ): ReadonlyArray<AnalyticsMetricPoint> =>
-	source.pageviews.map((point) => ({ bucket: point.bucket, value: pick(point) }))
+	EArr.map(source.pageviews, (point) => ({ bucket: point.bucket, value: pick(point) }))
 
 /**
  * The eight tiles, in display order — two rows of four at the `lg` breakpoint.

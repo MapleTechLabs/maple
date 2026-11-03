@@ -3,6 +3,7 @@ import * as THREE from "three"
 import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js"
 import type { MachineBadge } from "./badge-art"
 import { type Child, group, inkBox, mesh, type Scope, type Vec3 } from "./kit"
+import { Array as Arr } from "effect"
 
 /** Shared SVG artwork, including its knockouts, printed in ink on the sign. */
 function badgeMark(_scope: Scope, { path, size, color }: { path: string; size: number; color: string }) {
@@ -10,7 +11,7 @@ function badgeMark(_scope: Scope, { path, size, color }: { path: string; size: n
 		`<svg xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="${path}" /></svg>`,
 	)
 	const mark = new THREE.ShapeGeometry(
-		svg.paths.flatMap((svgPath) => svgPath.toShapes()),
+		Arr.flatMap(svg.paths, (svgPath) => svgPath.toShapes()),
 		8,
 	)
 	mark.computeBoundingBox()

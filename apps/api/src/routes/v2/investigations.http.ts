@@ -26,7 +26,7 @@ import type {
 	V2InvestigationCreateSubject,
 	V2InvestigationSubject,
 } from "@maple/domain/http/v2"
-import { Effect, Match, Schema } from "effect"
+import { Effect, Match, Schema, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 
@@ -204,7 +204,10 @@ const requireInvestigationScopes = (scopes: ReadonlyArray<string> | undefined) =
 		? Effect.void
 		: Effect.fail(
 				V2InsufficientScope.make(
-					`Running an investigation requires read access to everything its agent reads. Missing scopes: ${missing.map((family) => `"${family}:read"`).join(", ")}.`,
+					`Running an investigation requires read access to everything its agent reads. Missing scopes: ${Arr.join(
+						Arr.map(missing, (family) => `"${family}:read"`),
+						", ",
+					)}.`,
 				),
 			)
 }

@@ -23,7 +23,7 @@ import {
 import { parseStoredDashboard, stampCurrentVersion } from "@maple/widgets/dashboard"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Dashboards, DashboardVersions, type DashboardVersionRow } from "@maple/db/tables"
-import { DateTime, Clock, Effect, Layer, Option, Schema, Context } from "effect"
+import { DateTime, Clock, Effect, Layer, Option, Schema, Context, Array as Arr } from "effect"
 import { randomUUID } from "node:crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -110,12 +110,12 @@ const parsePayload = Effect.fnUntraced(function* (
 // jsonb columns take the document object directly; this guard preserves the
 // pre-Postgres validation that the payload is JSON-serializable before write.
 const validatePayload = Effect.fnUntraced(function* (dashboard: DashboardDocument) {
-	const names = (dashboard.variables ?? []).map((variable) => variable.name)
-	const duplicates = names.filter((name, index) => names.indexOf(name) !== index)
+	const names = Arr.map(dashboard.variables ?? [], (variable) => variable.name)
+	const duplicates = Arr.filter(names, (name, index) => names.indexOf(name) !== index)
 	if (duplicates.length > 0) {
 		return yield* new DashboardValidationError({
 			message: "Dashboard variable names must be unique",
-			details: [...new Set(duplicates)].map((name) => `Duplicate variable name: ${name}`),
+			details: Arr.map([...new Set(duplicates)], (name) => `Duplicate variable name: ${name}`),
 		})
 	}
 

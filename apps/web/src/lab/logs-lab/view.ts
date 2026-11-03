@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import * as LogsStreamView from "@maple/views/ui/logs/logs-stream-view"
@@ -28,7 +28,7 @@ const toggles = (h: HtmlBuilder<Message>, model: Model): ReadonlyArray<Html> => 
 		flag("Wrap", model.wrap, "Wrap"),
 		flag("Comfortable", model.density === "comfortable", "Comfortable"),
 		flag("Search “pool”", Option.isSome(model.search), "Search"),
-		...PIN_OPTIONS.map((key) =>
+		...Arr.map(PIN_OPTIONS, (key) =>
 			toggleButton(h, `Pin ${key}`, model.pinned.includes(key), Message.ClickedPin({ key })),
 		),
 		flag("Empty", model.isEmpty, "Empty"),

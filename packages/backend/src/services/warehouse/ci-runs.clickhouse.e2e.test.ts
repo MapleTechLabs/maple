@@ -5,7 +5,7 @@
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { isBackfill, migrations, renderStatementFull } from "@maple/domain/clickhouse"
 import * as CH from "@maple/query-engine/ch"
-import { DateTime } from "effect"
+import { DateTime, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	applyRealMigrations,
 	clickhouseE2eEnabled,
@@ -19,7 +19,8 @@ const READS_ORG_ID = "org_ci_reads_e2e"
 
 // Anchored to now: `traces` carries a 30-day TTL enforced at insert.
 const BASE_MS = Date.now() - 2 * 3_600_000
-const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 19)
+const chDateTime = (epochMs: number): string =>
+	Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 
 const REPO = "map('service.name', 'github-actions', 'vcs.owner.name', 'acme', 'vcs.repository.name', 'api')"
 
@@ -125,14 +126,16 @@ const insert = (spans: ReadonlyArray<SeedSpan>, orgId = ORG_ID) =>
 	clickhouseExec(
 		`INSERT INTO traces
 		 (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, StatusMessage, SampleRate, SpanAttributes, ResourceAttributes)
-		 VALUES\n${spans
-				.map((span, index) => {
-					const attributes = Object.entries(span.attributes)
-						.map(([key, value]) => `'${key}', '${value}'`)
-						.join(", ")
+		 VALUES\n${Arr.join(
+				Arr.map(spans, (span, index) => {
+					const attributes = Arr.join(
+						Arr.map(Rec.toEntries(span.attributes), ([key, value]) => `'${key}', '${value}'`),
+						", ",
+					)
 					return `('${orgId}', '${chDateTime(BASE_MS + index * 1000)}', '${span.traceId}', '${span.spanId}', '${span.parentSpanId}', '${span.name}', 'Internal', '${span.service ?? "github-actions"}', ${span.durationNs}, '${span.status ?? "Unset"}', '', 1, map(${attributes}), ${REPO})`
-				})
-				.join("\n,")}`,
+				}),
+				"\n,",
+			)}`,
 		database,
 	)
 
@@ -193,11 +196,11 @@ const readWindow = {
 	endTime: chDateTime(BASE_MS + 60_000),
 }
 const read = (query: Parameters<typeof CH.compileUnsafe>[0], params: Record<string, unknown> = readWindow) =>
-	runJson(CH.compileUnsafe(query, params).sql.replace(/\s*FORMAT JSON\s*$/, ""))
-const traceIds = (rows: ReadonlyArray<Record<string, unknown>>) => rows.map((row) => row.traceId)
+	runJson(Str.replace(/\s*FORMAT JSON\s*$/, "")(CH.compileUnsafe(query, params).sql))
+const traceIds = (rows: ReadonlyArray<Record<string, unknown>>) => Arr.map(rows, (row) => row.traceId)
 
-const ciMigration = migrations.filter((migration) => migration.version === 47)
-const backfills = ciMigration.flatMap((migration) => migration.statements.filter(isBackfill))
+const ciMigration = Arr.filter(migrations, (migration) => migration.version === 47)
+const backfills = Arr.flatMap(ciMigration, (migration) => Arr.filter(migration.statements, isBackfill))
 
 describe.skipIf(!clickhouseE2eEnabled)("ci_runs / ci_jobs materialization", () => {
 	beforeAll(async () => {
@@ -305,7 +308,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ci_runs / ci_jobs materialization", () =
 			database,
 		)
 		const before = await runs()
-		for (const statement of ciMigration.flatMap((migration) => migration.statements))
+		for (const statement of Arr.flatMap(ciMigration, (migration) => migration.statements))
 			await clickhouseExec(renderStatementFull(statement, database), database)
 		assert.deepStrictEqual(await runs(), before)
 		const kept = await runJson(`SELECT TraceId FROM ci_runs WHERE OrgId = '${expired}'`)
@@ -317,7 +320,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ci_runs / ci_jobs materialization", () =
 		assert.deepInclude(totals, { runs: 4, succeeded: 2, failed: 2, cancelled: 0 })
 		const series = await read(CH.ciRunSeriesQuery({}), { ...readWindow, bucketSeconds: 86_400 })
 		assert.strictEqual(
-			series.reduce((sum, row) => sum + Number(row.runs), 0),
+			Arr.reduce(series, 0, (sum, row) => sum + Number(row.runs)),
 			4,
 		)
 	})
@@ -325,7 +328,12 @@ describe.skipIf(!clickhouseE2eEnabled)("ci_runs / ci_jobs materialization", () =
 	it("keeps each workflow's run counts and latest result", async () => {
 		const rows = await read(CH.ciPipelineStatsQuery({}))
 		assert.deepStrictEqual(
-			rows.map(({ pipeline, runs, failed, lastResult }) => ({ pipeline, runs, failed, lastResult })),
+			Arr.map(rows, ({ pipeline, runs, failed, lastResult }) => ({
+				pipeline,
+				runs,
+				failed,
+				lastResult,
+			})),
 			[
 				{ pipeline: "CI", runs: 3, failed: 2, lastResult: "timeout" },
 				{ pipeline: "Deploy", runs: 1, failed: 0, lastResult: "success" },
@@ -351,7 +359,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ci_runs / ci_jobs materialization", () =
 		assert.deepInclude(all[0], { attempt: 2, pullRequest: 6, durationMs: 120_000 })
 		assert.strictEqual(all[2]?.pullRequest, 0)
 
-		const startedAt = DateTime.makeUnsafe(`${String(all[1]?.startedAt).replace(" ", "T")}Z`)
+		const startedAt = DateTime.makeUnsafe(`${Str.replace(" ", "T")(String(all[1]?.startedAt))}Z`)
 		const after = await read(CH.ciRunsQuery({ before: { startedAt, traceId: "r4" } }), {
 			...readWindow,
 			beforeStartedAt: startedAt,
@@ -370,7 +378,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ci_runs / ci_jobs materialization", () =
 		}))
 		const rows = await read(CH.ciActorStatsQuery({ defaultBranches }))
 		assert.deepStrictEqual(
-			rows.map(({ actor, runs, defaultBranchRuns }) => ({ actor, runs, defaultBranchRuns })),
+			Arr.map(rows, ({ actor, runs, defaultBranchRuns }) => ({ actor, runs, defaultBranchRuns })),
 			[{ actor: "octocat", runs: 3, defaultBranchRuns: 0 }],
 		)
 	})
@@ -379,7 +387,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ci_runs / ci_jobs materialization", () =
 		const ran = await read(CH.ciRunsQuery({ pipeline: "CI", ranOnly: true }))
 		assert.deepStrictEqual(traceIds(ran), ["r5", "r2", "r1"])
 		const streak = CH.ciRedStreak(
-			ran.map((row) => ({ result: String(row.result), revision: String(row.revision) })),
+			Arr.map(ran, (row) => ({ result: String(row.result), revision: String(row.revision) })),
 		)
 		assert.deepStrictEqual(
 			{
@@ -391,7 +399,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ci_runs / ci_jobs materialization", () =
 		)
 		const failed = await read(CH.ciFailedJobsQuery({ traceIds: ["r2", "r5"] }))
 		assert.deepStrictEqual(
-			failed.map(({ traceId, job, reason }) => ({ traceId, job, reason })),
+			Arr.map(failed, ({ traceId, job, reason }) => ({ traceId, job, reason })),
 			[
 				{ traceId: "r2", job: "build", reason: "boom" },
 				{ traceId: "r5", job: "build", reason: "" },

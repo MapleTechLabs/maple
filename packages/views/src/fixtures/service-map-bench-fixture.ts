@@ -1,4 +1,5 @@
 import type { ServiceOverview } from "@maple/query-engine"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * Deterministic synthetic topology for the service-map bench. Framework-free.
@@ -125,21 +126,21 @@ export function refreshBenchMetrics(graph: BenchGraph, revision: number): BenchG
 
 	return {
 		...graph,
-		edges: graph.edges.map((edge) => ({
+		edges: Arr.map(graph.edges, (edge) => ({
 			...edge,
 			callCount: Math.max(1, Math.round(edge.callCount * callScale)),
 			estimatedCallCount: Math.max(1, Math.round(edge.estimatedCallCount * callScale)),
 			avgDurationMs: edge.avgDurationMs * latencyScale,
 			maxDurationMs: edge.maxDurationMs * latencyScale,
 		})),
-		dbEdges: graph.dbEdges.map((edge) => ({
+		dbEdges: Arr.map(graph.dbEdges, (edge) => ({
 			...edge,
 			callCount: Math.max(1, Math.round(edge.callCount * callScale)),
 			estimatedCallCount: Math.max(1, Math.round(edge.estimatedCallCount * callScale)),
 			avgDurationMs: edge.avgDurationMs * latencyScale,
 			maxDurationMs: edge.maxDurationMs * latencyScale,
 		})),
-		overviews: graph.overviews.map((overview) => ({
+		overviews: Arr.map(graph.overviews, (overview) => ({
 			...overview,
 			throughput: overview.throughput * callScale,
 			tracedThroughput: overview.tracedThroughput * callScale,
@@ -153,7 +154,7 @@ export function refreshBenchMetrics(graph: BenchGraph, revision: number): BenchG
 export function generateBenchGraph(params: BenchParams): BenchGraph {
 	const rng = makeRng(params.seed)
 	const serviceCount = Math.max(2, params.services)
-	const names = Array.from({ length: serviceCount }, (_, i) => `svc-${String(i).padStart(3, "0")}`)
+	const names = Array.from({ length: serviceCount }, (_, i) => `svc-${Str.padStart(3, "0")(String(i))}`)
 
 	const platforms = new Map<string, ServicePlatform>()
 	const runtimes = new Map<string, string>()
@@ -231,7 +232,7 @@ export function generateBenchGraph(params: BenchParams): BenchGraph {
 	const namespaceFor = (i: number): string =>
 		groupCount <= 0 || i % 7 === 6 ? "" : namespaceName(i % groupCount)
 
-	const overviews: ServiceOverview[] = names.map((name, i) => {
+	const overviews: ServiceOverview[] = Arr.map(names, (name, i) => {
 		const errorRate = rng() < 0.15 ? rng() * 0.1 : rng() * 0.004
 		const throughput = rpsLo + rng() * (rpsHi - rpsLo)
 		const hasSampling = rng() < 0.3

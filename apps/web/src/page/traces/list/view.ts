@@ -21,12 +21,13 @@ import { filtersRail } from "./view-filters"
 import { tracesTable } from "./view-table"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * `AdvancedFilterDialog`'s trigger.
  */
 const advancedFilterButton = (h: HtmlBuilder<Message>, model: Model): Html => {
-	const isActive = (model.search.whereClause ?? "").trim().length > 0
+	const isActive = Str.trim(model.search.whereClause ?? "").length > 0
 	return button(
 		h,
 		{
@@ -74,18 +75,20 @@ const whereClausePanel = (h: HtmlBuilder<Message>, whereClause: string): Html =>
 
 /** The chip bar: URL namespace chips hide while the org pin is on. */
 const chips = (model: Model, pinnedNamespace: string | null) =>
-	traceFilterChips(model.search)
-		.filter(
+	Arr.map(
+		Arr.filter(
+			traceFilterChips(model.search),
 			(chip) =>
 				pinnedNamespace === null || (chip.id !== "namespaces" && chip.id !== "excludedNamespaces"),
-		)
-		.map((chip) => ({
+		),
+		(chip) => ({
 			id: chip.id,
 			label: chip.label,
 			values: chip.values,
 			isNegated: chip.negated,
 			onRemove: Message.RemovedFilterChip({ id: chip.id }),
-		}))
+		}),
+	)
 
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 

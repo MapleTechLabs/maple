@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Array as Arr } from "effect"
 import { serviceRuntimeResources, type ServiceRuntimesOutput, serviceWorkloadsSQL } from "./service-infra"
 import { OrgId } from "@maple/domain"
 
@@ -136,21 +136,27 @@ describe("serviceRuntimeResources", () => {
 		})
 
 	it("answers a Worker's series for its script name, never for a service named with the prefix", () => {
-		const worker = row({ metricServiceName: "cloudflare-worker/edge", metricName: "cloudflare.worker.cpu_time" })
-		expect(serviceRuntimeResources([worker], ["edge"]).map((r) => [r.serviceName, r.kind])).toEqual([
+		const worker = row({
+			metricServiceName: "cloudflare-worker/edge",
+			metricName: "cloudflare.worker.cpu_time",
+		})
+		expect(Arr.map(serviceRuntimeResources([worker], ["edge"]), (r) => [r.serviceName, r.kind])).toEqual([
 			["edge", "cloudflareWorker"],
 		])
 		expect(serviceRuntimeResources([worker], ["cloudflare-worker/edge"])).toEqual([])
 	})
 
 	it("keeps one Railway resource per environment across regions, and one per name across a rename", () => {
-		const regions = serviceRuntimeResources([railway("worker", "us-west"), railway("worker", "eu-west")], ["worker"])
+		const regions = serviceRuntimeResources(
+			[railway("worker", "us-west"), railway("worker", "eu-west")],
+			["worker"],
+		)
 		expect(regions).toHaveLength(1)
 		const renamed = serviceRuntimeResources(
 			[railway("worker", ""), railway("fleet-worker", "")],
 			["worker", "fleet-worker"],
 		)
-		expect(renamed.map((r) => r.serviceName).sort()).toEqual(["fleet-worker", "worker"])
+		expect(Arr.map(renamed, (r) => r.serviceName).sort()).toEqual(["fleet-worker", "worker"])
 	})
 
 	it("keeps a Cloud Run service per region and drops series of no runtime kind", () => {
@@ -162,6 +168,6 @@ describe("serviceRuntimeResources", () => {
 			],
 			["fleet-api"],
 		)
-		expect(resources.map((r) => r.region)).toEqual(["europe-west1", "us-central1"])
+		expect(Arr.map(resources, (r) => r.region)).toEqual(["europe-west1", "us-central1"])
 	})
 })

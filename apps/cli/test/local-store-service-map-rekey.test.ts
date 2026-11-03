@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { Chdb } from "@maple/local-server/chdb"
 import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
 import type { MigrationModuleContext } from "../src/server/local-store-migration-module"
@@ -11,7 +11,7 @@ import { describeWithChdb } from "./libchdb-test-support"
 import { migrationStep, openStore } from "./local-store-step-test-support"
 
 const DAY_MS = 86_400_000
-const iso = (ms: number) => new Date(ms).toISOString().replace("T", " ").replace("Z", "")
+const iso = (ms: number) => Str.replace("Z", "")(Str.replace("T", " ")(new Date(ms).toISOString()))
 const SPAN_COLUMNS =
 	"OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanKind, ServiceName, Duration, StatusCode"
 /** A client span in `web` and its server child in `api`: one service-map edge per trace. */
@@ -70,7 +70,10 @@ describeWithChdb("v39 -> v40 service-map span tables re-sort", () => {
 			schemaSql: localSchemaSnapshot(39).sql,
 		})
 		db.exec(
-			`INSERT INTO traces (${SPAN_COLUMNS}) VALUES ${ages.map((age, n) => callPair(nowMs - age * DAY_MS, n)).join(", ")}`,
+			`INSERT INTO traces (${SPAN_COLUMNS}) VALUES ${Arr.join(
+				Arr.map(ages, (age, n) => callPair(nowMs - age * DAY_MS, n)),
+				", ",
+			)}`,
 		)
 		db.close()
 		;({ migration, context } = migrationStep(STEP_ID, sourceDataDir, targetDataDir, nowMs))
@@ -82,8 +85,8 @@ describeWithChdb("v39 -> v40 service-map span tables re-sort", () => {
 
 	test("re-sorts both tables without losing a row or an edge, and a re-run converges", async () => {
 		const before = await openStore(sourceDataDir, snapshot)
-		const ttlsBefore = await openStore(sourceDataDir, (db) => spanTables(db).map(ttlOf))
-		expect(ttlsBefore.every((ttl) => ttl !== undefined)).toBe(true)
+		const ttlsBefore = await openStore(sourceDataDir, (db) => Arr.map(spanTables(db), ttlOf))
+		expect(Arr.every(ttlsBefore, (ttl) => ttl !== undefined)).toBe(true)
 		expect(before).toEqual({ spans: "10", children: "5", durationSum: "4510", edges: "5" })
 
 		const state = await migration.preflight(context)
@@ -100,11 +103,11 @@ describeWithChdb("v39 -> v40 service-map span tables re-sort", () => {
 			tables: spanTables(db),
 		}))
 		expect(after.snapshot).toEqual(before)
-		expect(after.tables.map((table) => [table.name, table.sortingKey])).toEqual([
+		expect(Arr.map(after.tables, (table) => [table.name, table.sortingKey])).toEqual([
 			["service_map_children", "OrgId, toStartOfFiveMinutes(Timestamp), TraceId, ParentSpanId"],
 			["service_map_spans", "OrgId, toStartOfFiveMinutes(Timestamp), TraceId, SpanId"],
 		])
-		expect(after.tables.map(ttlOf)).toEqual(ttlsBefore)
+		expect(Arr.map(after.tables, ttlOf)).toEqual(ttlsBefore)
 	})
 
 	test("the views still fill both tables for spans ingested after the swap", async () => {

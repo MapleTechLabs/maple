@@ -24,6 +24,7 @@ import { disconnectConfirm } from "./view-disconnect"
 import { entryBrand } from "./view-entry"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `ChatIntegrationCard`.
 // TODO(clerk): `useIsOrgAdmin` (self-hosted is the root admin) and `WorkspaceSettings`, which renders
@@ -76,7 +77,7 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 
 	const confirmWorkspace = workspaces.find((workspace) => workspace.id === model.chatCard.confirmId)
 	return vstack(h, { gap: "4" }, [
-		...workspaces.map((workspace) =>
+		...Arr.map(workspaces, (workspace) =>
 			mediaCard(h, integrationIconPlate(h, brand), [
 				itemContent(
 					h,

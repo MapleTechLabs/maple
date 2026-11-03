@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { findFirstPartialIndex, splitAtFirstPartial, trimEmptyTrailingBuckets } from "../partial-buckets"
+import { Array as Arr } from "effect"
 
 interface Row {
 	bucket: string
@@ -22,13 +23,13 @@ describe("findFirstPartialIndex", () => {
 	it("finds nothing when every bucket has closed", () => {
 		const now = Date.now()
 		// 1h buckets; the last ends 1h ago.
-		const rows = [4, 3, 2].map((h) => row(hoursAgo(h, now), { throughput: 10 }))
+		const rows = Arr.map([4, 3, 2], (h) => row(hoursAgo(h, now), { throughput: 10 }))
 		expect(findFirstPartialIndex(rows, { now })).toBe(-1)
 	})
 
 	it("flags the in-flight trailing bucket by wall clock", () => {
 		const now = Date.now()
-		const rows = [2, 1, 0].map((h) => row(hoursAgo(h, now), { throughput: 10 }))
+		const rows = Arr.map([2, 1, 0], (h) => row(hoursAgo(h, now), { throughput: 10 }))
 		// The bucket starting now ends in the future.
 		expect(findFirstPartialIndex(rows, { now })).toBe(2)
 	})
@@ -107,10 +108,10 @@ describe("splitAtFirstPartial", () => {
 		]
 		const split = splitAtFirstPartial(rows, ["throughput"])
 		expect(split.hasPartial).toBe(true)
-		expect(split.solid.map((r) => r.bucket)).toEqual(["a", "b"])
+		expect(Arr.map(split.solid, (r) => r.bucket)).toEqual(["a", "b"])
 		// "b" appears in BOTH slices — that overlap is the bridge, and without it
 		// the dashed segment would start one bucket late, leaving a visible gap.
-		expect(split.dashed.map((r) => r.bucket)).toEqual(["b", "c"])
+		expect(Arr.map(split.dashed, (r) => r.bucket)).toEqual(["b", "c"])
 	})
 
 	it("puts the whole series in the dashed slice when nothing has closed", () => {
@@ -131,6 +132,6 @@ describe("splitAtFirstPartial", () => {
 		// the series simply ends at the last bucket that reported.
 		expect(split.hasPartial).toBe(false)
 		expect(split.dashed).toEqual([])
-		expect(split.solid.map((r) => r.bucket)).toEqual(["a", "b"])
+		expect(Arr.map(split.solid, (r) => r.bucket)).toEqual(["a", "b"])
 	})
 })

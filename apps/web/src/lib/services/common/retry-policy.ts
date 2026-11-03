@@ -1,10 +1,10 @@
-import { Effect, Option, Schedule } from "effect"
+import { Effect, Option, Schedule, String as Str } from "effect"
 import { HttpClient, HttpClientError, HttpClientRequest, type HttpClientResponse } from "effect/http"
 
 const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
 
 export const isIdempotentRequest = (request: HttpClientRequest.HttpClientRequest): boolean =>
-	IDEMPOTENT_METHODS.has(request.method.toUpperCase())
+	IDEMPOTENT_METHODS.has(Str.toUpperCase(request.method))
 
 /** Retry transport failures only for idempotent requests, excluding client timeouts. */
 export const isRetryableTransportError = (error: unknown): boolean => {
@@ -20,7 +20,7 @@ export const isRetryableTransportError = (error: unknown): boolean => {
 const isV2Request = (request: HttpClientRequest.HttpClientRequest): boolean => {
 	try {
 		const pathname = new URL(request.url).pathname
-		return pathname === "/v2" || pathname.startsWith("/v2/")
+		return pathname === "/v2" || Str.startsWith("/v2/")(pathname)
 	} catch {
 		return false
 	}

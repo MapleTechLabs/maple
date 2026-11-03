@@ -10,6 +10,7 @@ import {
 	rawTelemetryTtlStatements,
 	readRawTelemetryRetentionDays,
 } from "@maple/local-server/chdb"
+import { Array as Arr, String as Str } from "effect"
 
 describe("embedded chDB arguments", () => {
 	it("keeps an explicit config after the loader and restore safety settings", () => {
@@ -40,29 +41,31 @@ describe("persistent raw telemetry retention floor", () => {
 
 	it("extends lower table TTLs without shortening higher schema TTLs", () => {
 		const executed: string[] = []
-		const tableRows = [
-			["logs", "TimestampTime", 180],
-			["traces", "Timestamp", 30],
-			["metrics_sum", "TimeUnix", 90],
-			["metrics_gauge", "TimeUnix", 90],
-			["metrics_histogram", "TimeUnix", 90],
-			["metrics_exponential_histogram", "TimeUnix", 90],
-		].map(([name, column, days]) =>
-			JSON.stringify({
-				name,
-				create_table_query: `CREATE TABLE ${name} (...) TTL toDate(${column}) + toIntervalDay(${days})`,
-			}),
+		const tableRows = Arr.map(
+			[
+				["logs", "TimestampTime", 180],
+				["traces", "Timestamp", 30],
+				["metrics_sum", "TimeUnix", 90],
+				["metrics_gauge", "TimeUnix", 90],
+				["metrics_histogram", "TimeUnix", 90],
+				["metrics_exponential_histogram", "TimeUnix", 90],
+			],
+			([name, column, days]) =>
+				JSON.stringify({
+					name,
+					create_table_query: `CREATE TABLE ${name} (...) TTL toDate(${column}) + toIntervalDay(${days})`,
+				}),
 		)
 		applyRawTelemetryRetentionFloor(
 			{
-				query: () => `${tableRows.join("\n")}\n`,
+				query: () => `${Arr.join(tableRows, "\n")}\n`,
 				exec: (sql) => executed.push(sql),
 			},
 			120,
 		)
 		strictEqual(executed.length, 5)
 		strictEqual(
-			executed.some((sql) => sql.includes("TABLE logs ")),
+			Arr.some(executed, (sql) => Str.includes("TABLE logs ")(sql)),
 			false,
 		)
 	})

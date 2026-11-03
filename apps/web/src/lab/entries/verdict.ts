@@ -1,5 +1,5 @@
 import { VERDICT_LAB_CASES } from "../verdict-fixture"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { verdictCard } from "../../page/investigations/detail/view-verdict"
 import { defineShellLab } from "../shell-lab"
@@ -21,7 +21,7 @@ export const lab = defineShellLab("Verdict", {
 		dashboardPage(h, {}, [
 			h.div(
 				[h.Class("flex flex-col gap-10 py-2")],
-				VERDICT_LAB_CASES.map((entry) =>
+				Arr.map(VERDICT_LAB_CASES, (entry) =>
 					h.section(
 						[h.Key(entry.key), h.Class("flex flex-col gap-3")],
 						[

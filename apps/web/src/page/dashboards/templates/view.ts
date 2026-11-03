@@ -1,5 +1,5 @@
 import { AsyncData, Submodel } from "foldkit"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { WIDGET_CHART_TOKENS } from "../kit/chart-tokens"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
@@ -54,8 +54,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const templates = templatesOf(model)
 	const metrics = Option.getOrNull(AsyncData.getData(model.metrics.data))
 	const readiness = computeReadiness(templates, metrics)
-	const listed = templates.filter((template) => template.id !== BLANK_TEMPLATE_ID)
-	const readyCount = listed.filter((template) => readiness.get(template.id)?.ready !== false).length
+	const listed = Arr.filter(templates, (template) => template.id !== BLANK_TEMPLATE_ID)
+	const readyCount = Arr.filter(listed, (template) => readiness.get(template.id)?.ready !== false).length
 	const isLoaded = AsyncData.isSuccess(model.templates.data) || AsyncData.isRefreshing(model.templates.data)
 	const failure = model.templates.data._tag === "Failure" ? model.templates.data.error : null
 	const selected = selectedOf(model)

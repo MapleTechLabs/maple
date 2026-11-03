@@ -9,6 +9,7 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { makeStoreMarker, readMarkerState, storeMarkerPath } from "@maple/local-server/store-version"
 import { CHDB_VERSION } from "@maple/local-server/version"
+import { String as Str } from "effect"
 
 const goldenV1 = {
 	chdb: "1.4.0",
@@ -25,7 +26,7 @@ const goldenV2 = {
 	createdAt: "2026-08-19T10:15:00.000Z",
 	createdByMaple: "0.3.9",
 	schemaVersion: 8,
-	schemaDigest: "a".repeat(64),
+	schemaDigest: Str.repeat(64)("a"),
 	schema: "51081e951066442a",
 	activation: "active",
 	lastMigration: {
@@ -74,7 +75,7 @@ describe("store marker", () => {
 		for (const patch of [
 			{ schema: "not-hex" },
 			{ schema: "51081e951066442" },
-			{ schemaDigest: "a".repeat(63) },
+			{ schemaDigest: Str.repeat(63)("a") },
 			{ schemaVersion: -1 },
 			{ schemaVersion: 1.5 },
 			{ storeId: "" },
@@ -93,7 +94,7 @@ describe("store marker", () => {
 		const marker = makeStoreMarker("0.4.2", "2026-08-19T10:15:00.000Z", "51081e951066442a", {
 			storeId: goldenV2.storeId,
 			schemaVersion: 8,
-			schemaDigest: "a".repeat(64),
+			schemaDigest: Str.repeat(64)("a"),
 		})
 		expect(marker).toEqual({
 			formatVersion: 2,
@@ -103,7 +104,7 @@ describe("store marker", () => {
 			createdAt: "2026-08-19T10:15:00.000Z",
 			createdByMaple: "0.4.2",
 			schemaVersion: 8,
-			schemaDigest: "a".repeat(64),
+			schemaDigest: Str.repeat(64)("a"),
 			schema: "51081e951066442a",
 			activation: "active",
 		})
@@ -113,11 +114,11 @@ describe("store marker", () => {
 	it("refuses to construct a marker without a full identity", () => {
 		const now = "2026-08-19T10:15:00.000Z"
 		expect(() =>
-			makeStoreMarker("0.4.2", now, "not-hex", { schemaVersion: 8, schemaDigest: "a".repeat(64) }),
+			makeStoreMarker("0.4.2", now, "not-hex", { schemaVersion: 8, schemaDigest: Str.repeat(64)("a") }),
 		).toThrow()
 		expect(() => makeStoreMarker("0.4.2", now, "51081e951066442a", { schemaVersion: 8 })).toThrow()
 		expect(() =>
-			makeStoreMarker("0.4.2", now, "51081e951066442a", { schemaDigest: "a".repeat(64) }),
+			makeStoreMarker("0.4.2", now, "51081e951066442a", { schemaDigest: Str.repeat(64)("a") }),
 		).toThrow(/schemaVersion/)
 	})
 })

@@ -6,7 +6,7 @@
 // resolution (env-lazy on Workers, env-auto-detect on Node, programmatic in the
 // browser) and its transport (plain `fetch` vs `fetch(keepalive)`); everything
 // downstream of a resolved endpoint lives here.
-import { Effect, Redacted, Result } from "effect"
+import { Effect, Redacted, Result, Array as Arr, Record as Rec, String as Str } from "effect"
 import { isMapleIngestEndpoint } from "@maple/browser-session/region"
 import type { LogBuffer, LogRecord } from "./flushable-logger.js"
 import type { MetricBuffer } from "./flushable-metrics.js"
@@ -89,7 +89,7 @@ export const buildResolved = (
 	// `r.endpoint` is always defined in practice (every resolver falls back to
 	// the region's public ingest); guard anyway.
 	const base = r.endpoint ?? "https://ingest.maple.dev"
-	const baseUrl = base.endsWith("/") ? base.slice(0, -1) : base
+	const baseUrl = Str.endsWith("/")(base) ? Str.slice(0, -1)(base) : base
 	const tracesUrl = `${baseUrl}${opts.tracesPath ?? "/v1/traces"}`
 	const logsUrl = `${baseUrl}${opts.logsPath ?? "/v1/logs"}`
 	const metricsUrl = `${baseUrl}${opts.metricsPath ?? "/v1/metrics"}`
@@ -122,7 +122,7 @@ const makeOtlpResource = (resource: {
 	readonly attributes: Record<string, unknown>
 }): OtlpResourceLike => {
 	const attrs: Array<{ readonly key: string; readonly value: unknown }> = []
-	for (const [key, value] of Object.entries(resource.attributes)) {
+	for (const [key, value] of Rec.toEntries(resource.attributes)) {
 		attrs.push({ key, value: anyValue(value) })
 	}
 	attrs.push({ key: "service.name", value: { stringValue: resource.serviceName } })
@@ -133,7 +133,7 @@ const makeOtlpResource = (resource: {
 }
 
 const anyValue = (value: unknown): unknown => {
-	if (Array.isArray(value)) return { arrayValue: { values: value.map(anyValue) } }
+	if (Arr.isArray(value)) return { arrayValue: { values: Arr.map(value, anyValue) } }
 	switch (typeof value) {
 		case "string":
 			return { stringValue: value }
@@ -204,7 +204,7 @@ const flushSignal = async <A>(args: {
 	const tail = tailBytes?.()
 	const chunks = tail ? newestFirst(batch, body, tail) : [batch]
 	const posted = await Promise.all(
-		chunks.map(async (chunk) => ({
+		Arr.map(chunks, async (chunk) => ({
 			chunk,
 			result: await Effect.runPromise(
 				Effect.result(
@@ -216,13 +216,13 @@ const flushSignal = async <A>(args: {
 			),
 		})),
 	)
-	const failed = posted.flatMap(({ chunk, result }) =>
+	const failed = Arr.flatMap(posted, ({ chunk, result }) =>
 		Result.isFailure(result) ? [{ chunk, cause: result.failure }] : [],
 	)
 	const [first] = failed
 	if (first) {
 		// One restore, back in drain order.
-		buffer.restore(failed.reverse().flatMap(({ chunk }) => chunk))
+		buffer.restore(Arr.flatMap(failed.reverse(), ({ chunk }) => chunk))
 		state.disabledUntil = Date.now() + COOLDOWN_MS
 		console.error(`${logPrefix} ${signal} flush failed; cooldown 60s:`, first.cause)
 	}
@@ -417,7 +417,7 @@ const metricAttributes = (
 	attributes: Readonly<Record<string, string>> | undefined,
 	extra?: readonly [string, string],
 ) => [
-	...Object.entries(attributes ?? {}).map(([key, value]) => ({
+	...Arr.map(Rec.toEntries(attributes ?? {}), ([key, value]) => ({
 		key,
 		value: anyValue(value),
 	})),
@@ -470,7 +470,7 @@ const makeMetricsBody = (snapshots: ReadonlyArray<MetricSnapshot>, r: Resolved) 
 					sum: {
 						aggregationTemporality: 2,
 						isMonotonic: true,
-						dataPoints: [...snapshot.state.occurrences].map(([value, count]) => ({
+						dataPoints: Arr.map([...snapshot.state.occurrences], ([value, count]) => ({
 							attributes: metricAttributes(snapshot.attributes, ["value", value]),
 							timeUnixNano: timestamp,
 							asDouble: count,
@@ -480,8 +480,8 @@ const makeMetricsBody = (snapshots: ReadonlyArray<MetricSnapshot>, r: Resolved) 
 				break
 			case "Histogram": {
 				let previous = 0
-				const finiteBuckets = snapshot.state.buckets.filter(([bound]) => Number.isFinite(bound))
-				const bucketCounts = finiteBuckets.map(([, cumulative]) => {
+				const finiteBuckets = Arr.filter(snapshot.state.buckets, ([bound]) => Number.isFinite(bound))
+				const bucketCounts = Arr.map(finiteBuckets, ([, cumulative]) => {
 					const count = cumulative - previous
 					previous = cumulative
 					return String(count)
@@ -499,7 +499,7 @@ const makeMetricsBody = (snapshots: ReadonlyArray<MetricSnapshot>, r: Resolved) 
 								sum: snapshot.state.sum,
 								min: snapshot.state.min,
 								max: snapshot.state.max,
-								explicitBounds: finiteBuckets.map(([bound]) => bound),
+								explicitBounds: Arr.map(finiteBuckets, ([bound]) => bound),
 								bucketCounts,
 							},
 						],
@@ -517,7 +517,7 @@ const makeMetricsBody = (snapshots: ReadonlyArray<MetricSnapshot>, r: Resolved) 
 								timeUnixNano: timestamp,
 								count: String(snapshot.state.count),
 								sum: snapshot.state.sum,
-								quantileValues: snapshot.state.quantiles.flatMap(([quantile, value]) =>
+								quantileValues: Arr.flatMap(snapshot.state.quantiles, ([quantile, value]) =>
 									value === undefined ? [] : [{ quantile, value }],
 								),
 							},

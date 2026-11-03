@@ -1,5 +1,5 @@
 import type { V2SourceUsage } from "@maple/domain/http/v2"
-import { DateTime, Option } from "effect"
+import { DateTime, Option, Array as Arr } from "effect"
 
 // `usageRows` and `usageTotals`.
 
@@ -15,7 +15,7 @@ export type UsageRow = Readonly<{ bucket: string; Spans: number; Logs: number; M
 export const usageRows = (usage: V2SourceUsage): ReadonlyArray<UsageRow> => {
 	// `window_end` is exclusive: the last row is the hour holding the instant before it.
 	const end = Math.floor((epochOf(usage.window_end) - 1) / HOUR_MS) * HOUR_MS
-	const byHour = new Map(usage.buckets.map((bucket) => [epochOf(bucket.hour), bucket]))
+	const byHour = new Map(Arr.map(usage.buckets, (bucket) => [epochOf(bucket.hour), bucket]))
 	return Array.from({ length: 24 }, (_, index) => {
 		const hour = end - (23 - index) * HOUR_MS
 		const bucket = byHour.get(hour)
@@ -33,12 +33,9 @@ export type UsageTotals = Readonly<{ spans: number; logs: number; metrics: numbe
 export const ZERO_USAGE: UsageTotals = { spans: 0, logs: 0, metrics: 0, bytes: 0 }
 
 export const usageTotals = (usage: V2SourceUsage): UsageTotals =>
-	usage.buckets.reduce(
-		(sum, bucket) => ({
-			spans: sum.spans + bucket.spans,
-			logs: sum.logs + bucket.logs,
-			metrics: sum.metrics + bucket.metrics,
-			bytes: sum.bytes + bucket.bytes,
-		}),
-		ZERO_USAGE,
-	)
+	Arr.reduce(usage.buckets, ZERO_USAGE, (sum, bucket) => ({
+		spans: sum.spans + bucket.spans,
+		logs: sum.logs + bucket.logs,
+		metrics: sum.metrics + bucket.metrics,
+		bytes: sum.bytes + bucket.bytes,
+	}))

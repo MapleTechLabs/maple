@@ -43,6 +43,7 @@ import {
 } from "./view-sections"
 import { verdictCard } from "./view-verdict"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The investigation page: `InvestigationView`, `InvestigationHeader`, `InvestigationTabs`.
 
@@ -95,48 +96,43 @@ const headerActions = (h: H, model: Model, investigation: V2Investigation): Html
 			: [{ _tag: "Item" as const, value: "resolve", label: "Mark resolved", isDisabled: isBusy }]),
 	]
 	return detailActions(h, [
-		hstack(h, { gap: "2" },
-			[
-				button(
-					h,
-					{
-						size: "sm",
-						variant: primary.variant,
-						isDisabled: isBusy,
-						attributes: [h.OnClick(Message.ClickedPrimary())],
-					},
-					[primary.label],
-				),
-				h.submodel({
-					slotId: "investigation-actions",
-					model: model.actionsMenu,
-					view: MenuView.view,
-					viewInputs: {
-						entries,
-						align: "end",
-						toView: ({ trigger, withTrigger }) =>
-							h.span(
-								[h.Class("contents")],
-								withTrigger(
-									button(
-										h,
-										{
-											variant: "outline",
-											size: "icon-sm",
-											attributes: [
-												h.AriaLabel("More investigation actions"),
-												...trigger,
-											],
-										},
-										[icon(h, "DotsVerticalIcon")],
-									),
+		hstack(h, { gap: "2" }, [
+			button(
+				h,
+				{
+					size: "sm",
+					variant: primary.variant,
+					isDisabled: isBusy,
+					attributes: [h.OnClick(Message.ClickedPrimary())],
+				},
+				[primary.label],
+			),
+			h.submodel({
+				slotId: "investigation-actions",
+				model: model.actionsMenu,
+				view: MenuView.view,
+				viewInputs: {
+					entries,
+					align: "end",
+					toView: ({ trigger, withTrigger }) =>
+						h.span(
+							[h.Class("contents")],
+							withTrigger(
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "icon-sm",
+										attributes: [h.AriaLabel("More investigation actions"), ...trigger],
+									},
+									[icon(h, "DotsVerticalIcon")],
 								),
 							),
-					},
-					toParentMessage: (message) => Message.GotActionsMenuMessage({ message }),
-				}),
-			],
-		),
+						),
+				},
+				toParentMessage: (message) => Message.GotActionsMenuMessage({ message }),
+			}),
+		]),
 	])
 }
 
@@ -153,19 +149,22 @@ const tabs = (h: H, investigation: V2Investigation, active: Tab): Html => {
 	return linkTabStrip(
 		h,
 		"Investigation sections",
-		TABS.filter((tab) => tab.value !== "evidence" || evidenceCount > 0).map((tab) => ({
-			key: tab.value,
-			href: hrefOf(
-				AppRoute.Investigation({
-					id: investigation.id,
-					search: tab.value === "overview" ? {} : { tab: tab.value },
-				}),
-			),
-			label: tab.label,
-			count: tab.value === "evidence" ? evidenceCount : undefined,
-			isCurrent: tab.value === active,
-			isRouteActive: tab.value === active,
-		})),
+		Arr.map(
+			Arr.filter(TABS, (tab) => tab.value !== "evidence" || evidenceCount > 0),
+			(tab) => ({
+				key: tab.value,
+				href: hrefOf(
+					AppRoute.Investigation({
+						id: investigation.id,
+						search: tab.value === "overview" ? {} : { tab: tab.value },
+					}),
+				),
+				label: tab.label,
+				count: tab.value === "evidence" ? evidenceCount : undefined,
+				isCurrent: tab.value === active,
+				isRouteActive: tab.value === active,
+			}),
+		),
 	)
 }
 
@@ -191,7 +190,10 @@ const documentTab = (
 				]
 	return [
 		pageScrollArea(h, {}, [
-			h.div([h.Class("flex flex-col gap-7")], [...sections, investigationMeta(h, model, investigation)]),
+			h.div(
+				[h.Class("flex flex-col gap-7")],
+				[...sections, investigationMeta(h, model, investigation)],
+			),
 		]),
 		...(isResolved ? [] : [h.div([h.Class("shrink-0 px-4 pb-4")], [followUpComposer(h)])]),
 	]

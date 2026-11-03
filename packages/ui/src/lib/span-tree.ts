@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { TraceId, SpanId } from "@maple/domain"
 import type { Span, SpanNode } from "./types"
 
@@ -57,7 +57,7 @@ export function transformSpan(raw: SpanHierarchyRow): Span {
 /** Drop duplicate spans (at-least-once ingest delivery), keeping the first occurrence. */
 export function dedupeBySpanId(spans: Span[]): Span[] {
 	const seen = new Set<string>()
-	return spans.filter((span) => {
+	return Arr.filter(spans, (span) => {
 		if (seen.has(span.spanId)) return false
 		seen.add(span.spanId)
 		return true
@@ -272,14 +272,15 @@ export interface TraceDetail {
  * which understates any trace whose async or orphaned spans run past the root.
  */
 export function traceWallClockMs(spans: ReadonlyArray<Pick<Span, "startTime" | "durationMs">>): number {
-	const longest = spans.reduce((max, span) => Math.max(max, span.durationMs), 0)
-	const bounds = spans.reduce(
+	const longest = Arr.reduce(spans, 0, (max, span) => Math.max(max, span.durationMs))
+	const bounds = Arr.reduce(
+		spans,
+		{ start: Number.POSITIVE_INFINITY, end: Number.NEGATIVE_INFINITY },
 		(acc, span) => {
 			const start = new Date(span.startTime).getTime()
 			if (!Number.isFinite(start)) return acc
 			return { start: Math.min(acc.start, start), end: Math.max(acc.end, start + span.durationMs) }
 		},
-		{ start: Number.POSITIVE_INFINITY, end: Number.NEGATIVE_INFINITY },
 	)
 	return Number.isFinite(bounds.start) ? Math.max(longest, bounds.end - bounds.start) : longest
 }
@@ -290,10 +291,17 @@ export function traceWallClockMs(spans: ReadonlyArray<Pick<Span, "startTime" | "
  * service list, and the earliest start time.
  */
 export function buildTraceDetail(rows: ReadonlyArray<SpanHierarchyRow>): TraceDetail {
-	const spans = dedupeBySpanId(rows.map(transformSpan))
+	const spans = dedupeBySpanId(Arr.map(rows, transformSpan))
 	const rootSpans = buildSpanTree(spans)
 	const totalDurationMs = traceWallClockMs(spans)
-	const services = Array.from(new Set(spans.map((span) => span.serviceName).filter(Boolean)))
+	const services = Array.from(
+		new Set(
+			Arr.filter(
+				Arr.map(spans, (span) => span.serviceName),
+				Boolean,
+			),
+		),
+	)
 	let traceStartTime = spans.length > 0 ? spans[0].startTime : new Date().toISOString()
 	let earliestEpoch = new Date(traceStartTime).getTime()
 	for (const span of spans) {

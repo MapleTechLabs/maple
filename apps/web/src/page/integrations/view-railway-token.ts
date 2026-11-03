@@ -1,5 +1,5 @@
 import { RailwayConnectRequest } from "@maple/domain/http"
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import * as Field from "@maple/views/ui/field"
@@ -25,7 +25,7 @@ export const railwayTokenForm = (
 	form: RailwayCardModel["connect"],
 	options: Readonly<{ mode: "connect" | "rotate"; canCancel: boolean }>,
 ): Html => {
-	const trimmed = form.token.value.trim()
+	const trimmed = Str.trim(form.token.value)
 	const isValid = Option.isSome(decodeConnectRequest({ token: trimmed }))
 	const isTokenInvalid = trimmed.length > 0 && !isValid
 	const hasError = !form.isSubmitting && form.error !== null

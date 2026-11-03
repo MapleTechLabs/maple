@@ -8,7 +8,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { hstackClass } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { spinner } from "@maple/views/ui/spinner"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
@@ -48,7 +48,7 @@ const tablesList = (h: HtmlBuilder<Message>, model: Model): Html => {
 	const tables = Option.getOrElse(AsyncData.getData(model.tables.data), () => [])
 	return h.ul(
 		[h.Class("space-y-0.5")],
-		tables.map((table) =>
+		Arr.map(tables, (table) =>
 			h.li(
 				[h.Key(table.name)],
 				[
@@ -80,7 +80,7 @@ export const querySidebar = (h: HtmlBuilder<Message>, model: Model): Html => {
 			eyebrow(h, { as: "h3", variant: "label", className: "pt-4 pb-1" }, ["Examples"]),
 			h.ul(
 				[h.Class("space-y-0.5")],
-				EXAMPLE_QUERIES.map((example) =>
+				Arr.map(EXAMPLE_QUERIES, (example) =>
 					h.li(
 						[h.Key(example.label)],
 						[

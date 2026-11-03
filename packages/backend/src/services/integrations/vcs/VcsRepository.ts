@@ -96,7 +96,7 @@ const toReadError = (table: string) => (error: DatabaseError) =>
 
 const decodeAll = <Row, A>(table: string, rows: ReadonlyArray<Row>, f: (row: Row) => A) =>
 	Effect.try({
-		try: () => rows.map(f),
+		try: () => Arr.map(rows, f),
 		catch: (err) =>
 			new VcsRepoDecodeError({
 				message: err instanceof Error ? err.message : "row decode failed",

@@ -24,6 +24,7 @@
 import * as m from "../paraglide/messages.js"
 import type { BrandMarkId } from "./brand-marks"
 import type { Vendor } from "./vendor-pricing"
+import { Array as Arr } from "effect"
 
 type Locale = "en" | "ja" | "ko"
 
@@ -1472,7 +1473,7 @@ export const competitors: Competitor[] = [
 	},
 ]
 
-export const competitorSlugs = competitors.map((competitor) => competitor.slug)
+export const competitorSlugs = Arr.map(competitors, (competitor) => competitor.slug)
 
 export const competitorBySlug = (slug: string) => competitors.find((competitor) => competitor.slug === slug)
 

@@ -2,7 +2,7 @@ import { formatClock } from "@maple/ui/lib/replay-format"
 import { hostFromUrl } from "@maple/ui/lib/replay"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { createKeyedLazy, createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { filterChip } from "@maple/views/ui/filter-chip"
@@ -48,7 +48,7 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type H = HtmlBuilder<Message>
 
-const SPEED_OPTIONS = [0.5, 1, 2, 4, 8].map((s) => ({ value: String(s), label: `${s}×` }))
+const SPEED_OPTIONS = Arr.map([0.5, 1, 2, 4, 8], (s) => ({ value: String(s), label: `${s}×` }))
 
 /**
  * The playhead on the recording's own clock: the only part a playback tick moves. Skip-idle jumps the
@@ -77,7 +77,7 @@ const idleBandsView = (h: H, intervals: ReadonlyArray<Interval>, totalMs: number
 		[h.Class("absolute inset-0")],
 		totalMs <= 0
 			? []
-			: intervals.map((interval, i) => {
+			: Arr.map(intervals, (interval, i) => {
 					const [leftPct, widthPct] = spanPct(interval.start, interval.end, totalMs)
 					return h.span(
 						[
@@ -101,7 +101,7 @@ const markersView = (h: H, markers: ReadonlyArray<Marker>, totalMs: number): Htm
 		[h.Class("absolute inset-0")],
 		totalMs <= 0
 			? []
-			: markers.map((marker, i) =>
+			: Arr.map(markers, (marker, i) =>
 					h.span(
 						[
 							h.Key(`${marker.kind}-${marker.ms}-${i}`),
@@ -398,7 +398,7 @@ const stageView = (
 			engineMount(h, stage, session, status, isHolding),
 			...(status === "ready" ? [playOverlay(h, stage)] : []),
 			...(overlay === null ? [] : [overlay]),
-			...trailingRanges(stage).map((range) =>
+			...Arr.map(trailingRanges(stage), (range) =>
 				h.span(
 					[
 						h.Key(`feed-${range.key}`),

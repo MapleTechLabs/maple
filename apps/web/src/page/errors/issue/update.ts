@@ -1,5 +1,5 @@
 import { type ErrorIssueId, ErrorIssuePullRequestId, type IssueSeverity } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -554,7 +554,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			]),
 		ChangedCommentDraft: ({ value }) => ({ model: { ...model, commentDraft: value } }),
 		ClickedComment: () => {
-			const body = model.commentDraft.trim()
+			const body = Str.trim(model.commentDraft)
 			return body.length === 0 || model.isCommenting
 				? { model }
 				: {

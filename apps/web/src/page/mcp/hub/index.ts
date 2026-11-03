@@ -3,6 +3,7 @@ import { Message } from "./message"
 import { Model } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
 import { view } from "./view"
+import { String as Str } from "effect"
 
 /** `/mcp-servers`, a server's overview, its tool pages and its sessions, as one instance: the time range carries across. */
 export const page = definePage(
@@ -34,7 +35,7 @@ export const page = definePage(
 						{ label: view.service, href: server },
 						{ label: "Sessions", href: `${server}/sessions` },
 						// A user session's id is a key the page reads back, not a name to show.
-						{ label: view.sessionId.startsWith("user:") ? "User session" : view.sessionId },
+						{ label: Str.startsWith("user:")(view.sessionId) ? "User session" : view.sessionId },
 					]
 			}
 		},

@@ -27,7 +27,7 @@ import {
 	PRODUCT_EVENTS_FUNNEL_ENDPOINT,
 	PRODUCT_EVENTS_PATHS_ENDPOINT,
 } from "@maple/widgets/dashboard"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { FunnelDraft, PathsDraft, StepDraft } from "./editor-state"
 
 // The funnel's and the paths widget's editor drafts, read from a stored widget
@@ -84,7 +84,7 @@ export const funnelInitialState = (widget: Widget): FunnelDraft => {
 	const breakdownBy = stored?.breakdownBy ?? routeParams?.breakdownBy
 	return {
 		source: routeParams !== undefined || steps.length > 0 ? "product_events" : "query_set",
-		steps: steps.map(draftFromFunnelStep),
+		steps: Arr.map(steps, draftFromFunnelStep),
 		keyBy,
 		windowSeconds,
 		...(breakdownBy !== undefined ? { breakdownBy } : undefined),
@@ -117,7 +117,7 @@ export const pathsInitialState = (widget: Widget): PathsDraft => {
 		keyBy,
 		windowSeconds,
 		include,
-		excludeText: exclude.join(", "),
+		excludeText: Arr.join(exclude, ", "),
 		filterClause: formatProductEventsFilterClause(stored?.filters ?? routeParams),
 		addOns: {
 			keyBy: keyBy !== "person",
@@ -146,7 +146,7 @@ const compiledOrBare = (draft: StepDraft): FunnelStep => {
 export const funnelDefinitionOf = (funnel: FunnelDraft) => {
 	const filters = populationFiltersOf(funnel.filterClause)
 	return {
-		steps: funnel.steps.map(compiledOrBare),
+		steps: Arr.map(funnel.steps, compiledOrBare),
 		keyBy: funnel.keyBy,
 		windowSeconds: funnel.windowSeconds,
 		...(funnel.breakdownBy !== undefined ? { breakdownBy: funnel.breakdownBy } : undefined),
@@ -157,10 +157,10 @@ export const funnelDefinitionOf = (funnel: FunnelDraft) => {
 }
 
 const parseExclude = (text: string): ReadonlyArray<string> =>
-	text
-		.split(",")
-		.map((entry) => entry.trim())
-		.filter((entry) => entry !== "")
+	Arr.filter(
+		Arr.map(Str.split(",")(text), (entry) => Str.trim(entry)),
+		(entry) => entry !== "",
+	)
 
 /** `pathsDefinition`: a session step cannot anchor a sequence. */
 export const pathsDefinitionOf = (paths: PathsDraft) => {
@@ -186,7 +186,7 @@ export const funnelValidationError = (funnel: FunnelDraft): string | null => {
 	if (steps.length === 0) return "Add at least one step"
 	const incomplete = steps.findIndex((step) => completedSteps([step]).length === 0)
 	if (incomplete !== -1) return `Step ${incomplete + 1} needs an event name, page path or session value`
-	if (steps.some((step, index) => index > 0 && step.kind === "session"))
+	if (Arr.some(steps, (step, index) => index > 0 && step.kind === "session"))
 		return "A session step is only valid as step 1"
 	const compiled = compileFunnelSteps(steps)
 	if (!compiled.ok) return compiled.error

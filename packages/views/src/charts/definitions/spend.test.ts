@@ -1,10 +1,15 @@
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { describe, expect, test } from "vitest"
 import { buildSpendCumulative } from "./spend"
 
 const DAY = 86_400_000
-const day = (index: number, bands: Record<string, number | null>, future: boolean, projected: number | null) => ({
-	date: new Date(Date.UTC(2026, 9, 1 + index)).toISOString().slice(0, 10),
+const day = (
+	index: number,
+	bands: Record<string, number | null>,
+	future: boolean,
+	projected: number | null,
+) => ({
+	date: Str.slice(0, 10)(new Date(Date.UTC(2026, 9, 1 + index)).toISOString()),
 	dayMs: Date.UTC(2026, 9, 1) + index * DAY,
 	bands,
 	projected,

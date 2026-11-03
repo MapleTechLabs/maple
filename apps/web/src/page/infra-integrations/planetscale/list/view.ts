@@ -4,7 +4,7 @@ import {
 } from "../../../../components/integrations/planetscale-setup-steps"
 import { EMPTY_VALUE, formatNumber, pluralize } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -173,7 +173,7 @@ const content = (
 	const stats =
 		AsyncData.isSuccess(statsData) || AsyncData.isRefreshing(statsData) ? statsData.data : NO_STATS
 	const never = neverCollected(model)
-	const branchTotal = inventory.databases.reduce((sum, db) => sum + db.branches.length, 0)
+	const branchTotal = Arr.reduce(inventory.databases, 0, (sum, db) => sum + db.branches.length)
 	const showInventoryNotice =
 		status.last_inventory_error !== null || inventoryIsStale(inventory.last_inventory_at, clock.nowMs)
 	const totals = totalsOf(stats)
@@ -194,7 +194,7 @@ const content = (
 						}),
 					]
 				: []),
-			...statsFailure.map((error) =>
+			...Arr.map(statsFailure, (error) =>
 				errorState(h, {
 					failure: error,
 					title: "Couldn't load database stats",

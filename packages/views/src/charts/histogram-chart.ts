@@ -1,6 +1,6 @@
 import { cellText } from "@maple/ui/components/charts/_shared/breakdown-rows"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { Message, Model } from "./chart"
@@ -37,16 +37,15 @@ const asFiniteNumber = (value: unknown): number => {
 
 const isPrebucketed = (rows: ReadonlyArray<Record<string, unknown>>): boolean =>
 	rows.length > 0 &&
-	rows.every((row) => typeof row.name === "string" && typeof row.value === "number") &&
+	Arr.every(rows, (row) => typeof row.name === "string" && typeof row.value === "number") &&
 	rows.length <= 200
 
 const pickValueField = (rows: ReadonlyArray<Record<string, unknown>>): string => {
 	const first = rows[0]
 	if (first === undefined) return "value"
 	return (
-		Object.keys(first).find(
-			(key) => key !== "name" && key !== "bucket" && typeof first[key] === "number",
-		) ?? "value"
+		Rec.keys(first).find((key) => key !== "name" && key !== "bucket" && typeof first[key] === "number") ??
+		"value"
 	)
 }
 
@@ -57,9 +56,10 @@ const numericBins = (
 	binWidth: number | undefined,
 ): ReadonlyArray<NumericBin> => {
 	const valueField = pickValueField(source)
-	const values = source
-		.map((row) => row[valueField])
-		.filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+	const values = Arr.filter(
+		Arr.map(source, (row) => row[valueField]),
+		(value): value is number => typeof value === "number" && Number.isFinite(value),
+	)
 	if (values.length === 0) return []
 	const min = Math.min(...values)
 	const max = Math.max(...values)
@@ -155,7 +155,7 @@ export const view = Submodel.defineView<Model, Message, HistogramChartInputs>((m
 		})
 
 	if (isPrebucketed(source)) {
-		const bins: ReadonlyArray<CategoricalBin> = source.map((row) => ({
+		const bins: ReadonlyArray<CategoricalBin> = Arr.map(source, (row) => ({
 			name: cellText(row.name, EMPTY_VALUE),
 			value: asFiniteNumber(row.value),
 		}))

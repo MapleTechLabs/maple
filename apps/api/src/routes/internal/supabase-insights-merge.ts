@@ -14,7 +14,7 @@ import {
 	SupabaseCallerMix,
 	SupabaseProjectCaller,
 } from "@maple/domain/http"
-import { Array as Arr, DateTime } from "effect"
+import { Array as Arr, DateTime, String as Str } from "effect"
 
 // /infra/supabase: joins of the metrics, logs and trace reads behind the insights endpoints.
 
@@ -44,9 +44,9 @@ export const mergeSupabaseProjects = (
 	cpu: ReadonlyArray<SupabaseProjectCpuOutput>,
 	logs: ReadonlyArray<SupabaseLogsProjectSummaryOutput>,
 ) => {
-	const cpuByRef = new Map(cpu.map((row) => [row.projectRef, row]))
+	const cpuByRef = new Map(Arr.map(cpu, (row) => [row.projectRef, row]))
 	const logsByRef = new Map(
-		logs.map((row) => [
+		Arr.map(logs, (row) => [
 			row.projectRef,
 			{
 				requests: row.requests,
@@ -56,7 +56,7 @@ export const mergeSupabaseProjects = (
 			},
 		]),
 	)
-	const fromMetrics = gauges.map((row) => ({
+	const fromMetrics = Arr.map(gauges, (row) => ({
 		...row,
 		cpuAvg: cpuByRef.get(row.projectRef)?.cpuAvg ?? 0,
 		cpuMax: cpuByRef.get(row.projectRef)?.cpuMax ?? 0,
@@ -64,11 +64,12 @@ export const mergeSupabaseProjects = (
 		...logsByRef.get(row.projectRef),
 		lastSeen: DateTime.formatIso(row.lastSeen),
 	}))
-	const withMetrics = new Set(gauges.map((row) => row.projectRef))
-	const logsOnly = logs
-		.filter((row) => !withMetrics.has(row.projectRef))
-		.map(({ lastSeen, ...row }) => ({ ...METRIC_ZEROS, ...row, lastSeen: DateTime.formatIso(lastSeen) }))
-	return [...fromMetrics, ...logsOnly].toSorted((a, b) => a.projectRef.localeCompare(b.projectRef))
+	const withMetrics = new Set(Arr.map(gauges, (row) => row.projectRef))
+	const logsOnly = Arr.map(
+		Arr.filter(logs, (row) => !withMetrics.has(row.projectRef)),
+		({ lastSeen, ...row }) => ({ ...METRIC_ZEROS, ...row, lastSeen: DateTime.formatIso(lastSeen) }),
+	)
+	return [...fromMetrics, ...logsOnly].toSorted((a, b) => Str.localeCompare(b.projectRef)(a.projectRef))
 }
 
 /** The bucketed status classes and the window totals as one response. */
@@ -79,7 +80,7 @@ export const apiTrafficResponse = (
 	const requests = totals?.requests ?? 0
 	const errors5xx = totals?.errors5xx ?? 0
 	return new SupabaseApiTrafficResponse({
-		buckets: series.map((row) => new SupabaseApiTrafficBucket(row)),
+		buckets: Arr.map(series, (row) => new SupabaseApiTrafficBucket(row)),
 		requests,
 		errors5xx,
 		errorRate5xx: requests > 0 ? errors5xx / requests : 0,
@@ -93,7 +94,8 @@ export const mergeSupabaseCallers = (
 	series: ReadonlyArray<SupabaseProjectCallerSeriesOutput>,
 ) => {
 	const seriesByService = Arr.groupBy(series, (row) => row.serviceName)
-	return callers.map(
+	return Arr.map(
+		callers,
 		(row) =>
 			new SupabaseProjectCaller({
 				serviceName: row.serviceName,
@@ -111,7 +113,8 @@ export const mergeSupabaseCallers = (
 					postgres: row.postgres,
 					other: row.other,
 				}),
-				series: (seriesByService[row.serviceName] ?? []).map(
+				series: Arr.map(
+					seriesByService[row.serviceName] ?? [],
 					(point) => new SupabaseCallerBucket({ bucket: point.bucket, calls: point.calls }),
 				),
 			}),

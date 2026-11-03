@@ -1,6 +1,6 @@
 // BOUNDARY: Test doubles mirror intentionally untyped external callbacks.
 import { describe, expect, it } from "vitest"
-import { Schema, Effect } from "effect"
+import { Schema, Effect, Array as Arr, Record as Rec } from "effect"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	auditAttributeKeyInventoryQuery,
@@ -261,7 +261,9 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		strings: Record<string, unknown>,
 		numbers: Record<string, number>,
 	): readonly [unknown, unknown] => {
-		const quoted = Object.fromEntries(Object.entries(numbers).map(([key, value]) => [key, String(value)]))
+		const quoted = Rec.fromEntries(
+			Arr.map(Rec.toEntries(numbers), ([key, value]) => [key, String(value)]),
+		)
 		return [decode({ ...strings, ...quoted }), decode({ ...strings, ...numbers })]
 	}
 

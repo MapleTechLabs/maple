@@ -26,6 +26,7 @@ import type { ZoneDetail, ZoneRow } from "../data"
 import { MountLinkedCursor } from "./command"
 import { Message, type Model } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // `CloudflareZoneSignals`.
 
@@ -151,7 +152,7 @@ export const zoneSignals = (
 ): Html => {
 	const { detail } = options
 	const totals = zoneSignalTotals(detail.statusBuckets, detail.cacheBuckets)
-	const strips = buildStrips(h, detail, options.zoneRow, totals).map((strip) =>
+	const strips = Arr.map(buildStrips(h, detail, options.zoneRow, totals), (strip) =>
 		(strip.id === "cf-latency" ? detail.latencyIgnoredFilters : detail.ignoredFilters).length > 0
 			? { ...strip, source: `zone-wide, filters not applied · ${strip.source}` }
 			: strip,
@@ -159,7 +160,7 @@ export const zoneSignals = (
 	return correlationStrips(h, {
 		strips,
 		xDomain: [
-			...new Set([...detail.statusBuckets, ...detail.cacheBuckets].map((b) => b.bucket)),
+			...new Set(Arr.map([...detail.statusBuckets, ...detail.cacheBuckets], (b) => b.bucket)),
 		].toSorted(),
 		isWaiting: options.isWaiting,
 		theme: options.theme,

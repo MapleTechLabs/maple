@@ -5,7 +5,18 @@ import { MobileDevicesService } from "@maple/backend/services/push/MobileDevices
 import { ApnsClient } from "@maple/backend/platform/Apns"
 import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
 import { ChatAlertPoster } from "./ChatAlertPoster"
-import { Cause, Clock, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import {
+	Cause,
+	Clock,
+	ConfigProvider,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient } from "effect/http"
 import {
 	AlertRecipientSelectionError,
@@ -91,7 +102,7 @@ export const tracesRow = (overrides: Record<string, unknown> = {}): Record<strin
 	return {
 		// At the test clock, not a fixed calendar date: the evaluation window ends
 		// at "now", so a bucket outside it reduces to no data and nothing fires.
-		bucket: new Date(DEFAULT_CLOCK_EPOCH_MS).toISOString().replace("T", " ").slice(0, 19),
+		bucket: Str.slice(0, 19)(Str.replace("T", " ")(new Date(DEFAULT_CLOCK_EPOCH_MS).toISOString())),
 		groupName: "all",
 		count: 0,
 		spanCount: count,
@@ -206,7 +217,7 @@ export const stubOrgMembersService = (
 	listOrganizationsOf: () => Effect.succeed([]),
 	listMemberActivity: () => Effect.succeed([]),
 	resolveMembers: (_orgId, userIds) => {
-		const byId = new Map(members.map((member) => [member.userId, member]))
+		const byId = new Map(Arr.map(members, (member) => [member.userId, member]))
 		const resolved: Array<OrgMember> = []
 		const unknown: Array<(typeof userIds)[number]> = []
 		for (const userId of userIds) {
@@ -375,7 +386,7 @@ export const createErrorRateRule = (
 export const makeUuidSequence = (...values: string[]): Pick<AlertRuntimeApi, "makeUuid"> => {
 	let index = 0
 	return {
-		makeUuid: () => values[index++] ?? `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+		makeUuid: () => values[index++] ?? `00000000-0000-4000-8000-${Str.padStart(12, "0")(String(index))}`,
 	}
 }
 

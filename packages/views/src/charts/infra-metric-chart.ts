@@ -1,7 +1,7 @@
 import { validateCssColor } from "@maple/ui/lib/sanitizers"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { chartEmpty } from "../ui/chart-state"
@@ -72,14 +72,14 @@ export const infraMetricModel = (options: InfraMetricOptions) => {
 	})
 	const tokens = seriesColorTokens(points.series)
 	const colors = new Map(
-		points.series.map((name) => [
+		Arr.map(points.series, (name) => [
 			name,
 			resolveColor(options.theme, options.seriesColors?.[name] ?? tokens.get(name) ?? "--border"),
 		]),
 	)
 	const latest = points.data[points.data.length - 1]
-	const lastValues = Object.fromEntries(
-		points.series.flatMap((name) => {
+	const lastValues = Rec.fromEntries(
+		Arr.flatMap(points.series, (name) => {
 			const value = latest?.[name]
 			return typeof value === "number" ? [[name, value]] : []
 		}),
@@ -93,7 +93,7 @@ export const infraMetricModel = (options: InfraMetricOptions) => {
 		showThreshold: options.showThreshold ?? false,
 		xDomain: options.xDomain ?? null,
 		gaps: options.gaps ?? false,
-		colors: Object.fromEntries(colors),
+		colors: Rec.fromEntries(colors),
 		chrome: {
 			border: resolveColor(options.theme, "--border"),
 			background: resolveColor(options.theme, "--background"),

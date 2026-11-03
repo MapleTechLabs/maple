@@ -2,7 +2,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { BillingCustomer, OrgId } from "@maple/domain/http"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
@@ -26,10 +26,13 @@ describe("missingCredits", () => {
 	const resetOf = (c: BillingCustomer) => Option.map(missingCredits(c, NOW), (refusal) => refusal.resetsAt)
 
 	it("lets an org with AI credits left start, or one whose plan bills overage", () => {
-		const starts = [
-			customer({ ai_credits: { granted: 10, remaining: 4 } }),
-			customer({ ai_credits: { granted: 10, remaining: -3, overageAllowed: true } }),
-		].map((c) => Option.isNone(missingCredits(c, NOW)))
+		const starts = Arr.map(
+			[
+				customer({ ai_credits: { granted: 10, remaining: 4 } }),
+				customer({ ai_credits: { granted: 10, remaining: -3, overageAllowed: true } }),
+			],
+			(c) => Option.isNone(missingCredits(c, NOW)),
+		)
 		assert.deepStrictEqual(starts, [true, true])
 	})
 

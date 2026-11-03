@@ -2,7 +2,7 @@ import { Density, readLogsViewPreferences, saveLogsViewPreferences } from "@mapl
 import { logAttributeQueryFilters } from "@maple/views/lib/log-attribute-filters"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getLogAttributeKeys, getLogsFacets, listLogs } from "@maple/web-data/warehouse/logs"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Duration, Effect, Schema, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
@@ -120,7 +120,7 @@ export const FetchAttributeKeys = Command.define("FetchLogAttributeKeys", {
 		getLogAttributeKeys({ data: window }).pipe(
 			Effect.mapBoth({
 				onSuccess: (response) =>
-					response.data.map((row) => ({ name: row.attributeKey, count: row.usageCount })),
+					Arr.map(response.data, (row) => ({ name: row.attributeKey, count: row.usageCount })),
 				onFailure: toLoadFailure,
 			}),
 			Effect.result,

@@ -1,4 +1,4 @@
-import { Duration, Effect, Option, Queue, Schema, Stream } from "effect"
+import { Duration, Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import { gcpConnectionState } from "../../components/integrations/gcp-connector-state"
 import { ingestPhaseOf } from "../infra-integrations/cloudflare/ingest"
@@ -187,7 +187,10 @@ const isAwsPending = (model: Model): boolean => {
 	return (
 		status !== null &&
 		setupId !== null &&
-		status.connections.some((connection) => connection.id === setupId && connection.verified_at === null)
+		Arr.some(
+			status.connections,
+			(connection) => connection.id === setupId && connection.verified_at === null,
+		)
 	)
 }
 
@@ -197,7 +200,8 @@ const isAwsStreaming = (model: Model): boolean => {
 	const status = Option.getOrNull(AsyncData.getData(model.statuses.aws.data))
 	return (
 		status !== null &&
-		status.connections.some(
+		Arr.some(
+			status.connections,
 			(connection) => connection.verified_at !== null && connection.metric_stream !== null,
 		)
 	)
@@ -221,7 +225,10 @@ const gcpRefreshInterval = (model: Model): number | null => {
 		onSome: (status) => status.connectors,
 	})
 	if (connectors.length === 0) return null
-	const settling = connectors.some((connector) => gcpConnectionState(connector, model.nowMs) !== "healthy")
+	const settling = Arr.some(
+		connectors,
+		(connector) => gcpConnectionState(connector, model.nowMs) !== "healthy",
+	)
 	return settling ? 10_000 : 60_000
 }
 
@@ -233,7 +240,7 @@ const isAwaitingRun = (model: Model): boolean => {
 	if (connector === undefined) return false
 	if (configure.method === "script") return !runConfirmed(connector, configure.opened, model.nowMs)
 	// `MethodApplyStage`: until each capability's first data, or its removal, is confirmed.
-	return CAPABILITY_IDS.some((capability) => {
+	return Arr.some(CAPABILITY_IDS, (capability) => {
 		const applied =
 			capability === "logs" ? connector.applied_logs_enabled : connector.applied_metrics_enabled
 		return connector[CAPABILITIES[capability].flag] ? applied !== true : applied === true
@@ -262,7 +269,10 @@ const isGithubPolling = (model: Model): boolean => {
 	const syncing =
 		status?.connected === true &&
 		status.repositoryDiscovery?._tag !== "Failed" &&
-		status.repositories.some((repo) => repo.syncStatus === "pending" || repo.syncStatus === "backfilling")
+		Arr.some(
+			status.repositories,
+			(repo) => repo.syncStatus === "pending" || repo.syncStatus === "backfilling",
+		)
 	return (
 		model.connect.active !== null ||
 		model.githubCard.isForcePolling ||

@@ -3,7 +3,7 @@
  * and tool results run to 50k, so these paths run in production far more often than the happy one.
  */
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Exit, Schema } from "effect"
+import { Effect, Exit, Schema, String as Str } from "effect"
 import { Tool } from "effect/ai"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import {
@@ -22,7 +22,7 @@ const userText = (content: string) => ({ role: "user", parts: [{ type: "text" as
 describe("messagesJson", () => {
 	it("drops whole oldest messages to fit, and counts them", () => {
 		const { json, dropped } = messagesJson(
-			[userText("a".repeat(600)), userText("b".repeat(600)), userText("c")],
+			[userText(Str.repeat(600)("a")), userText(Str.repeat(600)("b")), userText("c")],
 			1_000,
 		)
 
@@ -41,7 +41,7 @@ describe("messagesJson", () => {
 			[
 				{
 					role: "tool",
-					parts: [{ type: "tool_call_response", id: "t1", response: "x".repeat(5_000) }],
+					parts: [{ type: "tool_call_response", id: "t1", response: Str.repeat(5_000)("x") }],
 				},
 			],
 			1_000,
@@ -49,7 +49,7 @@ describe("messagesJson", () => {
 
 		assert.strictEqual(dropped, 0)
 		assert.isBelow(json.length, 1_000)
-		assert.isTrue(String(JSON.parse(json)[0].parts[0].response).endsWith(TRUNCATION_MARKER))
+		assert.isTrue(Str.endsWith(TRUNCATION_MARKER)(String(JSON.parse(json)[0].parts[0].response)))
 	})
 
 	it("splits a message's allowance across its parts, so parallel tool results share one", () => {
@@ -60,7 +60,7 @@ describe("messagesJson", () => {
 					parts: Array.from({ length: 20 }, (_, index) => ({
 						type: "tool_call_response" as const,
 						id: `t${index}`,
-						response: "x".repeat(5_000),
+						response: Str.repeat(5_000)("x"),
 					})),
 				},
 			],
@@ -91,22 +91,22 @@ describe("messagesJson", () => {
 
 describe("toolCallJson", () => {
 	it("wraps a string result, truncating the text before wrapping it", () => {
-		const result = String(JSON.parse(toolCallJson("x".repeat(20_000))).result)
+		const result = String(JSON.parse(toolCallJson(Str.repeat(20_000)("x"))).result)
 
-		assert.isTrue(result.startsWith("xxx"))
-		assert.isTrue(result.endsWith(TRUNCATION_MARKER))
+		assert.isTrue(Str.startsWith("xxx")(result))
+		assert.isTrue(Str.endsWith(TRUNCATION_MARKER)(result))
 	})
 
 	it("holds a string result to the budget once escaped", () => {
 		// Maple's tool results are JSON and tables: quotes and newlines double in length when wrapped.
-		const json = toolCallJson('{"row":"a"}\n'.repeat(2_000))
+		const json = toolCallJson(Str.repeat(2_000)('{"row":"a"}\n'))
 
 		assert.isAtMost(json.length, 8_000)
-		assert.isTrue(String(JSON.parse(json).result).endsWith(TRUNCATION_MARKER))
+		assert.isTrue(Str.endsWith(TRUNCATION_MARKER)(String(JSON.parse(json).result)))
 	})
 
 	it("holds an oversized object to the budget as a truncated prefix", () => {
-		const json = toolCallJson({ rows: '"quoted"'.repeat(5_000) })
+		const json = toolCallJson({ rows: Str.repeat(5_000)('"quoted"') })
 
 		assert.isAtMost(json.length, 8_000)
 		assert.strictEqual(JSON.parse(json).truncated, true)
@@ -114,7 +114,7 @@ describe("toolCallJson", () => {
 	})
 
 	it("cuts an escape-heavy object by what its encoding costs, not to nothing", () => {
-		const json = toolCallJson({ rows: '\\"'.repeat(6_000) })
+		const json = toolCallJson({ rows: Str.repeat(6_000)('\\"') })
 
 		assert.isAtMost(json.length, 8_000)
 		assert.isAbove(JSON.parse(json).prefix.length, 3_000)
@@ -138,7 +138,7 @@ describe("invokeAgentAttributes", () => {
 			model: "test-model",
 			tools: Array.from({ length: 40 }, (_, index) =>
 				Tool.make(`tool_${index}`, {
-					description: "d".repeat(1_000),
+					description: Str.repeat(1_000)("d"),
 					parameters: Schema.Struct({ query: Schema.String }),
 				}),
 			),
@@ -147,7 +147,7 @@ describe("invokeAgentAttributes", () => {
 
 		assert.strictEqual(definitions.length, 40)
 		assert.notProperty(definitions[0], "parameters")
-		assert.strictEqual(definitions[0].description, `${"d".repeat(128)}${TRUNCATION_MARKER}`)
+		assert.strictEqual(definitions[0].description, `${Str.repeat(128)("d")}${TRUNCATION_MARKER}`)
 		assert.notProperty(attributes, "gen_ai.agent.description")
 	})
 })

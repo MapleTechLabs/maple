@@ -7,7 +7,7 @@ import {
 	type DurationStats,
 	type AttributeValueItem,
 } from "@maple/query-engine"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, String as Str } from "effect"
 import { HttpClientError } from "effect/http"
 import { PublicHttpErrorBodySchema, type AnyPublicHttpErrorBody } from "@maple/domain/http"
 import { makeClientErrorBody, NetworkErrorBody } from "../lib/error-messages"
@@ -170,7 +170,7 @@ export const isWarehouseApiError = (cause: unknown): cause is WarehouseApiError 
 	cause !== null &&
 	"_tag" in cause &&
 	typeof cause._tag === "string" &&
-	cause._tag.startsWith("@maple/web/errors/Warehouse")
+	Str.startsWith("@maple/web/errors/Warehouse")(cause._tag)
 
 /**
  * True when `cause` is a request that never got a response — the browser could

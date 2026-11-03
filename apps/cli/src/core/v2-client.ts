@@ -11,7 +11,7 @@
 // minted with `kind: "standard"` and no scope restriction, which
 // `ApiAuthorizationV2Live` accepts across every `/v2` family.
 
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
 import { MapleApiV2 } from "@maple/domain/http/v2"
@@ -25,7 +25,7 @@ import type { Range } from "./time"
  * `Timestamp` schema rejects: it requires ISO-8601 with an explicit UTC
  * designator. Convert at the boundary rather than widening the wire schema.
  */
-export const toV2Timestamp = (clickhouseUtc: string): string => `${clickhouseUtc.replace(" ", "T")}.000Z`
+export const toV2Timestamp = (clickhouseUtc: string): string => `${Str.replace(" ", "T")(clickhouseUtc)}.000Z`
 
 export const toV2Window = (range: Range): { start_time: string; end_time: string } => ({
 	start_time: toV2Timestamp(range.startTime),
@@ -36,7 +36,7 @@ export type MapleV2Client = Effect.Success<ReturnType<typeof makeV2Client>>
 
 export const makeV2Client = (apiUrl: string, token: string) =>
 	HttpApiClient.make(MapleApiV2, {
-		baseUrl: apiUrl.replace(/\/$/, ""),
+		baseUrl: Str.replace(/\/$/, "")(apiUrl),
 		transformClient: HttpClient.mapRequest(HttpClientRequest.bearerToken(token)),
 	})
 

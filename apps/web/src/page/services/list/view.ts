@@ -15,6 +15,7 @@ import type { Model, ServiceRow } from "./model"
 import { displayedServices } from "./derive"
 import { filtersRail } from "./view-filters"
 import { loadingState, servicesTable, THROUGHPUT_COLOR } from "./view-table"
+import { Array as Arr } from "effect"
 
 /** The colour tokens the sparklines read off the theme. */
 const THEME_TOKENS = [TONE_COLOR.crit, THROUGHPUT_COLOR]
@@ -35,10 +36,11 @@ const filterChips = (model: Model, pinnedNamespace: string | null) => {
 			? []
 			: [{ id: param, label, values, isNegated, onRemove: Message.RemovedFilterChip({ param }) }]
 	}
-	return [
-		...FACETS.flatMap((facet) => chipOf(facet.exclude, facet.label, true)),
-		...FACETS.flatMap((facet) => chipOf(facet.include, facet.label, false)),
-	].filter(
+	return Arr.filter(
+		[
+			...Arr.flatMap(FACETS, (facet) => chipOf(facet.exclude, facet.label, true)),
+			...Arr.flatMap(FACETS, (facet) => chipOf(facet.include, facet.label, false)),
+		],
 		(chip) => pinnedNamespace === null || (chip.id !== "namespaces" && chip.id !== "excludedNamespaces"),
 	)
 }

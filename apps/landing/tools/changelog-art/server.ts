@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 /** Static server for the poster generator + a /save sink that writes PNGs to disk. */
 const ROOT = new URL(".", import.meta.url).pathname
 const OUT = `${ROOT}out`
@@ -11,14 +12,14 @@ Bun.serve({
 
 		if (req.method === "POST" && url.pathname === "/save") {
 			const { name, dataUrl } = (await req.json()) as { name: string; dataUrl: string }
-			const b64 = dataUrl.slice(dataUrl.indexOf(",") + 1)
+			const b64 = Str.slice(dataUrl.indexOf(",") + 1)(dataUrl)
 			const path = `${OUT}/${name}.png`
 			await Bun.write(path, Buffer.from(b64, "base64"))
 			return new Response(`wrote ${path}`)
 		}
 
 		const path = url.pathname === "/" ? "/index.html" : url.pathname
-		const file = Bun.file(ROOT + path.slice(1))
+		const file = Bun.file(ROOT + Str.slice(1)(path))
 		if (await file.exists()) {
 			return new Response(file, { headers: { "cache-control": "no-store" } })
 		}

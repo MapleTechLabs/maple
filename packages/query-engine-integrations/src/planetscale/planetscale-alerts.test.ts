@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { rawAlertSqlSelectsSamples, rawSqlIssue } from "@maple/domain/raw-sql"
 
 import { PLANETSCALE_STORAGE_RUNWAY_SQL, PLANETSCALE_STORAGE_USED_SQL } from "./planetscale-alerts"
+import { Record as Rec } from "effect"
 
 // These strings bypass the typed builder, so the alert runtime's contract is
 // only enforced here. Without this test a missing macro surfaces as a rule that
@@ -13,7 +14,7 @@ const STATEMENTS = {
 
 // A plain loop, not describe.each: the generic instantiation describe.each
 // produces has OOM'd tsc in this repo before.
-for (const [name, sql] of Object.entries(STATEMENTS)) {
+for (const [name, sql] of Rec.toEntries(STATEMENTS)) {
 	describe(`${name} alert SQL`, () => {
 		it("passes the alert runtime's raw-SQL validation", () => {
 			expect(rawSqlIssue(sql, { workload: "alert" })).toBeNull()

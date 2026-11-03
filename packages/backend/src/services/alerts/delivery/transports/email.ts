@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { buildAlertEmailContent } from "../../alert-email"
 import { makeDeliveryError } from "../runTransport"
 import type { EffectTransport, EffectTransportDeps, RenderInput, SecretConfigOf } from "../Transport"
@@ -30,7 +30,7 @@ export const emailTransport: EffectTransport<Config> = {
 					}),
 				),
 			)
-			const failures = outcomes.filter((outcome) => outcome.error != null)
+			const failures = Arr.filter(outcomes, (outcome) => outcome.error != null)
 			const count = members.length
 
 			if (failures.length === count && count > 0) {
@@ -56,9 +56,10 @@ export const emailTransport: EffectTransport<Config> = {
 					}),
 				)
 				return {
-					providerMessage: `Emailed ${count - failures.length} of ${count} members; failed: ${failures
-						.map((failure) => `${failure.member.email} (${failure.error})`)
-						.join(", ")}`,
+					providerMessage: `Emailed ${count - failures.length} of ${count} members; failed: ${Arr.join(
+						Arr.map(failures, (failure) => `${failure.member.email} (${failure.error})`),
+						", ",
+					)}`,
 					providerReference: null,
 					responseCode: null,
 				}

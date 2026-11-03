@@ -17,6 +17,7 @@ import type { ReleasesSearch } from "../../../route/search"
 import { commitRangesKey, commitsQueryKey } from "../kit"
 import type { PresetValue } from "../../kit/time-controls"
 import type { IssuePage, Model, ReleasesData } from "./model"
+import { Array as Arr } from "effect"
 
 export type Search = typeof ReleasesSearch.Type
 
@@ -33,8 +34,8 @@ export interface Derived {
 
 /** The page's `derived` memo: impacts, groups and live versions of the loaded rows. */
 export const deriveOf = (data: ReleasesData): Derived => {
-	const releases = data.releases.map((row) => ({ ...row }))
-	const timeline = data.timeline.map((row) => ({ ...row }))
+	const releases = Arr.map(data.releases, (row) => ({ ...row }))
+	const timeline = Arr.map(data.timeline, (row) => ({ ...row }))
 	const impacts = deriveReleaseImpacts(releases, timeline)
 	const groups = groupReleases(impacts)
 	return { impacts, groups, live: liveVersions(timeline, groups), response: data }
@@ -52,24 +53,33 @@ export const hasFilters = (search: Search): boolean =>
 const resolvedGroups = (groups: ReadonlyArray<ReleaseGroup>) => groups.slice(0, COMMIT_RESOLVE_LIMIT)
 
 export const shasKeyOf = (groups: ReadonlyArray<ReleaseGroup>): string =>
-	commitsQueryKey(resolvedGroups(groups).map((group) => group.commitSha))
+	commitsQueryKey(Arr.map(resolvedGroups(groups), (group) => group.commitSha))
 
 export const rangesKeyOf = (groups: ReadonlyArray<ReleaseGroup>): string =>
 	commitRangesKey(
-		resolvedGroups(groups).flatMap((group) => {
+		Arr.flatMap(resolvedGroups(groups), (group) => {
 			const base = previousSha(group)
 			return base === undefined ? [] : [{ base, head: group.commitSha }]
 		}),
 	)
 
 export const commitsOf = (model: Model): ReadonlyMap<string, VcsCommitDetailResponse> =>
-	new Map(AsyncData.getOrElse(model.commits.data, () => []).map((commit) => [commit.sha, commit]))
+	new Map(
+		Arr.map(
+			AsyncData.getOrElse(model.commits.data, () => []),
+			(commit) => [commit.sha, commit],
+		),
+	)
 
 export const rangesOf = (model: Model): ReadonlyMap<string, VcsCommitRangeResponse> =>
 	new Map(
-		AsyncData.getOrElse(model.ranges.data, () => [])
-			.filter((range) => range.status === "resolved")
-			.map((range) => [range.head, range]),
+		Arr.map(
+			Arr.filter(
+				AsyncData.getOrElse(model.ranges.data, () => []),
+				(range) => range.status === "resolved",
+			),
+			(range) => [range.head, range],
+		),
 	)
 
 /** `useReleaseIssueCounts`: undefined while loading or failed. */
@@ -77,4 +87,4 @@ export const issueCountsOf = (
 	impacts: ReadonlyArray<ReleaseServiceImpact>,
 	page: IssuePage | null,
 ): ReadonlyMap<string, ReleaseIssueCounts> | undefined =>
-	page === null ? undefined : countIssues(attributeIssues(impacts, page.data.map(errorIssueFromV2)))
+	page === null ? undefined : countIssues(attributeIssues(impacts, Arr.map(page.data, errorIssueFromV2)))

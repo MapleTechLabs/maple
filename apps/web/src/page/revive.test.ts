@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import { AppRoute } from "../route"
@@ -66,19 +66,23 @@ const servicesPage = (instance: number, isSettled: boolean): PageSlot | null => 
 	)
 	const model = servicesModel(windowed)
 	if (!isSettled || model === null) return windowed
-	return [
-		Message.CompletedFetchOverview({ key: model.overview.key ?? "", result: Result.succeed([row]) }),
-		Message.CompletedFetchSparklines({ key: model.sparklines.key ?? "", result: Result.succeed({}) }),
-		Message.CompletedFetchAnomalies({ key: model.anomalies.key ?? "", result: Result.succeed([]) }),
-		Message.CompletedFetchFacets({
-			key: model.facets.key ?? "",
-			result: Result.succeed({ environments: [], namespaces: [], commitShas: [] }),
-		}),
-		Message.CompletedFetchBaseline({ key: model.baseline.key ?? "", result: Result.succeed([]) }),
-		Message.UpdatedIncidents({ orgId, incidents: [] }),
-		Message.CompletedLoadChartRuntime(),
-		Message.CompletedLoadSignalPresence({ result: Result.succeed({}) }),
-	].reduce(send, windowed)
+	return Arr.reduce(
+		[
+			Message.CompletedFetchOverview({ key: model.overview.key ?? "", result: Result.succeed([row]) }),
+			Message.CompletedFetchSparklines({ key: model.sparklines.key ?? "", result: Result.succeed({}) }),
+			Message.CompletedFetchAnomalies({ key: model.anomalies.key ?? "", result: Result.succeed([]) }),
+			Message.CompletedFetchFacets({
+				key: model.facets.key ?? "",
+				result: Result.succeed({ environments: [], namespaces: [], commitShas: [] }),
+			}),
+			Message.CompletedFetchBaseline({ key: model.baseline.key ?? "", result: Result.succeed([]) }),
+			Message.UpdatedIncidents({ orgId, incidents: [] }),
+			Message.CompletedLoadChartRuntime(),
+			Message.CompletedLoadSignalPresence({ result: Result.succeed({}) }),
+		],
+		windowed,
+		send,
+	)
 }
 
 describe("a page step that changes nothing", () => {
@@ -111,7 +115,7 @@ describe("reviving a page left earlier", () => {
 			Option.some([row]),
 		)
 		// Re-resolved like entry: snapped, so a read still cached is served, not forced.
-		expect(back.commands.map((command) => [command.name, command.args])).toContainEqual([
+		expect(Arr.map(back.commands, (command) => [command.name, command.args])).toContainEqual([
 			"ResolveServicesWindow",
 			expect.objectContaining({ mode: "Load" }),
 		])
@@ -123,7 +127,7 @@ describe("reviving a page left earlier", () => {
 		const filtered = AppRoute.Services({ search: { environments: ["staging"], timePreset: "1h" } })
 		const back = enterRoute(overview, filtered, context, 3, parkPages([], left, overview))
 		expect(servicesModel(back.slot)?.search).toEqual(filtered.search)
-		expect(back.commands.map((command) => [command.name, command.args])).toContainEqual([
+		expect(Arr.map(back.commands, (command) => [command.name, command.args])).toContainEqual([
 			"ResolveServicesWindow",
 			expect.objectContaining({ mode: "Load", preset: "1h" }),
 		])
@@ -139,7 +143,7 @@ describe("reviving a page left earlier", () => {
 		)
 		expect(back.model.setup?.isOverviewInFlight).toBe(false)
 		expect([back.model.isReloading, back.model.refreshVersion]).toEqual([false, 0])
-		expect((back.commands ?? []).map((command) => command.name)).toContain("ReadOverviewEntry")
+		expect(Arr.map(back.commands ?? [], (command) => command.name)).toContain("ReadOverviewEntry")
 	})
 
 	test("an overview with a dismissed setup card is parked, though its card never read the keys", () => {
@@ -163,7 +167,7 @@ describe("reviving a page left earlier", () => {
 				: null
 		const away = enterRoute(overview, services, context, 2).slot
 		const parked = parkPages([], overview, away)
-		expect(parked.map((slot) => slot._tag)).toEqual(["Overview"])
+		expect(Arr.map(parked, (slot) => slot._tag)).toEqual(["Overview"])
 		expect(enterRoute(away, home, context, 3, parked).slot?.instance).toBe(3)
 	})
 
@@ -175,9 +179,9 @@ describe("reviving a page left earlier", () => {
 				: { ...model.setup, state: DEFAULT_QUICK_START_STATE, keys: { _tag: "Pending" as const } }
 		const parkedModel = { ...model, setup, chartRuntime: { _tag: "Failed" as const, reason: "boom" } }
 		const back = reviveOverview(parkedModel, { search: {} }, context)
-		const names = (back.commands ?? []).map((command) => command.name)
+		const names = Arr.map(back.commands ?? [], (command) => command.name)
 		expect(names).toContain("FetchSetupChecklistKeys")
-		expect(names.some((name) => name.includes("ChartRuntime"))).toBe(true)
+		expect(Arr.some(names, (name) => Str.includes("ChartRuntime")(name))).toBe(true)
 		expect(back.model.chartRuntime._tag).toBe("Loading")
 	})
 
@@ -194,7 +198,10 @@ describe("reviving a page left earlier", () => {
 			entered,
 		)
 		expect(
-			parkPages([], failed, enterRoute(failed, services, context, 2).slot).map((slot) => slot._tag),
+			Arr.map(
+				parkPages([], failed, enterRoute(failed, services, context, 2).slot),
+				(slot) => slot._tag,
+			),
 		).toEqual(["Overview"])
 	})
 
@@ -208,7 +215,7 @@ describe("reviving a page left earlier", () => {
 		const once = parkPages([], first, enterRoute(first, home, context, 2).slot)
 		const second = servicesPage(3, true)
 		const twice = parkPages(once, second, enterRoute(second, home, context, 4).slot)
-		expect(twice.map((slot) => [slot._tag, slot.instance])).toEqual([["ServicesList", 3]])
+		expect(Arr.map(twice, (slot) => [slot._tag, slot.instance])).toEqual([["ServicesList", 3]])
 	})
 
 	test("switching org drops the pages parked for the previous one", () => {

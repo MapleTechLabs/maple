@@ -1,4 +1,5 @@
 import type { CodeReviewTeamMember } from "@maple/domain/http"
+import { Array as Arr } from "effect"
 
 // One 0-100 score per person: 80% quality, 20% merged volume against the team's median. Quality is
 // how much of what the review raised reached the merge, each part a defect rate compared to the
@@ -54,7 +55,7 @@ export type Score = Readonly<{
 	volume: number
 }>
 
-const sum = (values: ReadonlyArray<number>) => values.reduce((total, value) => total + value, 0)
+const sum = (values: ReadonlyArray<number>) => Arr.reduce(values, 0, (total, value) => total + value)
 
 export const medianOf = (values: ReadonlyArray<number>): number | null => {
 	if (values.length === 0) return null
@@ -65,31 +66,31 @@ export const medianOf = (values: ReadonlyArray<number>): number | null => {
 
 /** Scores by login. People with no merged pull request have nothing to judge and are left out. */
 export const teamScores = (members: ReadonlyArray<CodeReviewTeamMember>): ReadonlyMap<string, Score> => {
-	const scored = members.filter((member) => member.mergedPullRequests > 0)
+	const scored = Arr.filter(members, (member) => member.mergedPullRequests > 0)
 	// A median, so one outlier barely moves anyone else; scales with the window like the counts do.
-	const teamMerged = medianOf(scored.map((member) => member.mergedPullRequests)) ?? 1
+	const teamMerged = medianOf(Arr.map(scored, (member) => member.mergedPullRequests)) ?? 1
 
 	// The team's pooled rate per component, over everyone, scored or not. A component with no
 	// evidence, or no defects anywhere, separates nobody and is left out.
-	const pooled = COMPONENTS.map((component) => {
-		const tallies = members.map(component.tally)
-		const trials = sum(tallies.map((tally) => tally.trials))
-		const rate = trials === 0 ? 0 : sum(tallies.map((tally) => tally.defects)) / trials
+	const pooled = Arr.map(COMPONENTS, (component) => {
+		const tallies = Arr.map(members, component.tally)
+		const trials = sum(Arr.map(tallies, (tally) => tally.trials))
+		const rate = trials === 0 ? 0 : sum(Arr.map(tallies, (tally) => tally.defects)) / trials
 		return rate > 0 ? rate : null
 	})
 
 	return new Map(
-		scored.map((member) => {
-			const parts = COMPONENTS.flatMap((component, index) => {
+		Arr.map(scored, (member) => {
+			const parts = Arr.flatMap(COMPONENTS, (component, index) => {
 				const team = pooled[index] ?? null
 				if (team === null) return []
 				const { defects, trials } = component.tally(member)
 				const own = (defects + component.prior * team) / (trials + component.prior)
 				return [{ weight: component.weight, goodness: team / (team + own) }]
 			})
-			const weights = sum(parts.map((part) => part.weight))
+			const weights = sum(Arr.map(parts, (part) => part.weight))
 			const quality =
-				weights === 0 ? 0.5 : sum(parts.map((part) => part.weight * part.goodness)) / weights
+				weights === 0 ? 0.5 : sum(Arr.map(parts, (part) => part.weight * part.goodness)) / weights
 			const volume = member.mergedPullRequests / (member.mergedPullRequests + teamMerged)
 			const score = 100 * (QUALITY_SHARE * quality + (1 - QUALITY_SHARE) * volume)
 			return [member.login, { score, quality, volume }]

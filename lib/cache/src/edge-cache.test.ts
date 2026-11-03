@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import {
 	EdgeCacheBackendError,
 	EdgeCacheIOError,
@@ -116,7 +116,7 @@ describe("EdgeCacheService.getOrCompute (no schema)", () => {
 			assert.strictEqual(getCalls, 2)
 			assert.strictEqual(computeCalls, 2)
 			assert.deepStrictEqual(
-				results.map(({ value }) => value),
+				Arr.map(results, ({ value }) => value),
 				["computed", "computed"],
 			)
 		}).pipe(Effect.provide(makeLayer(backend, 10)), Effect.timeout(200))
@@ -332,7 +332,7 @@ describe("EdgeCacheService.getOrCompute (with Schema.Class schema)", () => {
 					const view = new Uint8Array(digest)
 					let out = ""
 					for (let i = 0; i < view.length; i++) {
-						out += view[i]!.toString(16).padStart(2, "0")
+						out += Str.padStart(2, "0")(view[i]!.toString(16))
 					}
 					return out
 				})

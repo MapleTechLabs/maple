@@ -1,5 +1,6 @@
 import { isActivePlanSubscription, isPlanSubscription } from "@maple/domain/billing"
 import type { BillingBalance, BillingCustomer, BillingSubscription, CatalogPlan } from "@maple/domain/http"
+import { Array as Arr, String as Str } from "effect"
 
 type Customer = BillingCustomer
 
@@ -32,7 +33,7 @@ export interface FeatureQuota {
 }
 
 function isLegacyFreePlan(sub: Subscription): boolean {
-	if (sub.planId.toLowerCase() === "free") return true
+	if (Str.toLowerCase(sub.planId) === "free") return true
 	return sub.plan?.name?.toLowerCase() === "free"
 }
 
@@ -60,7 +61,7 @@ export function isLegacyPlan(
 // route. Treat anything without a `subscriptions` array as "no usable customer"
 // and let callers fail open instead of crashing.
 export function isUsableCustomer(customer: Customer | null | undefined): customer is Customer {
-	return !!customer && Array.isArray(customer.subscriptions)
+	return !!customer && Arr.isArray(customer.subscriptions)
 }
 
 export function getActivePlan(customer: Customer | null | undefined): Subscription | null {
@@ -204,7 +205,7 @@ function isHardCapped(balance: Balance | undefined): balance is Balance {
 export function isUsageBasedPlan(customer: Customer | null | undefined): boolean {
 	const balances = customer?.balances
 	if (!balances) return false
-	return METERED_INGEST_FEATURES.some((featureId) => balances[featureId]?.overageAllowed === true)
+	return Arr.some(METERED_INGEST_FEATURES, (featureId) => balances[featureId]?.overageAllowed === true)
 }
 
 // Per-feature quota standing for the hard-capped (base-plan) ingest features.
@@ -233,8 +234,8 @@ export function getFeatureQuotas(customer: Customer | null | undefined): Feature
 // blocked. Usage-based and unlimited orgs always resolve to "ok".
 export function getQuotaStatus(customer: Customer | null | undefined): QuotaLevel {
 	const quotas = getFeatureQuotas(customer)
-	if (quotas.some((quota) => quota.level === "over")) return "over"
-	if (quotas.some((quota) => quota.level === "approaching")) return "approaching"
+	if (Arr.some(quotas, (quota) => quota.level === "over")) return "over"
+	if (Arr.some(quotas, (quota) => quota.level === "approaching")) return "approaching"
 	return "ok"
 }
 

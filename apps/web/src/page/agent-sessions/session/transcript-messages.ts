@@ -14,6 +14,7 @@ import { clampedBody, messageBodyView, payloadCopyButton } from "./transcript-ki
 import { avatar, CLOCK, clockOf, LABEL, META, ON_HOVER, row, SPEAKER } from "./transcript-shell"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The transcript's people and prompts: `UserBlock`, `SystemBlock`, `ThinkingBlock`.
 
@@ -60,13 +61,16 @@ const history = (h: H, model: Model, user: Extract<TranscriptRow, { kind: "user"
 			typography(h, { size: "2xs", tone: "muted", as: "p" }, [
 				"The whole history this call re-sent, as captured.",
 			]),
-			...user.history.map((message, index) =>
+			...Arr.map(user.history, (message, index) =>
 				vstack(h, { gap: "1", attributes: [h.Key(String(index))] }, [
 					h.span([h.Class(cn(LABEL, "text-muted-foreground"))], [message.role]),
 					clampedBody(h, model, {
-						text: message.parts
-							.map((part) => (part.kind === "text" ? part.text : `[${part.kind}]`))
-							.join("\n"),
+						text: Arr.join(
+							Arr.map(message.parts, (part) =>
+								part.kind === "text" ? part.text : `[${part.kind}]`,
+							),
+							"\n",
+						),
 						textKey: `${user.key}:history-${index}`,
 						clampLines: 6,
 					}),

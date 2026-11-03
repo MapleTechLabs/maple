@@ -15,6 +15,7 @@ import { searchInput } from "@maple/views/ui/search-input"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The errors stat strip, list toolbar, search and the sort and severity selects.
 
@@ -84,14 +85,14 @@ const SEVERITY_TRIGGER_LABEL = { ...SEVERITY_FILTER_LABEL, all: "Severity" } sat
 >
 
 const isSeverityFilter = (value: string): value is SeverityFilter =>
-	SEVERITY_FILTERS.some((filter) => filter === value)
+	Arr.some(SEVERITY_FILTERS, (filter) => filter === value)
 
 /** `SeverityFilterDot`: the four real levels stacked for "all", the hollow ring for unset. */
 const severityFilterDot = (h: H, value: SeverityFilter): Html =>
 	value === "all"
 		? h.span(
 				[h.AriaHidden(true), h.Class("flex shrink-0 -space-x-1")],
-				SEVERITY_ORDER.map((severity) =>
+				Arr.map(SEVERITY_ORDER, (severity) =>
 					statusDot(h, {
 						tone: "custom",
 						size: "lg",
@@ -110,12 +111,12 @@ const severityContent = (
 		? [hstack(h, { gap: "2", as: "span" }, [severityFilterDot(h, value), labels[value]])]
 		: ["Severity"]
 
-const SORT_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = HUB_SORTS.map((value) => ({
+const SORT_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(HUB_SORTS, (value) => ({
 	_tag: "Item",
 	item: { value, label: SORT_LABEL[value] },
 }))
 
-const SEVERITY_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = SEVERITY_FILTERS.map((value) => ({
+const SEVERITY_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(SEVERITY_FILTERS, (value) => ({
 	_tag: "Item",
 	item: { value, label: SEVERITY_FILTER_LABEL[value] },
 }))
@@ -133,12 +134,7 @@ const toolbarSearch = (h: H, draft: string): Html =>
 	})
 
 /** `ListToolbar`: view tabs, then search, sort, severity and the count readout. */
-export const toolbar = (
-	h: H,
-	model: Model,
-	count: ReadonlyArray<string> | null,
-	className?: string,
-): Html =>
+export const toolbar = (h: H, model: Model, count: ReadonlyArray<string> | null, className?: string): Html =>
 	listToolbar(h, {
 		className,
 		leading: h.submodel({

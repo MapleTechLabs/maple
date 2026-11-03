@@ -5,6 +5,7 @@ import type { IconName } from "@maple/views/ui/icon"
 import { dashboardPage, type DashboardPageOptions } from "../../kit/dashboard-page"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import { navShell, type NavShellSection } from "../../settings/kit/nav-shell"
+import { Array as Arr } from "effect"
 // The frame of each Security source's page: the rail of sources, the source's title block, content.
 // The code security audit is the one source with tabs of its own (Overview, Findings, Runs).
 
@@ -110,7 +111,7 @@ const codeTabs = <M>(h: HtmlBuilder<M>, active: CodeTab): Html =>
 	linkTabStrip(
 		h,
 		"Code security audit views",
-		CODE_TABS.map((entry) => ({
+		Arr.map(CODE_TABS, (entry) => ({
 			key: entry.tab,
 			href: entry.href,
 			label: entry.label,

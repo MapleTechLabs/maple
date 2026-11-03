@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, String as Str } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	webAnalyticsAiCrawledPagesQuery,
@@ -15,7 +15,7 @@ const params = {
 	endTime: "2026-09-26 00:00:00",
 }
 
-const oneLine = (sql: string): string => sql.replace(/\s+/g, " ")
+const oneLine = (sql: string): string => Str.replace(/\s+/g, " ")(sql)
 
 describe("webAnalyticsAiReferralsQuery", () => {
 	it("classifies by referrer first, then by UTM source", () => {

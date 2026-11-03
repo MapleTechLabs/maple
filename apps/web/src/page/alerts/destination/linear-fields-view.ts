@@ -1,6 +1,6 @@
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { button } from "@maple/views/ui/button"
 import { field, fieldDescription, fieldError, type FieldIds, fieldLabel } from "@maple/views/ui/field"
 import type { FieldState } from "@maple/views/ui/input"
@@ -143,7 +143,7 @@ const teamField = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 					{
 						_tag: "Group",
 						label: "",
-						items: teams.map((team) => ({ value: team.id, label: teamLabel(team) })),
+						items: Arr.map(teams, (team) => ({ value: team.id, label: teamLabel(team) })),
 					},
 				],
 				labelledBy: IDS.label,

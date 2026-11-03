@@ -8,7 +8,7 @@ import { formatDurationNs, formatToolMetric } from "@maple/web-data/lib/tool-ana
 import { type ChartValue, d3Curve, defineChart, dot, lineY } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { formatExactCount } from "../../lib/locale"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
@@ -69,18 +69,18 @@ const bucketOf = (row: Row): string => {
 }
 
 export const buildToolSeries = (spec: ToolSeriesSpec): BuiltChart<Cell, ChartValue, number> => {
-	const axis = makeBucketAxis(spec.rows.map(bucketOf), spec.timeZone)
+	const axis = makeBucketAxis(Arr.map(spec.rows, bucketOf), spec.timeZone)
 	const yDomain = niceLinearDomain(
-		linearYDomain({ rows: spec.rows, keys: spec.series.map((entry) => entry.key) }),
+		linearYDomain({ rows: spec.rows, keys: Arr.map(spec.series, (entry) => entry.key) }),
 	)
 	const at = (cell: Cell) => bucketDate(bucketOf(cell.row))
 	const valueOf = (cell: Cell) => valueAt(cell.row, cell.key)
-	const marks = spec.series.flatMap((entry) => {
-		const cells = spec.rows.map((row) => ({ row, key: entry.key }))
+	const marks = Arr.flatMap(spec.series, (entry) => {
+		const cells = Arr.map(spec.rows, (row) => ({ row, key: entry.key }))
 		const { runs, lone, silences } = seriesRuns(cells, valueOf, at)
 		return [
 			silenceBridges(`${entry.key}-silence`, silences, at, valueOf, entry.color),
-			...runs.map((run, index) =>
+			...Arr.map(runs, (run, index) =>
 				lineY(run, {
 					id: `${entry.key}:${index}`,
 					x: at,
@@ -127,7 +127,7 @@ export const buildToolSeries = (spec: ToolSeriesSpec): BuiltChart<Cell, ChartVal
 			Option.map(Option.fromNullishOr(points[0]), ({ datum }) =>
 				ChartTooltip.Bucket({
 					heading: axis.heading(bucketOf(datum.row)),
-					rows: spec.series.flatMap((entry) => {
+					rows: Arr.flatMap(spec.series, (entry) => {
 						const value = valueAt(datum.row, entry.key)
 						return value === null
 							? []

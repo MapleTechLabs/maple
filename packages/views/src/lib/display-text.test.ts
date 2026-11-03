@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { describe, expect, test } from "vitest"
 import {
 	capForDisplay,
@@ -19,7 +19,7 @@ describe("prettyJson", () => {
 	})
 
 	test("a body too deeply nested to re-indent is shown as text instead of throwing", () => {
-		const deep = `${"[".repeat(20_000)}${"]".repeat(20_000)}`
+		const deep = `${Str.repeat(20_000)("[")}${Str.repeat(20_000)("]")}`
 		expect(Option.isNone(prettyJson(deep))).toBe(true)
 	})
 })
@@ -31,15 +31,15 @@ describe("memoizeByText", () => {
 			calls.push(input.length)
 			return input.length
 		})
-		const long = "x".repeat(DISPLAY_MAX_CHARS)
-		;[long, long, "short", "short"].forEach((input) => measure(input))
+		const long = Str.repeat(DISPLAY_MAX_CHARS)("x")
+		Arr.forEach([long, long, "short", "short"], (input) => measure(input))
 		expect(calls).toEqual([DISPLAY_MAX_CHARS, 5, 5])
 	})
 })
 
 describe("capForDisplay", () => {
 	test("keeps short text whole and cuts long text to the limit, counting the rest", () => {
-		const long = "y".repeat(DISPLAY_MAX_CHARS + 123)
+		const long = Str.repeat(DISPLAY_MAX_CHARS + 123)("y")
 		const { shown, omitted } = capForDisplay(long)
 		expect([capForDisplay("short").omitted, shown.length, omitted]).toEqual([0, DISPLAY_MAX_CHARS, 123])
 	})
@@ -56,21 +56,19 @@ describe("headLines", () => {
 })
 
 describe("textWindow", () => {
-	const line = `${"a".repeat(5_000)}NEEDLE${"b".repeat(5_000)}`
+	const line = `${Str.repeat(5_000)("a")}NEEDLE${Str.repeat(5_000)("b")}`
 
 	test("a short text comes back whole, a long one cut at the limit with an ellipsis", () => {
 		expect([textWindow("short", "x", 100), textWindow(line, undefined, 100)]).toEqual([
 			"short",
-			`${"a".repeat(100)}…`,
+			`${Str.repeat(100)("a")}…`,
 		])
 	})
 
 	test("a long text opens just before a case-insensitive match far past the limit", () => {
 		const shown = textWindow(line, "needle", 1_000)
-		expect([shown.startsWith("…"), shown.includes("NEEDLE"), shown.endsWith("…")]).toEqual([
-			true,
-			true,
-			true,
-		])
+		expect([Str.startsWith("…")(shown), Str.includes("NEEDLE")(shown), Str.endsWith("…")(shown)]).toEqual(
+			[true, true, true],
+		)
 	})
 })

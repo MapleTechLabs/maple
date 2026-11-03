@@ -3,7 +3,7 @@ import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { errorState } from "@maple/views/ui/error-state"
 import { skeletonList } from "@maple/views/ui/skeleton"
 import { METRIC_TYPE_COLORS } from "@maple/web/page/metrics/shared"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
@@ -12,7 +12,14 @@ import { rangeOf } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
 import { pageShell } from "../kit/page-shell"
 import { signalEmptyState } from "../kit/signal-empty-state"
-import { refreshButton, timeRangeSelect, toolbar, toolbarSearch, toolbarStat, toolbarStats } from "../kit/toolbar"
+import {
+	refreshButton,
+	timeRangeSelect,
+	toolbar,
+	toolbarSearch,
+	toolbarStat,
+	toolbarStats,
+} from "../kit/toolbar"
 import { metricsFilters } from "./load"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -42,17 +49,19 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const { service, type, search } = metricsFilters(context)
 	const range = rangeOf(context)
 	const entries = visibleEntries(model, service)
-	const activeFilterCount = [service, type].filter(Boolean).length
-	const totalDataPoints = Option.getOrElse(AsyncData.getData(model.summary.data), () => []).reduce(
-		(sum, row) => sum + row.dataPointCount,
+	const activeFilterCount = Arr.filter([service, type], Boolean).length
+	const totalDataPoints = Arr.reduce(
+		Option.getOrElse(AsyncData.getData(model.summary.data), () => []),
 		0,
+		(sum, row) => sum + row.dataPointCount,
 	)
 	const content = (): Html => {
 		if (isAwaitingFirstData(model.list)) return gridSkeleton(h)
 		const failure = failureWithoutData(model.list)
 		if (Option.isSome(failure))
 			return errorState(h, {
-				failure: failure.value, title: "Couldn’t load metrics",
+				failure: failure.value,
+				title: "Couldn’t load metrics",
 				onRetry: Message.ClickedRefresh(),
 			})
 		if (entries.length === 0)
@@ -64,7 +73,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onWidenRange: Message.ClickedWidenRange(),
 				presence: inputs.presenceOf("metrics"),
 				nowMs: inputs.presenceNowMs,
-				guide: { id: "metrics-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
+				guide: {
+					id: "metrics-empty",
+					endpoint: context.env.otlpEndpoint,
+					copies: model.copies,
+					toCopyMessage: toCopy,
+				},
 			})
 		const theme = model.themeColors
 		if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return gridSkeleton(h)
@@ -72,7 +86,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		return metricGrid(h, {
 			entries,
 			points: Option.getOrUndefined(
-				Option.map(sparklines, (list) => new Map(list.map((entry) => [entry.metricName, entry.points]))),
+				Option.map(
+					sparklines,
+					(list) => new Map(Arr.map(list, (entry) => [entry.metricName, entry.points])),
+				),
 			),
 			isLoading: isAwaitingFirstData(model.sparklines),
 			isFailed: Option.isSome(failureWithoutData(model.sparklines)),

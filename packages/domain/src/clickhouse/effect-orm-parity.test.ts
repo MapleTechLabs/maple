@@ -1,5 +1,5 @@
 import * as S from "@maple-dev/effect-orm/schema"
-import { Effect } from "effect"
+import { Effect, Array as Arr, Record as Rec, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { latestSnapshotStatements } from "../generated/clickhouse-schema"
 import { clickHouseOnlyColumns } from "./clickhouse-only-columns"
@@ -24,26 +24,39 @@ const topLevelParts = (body: string): Array<string> => {
 		else if (!quoted && ch === "(") depth++
 		else if (!quoted && ch === ")") depth--
 		else if (!quoted && depth === 0 && ch === ",") {
-			parts.push(body.slice(start, i).trim())
+			parts.push(Str.trim(Str.slice(start, i)(body)))
 			start = i + 1
 		}
 	}
-	parts.push(body.slice(start).trim())
+	parts.push(Str.trim(Str.slice(start)(body)))
 	return parts
 }
 
 // Text differences ClickHouse reads the same way: `IF NOT EXISTS`, quoting, whitespace,
 // `MergeTree()` vs `MergeTree`, and the order of skip indexes.
 const normalize = (sql: string): string => {
-	const flat = sql
-		.replace(/IF NOT EXISTS /g, "")
-		.replace(/`/g, "")
-		.replace(/MergeTree\(\)/g, "MergeTree")
-		.replace(/\s+/g, " ")
-		.replace(/\( /g, "(")
-		.replace(/ \)/g, ")")
-		.trim()
-	if (!flat.startsWith("CREATE TABLE")) return flat
+	const flat = Str.trim(
+		Str.replace(
+			/ \)/g,
+			")",
+		)(
+			Str.replace(
+				/\( /g,
+				"(",
+			)(
+				Str.replace(
+					/\s+/g,
+					" ",
+				)(
+					Str.replace(
+						/MergeTree\(\)/g,
+						"MergeTree",
+					)(Str.replace(/`/g, "")(Str.replace(/IF NOT EXISTS /g, "")(sql))),
+				),
+			),
+		),
+	)
+	if (!Str.startsWith("CREATE TABLE")(flat)) return flat
 	const open = flat.indexOf("(")
 	let depth = 0
 	let close = open
@@ -51,15 +64,15 @@ const normalize = (sql: string): string => {
 		if (flat[close] === "(") depth++
 		else if (flat[close] === ")" && --depth === 0) break
 	}
-	const parts = topLevelParts(flat.slice(open + 1, close))
-	const columns = parts.filter((part) => !part.startsWith("INDEX "))
-	const indexes = parts.filter((part) => part.startsWith("INDEX ")).sort()
-	return `${flat.slice(0, open + 1)}${[...columns, ...indexes].join(", ")}${flat.slice(close)}`
+	const parts = topLevelParts(Str.slice(open + 1, close)(flat))
+	const columns = Arr.filter(parts, (part) => !Str.startsWith("INDEX ")(part))
+	const indexes = Arr.filter(parts, (part) => Str.startsWith("INDEX ")(part)).sort()
+	return `${Str.slice(0, open + 1)(flat)}${Arr.join([...columns, ...indexes], ", ")}${Str.slice(close)(flat)}`
 }
 
 const objects: ReadonlyArray<S.SchemaObject> = [
 	...new Set(
-		[...Object.values(Datasources), ...Object.values(Materializations)].flatMap((value) =>
+		Arr.flatMap([...Rec.values(Datasources), ...Rec.values(Materializations)], (value) =>
 			S.isSchemaObject(value) ? [value] : [],
 		),
 	),
@@ -73,18 +86,20 @@ const KNOWN_DIFFERENCES = {
 
 describe("effect-orm DDL parity", () => {
 	const rendered = new Map(
-		S.renderSchema(Effect.runSync(S.entitiesOf(objects))).map((sql) => [nameOf(sql), normalize(sql)]),
+		Arr.map(S.renderSchema(Effect.runSync(S.entitiesOf(objects))), (sql) => [
+			nameOf(sql),
+			normalize(sql),
+		]),
 	)
 	const shippedWithClickHouseOnly = new Map(
-		latestSnapshotStatements.map((sql) => [nameOf(sql), normalize(sql)]),
+		Arr.map(latestSnapshotStatements, (sql) => [nameOf(sql), normalize(sql)]),
 	)
 	// The emitter appends ClickHouse-only columns that the shared definitions leave out.
 	const shipped = new Map(
-		[...shippedWithClickHouseOnly].map(([name, sql]) => [
+		Arr.map([...shippedWithClickHouseOnly], ([name, sql]) => [
 			name,
-			(clickHouseOnlyColumns.get(name) ?? []).reduce(
-				(acc, column) => acc.replace(`, ${column}`, ""),
-				sql,
+			Arr.reduce(clickHouseOnlyColumns.get(name) ?? [], sql, (acc, column) =>
+				Str.replace(`, ${column}`, "")(acc),
 			),
 		]),
 	)
@@ -103,11 +118,12 @@ describe("effect-orm DDL parity", () => {
 	})
 
 	it("renders each object as the emitter does, apart from the known differences", () => {
-		const differing = [...shipped]
-			.filter(([name, sql]) => rendered.get(name) !== sql)
-			.map(([name]) => name)
-		expect(differing.sort()).toEqual(Object.keys(KNOWN_DIFFERENCES).sort())
-		for (const [name, fragment] of Object.entries(KNOWN_DIFFERENCES)) {
+		const differing = Arr.map(
+			Arr.filter([...shipped], ([name, sql]) => rendered.get(name) !== sql),
+			([name]) => name,
+		)
+		expect(differing.sort()).toEqual(Rec.keys(KNOWN_DIFFERENCES).sort())
+		for (const [name, fragment] of Rec.toEntries(KNOWN_DIFFERENCES)) {
 			expect(rendered.get(name)).toContain(fragment)
 			expect(shipped.get(name)).not.toContain(fragment)
 		}

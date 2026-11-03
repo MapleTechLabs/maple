@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import { Effect, Exit, Layer, Schema, Scope } from "effect"
+import { Effect, Exit, Layer, Schema, Scope, Array as Arr, String as Str } from "effect"
 import { env as workerEnv } from "../test/stubs/cloudflare-workers"
 import { layerTick } from "./scheduled"
 
@@ -50,9 +50,9 @@ const stubFetch = (recorded: Array<RecordedRequest>): typeof globalThis.fetch =>
 const telemetryEnv = { MAPLE_INGEST_KEY: "maple_sk_test", MAPLE_ENDPOINT: "http://ingest.test" }
 
 const exportedTraces = (recorded: ReadonlyArray<RecordedRequest>) =>
-	recorded
-		.filter((request) => request.url.endsWith("/v1/traces"))
-		.flatMap((request) => decodeExportedTraces(JSON.parse(request.body ?? "{}")).resourceSpans ?? [])
+	Arr.filter(recorded, (request) => Str.endsWith("/v1/traces")(request.url)).flatMap(
+		(request) => decodeExportedTraces(JSON.parse(request.body ?? "{}")).resourceSpans ?? [],
+	)
 
 describe("alerting through alchemy's Worker bridge", () => {
 	it.effect("a tick's span reaches the export when the fire's scope closes", () =>
@@ -85,8 +85,10 @@ describe("alerting through alchemy's Worker bridge", () => {
 
 			assert.strictEqual(flushedBeforeClose, 0)
 			const resources = exportedTraces(recorded)
-			const spans = resources.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
-			assert.isTrue(spans.some((span) => span.name === "alerting.scheduler_tick"))
+			const spans = Arr.flatMap(resources, (resource) =>
+				Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
+			)
+			assert.isTrue(Arr.some(spans, (span) => span.name === "alerting.scheduler_tick"))
 			const serviceName = resources[0]?.resource.attributes.find(
 				(attribute) => attribute.key === "service.name",
 			)?.value

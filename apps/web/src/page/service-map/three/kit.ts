@@ -1,6 +1,7 @@
 import { createSketch, type Sketch } from "../../../components/service-map/three/maple-scenery-sketch"
 import { FACE_TONE } from "../../../components/service-map/three/palette"
 import * as THREE from "three"
+import { Array as Arr } from "effect"
 
 // Scene parts as plain three construction. Only the lazy scene chunk imports this folder.
 // A part returns `Child`: its children in declaration order, so materials are created in a
@@ -31,7 +32,7 @@ export interface Scope {
 export const makeScope = (): Scope => ({ frames: [], textures: new Map() })
 
 const flatten = (children: ReadonlyArray<Child>): Array<THREE.Object3D> =>
-	children.flatMap((child): Array<THREE.Object3D> => {
+	Arr.flatMap(children, (child): Array<THREE.Object3D> => {
 		if (child === null || child === undefined || child === false) return []
 		if (child instanceof THREE.Object3D) return [child]
 		return flatten(child)
@@ -61,10 +62,10 @@ export const disposeTree = (root: THREE.Object3D): void => {
 	root.traverse((object) => {
 		if (!(object instanceof THREE.Mesh || object instanceof THREE.LineSegments)) return
 		object.geometry.dispose()
-		const materials: ReadonlyArray<THREE.Material> = Array.isArray(object.material)
+		const materials: ReadonlyArray<THREE.Material> = Arr.isArray(object.material)
 			? object.material
 			: [object.material]
-		materials.forEach((material) => {
+		Arr.forEach(materials, (material) => {
 			if (material instanceof THREE.MeshBasicMaterial) material.map?.dispose()
 			material.dispose()
 		})

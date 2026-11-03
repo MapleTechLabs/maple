@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 export class MaskingInstruction {
 	private regex: RegExp
 	private _pattern: string
@@ -16,7 +17,7 @@ export class MaskingInstruction {
 	mask(content: string, maskPrefix: string, maskSuffix: string): string {
 		const replacement = maskPrefix + this.maskWith + maskSuffix
 		this.regex.lastIndex = 0
-		return content.replace(this.regex, replacement)
+		return Str.replace(this.regex, replacement)(content)
 	}
 }
 

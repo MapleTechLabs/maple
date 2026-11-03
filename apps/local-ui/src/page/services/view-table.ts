@@ -19,6 +19,7 @@ import type { Message } from "./message"
 import type { ServiceCatalogEntry } from "./model"
 import { hstackClass } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // The table of `ServicesListView` and its `ServiceRow`.
 
@@ -32,7 +33,7 @@ export const servicesSkeleton = (h: HtmlBuilder<Message>): Html =>
 				rows: 8,
 				columns: [
 					{ header: "Service", skeleton: "w-40" },
-					...NUMBER_COLUMNS.map((header) => ({
+					...Arr.map(NUMBER_COLUMNS, (header) => ({
 						header,
 						headClassName: "text-right",
 						skeleton: "ml-auto w-12",
@@ -57,7 +58,7 @@ const serviceRow = (h: HtmlBuilder<Message>, entry: ServiceCatalogEntry, query: 
 					...(entry.serviceNamespaces.length > 0
 						? [
 								typography(h, { size: "xs", tone: "muted", truncate: true }, [
-									entry.serviceNamespaces.join(", "),
+									Arr.join(entry.serviceNamespaces, ", "),
 								]),
 							]
 						: []),
@@ -92,12 +93,12 @@ export const servicesTable = (
 						tableHeader(h, [
 							tableRow(h, [
 								tableHead(h, ["Service"]),
-								...NUMBER_COLUMNS.map((header) => tableHead(h, [header], "text-right")),
+								...Arr.map(NUMBER_COLUMNS, (header) => tableHead(h, [header], "text-right")),
 							]),
 						]),
 						tableBody(
 							h,
-							entries.map((entry) => serviceRow(h, entry, query)),
+							Arr.map(entries, (entry) => serviceRow(h, entry, query)),
 						),
 					]),
 				],

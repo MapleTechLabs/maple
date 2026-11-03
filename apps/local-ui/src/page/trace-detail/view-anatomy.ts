@@ -13,13 +13,14 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Message } from "./message"
 import { hstack } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // The @maple/ui `TraceAnatomyStrip` as local mode renders it: no start time, no commit.
 // copied: the spectrum bar of apps/web/src/page/traces/detail/view-summary.ts.
 
 /** An Error status, or an HTTP status in the critical band, anywhere in the trace (as on web). */
 export const traceHasError = (trace: TraceData): boolean =>
-	trace.spans.some((span) => {
+	Arr.some(trace.spans, (span) => {
 		if (span.statusCode === "Error") return true
 		const raw =
 			span.spanAttributes["http.response.status_code"] || span.spanAttributes["http.status_code"]
@@ -51,7 +52,7 @@ const spectrumBar = (h: HtmlBuilder<Message>, shares: ReadonlyArray<ServiceShare
 		? null
 		: h.div(
 				[h.Class("flex h-1.5 w-full gap-px overflow-hidden rounded-full")],
-				shares.map((share) =>
+				Arr.map(shares, (share) =>
 					h.span(
 						[
 							h.Class("h-full"),
@@ -85,71 +86,86 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, trace: TraceData): Html =>
 	const deploymentEnv = resource["deployment.environment.name"] || resource["deployment.environment"]
 	return h.div(
 		[h.Class("shrink-0 space-y-2")],
-		[
-			h.div(
-				[h.Class("flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1")],
-				[
-					statFigure(h, {
-						value: formatDuration(trace.totalDurationMs),
-						unit: `${countLabel(trace.spans.length, "span")} · ${countLabel(shares.length, "service")}`,
-						className: "min-w-0",
-					}),
-					hstack(
-						h,
-						{
-							wrap: true,
-							shrink: true,
-							className: cn("gap-x-3 gap-y-1", typographyClass({ size: "xs", tone: "muted" })),
-						},
-						[
-							hstack(
-								h,
-								{
-									as: "span",
-									gap: "1.5",
-									className: cn(
-										typographyClass({ weight: "medium" }),
-										hasError ? "text-severity-error" : "text-severity-info",
+		Arr.filter(
+			[
+				h.div(
+					[h.Class("flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1")],
+					[
+						statFigure(h, {
+							value: formatDuration(trace.totalDurationMs),
+							unit: `${countLabel(trace.spans.length, "span")} · ${countLabel(shares.length, "service")}`,
+							className: "min-w-0",
+						}),
+						hstack(
+							h,
+							{
+								wrap: true,
+								shrink: true,
+								className: cn(
+									"gap-x-3 gap-y-1",
+									typographyClass({ size: "xs", tone: "muted" }),
+								),
+							},
+							Arr.filter(
+								[
+									hstack(
+										h,
+										{
+											as: "span",
+											gap: "1.5",
+											className: cn(
+												typographyClass({ weight: "medium" }),
+												hasError ? "text-severity-error" : "text-severity-info",
+											),
+										},
+										[
+											statusDot(h, { tone: hasError ? "crit" : "ok" }),
+											hasError ? "Error" : "OK",
+										],
 									),
-								},
-								[statusDot(h, { tone: hasError ? "crit" : "ok" }), hasError ? "Error" : "OK"],
+									httpStatusCode === undefined || httpStatusCode === null
+										? null
+										: h.span(
+												[
+													h.Class(
+														cn(
+															"font-mono font-medium",
+															httpStatusColor(httpStatusCode),
+														),
+													),
+												],
+												["HTTP ", String(httpStatusCode)],
+											),
+									deploymentEnv === undefined || deploymentEnv === ""
+										? null
+										: h.span(
+												[
+													h.Class(
+														deploymentEnv === "production"
+															? "text-severity-warn"
+															: "text-chart-p50",
+													),
+												],
+												[deploymentEnv],
+											),
+									traceIdBadge(h, trace.traceId, {
+										size: "default",
+										className: "text-xs max-w-[10rem]",
+									}),
+								],
+								(child) => child !== null,
 							),
-							httpStatusCode === undefined || httpStatusCode === null
-								? null
-								: h.span(
-										[
-											h.Class(
-												cn("font-mono font-medium", httpStatusColor(httpStatusCode)),
-											),
-										],
-										["HTTP ", String(httpStatusCode)],
-									),
-							deploymentEnv === undefined || deploymentEnv === ""
-								? null
-								: h.span(
-										[
-											h.Class(
-												deploymentEnv === "production"
-													? "text-severity-warn"
-													: "text-chart-p50",
-											),
-										],
-										[deploymentEnv],
-									),
-							traceIdBadge(h, trace.traceId, {
-								size: "default",
-								className: "text-xs max-w-[10rem]",
-							}),
-						].filter((child) => child !== null),
-					),
-				],
-			),
-			spectrumBar(h, shares),
-			hstack(
-				h,
-				{ wrap: true, className: "gap-x-4 gap-y-1" },
-				shares.map((share) => shareChip(h, share)),
-			),
-		].filter((child) => child !== null),
+						),
+					],
+				),
+				spectrumBar(h, shares),
+				hstack(
+					h,
+					{ wrap: true, className: "gap-x-4 gap-y-1" },
+					Arr.map(shares, (share) => shareChip(h, share)),
+				),
+			],
+			(child) => child !== null,
+		),
 	)
 }

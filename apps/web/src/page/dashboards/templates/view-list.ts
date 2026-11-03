@@ -23,6 +23,7 @@ import { Message } from "./message"
 import type { Model, ReadinessFilter } from "./model"
 import { filteredEmpty as filteredEmptyState } from "@maple/views/ui/signal-empty-state"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr, String as Str } from "effect"
 
 // `TemplateList`: the templates as rows.
 
@@ -110,7 +111,7 @@ const templateRow = (
 const filteredEmpty = (h: H, query: string): Html =>
 	filteredEmptyState(h, {
 		noun: "templates",
-		title: `No template matches “${query.trim()}”`,
+		title: `No template matches “${Str.trim(query)}”`,
 		description: "Try a shorter term. Or start blank and add the widgets you want.",
 		icon: icon(h, "MagnifierIcon", { size: 16 }),
 		onClear: Message.ChangedSearchDraft({ value: "" }),
@@ -165,10 +166,13 @@ const groups = (
 ): ReadonlyArray<Html> => {
 	const row = (template: V2DashboardTemplate) =>
 		templateRow(h, template, readiness.get(template.id), template.id === model.search.template)
-	const byCategory = CATEGORY_ORDER.map((category) => ({
-		category,
-		templates: needsSetup.filter((template) => template.category === category),
-	})).filter((group) => group.templates.length > 0)
+	const byCategory = Arr.filter(
+		Arr.map(CATEGORY_ORDER, (category) => ({
+			category,
+			templates: Arr.filter(needsSetup, (template) => template.category === category),
+		})),
+		(group) => group.templates.length > 0,
+	)
 	return [
 		...(ready.length === 0
 			? []
@@ -180,7 +184,7 @@ const groups = (
 						accent: isReadinessKnown,
 						className: "px-4 pt-4",
 					}),
-					...ready.map(row),
+					...Arr.map(ready, row),
 				]),
 		...(needsSetup.length === 0
 			? []
@@ -191,7 +195,7 @@ const groups = (
 						note: "these would render empty today",
 						className: cn("px-4 pt-4", ready.length > 0 && "mt-2 border-t border-border pt-6"),
 					}),
-					...byCategory.map(({ category, templates }) =>
+					...Arr.map(byCategory, ({ category, templates }) =>
 						h.keyed("div")(
 							category,
 							[],
@@ -200,7 +204,7 @@ const groups = (
 									[h.Class("text-foreground-subtle pt-3.5 pr-4 pb-1 pl-12.5 text-2xs")],
 									[CATEGORY_LABELS.get(category) ?? category],
 								),
-								...templates.map(row),
+								...Arr.map(templates, row),
 							],
 						),
 					),
@@ -218,13 +222,13 @@ export const templateList = (
 		!AsyncData.isSuccess(model.templates.data) && !AsyncData.isRefreshing(model.templates.data)
 	const listed =
 		model.templates.data._tag === "Success" || model.templates.data._tag === "Refreshing"
-			? model.templates.data.data.filter((template) => template.id !== BLANK_TEMPLATE_ID)
+			? Arr.filter(model.templates.data.data, (template) => template.id !== BLANK_TEMPLATE_ID)
 			: []
-	const searched = listed.filter((template) => templateMatches(template, model.query))
+	const searched = Arr.filter(listed, (template) => templateMatches(template, model.query))
 	const isReady = (template: V2DashboardTemplate) => readiness.get(template.id)?.ready !== false
-	const ready = model.filter === "needs-setup" ? [] : searched.filter(isReady)
-	const needsSetup = model.filter === "ready" ? [] : searched.filter((template) => !isReady(template))
-	const isSearching = model.query.trim().length > 0
+	const ready = model.filter === "needs-setup" ? [] : Arr.filter(searched, isReady)
+	const needsSetup = model.filter === "ready" ? [] : Arr.filter(searched, (template) => !isReady(template))
+	const isSearching = Str.trim(model.query).length > 0
 	const isNothingMatched = !isLoading && searched.length === 0
 	const isFilterHidingAll = !isLoading && searched.length > 0 && ready.length + needsSetup.length === 0
 	return h.div(

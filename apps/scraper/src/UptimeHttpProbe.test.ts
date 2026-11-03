@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Fiber, Layer, Schema } from "effect"
+import { Duration, Effect, Fiber, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { UPTIME_USER_AGENT, UptimeHttpConfig } from "@maple/domain/uptime"
@@ -95,7 +95,7 @@ describe("UptimeHttpProbe", () => {
 	it.effect("a body past the read budget settles only a contains found in the prefix", () =>
 		Effect.gen(function* () {
 			// "ok" up front, "error" only past 64 KB.
-			const respond = () => new Response(`ok ${"x".repeat(70 * 1024)} error`, { status: 200 })
+			const respond = () => new Response(`ok ${Str.repeat(70 * 1024)("x")} error`, { status: 200 })
 			const check = (assertion: Record<string, unknown>) =>
 				probeWith([], respond, { assertions: [assertion] })
 			const found = yield* check({ _tag: "body", op: "contains", value: "ok" })
@@ -104,7 +104,7 @@ describe("UptimeHttpProbe", () => {
 			assert.isTrue(found.ok)
 			const down = yield* probeWith(
 				[],
-				() => new Response(`${"x".repeat(70 * 1024)} error`, { status: 503 }),
+				() => new Response(`${Str.repeat(70 * 1024)("x")} error`, { status: 503 }),
 				{ assertions: [{ _tag: "body", op: "not_contains", value: "error" }] },
 			)
 			// A definite status failure is reported over the unread body.
@@ -238,7 +238,7 @@ describe("UptimeHttpProbe", () => {
 				assert.isTrue(head.ok)
 				// The scope ending aborts each request, cancelling the unread body.
 				assert.deepStrictEqual(
-					signals.map((signal) => signal?.aborted),
+					Arr.map(signals, (signal) => signal?.aborted),
 					[true, true],
 				)
 			}).pipe(Effect.provide(ProbeLive)),

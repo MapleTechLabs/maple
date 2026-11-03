@@ -3,6 +3,7 @@ import { Command, click, expect, given, keydown, role, scene } from "foldkit/sce
 import { describe, test } from "vitest"
 import { label } from "./label"
 import * as RadioGroup from "./radio-group"
+import { Array as Arr } from "effect"
 
 const ITEMS: ReadonlyArray<RadioGroup.RadioItem> = [
 	{ value: "p50", id: "r-p50", inputId: "r-p50-input" },
@@ -16,7 +17,7 @@ const view = (model: RadioGroup.Model, h: HtmlBuilder<RadioGroup.Message>): Html
 	return RadioGroup.radioGroup(
 		h,
 		{ label: "Percentile" },
-		ITEMS.map((item) =>
+		Arr.map(ITEMS, (item) =>
 			label(h, { attributes: [h.Id(RadioGroup.labelId(item.inputId))] }, [
 				...RadioGroup.radio(h, config, item.value),
 				` ${item.value}`,

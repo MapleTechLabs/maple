@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain/http"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { HttpRouter, type HttpServerRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { CancellationReviewQueue } from "@maple/backend/services/cancellation-review/CancellationReviewQueue"
@@ -131,7 +131,7 @@ export const AutumnWebhookRouter = HttpRouter.use((router) =>
 										).pipe(Effect.annotateLogs({ rawOrgId: data.value.customer_id })),
 									onSome: (orgId) =>
 										cancellationReviews.enqueue(
-											cancellations.map((cancellation) => ({
+											Arr.map(cancellations, (cancellation) => ({
 												...cancellation,
 												orgId,
 												receivedAt,

@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 /**
  * Datasources that are written via `ingest` (hard-pinned to the managed
  * Tinybird pipeline) and have NO per-org materialization — they simply do not
@@ -11,4 +12,4 @@
 export const INGEST_PINNED_TABLES: ReadonlyArray<string> = ["alert_checks", "audit_log"]
 
 export const findIngestPinnedTable = (sql: string): string | undefined =>
-	INGEST_PINNED_TABLES.find((table) => sql.includes(table))
+	INGEST_PINNED_TABLES.find((table) => Str.includes(table)(sql))

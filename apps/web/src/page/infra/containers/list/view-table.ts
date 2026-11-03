@@ -22,6 +22,7 @@ import type { ContainerRow } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { column, columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // `ContainerTable` / `ContainerTableLoading`.
 
@@ -182,5 +183,5 @@ export const containerTable = (
 		columns(h, { key: inputs.sortBy, dir: inputs.sortDir }),
 		containers.length === 0
 			? [dataTableEmpty(h, ["No containers match these filters"])]
-			: containers.map((container) => containerRow(h, container, inputs)),
+			: Arr.map(containers, (container) => containerRow(h, container, inputs)),
 	)

@@ -1,7 +1,7 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { button } from "@maple/views/ui/button"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
@@ -39,7 +39,12 @@ export const inlineEditableText = (
 	}>,
 ): Html => {
 	const rename = model.rename
-	if (options.isEditable && rename !== null && rename.sectionId === options.sectionId && rename.tabId === options.tabId)
+	if (
+		options.isEditable &&
+		rename !== null &&
+		rename.sectionId === options.sectionId &&
+		rename.tabId === options.tabId
+	)
 		return inlineRenameInput(h, {
 			className: options.className,
 			attributes: [
@@ -84,7 +89,7 @@ const tabBar = (h: H, model: Model, section: Section, activeTabId: string, isEdi
 	h.div(
 		[h.Class("flex min-w-0 items-center gap-1 overflow-x-auto"), h.Role("tablist")],
 		[
-			...section.tabs.map((tab) => {
+			...Arr.map(section.tabs, (tab) => {
 				const isActive = tab.id === activeTabId
 				return h.keyed("div")(
 					tab.id,
@@ -112,7 +117,12 @@ const tabBar = (h: H, model: Model, section: Section, activeTabId: string, isEdi
 												h.AriaKeyshortcuts("F2"),
 												h.OnKeyDownPreventDefault((key) =>
 													key === "F2"
-														? Option.some(Message.StartedRename({ sectionId: section.id, tabId: tab.id }))
+														? Option.some(
+																Message.StartedRename({
+																	sectionId: section.id,
+																	tabId: tab.id,
+																}),
+															)
 														: Option.none(),
 												),
 											]
@@ -141,7 +151,12 @@ const tabBar = (h: H, model: Model, section: Section, activeTabId: string, isEdi
 											className:
 												"opacity-0 transition-opacity focus-visible:opacity-100 group-hover/tab:opacity-100 pointer-coarse:opacity-100",
 											attributes: [
-												h.OnClick(Message.ClickedDeleteTab({ sectionId: section.id, tabId: tab.id })),
+												h.OnClick(
+													Message.ClickedDeleteTab({
+														sectionId: section.id,
+														tabId: tab.id,
+													}),
+												),
 											],
 										},
 										[icon(h, "TrashIcon")],
@@ -229,17 +244,25 @@ export const sectionView = (h: H, model: Model, inputs: SectionViewInputs): Html
 								h,
 								{
 									size: "icon-xs",
-									label: isCollapsed ? `Expand ${section.title}` : `Collapse ${section.title}`,
+									label: isCollapsed
+										? `Expand ${section.title}`
+										: `Collapse ${section.title}`,
 									attributes: [
 										h.AriaExpanded(!isCollapsed),
 										h.OnClick(
-											Message.ClickedSectionChevron({ sectionId: section.id, collapsed: !isCollapsed }),
+											Message.ClickedSectionChevron({
+												sectionId: section.id,
+												collapsed: !isCollapsed,
+											}),
 										),
 									],
 								},
 								[
 									icon(h, "ChevronDownIcon", {
-										className: cn("transition-transform duration-150", isCollapsed && "-rotate-90"),
+										className: cn(
+											"transition-transform duration-150",
+											isCollapsed && "-rotate-90",
+										),
 									}),
 								],
 							)
@@ -254,7 +277,12 @@ export const sectionView = (h: H, model: Model, inputs: SectionViewInputs): Html
 						className: "min-w-0 truncate text-sm font-semibold",
 					}),
 					...(hasTabs && !isCollapsed
-						? [h.div([h.Class("ml-2 min-w-0 flex-1")], [tabBar(h, model, section, activeTabId, isEditable)])]
+						? [
+								h.div(
+									[h.Class("ml-2 min-w-0 flex-1")],
+									[tabBar(h, model, section, activeTabId, isEditable)],
+								),
+							]
 						: []),
 					h.div(
 						[h.Class(cn(hstackClass({ gap: "1" }), !hasTabs && "ml-auto"))],
@@ -268,7 +296,10 @@ export const sectionView = (h: H, model: Model, inputs: SectionViewInputs): Html
 												label: `Add widget to ${section.title}`,
 												attributes: [
 													h.OnClick(
-														Message.ClickedAddSectionWidget({ sectionId: section.id, tabId: activeTabId }),
+														Message.ClickedAddSectionWidget({
+															sectionId: section.id,
+															tabId: activeTabId,
+														}),
 													),
 												],
 											},
@@ -284,10 +315,18 @@ export const sectionView = (h: H, model: Model, inputs: SectionViewInputs): Html
 												model.sectionMenuId === section.id
 													? model.sectionMenu
 													: Menu.init(sectionMenuIdOf(section.id)),
-											entries: optionEntries(h, section, inputs.index, inputs.sectionCount),
+											entries: optionEntries(
+												h,
+												section,
+												inputs.index,
+												inputs.sectionCount,
+											),
 											label: `${section.title} options`,
 											toParentMessage: (message) =>
-												Message.GotSectionMenuMessage({ sectionId: section.id, message }),
+												Message.GotSectionMenuMessage({
+													sectionId: section.id,
+													message,
+												}),
 										}),
 									]
 								: []),
@@ -321,12 +360,13 @@ export const sectionDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 	const sections = model.document?.sections ?? []
 	const widgets = model.document?.widgets ?? []
 	const section = sections.find((candidate) => candidate.id === model.pendingSectionDelete)
-	const sectionCount = widgets.filter((widget) => widget.sectionId === section?.id).length
+	const sectionCount = Arr.filter(widgets, (widget) => widget.sectionId === section?.id).length
 	const pendingTab = model.pendingTabDelete
 	const tabSection = sections.find((candidate) => candidate.id === pendingTab?.sectionId)
 	const tab = tabSection?.tabs.find((candidate) => candidate.id === pendingTab?.tabId)
 	const destination = tabSection?.tabs.find((candidate) => candidate.id !== pendingTab?.tabId)
-	const tabCount = widgets.filter(
+	const tabCount = Arr.filter(
+		widgets,
 		(widget) => widget.sectionId === pendingTab?.sectionId && widget.tabId === pendingTab?.tabId,
 	).length
 	return [

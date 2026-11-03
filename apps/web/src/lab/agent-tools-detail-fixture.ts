@@ -1,7 +1,7 @@
 // The tool analytics fixture, detail half (`SESSION_SEEDS`, the error groups,
 // `buildToolErrorDetailFixture`, `buildToolDetailFixture`).
 
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import {
 	EMPTY_MEASURES,
 	type ToolErrorOccurrenceRow,
@@ -232,7 +232,7 @@ const ERROR_GROUPS = new Map<string, ReadonlyArray<ErrorGroupSpec>>([
 				callsSince: 284,
 				arguments: (index) =>
 					candidate({
-						evidence: [0, 1, 2].map((item) =>
+						evidence: Arr.map([0, 1, 2], (item) =>
 							evidenceItem(
 								item,
 								item === variantIndex(index, [4, 3, 2]) ? "traceIds" : undefined,
@@ -390,22 +390,25 @@ const ERROR_GROUPS = new Map<string, ReadonlyArray<ErrorGroupSpec>>([
 				callsSince: 700,
 				arguments: () => queryData({ group_by: "vcs.ref.head.revision" }),
 			},
-			...[
-				"Tool failed: Timeout exceeded: elapsed 15346.717367 ms, maximum: 15000 ms (query_id=01M1XS1YN5140J9SMWJTC5GGMJ)",
-				"Tool failed: Unknown metric `http.server.request.duration`. Use list_metrics to discover available metrics.",
-				'Tool failed: Invalid filter "status_code=5xx". Filters compare one attribute to one value.',
-				"Tool failed: Requested 171.3 hours, maximum is 168 hours",
-				"Tool failed: `kind=breakdown` does not accept `bucket_seconds`.",
-				"Tool failed: Repository 'maple/maple-api' is not connected to this organization",
-			].map((message, index): ErrorGroupSpec => ({
-				message,
-				errorType: "tool_error",
-				calls: 1,
-				sessions: 1,
-				perDay: [0, 1, 2, 3, 4, 5, 6, 7].map((day) => (day === index + 1 ? 1 : 0)),
-				callsSince: 300 + index * 80,
-				arguments: () => queryData({}),
-			})),
+			...Arr.map(
+				[
+					"Tool failed: Timeout exceeded: elapsed 15346.717367 ms, maximum: 15000 ms (query_id=01M1XS1YN5140J9SMWJTC5GGMJ)",
+					"Tool failed: Unknown metric `http.server.request.duration`. Use list_metrics to discover available metrics.",
+					'Tool failed: Invalid filter "status_code=5xx". Filters compare one attribute to one value.',
+					"Tool failed: Requested 171.3 hours, maximum is 168 hours",
+					"Tool failed: `kind=breakdown` does not accept `bucket_seconds`.",
+					"Tool failed: Repository 'maple/maple-api' is not connected to this organization",
+				],
+				(message, index): ErrorGroupSpec => ({
+					message,
+					errorType: "tool_error",
+					calls: 1,
+					sessions: 1,
+					perDay: Arr.map([0, 1, 2, 3, 4, 5, 6, 7], (day) => (day === index + 1 ? 1 : 0)),
+					callsSince: 300 + index * 80,
+					arguments: () => queryData({}),
+				}),
+			),
 			// Recorded before failures kept their text: one group, named for what it is.
 			{
 				message: "",
@@ -442,7 +445,7 @@ export const DETAIL_TOOLS = ["submit_candidate", "query_data", "sandbox_exec", "
 
 /** Which of a group's variants the `index`-th sample is, spread by their counts. */
 function variantIndex(index: number, counts: ReadonlyArray<number>): number {
-	const total = counts.reduce((sum, count) => sum + count, 0)
+	const total = Arr.reduce(counts, 0, (sum, count) => sum + count)
 	let slot = index % total
 	for (const [position, count] of counts.entries()) {
 		if (slot < count) return position
@@ -456,9 +459,10 @@ const fingerprintOf = (message: string, index: number) =>
 	message === ""
 		? "0"
 		: String(
-				Array.from(message).reduce(
-					(hash, char) => (hash * 31n + BigInt(char.charCodeAt(0))) % 18_446_744_073_709_551_557n,
+				Arr.reduce(
+					Array.from(message),
 					BigInt(index + 7),
+					(hash, char) => (hash * 31n + BigInt(char.charCodeAt(0))) % 18_446_744_073_709_551_557n,
 				),
 			)
 
@@ -467,12 +471,12 @@ const dayStart = (ms: number) => Math.floor(ms / DAY) * DAY
 /** The error groups of one tool, as the Errors read returns them. */
 export function buildToolErrorsFixture(tool: string, nowMs: number): ReadonlyArray<ToolErrorRow> {
 	const today = dayStart(nowMs)
-	return (ERROR_GROUPS.get(tool) ?? []).map((spec, index) => {
-		const days = spec.perDay.map((calls, day) => ({
+	return Arr.map(ERROR_GROUPS.get(tool) ?? [], (spec, index) => {
+		const days = Arr.map(spec.perDay, (calls, day) => ({
 			bucket: today - (spec.perDay.length - 1 - day) * DAY,
 			calls,
 		}))
-		const active = days.filter((day) => day.calls > 0)
+		const active = Arr.filter(days, (day) => day.calls > 0)
 		const lastDay = active[active.length - 1]?.bucket ?? today
 		return {
 			fingerprint: fingerprintOf(spec.message, index),
@@ -488,7 +492,7 @@ export function buildToolErrorsFixture(tool: string, nowMs: number): ReadonlyArr
 				nowMs - 22 * 3_600_000 - index * 60_000,
 			),
 			callsSince: spec.callsSince,
-			trend: days.filter((day) => day.calls > 0),
+			trend: Arr.filter(days, (day) => day.calls > 0),
 		}
 	})
 }
@@ -522,7 +526,7 @@ export function buildToolErrorDetailFixture(
 	const where = spec.where ?? [["z-ai/glm-5.3-flash:nitro", "maple-investigations", 1] as const]
 	const sessionIds = SAMPLE_SESSION_IDS.slice(0, Math.min(SAMPLE_SESSION_IDS.length, spec.sessions))
 
-	const sessions: ReadonlyArray<ToolErrorSessionRow> = sessionIds.map((sessionId, index) => ({
+	const sessions: ReadonlyArray<ToolErrorSessionRow> = Arr.map(sessionIds, (sessionId, index) => ({
 		sessionId,
 		vendorId: "maple",
 		agentName: "investigation-lane",
@@ -536,16 +540,16 @@ export function buildToolErrorDetailFixture(
 			variants[
 				variantIndex(
 					index,
-					variants.map((candidate) => candidate.calls),
+					Arr.map(variants, (candidate) => candidate.calls),
 				)
 			]!
 		const [model, service] = where[index % where.length]!
 		const args = spec.arguments(index)
-		const result = spec.message.startsWith("{") ? variant.message : ""
+		const result = Str.startsWith("{")(spec.message) ? variant.message : ""
 		return {
 			timestamp: row.lastSeen - index * 37 * 60_000,
-			traceId: `4bf92f3577b34da6a3ce929d${index.toString(16).padStart(8, "0")}`,
-			spanId: `a1b2c3d4${index.toString(16).padStart(8, "0")}`,
+			traceId: `4bf92f3577b34da6a3ce929d${Str.padStart(8, "0")(index.toString(16))}`,
+			spanId: `a1b2c3d4${Str.padStart(8, "0")(index.toString(16))}`,
 			sessionId: sessionIds[index % sessionIds.length] ?? "trace:4bf92f3577b34da6a3ce929d0e0e4736",
 			vendorId: "maple",
 			agentName: "investigation-lane",
@@ -561,7 +565,8 @@ export function buildToolErrorDetailFixture(
 			resultBytes: new TextEncoder().encode(result).length,
 		}
 	})
-	const narrowed = all.filter(
+	const narrowed = Arr.filter(
+		all,
 		(occurrence) =>
 			(options.session === undefined || occurrence.sessionId === options.session) &&
 			(options.variant === undefined || occurrence.message === options.variant),
@@ -572,11 +577,11 @@ export function buildToolErrorDetailFixture(
 			variants:
 				spec.variants === undefined
 					? [{ message: spec.message, calls: spec.calls, lastSeen: row.lastSeen }]
-					: variants.map((candidate, index) => ({
+					: Arr.map(variants, (candidate, index) => ({
 							...candidate,
 							lastSeen: row.lastSeen - index * 3_600_000,
 						})),
-			breakdown: where.map(([model, service, share]) => ({
+			breakdown: Arr.map(where, ([model, service, share]) => ({
 				model,
 				service,
 				calls: Math.max(1, Math.round(spec.calls * share)),
@@ -598,43 +603,50 @@ function detailSessions(
 	scoped: ReadonlyArray<ToolFixtureCell>,
 	model: string | undefined,
 ) {
-	const seeded = SESSION_SEEDS.some((seed) => (seed.tools as ReadonlyArray<string>).includes(tool))
-	return SESSION_SEEDS.filter(
-		(seed) =>
-			(!seeded ||
-				((seed.tools as ReadonlyArray<string>).includes(tool) &&
-					scoped.some((cell) => cell.service === seed.serviceName))) &&
-			(model === undefined || seed.model === model),
-	).map((seed, index) => {
-		const startedAt = nowMs - seed.minutesAgo * 60_000
-		const durationMs = seed.maxMs * 4 + 12_000
-		return {
-			sessionId: seed.sessionId,
-			vendorId: ["eve", "claude_agent_sdk", "vercel_ai_sdk", "langchain"][index % 4]!,
-			vendorVersion: ["v1.4.2", "v0.9.1", "v5.0.4", "v0.3.27"][index % 4]!,
-			traceCount: 1 + (index % 6),
-			spanCount: 22 + index * 97,
-			errorSpanCount: seed.errors,
-			toolErrorCount: seed.errors,
-			turnErrorCount: 0,
-			serviceNames: [seed.serviceName],
-			models: [seed.model],
-			agentNames: seed.agentName === "" ? [] : [seed.agentName],
-			firstAgentName: seed.agentName,
-			llmCalls: Math.round(seed.calls / 3),
-			toolCalls: seed.calls,
-			totalTokens: seed.calls * 900,
-			inputTokens: seed.calls * 600,
-			cacheReadTokens: seed.calls * 200,
-			cacheWriteTokens: 0,
-			outputTokens: seed.calls * 100,
-			reasoningTokens: 0,
-			cost: seed.calls * 0.004,
-			startTime: new Date(startedAt).toISOString().replace("T", " ").slice(0, 23),
-			endTime: new Date(startedAt + durationMs).toISOString().replace("T", " ").slice(0, 23),
-			durationMs,
-		}
-	})
+	const seeded = Arr.some(SESSION_SEEDS, (seed) => (seed.tools as ReadonlyArray<string>).includes(tool))
+	return Arr.map(
+		Arr.filter(
+			SESSION_SEEDS,
+			(seed) =>
+				(!seeded ||
+					((seed.tools as ReadonlyArray<string>).includes(tool) &&
+						Arr.some(scoped, (cell) => cell.service === seed.serviceName))) &&
+				(model === undefined || seed.model === model),
+		),
+		(seed, index) => {
+			const startedAt = nowMs - seed.minutesAgo * 60_000
+			const durationMs = seed.maxMs * 4 + 12_000
+			return {
+				sessionId: seed.sessionId,
+				vendorId: ["eve", "claude_agent_sdk", "vercel_ai_sdk", "langchain"][index % 4]!,
+				vendorVersion: ["v1.4.2", "v0.9.1", "v5.0.4", "v0.3.27"][index % 4]!,
+				traceCount: 1 + (index % 6),
+				spanCount: 22 + index * 97,
+				errorSpanCount: seed.errors,
+				toolErrorCount: seed.errors,
+				turnErrorCount: 0,
+				serviceNames: [seed.serviceName],
+				models: [seed.model],
+				agentNames: seed.agentName === "" ? [] : [seed.agentName],
+				firstAgentName: seed.agentName,
+				llmCalls: Math.round(seed.calls / 3),
+				toolCalls: seed.calls,
+				totalTokens: seed.calls * 900,
+				inputTokens: seed.calls * 600,
+				cacheReadTokens: seed.calls * 200,
+				cacheWriteTokens: 0,
+				outputTokens: seed.calls * 100,
+				reasoningTokens: 0,
+				cost: seed.calls * 0.004,
+				startTime: Str.slice(0, 23)(Str.replace("T", " ")(new Date(startedAt).toISOString())),
+				endTime: Str.slice(
+					0,
+					23,
+				)(Str.replace("T", " ")(new Date(startedAt + durationMs).toISOString())),
+				durationMs,
+			}
+		},
+	)
 }
 
 /** `/agent-sessions/tools/$toolName` over the same week the overview draws. */
@@ -644,14 +656,16 @@ export function buildToolDetailFixture(
 	nowMs: number,
 	cells: ReadonlyArray<ToolFixtureCell>,
 ) {
-	const scoped = cells.filter(
+	const scoped = Arr.filter(
+		cells,
 		(cell) =>
 			cell.tool === tool &&
 			(search.model === undefined || cell.model === search.model) &&
 			(search.service === undefined || cell.service === search.service) &&
 			(search.env === undefined || cell.env === search.env),
 	)
-	const series: ToolSeriesPoint[] = [...rollup(scoped, (cell) => `${cell.bucket}`).entries()].map(
+	const series: ToolSeriesPoint[] = Arr.map(
+		[...rollup(scoped, (cell) => `${cell.bucket}`).entries()],
 		([bucket, value]) => ({ bucket: Number(bucket), seriesKey: tool, ...value }),
 	)
 	const totals: ToolTotals = rollup(scoped, () => "all").get("all") ?? EMPTY_MEASURES
@@ -660,9 +674,15 @@ export function buildToolDetailFixture(
 	return {
 		series,
 		totals,
-		scopeCalls: cells.filter((cell) => cell.tool === tool).reduce((sum, cell) => sum + cell.calls, 0),
-		firstSeen: scoped.reduce((min, cell) => (min === 0 ? cell.bucket : Math.min(min, cell.bucket)), 0),
-		lastSeen: scoped.reduce((max, cell) => Math.max(max, cell.bucket), 0),
+		scopeCalls: Arr.reduce(
+			Arr.filter(cells, (cell) => cell.tool === tool),
+			0,
+			(sum, cell) => sum + cell.calls,
+		),
+		firstSeen: Arr.reduce(scoped, 0, (min, cell) =>
+			min === 0 ? cell.bucket : Math.min(min, cell.bucket),
+		),
+		lastSeen: Arr.reduce(scoped, 0, (max, cell) => Math.max(max, cell.bucket)),
 		description: `Runs ${tool} in the agent's workspace and returns its output, truncated to the last 4,000 characters.`,
 		range: { startMs: nowMs - BUCKETS * BUCKET_MS, endMs: nowMs },
 		errors: buildToolErrorsFixture(tool, nowMs),

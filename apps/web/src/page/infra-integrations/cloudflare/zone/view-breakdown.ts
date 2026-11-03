@@ -25,6 +25,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr, String as Str } from "effect"
 
 // `CloudflareBreakdownPanel`: one ranked table per dimension, rows filter the page, and a live Cloudflare
 // lookup for the long tail.
@@ -36,7 +37,7 @@ const ROW_CLASS = hstackClass({
 	className: stripClass("hoverRow"),
 })
 
-const warehouseTimeToMs = (value: string) => new Date(`${value.replace(" ", "T")}Z`).getTime()
+const warehouseTimeToMs = (value: string) => new Date(`${Str.replace(" ", "T")(value)}Z`).getTime()
 
 /** ISO-8601 UTC → "Jul 28" (`formatDateInTimezone` without the year). */
 const formatCollectedFrom = (iso: string, timeZone: string): string | null =>
@@ -116,7 +117,7 @@ const table = (
 		],
 		sorted.length === 0
 			? [dataTableEmpty(h, [options.emptyMessage])]
-			: sorted.map((row) => {
+			: Arr.map(sorted, (row) => {
 					const label = row.key || EMPTY_VALUE
 					const isSelected = options.selected?.includes(row.key) === true
 					const style = shareBarStyle(row.share)
@@ -212,7 +213,7 @@ const stored = (
 	timeZone: string,
 ): Html => {
 	const body = (data: ZoneBreakdown, isWaiting: boolean): Html => {
-		const query = model.breakdownSearch.trim().toLowerCase()
+		const query = Str.toLowerCase(Str.trim(model.breakdownSearch))
 		const collectedFrom =
 			data.coverageStart !== null &&
 			warehouseTimeToMs(startTime) < new Date(data.coverageStart).getTime() - 60_000
@@ -220,8 +221,10 @@ const stored = (
 				: null
 		const notCollected = data.coverageStart === null && data.totals.length === 0
 		const matches =
-			query === "" ? data.totals : data.totals.filter((row) => row.key.toLowerCase().includes(query))
-		const canSearchLive = dimension.liveDimension !== undefined && model.breakdownSearch.trim() !== ""
+			query === ""
+				? data.totals
+				: Arr.filter(data.totals, (row) => Str.includes(query)(Str.toLowerCase(row.key)))
+		const canSearchLive = dimension.liveDimension !== undefined && Str.trim(model.breakdownSearch) !== ""
 		const footerExtras = [
 			...(collectedFrom === null ? [] : [h.span([], ["collected from ", collectedFrom])]),
 			...(canSearchLive
@@ -272,7 +275,7 @@ const stored = (
 					isWaiting,
 					emptyMessage:
 						query !== ""
-							? `No listed ${dimension.noun} match "${model.breakdownSearch.trim()}".`
+							? `No listed ${dimension.noun} match "${Str.trim(model.breakdownSearch)}".`
 							: notCollected
 								? `Not collected for this period. ${dimension.column} data starts once the poller has run.`
 								: "No traffic in this window",
@@ -297,7 +300,7 @@ const stored = (
 const breakdownError = (h: H, dimension: DimensionDef): Html =>
 	h.p(
 		[h.Class("px-3 pb-3 font-mono text-2xs text-muted-foreground")],
-		["Couldn't load the ", dimension.column.toLowerCase(), " breakdown."],
+		["Couldn't load the ", Str.toLowerCase(dimension.column), " breakdown."],
 	)
 
 const live = (h: H, model: Model, dimension: DimensionDef): Html => {
@@ -364,8 +367,8 @@ const liveBody = (
 			],
 		)
 	}
-	const attributed = data.rows.reduce((sum, row) => sum + row.requests, 0)
-	const rows = data.rows.map((row) => ({
+	const attributed = Arr.reduce(data.rows, 0, (sum, row) => sum + row.requests)
+	const rows = Arr.map(data.rows, (row) => ({
 		key: row.key,
 		requests: row.requests,
 		errors5xx: 0,
@@ -424,7 +427,7 @@ export const breakdownPanel = (
 			action: segmentedSelect(h, {
 				size: "xs",
 				ariaLabel: "Breakdown dimension",
-				options: DIMENSIONS.map((d) => ({ value: d.id, label: d.tab })),
+				options: Arr.map(DIMENSIONS, (d) => ({ value: d.id, label: d.tab })),
 				value: model.dimension,
 				onChange: (next) => Message.ClickedDimension({ dimension: next }),
 			}),
@@ -459,4 +462,4 @@ export const breakdownPanel = (
 }
 
 export const breakdownReason = (dimension: DimensionDef) =>
-	`This breakdown is grouped by ${dimension.column.toLowerCase()}`
+	`This breakdown is grouped by ${Str.toLowerCase(dimension.column)}`

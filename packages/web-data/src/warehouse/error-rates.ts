@@ -1,4 +1,4 @@
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { ErrorRateByServiceRequest } from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
@@ -40,7 +40,7 @@ export const getErrorRateByService = Effect.fn("QueryEngine.getErrorRateByServic
 	)
 
 	return {
-		data: result.data.map((row) => ({
+		data: Arr.map(result.data, (row) => ({
 			serviceName: row.serviceName,
 			totalLogs: row.totalLogs,
 			errorLogs: row.errorLogs,

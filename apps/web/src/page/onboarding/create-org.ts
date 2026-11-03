@@ -1,5 +1,5 @@
 import { MapleRegion } from "@maple/domain/organization-regions"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, String as Str } from "effect"
 import { Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { suggestOrganizationName } from "../../lib/onboarding-org-name"
@@ -150,7 +150,7 @@ export const update = (model: Model, message: Message): Result =>
 		ChangedName: ({ value }) => ({ model: { ...model, name: value, errorMessage: null } }),
 		PickedRegion: ({ region }) => (isBusy(model) ? { model } : { model: { ...model, region } }),
 		SubmittedCreate: () =>
-			isBusy(model) || model.name.trim() === ""
+			isBusy(model) || Str.trim(model.name) === ""
 				? { model }
 				: {
 						model: { ...model, isCreating: true, errorMessage: null },
@@ -171,14 +171,18 @@ export const update = (model: Model, message: Message): Result =>
 			model: {
 				...model,
 				isCreating: false,
-				errorMessage: failure.trim() || "Couldn't create your organization. Try again.",
+				errorMessage: Str.trim(failure) || "Couldn't create your organization. Try again.",
 			},
 		}),
 		LoadedInvitations: ({ invitations }) => ({
 			model: { ...model, invitations, invitationsError: null },
 		}),
 		FailedLoadInvitations: ({ message: failure }) => ({
-			model: { ...model, invitations: [], invitationsError: failure.trim() || "Clerk did not answer." },
+			model: {
+				...model,
+				invitations: [],
+				invitationsError: Str.trim(failure) || "Clerk did not answer.",
+			},
 		}),
 		ClickedJoin: ({ invitationId }) =>
 			isBusy(model)
@@ -193,7 +197,7 @@ export const update = (model: Model, message: Message): Result =>
 			model: {
 				...model,
 				joiningId: null,
-				errorMessage: failure.trim() || "Couldn't join that organization. Try again.",
+				errorMessage: Str.trim(failure) || "Couldn't join that organization. Try again.",
 			},
 			// Accepted in another tab: the re-read drops the row, and the org shows up among the user's own.
 			commands: [LoadInvitations()],

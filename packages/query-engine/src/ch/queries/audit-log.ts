@@ -2,6 +2,7 @@ import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { defineCondFn, from, param, paramPlaceholder } from "@maple-dev/effect-orm/clickhouse"
 import { AuditLog, orgIdParam } from "../tables"
+import { Array as Arr } from "effect"
 
 /**
  * Which optional filters a listing applies. Every set flag binds a parameter of
@@ -83,7 +84,9 @@ export function auditLogEntriesQuery(opts: AuditLogEntriesOpts) {
 			CH.whenTrue(!!opts.since, () => $.OccurredAt.gte(param.dateTime("since"))),
 			CH.whenTrue(!!opts.until, () => $.OccurredAt.lte(param.dateTime("until"))),
 			opts.excludeActionSuffixes?.length
-				? CH.not(CH.or(...opts.excludeActionSuffixes.map((suffix) => endsWith($.Action, suffix))))
+				? CH.not(
+						CH.or(...Arr.map(opts.excludeActionSuffixes, (suffix) => endsWith($.Action, suffix))),
+					)
 				: undefined,
 		])
 		.orderBy(["occurredAt", "desc"], ["id", "desc"])

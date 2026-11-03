@@ -1,4 +1,14 @@
-import { Clock, Config, DateTime, Duration, Effect, Option, Schema } from "effect"
+import {
+	Clock,
+	Config,
+	DateTime,
+	Duration,
+	Effect,
+	Option,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FileSystem } from "effect/FileSystem"
 import * as Command from "effect/cli/Command"
 import * as Flag from "effect/cli/Flag"
@@ -167,7 +177,7 @@ export const authSummary = (auth: RemoteAuth, bindHost: string): string | undefi
 	]
 	if (open.length === 0) return "ingest key + access token"
 	if (isLoopbackHostname(bindHost)) return undefined
-	return amber(`⚠ open to anyone who can reach this address: ${open.join(", ")}`)
+	return amber(`⚠ open to anyone who can reach this address: ${Arr.join(open, ", ")}`)
 }
 
 /** The startup banner shown once the server is listening. `dashboardUrl` is the
@@ -184,7 +194,7 @@ const startBanner = (
 	inMemory: InMemoryStore | undefined,
 ): string => {
 	// No leading indent here: the gutter below supplies it.
-	const row = (key: string, value: string) => `${dim(key.padEnd(11))}${value}`
+	const row = (key: string, value: string) => `${dim(Str.padEnd(11)(key))}${value}`
 	const content = [
 		// The lockup. Mono has only one face, so the tension that carries it in
 		// the UI (display vs. mono) becomes weight: `maple` bold, `local` dim.
@@ -198,7 +208,7 @@ const startBanner = (
 		...(dashboardUrl
 			? [
 					row("dashboard", cyan(dashboardUrl)),
-					...(offline ? [] : [`${" ".repeat(11)}${dim("· bundled UI: pass --offline")}`]),
+					...(offline ? [] : [`${Str.repeat(11)(" ")}${dim("· bundled UI: pass --offline")}`]),
 				]
 			: []),
 		inMemory === undefined
@@ -226,11 +236,13 @@ const startBanner = (
 	const lines =
 		(process.stderr.columns ?? 80) >= 72
 			? Array.from({ length: Math.max(MARK_LINES.length, content.length) }, (_, i) =>
-					`  ${amber(MARK_LINES[i] ?? " ".repeat(MARK_WIDTH))}   ${content[i] ?? ""}`.trimEnd(),
+					Str.trimEnd(
+						`  ${amber(MARK_LINES[i] ?? Str.repeat(MARK_WIDTH)(" "))}   ${content[i] ?? ""}`,
+					),
 				)
-			: content.map((line) => `  ${line}`)
+			: Arr.map(content, (line) => `  ${line}`)
 
-	return `\n${lines.join("\n")}\n\n`
+	return `\n${Arr.join(lines, "\n")}\n\n`
 }
 
 const alreadyRunning =
@@ -255,7 +267,7 @@ const runningRefusal =
 const adoptSidecars = (dataDir: string): Effect.Effect<void, ServerStateFileError> =>
 	Effect.flatMap(adoptLegacyStoreFiles(dataDir), (adopted) =>
 		Effect.sync(() => {
-			if (adopted.length > 0) debugLog("adopted legacy store files", adopted.join(", "))
+			if (adopted.length > 0) debugLog("adopted legacy store files", Arr.join(adopted, ", "))
 		}),
 	)
 
@@ -469,7 +481,7 @@ const BACKGROUND_ABORT_GRACE_MS = 20_000
  * the data loss this exists to prevent.
  */
 export const parseCheckpointInterval = (value: string): Duration.Duration | undefined | "invalid" => {
-	const raw = value.trim().toLowerCase()
+	const raw = Str.toLowerCase(Str.trim(value))
 	if (raw === "off" || raw === "0" || raw === "none") return undefined
 	const match = raw.match(/^(\d+)\s*(s|m|h)$/)
 	if (!match) return "invalid"
@@ -508,7 +520,7 @@ const storeHasLiveData = (dataDir: string): Effect.Effect<boolean, never, FileSy
 	Effect.gen(function* () {
 		const fs = yield* FileSystem
 		return yield* fs.readDirectory(dataDir).pipe(
-			Effect.map((entries) => entries.some((entry) => entry !== "backups")),
+			Effect.map((entries) => Arr.some(entries, (entry) => entry !== "backups")),
 			Effect.orElseSucceed(() => false),
 		)
 	})
@@ -598,7 +610,7 @@ const takeCheckpointQuietly = (
 								new CheckpointChildError({
 									reason,
 									exitCode,
-									message: stderr.trim() || `maple checkpoint exited ${exitCode}`,
+									message: Str.trim(stderr) || `maple checkpoint exited ${exitCode}`,
 								}),
 							),
 				),
@@ -704,13 +716,16 @@ const childFailureLine = (logPath: string, fromByte: number): string =>
 	Effect.runSync(
 		Effect.try({
 			try: () => {
-				const lines = readFileSync(logPath)
-					.subarray(fromByte)
-					.toString("utf8")
-					.split("\n")
-					.map((line) => line.trim())
-					.filter((line) => line.length > 0)
-				return [...lines].reverse().find((line) => line.startsWith("error:")) ?? lines.at(-1) ?? ""
+				const lines = Arr.filter(
+					Arr.map(
+						Str.split("\n")(readFileSync(logPath).subarray(fromByte).toString("utf8")),
+						(line) => Str.trim(line),
+					),
+					(line) => line.length > 0,
+				)
+				return (
+					[...lines].reverse().find((line) => Str.startsWith("error:")(line)) ?? lines.at(-1) ?? ""
+				)
 			},
 			catch: stateFileError(logPath, "read"),
 		}).pipe(Effect.orElseSucceed(() => "")),
@@ -844,7 +859,7 @@ const startDetached = (options: DetachedStart) =>
 				exitCode: child.exitCode,
 				message:
 					`background server exited during startup` +
-					(cause ? ` (${cause.replace(/^error:\s*/, "")})` : "") +
+					(cause ? ` (${Str.replace(/^error:\s*/, "")(cause)})` : "") +
 					`; full log: ${prettyPath(logPath)}`,
 			})
 		}
@@ -942,7 +957,7 @@ export const start = Command.make("start", {
 			if (conflicts.length > 0) {
 				return yield* new ServerOptionError({
 					source: "--in-memory",
-					message: `--in-memory keeps nothing after the run, so it cannot be combined with ${conflicts.join(", ")}`,
+					message: `--in-memory keeps nothing after the run, so it cannot be combined with ${Arr.join(conflicts, ", ")}`,
 				})
 			}
 			// Acquired on the handler's scope, outside the server's: the store is
@@ -1242,7 +1257,8 @@ export const start = Command.make("start", {
 						hostname: bindHost,
 						browserHosts: Array.from(
 							new Set(
-								[bindHost, connectionHostForBindHost(bindHost), advertiseHost].map(
+								Arr.map(
+									[bindHost, connectionHostForBindHost(bindHost), advertiseHost],
 									canonicalUrlHostname,
 								),
 							),
@@ -1586,7 +1602,7 @@ export const checkpoint = Command.make("checkpoint", {
 				dataDir,
 				host: Option.match(discovered, {
 					onNone: () => connectionHostForBindHost(a.host),
-					onSome: (url) => url.hostname.replace(/^\[(.*)\]$/, "$1"),
+					onSome: (url) => Str.replace(/^\[(.*)\]$/, "$1")(url.hostname),
 				}),
 				port: Option.getOrElse(a.port, () =>
 					Option.match(discovered, {

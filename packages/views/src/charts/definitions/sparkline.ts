@@ -1,7 +1,7 @@
 import { areaY, d3Curve, defineChart, lineY, type ChartLinearGradient } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 
@@ -35,7 +35,7 @@ const verticalGradient = (
 })
 
 export const buildSparkline = (spec: SparklineSpec): BuiltChart<SparkPoint, number, number> => {
-	const points: ReadonlyArray<SparkPoint> = spec.values.map((value, index) => ({ index, value }))
+	const points: ReadonlyArray<SparkPoint> = Arr.map(spec.values, (value, index) => ({ index, value }))
 	const at = (point: SparkPoint) => point.index
 	const value = (point: SparkPoint) => point.value
 	const interpolation = spec.curve === "monotone" ? d3Curve(curveMonotoneX) : undefined

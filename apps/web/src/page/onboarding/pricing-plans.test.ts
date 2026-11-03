@@ -1,6 +1,7 @@
 import { CatalogPlan, CatalogPlanItem, CatalogPlanItemPrice } from "@maple/domain/http"
 import { describe, expect, it } from "vitest"
 import { getFeatureRows } from "./pricing-plans"
+import { Array as Arr } from "effect"
 
 const item = (featureId: string, included: number) =>
 	new CatalogPlanItem({
@@ -23,7 +24,7 @@ describe("getFeatureRows", () => {
 			],
 		})
 
-		expect(getFeatureRows(plan).map((row) => row.featureId)).toEqual(["logs", "ai_credits"])
+		expect(Arr.map(getFeatureRows(plan), (row) => row.featureId)).toEqual(["logs", "ai_credits"])
 	})
 
 	it("quotes an overage rate in whole cents and leaves sub-cent rates alone", () => {
@@ -38,7 +39,7 @@ describe("getFeatureRows", () => {
 			],
 		})
 
-		expect(getFeatureRows(plan).map((row) => row.detail)).toEqual([
+		expect(Arr.map(getFeatureRows(plan), (row) => row.detail)).toEqual([
 			"then $0.30 per GB",
 			"then $0.002 per browser session",
 		])

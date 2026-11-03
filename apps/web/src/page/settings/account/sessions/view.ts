@@ -7,13 +7,22 @@ import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { skeletonList } from "@maple/views/ui/skeleton"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow, truncatedTableCell } from "@maple/views/ui/table"
+import {
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+	truncatedTableCell,
+} from "@maple/views/ui/table"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { relativeTime } from "../../../kit/relative-time"
 import { settingsSection, settingsSections } from "../../kit/section"
 import { Message, type Model, type SessionRow } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string }>
@@ -23,23 +32,21 @@ const sessionRow = (h: H, model: Model, session: SessionRow, inputs: Inputs): Ht
 	return tableRow(
 		h,
 		[
-			truncatedTableCell(
-				h,
-				[
-					hstack(h, { gap: "2.5" },
-						[
-							icon(h, session.isMobile ? "MobileIcon" : "ComputerIcon", {
-								size: 16,
-								className: "shrink-0 text-muted-foreground",
-							}),
-							truncatedText(h, { text: session.device, className: typographyClass({ size: "xs", weight: "medium" }) }),
-							...(isCurrent
-								? [badge(h, { variant: "secondary", className: "shrink-0" }, ["This device"])]
-								: []),
-						],
-					),
-				],
-			),
+			truncatedTableCell(h, [
+				hstack(h, { gap: "2.5" }, [
+					icon(h, session.isMobile ? "MobileIcon" : "ComputerIcon", {
+						size: 16,
+						className: "shrink-0 text-muted-foreground",
+					}),
+					truncatedText(h, {
+						text: session.device,
+						className: typographyClass({ size: "xs", weight: "medium" }),
+					}),
+					...(isCurrent
+						? [badge(h, { variant: "secondary", className: "shrink-0" }, ["This device"])]
+						: []),
+				]),
+			]),
 			tableCell(h, [session.location], "text-muted-foreground hidden text-xs sm:table-cell"),
 			tableCell(
 				h,
@@ -82,20 +89,18 @@ const body = (h: H, model: Model, inputs: Inputs): ReadonlyArray<Html> => {
 			return [skeletonList(h, { rows: 2, rowClassName: "h-9", gap: "2" })]
 		case "Failed":
 			return [
-				hstack(h, { gap: "4", justify: "between" },
-					[
-						h.p([h.Class(cn("text-sm", TONE_TEXT.crit))], [state.message]),
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "sm",
-								attributes: [h.OnClick(Message.ClickedRetry())],
-							},
-							["Retry"],
-						),
-					],
-				),
+				hstack(h, { gap: "4", justify: "between" }, [
+					h.p([h.Class(cn("text-sm", TONE_TEXT.crit))], [state.message]),
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "sm",
+							attributes: [h.OnClick(Message.ClickedRetry())],
+						},
+						["Retry"],
+					),
+				]),
 			]
 		case "Ready":
 			return [
@@ -110,7 +115,7 @@ const body = (h: H, model: Model, inputs: Inputs): ReadonlyArray<Html> => {
 					]),
 					tableBody(
 						h,
-						state.sessions.map((session) => sessionRow(h, model, session, inputs)),
+						Arr.map(state.sessions, (session) => sessionRow(h, model, session, inputs)),
 					),
 				]),
 			]

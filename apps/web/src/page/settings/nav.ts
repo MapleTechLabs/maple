@@ -110,18 +110,21 @@ const isVisible = (id: string, visibility: Visibility): boolean => {
 
 /** `useVisibleSettingsSections().visibleSections`. */
 export const visibleSections = (visibility: Visibility): ReadonlyArray<NavShellSection<SettingsTab>> =>
-	navSections
-		.map((section) => ({
+	Array.filter(
+		Array.map(navSections, (section) => ({
 			...section,
-			items: section.items.filter((row) => isVisible(row.id, visibility)),
-		}))
-		.filter((section) => section.items.length > 0)
+			items: Array.filter(section.items, (row) => isVisible(row.id, visibility)),
+		})),
+		(section) => section.items.length > 0,
+	)
 
 /** The tab rows only: `/integrations` is a route and never a fallback tab. */
 export const visibleTabs = (
 	sections: ReadonlyArray<NavShellSection<SettingsTab>>,
 ): ReadonlyArray<SettingsTab> =>
-	sections.flatMap((section) => section.items.flatMap((row) => (row.kind === "tab" ? [row.id] : [])))
+	Array.flatMap(sections, (section) =>
+		Array.flatMap(section.items, (row) => (row.kind === "tab" ? [row.id] : [])),
+	)
 
 const DEFAULT_SETTINGS_TAB_ORDER: ReadonlyArray<SettingsTab> = ["general", "ingestion"]
 

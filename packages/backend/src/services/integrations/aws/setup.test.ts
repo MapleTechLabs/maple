@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { AwsAccountId } from "@maple/domain/primitives"
 import { renderAwsCleanupScript, renderAwsSetupScript } from "./setup"
 
@@ -75,7 +75,7 @@ const run = (
 			...process.env,
 			PATH: `${dir}:${process.env.PATH}`,
 			AWS_LOG: log,
-			AWS_STACKS_IN: env.stacksIn.join(" "),
+			AWS_STACKS_IN: Arr.join(env.stacksIn, " "),
 			AWS_WAIT_FAILS: env.waitFails === true ? "1" : "",
 			AWS_DELETE_FAILS: env.deleteFails === true ? "1" : "",
 			AWS_PROVIDER_EXISTS: env.providerExists === true ? "1" : "",
@@ -84,21 +84,29 @@ const run = (
 	})
 	return {
 		status: result.status,
-		calls: existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [],
+		calls: existsSync(log) ? Str.split("\n")(Str.trim(readFileSync(log, "utf8"))) : [],
 	}
 }
 
 /** The calls that touch one region's metric stream stack or its bucket, in order. */
 const metricsCalls = (calls: ReadonlyArray<string>, region: string) =>
-	calls
-		.filter(
-			(call) =>
-				call.includes(`--region ${region}`) && /s3 rm|delete-stack|wait stack-delete/u.test(call),
-		)
-		.filter((call) => !call.includes(target.stackName))
-		.map((call) =>
-			call.startsWith("s3 rm") ? "empty bucket" : call.includes("delete-stack ") ? "delete" : "wait",
-		)
+	Arr.map(
+		Arr.filter(
+			Arr.filter(
+				calls,
+				(call) =>
+					Str.includes(`--region ${region}`)(call) &&
+					/s3 rm|delete-stack|wait stack-delete/u.test(call),
+			),
+			(call) => !Str.includes(target.stackName)(call),
+		),
+		(call) =>
+			Str.startsWith("s3 rm")(call)
+				? "empty bucket"
+				: Str.includes("delete-stack ")(call)
+					? "delete"
+					: "wait",
+	)
 
 describe("AWS setup scripts", () => {
 	it("empties a stream's bucket before every delete, and retries a delete that failed", () => {
@@ -116,9 +124,11 @@ describe("AWS setup scripts", () => {
 		// Regions without the stack are left alone, and the role's stack goes after them.
 		expect(metricsCalls(calls, "us-west-2")).toEqual([])
 		const roleStackDeleted = calls.findIndex((call) =>
-			call.includes(`stack-delete-complete --region us-east-1 --stack-name ${target.stackName}`),
+			Str.includes(`stack-delete-complete --region us-east-1 --stack-name ${target.stackName}`)(call),
 		)
-		expect(roleStackDeleted).toBeGreaterThan(calls.findLastIndex((call) => call.includes("eu-central-1")))
+		expect(roleStackDeleted).toBeGreaterThan(
+			calls.findLastIndex((call) => Str.includes("eu-central-1")(call)),
+		)
 	})
 
 	it("retries a delete request AWS refused, instead of ending the script", () => {
@@ -136,10 +146,10 @@ describe("AWS setup scripts", () => {
 
 	it("stops a cleanup that cannot delete a stream's stack, so the role that trusts Maple is not removed first", () => {
 		const cleanup = Effect.runSync(renderAwsCleanupScript(target))
-		const failing = FAKE_AWS.replace(
+		const failing = Str.replace(
 			`if [ -n "$AWS_WAIT_FAILS" ] && [ ! -e "$AWS_LOG.waited" ]; then touch "$AWS_LOG.waited"; exit 255; fi ;;`,
 			"exit 255 ;;",
-		)
+		)(FAKE_AWS)
 		const dir = mkdtempSync(join(tmpdir(), "maple-aws-script-"))
 		tempDirs.push(dir)
 		writeFileSync(join(dir, "aws"), failing)
@@ -176,19 +186,21 @@ describe("AWS setup scripts", () => {
 		const fresh = run(setup, { stacksIn: [] })
 		expect(fresh.status).toBe(0)
 		const created = fresh.calls.findIndex((call) =>
-			call.startsWith("iam create-open-id-connect-provider"),
+			Str.startsWith("iam create-open-id-connect-provider")(call),
 		)
 		expect(fresh.calls[created]).toContain(
 			`--url ${target.oidcProvider.url} --client-id-list sts.amazonaws.com`,
 		)
-		const deployed = fresh.calls.findIndex((call) => call.startsWith("cloudformation deploy"))
+		const deployed = fresh.calls.findIndex((call) => Str.startsWith("cloudformation deploy")(call))
 		expect(created).toBeLessThan(deployed)
 		// The stack never owns it, so deleting one connection's stack cannot take it from another.
 		expect(fresh.calls[deployed]).toContain("--parameter-overrides CreateOidcProvider=false")
 
 		const again = run(setup, { stacksIn: [], providerExists: true })
 		expect(again.status).toBe(0)
-		expect(again.calls.some((call) => call.startsWith("iam create-open-id-connect-provider"))).toBe(false)
+		expect(
+			Arr.some(again.calls, (call) => Str.startsWith("iam create-open-id-connect-provider")(call)),
+		).toBe(false)
 		// One that exists gets Maple's audience, in case it was made by hand without it.
 		expect(again.calls).toContain(
 			`iam add-client-id-to-open-id-connect-provider --open-id-connect-provider-arn ${PROVIDER_ARN} --client-id sts.amazonaws.com`,
@@ -199,9 +211,9 @@ describe("AWS setup scripts", () => {
 		const cleanup = Effect.runSync(renderAwsCleanupScript(target))
 		const shared = run(cleanup, { stacksIn: [], rolesLeft: "MapleIntegration-def" })
 		expect(shared.status).toBe(0)
-		expect(shared.calls.some((call) => call.startsWith("iam delete-open-id-connect-provider"))).toBe(
-			false,
-		)
+		expect(
+			Arr.some(shared.calls, (call) => Str.startsWith("iam delete-open-id-connect-provider")(call)),
+		).toBe(false)
 
 		const last = run(cleanup, { stacksIn: [] })
 		expect(last.status).toBe(0)

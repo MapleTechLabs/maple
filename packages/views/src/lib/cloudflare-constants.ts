@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec } from "effect"
 // Shared vocabulary for the Cloudflare infra pages: chart bucketing plus the
 // fixed color mappings for HTTP status classes and cache statuses, so the same
 // status never renders in two hues on one page.
@@ -42,7 +43,7 @@ export const EDGE_SERVED_STATUSES: ReadonlyArray<{ status: string; label: string
 ]
 
 export const CACHE_STATUS_COLORS: Record<string, string> = {
-	...Object.fromEntries(EDGE_SERVED_STATUSES.map((s) => [s.status, s.color])),
+	...Rec.fromEntries(Arr.map(EDGE_SERVED_STATUSES, (s) => [s.status, s.color])),
 	miss: "var(--chart-3)",
 	expired: "var(--chart-4)",
 	// Deliberately-uncached traffic (bypass/dynamic/none) shades down a single

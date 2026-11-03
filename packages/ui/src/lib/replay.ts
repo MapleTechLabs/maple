@@ -1,7 +1,7 @@
 // Non-formatting helpers for the session-replay surfaces, shared by the web app
 // and the local-mode UI.
 
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 
 const decodeUrl = Schema.decodeUnknownOption(Schema.URLFromString)
 
@@ -31,6 +31,6 @@ export function gradientFor(seed: string): string {
 
 /** `true` for handheld device-type strings as reported by the browser SDK. */
 export function isMobileDevice(deviceType: string): boolean {
-	const d = deviceType.toLowerCase()
+	const d = Str.toLowerCase(deviceType)
 	return d === "mobile" || d === "tablet" || d === "phone"
 }

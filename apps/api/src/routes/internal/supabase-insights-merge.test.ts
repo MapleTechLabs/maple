@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { DateTime } from "effect"
+import { DateTime, Array as Arr } from "effect"
 import { apiTrafficResponse, mergeSupabaseCallers, mergeSupabaseProjects } from "./supabase-insights-merge"
 
 const REF_METRICS = "abcdefghijklmnopqrst"
@@ -107,7 +107,10 @@ describe("mergeSupabaseCallers", () => {
 			],
 		)
 		expect(
-			callers.map((caller) => [caller.serviceName, caller.series.map((point) => point.calls)]),
+			Arr.map(callers, (caller) => [
+				caller.serviceName,
+				Arr.map(caller.series, (point) => point.calls),
+			]),
 		).toEqual([
 			["api", [40, 50]],
 			["worker", [10]],

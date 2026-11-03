@@ -1,4 +1,5 @@
 import { getCollection, type CollectionEntry } from "astro:content"
+import { Array as Arr, String as Str } from "effect"
 
 export type BlogPost = CollectionEntry<"blog">
 
@@ -20,7 +21,7 @@ export async function getSortedPosts(): Promise<BlogPost[]> {
 
 /** Estimated read time in whole minutes (~200 wpm), floored at 1. */
 export function readingTime(body: string | undefined): number {
-	const words = (body ?? "").trim().split(/\s+/).filter(Boolean).length
+	const words = Arr.filter(Str.split(/\s+/)(Str.trim(body ?? "")), Boolean).length
 	return Math.max(1, Math.round(words / 200))
 }
 
@@ -28,10 +29,10 @@ const DATE_FMT = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "sho
 
 /** "jun 20, 2026" — lowercase to match the docs-index terminal idiom. */
 export function formatDate(date: Date): string {
-	return DATE_FMT.format(date).toLowerCase()
+	return Str.toLowerCase(DATE_FMT.format(date))
 }
 
 /** ISO date for <time datetime> and JSON-LD. */
 export function isoDate(date: Date): string {
-	return date.toISOString().slice(0, 10)
+	return Str.slice(0, 10)(date.toISOString())
 }

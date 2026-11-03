@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Option } from "effect"
+import { Effect, Exit, Layer, Option, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { decodeStatusPageSnapshotJson, StatusPageKeys, utcDay } from "@maple/domain/status-page"
 import { StatusPageId } from "@maple/domain/primitives"
@@ -62,7 +62,7 @@ describe("StatusPagePublisher.publish", () => {
 				if (Option.isSome(snapshot)) {
 					assert.strictEqual(snapshot.value.revision, 3)
 					assert.deepStrictEqual(
-						snapshot.value.components.map((c) => c.name),
+						Arr.map(snapshot.value.components, (c) => c.name),
 						["API"],
 					)
 				}
@@ -300,7 +300,7 @@ describe("StatusPagePublisher.sweep", () => {
 				const second = newPageId()
 				yield* seedPage(testDb, { id: first, slug: "first" })
 				yield* seedPage(testDb, { id: second, slug: "second" })
-				yield* store.setFailing((key) => key.includes(first))
+				yield* store.setFailing((key) => Str.includes(first)(key))
 
 				const counts = { cleaned: 0, cleanupsFailed: 0 }
 				const partial = yield* publisher.sweep(NOW)

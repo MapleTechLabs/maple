@@ -4,6 +4,7 @@ import { UpdateWidgetLayouts } from "./command"
 import { gridOfWidget } from "./grid"
 import type { Message } from "./message"
 import type { Model } from "./model"
+import { Array as Arr } from "effect"
 
 type Return = PageReturn<Model, Message>
 
@@ -25,7 +26,7 @@ export const commitLayout = (
 			UpdateWidgetLayouts({
 				orgId: context.orgId,
 				dashboardId: model.dashboardId,
-				layouts: changed.map(({ i, x, y, w, h }) => ({ i, x, y, w, h })),
+				layouts: Arr.map(changed, ({ i, x, y, w, h }) => ({ i, x, y, w, h })),
 			}),
 		],
 	}

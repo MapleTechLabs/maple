@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
@@ -37,7 +37,7 @@ const row = (serviceName: string, metricType = "histogram", isMonotonic = false)
 })
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const windowed = (search: Search = {}): Model =>
 	pageUpdate(
@@ -67,7 +67,7 @@ const loaded = (rows: ReadonlyArray<MetricRow>, search: Search = {}): Model => {
 		Message.CompletedLoadChartRuntime(),
 		Message.ResolvedThemeColors({ colors: {} }),
 	]
-	return steps.reduce((model, message) => pageUpdate(model, message).model, base)
+	return Arr.reduce(steps, base, (model, message) => pageUpdate(model, message).model)
 }
 
 const themeResolved = () =>
@@ -151,11 +151,24 @@ describe("metric detail", () => {
 
 	test("Try again on a failed chart asks for the chart only, without a Reload", () => {
 		const base = withCatalog(windowed(), [row("payment-svc")]).model
-		const failed = [
-			Message.CompletedFetchAttributeKeys({ key: base.attributeKeys.key ?? "", result: Result.succeed([]) }),
-			Message.CompletedFetchTimeseries({ key: base.timeseries.key ?? "", result: Result.fail(toLoadFailure("down")) }),
-			Message.CompletedFetchBreakdown({ key: base.breakdown.key ?? "", result: Result.succeed([]) }),
-		].reduce((model, message) => pageUpdate(model, message).model, base)
+		const failed = Arr.reduce(
+			[
+				Message.CompletedFetchAttributeKeys({
+					key: base.attributeKeys.key ?? "",
+					result: Result.succeed([]),
+				}),
+				Message.CompletedFetchTimeseries({
+					key: base.timeseries.key ?? "",
+					result: Result.fail(toLoadFailure("down")),
+				}),
+				Message.CompletedFetchBreakdown({
+					key: base.breakdown.key ?? "",
+					result: Result.succeed([]),
+				}),
+			],
+			base,
+			(model, message) => pageUpdate(model, message).model,
+		)
 		const retried = pageUpdate(failed, Message.ClickedRetryChart())
 		expect(names(retried.commands)).toEqual(["FetchMetricTimeseries"])
 		expect(retried.model.isReloading).toBe(false)
@@ -201,7 +214,10 @@ describe("metric detail", () => {
 			{ update: pageUpdate, view },
 			given(loaded([row("payment-svc"), row("checkout-api")])),
 			themeResolved(),
-			Mount.resolve(MountWhereCaret, Message.GotCaretMessage({ message: CaretMessage.BlurredEditor() })),
+			Mount.resolve(
+				MountWhereCaret,
+				Message.GotCaretMessage({ message: CaretMessage.BlurredEditor() }),
+			),
 			expectView(text(`avg(${NAME})`)).toExist(),
 			expectView(text("Top values · avg per value")).toExist(),
 			expectView(role("button", { name: /^Filter to service\.name = payment-svc/ })).toExist(),

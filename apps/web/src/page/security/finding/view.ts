@@ -40,6 +40,7 @@ import { findingBody } from "../kit/finding-body"
 import { findingBadge } from "../kit/findings-view"
 import { typography } from "@maple/views/ui/typography"
 import { vstackClass } from "@maple/views/ui/stack"
+import { String as Str } from "effect"
 
 // `/security/code/findings/$targetId/$fingerprint`: the record on the left, triage and facts on the right.
 
@@ -298,7 +299,7 @@ const activity = (h: H, finding: SecurityAuditFinding, timeZone: string): Readon
 				: [
 						activityItem(
 							h,
-							`Marked ${FINDING_STATUS_LABEL[finding.status].toLowerCase()}${finding.statusReason === null ? "" : `: ${finding.statusReason}`}`,
+							`Marked ${Str.toLowerCase(FINDING_STATUS_LABEL[finding.status])}${finding.statusReason === null ? "" : `: ${finding.statusReason}`}`,
 							finding.statusChangedAt,
 							timeZone,
 						),
@@ -315,7 +316,7 @@ const activity = (h: H, finding: SecurityAuditFinding, timeZone: string): Readon
 					]),
 			activityItem(
 				h,
-				`Reported in run ${shortId(finding.firstSeenRunId)} with the verdict ${VERDICT_LABEL[finding.verdict].toLowerCase()}.`,
+				`Reported in run ${shortId(finding.firstSeenRunId)} with the verdict ${Str.toLowerCase(VERDICT_LABEL[finding.verdict])}.`,
 				finding.createdAt,
 				timeZone,
 			),

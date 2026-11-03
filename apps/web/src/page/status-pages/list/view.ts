@@ -1,6 +1,6 @@
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "@maple/views/ui/button"
@@ -147,31 +147,27 @@ const pageRow = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => 
 }
 
 const table = (h: H, pages: ReadonlyArray<StatusPageSummary>, inputs: ViewInputs): Html =>
-	borderedBox(
-		h,
-		{ overflow: "x-auto" },
-		[
-			h.div(
-				[h.Class("min-w-[720px]")],
-				[
-					h.div(
-						[h.Class(cn(ROW_GRID, "border-b py-2 pr-4 pl-4"))],
-						[
-							eyebrow(h, {}, ["Page"]),
-							eyebrow(h, {}, ["Status"]),
-							eyebrow(h, { className: "text-right" }, ["Components"]),
-							eyebrow(h, { className: "text-right" }, ["Open incidents"]),
-							eyebrow(h, { className: "text-right" }, ["Last published"]),
-						],
-					),
-					h.ul(
-						[h.Class("divide-y")],
-						pages.map((summary) => pageRow(h, summary, inputs)),
-					),
-				],
-			),
-		],
-	)
+	borderedBox(h, { overflow: "x-auto" }, [
+		h.div(
+			[h.Class("min-w-[720px]")],
+			[
+				h.div(
+					[h.Class(cn(ROW_GRID, "border-b py-2 pr-4 pl-4"))],
+					[
+						eyebrow(h, {}, ["Page"]),
+						eyebrow(h, {}, ["Status"]),
+						eyebrow(h, { className: "text-right" }, ["Components"]),
+						eyebrow(h, { className: "text-right" }, ["Open incidents"]),
+						eyebrow(h, { className: "text-right" }, ["Last published"]),
+					],
+				),
+				h.ul(
+					[h.Class("divide-y")],
+					Arr.map(pages, (summary) => pageRow(h, summary, inputs)),
+				),
+			],
+		),
+	])
 
 const body = (h: H, model: Model, inputs: ViewInputs): Html => {
 	const data = model.pages.data

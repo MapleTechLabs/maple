@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { DEFAULT_GESTURES, type FlowLimits, followLimits, limitsAttribute, windowDrag } from "./attach"
+import { Array as Arr } from "effect"
 
 const limits = (translateExtent: FlowLimits["gestures"]["translateExtent"]): FlowLimits => ({
 	minZoom: 0.5,
@@ -9,12 +10,27 @@ const limits = (translateExtent: FlowLimits["gestures"]["translateExtent"]): Flo
 
 describe("flow limits", () => {
 	test("a changed translate extent on the renderer is applied once", () => {
-		const small = limitsAttribute(limits([[0, 0], [100, 100]]))
-		const large = limitsAttribute(limits([[0, 0], [100, 900]]))
+		const small = limitsAttribute(
+			limits([
+				[0, 0],
+				[100, 100],
+			]),
+		)
+		const large = limitsAttribute(
+			limits([
+				[0, 0],
+				[100, 900],
+			]),
+		)
 		const applied: Array<FlowLimits> = []
 		const next = followLimits(large, small, (value) => applied.push(value))
 		expect(next).toBe(large)
-		expect(applied.map((value) => value.gestures.translateExtent)).toEqual([[[0, 0], [100, 900]]])
+		expect(Arr.map(applied, (value) => value.gestures.translateExtent)).toEqual([
+			[
+				[0, 0],
+				[100, 900],
+			],
+		])
 		expect(followLimits(large, next, (value) => applied.push(value))).toBe(large)
 		expect(applied).toHaveLength(1)
 	})

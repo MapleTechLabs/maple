@@ -291,9 +291,9 @@ const dispatchTierFields = (
 ) => {
 	const ruleSeverities =
 		queuedSeverities === undefined
-			? Option.map(currentRule, (condition) => condition.thresholds.map((tier) => tier.severity))
+			? Option.map(currentRule, (condition) => Arr.map(condition.thresholds, (tier) => tier.severity))
 			: Option.some(
-					queuedSeverities.flatMap((severity) =>
+					Arr.flatMap(queuedSeverities, (severity) =>
 						Option.toArray(decodeAlertSeverityOption(severity)),
 					),
 				)
@@ -319,7 +319,7 @@ const ruleForResolve = (
 		rule,
 		nearestSeverity(
 			decodeAlertSeveritySync(incident.severity),
-			rule.thresholds.map((tier) => tier.severity),
+			Arr.map(rule.thresholds, (tier) => tier.severity),
 		),
 		incident.peakSeverity === null ? null : decodeAlertSeveritySync(incident.peakSeverity),
 	)

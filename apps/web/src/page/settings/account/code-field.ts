@@ -1,6 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { label } from "@maple/views/ui/label"
 import * as OtpField from "@maple/views/ui/otp-field"
+import { Array as Arr } from "effect"
 
 // `CodeField`: six digits for an email or TOTP code. Slot one carries the field's name through a real label;
 // the others name their position.
@@ -13,7 +14,11 @@ export const isComplete = (model: OtpField.Model): boolean => OtpField.valueOf(m
 
 export const codeField = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ model: OtpField.Model; label: string; toParentMessage: (message: OtpField.Message) => M }>,
+	options: Readonly<{
+		model: OtpField.Model
+		label: string
+		toParentMessage: (message: OtpField.Message) => M
+	}>,
 ): Html => {
 	const config = { model: options.model, toParentMessage: options.toParentMessage, size: "lg" as const }
 	return h.div(
@@ -23,8 +28,14 @@ export const codeField = <M>(
 			...OtpField.otpField(
 				h,
 				config,
-				SLOTS.map((slot) =>
-					OtpField.otpFieldInput(h, config, slot, undefined, slot === 0 ? [] : [h.AriaLabel(`Digit ${slot + 1} of 6`)]),
+				Arr.map(SLOTS, (slot) =>
+					OtpField.otpFieldInput(
+						h,
+						config,
+						slot,
+						undefined,
+						slot === 0 ? [] : [h.AriaLabel(`Digit ${slot + 1} of 6`)],
+					),
 				),
 			),
 		],

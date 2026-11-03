@@ -1,6 +1,6 @@
 import { getServiceDetailOverview } from "@maple/web-data/warehouse/custom-charts"
 import { workloadInfraTimeseries } from "@maple/web-data/warehouse/infra"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
@@ -55,7 +55,7 @@ export const FetchOverview = Command.define("FetchLensServiceOverview", {
 		getServiceDetailOverview({ data: input }).pipe(
 			Effect.mapBoth({
 				onSuccess: (response) =>
-					response.data.map((point) => ({
+					Arr.map(response.data, (point) => ({
 						bucket: point.bucket,
 						p99LatencyMs: point.p99LatencyMs,
 						throughput: point.throughput,

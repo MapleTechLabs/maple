@@ -1,12 +1,16 @@
+import { Array as Arr, String as Str } from "effect"
 // The onboarding backdrop: square pixels lit in the primary colour through an 8x8 ordered dither,
 // spreading from the bottom-left corner. `data-reach` on the canvas sets how far (it grows per step),
 // slow waves move its edge, and reduced motion keeps it still.
 
-const BAYER_8 = [
-	0, 32, 8, 40, 2, 34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26, 12, 44, 4, 36, 14, 46, 6, 38, 60, 28, 52, 20,
-	62, 30, 54, 22, 3, 35, 11, 43, 1, 33, 9, 41, 51, 19, 59, 27, 49, 17, 57, 25, 15, 47, 7, 39, 13, 45, 5, 37,
-	63, 31, 55, 23, 61, 29, 53, 21,
-].map((rank) => (rank + 0.5) / 64)
+const BAYER_8 = Arr.map(
+	[
+		0, 32, 8, 40, 2, 34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26, 12, 44, 4, 36, 14, 46, 6, 38, 60, 28, 52,
+		20, 62, 30, 54, 22, 3, 35, 11, 43, 1, 33, 9, 41, 51, 19, 59, 27, 49, 17, 57, 25, 15, 47, 7, 39, 13,
+		45, 5, 37, 63, 31, 55, 23, 61, 29, 53, 21,
+	],
+	(rank) => (rank + 0.5) / 64,
+)
 
 /** On screen each cell is 8 CSS px holding a 4 px square; the canvas stores it as 2x2 pixels, one lit. */
 const CELL = 8
@@ -46,7 +50,7 @@ export const startDitherField = (canvas: HTMLCanvasElement): (() => void) => {
 	const context = canvas.getContext("2d")
 	if (context === null) return () => undefined
 	const isStill = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-	const color = getComputedStyle(canvas).getPropertyValue("--primary").trim() || "#e8872a"
+	const color = Str.trim(getComputedStyle(canvas).getPropertyValue("--primary")) || "#e8872a"
 	const state = { frame: 0, last: 0, seconds: 0, reach: readReach(canvas), width: 0, height: 0 }
 
 	// The canvas is drawn at cell resolution and scaled up without smoothing: a few thousand pixels a

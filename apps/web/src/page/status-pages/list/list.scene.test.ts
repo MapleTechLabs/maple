@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -18,13 +18,14 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const listUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(listView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const entered = (isAdmin = true): Model => {
 	const start = init({ _tag: "StatusPages" }, context).model
-	return [Message.ReadClock({ nowMs: NOW }), Message.CompletedFetchSession({ orgId: ORG, isAdmin })].reduce(
-		(model, message) => listUpdate(model, message).model,
+	return Arr.reduce(
+		[Message.ReadClock({ nowMs: NOW }), Message.CompletedFetchSession({ orgId: ORG, isAdmin })],
 		start,
+		(model, message) => listUpdate(model, message).model,
 	)
 }
 

@@ -1,5 +1,5 @@
 import { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import type { AlertRuleStateRow } from "../collections/alerts"
 import { deriveOverview } from "./overview"
@@ -124,8 +124,8 @@ describe("deriveOverview", () => {
 			deliveryEvents: [],
 			now: NOW,
 		})
-		expect(overview.rules.map((r) => r.id)).toEqual([RULE_B, RULE_A])
-		expect(overview.incidents.map((i) => i.id)).toEqual([
+		expect(Arr.map(overview.rules, (r) => r.id)).toEqual([RULE_B, RULE_A])
+		expect(Arr.map(overview.incidents, (i) => i.id)).toEqual([
 			"00000000-0000-4000-8000-0000000000f2",
 			"00000000-0000-4000-8000-0000000000f1",
 		])
@@ -187,7 +187,7 @@ describe("deriveOverview", () => {
 			deliveryEvents: [],
 			now: NOW,
 		})
-		expect(overview.incidents.map((i) => i.id)).toEqual([
+		expect(Arr.map(overview.incidents, (i) => i.id)).toEqual([
 			"00000000-0000-4000-8000-0000000000f1",
 			"00000000-0000-4000-8000-0000000000f2",
 		])
@@ -215,7 +215,7 @@ describe("deriveOverview", () => {
 			deliveryEvents: [],
 			now: NOW,
 		})
-		expect(overview.rules.map((rule) => rule.id)).toEqual([RULE_A])
-		expect(overview.openIncidents.map((incident) => incident.ruleName)).toEqual(["API health"])
+		expect(Arr.map(overview.rules, (rule) => rule.id)).toEqual([RULE_A])
+		expect(Arr.map(overview.openIncidents, (incident) => incident.ruleName)).toEqual(["API health"])
 	})
 })

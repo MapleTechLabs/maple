@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { afterEach, expect, vi } from "vitest"
 import { make } from "./flushable.js"
 
@@ -56,7 +56,7 @@ describe("MapleFlush.make (server) — resource resolution failure", () => {
 			// next flush resolves the resource and exports the retained span.
 			expect(uuidSpy).toHaveBeenCalledTimes(1)
 			await telemetry.flush()
-			expect(calls.some((url) => url.endsWith("/v1/traces"))).toBe(true)
+			expect(Arr.some(calls, (url) => Str.endsWith("/v1/traces")(url))).toBe(true)
 		} finally {
 			globalThis.fetch = originalFetch
 		}

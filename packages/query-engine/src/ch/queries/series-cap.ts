@@ -16,9 +16,10 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import { fromQuery, type CHQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import { uint64 } from "@maple-dev/effect-orm/clickhouse"
+import { Array as Arr, Record as Rec } from "effect"
 
 function hasRealGroupBy(groupBy: readonly string[] | undefined): boolean {
-	return !!groupBy && groupBy.some((key) => key !== "none")
+	return !!groupBy && Arr.some(groupBy, (key) => key !== "none")
 }
 
 export interface FinalizeTimeseriesParams {
@@ -54,7 +55,7 @@ export function finalizeTimeseries<Output extends Record<string, unknown>>(
 	// shape of a timeseries from "decodes" to "decodes nothing" while the
 	// uncapped shape of the same query still decoded.
 	const passthrough: Record<string, CH.Expr<unknown>> = {}
-	for (const [key, columnType] of Object.entries(outputColumns)) {
+	for (const [key, columnType] of Rec.toEntries(outputColumns)) {
 		passthrough[key] = CH.dynamicColumn(key, columnType)
 	}
 

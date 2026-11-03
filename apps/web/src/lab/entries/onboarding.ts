@@ -1,5 +1,5 @@
 import { CatalogPlan, CatalogPlanItem, CatalogPlanItemPrice } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { Command, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CreateOrg from "../../page/onboarding/create-org"
@@ -129,7 +129,8 @@ const teamStep = (model: Model, message: TeamMessage): Return => {
 				: [
 						SimulateTeamOperation({
 							operation,
-							value: operation === "rename" ? next.team.name.trim() : next.team.email.trim(),
+							value:
+								operation === "rename" ? Str.trim(next.team.name) : Str.trim(next.team.email),
 						}),
 					],
 	}
@@ -198,12 +199,12 @@ const createOrgStep = (model: Model, message: CreateOrg.Message): Return => {
 		case "PickedRegion":
 			return { model: { ...model, createOrg: CreateOrg.update(model.createOrg, message).model } }
 		case "SubmittedCreate":
-			return model.createOrg.name.trim() === ""
+			return Str.trim(model.createOrg.name) === ""
 				? { model }
 				: {
 						model: {
 							...model,
-							orgName: model.createOrg.name.trim(),
+							orgName: Str.trim(model.createOrg.name),
 							createOrg: null,
 							quickStart: {
 								...model.quickStart,

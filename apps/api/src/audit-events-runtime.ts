@@ -1,7 +1,7 @@
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import type { Message } from "@cloudflare/workers-types"
 import type { OrgId } from "@maple/domain/primitives"
-import { Cause, Clock, Effect, Layer } from "effect"
+import { Cause, Clock, Effect, Layer, Array as Arr } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"
@@ -123,7 +123,7 @@ export const processAuditEventsBatch = Effect.fn("AuditEvents.processBatch")(fun
 				.ingest(
 					systemTenant(orgId),
 					AUDIT_LOG_DATASOURCE,
-					group.map(({ event }) => auditEventToRow(event, now)),
+					Arr.map(group, ({ event }) => auditEventToRow(event, now)),
 				)
 				.pipe(
 					Effect.flatMap(() =>

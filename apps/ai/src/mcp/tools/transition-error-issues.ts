@@ -1,5 +1,5 @@
 import type { McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { TransitionErrorIssuesOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { resolveActorId } from "../lib/resolve-actor"
@@ -41,7 +41,7 @@ export function registerTransitionErrorIssuesTool(server: McpToolRegistrar) {
 					})),
 				),
 			)
-			const succeeded = results.filter((result) => result.ok).length
+			const succeeded = Arr.filter(results, (result) => result.ok).length
 			return {
 				toState: params.to_state,
 				succeeded,
@@ -51,7 +51,7 @@ export function registerTransitionErrorIssuesTool(server: McpToolRegistrar) {
 			}
 		}),
 		render: (output) => {
-			const failures = output.results.filter((result) => !result.ok)
+			const failures = Arr.filter(output.results, (result) => !result.ok)
 			return {
 				title: "Error issues transitioned",
 				blocks: [
@@ -66,7 +66,7 @@ export function registerTransitionErrorIssuesTool(server: McpToolRegistrar) {
 						: [
 								doc.table(
 									["Issue", "Error"],
-									failures.map((result) => [result.id, result.error ?? ""]),
+									Arr.map(failures, (result) => [result.id, result.error ?? ""]),
 								),
 							]),
 				],

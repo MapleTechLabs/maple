@@ -28,6 +28,7 @@ import {
 } from "./command"
 import { Message, type RequestMode } from "./message"
 import type { Model, Section } from "./model"
+import { Array as Arr, Record as Rec } from "effect"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -132,10 +133,10 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 		FetchProjects({ key: projectsKey, window }),
 	)
 	const start: Step = { model: { ...model, window, projects }, commands: projectFetches }
-	return SECTIONS.reduce((step, section) => {
+	return Arr.reduce(SECTIONS, start, (step, section) => {
 		const next = requestSection(step.model, context, window, section, mode)
 		return { model: next.model, commands: [...step.commands, ...next.commands] }
-	}, start)
+	})
 }
 
 const searchHref = (model: Model, search: Search) =>
@@ -162,7 +163,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		issues: Keyed.idle(),
 		insights: Keyed.idle(),
 		isTopPathsOpen: false,
-		charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
+		charts: Rec.fromEntries(Arr.map(CHART_IDS, (id) => [id, Chart.init()])),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		timePicker: TimeRangePicker.init("supabase-project-time-range"),

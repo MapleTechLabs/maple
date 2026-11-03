@@ -5,6 +5,7 @@ import { buildSessionChecks, type SessionCheck } from "./session-checks"
 import { buildSessionSummary } from "./session-summary"
 import { buildSessionTurns } from "./session-turns"
 import { agentSpan, llmSpan, makeSpan, toolSpan } from "./span-test-support"
+import { Array as Arr } from "effect"
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -77,9 +78,9 @@ describe("buildSessionChecks", () => {
 		// Nothing reported cache usage, so the cache check says so rather than passing.
 		expect(byId(report, "prompt-cache").status).toBe("skipped")
 		// Passed and skipped rows carry no fix tag: there is nothing to fix.
-		expect(report.checks.every((check) => check.status !== "passed" || check.fixArea === undefined)).toBe(
-			true,
-		)
+		expect(
+			Arr.every(report.checks, (check) => check.status !== "passed" || check.fixArea === undefined),
+		).toBe(true)
 	})
 
 	it("names the cause of death in the headline, and the cause's own check carries the action", () => {
@@ -122,7 +123,7 @@ describe("buildSessionChecks", () => {
 		)
 		expect(context.action).toMatch(/^Compact or summarise/)
 		expect(context.fixArea).toBe("prompt")
-		expect(context.findings.map((finding) => finding.spanId)).toEqual(["l2"])
+		expect(Arr.map(context.findings, (finding) => finding.spanId)).toEqual(["l2"])
 		expect(report.counts.failed).toBe(1)
 	})
 
@@ -326,7 +327,7 @@ describe("buildSessionChecks", () => {
 		const session = (genAi: (i: number) => AiSessionGenAiValues) =>
 			checks([
 				agentSpan({ spanId: "a1", startMs: 0, durationMs: MINUTE, genAi: { conversationId: "t1" } }),
-				...[0, 1, 2, 3, 4].map((i) => call(`c${i}`, (i + 1) * SECOND, genAi(i))),
+				...Arr.map([0, 1, 2, 3, 4], (i) => call(`c${i}`, (i + 1) * SECOND, genAi(i))),
 			])
 
 		const short = byId(
@@ -497,7 +498,7 @@ describe("buildSessionChecks", () => {
 	// once, and judged by the observation that measured the cache.
 	it("judges the prompt cache off a gateway mirror when the counted span has none", () => {
 		const report = checks(
-			[0, 1, 2, 3, 4].flatMap((i) => [
+			Arr.flatMap([0, 1, 2, 3, 4], (i) => [
 				llmSpan({
 					spanId: `app-${i}`,
 					traceId: `trace-app-${i}`,
@@ -541,7 +542,7 @@ describe("buildSessionChecks", () => {
 		})
 		const report = checks([
 			agentSpan({ spanId: "a1", startMs: 0, durationMs: MINUTE, agentName: "assistant" }),
-			...[0, 1, 2, 3, 4].flatMap((i) => [
+			...Arr.flatMap([0, 1, 2, 3, 4], (i) => [
 				makeSpan({
 					spanId: `call-${i}`,
 					parentSpanId: "a1",
@@ -660,7 +661,7 @@ describe("buildSessionChecks", () => {
 				durationMs: 20 * SECOND,
 				genAi: { conversationId: "t2" },
 			}),
-			...["t_one", "t_two", "t_three", "t_four", "t_five"].map(failing),
+			...Arr.map(["t_one", "t_two", "t_three", "t_four", "t_five"], failing),
 			llmSpan({
 				spanId: "l2",
 				parentSpanId: "a2",

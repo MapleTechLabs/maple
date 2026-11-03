@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { AWS_INFRA_KINDS, type AwsInfraKindId } from "@maple/domain/aws-infra"
 import {
 	EMPTY_VALUE,
@@ -338,18 +338,18 @@ const COLUMNS = {
 } satisfies Record<AwsInfraKindId, ReadonlyArray<Column>>
 
 const columnsOf = (kind: AwsInfraKindId, showTraced = true): ReadonlyArray<Column> =>
-	showTraced ? COLUMNS[kind] : COLUMNS[kind].filter((column: Column) => column.traced !== true)
+	showTraced ? COLUMNS[kind] : Arr.filter(COLUMNS[kind], (column: Column) => column.traced !== true)
 
 /** False once the traced services loaded and none of the rows matches one. */
 const anyTraced = (views: ReadonlyArray<ResourceView>, traced: TableContext["traced"]): boolean =>
-	traced === null || views.some((view) => tracedAs(traced, view) !== null)
+	traced === null || Arr.some(views, (view) => tracedAs(traced, view) !== null)
 
 // Grows far ahead of a CPU trend column, so it reaches its cap before the trend widens.
 const NAME_COLUMN = { label: "", width: "w-0 min-w-48 max-w-[480px] flex-[999_1_0%]" }
 
 const heads = (h: H, kind: AwsInfraKindId, nameLabel: string, showTraced = true): ReadonlyArray<Html> => [
 	columnHead(h, { label: nameLabel, width: NAME_COLUMN.width }),
-	...columnsOf(kind, showTraced).map((column) =>
+	...Arr.map(columnsOf(kind, showTraced), (column) =>
 		columnHead(h, {
 			label: column.label,
 			width: column.width,
@@ -369,13 +369,16 @@ export const awsTableLoading = (h: H, kind: AwsInfraKindId, nameLabel: string): 
 				[h.Class(cn(NAME_COLUMN.width, "space-y-1.5"))],
 				[skeleton(h, "h-3.5 w-36"), skeleton(h, "h-2.5 w-48")],
 			),
-			...columnsOf(kind).map((column) => skeleton(h, cn("h-3", column.width, column.hidden))),
+			...Arr.map(columnsOf(kind), (column) => skeleton(h, cn("h-3", column.width, column.hidden))),
 		]),
 	)
 
 /** "prod · us-east-1", or the reason it needs a look. */
 const subline = (view: ResourceView): string =>
-	[view.cluster, view.region].filter((part) => part !== "").join(" · ")
+	Arr.join(
+		Arr.filter([view.cluster, view.region], (part) => part !== ""),
+		" · ",
+	)
 
 const row = (h: H, view: ResourceView, context: TableContext, showTraced: boolean): Html =>
 	h.a(
@@ -433,13 +436,16 @@ const row = (h: H, view: ResourceView, context: TableContext, showTraced: boolea
 							[
 								view.reason === null
 									? subline(view)
-									: [subline(view), view.reason].filter((part) => part !== "").join(" · "),
+									: Arr.join(
+											Arr.filter([subline(view), view.reason], (part) => part !== ""),
+											" · ",
+										),
 							],
 						),
 					]),
 				],
 			),
-			...columnsOf(view.kind, showTraced).map((column) =>
+			...Arr.map(columnsOf(view.kind, showTraced), (column) =>
 				h.div(
 					[
 						h.Class(
@@ -474,9 +480,9 @@ export const awsTable = (
 		h,
 		{ ariaLabel: `AWS ${options.nameLabel}`, isWaiting: options.isWaiting },
 		heads(h, options.kind, options.nameLabel, showTraced),
-		options.views.map((view) => row(h, view, options.context, showTraced)),
+		Arr.map(options.views, (view) => row(h, view, options.context, showTraced)),
 	)
-	const hasTracedColumn = COLUMNS[options.kind].some((column: Column) => column.traced === true)
+	const hasTracedColumn = Arr.some(COLUMNS[options.kind], (column: Column) => column.traced === true)
 	return showTraced || !hasTracedColumn
 		? table
 		: h.div(

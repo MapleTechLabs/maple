@@ -10,6 +10,7 @@ import {
 	utcDay,
 } from "@maple/domain/status-page"
 import { INCIDENT_STATUS_LABEL, MONTHS } from "./format"
+import { Array as Arr, String as Str } from "effect"
 
 // Paging and calendar rules for the page. The inline script mirrors `windowBounds`,
 // `monthCells` and the labels; `script.test.ts` holds the two to the same answers.
@@ -17,7 +18,7 @@ import { INCIDENT_STATUS_LABEL, MONTHS } from "./format"
 const DAY_MS = 86_400_000
 
 const dayMs = (day: string): number => {
-	const [year = 1970, month = 1, date = 1] = day.split("-").map(Number)
+	const [year, month = 1, date = 1] = Arr.map(Str.split("-")(day), Number)
 	return Date.UTC(year, month - 1, date)
 }
 
@@ -26,7 +27,7 @@ export const shiftDay = (day: string, offset: number): string => utcDay(dayMs(da
 
 /** `Oct 2026` for a `YYYY-MM-DD` day. */
 export const monthLabel = (day: string): string => {
-	const [year = "", month = "1"] = day.split("-")
+	const [year, month = "1"] = Str.split("-")(day)
 	return `${MONTHS[Number(month) - 1] ?? ""} ${year}`
 }
 
@@ -71,16 +72,16 @@ export const rangeLabel = (days: ReadonlyArray<StatusPageDayBar>): string => {
 export const barComponents = (
 	components: ReadonlyArray<StatusPageSnapshotComponent>,
 ): ReadonlyArray<StatusPageSnapshotComponent> =>
-	components.filter((component) => component.showUptime && component.days.length > 0)
+	Arr.filter(components, (component) => component.showUptime && component.days.length > 0)
 
 /** Windows worth paging through: back to the oldest day any component was checked, at least one. */
 export const windowCount = (components: ReadonlyArray<StatusPageSnapshotComponent>): number =>
-	barComponents(components).reduce((count, component) => {
+	Arr.reduce(barComponents(components), 1, (count, component) => {
 		const oldest = component.days.findIndex((bar) => bar.checks > 0)
 		return oldest === -1
 			? count
 			: Math.max(count, Math.floor((component.days.length - 1 - oldest) / STATUS_PAGE_WINDOW_DAYS) + 1)
-	}, 1)
+	})
 
 /** Monday-first weeks of a month: day numbers, 0 for the padding cells. `month` is 1 to 12. */
 export const monthCells = (year: number, month: number): ReadonlyArray<number> => {
@@ -95,17 +96,18 @@ export const monthCells = (year: number, month: number): ReadonlyArray<number> =
 
 /** `YYYY-MM` of the month `back` months before the one holding `day`. */
 export const monthBefore = (day: string, back: number): string => {
-	const [year = 1970, month = 1] = day.split("-").map(Number)
+	const [year, month = 1] = Arr.map(Str.split("-")(day), Number)
 	const index = year * 12 + (month - 1) - back
-	return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`
+	return `${Math.floor(index / 12)}-${Str.padStart(2, "0")(String((index % 12) + 1))}`
 }
 
 /** Months the calendar pages through: back to the one holding the oldest day of history. */
 export const calendarMonthCount = (today: string): number => {
-	const [year = 1970, month = 1] = today.split("-").map(Number)
-	const [oldYear = 1970, oldMonth = 1] = shiftDay(today, 1 - STATUS_PAGE_HISTORY_DAYS)
-		.split("-")
-		.map(Number)
+	const [year, month = 1] = Arr.map(Str.split("-")(today), Number)
+	const [oldYear, oldMonth = 1] = Arr.map(
+		Str.split("-")(shiftDay(today, 1 - STATUS_PAGE_HISTORY_DAYS)),
+		Number,
+	)
 	return (year - oldYear) * 12 + (month - oldMonth) + 1
 }
 
@@ -145,20 +147,25 @@ const toneOf = (entry: Pick<StatusPageIncidentHistoryEntry, "kind" | "impact">):
  * break-glass ones not yet imported) taking precedence. Upcoming maintenance has no days yet.
  */
 export const calendarEntries = (snapshot: StatusPageSnapshot): ReadonlyArray<CalendarEntry> => {
-	const listed = snapshot.incidents.filter(
+	const listed = Arr.filter(
+		snapshot.incidents,
 		(incident) => !(incident.kind === "maintenance" && incident.status === "scheduled"),
 	)
-	const listedIds = new Set(snapshot.incidents.map((incident) => incident.id))
-	const fromIndex = snapshot.incidentHistory
-		.filter((entry) => !listed.some((incident) => incident.id === entry.id))
-		.map((entry) => ({
+	const listedIds = new Set(Arr.map(snapshot.incidents, (incident) => incident.id))
+	const fromIndex = Arr.map(
+		Arr.filter(
+			snapshot.incidentHistory,
+			(entry) => !Arr.some(listed, (incident) => incident.id === entry.id),
+		),
+		(entry) => ({
 			...entry,
 			status:
 				entry.resolvedAt === null
 					? "Ongoing"
 					: INCIDENT_STATUS_LABEL[entry.kind === "incident" ? "resolved" : "completed"],
-		}))
-	const fromList = listed.map((incident) => ({
+		}),
+	)
+	const fromList = Arr.map(listed, (incident) => ({
 		id: incident.id,
 		title: incident.title,
 		kind: incident.kind,
@@ -167,9 +174,10 @@ export const calendarEntries = (snapshot: StatusPageSnapshot): ReadonlyArray<Cal
 		resolvedAt: incident.resolvedAt,
 		status: INCIDENT_STATUS_LABEL[incident.status],
 	}))
-	return [...fromList, ...fromIndex]
-		.sort((a, b) => b.startedAt - a.startedAt)
-		.map((entry) => ({ ...entry, tone: toneOf(entry), listed: listedIds.has(entry.id) }))
+	return Arr.map(
+		[...fromList, ...fromIndex].sort((a, b) => b.startedAt - a.startedAt),
+		(entry) => ({ ...entry, tone: toneOf(entry), listed: listedIds.has(entry.id) }),
+	)
 }
 
 export interface CalendarDay {
@@ -187,10 +195,11 @@ export const calendarDays = (
 	const todayN = Math.floor(nowMs / DAY_MS)
 	const oldestN = todayN + 1 - STATUS_PAGE_HISTORY_DAYS
 	const byDay = new Map<number, { tone: CalendarTone; entries: Array<number> }>()
-	entries.forEach((entry, index) => {
+	Arr.forEach(entries, (entry, index) => {
 		const firstN = Math.max(Math.floor(entry.startedAt / DAY_MS), oldestN)
 		const endN = Math.min(Math.floor(Math.min(entry.resolvedAt ?? nowMs, nowMs) / DAY_MS), todayN)
-		Array.from({ length: Math.max(0, endN - firstN + 1) }, (_, offset) => firstN + offset).forEach(
+		Arr.forEach(
+			Array.from({ length: Math.max(0, endN - firstN + 1) }, (_, offset) => firstN + offset),
 			(dayN) => {
 				const current = byDay.get(dayN)
 				if (current === undefined) {

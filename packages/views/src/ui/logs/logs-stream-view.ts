@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { defineView } from "foldkit/submodel"
 import { chipCard } from "./chip-card"
@@ -43,12 +43,12 @@ const GENERIC_SEGMENTS = new Set(["name", "id", "value", "type"])
 export const pinnedColumnParts = (
 	key: string,
 ): Readonly<{ prefix: string; label: string; suffix: string }> => {
-	const segments = key.split(".").filter((segment) => segment !== "")
-	const found = segments.findLastIndex((segment) => !GENERIC_SEGMENTS.has(segment.toLowerCase()))
+	const segments = Arr.filter(Str.split(".")(key), (segment) => segment !== "")
+	const found = segments.findLastIndex((segment) => !GENERIC_SEGMENTS.has(Str.toLowerCase(segment)))
 	const at = found === -1 ? segments.length - 1 : found
 	if (at < 0) return { prefix: "", label: key, suffix: "" }
-	const prefix = segments.slice(0, at).join(".")
-	const suffix = segments.slice(at + 1).join(".")
+	const prefix = Arr.join(segments.slice(0, at), ".")
+	const suffix = Arr.join(segments.slice(at + 1), ".")
 	return {
 		prefix: prefix === "" ? "" : `${prefix}.`,
 		label: segments[at] ?? key,
@@ -90,7 +90,7 @@ const columnHeader = (
 			h.span([h.Class("shrink-0 w-24"), h.Title(`Times in ${timeZone}`)], ["Time"]),
 			h.span([h.Class("shrink-0 w-11")], ["Level"]),
 			h.span([h.Class("shrink-0 w-40 hidden md:inline-block")], ["Service"]),
-			...pinnedColumns.map((key) => {
+			...Arr.map(pinnedColumns, (key) => {
 				// The whole key stays readable; only its muted leading segments give way to the naming one.
 				const parts = pinnedColumnParts(key)
 				return h.span(
@@ -149,7 +149,7 @@ const ROW_SLOTS = 256
 /** The logs table for a non-empty stream. */
 export const view = defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const focused = Option.getOrElse(model.focusedIndex, () => -1)
-	const rows = model.window.flatMap(({ index, start }) => {
+	const rows = Arr.flatMap(model.window, ({ index, start }) => {
 		const row = model.rows[index]
 		return row === undefined
 			? []

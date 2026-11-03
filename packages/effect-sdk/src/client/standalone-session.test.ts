@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { getActiveSink } from "@maple/browser-session"
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { afterEach, beforeEach, expect, vi } from "vitest"
 import { make as makeTelemetry } from "./flushable.js"
 import { resetStandaloneSessionForTests } from "./standalone-session.js"
@@ -35,10 +35,10 @@ const setupFetch = () => {
 	const original = globalThis.fetch
 	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-		if (url.includes("/v1/sessionReplays/meta") && typeof init?.body === "string") {
+		if (Str.includes("/v1/sessionReplays/meta")(url) && typeof init?.body === "string") {
 			metaPosts.push({
 				url,
-				row: JSON.parse(init.body.trim()),
+				row: JSON.parse(Str.trim(init.body)),
 				keepalive: init?.keepalive,
 				authorization: new Headers(init.headers).get("authorization"),
 			})
@@ -89,7 +89,7 @@ describe("standalone session emission (client)", () => {
 	})
 
 	afterEach(async () => {
-		await Promise.all(clients.splice(0).map((client) => client.dispose()))
+		await Promise.all(Arr.map(clients.splice(0), (client) => client.dispose()))
 		resetStandaloneSessionForTests()
 		identify(undefined)
 		restore?.()
@@ -166,7 +166,7 @@ describe("standalone session emission (client)", () => {
 		await telemetry.dispose()
 		await new Promise((resolve) => setTimeout(resolve, 0))
 
-		const ended = metaPosts.filter((post) => post.row.status === "ended").at(-1)!
+		const ended = Arr.filter(metaPosts, (post) => post.row.status === "ended").at(-1)!
 		expect(ended.row.click_count).toBe(8)
 		expect(ended.row.error_count).toBe(4)
 	})
@@ -185,15 +185,15 @@ describe("standalone session emission (client)", () => {
 		const second = make(baseConfig)
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		// One shared session, not one per runtime.
-		expect(metaPosts.filter((post) => post.row.status === "active").length).toBe(1)
+		expect(Arr.filter(metaPosts, (post) => post.row.status === "active").length).toBe(1)
 
 		await first.dispose()
 		await new Promise((resolve) => setTimeout(resolve, 0))
-		expect(metaPosts.filter((post) => post.row.status === "ended").length).toBe(0)
+		expect(Arr.filter(metaPosts, (post) => post.row.status === "ended").length).toBe(0)
 
 		await second.dispose()
 		await new Promise((resolve) => setTimeout(resolve, 0))
-		expect(metaPosts.filter((post) => post.row.status === "ended").length).toBe(1)
+		expect(Arr.filter(metaPosts, (post) => post.row.status === "ended").length).toBe(1)
 	})
 
 	it("treats a repeated dispose of the same runtime as a no-op", async () => {
@@ -207,7 +207,7 @@ describe("standalone session emission (client)", () => {
 		await telemetry.dispose()
 		await new Promise((resolve) => setTimeout(resolve, 0))
 
-		expect(metaPosts.filter((post) => post.row.status === "ended").length).toBe(1)
+		expect(Arr.filter(metaPosts, (post) => post.row.status === "ended").length).toBe(1)
 	})
 
 	it("posts nothing when the @maple-dev/browser sink owns the session", async () => {
@@ -244,7 +244,7 @@ describe("standalone session emission (client)", () => {
 		make({ ...baseConfig, ingestKey: undefined })
 
 		await new Promise((resolve) => setTimeout(resolve, 0))
-		expect(metaPosts.map((post) => post.row.status)).toEqual(["active"])
+		expect(Arr.map(metaPosts, (post) => post.row.status)).toEqual(["active"])
 		expect(metaPosts[0]!.authorization).toBeNull()
 	})
 
@@ -274,7 +274,7 @@ describe("standalone session emission (client)", () => {
 		expect(ended!.row.trace_ids.length).toBe(1)
 		expect(ended!.row.trace_ids[0]).toMatch(/^[0-9a-f]{32}$/i)
 
-		const secondActive = metaPosts.filter((p) => p.row.status === "active").at(-1)!
+		const secondActive = Arr.filter(metaPosts, (p) => p.row.status === "active").at(-1)!
 		expect(secondActive.row.session_id).not.toBe(firstSession)
 		expect(secondActive.row.session_id).toBe(JSON.parse(store.get("maple.session")!).id)
 	})

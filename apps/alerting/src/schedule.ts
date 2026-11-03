@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec } from "effect"
 /**
  * The alerting schedule: each cron fans out to independent lanes, and each lane
  * runs as its own placed invocation (`./tick-dispatch.ts`) with its own Postgres
@@ -51,8 +52,10 @@ export type TickLane = (typeof ALERTING_SCHEDULE)[AlertingCron]["lanes"][number]
 
 const isAlertingCron = (cron: string): cron is AlertingCron => Object.hasOwn(ALERTING_SCHEDULE, cron)
 
-export const ALERTING_CRONS: ReadonlyArray<AlertingCron> =
-	Object.keys(ALERTING_SCHEDULE).filter(isAlertingCron)
+export const ALERTING_CRONS: ReadonlyArray<AlertingCron> = Arr.filter(
+	Rec.keys(ALERTING_SCHEDULE),
+	isAlertingCron,
+)
 
 /** `cron`'s schedule, or `undefined` for a cron this Worker does not know. */
 export const scheduleFor = (cron: string): CronSchedule | undefined =>

@@ -1,4 +1,4 @@
-import { Context, Effect, Option, Result, Schema, Stream } from "effect"
+import { Context, Effect, Option, Result, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { constTrue } from "effect/Function"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest, Url } from "effect/http"
 import type { HttpClientError, HttpClientResponse } from "effect/http"
@@ -39,7 +39,7 @@ const BLOCKED_HOSTNAME_SUFFIXES: ReadonlyArray<string> = [
 ]
 
 const hasBlockedSuffix = (name: string): boolean =>
-	BLOCKED_HOSTNAME_SUFFIXES.some((suffix) => name === suffix || name.endsWith(`.${suffix}`))
+	Arr.some(BLOCKED_HOSTNAME_SUFFIXES, (suffix) => name === suffix || Str.endsWith(`.${suffix}`)(name))
 
 const PRIVATE_IPV4_PATTERNS: ReadonlyArray<RegExp> = [
 	/^0(?:\.|$)/,
@@ -73,7 +73,7 @@ const PRIVATE_IPV4_PATTERNS: ReadonlyArray<RegExp> = [
 const IPV4_LITERAL_RE = /^\d{1,3}(?:\.\d{1,3}){3}$/
 
 const isPrivateIPv4 = (host: string): boolean =>
-	IPV4_LITERAL_RE.test(host) && PRIVATE_IPV4_PATTERNS.some((re) => re.test(host))
+	IPV4_LITERAL_RE.test(host) && Arr.some(PRIVATE_IPV4_PATTERNS, (re) => re.test(host))
 
 /**
  * The eight 16-bit groups of an IPv6 literal, or `null` when it is not one.
@@ -82,29 +82,29 @@ const isPrivateIPv4 = (host: string): boolean =>
  */
 const ipv6Groups = (inner: string): ReadonlyArray<number> | null => {
 	const dotted = /^(.*:)(\d{1,3}(?:\.\d{1,3}){3})$/.exec(inner)
-	const quad = dotted ? dotted[2].split(".").map(Number) : null
-	if (quad && quad.some((octet) => octet > 255)) return null
+	const quad = dotted ? Arr.map(Str.split(".")(dotted[2]), Number) : null
+	if (quad && Arr.some(quad, (octet) => octet > 255)) return null
 	const hexTail = quad
 		? `${((quad[0] << 8) | quad[1]).toString(16)}:${((quad[2] << 8) | quad[3]).toString(16)}`
 		: null
 	const head = dotted && hexTail ? `${dotted[1]}${hexTail}` : inner
-	const halves = head.split("::")
+	const halves = Str.split("::")(head)
 	if (halves.length > 2) return null
-	const parse = (part: string) => (part === "" ? [] : part.split(":"))
+	const parse = (part: string) => (part === "" ? [] : Str.split(":")(part))
 	const left = parse(halves[0])
 	const right = halves.length === 2 ? parse(halves[1]) : []
 	const missing = 8 - left.length - right.length
 	if (halves.length === 2 ? missing < 1 : missing !== 0) return null
 	const groups = [...left, ...Array.from({ length: missing }, () => "0"), ...right]
-	if (!groups.every((group) => /^[0-9a-f]{1,4}$/i.test(group))) return null
-	return groups.map((group) => Number.parseInt(group, 16))
+	if (!Arr.every(groups, (group) => /^[0-9a-f]{1,4}$/i.test(group))) return null
+	return Arr.map(groups, (group) => Number.parseInt(group, 16))
 }
 
 const dottedFrom = (hi: number, lo: number): string =>
 	`${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`
 
 const zeroed = (groups: ReadonlyArray<number>, from: number, to: number): boolean =>
-	groups.slice(from, to).every((group) => group === 0)
+	Arr.every(groups.slice(from, to), (group) => group === 0)
 
 /**
  * What an IPv6 literal delivers to, judged on its groups:
@@ -132,9 +132,9 @@ const isPrivateIPv6Groups = (groups: ReadonlyArray<number>): boolean => {
 
 /** A bracketed host that is not a well-formed IPv6 literal is refused, not guessed at. */
 const isPrivateIPv6 = (host: string): boolean => {
-	const inner = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host
+	const inner = Str.startsWith("[")(host) && Str.endsWith("]")(host) ? Str.slice(1, -1)(host) : host
 	const groups = ipv6Groups(inner)
-	if (groups === null) return host.startsWith("[") || inner.includes(":")
+	if (groups === null) return Str.startsWith("[")(host) || Str.includes(":")(inner)
 	return isPrivateIPv6Groups(groups)
 }
 
@@ -144,8 +144,8 @@ const isPrivateIPv6 = (host: string): boolean => {
  * keyed on the bare name never matched it. Strip it before every name comparison.
  */
 const canonicalHostname = (hostname: string): string => {
-	const lower = hostname.toLowerCase()
-	return lower.endsWith(".") ? lower.slice(0, -1) : lower
+	const lower = Str.toLowerCase(hostname)
+	return Str.endsWith(".")(lower) ? Str.slice(0, -1)(lower) : lower
 }
 
 const isPrivateHost = (hostname: string): boolean => {
@@ -161,7 +161,7 @@ const isPrivateHost = (hostname: string): boolean => {
  * schemes, embedded credentials, and loopback / private / metadata hosts.
  */
 export const parseExternalUrl = (raw: string): Result.Result<URL, UrlValidationError> => {
-	const trimmed = raw.trim()
+	const trimmed = Str.trim(raw)
 	if (trimmed.length === 0) {
 		return Result.fail(new UrlValidationError({ message: "URL is required" }))
 	}
@@ -212,12 +212,14 @@ const MAX_REDIRECTS = 5
 const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"] as const
 
 const withoutCredentialHeaders = (request: HttpClientRequest.HttpClientRequest) =>
-	CREDENTIAL_HEADERS.reduce((next, name) => HttpClientRequest.removeHeader(next, name), request)
+	Arr.reduce(CREDENTIAL_HEADERS, request, (next, name) => HttpClientRequest.removeHeader(next, name))
 
 const withoutHeaders = (request: HttpClientRequest.HttpClientRequest, keep: ReadonlySet<string>) =>
-	Object.keys(request.headers)
-		.filter((name) => !keep.has(name.toLowerCase()))
-		.reduce((next, name) => HttpClientRequest.removeHeader(next, name), request)
+	Arr.reduce(
+		Arr.filter(Object.keys(request.headers), (name) => !keep.has(Str.toLowerCase(name))),
+		request,
+		(next, name) => HttpClientRequest.removeHeader(next, name),
+	)
 
 /** How `guard` hands a request on to a redirect's destination. */
 export interface GuardOptions {
@@ -265,7 +267,9 @@ export type ResolveHost = (hostname: string) => Effect.Effect<ReadonlyArray<stri
 
 /** A resolved address, judged by the same rules as a literal host. Unparseable answers are refused. */
 export const isPrivateAddress = (address: string): boolean =>
-	address.includes(":") ? isPrivateIPv6(address) : !IPV4_LITERAL_RE.test(address) || isPrivateIPv4(address)
+	Str.includes(":")(address)
+		? isPrivateIPv6(address)
+		: !IPV4_LITERAL_RE.test(address) || isPrivateIPv4(address)
 
 /**
  * The TLS name a guarded hop verifies when it dials a pinned address, null when the URL host is
@@ -289,19 +293,19 @@ const pinTo =
 	): Effect.Effect<Dial, UrlValidationError | HostResolutionError> =>
 		Effect.gen(function* () {
 			const hostname = canonicalHostname(url.hostname)
-			if (IPV4_LITERAL_RE.test(hostname) || hostname.startsWith("["))
+			if (IPV4_LITERAL_RE.test(hostname) || Str.startsWith("[")(hostname))
 				return { request, serverName: null }
 			const addresses = yield* resolve(hostname)
 			// Every answer is checked, so any is safe; IPv4 first because not every
 			// network that resolves AAAA can route IPv6.
-			const first = addresses.find((address) => !address.includes(":")) ?? addresses[0]
-			if (first === undefined || addresses.some(isPrivateAddress)) {
+			const first = addresses.find((address) => !Str.includes(":")(address)) ?? addresses[0]
+			if (first === undefined || Arr.some(addresses, isPrivateAddress)) {
 				return yield* new UrlValidationError({
 					message: `URL host '${url.hostname}' resolves to a loopback, private, or metadata address`,
 				})
 			}
 			const pinned = new URL(url)
-			pinned.hostname = first.includes(":") ? `[${first}]` : first
+			pinned.hostname = Str.includes(":")(first) ? `[${first}]` : first
 			return {
 				request: HttpClientRequest.setUrl(request, pinned).pipe(
 					HttpClientRequest.setHeader("host", url.host),
@@ -317,7 +321,7 @@ const guardWith = <E, R, E2>(
 ): HttpClient.HttpClient.With<E | E2 | UrlValidationError, R> => {
 	const strict = options.strictRedirects === true
 	const ownHeaders: ReadonlySet<string> = new Set(
-		(options.ownHeaders ?? []).map((name) => name.toLowerCase()),
+		Arr.map(options.ownHeaders ?? [], (name) => Str.toLowerCase(name)),
 	)
 	const send = ({ request, serverName }: Dial) =>
 		Effect.serviceOption(FetchHttpClient.RequestInit).pipe(
@@ -430,9 +434,8 @@ export const describeHttpClientError = (error: HttpClientError.HttpClientError):
 	// Some runtimes put the URL in the cause's own message; keep only its origin.
 	const url = Url.make(request.url, request.urlParams, Option.getOrUndefined(request.hash))
 	if (Result.isFailure(url)) return message
-	return [url.success.href, request.url].reduce(
-		(redacted, secret) => redacted.split(secret).join(url.success.origin),
-		message,
+	return Arr.reduce([url.success.href, request.url], message, (redacted, secret) =>
+		Arr.join(Str.split(secret)(redacted), url.success.origin),
 	)
 }
 

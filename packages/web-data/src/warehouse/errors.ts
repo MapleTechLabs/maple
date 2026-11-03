@@ -1,4 +1,4 @@
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import {
 	QueryEngineExecuteRequest,
 	coerceErrorsByTypeRows,
@@ -344,7 +344,7 @@ const getErrorDetailTracesEffect = Effect.fn("QueryEngine.getErrorDetailTraces")
 	)
 
 	return {
-		data: result.data.map((raw) => ({
+		data: Arr.map(result.data, (raw) => ({
 			traceId: raw.traceId,
 			startTime: new Date(warehouseDateTimeToIso(raw.startTime)),
 			durationMicros: raw.durationMicros,
@@ -452,6 +452,6 @@ const getErrorsSparkEffect = Effect.fn("QueryEngine.getErrorsSpark")(function* (
 	}
 
 	return {
-		data: [...byFingerprint].map(([fingerprintHash, points]) => ({ fingerprintHash, points })),
+		data: Arr.map([...byFingerprint], ([fingerprintHash, points]) => ({ fingerprintHash, points })),
 	}
 })

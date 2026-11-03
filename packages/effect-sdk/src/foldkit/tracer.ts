@@ -7,7 +7,7 @@
 //   `update` passes the navigation id in through the args), and
 // - drop a Command that finished without starting a child span: the UI work
 //   (focus, scroll, hover delays) that would otherwise flood the traces.
-import { Context, Exit, Option, Tracer } from "effect"
+import { Context, Exit, Option, Tracer, Record as Rec } from "effect"
 
 /** Internal arg carrying a navigation id from `update` to the tracer. Never exported. */
 export const NAVIGATION_ARG = "maple.foldkit.navigation_id"
@@ -73,7 +73,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 			sampled: navigation.sampled,
 		})
 		span.attribute("url.path", navigation.path)
-		for (const [key, value] of Object.entries(navigation.attributes ?? {})) span.attribute(key, value)
+		for (const [key, value] of Rec.toEntries(navigation.attributes ?? {})) span.attribute(key, value)
 		navigation.span = span
 		return span
 	}
@@ -296,7 +296,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 				// A navigation sampled out keeps its phases out even once it has closed.
 				sampled: navigation?.sampled ?? true,
 			})
-			for (const key of Object.keys(attributes)) span.attribute(key, attributes[key])
+			for (const key of Rec.keys(attributes)) span.attribute(key, attributes[key])
 			span.end(endTime, Exit.void)
 		}
 		if (inner !== undefined) return record(inner)

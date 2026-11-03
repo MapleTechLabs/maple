@@ -1,5 +1,5 @@
 import { TraceData } from "@maple/views/traces/trace-data"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import type { CacheValue, QueryKey } from "./cache-store"
 
 // `useLocalTraceDetail`'s key and data (`buildTraceDetail`'s `TraceDetail`) in the result cache.
@@ -15,7 +15,14 @@ export const traceToCached = (maybeTrace: Option.Option<TraceData>) =>
 			spans: trace.spans,
 			rootSpans: trace.rootSpans,
 			totalDurationMs: trace.totalDurationMs,
-			services: [...new Set(trace.spans.map((span) => span.serviceName).filter(Boolean))],
+			services: [
+				...new Set(
+					Arr.filter(
+						Arr.map(trace.spans, (span) => span.serviceName),
+						Boolean,
+					),
+				),
+			],
 			traceStartTime: trace.traceStartTime ?? "",
 		}),
 	})
@@ -36,5 +43,8 @@ export const traceFromCached =
 		if (!isCachedDetail(value)) return Option.none()
 		if (value.spans.length === 0) return Option.some(Option.none())
 		const { spans, rootSpans, totalDurationMs, traceStartTime } = value
-		return Option.map(decodeTrace({ traceId, spans, rootSpans, totalDurationMs, traceStartTime }), Option.some)
+		return Option.map(
+			decodeTrace({ traceId, spans, rootSpans, totalDurationMs, traceStartTime }),
+			Option.some,
+		)
 	}

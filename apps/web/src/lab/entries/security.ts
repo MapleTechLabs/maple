@@ -1,4 +1,4 @@
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -113,7 +113,7 @@ const update = (model: Model, message: Message) =>
 			const next = TabsUpdate.update(model.tabs, inner, context)
 			return {
 				model: { ...model, tabs: next.model },
-				commands: Command.mapMessages((next.commands ?? []).filter(isLocalCommand), (child) =>
+				commands: Command.mapMessages(Arr.filter(next.commands ?? [], isLocalCommand), (child) =>
 					Message.GotTabsMessage({ message: child }),
 				),
 			}
@@ -123,7 +123,7 @@ const update = (model: Model, message: Message) =>
 			const next = RunUpdate.update(model.run, inner, context)
 			return {
 				model: { ...model, run: next.model },
-				commands: Command.mapMessages((next.commands ?? []).filter(isLocalCommand), (child) =>
+				commands: Command.mapMessages(Arr.filter(next.commands ?? [], isLocalCommand), (child) =>
 					Message.GotRunMessage({ message: child }),
 				),
 			}
@@ -133,7 +133,7 @@ const update = (model: Model, message: Message) =>
 			const next = FindingUpdate.update(model.finding, inner, context)
 			return {
 				model: { ...model, finding: next.model },
-				commands: Command.mapMessages((next.commands ?? []).filter(isLocalCommand), (child) =>
+				commands: Command.mapMessages(Arr.filter(next.commands ?? [], isLocalCommand), (child) =>
 					Message.GotFindingMessage({ message: child }),
 				),
 			}
@@ -143,7 +143,7 @@ const update = (model: Model, message: Message) =>
 			const next = TelemetryUpdate.update(model.telemetry, inner, context)
 			return {
 				model: { ...model, telemetry: next.model },
-				commands: Command.mapMessages((next.commands ?? []).filter(isLocalCommand), (child) =>
+				commands: Command.mapMessages(Arr.filter(next.commands ?? [], isLocalCommand), (child) =>
 					Message.GotTelemetryMessage({ message: child }),
 				),
 			}
@@ -153,7 +153,7 @@ const update = (model: Model, message: Message) =>
 			const next = DependenciesUpdate.update(model.dependencies, inner, context)
 			return {
 				model: { ...model, dependencies: next.model },
-				commands: Command.mapMessages((next.commands ?? []).filter(isLocalCommand), (child) =>
+				commands: Command.mapMessages(Arr.filter(next.commands ?? [], isLocalCommand), (child) =>
 					Message.GotDependenciesMessage({ message: child }),
 				),
 			}

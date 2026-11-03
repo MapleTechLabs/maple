@@ -6,6 +6,7 @@ import type {
 	CloudflareZoneRow,
 } from "@maple/web-data/warehouse/cloudflare-infra"
 import { mergeWorkerRows, sortWorkersByAttention, workerHealth, zoneHealth } from "./list-model"
+import { Array as Arr } from "effect"
 
 const zone = (requests: number, errorRate: number, clientErrorRate: number): CloudflareZoneRow => ({
 	serviceName: "cloudflare/z",
@@ -87,7 +88,9 @@ describe("mergeWorkerRows", () => {
 
 	it("keeps scripts that only host Durable Objects", () => {
 		const rows = mergeWorkerRows([], [durable("maple-sandbox", 208, 0)])
-		expect(rows.map((r) => [r.scriptName, r.requests, r.doRequests])).toEqual([["maple-sandbox", 0, 208]])
+		expect(Arr.map(rows, (r) => [r.scriptName, r.requests, r.doRequests])).toEqual([
+			["maple-sandbox", 0, 208],
+		])
 	})
 
 	it("keeps same-named Workers in two accounts apart and says so", () => {
@@ -98,7 +101,7 @@ describe("mergeWorkerRows", () => {
 			],
 			[durable("api-gateway", 900, 0.5, "acct-staging")],
 		)
-		expect(rows.map((r) => [r.accountId, r.requests, r.doRequests, r.nameInOtherAccounts])).toEqual([
+		expect(Arr.map(rows, (r) => [r.accountId, r.requests, r.doRequests, r.nameInOtherAccounts])).toEqual([
 			["acct-prod", 4_800_000, 0, true],
 			["acct-staging", 120_000, 900, true],
 		])
@@ -106,7 +109,7 @@ describe("mergeWorkerRows", () => {
 
 	it("flags per-PR preview deploys", () => {
 		const rows = mergeWorkerRows([worker("maple-api-pr-1336", 16, 0), worker("maple-api", 15_820, 0)], [])
-		expect(rows.map((r) => r.isPreview)).toEqual([true, false])
+		expect(Arr.map(rows, (r) => r.isPreview)).toEqual([true, false])
 	})
 })
 
@@ -116,7 +119,10 @@ describe("sortWorkersByAttention", () => {
 			[worker("maple-api", 15_820, 0.011), worker("hazel-backend", 159, 1)],
 			[],
 		)
-		expect(sortWorkersByAttention(rows).map((r) => r.scriptName)).toEqual(["hazel-backend", "maple-api"])
+		expect(Arr.map(sortWorkersByAttention(rows), (r) => r.scriptName)).toEqual([
+			"hazel-backend",
+			"maple-api",
+		])
 	})
 
 	it("puts a small failing Worker above a busy healthy one", () => {
@@ -128,7 +134,7 @@ describe("sortWorkersByAttention", () => {
 			],
 			[],
 		)
-		expect(sortWorkersByAttention(rows).map((r) => r.scriptName)).toEqual([
+		expect(Arr.map(sortWorkersByAttention(rows), (r) => r.scriptName)).toEqual([
 			"hazel-backend",
 			"maple-alerting",
 			"maple-api",

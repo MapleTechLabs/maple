@@ -2,7 +2,7 @@ import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant } from "@maple/domain/http"
 import { isoTimestamp, MapleApiV2, paginateOffsetQuery } from "@maple/domain/http/v2"
 import type { V2AgentFeedback } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import {
 	AgentFeedbackService,
@@ -59,7 +59,7 @@ export const HttpV2AgentFeedbackLive = HttpApiBuilder.group(MapleApiV2, "agentFe
 					const page = yield* paginateOffsetQuery(query, (window) =>
 						service
 							.list(tenant.orgId, window)
-							.pipe(Effect.map((rows) => rows.map(toV2AgentFeedback))),
+							.pipe(Effect.map((rows) => Arr.map(rows, toV2AgentFeedback))),
 					)
 					return { object: "list" as const, ...page }
 				}),

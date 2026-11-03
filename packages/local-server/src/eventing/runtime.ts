@@ -1,5 +1,17 @@
 // BOUNDARY: activation candidates and decoded OTLP bodies arrive unparsed; this runtime decodes them.
-import { Context, DateTime, Duration, Effect, Exit, Layer, Result, Schema, SynchronizedRef } from "effect"
+import {
+	Context,
+	DateTime,
+	Duration,
+	Effect,
+	Exit,
+	Layer,
+	Result,
+	Schema,
+	SynchronizedRef,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { createHash } from "node:crypto"
 import {
 	canonicalJson,
@@ -194,9 +206,12 @@ export const sourceOccurrenceFingerprint = (
 		occurredAt: signal.occurredAt,
 		observedAt: signal.observedAt,
 		subject: signal.subject,
-		fields: [...signal.fields.entries()]
-			.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-			.map(([key, value]) => ({ key, value })),
+		fields: Arr.map(
+			[...signal.fields.entries()].sort(([left], [right]) =>
+				left < right ? -1 : left > right ? 1 : 0,
+			),
+			([key, value]) => ({ key, value }),
+		),
 		data: signal.data,
 	}
 	return Result.succeed(`sha256:${createHash("sha256").update(canonicalJson(content)).digest("hex")}`)
@@ -247,7 +262,7 @@ export class LocalEventingRuntime extends Context.Service<LocalEventingRuntime, 
 		// Commits are serialized by the ref, so a stale activation always fails as a conflict.
 		const registry = yield* SynchronizedRef.make<RegistryState>({
 			compiled,
-			activeSourceKinds: new Set(specs.map(({ sourceKind }) => sourceKind)),
+			activeSourceKinds: new Set(Arr.map(specs, ({ sourceKind }) => sourceKind)),
 			generation: 0,
 		})
 
@@ -303,7 +318,7 @@ export class LocalEventingRuntime extends Context.Service<LocalEventingRuntime, 
 								{
 									compiled: activation.compiled,
 									activeSourceKinds: new Set(
-										activation.next.map(({ sourceKind }) => sourceKind),
+										Arr.map(activation.next, ({ sourceKind }) => sourceKind),
 									),
 									generation: state.generation + 1,
 								} satisfies RegistryState,
@@ -417,7 +432,7 @@ export class LocalEventingRuntime extends Context.Service<LocalEventingRuntime, 
 						continue
 					}
 				}
-				if (isRetiredUtcDay(occurrence.occurredAt.slice(0, 10))) continue
+				if (isRetiredUtcDay(Str.slice(0, 10)(occurrence.occurredAt))) continue
 				const result = yield* Effect.fromResult(snapshot.evaluate(occurrence, acceptedAt))
 				yield* observeEventing({
 					operation: "projection",

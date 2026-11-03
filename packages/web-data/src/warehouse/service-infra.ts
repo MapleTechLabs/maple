@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import {
 	ServiceName,
 	ServiceRuntimesRequest,
@@ -58,7 +58,7 @@ export const getServiceWorkloads = Effect.fn("QueryEngine.getServiceWorkloads")(
 	)
 
 	return {
-		workloads: result.data.map((row) => ({
+		workloads: Arr.map(result.data, (row) => ({
 			serviceName: row.serviceName,
 			workloadKind: row.workloadKind,
 			workloadName: row.workloadName,

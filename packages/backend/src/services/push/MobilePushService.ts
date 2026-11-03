@@ -7,7 +7,7 @@ import type {
 	OrgId,
 } from "@maple/domain/http"
 import { PublicIdPrefixes, encodePublicId } from "@maple/domain/http/v2"
-import { Cause, Clock, Context, Duration, Effect, Layer } from "effect"
+import { Cause, Clock, Context, Duration, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { ApnsClient, type ApnsPush } from "@maple/backend/platform/Apns"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import {
@@ -205,7 +205,7 @@ const RENOTIFY_TAIL_INTERVAL_MINUTES = 720
 const escalationRungsBelow = (openForMs: number): number => {
 	const minutes = openForMs / 60_000
 	const last = RENOTIFY_ESCALATION_MINUTES[RENOTIFY_ESCALATION_MINUTES.length - 1]
-	const rungs = RENOTIFY_ESCALATION_MINUTES.filter((rung) => minutes >= rung).length
+	const rungs = Arr.filter(RENOTIFY_ESCALATION_MINUTES, (rung) => minutes >= rung).length
 	return minutes >= last ? rungs + Math.floor((minutes - last) / RENOTIFY_TAIL_INTERVAL_MINUTES) : rungs
 }
 
@@ -338,10 +338,14 @@ export const renderIncidentPush = (
 		case "renotify":
 			return {
 				alert: {
-					title: `Still ${severity.toLowerCase()} · ${rule}`,
-					subtitle: [service, openFor === null ? null : `open ${openFor}`]
-						.filter((part) => part !== null)
-						.join(" · "),
+					title: `Still ${Str.toLowerCase(severity)} · ${rule}`,
+					subtitle: Arr.join(
+						Arr.filter(
+							[service, openFor === null ? null : `open ${openFor}`],
+							(part) => part !== null,
+						),
+						" · ",
+					),
 					body: `${label} ${observed} over ${formatWindow(event.windowMinutes)}.`,
 				},
 				interruptionLevel: "active",
@@ -445,7 +449,7 @@ export const buildLiveActivitySeries = (
 	event: IncidentPushEvent,
 	recentValues: ReadonlyArray<number>,
 ): ReadonlyArray<number> => {
-	const history = [...recentValues].reverse().filter((value) => Number.isFinite(value))
+	const history = Arr.filter([...recentValues].reverse(), (value) => Number.isFinite(value))
 	const series = event.value === null ? history : [...history, event.value]
 	return series.slice(-LIVE_ACTIVITY_SERIES_POINTS)
 }

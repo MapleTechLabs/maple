@@ -2,7 +2,7 @@
 // (https://api.supabase.com/api/v1-json, v2-json for log drains); extra fields are ignored so
 // additions never break decode.
 import { SupabaseProjectRef } from "@maple/domain/primitives"
-import { Duration, Effect, Option, Redacted, Schedule, Schema } from "effect"
+import { Duration, Effect, Option, Redacted, Schedule, Schema, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 
 const REQUEST_TIMEOUT = Duration.seconds(20)
@@ -66,7 +66,7 @@ const upstreamDetail = (text: string) =>
 		onNone: () => "",
 		onSome: (body) => {
 			const detail = "error" in body ? (body.error.description ?? body.error.message) : body.message
-			return detail === undefined ? "" : `: ${detail.slice(0, 300)}`
+			return detail === undefined ? "" : `: ${Str.slice(0, 300)(detail)}`
 		},
 	})
 
@@ -179,7 +179,7 @@ export const listOrganizations = Effect.fn("SupabaseApi.listOrganizations")(func
 		accessToken,
 		"listing organizations",
 	)
-	const organizations = items.flatMap((item) => Option.toArray(decodeOrganization(item)))
+	const organizations = Arr.flatMap(items, (item) => Option.toArray(decodeOrganization(item)))
 	// A dropped org would make a partial listing look complete, so any undecodable item fails.
 	if (organizations.length !== items.length) {
 		return yield* new SupabaseApiError({
@@ -200,7 +200,7 @@ export const listProjects = Effect.fn("SupabaseApi.listProjects")(function* (
 	accessToken: string,
 ) {
 	const items = yield* getArray(httpClient, `${baseUrl}/v1/projects`, accessToken, "listing projects")
-	const projects = items.flatMap((item) => Option.toArray(decodeProject(item)))
+	const projects = Arr.flatMap(items, (item) => Option.toArray(decodeProject(item)))
 	yield* Effect.annotateCurrentSpan({
 		"maple.supabase.projects_listed": items.length,
 		"maple.supabase.projects_skipped": items.length - projects.length,
@@ -379,7 +379,7 @@ export const listLogDrains = Effect.fn("SupabaseApi.listLogDrains")(function* (
 		return Option.none<ReadonlyArray<SupabaseLogDrain>>()
 	}
 	const list = yield* decodeDrainList(text.value).pipe(Effect.mapError(() => unexpectedBody(what)))
-	const drains = list.data.flatMap((item) => Option.toArray(decodeDrain(item)))
+	const drains = Arr.flatMap(list.data, (item) => Option.toArray(decodeDrain(item)))
 	yield* Effect.annotateCurrentSpan({
 		"maple.supabase.log_drains_listed": list.data.length,
 		"maple.supabase.log_drains_skipped": list.data.length - drains.length,

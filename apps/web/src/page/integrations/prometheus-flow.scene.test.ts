@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import * as Field from "@maple/views/ui/field"
@@ -22,7 +22,7 @@ const view = withViewInputs(pageView, { context })()
 const inner = (model: Model, message: IntegrationMessage) =>
 	pageUpdate(model, Message.GotIntegrationsMessage({ message }))
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const URL_VALUE = "https://redis.internal:9121/metrics"
 
@@ -186,9 +186,10 @@ describe("prometheus connect flow", () => {
 	})
 
 	test("Go live reads the first scheduled scrape from the target's checks", () => {
-		const live = [Message.ClickedContinue(), Message.ClickedContinue()].reduce(
-			(model, message) => pageUpdate(model, message).model,
+		const live = Arr.reduce(
+			[Message.ClickedContinue(), Message.ClickedContinue()],
 			probed(saved("prometheus"), true),
+			(model, message) => pageUpdate(model, message).model,
 		)
 		scene(
 			{ update: pageUpdate, view },

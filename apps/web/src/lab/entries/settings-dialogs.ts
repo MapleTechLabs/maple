@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2ApiKeyWithSecret, V2Source } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -194,8 +194,8 @@ const ignore = () => Message.Ignored()
 const disconnectView = Submodel.defineView<IntegrationsModel.Model, IntegrationsMessage>((model, h) =>
 	disconnectDialog(h, model, "linear"),
 )
-const dashboardView = Submodel.defineView<DashboardListModel.Model, DashboardListMessage>(
-	(model, h) => deleteDialog(h, model),
+const dashboardView = Submodel.defineView<DashboardListModel.Model, DashboardListMessage>((model, h) =>
+	deleteDialog(h, model),
 )
 const sourceView = Submodel.defineView<SourceDetailModel.Model, SourceMessage>((model, h) =>
 	settingsTab(h, model, source),
@@ -271,11 +271,13 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 		[
 			h.nav(
 				[h.Class("flex flex-wrap gap-2 text-xs")],
-				ITEMS.map((item) =>
+				Arr.map(ITEMS, (item) =>
 					h.a(
 						[
 							h.Href(`/lab/settings-dialogs?item=${item}`),
-							h.Class(item === model.item ? "font-medium text-foreground" : "text-muted-foreground"),
+							h.Class(
+								item === model.item ? "font-medium text-foreground" : "text-muted-foreground",
+							),
 						],
 						[item],
 					),
@@ -287,7 +289,9 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 
 export const lab = defineLab("Settings dialogs", {
 	Model,
-	init: () => ({ model: { item: new URLSearchParams(window.location.search).get("item") ?? "disconnect" } }),
+	init: () => ({
+		model: { item: new URLSearchParams(window.location.search).get("item") ?? "disconnect" },
+	}),
 	update: (model) => ({ model }),
 	view,
 })

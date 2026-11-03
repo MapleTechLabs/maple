@@ -12,6 +12,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `PlatformPicker`: the Source step.
 
@@ -93,7 +94,7 @@ export const platformPicker = (h: H, model: Model): Html =>
 				h,
 				"Send with OpenTelemetry",
 				"Your code or agent pushes data to Maple with an ingest key",
-				PUSH_PLATFORMS.map((platform: PushSourcePlatform) =>
+				Arr.map(PUSH_PLATFORMS, (platform: PushSourcePlatform) =>
 					card(
 						h,
 						platform,
@@ -108,7 +109,7 @@ export const platformPicker = (h: H, model: Model): Html =>
 				h,
 				"Connect an integration",
 				"Maple reads from your provider",
-				DATA_INTEGRATIONS.map((integration) =>
+				Arr.map(DATA_INTEGRATIONS, (integration) =>
 					card(
 						h,
 						integration,

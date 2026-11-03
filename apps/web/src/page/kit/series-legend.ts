@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr } from "effect"
 
 export type SeriesLegendSwatch = "dot" | "square" | "line" | "dashed"
 
@@ -66,13 +67,20 @@ export const seriesLegend = <M>(
 	return h.div(
 		[h.Class(cn(STYLES.root, options.className))],
 		[
-			...shown.map((item) =>
+			...Arr.map(shown, (item) =>
 				h.span(
 					[h.Key(item.key), h.Class(STYLES.item)],
 					[
 						...(item.color === undefined
 							? []
-							: [swatch(h, item.swatch ?? options.swatch ?? "square", item.color, STYLES.swatch)]),
+							: [
+									swatch(
+										h,
+										item.swatch ?? options.swatch ?? "square",
+										item.color,
+										STYLES.swatch,
+									),
+								]),
 						...(item.label === undefined
 							? []
 							: [

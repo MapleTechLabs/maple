@@ -1,4 +1,4 @@
-import { Effect, Fiber, Stream } from "effect"
+import { Effect, Fiber, Stream, Array as Arr } from "effect"
 import { describe, expect, test, vi } from "vitest"
 
 // The root's listeners target `window` (an EventTarget is all they need here).
@@ -21,6 +21,9 @@ describe("time zone preference changes", () => {
 			window.dispatchEvent(new Event(TIME_ZONE_PREFERENCE_EVENT))
 		}, 10)
 		const messages = await Effect.runPromise(Fiber.join(fiber)).finally(() => clearInterval(timer))
-		expect(messages.map((message) => message._tag)).toEqual(["ChangedTimeZonePreference", "ChangedTimeZonePreference"])
+		expect(Arr.map(messages, (message) => message._tag)).toEqual([
+			"ChangedTimeZonePreference",
+			"ChangedTimeZonePreference",
+		])
 	})
 })

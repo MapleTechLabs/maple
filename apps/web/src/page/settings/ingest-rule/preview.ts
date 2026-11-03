@@ -8,7 +8,7 @@ import {
 	type RuleRecord,
 	spanSampleToRecord,
 } from "@maple/ingest-rules"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 const encodeAttrJson = Schema.encodeSync(
 	Schema.fromJsonString(Schema.Unknown, {
@@ -56,7 +56,9 @@ export type Samples = typeof Samples.Type
 export const PREVIEW_SALT = "maple-settings-preview"
 
 export const recordsOf = (samples: Samples): ReadonlyArray<RuleRecord> =>
-	samples._tag === "logs" ? samples.rows.map(logSampleToRecord) : samples.rows.map(spanSampleToRecord)
+	samples._tag === "logs"
+		? Arr.map(samples.rows, logSampleToRecord)
+		: Arr.map(samples.rows, spanSampleToRecord)
 
 export interface ValueChange {
 	readonly where: string
@@ -81,7 +83,7 @@ const show = (value: AttrValue | undefined): string =>
 	value === undefined ? "" : typeof value === "string" ? value : encodeAttrJson(value)
 
 const mapChanges = (where: string, before: AttrMap, after: AttrMap): ReadonlyArray<ValueChange> =>
-	Object.keys(before).flatMap((key) => {
+	Arr.flatMap(Object.keys(before), (key) => {
 		const was = show(before[key])
 		const now = key in after ? show(after[key]) : null
 		return now === was ? [] : [{ where, key, before: was, after: now }]
@@ -103,7 +105,7 @@ const changesOf = (before: RuleRecord, after: RuleRecord): ReadonlyArray<ValueCh
 				},
 			]
 		: []),
-	...(before.events ?? []).flatMap((event, index) =>
+	...Arr.flatMap(before.events ?? [], (event, index) =>
 		mapChanges(`event ${event.name}`, event.attributes, after.events?.[index]?.attributes ?? {}),
 	),
 ]
@@ -111,7 +113,7 @@ const changesOf = (before: RuleRecord, after: RuleRecord): ReadonlyArray<ValueCh
 /** Runs the draft over the samples with the same engine the gateway's twin uses. */
 export const runPreview = (spec: IngestRuleSpec, records: ReadonlyArray<RuleRecord>): PreviewResult => {
 	const compiled = compileRules([spec], PREVIEW_SALT)
-	const rows = records.flatMap((record, index): ReadonlyArray<PreviewRow> => {
+	const rows = Arr.flatMap(records, (record, index): ReadonlyArray<PreviewRow> => {
 		// Records without a trace id sample at random in the gateway; a fixed draw per row keeps
 		// the preview's counts steady between renders.
 		const outcome = applyRules(compiled, record, () => (((index * 0.618_033_988_75) % 1) + 1) % 1)
@@ -121,8 +123,8 @@ export const runPreview = (spec: IngestRuleSpec, records: ReadonlyArray<RuleReco
 	})
 	return {
 		total: records.length,
-		dropped: rows.filter((row) => row._tag === "dropped").length,
-		redacted: rows.filter((row) => row._tag === "redacted").length,
+		dropped: Arr.filter(rows, (row) => row._tag === "dropped").length,
+		redacted: Arr.filter(rows, (row) => row._tag === "redacted").length,
 		rows,
 	}
 }
@@ -134,15 +136,18 @@ export type Segment = { readonly isReplacement: boolean; readonly text: string }
 
 export const segmentsOf = (value: string): ReadonlyArray<Segment> => {
 	const matches = [...value.matchAll(REPLACEMENT)]
-	const ends = matches.map((match) => (match.index ?? 0) + match[0].length)
-	const segments = matches.flatMap((match, index) => {
+	const ends = Arr.map(matches, (match) => (match.index ?? 0) + match[0].length)
+	const segments = Arr.flatMap(matches, (match, index) => {
 		const start = match.index ?? 0
 		const previousEnd = index === 0 ? 0 : (ends[index - 1] ?? 0)
 		return [
-			{ isReplacement: false, text: value.slice(previousEnd, start) },
+			{ isReplacement: false, text: Str.slice(previousEnd, start)(value) },
 			{ isReplacement: true, text: match[0] },
 		]
 	})
-	const tail = value.slice(ends.at(-1) ?? 0)
-	return [...segments, { isReplacement: false, text: tail }].filter((segment) => segment.text.length > 0)
+	const tail = Str.slice(ends.at(-1) ?? 0)(value)
+	return Arr.filter(
+		[...segments, { isReplacement: false, text: tail }],
+		(segment) => segment.text.length > 0,
+	)
 }

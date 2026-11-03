@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { overlayIncidentId, StatusPageKeys, type StatusPageOverlayEntry } from "@maple/domain/status-page"
 import type { StatusPageId } from "@maple/domain/primitives"
@@ -126,7 +126,7 @@ describe("StatusPageReconciler", () => {
 				assert.deepStrictEqual(first, { imported: 2, cleared: 0 })
 				const incidents = yield* incidentsOf(testDb, pageId)
 				assert.deepStrictEqual(
-					incidents.map(({ title, status, impact, resolved, components }) => ({
+					Arr.map(incidents, ({ title, status, impact, resolved, components }) => ({
 						title,
 						status,
 						impact,
@@ -235,7 +235,7 @@ describe("StatusPageReconciler", () => {
 					},
 				)
 				assert.strictEqual(
-					results.reduce((sum, r) => sum + r.imported, 0),
+					Arr.reduce(results, 0, (sum, r) => sum + r.imported),
 					1,
 				)
 				const incidents = yield* incidentsOf(testDb, pageId)
@@ -368,7 +368,7 @@ describe("StatusPageReconciler.repairAutoIncidents", () => {
 				assert.strictEqual(yield* reconciler.repairAutoIncidents(), 1)
 				const incidents = yield* incidentsOf(testDb, pageId)
 				assert.deepStrictEqual(
-					incidents.map((i) => [i.title, i.status]),
+					Arr.map(incidents, (i) => [i.title, i.status]),
 					[["Checkout is down", "investigating"]],
 				)
 				assert.strictEqual(yield* reconciler.repairAutoIncidents(), 0)
@@ -405,7 +405,7 @@ describe("StatusPageReconciler.repairAutoIncidents", () => {
 				assert.strictEqual(yield* reconciler.repairAutoIncidents(), 2)
 				const incidents = yield* incidentsOf(testDb, pageId)
 				assert.deepStrictEqual(
-					incidents.map((i) => [i.id, i.status]),
+					Arr.map(incidents, (i) => [i.id, i.status]),
 					[
 						[orphanOfResolved, "resolved"],
 						[orphanOfMissing, "resolved"],

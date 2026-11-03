@@ -20,6 +20,7 @@ import { deleteMappingDialog, mappingsSection, recommendationsSection } from "./
 import { deleteRuleDialog, ingestRulesSection } from "./view-ingest-rules"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `IngestionSection`.
 
@@ -28,11 +29,11 @@ type H = HtmlBuilder<Message>
 /** `useIngestConnection`: the org's own (non-`demo-`) services and their span rate. */
 const connectionOf = (model: Model) => {
 	const rows = AsyncData.getOrElse(model.overview, () => [])
-	const real = rows.filter((row) => !row.serviceName.startsWith("demo-"))
+	const real = Arr.filter(rows, (row) => !Str.startsWith("demo-")(row.serviceName))
 	return {
 		isConnected: real.length > 0,
 		serviceCount: real.length,
-		spansPerMinute: real.reduce((sum, row) => sum + row.spanCount, 0) / 60,
+		spansPerMinute: Arr.reduce(real, 0, (sum, row) => sum + row.spanCount) / 60,
 		privateKey: AsyncData.getOrElse(
 			AsyncData.map(model.ingest, (keys) => keys.private_key),
 			() => "",
@@ -45,9 +46,9 @@ const unknownStatusBanner = (h: H): Html =>
 	panel(h, { className: "flex-row items-center gap-3 px-4 py-2.5" }, [
 		statusDot(h, { tone: "neutral", size: "lg" }),
 		h.span([h.Class("text-sm font-medium whitespace-nowrap")], ["Status unknown"]),
-		typography(h, { size: "xs", tone: "muted", truncate: true, className: "font-prose" },
-			["Couldn't check for incoming telemetry."],
-		),
+		typography(h, { size: "xs", tone: "muted", truncate: true, className: "font-prose" }, [
+			"Couldn't check for incoming telemetry.",
+		]),
 	])
 
 const statusBanner = (h: H, model: Model): Html => {
@@ -62,18 +63,20 @@ const statusBanner = (h: H, model: Model): Html => {
 			[h.Class("text-sm font-medium whitespace-nowrap")],
 			[connection.isConnected ? "Receiving telemetry" : "Waiting for telemetry"],
 		),
-		typography(h, { size: "xs", tone: "muted", mono: true, truncate: true },
-			[
-				connection.isConnected
-					? [
-							countLabel(connection.serviceCount, "service"),
-							spansPerMinute > 0 ? `${formatNumber(spansPerMinute)} spans/min` : null,
-						]
-							.filter((part) => part !== null)
-							.join(" · ")
-					: "watching for your first trace",
-			],
-		),
+		typography(h, { size: "xs", tone: "muted", mono: true, truncate: true }, [
+			connection.isConnected
+				? Arr.join(
+						Arr.filter(
+							[
+								countLabel(connection.serviceCount, "service"),
+								spansPerMinute > 0 ? `${formatNumber(spansPerMinute)} spans/min` : null,
+							],
+							(part) => part !== null,
+						),
+						" · ",
+					)
+				: "watching for your first trace",
+		]),
 		h.div([h.Class("grow")], []),
 		...(connection.isConnected
 			? [
@@ -82,7 +85,8 @@ const statusBanner = (h: H, model: Model): Html => {
 						{
 							variant: "ghost",
 							size: "sm",
-							className: "text-muted-foreground hover:text-foreground active:text-foreground gap-1.5",
+							className:
+								"text-muted-foreground hover:text-foreground active:text-foreground gap-1.5",
 							href: "/traces",
 						},
 						["Explore traces", icon(h, "ArrowRightIcon")],
@@ -196,29 +200,27 @@ const addServiceSection = (h: H, model: Model): Html => {
 							connectInstructions(h, model, connection.privateKey),
 						],
 					)
-				: hstack(h, { gap: "3", className: "px-4 py-3" },
-						[
-							frameworkIconStrip(h),
-							h.span(
-								[h.Class("text-muted-foreground min-w-0 grow truncate text-xs")],
-								["Next.js, Node.js, Python, Go, Effect and more"],
-							),
-							button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									attributes: [h.OnClick(Message.ClickedShowSetup())],
-								},
-								[
-									"Show setup",
-									icon(h, "ChevronRightIcon", {
-										attributes: [h.DataAttribute("icon", "inline-end")],
-									}),
-								],
-							),
-						],
-					),
+				: hstack(h, { gap: "3", className: "px-4 py-3" }, [
+						frameworkIconStrip(h),
+						h.span(
+							[h.Class("text-muted-foreground min-w-0 grow truncate text-xs")],
+							["Next.js, Node.js, Python, Go, Effect and more"],
+						),
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								attributes: [h.OnClick(Message.ClickedShowSetup())],
+							},
+							[
+								"Show setup",
+								icon(h, "ChevronRightIcon", {
+									attributes: [h.DataAttribute("icon", "inline-end")],
+								}),
+							],
+						),
+					]),
 		],
 	)
 }

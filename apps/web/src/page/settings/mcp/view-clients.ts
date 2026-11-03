@@ -11,6 +11,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `McpConnectedClientsSection`.
 
@@ -66,7 +67,7 @@ const content = (h: H, model: Model, inputs: Inputs): Html =>
 				? sectionNote(h, "No clients connected yet. Connect one above.")
 				: h.ul(
 						[h.Class("divide-y")],
-						rows.map((row) => connectionRow(h, row, inputs)),
+						Arr.map(rows, (row) => connectionRow(h, row, inputs)),
 					),
 	})
 

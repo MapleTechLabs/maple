@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { doc, filterNextCalls, renderToolDoc } from "./tool-doc"
+import { Array as Arr } from "effect"
 
 describe("renderToolDoc", () => {
 	it("renders sections in a fixed order", () => {
@@ -21,15 +22,18 @@ describe("renderToolDoc", () => {
 			next: [doc.next("error_detail", { fingerprint: "123", service: undefined }, "sample traces")],
 		})
 		expect(text).toBe(
-			[
-				"## Errors by Type",
-				"Warning: `servce` is not a parameter",
-				"Time range: a to b",
-				"Note: Window narrowed",
-				"| Error | Count |\n|---|---|\n| Boom \\| pipe | 3 |",
-				"Showing 1 of 9 error types. Next page: `find_errors offset=1`: the next page",
-				'Next:\n- `error_detail fingerprint="123"`: sample traces',
-			].join("\n\n"),
+			Arr.join(
+				[
+					"## Errors by Type",
+					"Warning: `servce` is not a parameter",
+					"Time range: a to b",
+					"Note: Window narrowed",
+					"| Error | Count |\n|---|---|\n| Boom \\| pipe | 3 |",
+					"Showing 1 of 9 error types. Next page: `find_errors offset=1`: the next page",
+					'Next:\n- `error_detail fingerprint="123"`: sample traces',
+				],
+				"\n\n",
+			),
 		)
 	})
 

@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 // Warm tiles for initials avatars, near the primary orange, so an org or a user without an image
 // gets the same colour wherever their avatar is drawn.
 const WARM_TONES: readonly [string, ...string[]] = [
@@ -10,6 +11,6 @@ const WARM_TONES: readonly [string, ...string[]] = [
 
 /** The tile classes for a seed (an org or user name): stable across renders and pages. */
 export const warmAvatarTone = (seed: string): string => {
-	const hash = Array.from(seed).reduce((acc, char) => (acc * 31 + (char.codePointAt(0) ?? 0)) >>> 0, 0)
+	const hash = Arr.reduce(Array.from(seed), 0, (acc, char) => (acc * 31 + (char.codePointAt(0) ?? 0)) >>> 0)
 	return WARM_TONES[hash % WARM_TONES.length] ?? WARM_TONES[0]
 }

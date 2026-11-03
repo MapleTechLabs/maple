@@ -9,7 +9,7 @@
 import { createHash, randomUUID } from "node:crypto"
 import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
-import { Effect, Schema, SchemaGetter } from "effect"
+import { Effect, Schema, SchemaGetter, Array as Arr, String as Str } from "effect"
 import { CHDB_VERSION } from "./version"
 import { Digest64, Fingerprint16, IsoOrUnknown } from "./identity-schema"
 import { durableRemove, durableRenameSync, durableWrite, durableWriteFileSync } from "./durable-files"
@@ -121,7 +121,7 @@ const pidFileNamesLiveProcess = (path: string): boolean =>
 	Effect.runSync(
 		Effect.try({
 			try: () => {
-				const pid = Number.parseInt(readFileSync(path, "utf8").trim(), 10)
+				const pid = Number.parseInt(Str.trim(readFileSync(path, "utf8")), 10)
 				if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return false
 				process.kill(pid, 0)
 				return true
@@ -298,7 +298,7 @@ const decodeMarkerV1 = Schema.decodeUnknownSync(StoreMarkerV1Schema)
 const decodeMarkerV2 = Schema.decodeUnknownSync(StoreMarkerV2Schema)
 
 const parseMarker = (value: unknown): StoreMarker => {
-	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+	if (typeof value !== "object" || value === null || Arr.isArray(value)) {
 		throw new Error("marker must contain a non-empty chdb string")
 	}
 	const formatVersion = (value as { readonly formatVersion?: unknown }).formatVersion
@@ -454,16 +454,13 @@ export const writeStoreMarkerDurable = async (
  * fingerprint and the v2 full digest. This is intentionally not described as
  * a physical-schema hash: regex normalization cannot parse SQL literals. */
 export const normalizedSchemaSql = (schemaSql: string): string =>
-	schemaSql
-		.replace(/--[^\n]*/g, "")
-		.replace(/\s+/g, " ")
-		.trim()
+	Str.trim(Str.replace(/\s+/g, " ")(Str.replace(/--[^\n]*/g, "")(schemaSql)))
 
 export const schemaDigest = (schemaSql: string): string =>
 	createHash("sha256").update(normalizedSchemaSql(schemaSql)).digest("hex")
 
 /** Legacy bundle fingerprint retained for compatibility and diagnostics. */
-export const schemaFingerprint = (schemaSql: string): string => schemaDigest(schemaSql).slice(0, 16)
+export const schemaFingerprint = (schemaSql: string): string => Str.slice(0, 16)(schemaDigest(schemaSql))
 
 /** True when a populated store was bootstrapped from a different schema
  * identity. The caller must choose migration or explicit reset. */

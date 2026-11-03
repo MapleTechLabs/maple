@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -102,7 +102,7 @@ const fakePlanetScale = (options: {
 		const url = new URL(request.url)
 		const json = (body: unknown, status = 200) =>
 			new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
-		if (url.pathname.endsWith("/oauth/token")) {
+		if (Str.endsWith("/oauth/token")(url.pathname)) {
 			return json({
 				access_token: "ps-access-token",
 				refresh_token: "ps-refresh-token",
@@ -154,9 +154,9 @@ const fakePlanetScale = (options: {
 			}
 		}
 		if (/\/databases\/[^/]+\/(branches|deploy-requests)/.test(url.pathname)) return json({ data: [] })
-		if (url.pathname.endsWith("/databases")) {
+		if (Str.endsWith("/databases")(url.pathname)) {
 			return json({
-				data: options.databases.map((database, index) => ({ id: `db_${index}`, ...database })),
+				data: Arr.map(options.databases, (database, index) => ({ id: `db_${index}`, ...database })),
 			})
 		}
 		return json([])
@@ -210,7 +210,7 @@ describe("PlanetScaleWebhookService", () => {
 				store
 					.get("ledger")?.[0]
 					?.events.filter(
-						(event) => event.startsWith("deploy_request.") || event === "keyspace.storage",
+						(event) => Str.startsWith("deploy_request.")(event) || event === "keyspace.storage",
 					),
 				[],
 			)

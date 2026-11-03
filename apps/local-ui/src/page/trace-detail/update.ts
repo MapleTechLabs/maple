@@ -5,7 +5,7 @@ import { LOG_LIMIT } from "@maple/views/traces/span-panel/command"
 import * as Waterfall from "@maple/web/page/traces/detail/waterfall"
 import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
 import * as Tabs from "@maple/views/ui/tabs"
-import { Option, Result } from "effect"
+import { Option, Result, Array as Arr } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import type { Cached } from "../../data/cached"
 import { accept, acceptCached, idle, requestKeepingFailure } from "@maple/views/data/keyed"
@@ -42,7 +42,11 @@ export const chain = (first: UpdateReturn, then: (model: Model) => UpdateReturn)
 export const loadedTrace = (model: Model) => Option.flatten(AsyncData.getData(model.trace.data))
 
 /** A filter-style hash change: replace the entry with the new params. */
-export const setParams = (model: Model, context: PageContext, updates: Record<string, string | null>): UpdateReturn => ({
+export const setParams = (
+	model: Model,
+	context: PageContext,
+	updates: Record<string, string | null>,
+): UpdateReturn => ({
 	model,
 	outMessage: replaceParams(context.location, updates),
 })
@@ -71,7 +75,12 @@ const onLoaded = (model: Model, context: PageContext): UpdateReturn =>
 	Option.match(loadedTrace(model), {
 		onNone: () => ({ model: { ...model, timeline: null, waterfall: null, flow: null, panel: null } }),
 		onSome: (trace) => {
-			const tab = enterTab(model, trace, viewOf(context), selectedSpanOf(trace, context)?.spanId ?? null)
+			const tab = enterTab(
+				model,
+				trace,
+				viewOf(context),
+				selectedSpanOf(trace, context)?.spanId ?? null,
+			)
 			return chain(tab, (next) => syncPanel(next, context))
 		},
 	})
@@ -154,10 +163,7 @@ const refresh = (model: Model, context: PageContext): UpdateReturn => {
 	)
 	return {
 		model: { ...model, trace, isRefreshing: true, panel: panel === null ? null : panel.model },
-		commands: [
-			...Option.toArray(fetch),
-			...liftPanel(panel?.commands),
-		],
+		commands: [...Option.toArray(fetch), ...liftPanel(panel?.commands)],
 		outMessage: PageOutMessage.RefetchedInPlace(),
 	}
 }
@@ -168,14 +174,28 @@ const back = (model: Model, context: PageContext): UpdateReturn => {
 	query.delete("spanId")
 	query.delete("view")
 	const search = query.toString()
-	return { model, outMessage: PageOutMessage.RequestedBack({ fallbackHash: `#/traces${search ? `?${search}` : ""}` }) }
+	return {
+		model,
+		outMessage: PageOutMessage.RequestedBack({ fallbackHash: `#/traces${search ? `?${search}` : ""}` }),
+	}
 }
 
 /** The cache answered first: show it (a first load mounts the tab and panel), then fetch unless fresh. */
-const settleCached = (model: Model, context: PageContext, key: string, cached: Cached<Option.Option<TraceData>>): UpdateReturn => {
+const settleCached = (
+	model: Model,
+	context: PageContext,
+	key: string,
+	cached: Cached<Option.Option<TraceData>>,
+): UpdateReturn => {
 	if (model.trace.key !== key) return { model }
-	const next: Model = { ...model, trace: acceptCached(model.trace, key, cached, cached.isFresh), traceUpdatedAtMs: cached.updatedAtMs }
-	const fetch: Commands = cached.isFresh ? [] : [FetchTrace({ key, traceId: model.traceId, apiBase: context.env.apiBase, readsCache: false })]
+	const next: Model = {
+		...model,
+		trace: acceptCached(model.trace, key, cached, cached.isFresh),
+		traceUpdatedAtMs: cached.updatedAtMs,
+	}
+	const fetch: Commands = cached.isFresh
+		? []
+		: [FetchTrace({ key, traceId: model.traceId, apiBase: context.env.apiBase, readsCache: false })]
 	return chain({ model: next, commands: fetch }, (loaded) => onLoaded(loaded, context))
 }
 
@@ -183,12 +203,26 @@ const settleCached = (model: Model, context: PageContext, key: string, cached: C
 const traceSignature = (trace: Option.Option<TraceData>): string =>
 	Option.match(trace, {
 		onNone: () => "none",
-		onSome: (t) => `${t.totalDurationMs}|${t.rootSpans.map((s) => s.spanId).join(",")}|${t.spans.map((s) => s.spanId).join(",")}`,
+		onSome: (t) =>
+			`${t.totalDurationMs}|${Arr.join(
+				Arr.map(t.rootSpans, (s) => s.spanId),
+				",",
+			)}|${Arr.join(
+				Arr.map(t.spans, (s) => s.spanId),
+				",",
+			)}`,
 	})
-const sameTrace = (a: Option.Option<TraceData>, b: Option.Option<TraceData>) => traceSignature(a) === traceSignature(b)
+const sameTrace = (a: Option.Option<TraceData>, b: Option.Option<TraceData>) =>
+	traceSignature(a) === traceSignature(b)
 
 /** The trace answered: a first load mounts the tab and panel; a refetch keeps them unless the trace changed. */
-const settleTrace = (model: Model, context: PageContext, key: string, result: Result.Result<Option.Option<TraceData>, LoadFailure>, fetchedAtMs: number): UpdateReturn => {
+const settleTrace = (
+	model: Model,
+	context: PageContext,
+	key: string,
+	result: Result.Result<Option.Option<TraceData>, LoadFailure>,
+	fetchedAtMs: number,
+): UpdateReturn => {
 	if (model.trace.key !== key) return { model }
 	const hadData = Option.isSome(AsyncData.getData(model.trace.data))
 	const next: Model = {
@@ -226,7 +260,10 @@ const panelStep = (model: Model, context: PageContext, message: SpanPanel.Messag
 	if (model.panel === null) return { model }
 	const { span } = model.panel
 	const next = SpanPanel.update(model.panel, message)
-	const stepped: UpdateReturn = { model: { ...model, panel: next.model }, commands: liftPanel(next.commands) }
+	const stepped: UpdateReturn = {
+		model: { ...model, panel: next.model },
+		commands: liftPanel(next.commands),
+	}
 	const out = next.outMessage
 	if (out === undefined) return stepped
 	return SpanPanel.OutMessage.match<UpdateReturn>(out, {
@@ -255,7 +292,8 @@ const panelStep = (model: Model, context: PageContext, message: SpanPanel.Messag
 export const update = (model: Model, message: Message, context: PageContext): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		FoundCachedTrace: ({ key, cached }) => settleCached(model, context, key, cached),
-		SucceededFetchTrace: ({ key, trace, fetchedAtMs }) => settleTrace(model, context, key, Result.succeed(trace), fetchedAtMs),
+		SucceededFetchTrace: ({ key, trace, fetchedAtMs }) =>
+			settleTrace(model, context, key, Result.succeed(trace), fetchedAtMs),
 		FailedFetchTrace: ({ key, failure }) => settleTrace(model, context, key, Result.fail(failure), 0),
 		ClickedBack: () => back(model, context),
 		ClickedRefresh: () => refresh(model, context),
@@ -266,19 +304,27 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			const next = Tabs.update(model.tabs, child)
 			const lifted: UpdateReturn = {
 				model: { ...model, tabs: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (tab) => Message.GotTabsMessage({ message: tab })),
+				commands: Command.mapMessages(next.commands ?? [], (tab) =>
+					Message.GotTabsMessage({ message: tab }),
+				),
 			}
 			const view = TAB_VALUES.find((value) => value === next.model.selected)
 			return view === undefined || view === model.tabs.selected
 				? lifted
-				: chain(lifted, (m) => setParams({ ...m, tabs: model.tabs }, context, { view: view === "timeline" ? null : view }))
+				: chain(lifted, (m) =>
+						setParams({ ...m, tabs: model.tabs }, context, {
+							view: view === "timeline" ? null : view,
+						}),
+					)
 		},
 		GotTimelineMessage: ({ message: child }) => {
 			if (model.timeline === null) return { model }
 			const next = Timeline.update(model.timeline, child)
 			const lifted: UpdateReturn = {
 				model: { ...model, timeline: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (inner) => Message.GotTimelineMessage({ message: inner })),
+				commands: Command.mapMessages(next.commands ?? [], (inner) =>
+					Message.GotTimelineMessage({ message: inner }),
+				),
 			}
 			const out = next.outMessage
 			if (out === undefined) return lifted
@@ -288,7 +334,9 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 				const recolored = Timeline.setColorBy(m.timeline, out.colorBy)
 				return {
 					model: { ...m, colorBy: out.colorBy, timeline: recolored.model },
-					commands: Command.mapMessages(recolored.commands ?? [], (inner) => Message.GotTimelineMessage({ message: inner })),
+					commands: Command.mapMessages(recolored.commands ?? [], (inner) =>
+						Message.GotTimelineMessage({ message: inner }),
+					),
 				}
 			})
 		},
@@ -297,7 +345,9 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			const next = Waterfall.update(model.waterfall, child)
 			const lifted: UpdateReturn = {
 				model: { ...model, waterfall: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (inner) => Message.GotWaterfallMessage({ message: inner })),
+				commands: Command.mapMessages(next.commands ?? [], (inner) =>
+					Message.GotWaterfallMessage({ message: inner }),
+				),
 			}
 			const out = next.outMessage
 			return out === undefined ? lifted : chain(lifted, (m) => selectSpan(m, context, out.spanId))
@@ -307,10 +357,15 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			const stepped = TraceFlow.update(model.flow.graph)(model.flow.model, child)
 			// Handles stay measured at the unfitted zoom (exact positions): legacy's re-measure at the
 			// fitted zoom only adds sub-1e-3 px float residue, which made one edge label round differently.
-			const flowModel = { ...stepped, canvas: { ...stepped.canvas, measureEpoch: model.flow.model.canvas.measureEpoch } }
+			const flowModel = {
+				...stepped,
+				canvas: { ...stepped.canvas, measureEpoch: model.flow.model.canvas.measureEpoch },
+			}
 			const next: Model = { ...model, flow: { ...model.flow, model: flowModel } }
 			const picked = Option.getOrUndefined(flowModel.selectedSpanId)
-			return child._tag === "ClickedSpanNode" && picked !== undefined ? selectSpan(next, context, picked) : { model: next }
+			return child._tag === "ClickedSpanNode" && picked !== undefined
+				? selectSpan(next, context, picked)
+				: { model: next }
 		},
 		GotSpanPanelMessage: ({ message: child }) => panelStep(model, context, child),
 		FoundSpanLog: ({ log }) => liftSheet(model, openLocalLog(model.maybeLogSheet, "span-log-sheet", log)),

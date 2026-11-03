@@ -20,6 +20,7 @@ import { gcpListPageParts, THEME_TOKENS, titleRow } from "../../page/infra-integ
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { Message, type Model } from "./model"
+import { Array as Arr } from "effect"
 
 const SPARKS = gcpSparks(SPARKLINE_READS, { startTime: START, endTime: END, bucketSeconds: BUCKET_SECONDS })
 
@@ -93,7 +94,7 @@ export const overlay = (model: Model, h: HtmlBuilder<Message>): Html =>
 			segmentedSelect(h, {
 				size: "xs",
 				ariaLabel: "Lab view",
-				options: VIEWS.map((value) => ({ value, label: VIEW_LABEL[value] })),
+				options: Arr.map(VIEWS, (value) => ({ value, label: VIEW_LABEL[value] })),
 				value: VIEWS.find((view) => view === model.state.view) ?? "services",
 				onChange: (view) => Message.ClickedLabView({ view }),
 			}),

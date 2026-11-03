@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { FromClientEncoded } from "effect/rpc/RpcMessage"
 import { mcpServerSpan, withMetaTraceContext } from "./span-conventions"
+import { String as Str } from "effect"
 
 const request = (tag: string, payload: unknown) =>
 	({ _tag: "Request", id: "7", tag, payload, headers: [] }) as const
@@ -94,7 +95,7 @@ describe("mcpServerSpan", () => {
 		const long = mcpServerSpan(
 			request("tools/call", {
 				name: "run_sql",
-				_meta: { "io.modelcontextprotocol/clientInfo": { name: "x".repeat(5_000) } },
+				_meta: { "io.modelcontextprotocol/clientInfo": { name: Str.repeat(5_000)("x") } },
 			}),
 			"2025-06-18",
 			caller,

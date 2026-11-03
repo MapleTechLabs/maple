@@ -1,5 +1,5 @@
 import { describe, it } from "vitest"
-import { Effect, Result } from "effect"
+import { Effect, Result, String as Str } from "effect"
 import { deepStrictEqual, ok, strictEqual } from "node:assert"
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -142,7 +142,7 @@ export default { apiVersion: 1, async register(add) {
 				const result = await Effect.runPromise(Effect.result(loadProjectorModules([path])))
 				ok(Result.isFailure(result))
 				strictEqual(result.failure._tag, "@maple/cli/ProjectorModuleError")
-				ok(result.failure.message.includes(path))
+				ok(Str.includes(path)(result.failure.message))
 			}
 		})
 	})

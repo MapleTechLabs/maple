@@ -5,6 +5,7 @@ import {
 	MCP_SERVER_JSON_SCHEMA,
 	mapleMcpServerManifest,
 } from "./mcp-manifest"
+import { Array as Arr } from "effect"
 
 // Constraints lifted from the registry schema named in `$schema`.
 const NAME_PATTERN = /^[a-zA-Z0-9.-]+\/[a-zA-Z0-9._-]+$/
@@ -31,7 +32,7 @@ describe("mapleMcpServerManifest", () => {
 		expect(remote.type).toBe("streamable-http")
 		expect(remote.url).toBe("https://api.maple.dev/mcp")
 		expect(remote.url).toMatch(REMOTE_URL_PATTERN)
-		expect(remote.headers.map((h) => h.name)).toEqual(["Authorization"])
+		expect(Arr.map(remote.headers, (h) => h.name)).toEqual(["Authorization"])
 		expect(remote.headers[0].isSecret).toBe(true)
 	})
 

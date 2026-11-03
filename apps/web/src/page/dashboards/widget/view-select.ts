@@ -3,6 +3,7 @@ import * as Select from "@maple/views/ui/select"
 import { view as selectView, type SelectOption } from "@maple/views/ui/select-view"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -32,7 +33,7 @@ export const pageSelect = (
 		view: selectView,
 		toParentMessage: (message) => Message.GotSelectMessage({ id, message }),
 		viewInputs: {
-			entries: options.map((item) => ({ _tag: "Item" as const, item })),
+			entries: Arr.map(options, (item) => ({ _tag: "Item" as const, item })),
 			size: inputs.size,
 			className: inputs.className,
 			ariaLabel: inputs.ariaLabel,

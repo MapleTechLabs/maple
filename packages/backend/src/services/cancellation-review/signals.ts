@@ -7,6 +7,7 @@
  */
 import type { CancellationReason, CancellationSnapshot, CancellationVolume } from "@maple/domain/http"
 import { WINDOW_DAYS } from "./snapshot"
+import { Array as Arr } from "effect"
 
 export interface CancellationSignal {
 	/** The part of the snapshot the sentence is about; the report files it under that stat. */
@@ -172,7 +173,11 @@ export const deriveSignals = (snapshot: CancellationSnapshot): ReadonlyArray<Can
 			)
 		}
 		if (billing.overAllowance.length > 0) {
-			add("billing", "concern", `Past the included allowance on ${billing.overAllowance.join(", ")}`)
+			add(
+				"billing",
+				"concern",
+				`Past the included allowance on ${Arr.join(billing.overAllowance, ", ")}`,
+			)
 		}
 	}
 

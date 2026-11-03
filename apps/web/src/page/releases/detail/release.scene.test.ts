@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
@@ -20,11 +20,11 @@ const context: PageContext = {
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const NOW = Date.UTC(2026, 9, 1, 12)
 const window = { startTime: "2026-09-25 00:00:00", endTime: "2026-10-01 12:00:00" }
-const HEAD = "b".repeat(40)
-const BASE = "a".repeat(40)
+const HEAD = Str.repeat(40)("b")
+const BASE = Str.repeat(40)("a")
 
 const row = (commit: string, firstSeen: string) => ({
 	serviceName: "payment-svc",
@@ -125,7 +125,7 @@ describe("release detail", () => {
 	})
 
 	test("a sha that served no traffic says so", () => {
-		const model = withReleases("c".repeat(40)).model
+		const model = withReleases(Str.repeat(40)("c")).model
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
@@ -149,7 +149,7 @@ describe("release detail", () => {
 			THEME,
 			CURSOR,
 			expectView(text("This version vs. the previous one")).toExist(),
-			expectView(text(`Only spans that carried ${HEAD.slice(0, 7)}`)).toExist(),
+			expectView(text(`Only spans that carried ${Str.slice(0, 7)(HEAD)}`)).toExist(),
 		)
 		const others = pageUpdate(model, Message.ClickedSeries({ series: "others" })).model
 		scene(
@@ -158,7 +158,7 @@ describe("release detail", () => {
 			THEME,
 			CURSOR,
 			expectView(
-				text(`Only spans that carried ${BASE.slice(0, 7)}, the version it replaced`),
+				text(`Only spans that carried ${Str.slice(0, 7)(BASE)}, the version it replaced`),
 			).toExist(),
 		)
 	})
@@ -183,8 +183,14 @@ describe("release detail", () => {
 		const picked = routeChanged(reloaded, { ...route(), search: { service: "payment-svc" } }, context)
 		expect(names(picked.commands)).not.toContain("ResolveReleaseWindow")
 		expect(names(picked.commands)).toContain("FetchReleaseDetail")
-		const moved = routeChanged(picked.model, { ...route(), search: { service: "payment-svc", timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveReleaseWindow", "Refresh"]])
+		const moved = routeChanged(
+			picked.model,
+			{ ...route(), search: { service: "payment-svc", timePreset: "1h" } },
+			context,
+		)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveReleaseWindow", "Refresh"],
+		])
 	})
 
 	test("Reload re-resolves the window unsnapped and spins", () => {
@@ -198,7 +204,11 @@ describe("release detail", () => {
 	test("the deploy's releases read carries the namespace pin; a pin change re-resolves", () => {
 		const pinned: PageContext = { ...context, pinnedNamespace: "payments" }
 		const entered = init(route(), pinned).model
-		const resolved = update(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }), pinned)
+		const resolved = update(
+			entered,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+			pinned,
+		)
 		expect(resolved.commands?.[0]?.args).toMatchObject({ namespaces: ["payments"] })
 		expect(resolved.model.releases.key).not.toEqual(withReleases().model.releases.key)
 		expect(names(contextChanged(withReleases().model, pinned).commands)).toEqual(["ResolveReleaseWindow"])

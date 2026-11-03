@@ -24,12 +24,13 @@ import { thresholds } from "./view-rail-thresholds"
 import { pageSelect } from "./view-select"
 import { hstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
+import { Array as Arr, String as Str } from "effect"
 
 // Each non-timeseries panel type's `ConfigPanel` over the `WidgetSettings` fields.
 
 type H = HtmlBuilder<Message>
 
-const titleCase = (value: string): string => `${value.charAt(0).toUpperCase()}${value.slice(1)}`
+const titleCase = (value: string): string => `${Str.toUpperCase(value.charAt(0))}${Str.slice(1)(value)}`
 
 /** `ScalarReduction`: the aggregate, and the series it reduces (the first while unset or gone). */
 const scalarReduction = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => {
@@ -44,7 +45,7 @@ const scalarReduction = (h: H, model: Model, state: EditorState): ReadonlyArray<
 			model,
 			"stat-aggregate",
 			state.statAggregate,
-			STAT_AGGREGATES.map((value) => ({ value, label: value })),
+			Arr.map(STAT_AGGREGATES, (value) => ({ value, label: value })),
 			{
 				className: "w-full",
 				toView: (parts) => railSetting(h, "stat-aggregate", "Aggregate", true, parts),
@@ -55,7 +56,7 @@ const scalarReduction = (h: H, model: Model, state: EditorState): ReadonlyArray<
 			model,
 			"stat-value-field",
 			valueField,
-			fields.map((field) => ({ value: field, label: field })),
+			Arr.map(fields, (field) => ({ value: field, label: field })),
 			{
 				className: "w-full",
 				toView: (parts) => railSetting(h, "stat-value-field", "Value field", true, parts),
@@ -120,7 +121,7 @@ const rowLimit = (h: H, state: EditorState): Html =>
 const rampSwatch = (h: H, scale: string): Html =>
 	h.span(
 		[h.Class("flex shrink-0 gap-px")],
-		[0, 1, 2, 3, 4].map((stop) =>
+		Arr.map([0, 1, 2, 3, 4], (stop) =>
 			h.span([
 				h.Class("size-2 rounded-xs"),
 				h.Style({ backgroundColor: `var(--heatmap-${scale}-${stop})` }),
@@ -139,7 +140,7 @@ const heatmapColors = (h: H, model: Model, state: EditorState): ReadonlyArray<Ht
 		model,
 		"heatmap-colors",
 		state.heatmapColorScale ?? DEFAULT_HEATMAP_COLOR_SCALE,
-		HEATMAP_COLOR_SCALES.map((scale) => ({ value: scale, label: titleCase(scale) })),
+		Arr.map(HEATMAP_COLOR_SCALES, (scale) => ({ value: scale, label: titleCase(scale) })),
 		{
 			className: "w-full",
 			renderValue: (value) => swatchLabel(h, value),

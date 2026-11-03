@@ -2,7 +2,7 @@ import { countLabel } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as DialogView from "@maple/views/ui/dialog-view"
@@ -145,7 +145,8 @@ export const view = Submodel.defineView<Model, Message, PeekViewInputs>((model, 
 												className: "max-w-[260px]",
 												onCopy: Message.ClickedCopyTraceId(),
 											}),
-											...[logsLink(h, model, trace), replayLink(h, model)].flatMap(
+											...Arr.flatMap(
+												[logsLink(h, model, trace), replayLink(h, model)],
 												(link) => (link === null ? [] : [link]),
 											),
 										],

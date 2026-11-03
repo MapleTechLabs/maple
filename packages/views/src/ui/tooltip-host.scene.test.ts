@@ -3,6 +3,7 @@ import { expect, given, Mount, scene, text } from "foldkit/scene"
 import { expect as assert, describe, test } from "vitest"
 import * as Tooltip from "./tooltip"
 import { init, Message, type Model, update, view } from "./tooltip-host"
+import { Array as Arr, Record as Rec } from "effect"
 
 /** The delegated tooltip: one Model serves every `tooltipTrigger` on the page. */
 const ID = "host"
@@ -57,7 +58,7 @@ describe("tooltip host", () => {
 		assert({
 			isOpen: next.model.tooltip.isOpen,
 			anchor: next.model.tooltip.triggerId,
-			waits: (next.commands ?? []).some((command) => command.name === "WaitOpenDelay"),
+			waits: Arr.some(next.commands ?? [], (command) => command.name === "WaitOpenDelay"),
 		}).toEqual({ isOpen: true, anchor: "b", waits: false })
 		scene({ update, view: sceneView }, given(next.model), mounted, expect(text("Second")).toExist())
 	})
@@ -77,7 +78,7 @@ describe("tooltip host", () => {
 		const open = elapsed(entered(init(ID), "a", "First").model).model
 		const second = entered(open, "b", "Second").model
 		const third = entered(second, "c", "Third").model
-		assert(Object.keys(third.shown).sort()).toEqual(["b", "c"])
+		assert(Rec.keys(third.shown).sort()).toEqual(["b", "c"])
 	})
 
 	test("the shown trigger's new text replaces the old one; other triggers' changes are dropped", () => {
@@ -87,7 +88,7 @@ describe("tooltip host", () => {
 			copied,
 			Message.ChangedTriggerText({ triggerId: "other", text: "Copied" }),
 		).model
-		assert({ text: elsewhere.shown["copy"]?.text, ids: Object.keys(elsewhere.shown) }).toEqual({
+		assert({ text: elsewhere.shown["copy"]?.text, ids: Rec.keys(elsewhere.shown) }).toEqual({
 			text: "Copied",
 			ids: ["copy"],
 		})

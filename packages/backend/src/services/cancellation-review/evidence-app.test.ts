@@ -1,6 +1,6 @@
 import type { IntegrationInventory } from "@maple/domain/integration-inventory"
 import { OrgId, SourceId, SourcePlatform } from "@maple/domain/primitives"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
@@ -154,16 +154,19 @@ describe("integrationHealthOf", () => {
 		const platforms = ["opentelemetry", "nodejs", "python", "go", "java", "dotnet", "ruby", "php", "rust"]
 		const health = integrationHealthOf(
 			inventory([]),
-			[
-				...platforms,
-				"browser",
-				"kubernetes",
-				"docker",
-				"host",
-				"claude_code",
-				"cloudflare_ai_gateway",
-				"gcp",
-			].map((name) => source({ platform: name, lastRejectedAt: AT - DAY_MS })),
+			Arr.map(
+				[
+					...platforms,
+					"browser",
+					"kubernetes",
+					"docker",
+					"host",
+					"claude_code",
+					"cloudflare_ai_gateway",
+					"gcp",
+				],
+				(name) => source({ platform: name, lastRejectedAt: AT - DAY_MS }),
+			),
 			[],
 			AT,
 			AT,
@@ -179,7 +182,7 @@ describe("integrationHealthOf", () => {
 			AT,
 			AT,
 		)
-		expect(health.map((entry) => entry.kind)).toEqual(["claude_code"])
+		expect(Arr.map(health, (entry) => entry.kind)).toEqual(["claude_code"])
 	})
 
 	it("does not count a refusal after the cancellation as an error before it", () => {
@@ -360,14 +363,14 @@ describe("agentFeedbackOf", () => {
 				createdAt: AT - 3 * DAY_MS,
 				kind: "bug",
 				impact: "blocking",
-				summary: ` search_traces times out on https://acme.test/x?k=1 with key key0123456789abcdefghijklmnopqr, ask dev@example.com ${"slow ".repeat(60)}`,
+				summary: ` search_traces times out on https://acme.test/x?k=1 with key key0123456789abcdefghijklmnopqr, ask dev@example.com ${Str.repeat(60)("slow ")}`,
 			},
 			AT,
 		)
 		expect(feedback.daysBeforeCancel).toBe(3)
 		expect(
-			feedback.summary.startsWith(
-				"search_traces times out on [url] with key [token], ask [email] slow",
+			Str.startsWith("search_traces times out on [url] with key [token], ask [email] slow")(
+				feedback.summary,
 			),
 		).toBe(true)
 		expect(feedback.summary).toHaveLength(200)

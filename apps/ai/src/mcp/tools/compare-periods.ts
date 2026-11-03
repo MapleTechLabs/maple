@@ -4,7 +4,7 @@ import { resolveTimeRange } from "../lib/time"
 import { formatDelta, formatPercent, formatDurationFromMs, formatNumber } from "../lib/format"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { ComparePeriodsOutput } from "@maple/domain/mcp-outputs"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 
@@ -151,7 +151,7 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 					current: overallOf(currentSvcMap),
 					previous: overallOf(previousSvcMap),
 				},
-				services: allServiceNames.map((name) => {
+				services: Arr.map(allServiceNames, (name) => {
 					const current = statsOf(currentSvcMap.get(name))
 					const previous = statsOf(previousSvcMap.get(name))
 					const flags: Array<RegressionFlag> = []
@@ -208,7 +208,7 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 							"Curr P95",
 							"Flags",
 						],
-						output.services.map((s) => [
+						Arr.map(output.services, (s) => [
 							s.name,
 							formatNumber(s.previous.throughput),
 							formatNumber(s.current.throughput),
@@ -216,15 +216,15 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 							formatPercent(s.current.errorRate),
 							formatDurationFromMs(s.previous.p95Ms),
 							formatDurationFromMs(s.current.p95Ms),
-							(s.flags ?? []).join(", ") || "-",
+							Arr.join(s.flags ?? [], ", ") || "-",
 						]),
 					),
 				)
 			}
-			const regressions = output.services.filter((s) => (s.flags ?? []).length > 0).slice(0, 3)
+			const regressions = Arr.filter(output.services, (s) => (s.flags ?? []).length > 0).slice(0, 3)
 			const errorsUp = current.errorRate > previous.errorRate && current.errorRate > 0.01
 			const next = [
-				...regressions.map((s) =>
+				...Arr.map(regressions, (s) =>
 					doc.next(
 						"diagnose_service",
 						{

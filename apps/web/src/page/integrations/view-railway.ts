@@ -26,6 +26,7 @@ import { typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // `RailwayIntegrationCard`.
 
@@ -44,7 +45,7 @@ const environmentsTable = (h: H, model: Model, status: RailwayIntegrationStatus,
 		],
 		status.environments.length === 0
 			? [dataTableEmpty(h, ["This token can't see any projects yet."])]
-			: status.environments.map((environment) =>
+			: Arr.map(status.environments, (environment) =>
 					hstack(
 						h,
 						{
@@ -104,7 +105,7 @@ const environmentsTable = (h: H, model: Model, status: RailwayIntegrationStatus,
 
 const connectedView = (h: H, model: Model, status: RailwayIntegrationStatus, timeZone: string): Html => {
 	const card = model.railwayCard
-	const failing = status.environments.filter((environment) => environment.lastError !== null).length
+	const failing = Arr.filter(status.environments, (environment) => environment.lastError !== null).length
 	const queued = status.authFailed ? 0 : unsyncedEnvironments(status)
 	return connectedIntegrationCard(h, model, {
 		integration: "railway",

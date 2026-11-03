@@ -1,4 +1,4 @@
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { RailwayInfraServicesRequest, RailwayInfraServiceTimeseriesRequest } from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
 import {
@@ -72,7 +72,7 @@ export const getRailwayServices = Effect.fn("QueryEngine.getRailwayServices")(fu
 		}),
 	)
 	return {
-		services: result.data.map((row): RailwayServiceRow => ({
+		services: Arr.map(result.data, (row): RailwayServiceRow => ({
 			environmentId: wireString(row.environmentId),
 			serviceId: wireString(row.serviceId),
 			serviceName: wireString(row.serviceName),
@@ -112,7 +112,7 @@ export const getRailwayServiceTimeseries = Effect.fn("QueryEngine.getRailwayServ
 		}),
 	)
 	return {
-		buckets: result.data.map((row): RailwayServiceTimeseriesRow => ({
+		buckets: Arr.map(result.data, (row): RailwayServiceTimeseriesRow => ({
 			bucket: wireString(row.bucket),
 			cpuAvg: wireNumber(row.cpuAvg),
 			cpuMax: wireNumber(row.cpuMax),

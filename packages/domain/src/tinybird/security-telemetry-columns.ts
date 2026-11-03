@@ -12,6 +12,7 @@ import {
 	SCANNER_AGENTS,
 } from "../security-telemetry"
 import { requestHostExpr, requestPathExpr, userAgentExpr } from "./ai-crawler-columns"
+import { Array as Arr } from "effect"
 
 interface MapColumnLike {
 	get(key: string): Expr<string>
@@ -24,10 +25,11 @@ const mapColumn = (name: string): MapColumnLike => ({
 const spanAttributes = mapColumn("SpanAttributes")
 const resourceAttributes = mapColumn("ResourceAttributes")
 
-const stringArray = (values: ReadonlyArray<string>) => CH.arrayOf(...values.map((value) => CH.lit(value)))
+const stringArray = (values: ReadonlyArray<string>) =>
+	CH.arrayOf(...Arr.map(values, (value) => CH.lit(value)))
 
 const firstNonEmpty = (...values: ReadonlyArray<Expr<string>>): Expr<string> =>
-	CH.coalesce(...values.map((value) => CH.nullIf(value, "")), CH.lit(""))
+	CH.coalesce(...Arr.map(values, (value) => CH.nullIf(value, "")), CH.lit(""))
 
 const leftUtf8 = (value: Expr<string>, max: number) => CH.compileFnCall<string>("leftUTF8", value, max)
 
@@ -48,13 +50,13 @@ function probeHaystackExpr(attrs: MapColumnLike): Expr<string> {
 
 const needles = (signatures: ReadonlyArray<ProbeSignature>) =>
 	stringArray(
-		signatures.map((signature) =>
+		Arr.map(signatures, (signature) =>
 			signature.anchored === true ? ` ${signature.token}` : signature.token,
 		),
 	)
 
 const tokens = (signatures: ReadonlyArray<ProbeSignature>) =>
-	stringArray(signatures.map((signature) => signature.token))
+	stringArray(Arr.map(signatures, (signature) => signature.token))
 
 const probeIndex = (attrs: MapColumnLike, signatures: ReadonlyArray<ProbeSignature>): Expr<number> =>
 	CH.compileFnCall<number>(
@@ -87,13 +89,16 @@ export function scannerIndexExpr(attrs: MapColumnLike): Expr<number> {
 	return CH.compileFnCall<number>(
 		"multiSearchFirstIndexCaseInsensitive",
 		userAgentExpr(attrs),
-		stringArray(SCANNER_AGENTS.map((agent) => agent.token)),
+		stringArray(Arr.map(SCANNER_AGENTS, (agent) => agent.token)),
 	)
 }
 
 /** The scanning tool's name, `''` when the user agent names none. */
 export function scannerNameExpr(attrs: MapColumnLike): Expr<string> {
-	return CH.arrayElement(stringArray(SCANNER_AGENTS.map((agent) => agent.name)), scannerIndexExpr(attrs))
+	return CH.arrayElement(
+		stringArray(Arr.map(SCANNER_AGENTS, (agent) => agent.name)),
+		scannerIndexExpr(attrs),
+	)
 }
 
 /** Bounds for the free-form columns the views keep. */

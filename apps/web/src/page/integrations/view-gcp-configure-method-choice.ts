@@ -7,6 +7,7 @@ import type { ConfigureModel, SetupMethod } from "./gcp-configure-schema"
 import { Message } from "./message"
 import { GCP_TITLE, SMALL } from "./view-gcp-parts"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `GcpMethodChoice`: one row per way to connect.
 
@@ -36,7 +37,7 @@ const METHODS = [
 
 const HINTS = { terraform: "maple.tf for the google provider", alchemy: "maple.ts for alchemy/GCP" } as const
 
-const ITEMS = METHODS.map((option) => ({
+const ITEMS = Arr.map(METHODS, (option) => ({
 	value: option.value,
 	id: `gcp-method-${option.value}`,
 	inputId: `gcp-method-${option.value}-input`,
@@ -51,21 +52,19 @@ const flavourToggle = (h: H, configure: ConfigureModel, flavour: "terraform" | "
 	h.div(
 		[h.Class("flex flex-col gap-1.5 pl-7")],
 		[
-			hstack(h, { gap: "3", wrap: true },
-				[
-					ToggleGroup.view(h, {
-						model: { ...configure.flavourGroup, values: [flavour] },
-						toParentMessage: (message) => Message.GotGcpFlavourMessage({ message }),
-						items: [
-							{ value: "terraform", label: "Terraform" },
-							{ value: "alchemy", label: "Alchemy" },
-						],
-						variant: "outline",
-						size: "sm",
-					}),
-					h.span([h.Class(SMALL)], [HINTS[flavour]]),
-				],
-			),
+			hstack(h, { gap: "3", wrap: true }, [
+				ToggleGroup.view(h, {
+					model: { ...configure.flavourGroup, values: [flavour] },
+					toParentMessage: (message) => Message.GotGcpFlavourMessage({ message }),
+					items: [
+						{ value: "terraform", label: "Terraform" },
+						{ value: "alchemy", label: "Alchemy" },
+					],
+					variant: "outline",
+					size: "sm",
+				}),
+				h.span([h.Class(SMALL)], [HINTS[flavour]]),
+			]),
 		],
 	)
 
@@ -90,50 +89,47 @@ export const methodChoice = (h: H, configure: ConfigureModel, changing: boolean)
 				[changing ? "How do you want to apply the change?" : "How do you want to connect?"],
 			),
 			RadioGroup.radioGroup(h, { className: "gap-0 divide-y divide-border-subtle rounded-md border" }, [
-				...METHODS.map((option) =>
-					vstack(h, { gap: "3", className: "p-4", attributes: [h.Key(option.value)] },
-						[
-							hstack(h, { gap: "3", align: "start" },
+				...Arr.map(METHODS, (option) =>
+					vstack(h, { gap: "3", className: "p-4", attributes: [h.Key(option.value)] }, [
+						hstack(h, { gap: "3", align: "start" }, [
+							...RadioGroup.radio(h, config, option.value, "mt-0.5"),
+							label(
+								h,
+								{
+									className:
+										"flex min-w-0 cursor-pointer flex-col items-stretch gap-0.5 font-normal",
+									attributes: [
+										h.Id(RadioGroup.labelId(`gcp-method-${option.value}-input`)),
+										h.For(`gcp-method-${option.value}-input`),
+									],
+								},
 								[
-									...RadioGroup.radio(h, config, option.value, "mt-0.5"),
-									label(
-										h,
-										{
-											className: "flex min-w-0 cursor-pointer flex-col items-stretch gap-0.5 font-normal",
-											attributes: [
-												h.Id(RadioGroup.labelId(`gcp-method-${option.value}-input`)),
-												h.For(`gcp-method-${option.value}-input`),
-											],
-										},
+									h.span(
+										[h.Class("flex items-baseline gap-2 text-sm font-medium")],
 										[
-											h.span(
-												[h.Class("flex items-baseline gap-2 text-sm font-medium")],
-												[
-													option.title,
-													...(option.badge === null
-														? []
-														: [
-																h.span(
-																	[
-																		h.Class(
-																			"text-xs font-normal text-muted-foreground",
-																		),
-																	],
-																	[option.badge],
+											option.title,
+											...(option.badge === null
+												? []
+												: [
+														h.span(
+															[
+																h.Class(
+																	"text-xs font-normal text-muted-foreground",
 																),
-															]),
-												],
-											),
-											h.span([h.Class(SMALL)], [option.description]),
+															],
+															[option.badge],
+														),
+													]),
 										],
 									),
+									h.span([h.Class(SMALL)], [option.description]),
 								],
 							),
-							...(option.value === "code" && row === "code"
-								? [flavourToggle(h, configure, flavour)]
-								: []),
-						],
-					),
+						]),
+						...(option.value === "code" && row === "code"
+							? [flavourToggle(h, configure, flavour)]
+							: []),
+					]),
 				),
 			]),
 		],

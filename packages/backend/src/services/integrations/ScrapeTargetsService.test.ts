@@ -1,7 +1,7 @@
 import { FetchHttpClient } from "effect/http"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { afterEach, assert, beforeEach, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	CreateScrapeTargetRequest,
@@ -131,7 +131,7 @@ describe("ScrapeTargetsService", () => {
 					),
 				)
 			assert.deepStrictEqual(
-				(yield* sources()).rows.map((row) => [
+				Arr.map((yield* sources()).rows, (row) => [
 					row.org_id,
 					row.kind,
 					row.platform,
@@ -149,7 +149,7 @@ describe("ScrapeTargetsService", () => {
 				testDb.pglite.query<{ org_id: string }>("SELECT org_id FROM sources"),
 			)
 			assert.deepStrictEqual(
-				left.rows.map((row) => row.org_id),
+				Arr.map(left.rows, (row) => row.org_id),
 				["org_2"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -204,7 +204,7 @@ describe("ScrapeTargetsService", () => {
 			)
 			const rows = yield* service.listAllEnabled()
 			assert.deepStrictEqual(
-				rows.map((row) => [row.id, row.labelsJson]),
+				Arr.map(rows, (row) => [row.id, row.labelsJson]),
 				[[target.id, { team: 7 }]],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -432,7 +432,7 @@ describe("ScrapeTargetsService", () => {
 					{ targetId: failing.id, scrapedAt, error: null },
 					{ targetId: failing.id, scrapedAt: scrapedAt + 15_000, error: "HTTP 503" },
 					{ targetId: stale.id, scrapedAt, error: "HTTP 500" },
-					...rest.map((target) => ({ targetId: target.id, scrapedAt, error: null })),
+					...Arr.map(rest, (target) => ({ targetId: target.id, scrapedAt, error: null })),
 				])
 				.pipe(Effect.withTracer(recorder.tracer))
 			// 6 targets of one source: 1 UPDATE, 1 SELECT (org and source ids), the source's targets and
@@ -730,7 +730,7 @@ describe("ScrapeTargetsService", () => {
 
 			const pulled = { count: 0 }
 			// 7 bytes per line, so chunk boundaries cut lines and the cap lands mid-line.
-			const chunk = new TextEncoder().encode("up 1.5\n".repeat(10_000))
+			const chunk = new TextEncoder().encode(Str.repeat(10_000)("up 1.5\n"))
 			const fetchStub = (async () =>
 				new Response(
 					new ReadableStream<Uint8Array>({

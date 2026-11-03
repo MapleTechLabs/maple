@@ -35,6 +35,7 @@ import type { PlanetscaleMetricsMethod } from "./planetscale"
 import { branchFields, branchPreviewOf, orgChoices } from "./view-planetscale-picker"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // PlanetScale in the connect flow: authorize (optionally a metrics token), pick the organization
 // and branches, then watch access, the inventory and the first metrics land.
@@ -158,7 +159,7 @@ const tokenField = (
 
 const tokenForm = (h: H, model: Model, status: V2PlanetScaleIntegration, isAttached: boolean): Html => {
 	const card = model.planetscaleCard
-	const isReady = card.tokenId.value.trim() !== "" && card.tokenSecret.value.trim() !== ""
+	const isReady = Str.trim(card.tokenId.value) !== "" && Str.trim(card.tokenSecret.value) !== ""
 	const tokensUrl =
 		status.organization === null
 			? "https://app.planetscale.com"
@@ -271,7 +272,7 @@ const databaseChips = (h: H, model: Model): ReadonlyArray<Html> => {
 		: [
 				foundChips(
 					h,
-					databases.slice(0, 8).map((db) => ({
+					Arr.map(databases.slice(0, 8), (db) => ({
 						label: db.name,
 						detail: countLabel(db.branches.length, "branch", "branches"),
 					})),
@@ -456,7 +457,7 @@ const liveStep = (h: H, model: Model): Html => {
 	const rows: ReadonlyArray<CheckRow> =
 		setup === null
 			? [{ state: "waiting", title: "Waiting for PlanetScale's status" }]
-			: setup.checks.map((check) =>
+			: Arr.map(setup.checks, (check) =>
 					check.id === "access" && check.state === "failed"
 						? { ...check, extra: connectButton(h, model, "Reconnect", "outline") }
 						: check,

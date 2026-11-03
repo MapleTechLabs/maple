@@ -39,6 +39,7 @@ import { ANYONE } from "./update"
 import { auditDetail, resourceHref } from "./view-detail"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
 type SettingsSearch = typeof SettingsSearchSchema.Type
@@ -88,12 +89,12 @@ const COL = {
 	outcome: "hidden w-15 shrink-0 @md:block",
 }
 
-const initialsOf = (label: string) => (label.startsWith("user_") ? "?" : initialsFrom(label))
+const initialsOf = (label: string) => (Str.startsWith("user_")(label) ? "?" : initialsFrom(label))
 
 const abbreviateId = (id: string): string => {
 	const prefixEnd = id.indexOf("_")
 	if (prefixEnd === -1 || id.length <= prefixEnd + 10) return id
-	return `${id.slice(0, prefixEnd + 1)}…${id.slice(-5)}`
+	return `${Str.slice(0, prefixEnd + 1)(id)}…${Str.slice(-5)(id)}`
 }
 
 const actorDisplayName = (entry: V2AuditLogEntry): string | null =>
@@ -118,7 +119,7 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 	const activeKey = range.kind === "all" ? "all" : range.kind === "preset" ? range.preset : null
 	const options = [
 		{ key: "all", label: "All time" },
-		...AUDIT_RANGE_PRESETS.map((preset) => ({ key: preset.value, label: preset.label })),
+		...Arr.map(AUDIT_RANGE_PRESETS, (preset) => ({ key: preset.value, label: preset.label })),
 	]
 	return h.submodel({
 		slotId: "audit-date-range",
@@ -150,14 +151,16 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 				h.div(
 					[h.Class("flex flex-col py-1.5")],
 					[
-						...options.map((option) =>
+						...Arr.map(options, (option) =>
 							pressable(
 								h,
 								{
 									onClick: Message.ClickedRangePreset({ value: option.key }),
 									className: cn(
 										"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
-										option.key === activeKey ? typographyClass({ tone: "foreground", weight: "medium" }) : "text-foreground-soft",
+										option.key === activeKey
+											? typographyClass({ tone: "foreground", weight: "medium" })
+											: "text-foreground-soft",
 									),
 									attributes: [h.Key(option.key)],
 								},
@@ -170,7 +173,9 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 							{
 								className: cn(
 									"flex h-7 items-center px-3 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
-									range.kind === "custom" ? typographyClass({ tone: "foreground", weight: "medium" }) : "text-muted-foreground",
+									range.kind === "custom"
+										? typographyClass({ tone: "foreground", weight: "medium" })
+										: "text-muted-foreground",
 								),
 							},
 							["Custom range…"],
@@ -189,7 +194,7 @@ const personFilter = (
 	apiKeys: ReadonlyArray<V2ApiKey>,
 ): Html => {
 	// Audit rows name a key by its public `key_…` id; the synced rows carry the internal one.
-	const keyOptions = apiKeys.map((key) => ({
+	const keyOptions = Arr.map(apiKeys, (key) => ({
 		value: encodePublicId(PublicIdPrefixes.apiKey, key.id),
 		label: key.name,
 	}))
@@ -263,7 +268,11 @@ const actionLabel = (h: H, action: string): ReadonlyArray<Html> => {
 	if (label === null) return [truncatedText(h, { mono: true, text: action, className: "text-xs" })]
 	return [
 		truncatedText(h, { text: label, className: typographyClass({ size: "xs", tone: "foreground" }) }),
-		truncatedText(h, { mono: true, text: action, className: typographyClass({ size: "3xs", tone: "muted" }) }),
+		truncatedText(h, {
+			mono: true,
+			text: action,
+			className: typographyClass({ size: "3xs", tone: "muted" }),
+		}),
 	]
 }
 
@@ -333,12 +342,10 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 					h.div(
 						[h.Class(cn(COL.action, vstackClass({ shrink: true })))],
 						[
-							hstack(h, { gap: "1.5", shrink: true },
-								[
-									vstack(h, { shrink: true }, actionLabel(h, entry.action)),
-									...(isDenied ? [h.span([h.Class("@md:hidden")], [deniedBadge(h)])] : []),
-								],
-							),
+							hstack(h, { gap: "1.5", shrink: true }, [
+								vstack(h, { shrink: true }, actionLabel(h, entry.action)),
+								...(isDenied ? [h.span([h.Class("@md:hidden")], [deniedBadge(h)])] : []),
+							]),
 							...(isDenied && entry.denial_reason !== null
 								? [
 										truncatedText(h, {
@@ -403,14 +410,16 @@ const listBody = (h: H, model: Model, inputs: ViewInputs, isFiltered: boolean): 
 				emptyHeader(h, [
 					emptyMedia(h, { variant: "icon" }, [icon(h, "HistoryIcon")]),
 					emptyTitle(h, ["No audit log entries"]),
-					emptyDescription(h, ["Actions and data reads by users, API keys, and agents will appear here."]),
+					emptyDescription(h, [
+						"Actions and data reads by users, API keys, and agents will appear here.",
+					]),
 				]),
 			],
 			"py-8",
 		)
 	return h.div(
 		[h.Class("divide-border divide-y")],
-		[headerRow(h), ...view.entries.map((entry) => auditRow(h, model, entry, inputs))],
+		[headerRow(h), ...Arr.map(view.entries, (entry) => auditRow(h, model, entry, inputs))],
 	)
 }
 
@@ -431,40 +440,34 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			framed: false,
 		},
 		[
-			vstack(h, { gap: "2" },
-				[
-					hstack(h, { gap: "2", wrap: true },
-						[
-							dateRange(h, model, filters.range, inputs.timeZone),
-							personFilter(h, model, filters.actorId, inputs.apiKeys),
-							// The labelled Reload every page header uses, beside the range it re-reads.
-							refreshButton(h, {
-								label: "Reload",
-								isPending: isWaiting,
-								onRefresh: Message.ClickedRefresh(),
-							}),
-						],
-					),
-					hstack(h, { gap: "3", wrap: true },
-						[
-							segmentedSelect(h, {
-								size: "sm",
-								ariaLabel: "Actor type",
-								value: filters.actorType ?? "all",
-								onChange: (value) => Message.ClickedActorType({ value }),
-								options: ACTOR_FILTERS,
-							}),
-							segmentedSelect(h, {
-								size: "sm",
-								ariaLabel: "Outcome",
-								value: filters.outcome ?? "all",
-								onChange: (value) => Message.ClickedOutcome({ value }),
-								options: OUTCOME_FILTERS,
-							}),
-						],
-					),
-				],
-			),
+			vstack(h, { gap: "2" }, [
+				hstack(h, { gap: "2", wrap: true }, [
+					dateRange(h, model, filters.range, inputs.timeZone),
+					personFilter(h, model, filters.actorId, inputs.apiKeys),
+					// The labelled Reload every page header uses, beside the range it re-reads.
+					refreshButton(h, {
+						label: "Reload",
+						isPending: isWaiting,
+						onRefresh: Message.ClickedRefresh(),
+					}),
+				]),
+				hstack(h, { gap: "3", wrap: true }, [
+					segmentedSelect(h, {
+						size: "sm",
+						ariaLabel: "Actor type",
+						value: filters.actorType ?? "all",
+						onChange: (value) => Message.ClickedActorType({ value }),
+						options: ACTOR_FILTERS,
+					}),
+					segmentedSelect(h, {
+						size: "sm",
+						ariaLabel: "Outcome",
+						value: filters.outcome ?? "all",
+						onChange: (value) => Message.ClickedOutcome({ value }),
+						options: OUTCOME_FILTERS,
+					}),
+				]),
+			]),
 			panel(
 				h,
 				{

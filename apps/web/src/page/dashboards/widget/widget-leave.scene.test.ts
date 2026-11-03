@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { AppRoute } from "../../../route"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -16,7 +16,7 @@ import { init } from "./update"
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const run = (model: Model, messages: ReadonlyArray<Message>) =>
-	messages.reduce((current, message) => update(current, message, context).model, model)
+	Arr.reduce(messages, model, (current, message) => update(current, message, context).model)
 
 const document = Schema.decodeUnknownSync(DashboardDocument)({
 	id: "dash_leave",
@@ -42,7 +42,13 @@ const opened = () =>
 		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
 	])
 
-const slotOf = (model: Model): PageSlot => ({ _tag: "DashboardWidget", key: "dash_leave/note", orgId, instance: 1, model })
+const slotOf = (model: Model): PageSlot => ({
+	_tag: "DashboardWidget",
+	key: "dash_leave/note",
+	orgId,
+	instance: 1,
+	model,
+})
 const away = AppRoute.Services({ search: {} })
 const isHeld = (model: Model, route: AppRoute = away) =>
 	Option.isSome(blockNavigation(slotOf(model), route, "/services", context))
@@ -69,7 +75,7 @@ describe("leaving the widget editor", () => {
 	test("after a save the way back is not held", () => {
 		const edited = run(opened(), [Message.ChangedTitle({ value: "Renamed" })])
 		const applying = update(edited, Message.ClickedApply(), context)
-		expect((applying.commands ?? []).map(({ name }) => name)).toContain(SaveWidget.name)
+		expect(Arr.map(applying.commands ?? [], ({ name }) => name)).toContain(SaveWidget.name)
 		expect(isHeld(applying.model)).toBe(false)
 		const saved = update(applying.model, Message.CompletedSave({ error: null }), context).model
 		expect(isHeld(saved)).toBe(false)

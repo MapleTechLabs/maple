@@ -1,8 +1,13 @@
 import { LOCAL_ORG_ID } from "@maple/query-engine/local"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { CH, formatWarehouseDateTime, parseSpanEvents } from "@maple/query-engine"
-import { SpanDetail, type SpanDetailRequest, type SpanLogsRequest, TraceSource } from "@maple/views/traces/trace-source"
-import { Clock, Effect, Layer, Option, Schema } from "effect"
+import {
+	SpanDetail,
+	type SpanDetailRequest,
+	type SpanLogsRequest,
+	TraceSource,
+} from "@maple/views/traces/trace-source"
+import { Clock, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { HttpClient } from "effect/http"
 import { readLocalEnv } from "../env"
 import { LocalLog, logKey, normalizeLog } from "../lib/log-shape"
@@ -21,7 +26,12 @@ const StoredLogs = Schema.Array(LocalLog)
 
 type LogsRequest = Pick<SpanLogsRequest, "traceId" | "spanId" | "startTime" | "durationMs" | "limit">
 
-const spanDetailCacheKey = (request: SpanDetailRequest): QueryKey => ["local", "span-detail", request.traceId, request.spanId]
+const spanDetailCacheKey = (request: SpanDetailRequest): QueryKey => [
+	"local",
+	"span-detail",
+	request.traceId,
+	request.spanId,
+]
 
 const spanLogsCacheKey = (request: LogsRequest): QueryKey => [
 	"local",
@@ -36,7 +46,9 @@ const spanLogsCacheKey = (request: LogsRequest): QueryKey => [
 const fetchSpanDetail = (request: SpanDetailRequest, apiBase: string) =>
 	Effect.gen(function* () {
 		const maybeRow = yield* queryFirstRow(
-			CH.compile(CH.spanDetailQuery({ traceId: request.traceId, spanId: request.spanId }), { orgId: LOCAL_ORG_ID }),
+			CH.compile(CH.spanDetailQuery({ traceId: request.traceId, spanId: request.spanId }), {
+				orgId: LOCAL_ORG_ID,
+			}),
 			apiBase,
 		)
 		if (Option.isNone(maybeRow)) return Option.none()
@@ -50,7 +62,11 @@ const fetchSpanDetail = (request: SpanDetailRequest, apiBase: string) =>
 					serviceName: row.serviceName,
 					spanName: row.rawSpanName,
 				}),
-				{ orgId: LOCAL_ORG_ID, startTime: formatWarehouseDateTime(startMs), endTime: formatWarehouseDateTime(startMs + 1000) },
+				{
+					orgId: LOCAL_ORG_ID,
+					startTime: formatWarehouseDateTime(startMs),
+					endTime: formatWarehouseDateTime(startMs + 1000),
+				},
 			),
 			apiBase,
 		).pipe(
@@ -81,7 +97,7 @@ export const fetchSpanLogRecords = (request: LogsRequest, apiBase: string) => {
 	const query = CH.logsListQuery({ traceId: request.traceId, spanId: request.spanId, limit: request.limit })
 	return Effect.gen(function* () {
 		const rows = yield* queryRows(CH.compile(query, localParams(bounds)), apiBase)
-		const logs = rows.map(normalizeLog)
+		const logs = Arr.map(rows, normalizeLog)
 		const now = yield* Clock.currentTimeMillis
 		yield* recordCached(spanLogsCacheKey(request), logs, now)
 		return logs
@@ -89,9 +105,15 @@ export const fetchSpanLogRecords = (request: LogsRequest, apiBase: string) => {
 }
 
 /** The span's logs as the cache keeps them (whole `LocalLog`s, the sheet opens on one). */
-export const cachedSpanLogRecords = (request: LogsRequest) => readCached(spanLogsCacheKey(request), cachedAs(StoredLogs))
+export const cachedSpanLogRecords = (request: LogsRequest) =>
+	readCached(spanLogsCacheKey(request), cachedAs(StoredLogs))
 
-const toEntry = (log: LocalLog) => ({ key: logKey(log), timestamp: log.timestamp, severityText: log.severityText, body: log.body })
+const toEntry = (log: LocalLog) => ({
+	key: logKey(log),
+	timestamp: log.timestamp,
+	severityText: log.severityText,
+	body: log.body,
+})
 
 export const TraceSourceLocal = Layer.effect(
 	TraceSource,
@@ -100,17 +122,23 @@ export const TraceSourceLocal = Layer.effect(
 		const cache = yield* LocalQueryCache
 		const { apiBase } = yield* readLocalEnv
 		const run = <A, E>(effect: Effect.Effect<A, E, HttpClient.HttpClient | LocalQueryCache>) =>
-			effect.pipe(Effect.provideService(HttpClient.HttpClient, http), Effect.provideService(LocalQueryCache, cache))
+			effect.pipe(
+				Effect.provideService(HttpClient.HttpClient, http),
+				Effect.provideService(LocalQueryCache, cache),
+			)
 		return TraceSource.of({
 			spanDetail: (request) => run(fetchSpanDetail(request, apiBase)),
-			spanLogs: (request) => run(fetchSpanLogRecords(request, apiBase)).pipe(Effect.map((logs) => logs.map(toEntry))),
+			spanLogs: (request) =>
+				run(fetchSpanLogRecords(request, apiBase)).pipe(Effect.map((logs) => Arr.map(logs, toEntry))),
 			cachedSpanDetail: (request) =>
 				run(readCached(spanDetailCacheKey(request), cachedAs(SpanDetail))).pipe(
 					Effect.map(Option.map(({ data, isFresh }) => ({ data, isFresh }))),
 				),
 			cachedSpanLogs: (request) =>
 				run(cachedSpanLogRecords(request)).pipe(
-					Effect.map(Option.map(({ data, isFresh }) => ({ data: data.map(toEntry), isFresh }))),
+					Effect.map(
+						Option.map(({ data, isFresh }) => ({ data: Arr.map(data, toEntry), isFresh })),
+					),
 				),
 		})
 	}),

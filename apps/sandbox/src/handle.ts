@@ -24,7 +24,7 @@ import {
 	type ExecutorRunResponse,
 	ExecutorUnavailable,
 } from "@maple/domain/executor"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { authorize } from "./auth"
 import { SandboxCallError } from "./checkout"
 
@@ -91,7 +91,7 @@ export const handle = (request: Request, env: SandboxHandleEnv): Effect.Effect<R
 			// across a deploy. Worth a line: the caller only sees "invalid".
 			Effect.tapError((error) =>
 				Effect.logWarning("sandbox request failed to decode").pipe(
-					Effect.annotateLogs({ "error.message": String(error).slice(0, 500) }),
+					Effect.annotateLogs({ "error.message": Str.slice(0, 500)(String(error)) }),
 				),
 			),
 			Effect.option,

@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "@maple/views/ui/icon"
+import { Array as Arr } from "effect"
 
 // `UnderlineTabStrip` and `underlineTabClass`: a row of tabs with an underlined active tab.
 
@@ -69,7 +70,7 @@ export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: Readonly
 			divided: false,
 			className: "gap-0 border-b border-border",
 		},
-		tabs.map((tab) =>
+		Arr.map(tabs, (tab) =>
 			h.a(
 				[
 					h.Key(tab.key),

@@ -7,7 +7,7 @@ import {
 	IssueEscalationAttemptsResponse,
 } from "@maple/domain/http"
 import { encodePublicId, V2ErrorIssueDetail } from "@maple/domain/http/v2"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -33,7 +33,7 @@ const WINDOW_MS = 12 * 60 * 60 * 1000
 const BUCKETS = 48
 const BUCKET_MS = WINDOW_MS / BUCKETS
 
-const warehouseTime = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ")
+const warehouseTime = (ms: number) => Str.replace("T", " ")(Str.slice(0, 19)(new Date(ms).toISOString()))
 const window = { startTime: warehouseTime(NOW - WINDOW_MS), endTime: warehouseTime(NOW) }
 
 /** A low steady rate that climbs into a surge over the last two hours. */
@@ -77,8 +77,8 @@ const detail = Schema.decodeUnknownSync(V2ErrorIssueDetail)({
 	open_pull_request_count: 0,
 	merged_pull_request_count: 0,
 	timeseries,
-	sample_traces: [3, 9, 14, 26, 41].map((minutesAgo, i) => ({
-		trace_id: `4bf92f3577b34da6a3ce929d0e0e47${String(36 + i).padStart(2, "0")}`,
+	sample_traces: Arr.map([3, 9, 14, 26, 41], (minutesAgo, i) => ({
+		trace_id: `4bf92f3577b34da6a3ce929d0e0e47${Str.padStart(2, "0")(String(36 + i))}`,
 		span_id: `00f067aa0ba902b${i}`,
 		service_name: "subscriptions-api",
 		timestamp: new Date(NOW - minutesAgo * 60_000).toISOString(),
@@ -114,7 +114,7 @@ const send = (step: Step, message: Message): Step => {
 	const next = pageUpdate(step.model, message, context)
 	return {
 		model: next.model,
-		commands: [...step.commands, ...(next.commands ?? []).filter(isLocalCommand)],
+		commands: [...step.commands, ...Arr.filter(next.commands ?? [], isLocalCommand)],
 	}
 }
 
@@ -122,31 +122,35 @@ const Flags = Schema.Struct({})
 
 const init = () => {
 	const entered = pageInit({ issueId, search: {} }, context)
-	const start: Step = { model: entered.model, commands: (entered.commands ?? []).filter(isLocalCommand) }
+	const start: Step = { model: entered.model, commands: Arr.filter(entered.commands ?? [], isLocalCommand) }
 	const windowed = send(start, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }))
 	const keyOf = (field: "detail" | "events" | "pullRequests" | "verifications" | "escalations") =>
 		windowed.model[field].key ?? ""
-	return [
-		Message.CompletedFetchDetail({ key: keyOf("detail"), result: Result.succeed(detail) }),
-		Message.CompletedFetchEvents({
-			key: keyOf("events"),
-			result: Result.succeed(new ErrorIssueEventsResponse({ events: [] })),
-		}),
-		Message.CompletedFetchPullRequests({
-			key: keyOf("pullRequests"),
-			result: Result.succeed(
-				new ErrorIssuePullRequestsResponse({ pullRequests: [], suggestedRepository: null }),
-			),
-		}),
-		Message.CompletedFetchVerifications({
-			key: keyOf("verifications"),
-			result: Result.succeed(new ErrorIssueVerificationsResponse({ verifications: [] })),
-		}),
-		Message.CompletedFetchEscalations({
-			key: keyOf("escalations"),
-			result: Result.succeed(new IssueEscalationAttemptsResponse({ attempts: [] })),
-		}),
-	].reduce(send, windowed)
+	return Arr.reduce(
+		[
+			Message.CompletedFetchDetail({ key: keyOf("detail"), result: Result.succeed(detail) }),
+			Message.CompletedFetchEvents({
+				key: keyOf("events"),
+				result: Result.succeed(new ErrorIssueEventsResponse({ events: [] })),
+			}),
+			Message.CompletedFetchPullRequests({
+				key: keyOf("pullRequests"),
+				result: Result.succeed(
+					new ErrorIssuePullRequestsResponse({ pullRequests: [], suggestedRepository: null }),
+				),
+			}),
+			Message.CompletedFetchVerifications({
+				key: keyOf("verifications"),
+				result: Result.succeed(new ErrorIssueVerificationsResponse({ verifications: [] })),
+			}),
+			Message.CompletedFetchEscalations({
+				key: keyOf("escalations"),
+				result: Result.succeed(new IssueEscalationAttemptsResponse({ attempts: [] })),
+			}),
+		],
+		windowed,
+		send,
+	)
 }
 
 /** The lab has no API, so a started investigation is answered at once with the failure the page shows. */
@@ -157,12 +161,12 @@ const NO_API = Message.CompletedCreateInvestigation({
 const update = (model: Model, message: Message) => {
 	const next = pageUpdate(model, message, context)
 	const commands = next.commands ?? []
-	if (!commands.some((command) => command.name === "CreateErrorIssueInvestigation"))
-		return { model: next.model, commands: commands.filter(isLocalCommand) }
+	if (!Arr.some(commands, (command) => command.name === "CreateErrorIssueInvestigation"))
+		return { model: next.model, commands: Arr.filter(commands, isLocalCommand) }
 	const settled = pageUpdate(next.model, NO_API, context)
 	return {
 		model: settled.model,
-		commands: [...commands, ...(settled.commands ?? [])].filter(isLocalCommand),
+		commands: Arr.filter([...commands, ...(settled.commands ?? [])], isLocalCommand),
 	}
 }
 

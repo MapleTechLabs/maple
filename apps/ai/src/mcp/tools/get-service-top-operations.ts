@@ -5,7 +5,7 @@ import { formatMetricValue } from "../lib/format-query-result"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { GetServiceTopOperationsOutput } from "@maple/domain/mcp-outputs"
 import { topOperations } from "@maple/query-engine/observability"
 import { TracesMetric } from "@maple/query-engine"
@@ -56,7 +56,7 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 				serviceName: params.service,
 				metric,
 				total: operations.length,
-				operations: operations.map((op) => ({ name: op.name, value: op.value })),
+				operations: Arr.map(operations, (op) => ({ name: op.name, value: op.value })),
 			}
 		}),
 		render: (output) => ({
@@ -74,7 +74,7 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 					: [
 							doc.table(
 								["Operation", output.metric],
-								output.operations.map((op) => [
+								Arr.map(output.operations, (op) => [
 									op.name,
 									formatMetricValue(output.metric, op.value),
 								]),
@@ -91,15 +91,13 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 							doc.next("list_services", {}, "verify the service name"),
 						]
 					: [
-							...output.operations
-								.slice(0, 3)
-								.map((op) =>
-									doc.next(
-										"search_traces",
-										{ service: output.serviceName, span_name: op.name },
-										`find traces for ${op.name}`,
-									),
+							...Arr.map(output.operations.slice(0, 3), (op) =>
+								doc.next(
+									"search_traces",
+									{ service: output.serviceName, span_name: op.name },
+									`find traces for ${op.name}`,
 								),
+							),
 							doc.next(
 								"query_data",
 								{

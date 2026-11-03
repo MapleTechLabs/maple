@@ -8,7 +8,7 @@
  * shape here — pure, testable, no React — and let the component paint it.
  */
 
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
@@ -30,7 +30,7 @@ function looksLikeJson(text: string): boolean {
 }
 
 export function parseErrorBody(message: string): ErrorBody {
-	const trimmed = message.trim()
+	const trimmed = Str.trim(message)
 
 	if (looksLikeJson(trimmed)) {
 		// The delimiter check already guarantees an object or an array — the JSON
@@ -44,7 +44,7 @@ export function parseErrorBody(message: string): ErrorBody {
 	}
 
 	// Trailing newlines would paint as blank lines under the message.
-	return { format: "text", full: message.replace(/^(?:\r?\n)+/, "").trimEnd() }
+	return { format: "text", full: Str.trimEnd(Str.replace(/^(?:\r?\n)+/, "")(message)) }
 }
 
 export type JsonTokenType = "key" | "string" | "number" | "keyword" | "punctuation" | "plain"
@@ -113,5 +113,8 @@ const FRAME_RE = /^\s*(at\s|from\s|File\s"|\.{3}\s|Caused by:|\w+\.\w+\(.*\))/
 
 /** Splits a plain-text error into its message and its (dimmed) stack frames. */
 export function splitErrorText(message: string): ErrorTextLine[] {
-	return message.split("\n").map((text, index) => ({ frame: index > 0 && FRAME_RE.test(text), text }))
+	return Arr.map(Str.split("\n")(message), (text, index) => ({
+		frame: index > 0 && FRAME_RE.test(text),
+		text,
+	}))
 }

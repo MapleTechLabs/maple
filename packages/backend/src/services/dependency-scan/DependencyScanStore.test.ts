@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import type { DependencyScanLockfile, DependencyScanTrigger } from "@maple/domain/dependency-scan"
 import { GitCommitSha, VcsRepositoryId } from "@maple/domain/http/vcs"
 import { OrgId, UserId } from "@maple/domain/primitives"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
@@ -18,7 +18,7 @@ const orgA = Schema.decodeSync(OrgId)("org_a")
 const orgB = Schema.decodeSync(OrgId)("org_b")
 const user = Schema.decodeSync(UserId)("user_a")
 const repo = Schema.decodeSync(VcsRepositoryId)("7f0c1a52-4d8e-4b6a-9b1e-2a3c4d5e6f70")
-const sha = (digit: string) => Schema.decodeSync(GitCommitSha)(digit.repeat(40))
+const sha = (digit: string) => Schema.decodeSync(GitCommitSha)(Str.repeat(40)(digit))
 
 const withStore = <A, E>(body: (store: DependencyScanStoreApi) => Effect.Effect<A, E>) =>
 	Effect.gen(function* () {
@@ -163,7 +163,7 @@ describe("DependencyScanStore findings lifecycle", () => {
 				])
 				const rows = yield* findings(store)
 				assert.deepStrictEqual(
-					rows.map((row) => [row.id, row.advisoryId, row.status]),
+					Arr.map(rows, (row) => [row.id, row.advisoryId, row.status]),
 					[[first.id, "GO-2026-1", "dismissed"]],
 				)
 				assert.include(rows[0]?.aliases ?? [], "GHSA-aaaa")
@@ -276,7 +276,7 @@ describe("DependencyScanStore findings lifecycle", () => {
 				})
 				const rows = yield* findings(store)
 				assert.deepStrictEqual(
-					rows.map((row) => [row.packageName, row.status, row.fixedSha]),
+					Arr.map(rows, (row) => [row.packageName, row.status, row.fixedSha]),
 					[["lodash", "fixed", sha("c")]],
 				)
 			}),
@@ -295,7 +295,7 @@ describe("DependencyScanStore findings lifecycle", () => {
 				assert.strictEqual(settled.vulnerableCount, 3)
 				const rows = yield* findings(store)
 				assert.deepStrictEqual(
-					rows.map((row) => [
+					Arr.map(rows, (row) => [
 						row.packageName,
 						row.status,
 						row.severity,
@@ -384,7 +384,7 @@ describe("DependencyScanStore findings lifecycle", () => {
 				})
 				const rows = yield* findings(store)
 				assert.deepStrictEqual(
-					rows.map((row) => [row.packageName, row.status]),
+					Arr.map(rows, (row) => [row.packageName, row.status]),
 					[
 						["lodash", "open"],
 						["x/net", "open"],
@@ -417,7 +417,7 @@ describe("DependencyScanStore findings lifecycle", () => {
 				})
 				const rows = yield* findings(store)
 				assert.deepStrictEqual(
-					rows.map((row) => [row.packageName, row.status, row.fixedSha]),
+					Arr.map(rows, (row) => [row.packageName, row.status, row.fixedSha]),
 					[
 						["lodash", "open", null],
 						["serde", "fixed", removal.commitSha],
@@ -436,12 +436,12 @@ describe("DependencyScanStore findings lifecycle", () => {
 				})
 				const rows = yield* findings(store)
 				assert.deepStrictEqual(
-					rows.map((row) => [row.packageName, row.status]),
+					Arr.map(rows, (row) => [row.packageName, row.status]),
 					[["lodash", "open"]],
 				)
 				const matches = yield* store.scanMatches({ orgId: orgA, scanId: production.id })
 				assert.deepStrictEqual(
-					matches.map((row) => [row.packageName, row.version, row.advisoryId]),
+					Arr.map(matches, (row) => [row.packageName, row.version, row.advisoryId]),
 					[["minimist", "0.0.8", "GHSA-minimist"]],
 				)
 			}),
@@ -504,7 +504,7 @@ describe("DependencyScanStore scans", () => {
 				assert.deepStrictEqual(Option.getOrUndefined(atA)?.lockfiles, [lockfile("bun.lock")])
 				const scans = yield* store.listScans({ orgId: orgA, repositoryId: repo, limit: 10 })
 				assert.deepStrictEqual(
-					scans.map((row) => [row.commitSha, row.status]),
+					Arr.map(scans, (row) => [row.commitSha, row.status]),
 					[
 						[sha("c"), "running"],
 						[sha("b"), "completed"],

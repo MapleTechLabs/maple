@@ -17,7 +17,7 @@ import type { SourceResourceCount } from "@maple/domain/source-health"
 import { SourcePublicId } from "@maple/domain/http/v2"
 import type { OrgId, PullSourcePlatform, SourceId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Array as Arr, Effect, Schema } from "effect"
+import { Array as Arr, Effect, Schema, Record as Rec } from "effect"
 import {
 	isPausedAt,
 	newSourceId,
@@ -90,7 +90,7 @@ export const deleteSourcesOf = (
 	rows: ReadonlyArray<{ readonly sourceId: SourceId | null }>,
 	platform?: PullSourcePlatform,
 ) => {
-	const ids = rows.flatMap((row) => (row.sourceId === null ? [] : [row.sourceId]))
+	const ids = Arr.flatMap(rows, (row) => (row.sourceId === null ? [] : [row.sourceId]))
 	return ids.length === 0
 		? Effect.void
 		: db
@@ -194,12 +194,12 @@ const SCRAPING_OFF = "Scraping is turned off"
 const scrapeOverrides = (
 	group: ReadonlyArray<{ readonly enabled: boolean; readonly scrapeIntervalSeconds: number }>,
 ): SourceHealthOverrides => {
-	const enabled = group.filter((target) => target.enabled)
+	const enabled = Arr.filter(group, (target) => target.enabled)
 	return enabled.length === 0
 		? { turnedOff: SCRAPING_OFF }
 		: {
 				staleAfterMs: Math.max(
-					...enabled.map((target) => scrapeStaleAfterMs(target.scrapeIntervalSeconds)),
+					...Arr.map(enabled, (target) => scrapeStaleAfterMs(target.scrapeIntervalSeconds)),
 				),
 			}
 }
@@ -212,13 +212,13 @@ const overridesBySource = (
 	}>,
 ) => {
 	const bySource = Arr.groupBy(
-		targets.flatMap((target) =>
+		Arr.flatMap(targets, (target) =>
 			target.sourceId === null ? [] : [{ ...target, sourceId: target.sourceId }],
 		),
 		(target) => target.sourceId,
 	)
 	return new Map(
-		Object.values(bySource).map((group): readonly [SourceId, SourceHealthOverrides] => [
+		Arr.map(Rec.values(bySource), (group): readonly [SourceId, SourceHealthOverrides] => [
 			group[0].sourceId,
 			scrapeOverrides(group),
 		]),
@@ -283,7 +283,7 @@ const readAwsHealth = (db: MapleDb, orgId: OrgId) =>
 	)
 
 const awsOverridesBySource = (connections: ReadonlyArray<AwsHealthRow>, now: number) =>
-	connections.flatMap((connection): ReadonlyArray<readonly [SourceId, SourceHealthOverrides]> =>
+	Arr.flatMap(connections, (connection): ReadonlyArray<readonly [SourceId, SourceHealthOverrides]> =>
 		connection.sourceId === null ? [] : [[connection.sourceId, awsHealthOverrides(connection, now)]],
 	)
 
@@ -350,7 +350,7 @@ export const readSourceOwners = Effect.fnUntraced(function* (db: MapleDb, orgId:
 		],
 		{ concurrency: "unbounded" },
 	)
-	const linked = [...targets, ...awsConnections, ...owners.flat()].flatMap((owner) =>
+	const linked = Arr.flatMap([...targets, ...awsConnections, ...owners.flat()], (owner) =>
 		owner.sourceId === null ? [] : [[owner.sourceId, owner.id] as const],
 	)
 	return {

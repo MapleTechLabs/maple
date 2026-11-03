@@ -2,7 +2,7 @@ import { getServiceColor } from "@maple/ui/lib/colors"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { filterSection } from "@maple/views/ui/filters/filter-section"
 import { filterSidebarBody, filterSidebarHeader } from "@maple/views/ui/filters/filter-sidebar"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { type Keyed } from "@maple/views/data/keyed"
@@ -22,7 +22,7 @@ const isFetching = (slot: Keyed<unknown, LoadFailure>) =>
 	AsyncData.isLoading(slot.data) || AsyncData.isRefreshing(slot.data)
 
 const severityColor = (name: string): string | undefined =>
-	Object.hasOwn(SEVERITY_COLORS, name) ? SEVERITY_COLORS[name] : undefined
+	Rec.has(SEVERITY_COLORS, name) ? SEVERITY_COLORS[name] : undefined
 
 export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: LogFilters): Html =>
 	filterRailFrame(h, { isWaiting: isFetching(model.services) || isFetching(model.severities) }, [
@@ -33,26 +33,29 @@ export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: LogFilte
 		...filterSidebarBody(
 			h,
 			"logs-filters",
-			[
-				filterSection(h, {
-					title: "Severity",
-					options: optionsOf(model.severities),
-					selected: filters.severity ? [filters.severity] : [],
-					colorOf: severityColor,
-					sections: model.sections,
-					toSectionsMessage: toSections,
-					onToggle: (name) => Message.ToggledFacetOption({ param: "severity", name }),
-				}),
-				filterSection(h, {
-					title: "Service",
-					options: optionsOf(model.services),
-					selected: filters.service ? [filters.service] : [],
-					isSearchable: true,
-					colorOf: getServiceColor,
-					sections: model.sections,
-					toSectionsMessage: toSections,
-					onToggle: (name) => Message.ToggledFacetOption({ param: "service", name }),
-				}),
-			].filter((section) => section !== null),
+			Arr.filter(
+				[
+					filterSection(h, {
+						title: "Severity",
+						options: optionsOf(model.severities),
+						selected: filters.severity ? [filters.severity] : [],
+						colorOf: severityColor,
+						sections: model.sections,
+						toSectionsMessage: toSections,
+						onToggle: (name) => Message.ToggledFacetOption({ param: "severity", name }),
+					}),
+					filterSection(h, {
+						title: "Service",
+						options: optionsOf(model.services),
+						selected: filters.service ? [filters.service] : [],
+						isSearchable: true,
+						colorOf: getServiceColor,
+						sections: model.sections,
+						toSectionsMessage: toSections,
+						onToggle: (name) => Message.ToggledFacetOption({ param: "service", name }),
+					}),
+				],
+				(section) => section !== null,
+			),
 		),
 	])

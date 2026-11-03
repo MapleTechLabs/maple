@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
-import { Schema } from "effect"
+import { Schema, Record as Rec } from "effect"
 import { MapleCloudEventSchema, SignalProjectionSpecSchema, SignalScalarSchema } from "../src/model"
 
 const encodeJsonTabbed = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
@@ -36,7 +36,7 @@ for (const entry of documents) {
 		onExcessProperty: "error",
 	})
 	const schemaDocument =
-		Object.keys(document.definitions).length === 0
+		Rec.keys(document.definitions).length === 0
 			? { $schema: "https://json-schema.org/draft/2020-12/schema", $id: entry.id, ...document.schema }
 			: {
 					$schema: "https://json-schema.org/draft/2020-12/schema",

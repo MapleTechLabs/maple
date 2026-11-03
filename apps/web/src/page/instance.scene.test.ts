@@ -1,6 +1,6 @@
 import { DashboardId, OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { AppRoute } from "../route"
 import type { PageContext } from "./contract"
@@ -32,7 +32,10 @@ const documentOf = (id: string) =>
 	})
 
 const routeOf = (id: string, isEdit: boolean) =>
-	AppRoute.Dashboard({ dashboardId: Schema.decodeSync(DashboardId)(id), search: isEdit ? { mode: "edit" } : {} })
+	AppRoute.Dashboard({
+		dashboardId: Schema.decodeSync(DashboardId)(id),
+		search: isEdit ? { mode: "edit" } : {},
+	})
 
 const stamp = (key: string, instance: number, message: Message, org: string = orgId): PageMessage => ({
 	_tag: "DashboardView",
@@ -46,9 +49,17 @@ const send = (slot: PageSlot | null, message: PageMessage) => updatePage(slot, m
 
 /** Dashboard `id` entered in edit mode as build `instance`, clocked and holding its document. */
 const opened = (current: PageSlot | null, id: string, instance: number): PageSlot | null =>
-	[Message.CompletedReadClock({ nowMs: NOW }), Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(documentOf(id)) })]
-		.map((message) => stamp(id, instance, message))
-		.reduce((slot, message) => send(slot, message).slot, enterRoute(current, routeOf(id, true), context, instance).slot)
+	Arr.reduce(
+		Arr.map(
+			[
+				Message.CompletedReadClock({ nowMs: NOW }),
+				Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(documentOf(id)) }),
+			],
+			(message) => stamp(id, instance, message),
+		),
+		enterRoute(current, routeOf(id, true), context, instance).slot,
+		(slot, message) => send(slot, message).slot,
+	)
 
 const deleteTile = (slot: PageSlot | null, id: string, instance: number) =>
 	send(
@@ -77,7 +88,7 @@ describe("page instances", () => {
 		const undo = Option.getOrThrow(undoOf(deleteTile(onA, "dash_a", 1)))
 		const onB = opened(onA, "dash_b", 2)
 		expect(onB?.key).toBe("dash_b")
-		expect([undo.orgId, undo.dashboardId, undo.widgets.map((widget) => widget.id)]).toEqual([
+		expect([undo.orgId, undo.dashboardId, Arr.map(undo.widgets, (widget) => widget.id)]).toEqual([
 			orgId,
 			"dash_a",
 			["total-errors"],
@@ -86,13 +97,19 @@ describe("page instances", () => {
 
 	test("dashboard A's late failed write does not make B read-only", () => {
 		const onB = opened(opened(null, "dash_a", 1), "dash_b", 2)
-		const late = send(onB, stamp("dash_a", 1, Message.CompletedWrite({ result: Result.fail("Write failed") })))
+		const late = send(
+			onB,
+			stamp("dash_a", 1, Message.CompletedWrite({ result: Result.fail("Write failed") })),
+		)
 		expect(late.slot?._tag === "DashboardView" ? late.slot.model.persistenceError : "missing").toBeNull()
 	})
 
 	test("a Message stamped for another org's instance of the same dashboard is dropped", () => {
 		const onA = opened(null, "dash_a", 1)
-		const late = send(onA, stamp("dash_a", 1, Message.CompletedWrite({ result: Result.fail("Write failed") }), otherOrgId))
+		const late = send(
+			onA,
+			stamp("dash_a", 1, Message.CompletedWrite({ result: Result.fail("Write failed") }), otherOrgId),
+		)
 		expect(late.slot).toBe(onA)
 	})
 

@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto"
 import { existsSync, readFileSync, statfsSync } from "node:fs"
 import { lstat, readdir, stat } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { Chdb } from "@maple/local-server/chdb"
 import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
 import {
@@ -102,7 +102,7 @@ export interface MigrationResult {
 /** v0 -> v1 is a hand-written module; every later edge is a row of `steps.ts`. */
 export const localStoreMigrations: ReadonlyArray<AnyLocalStoreMigrationModule> = [
 	legacyToCurrentModule,
-	...LOCAL_STORE_STEPS.map(stepModule),
+	...Arr.map(LOCAL_STORE_STEPS, stepModule),
 ]
 
 export const validateMigrationRegistry = (
@@ -210,7 +210,7 @@ export const resolveMigrationChain = (
 	}
 
 	const byFrom = new Map(
-		validateMigrationRegistry(registry).map((migration) => [migration.from.version, migration]),
+		Arr.map(validateMigrationRegistry(registry), (migration) => [migration.from.version, migration]),
 	)
 	const chain: AnyLocalStoreMigrationModule[] = []
 	let current = source
@@ -250,14 +250,14 @@ export const resolveMigrationChain = (
 
 export const planMigration = (source: LocalSchemaIdentity, target = CURRENT_LOCAL_SCHEMA): MigrationPlan => {
 	const chain = resolveMigrationChain(source, target)
-	const operations = chain.flatMap((migration) => migration.operations)
+	const operations = Arr.flatMap(chain, (migration) => migration.operations)
 	return {
 		source,
 		target,
 		chain,
 		operations,
-		dispositions: chain.flatMap((migration) => migration.dispositions),
-		requiresQuiescence: operations.some((operation) => operation.requiresQuiescence),
+		dispositions: Arr.flatMap(chain, (migration) => migration.dispositions),
+		requiresQuiescence: Arr.some(operations, (operation) => operation.requiresQuiescence),
 		rollbackBoundary:
 			"The retained source is a pre-cutover rollback point only; telemetry accepted after promotion is not present there.",
 		checkpointDisposition:
@@ -273,21 +273,23 @@ export const formatMigrationPlan = (plan: MigrationPlan): string => {
 		`chDB: ${plan.target.chdb}`,
 		`quiescence required: ${plan.requiresQuiescence ? "yes" : "no"}`,
 		"migration chain:",
-		...plan.chain.map((migration) => `  - ${migration.id}: ${migration.description}`),
+		...Arr.map(plan.chain, (migration) => `  - ${migration.id}: ${migration.description}`),
 		"ordered operations:",
-		...plan.operations.map(
+		...Arr.map(
+			plan.operations,
 			(operation) =>
 				`  - ${operation.id}: ${operation.description}${operation.phase === undefined ? "" : ` [${operation.phase}]`}`,
 		),
 		"state dispositions:",
-		...plan.dispositions.map(
+		...Arr.map(
+			plan.dispositions,
 			(entry) =>
 				`  - ${entry.name}: ${entry.disposition}${entry.preservationInterval === undefined ? "" : ` [${entry.preservationInterval}]`} — ${entry.guarantee}`,
 		),
 		`checkpoint: ${plan.checkpointDisposition}`,
 		`rollback: ${plan.rollbackBoundary}`,
 	]
-	return `${lines.join("\n")}\n`
+	return `${Arr.join(lines, "\n")}\n`
 }
 
 /** Read a journal for resume or promotion. Unlike structural quarantine, this
@@ -361,7 +363,7 @@ class LocalServerPidProbeError extends Schema.TaggedError<LocalServerPidProbeErr
  *  server's file names whichever process reads it. */
 const livePidIn = (path: string): number | null => {
 	if (!existsSync(path)) return null
-	const pid = Number.parseInt(readFileSync(path, "utf8").trim(), 10)
+	const pid = Number.parseInt(Str.trim(readFileSync(path, "utf8")), 10)
 	if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return null
 	return Effect.runSync(
 		Effect.try({
@@ -623,7 +625,7 @@ export const abandonLocalStoreMigrationPreservingSource = async (dataDir: string
 				const targetMarker = readMarker(journal.targetDataDir)
 				if (
 					targetMarker === null ||
-					!journal.chain.some((step) =>
+					!Arr.some(journal.chain, (step) =>
 						markerMatches(targetMarker, step.to, journal.targetStoreId, "staging"),
 					)
 				)
@@ -664,7 +666,7 @@ const archiveAndReturn = async (dataDir: string, journal: MigrationJournal): Pro
 		cutoffAt: journal.cutoffAt,
 		sourceRollbackDir: join(migrationRootPath(dataDir, journal.migrationId), "source", "data"),
 		targetDataDir: resolve(dataDir),
-		completedSteps: journal.chain.filter((step) => step.status === "completed").length,
+		completedSteps: Arr.filter(journal.chain, (step) => step.status === "completed").length,
 		copiedRows: {},
 	}
 }
@@ -890,7 +892,9 @@ const makeModuleContext = (
 			}
 			current = {
 				...current,
-				chain: current.chain.map((candidate, index) => (index === stepIndex ? nextStep : candidate)),
+				chain: Arr.map(current.chain, (candidate, index) =>
+					index === stepIndex ? nextStep : candidate,
+				),
 			}
 			await writeMigrationJournal(dataDir, current)
 		},
@@ -994,7 +998,9 @@ export const executeMigrationChain = async (
 			if (step.status === "pending") {
 				step = { ...step, status: "running" }
 				journal = await updateJournal(dataDir, journal, {
-					chain: journal.chain.map((candidate, index) => (index === stepIndex ? step : candidate)),
+					chain: Arr.map(journal.chain, (candidate, index) =>
+						index === stepIndex ? step : candidate,
+					),
 				})
 			}
 			const targetMarker = readMarker(journal.targetDataDir)
@@ -1031,7 +1037,7 @@ export const executeMigrationChain = async (
 					dataDir,
 					{
 						...current(),
-						chain: current().chain.map((candidate, index) =>
+						chain: Arr.map(current().chain, (candidate, index) =>
 							index === stepIndex ? verifiedStep : candidate,
 						),
 					},
@@ -1054,7 +1060,7 @@ export const executeMigrationChain = async (
 				...current().chain[stepIndex]!,
 				status: "completed",
 			}
-			const nextChain = current().chain.map((candidate, index) =>
+			const nextChain = Arr.map(current().chain, (candidate, index) =>
 				index === stepIndex
 					? completedStep
 					: index === stepIndex + 1
@@ -1106,7 +1112,7 @@ const createJournal = (dataDir: string, plan: MigrationPlan, marker: StoreMarker
 		formatVersion: 2,
 		migrationId,
 		phase: "planned",
-		chain: plan.chain.map((migration): MigrationStepJournal => ({
+		chain: Arr.map(plan.chain, (migration): MigrationStepJournal => ({
 			id: migration.id,
 			moduleVersion: migration.moduleVersion,
 			from: migration.from,
@@ -1136,7 +1142,7 @@ const journalModules = (
 	modules: ReadonlyArray<AnyLocalStoreMigrationModule>,
 ): ReadonlyArray<AnyLocalStoreMigrationModule> => {
 	validateJournalModuleState(journal, modules)
-	return journal.chain.map((step) => moduleForStep(step, modules))
+	return Arr.map(journal.chain, (step) => moduleForStep(step, modules))
 }
 
 const migrationPlanFromJournal = (journal: MigrationJournal): MigrationPlan => {
@@ -1148,14 +1154,14 @@ const migrationPlanFromJournal = (journal: MigrationJournal): MigrationPlan => {
 		chdb: journal.sourceChdb,
 	}
 	const target = journal.chain[journal.chain.length - 1]!.to
-	const operations = chain.flatMap((migration) => migration.operations)
+	const operations = Arr.flatMap(chain, (migration) => migration.operations)
 	return {
 		source,
 		target,
 		chain,
 		operations,
-		dispositions: chain.flatMap((migration) => migration.dispositions),
-		requiresQuiescence: operations.some((operation) => operation.requiresQuiescence),
+		dispositions: Arr.flatMap(chain, (migration) => migration.dispositions),
+		requiresQuiescence: Arr.some(operations, (operation) => operation.requiresQuiescence),
 		rollbackBoundary:
 			"The retained source is a pre-cutover rollback point only; telemetry accepted after promotion is not present there.",
 		checkpointDisposition:
@@ -1172,7 +1178,7 @@ const migrationResult = (journal: MigrationJournal, dataDir: string): MigrationR
 	cutoffAt: journal.cutoffAt,
 	sourceRollbackDir: join(migrationRootPath(dataDir, journal.migrationId), "source", "data"),
 	targetDataDir: resolve(dataDir),
-	completedSteps: journal.chain.filter((step) => step.status === "completed").length,
+	completedSteps: Arr.filter(journal.chain, (step) => step.status === "completed").length,
 	copiedRows: {},
 })
 
@@ -1261,8 +1267,8 @@ export const runLocalStoreMigration = async (
 			source: sourceIdentity,
 			target: journal!.chain[journal!.chain.length - 1]!.to,
 			chain: resumedChain,
-			operations: resumedChain.flatMap((migration) => migration.operations),
-			dispositions: resumedChain.flatMap((migration) => migration.dispositions),
+			operations: Arr.flatMap(resumedChain, (migration) => migration.operations),
+			dispositions: Arr.flatMap(resumedChain, (migration) => migration.dispositions),
 			requiresQuiescence: true,
 			rollbackBoundary:
 				"The retained source is a pre-cutover rollback point only; telemetry accepted after promotion is not present there.",

@@ -8,7 +8,7 @@ import {
 	type SignalScalar,
 	type SignalSourceDefinition,
 } from "@maple/eventing-core"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"
 import { OtlpFieldError, spanIdHex, traceIdHex, type AnyValue, type KeyValue } from "../otlp/encode"
 
 const NumberOrString = Schema.Union([Schema.String, Schema.Number])
@@ -176,7 +176,7 @@ const anyValueScalar = (value: AnyValue | undefined, label: string): SignalScala
 		const double =
 			typeof value.doubleValue === "number"
 				? value.doubleValue
-				: value.doubleValue.trim() === ""
+				: Str.trim(value.doubleValue) === ""
 					? Number.NaN
 					: Number(value.doubleValue)
 		if (!Number.isFinite(double)) throw new OtlpFieldError({ message: `${label} must be finite` })
@@ -200,7 +200,7 @@ const anyValueJson = (
 	if (!value) return null
 	if (value.bytesValue !== undefined) return assertStringBound(value.bytesValue, `${label}.bytesValue`)
 	if (value.arrayValue !== undefined)
-		return (value.arrayValue.values ?? []).map((item, index) =>
+		return Arr.map(value.arrayValue.values ?? [], (item, index) =>
 			anyValueJson(item, `${label}[${index}]`, depth + 1, budget),
 		)
 	if (value.kvlistValue !== undefined) {
@@ -232,7 +232,7 @@ const attributes = (values: readonly KeyValue[] | undefined, label: string): Nor
 		if (scalar) scalars.set(key, scalar)
 		data[key] = anyValueJson(entry.value, `${label}.${key}`)
 	}
-	return { scalars: [...scalars].map(([key, value]) => ({ key, value })), data }
+	return { scalars: Arr.map([...scalars], ([key, value]) => ({ key, value })), data }
 }
 
 const epochNanos = (value: string | number | undefined): bigint | null => {
@@ -248,7 +248,7 @@ const nanosToTimestamp = (nanos: bigint): string => {
 	const date = new Date(milliseconds)
 	if (!Number.isFinite(milliseconds) || Number.isNaN(date.getTime()))
 		throw new OtlpFieldError({ message: "OTLP timestamp is outside the supported date range" })
-	return `${date.toISOString().slice(0, 19)}.${fraction.toString().padStart(9, "0")}Z`
+	return `${Str.slice(0, 19)(date.toISOString())}.${Str.padStart(9, "0")(fraction.toString())}Z`
 }
 
 const stringAttribute = (attrs: NormalizedAttributes, key: string): string | null => {
@@ -457,15 +457,15 @@ const normalizeLogRecord = (
 				field: { namespace: "signal", key: "observed_time", type: "timestamp" },
 				value: { type: "timestamp", value: sourceObservedAt },
 			},
-			...resource.scalars.map(({ key, value }) => ({
+			...Arr.map(resource.scalars, ({ key, value }) => ({
 				field: { namespace: "resource" as const, key, type: value.type },
 				value,
 			})),
-			...scope.scalars.map(({ key, value }) => ({
+			...Arr.map(scope.scalars, ({ key, value }) => ({
 				field: { namespace: "scope" as const, key, type: value.type },
 				value,
 			})),
-			...record.scalars.map(({ key, value }) => ({
+			...Arr.map(record.scalars, ({ key, value }) => ({
 				field: { namespace: "attribute" as const, key, type: value.type },
 				value,
 			})),

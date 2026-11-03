@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Tracer } from "effect"
+import { Effect, Layer, Tracer, Array as Arr } from "effect"
 import { makeSpanBuffer, type OtlpSpan } from "../shared/flushable-tracer.js"
 import { makeArgsScrubber, REDACTED } from "./args.js"
 import { makeFoldkitTracing, NAVIGATION_ARG, nowNanos } from "./tracer.js"
@@ -62,13 +62,13 @@ describe("Foldkit command tracing", () => {
 	it("exports a failed Command even without a child span", async () => {
 		const { buffer, runCommand } = setup()
 		await runCommand("SaveDraft", {}, Effect.fail("disk full"))
-		expect(buffer.drain().map((span) => span.name)).toEqual(["SaveDraft"])
+		expect(Arr.map(buffer.drain(), (span) => span.name)).toEqual(["SaveDraft"])
 	})
 
 	it("exports a kept Command without a child span", async () => {
 		const { buffer, runCommand } = setup({ keepCommands: ["VerifyTotp"] })
 		await runCommand("VerifyTotp", {}, Effect.void)
-		expect(buffer.drain().map((span) => span.name)).toEqual(["VerifyTotp"])
+		expect(Arr.map(buffer.drain(), (span) => span.name)).toEqual(["VerifyTotp"])
 	})
 
 	it("parents navigation Commands under one navigation span that ends after the last", async () => {
@@ -88,14 +88,14 @@ describe("Foldkit command tracing", () => {
 		await settle()
 		const spans = buffer.drain()
 		const navigation = byName(spans, "navigate /chat/:id")
-		expect(spans.map((span) => span.name).sort()).toEqual(
+		expect(Arr.map(spans, (span) => span.name).sort()).toEqual(
 			["LoadMembers", "LoadMessages", "RpcClient.load", "RpcClient.load", "navigate /chat/:id"].sort(),
 		)
 		expect(navigation?.parentSpanId).toBeUndefined()
 		expect(byName(spans, "LoadMessages")?.parentSpanId).toBe(navigation?.spanId)
 		expect(byName(spans, "LoadMembers")?.traceId).toBe(navigation?.traceId)
 		expect(attribute(navigation, "url.path")).toEqual({ stringValue: "/chat/1" })
-		expect(spans.some((span) => attribute(span, NAVIGATION_ARG) !== undefined)).toBe(false)
+		expect(Arr.some(spans, (span) => attribute(span, NAVIGATION_ARG) !== undefined)).toBe(false)
 	})
 
 	it("makes a Command whose navigation closed before it had a span a root, not a child of nothing", async () => {
@@ -112,7 +112,7 @@ describe("Foldkit command tracing", () => {
 		)
 		await runCommand("LoadMessages", { [NAVIGATION_ARG]: id }, work)
 		const spans = buffer.drain()
-		expect(spans.map((span) => span.name).sort()).toEqual(["LoadMessages", "RpcClient.load"])
+		expect(Arr.map(spans, (span) => span.name).sort()).toEqual(["LoadMessages", "RpcClient.load"])
 		expect(byName(spans, "LoadMessages")?.parentSpanId).toBeUndefined()
 	})
 
@@ -126,12 +126,10 @@ describe("Foldkit command tracing", () => {
 		expect(dropped.buffer.drain()).toEqual([])
 		const kept = setup({ sampleRates: { SendHeartbeat: 1 } })
 		await kept.runCommand("SendHeartbeat", {}, Effect.void.pipe(Effect.withSpan("RpcClient.heartbeat")))
-		expect(
-			kept.buffer
-				.drain()
-				.map((span) => span.name)
-				.sort(),
-		).toEqual(["RpcClient.heartbeat", "SendHeartbeat"])
+		expect(Arr.map(kept.buffer.drain(), (span) => span.name).sort()).toEqual([
+			"RpcClient.heartbeat",
+			"SendHeartbeat",
+		])
 	})
 
 	it("exports nothing for a navigation whose Commands were all UI work", async () => {

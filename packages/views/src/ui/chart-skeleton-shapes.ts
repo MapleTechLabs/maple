@@ -1,4 +1,5 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr, Record as Rec } from "effect"
 
 // The heatmap, hbar, funnel, drop-off, paths, pie, gauge and stat ghosts of `ChartSkeleton`
 // (packages/ui/src/components/charts/_shared/chart-skeleton.tsx), markup and numbers as there.
@@ -8,7 +9,7 @@ const HEATMAP_COLS = 8
 const HEATMAP_ROWS = 5
 
 const attrs = <M>(h: HtmlBuilder<M>, entries: Readonly<Record<string, string | number>>) =>
-	Object.entries(entries).map(([name, value]) => h.Attribute(name, String(value)))
+	Arr.map(Rec.toEntries(entries), ([name, value]) => h.Attribute(name, String(value)))
 
 const stub = <M>(h: HtmlBuilder<M>, className: string, style?: Readonly<Record<string, string>>): Html =>
 	h.div([h.Class(className), ...(style === undefined ? [] : [h.Style(style)])])
@@ -28,7 +29,7 @@ export const heatmapGhost = <M>(h: HtmlBuilder<M>): Html =>
 export const hbarGhost = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
 		[h.Class("flex h-full w-full flex-col justify-start gap-1.5 px-1")],
-		[92, 78, 55, 34, 16].map((w, i) =>
+		Arr.map([92, 78, 55, 34, 16], (w, i) =>
 			h.div(
 				[
 					h.Class("grid max-h-14 min-h-4.5 flex-1 items-center gap-2"),
@@ -55,7 +56,7 @@ export const hbarGhost = <M>(h: HtmlBuilder<M>): Html =>
 export const funnelGhost = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
 		[h.Class("flex h-full w-full flex-col justify-center gap-2 px-1")],
-		[100, 64, 38, 18].map((w, i) =>
+		Arr.map([100, 64, 38, 18], (w, i) =>
 			h.div(
 				[h.Class("flex flex-col gap-1")],
 				[
@@ -129,7 +130,7 @@ export const pathsGhost = <M>(h: HtmlBuilder<M>): Html => {
 		[
 			h.div(
 				[h.Class("flex h-4.5 shrink-0 items-start justify-between")],
-				PATH_COLUMNS.map(() => stub(h, "h-2 w-10 rounded-xs bg-foreground/10")),
+				Arr.map(PATH_COLUMNS, () => stub(h, "h-2 w-10 rounded-xs bg-foreground/10")),
 			),
 			h.svg(
 				[
@@ -137,7 +138,7 @@ export const pathsGhost = <M>(h: HtmlBuilder<M>): Html => {
 					h.Class("min-h-0 w-full flex-1"),
 				],
 				[
-					...PATH_LINKS.map(([from, [sy0, sy1], [ty0, ty1]]) => {
+					...Arr.map(PATH_LINKS, ([from, [sy0, sy1], [ty0, ty1]]) => {
 						const x0 = nodeX(from) + PATH_NODE_W
 						const x1 = nodeX(from + 1)
 						const cx = (x0 + x1) / 2
@@ -149,10 +150,10 @@ export const pathsGhost = <M>(h: HtmlBuilder<M>): Html => {
 							}),
 						])
 					}),
-					...PATH_COLUMNS.flatMap((column, i) => {
+					...Arr.flatMap(PATH_COLUMNS, (column, i) => {
 						const last = i === columns - 1
 						const x = nodeX(i)
-						return column.map(([y0, y1]) =>
+						return Arr.map(column, ([y0, y1]) =>
 							h.g(
 								[],
 								[
@@ -281,7 +282,7 @@ export const dropoffGhost = <M>(h: HtmlBuilder<M>): Html =>
 			h.div([h.Class("flex justify-end pb-2")], [stub(h, "h-2.5 w-24 rounded-xs bg-foreground/10")]),
 			h.div(
 				[h.Class("grid min-h-0 flex-1 grid-cols-4 gap-3")],
-				DROPOFF_HEIGHTS.map((height, i) => {
+				Arr.map(DROPOFF_HEIGHTS, (height, i) => {
 					const prev = i === 0 ? height : (DROPOFF_HEIGHTS[i - 1] ?? height)
 					return h.div(
 						[h.Class("flex min-w-0 flex-col")],

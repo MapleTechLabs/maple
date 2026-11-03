@@ -22,7 +22,18 @@ import {
 	type ChatDestination,
 	type ChatWorkspaceSettings,
 } from "@maple/chat-platform"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
@@ -287,9 +298,9 @@ const make: Effect.Effect<
 	const validateSettings = (connector: ChatConnector<unknown>, settings: ChatWorkspaceSettings) =>
 		connector.install
 			.decodeSettings(
-				Object.fromEntries(
-					Object.entries(settings).flatMap(([key, value]) =>
-						value.trim().length > 0 ? [[key, value.trim()] as const] : [],
+				Rec.fromEntries(
+					Arr.flatMap(Rec.toEntries(settings), ([key, value]) =>
+						Str.trim(value).length > 0 ? [[key, Str.trim(value)] as const] : [],
 					),
 				),
 			)
@@ -666,7 +677,7 @@ const make: Effect.Effect<
 		const missing = missingOutboundConfig(workspace.value, env.CHAT_CONNECTOR_OUTBOUND_CONFIG)
 		if (missing.length > 0) {
 			return yield* new IntegrationsConfigurationError({
-				message: `${name} is not configured on this deployment (${missing.join(", ")})`,
+				message: `${name} is not configured on this deployment (${Arr.join(missing, ", ")})`,
 			})
 		}
 		const transport = yield* chatOutboundTransport(

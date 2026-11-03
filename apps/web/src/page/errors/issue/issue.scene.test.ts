@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { ErrorIssueId } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import * as Chart from "@maple/views/charts/chart"
@@ -21,7 +21,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const entered = () => init({ issueId, search: {} }, context)
 const windowed = (): Model =>

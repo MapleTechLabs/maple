@@ -9,6 +9,7 @@ import {
 } from "./form-utils"
 import { incidentGroup } from "./incident-timeline"
 import { type DerivedRuleStatus, needsAttention } from "./rule-status"
+import { Array as Arr, String as Str } from "effect"
 
 /** The four mutually exclusive buckets the Rules tab filters by. */
 export type RuleBucket = "firing" | "blind" | "healthy" | "disabled"
@@ -33,13 +34,13 @@ export function ruleConditionSummary(rule: AlertRuleDocument): string {
 		: formatSignalValue(display, rule.threshold)
 	const subject =
 		rule.signalType === "builder_query" && rule.queryBuilderDraft
-			? rule.queryBuilderDraft.aggregation.replaceAll("_", " ")
+			? Str.replaceAll("_", " ")(rule.queryBuilderDraft.aggregation)
 			: signalLabels[rule.signalType]
 	const parts = [`${subject} ${comparatorLabels[rule.comparator]} ${threshold}`, `${rule.windowMinutes}m`]
-	if (rule.groupBy !== null) parts.push(`per ${rule.groupBy.join(", ")}`)
+	if (rule.groupBy !== null) parts.push(`per ${Arr.join(rule.groupBy, ", ")}`)
 	if (rule.serviceNames.length === 1) parts.push(rule.serviceNames[0] ?? "")
 	else if (rule.serviceNames.length > 1) parts.push(`${rule.serviceNames.length} services`)
-	return parts.join(" · ")
+	return Arr.join(parts, " · ")
 }
 
 type IncidentLine = Pick<
@@ -124,7 +125,7 @@ const breaches = (rule: AlertRuleDocument, value: number): boolean => {
 /** Current value against the threshold on a shared 0..max scale. */
 export function ruleHeadroom(rule: AlertRuleDocument, value: number): Headroom {
 	const thresholds = [rule.threshold, ...(rule.thresholdUpper !== null ? [rule.thresholdUpper] : [])]
-	const max = Math.max(value * 1.1, ...thresholds.map((t) => t * 1.5), Number.EPSILON)
+	const max = Math.max(value * 1.1, ...Arr.map(thresholds, (t) => t * 1.5), Number.EPSILON)
 	const above = rule.comparator === "gt" || rule.comparator === "gte"
 	const below = rule.comparator === "lt" || rule.comparator === "lte"
 	const headroom =
@@ -137,7 +138,7 @@ export function ruleHeadroom(rule: AlertRuleDocument, value: number): Headroom {
 					: null
 	return {
 		fill: Math.min(1, Math.max(0, value / max)),
-		ticks: thresholds.map((t) => Math.min(1, Math.max(0, t / max))),
+		ticks: Arr.map(thresholds, (t) => Math.min(1, Math.max(0, t / max))),
 		breached: breaches(rule, value),
 		headroom,
 	}
@@ -186,9 +187,11 @@ export function fireLanes(
 		if (lane) lane.bars.push(bar)
 		else lanes.set(incident.ruleId, { ruleName: incident.ruleName, bars: [bar] })
 	}
-	return [...lanes.entries()]
-		.map(([ruleId, lane]) => ({ ruleId, ruleName: lane.ruleName, bars: lane.bars }))
-		.sort((a, b) => b.bars.length - a.bars.length || a.ruleName.localeCompare(b.ruleName))
+	return Arr.map([...lanes.entries()], ([ruleId, lane]) => ({
+		ruleId,
+		ruleName: lane.ruleName,
+		bars: lane.bars,
+	})).sort((a, b) => b.bars.length - a.bars.length || Str.localeCompare(b.ruleName)(a.ruleName))
 }
 
 export type RibbonCell = "quiet" | "warning" | "critical"
@@ -203,12 +206,12 @@ export function ruleRibbon(
 	return Array.from({ length: cells }, (_, i) => {
 		const cellStart = range.min + i * width
 		const cellEnd = cellStart + width
-		const hits = incidents.filter((incident) => {
+		const hits = Arr.filter(incidents, (incident) => {
 			const start = Date.parse(incident.firstTriggeredAt)
 			const end = incident.resolvedAt === null ? range.max : Date.parse(incident.resolvedAt)
 			return end > cellStart && start < cellEnd
 		})
-		if (hits.some((incident) => incident.severity === "critical")) return "critical"
+		if (Arr.some(hits, (incident) => incident.severity === "critical")) return "critical"
 		return hits.length > 0 ? "warning" : "quiet"
 	})
 }

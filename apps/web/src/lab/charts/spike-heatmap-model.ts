@@ -1,4 +1,5 @@
 import { heatmapSampleData } from "@maple/ui/components/charts/_shared/sample-data"
+import { Array as Arr } from "effect"
 
 // `HeatmapSpike`'s model: empty rows and columns
 // pruned, the holes listed, the colour domain and the cell geometry. Pure, so the lab page can
@@ -38,7 +39,10 @@ const solveGeometry = (columns: number, rows: number): HeatmapSpikeModel["geomet
 }
 
 const domainOf = (rows: ReadonlyArray<HeatmapSpikeRow>): readonly [number, number] => {
-	const finite = rows.map((row) => row.value).filter((value) => Number.isFinite(value))
+	const finite = Arr.filter(
+		Arr.map(rows, (row) => row.value),
+		(value) => Number.isFinite(value),
+	)
 	if (finite.length === 0) return [0, 1]
 	const min = Math.min(...finite)
 	const max = Math.max(...finite)
@@ -47,27 +51,30 @@ const domainOf = (rows: ReadonlyArray<HeatmapSpikeRow>): readonly [number, numbe
 
 /** `buildModel`. */
 export const heatmapSpikeModel = (rows: ReadonlyArray<HeatmapSpikeRow>): HeatmapSpikeModel => {
-	const present = new Set(rows.map((row) => cellKey(row.x, row.y)))
-	const allX = uniqueInOrder(rows.map((row) => row.x))
-	const allY = uniqueInOrder(rows.map((row) => row.y))
+	const present = new Set(Arr.map(rows, (row) => cellKey(row.x, row.y)))
+	const allX = uniqueInOrder(Arr.map(rows, (row) => row.x))
+	const allY = uniqueInOrder(Arr.map(rows, (row) => row.y))
 	const signal = new Set(
-		rows
-			.filter((row) => Number.isFinite(row.value) && row.value !== 0)
-			.map((row) => cellKey(row.x, row.y)),
+		Arr.map(
+			Arr.filter(rows, (row) => Number.isFinite(row.value) && row.value !== 0),
+			(row) => cellKey(row.x, row.y),
+		),
 	)
-	const nonEmptyX = allX.filter((x) => allY.some((y) => signal.has(cellKey(x, y))))
-	const nonEmptyY = allY.filter((y) => allX.some((x) => signal.has(cellKey(x, y))))
+	const nonEmptyX = Arr.filter(allX, (x) => Arr.some(allY, (y) => signal.has(cellKey(x, y))))
+	const nonEmptyY = Arr.filter(allY, (y) => Arr.some(allX, (x) => signal.has(cellKey(x, y))))
 	const xDomain = nonEmptyX.length > 0 ? nonEmptyX : allX
 	const yDomain = [...(nonEmptyY.length > 0 ? nonEmptyY : allY)].reverse()
 	const visibleX = new Set(xDomain)
 	const visibleY = new Set(yDomain)
-	const visibleRows = rows.filter((row) => visibleX.has(row.x) && visibleY.has(row.y))
+	const visibleRows = Arr.filter(rows, (row) => visibleX.has(row.x) && visibleY.has(row.y))
 	return {
 		xDomain,
 		yDomain,
 		domain: domainOf(visibleRows),
 		visibleRows,
-		holes: xDomain.flatMap((x) => yDomain.flatMap((y) => (present.has(cellKey(x, y)) ? [] : [{ x, y }]))),
+		holes: Arr.flatMap(xDomain, (x) =>
+			Arr.flatMap(yDomain, (y) => (present.has(cellKey(x, y)) ? [] : [{ x, y }])),
+		),
 		prunedColumns: allX.length - nonEmptyX.length,
 		prunedRows: allY.length - nonEmptyY.length,
 		geometry: solveGeometry(xDomain.length, yDomain.length),
@@ -79,10 +86,14 @@ const pluralize = (count: number, noun: string) => `${count} ${noun}${count === 
 /** The footer under the plot when anything was pruned, else `null`. */
 export const heatmapPrunedNote = (model: HeatmapSpikeModel): string | null =>
 	model.prunedColumns > 0 || model.prunedRows > 0
-		? `${[
-				model.prunedColumns > 0 ? pluralize(model.prunedColumns, "empty column") : null,
-				model.prunedRows > 0 ? pluralize(model.prunedRows, "empty row") : null,
-			]
-				.filter((part) => part !== null)
-				.join(" · ")} hidden`
+		? `${Arr.join(
+				Arr.filter(
+					[
+						model.prunedColumns > 0 ? pluralize(model.prunedColumns, "empty column") : null,
+						model.prunedRows > 0 ? pluralize(model.prunedRows, "empty row") : null,
+					],
+					(part) => part !== null,
+				),
+				" · ",
+			)} hidden`
 		: null

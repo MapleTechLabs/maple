@@ -1,7 +1,7 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { strict as assert } from "node:assert"
 import { beforeEach, vi } from "vitest"
 import { mockedWarehouse } from "./testing"
@@ -100,8 +100,8 @@ describe("getServiceOverview throughput resolution", () => {
 				assert.ok(Math.abs(svc.samplingWeight - 10) < 1e-9, `weight=${svc.samplingWeight}`)
 
 				// The SpanMetrics `calls` counter must not be queried for the overview.
-				const spanMetricsCalls = executeQueryEngineMock.mock.calls.filter((call) =>
-					String(call[0]).includes("spanMetricsCalls"),
+				const spanMetricsCalls = Arr.filter(executeQueryEngineMock.mock.calls, (call) =>
+					Str.includes("spanMetricsCalls")(String(call[0])),
 				)
 				assert.strictEqual(spanMetricsCalls.length, 0)
 			}).pipe(mockedWarehouse),
@@ -127,7 +127,8 @@ describe("getServiceOverview throughput resolution", () => {
 
 			// SpanMetrics timeseries must be skipped entirely when the catalog has no
 			// calls metric (no wasted query).
-			const spanMetricsCalls = executeQueryEngineMock.mock.calls.filter(
+			const spanMetricsCalls = Arr.filter(
+				executeQueryEngineMock.mock.calls,
 				(call) => call[0] === "queryEngine.spanMetricsCalls",
 			)
 			assert.strictEqual(spanMetricsCalls.length, 0)

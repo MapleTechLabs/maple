@@ -22,10 +22,11 @@ import { errorRateValue, latencyValue } from "@maple/views/ui/values"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LocalServiceMapData } from "./data"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // The side panel for a selected database node, on the service panel's kit.
 
-const sum = (values: ReadonlyArray<number>): number => values.reduce((total, value) => total + value, 0)
+const sum = (values: ReadonlyArray<number>): number => Arr.reduce(values, 0, (total, value) => total + value)
 
 export const databasePanel = <M>(
 	h: HtmlBuilder<M>,
@@ -39,19 +40,20 @@ export const databasePanel = <M>(
 	}>,
 ): Html => {
 	const { durationSeconds } = options
-	const callers = options.data.dbEdges.filter(
+	const callers = Arr.filter(
+		options.data.dbEdges,
 		(e) => e.dbSystem === options.dbSystem && e.dbNamespace === options.dbNamespace,
 	)
-	const totalCalls = sum(callers.map((e) => e.callCount))
-	const totalErrors = sum(callers.map((e) => e.errorCount))
-	const estimatedCalls = sum(callers.map((e) => e.estimatedCallCount))
+	const totalCalls = sum(Arr.map(callers, (e) => e.callCount))
+	const totalErrors = sum(Arr.map(callers, (e) => e.errorCount))
+	const estimatedCalls = sum(Arr.map(callers, (e) => e.estimatedCallCount))
 	const errorRate = totalCalls > 0 ? totalErrors / totalCalls : 0
 	const avgLatencyMs =
-		totalCalls > 0 ? sum(callers.map((e) => e.avgDurationMs * e.callCount)) / totalCalls : 0
+		totalCalls > 0 ? sum(Arr.map(callers, (e) => e.avgDurationMs * e.callCount)) / totalCalls : 0
 	// The worst caller's p95 (a real p95); the max stands in, labelled as one, when no digest exists.
-	const p95 = callers.reduce((worst, e) => Math.max(worst, e.p95DurationMs), 0)
-	const max = callers.reduce((worst, e) => Math.max(worst, e.maxDurationMs), 0)
-	const hasSampling = callers.some((e) => e.hasSampling)
+	const p95 = Arr.reduce(callers, 0, (worst, e) => Math.max(worst, e.p95DurationMs))
+	const max = Arr.reduce(callers, 0, (worst, e) => Math.max(worst, e.maxDurationMs))
+	const hasSampling = Arr.some(callers, (e) => e.hasSampling)
 	const db = resolveDbNodeStyle(options.dbSystem, options.dbNamespace)
 	const subtitle = hstack(
 		h,
@@ -147,7 +149,7 @@ export const databasePanel = <M>(
 										eyebrow(h, { as: "h4" }, ["Called by"]),
 										h.div(
 											[h.Class("space-y-1.5")],
-											callers.map((edge) =>
+											Arr.map(callers, (edge) =>
 												edgeRow(h, {
 													service: edge.sourceService,
 													href: options.serviceHref(edge.sourceService),

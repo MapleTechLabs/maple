@@ -5,7 +5,7 @@ import {
 	type StatusPageSnapshot,
 	type StatusPageTheme,
 } from "@maple/domain/status-page"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	FIXTURE_NOW,
@@ -65,10 +65,11 @@ const hostileSnapshot = makeSnapshot({
 
 /** The `<li>` bars of one component, in order. */
 const barsOf = (html: string, componentId: string) => {
-	const block = html.split(`data-component="${componentId}"`)[1]?.split(`data-component="`)[0] ?? ""
-	return [
-		...block.matchAll(/<li class="d-(\w+)" data-day="([^"]+)" data-state="\w+" title="([^"]*)">/gu),
-	].map((match) => ({ state: match[1], day: match[2], title: match[3] }))
+	const block = Str.split(`data-component="${componentId}"`)(html)[1]?.split(`data-component="`)[0] ?? ""
+	return Arr.map(
+		[...block.matchAll(/<li class="d-(\w+)" data-day="([^"]+)" data-state="\w+" title="([^"]*)">/gu)],
+		(match) => ({ state: match[1], day: match[2], title: match[3] }),
+	)
 }
 
 const delayedBanner = (html: string): string =>
@@ -136,11 +137,16 @@ describe("renderPage", () => {
 	it("offers each status under the lifecycle it belongs to", () => {
 		const html = renderManagePage(makeSnapshot())
 		const group = (label: string) =>
-			[
-				...(
-					html.match(new RegExp(`<optgroup label="${label}"[^>]*>(.*?)</optgroup>`, "u"))?.[1] ?? ""
-				).matchAll(/value="([a-z_]+)"/gu),
-			].map((match) => match[1])
+			Arr.map(
+				[
+					...(
+						html.match(
+							new RegExp(`<optgroup label="${label}"[^>]*>(.*?)</optgroup>`, "u"),
+						)?.[1] ?? ""
+					).matchAll(/value="([a-z_]+)"/gu),
+				],
+				(match) => match[1],
+			)
 		expect(group("For incidents")).toEqual(["investigating", "identified", "monitoring", "resolved"])
 		expect(group("For maintenance")).toEqual(["scheduled", "in_progress", "completed"])
 	})
@@ -181,7 +187,7 @@ describe("renderPage", () => {
 			],
 		})
 		const html = renderPage(snapshot, live, FIXTURE_NOW)
-		const section = (id: string) => html.split(`id="h-${id}"`)[1]?.split("</section>")[0] ?? ""
+		const section = (id: string) => Str.split(`id="h-${id}"`)(html)[1]?.split("</section>")[0] ?? ""
 		expect(html).toContain("We're experiencing a partial outage")
 		expect(section("active")).toContain("Elevated errors")
 		expect(section("active")).toContain("We found the cause")
@@ -226,10 +232,10 @@ const pageDataOf = (html: string) =>
 	)
 
 const heroOf = (html: string): string =>
-	html.split(`aria-labelledby="h-hero">`)[1]?.split("</section>")[0] ?? ""
-const footerOf = (html: string): string => html.split("<footer>")[1]?.split("</footer>")[0] ?? ""
+	Str.split(`aria-labelledby="h-hero">`)(html)[1]?.split("</section>")[0] ?? ""
+const footerOf = (html: string): string => Str.split("<footer>")(html)[1]?.split("</footer>")[0] ?? ""
 const rowOf = (html: string, componentId: string): string =>
-	html.split(`data-component="${componentId}"`)[1]?.split(`<ol`)[0] ?? ""
+	Str.split(`data-component="${componentId}"`)(html)[1]?.split(`<ol`)[0] ?? ""
 
 describe("renderPage layout", () => {
 	const sentences: ReadonlyArray<[StatusPageComponentStatus, string]> = [
@@ -325,7 +331,7 @@ describe("renderPage layout", () => {
 		expect(bars.at(-1)?.day).toBe("2026-10-28")
 		const arrows = html.match(/<button type="button" data-nav="[a-z]+"[^>]*>/gu) ?? []
 		expect(arrows).toHaveLength(4)
-		expect(arrows.every((arrow) => arrow.includes(" hidden"))).toBe(true)
+		expect(Arr.every(arrows, (arrow) => Str.includes(" hidden")(arrow))).toBe(true)
 		const data = pageDataOf(html)
 		expect(data.windows).toBe(5)
 		expect(data.len).toBe(365)
@@ -336,7 +342,7 @@ describe("renderPage layout", () => {
 	it("names the status of a component that hides uptime, without bars or a percentage", () => {
 		const html = renderPage(makeSnapshot(), live, FIXTURE_NOW)
 		const docs =
-			html.split(`data-component="${fixtureComponentId(2)}"`)[1]?.split("</div></div>")[0] ?? ""
+			Str.split(`data-component="${fixtureComponentId(2)}"`)(html)[1]?.split("</div></div>")[0] ?? ""
 		expect(docs).toContain("Docs")
 		expect(docs).toContain(": Operational")
 		expect(docs).not.toContain("uptime")
@@ -355,14 +361,12 @@ describe("renderPage layout", () => {
 			live,
 			FIXTURE_NOW,
 		)
-		const groups = html
-			.split(`<div class="group">`)
-			.slice(1)
-			.map((group) =>
-				[...group.matchAll(/<span>([^<]+)<\/span><span class="sr">: ([^<]+)</gu)].map(
-					(m) => `${m[1]}: ${m[2]}`,
-				),
-			)
+		const groups = Arr.map(Str.split(`<div class="group">`)(html).slice(1), (group) =>
+			Arr.map(
+				[...group.matchAll(/<span>([^<]+)<\/span><span class="sr">: ([^<]+)</gu)],
+				(m) => `${m[1]}: ${m[2]}`,
+			),
+		)
 		expect(groups).toEqual([
 			["Platform: Partial outage", "API: Operational", "Dashboard: Partial outage"],
 			["Docs: Operational"],
@@ -403,7 +407,7 @@ describe("renderPage layout", () => {
 			FIXTURE_NOW,
 		)
 		const data = pageDataOf(html)
-		const tones = Object.fromEntries(Object.entries(data.days).map(([day, mark]) => [day, mark[0]]))
+		const tones = Rec.fromEntries(Arr.map(Rec.toEntries(data.days), ([day, mark]) => [day, mark[0]]))
 		expect(tones).toEqual({
 			"2026-10-09": "major_outage",
 			"2026-10-10": "major_outage",
@@ -411,7 +415,7 @@ describe("renderPage layout", () => {
 			"2026-10-12": "degraded",
 		})
 		expect(data.days["2026-10-10"]?.[2]).toBe("Oct 10, 2026: 1 incident, 1 maintenance")
-		expect(data.entries.map((entry) => [entry.title, entry.meta, entry.href])).toEqual([
+		expect(Arr.map(data.entries, (entry) => [entry.title, entry.meta, entry.href])).toEqual([
 			["Slow search", "Minor · Resolved", null],
 			["Database upgrade", "Maintenance · Completed", null],
 			["Login outage", "Critical · Resolved", null],
@@ -515,7 +519,7 @@ describe("renderStatusJson", () => {
 			],
 		})
 		const json = renderStatusJson(snapshot, delayed)
-		expect(json.incidents.map((incident) => incident.id)).toEqual(["open"])
+		expect(Arr.map(json.incidents, (incident) => incident.id)).toEqual(["open"])
 		expect(json.status.delayed).toBe(true)
 		expect(json.updated_at).toBe("2026-10-28T11:00:00.000Z")
 	})
@@ -545,7 +549,7 @@ describe("renderAtomFeed", () => {
 			],
 		})
 		const xml = renderAtomFeed(snapshot, "https://status.acme.example/")
-		const titles = [...xml.matchAll(/<entry>.*?<title>([^<]*)<\/title>/gu)].map((match) => match[1])
+		const titles = Arr.map([...xml.matchAll(/<entry>.*?<title>([^<]*)<\/title>/gu)], (match) => match[1])
 		expect(titles).toEqual([
 			"Errors &amp; timeouts: Resolved",
 			"Incident b: Investigating",
@@ -565,13 +569,17 @@ describe("renderManagePage", () => {
 			],
 		})
 		const html = renderManagePage(snapshot, { tone: "error", text: HOSTILE })
-		const incidentOptions = [
-			...(html.split(`name="incidentId"`)[1]?.split("</select>")[0] ?? "").matchAll(
-				/<option value="([^"]+)"[^>]*>/gu,
-			),
-		].map((match) => match[1])
+		const incidentOptions = Arr.map(
+			[
+				...(Str.split(`name="incidentId"`)(html)[1]?.split("</select>")[0] ?? "").matchAll(
+					/<option value="([^"]+)"[^>]*>/gu,
+				),
+			],
+			(match) => match[1],
+		)
 		expect(incidentOptions).toEqual(["new", "open"])
-		const checkboxes = [...html.matchAll(/name="componentIds" value="([^"]+)"/gu)].map(
+		const checkboxes = Arr.map(
+			[...html.matchAll(/name="componentIds" value="([^"]+)"/gu)],
 			(match) => match[1],
 		)
 		expect(checkboxes).toEqual([fixtureComponentId(0), fixtureComponentId(1), fixtureComponentId(2)])
@@ -582,11 +590,14 @@ describe("renderManagePage", () => {
 	it("selects No change for status and impact, so a follow-up keeps the incident's values", () => {
 		const html = renderManagePage(makeSnapshot({ incidents: [makeIncident("open")] }))
 		const selected = (name: string) =>
-			[
-				...(html.split(`name="${name}"`)[1]?.split("</select>")[0] ?? "").matchAll(
-					/<option value="([^"]*)" selected>/gu,
-				),
-			].map((match) => match[1])
+			Arr.map(
+				[
+					...(Str.split(`name="${name}"`)(html)[1]?.split("</select>")[0] ?? "").matchAll(
+						/<option value="([^"]*)" selected>/gu,
+					),
+				],
+				(match) => match[1],
+			)
 		expect(selected("status")).toEqual([""])
 		expect(selected("impact")).toEqual([""])
 	})
@@ -719,7 +730,7 @@ describe("editor preview render", () => {
 
 	it("adds nothing else: without the ids the preview is the public page", () => {
 		const preview = renderPage(snapshot, live, FIXTURE_NOW, { preview: true })
-		expect(preview.replaceAll(/ data-(component|incident)-id="[^"]*"/gu, "")).toBe(
+		expect(Str.replaceAll(/ data-(component|incident)-id="[^"]*"/gu, "")(preview)).toBe(
 			renderPage(snapshot, live, FIXTURE_NOW),
 		)
 	})
@@ -745,15 +756,15 @@ describe("previewSnapshot", () => {
 			incidents: makeSnapshot({ incidents: [incident] }).incidents,
 			nowMs: FIXTURE_NOW,
 		})
-		expect(snapshot.components.map((c) => c.status)).toEqual([
+		expect(Arr.map(snapshot.components, (c) => c.status)).toEqual([
 			"major_outage",
 			"partial_outage",
 			"degraded",
 		])
 		expect(snapshot.components[1]?.baseStatus).toBe("operational")
-		expect(snapshot.components.map((c) => c.days.length)).toEqual([90, 90, 0])
-		expect(snapshot.incidentHistory.map((entry) => entry.id)).toEqual(["inc-1"])
-		expect(snapshot.components[0]?.days.every((day) => day.checks === 0)).toBe(true)
+		expect(Arr.map(snapshot.components, (c) => c.days.length)).toEqual([90, 90, 0])
+		expect(Arr.map(snapshot.incidentHistory, (entry) => entry.id)).toEqual(["inc-1"])
+		expect(Arr.every(snapshot.components[0]?.days, (day) => day.checks === 0)).toBe(true)
 		const html = renderPage(snapshot, { _tag: "live", updatedAt: FIXTURE_NOW }, FIXTURE_NOW)
 		expect(html).toContain("--link:#123abc")
 		expect(rowOf(html, snapshot.components[0]!.id)).toContain(`<span class="uptime">No data</span>`)

@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId, SupabaseProjectUpdateRequest } from "@maple/domain/http"
@@ -113,7 +113,8 @@ const sourceRow = (testDb: TestDb) =>
 		),
 	)
 
-const apiCalls = (fake: Fake, path: string) => fake.state.calls.filter((call) => call.path === path).length
+const apiCalls = (fake: Fake, path: string) =>
+	Arr.filter(fake.state.calls, (call) => call.path === path).length
 
 describe("SupabaseConnectionService", () => {
 	it.effect("reads as not connected (but configured) before any grant", () => {
@@ -152,7 +153,7 @@ describe("SupabaseConnectionService", () => {
 			assert.isNull(status.lastDiscoveryError)
 			// Only the granted organization's projects, by name, metrics on and drains off by default.
 			assert.deepStrictEqual(
-				status.projects.map((project) => [
+				Arr.map(status.projects, (project) => [
 					project.ref,
 					project.name,
 					project.metricsEnabled,
@@ -198,9 +199,9 @@ describe("SupabaseConnectionService", () => {
 				)
 				const status = yield* service.getStatus(ORG)
 				assert.deepStrictEqual(
-					status.projects.map((project) => [project.ref, project.name, project.status]),
+					Arr.map(status.projects, (project) => [project.ref, project.name, project.status]),
 					[
-						[REF_C, `project-${REF_C.slice(0, 4)}`, "ACTIVE_HEALTHY"],
+						[REF_C, `project-${Str.slice(0, 4)(REF_C)}`, "ACTIVE_HEALTHY"],
 						[REF_A, "renamed", "INACTIVE"],
 					],
 				)
@@ -356,7 +357,8 @@ describe("SupabaseConnectionService", () => {
 			// The new organization is due for the next sweep rather than waiting out the interval.
 			assert.strictEqual((yield* (yield* SupabaseConnectionService).discoverAllOrgs()).discovered, 1)
 			assert.deepStrictEqual(
-				(yield* (yield* SupabaseConnectionService).getStatus(ORG)).projects.map(
+				Arr.map(
+					(yield* (yield* SupabaseConnectionService).getStatus(ORG)).projects,
 					(project) => project.ref,
 				),
 				[REF_C],
@@ -371,7 +373,7 @@ describe("SupabaseConnectionService", () => {
 			yield* connect(fake)
 			const status = yield* finalize(fake)
 			assert.deepStrictEqual(
-				status.projects.map((project) => project.ref),
+				Arr.map(status.projects, (project) => project.ref),
 				[REF_A],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
@@ -427,8 +429,9 @@ const tokenSourceCount = (testDb: TestDb) =>
 	).pipe(Effect.map((row) => row?.count ?? -1))
 
 const drainCalls = (fake: Fake, method: string) =>
-	fake.state.calls.filter(
-		(call: FakeCall) => call.method === method && call.path.includes("/analytics/log-drains"),
+	Arr.filter(
+		fake.state.calls,
+		(call: FakeCall) => call.method === method && Str.includes("/analytics/log-drains")(call.path),
 	)
 
 const DrainBody = Schema.fromJsonString(
@@ -548,7 +551,7 @@ describe("SupabaseConnectionService log drains", () => {
 					{ platform: "supabase", kind: "token", name: "Supabase logs: app" },
 				)
 				// The drain sends the token this source was minted with.
-				assert.isTrue(authorization.startsWith(`Bearer ${source?.key_prefix ?? "?"}`))
+				assert.isTrue(Str.startsWith(`Bearer ${source?.key_prefix ?? "?"}`)(authorization))
 				assert.deepStrictEqual(source?.allowed_signals, ["logs"])
 				assert.deepStrictEqual(source?.resource_attributes, [
 					{ key: "supabase.project.ref", value: REF_A, mode: "set" },
@@ -566,7 +569,7 @@ describe("SupabaseConnectionService log drains", () => {
 					[true, null, row?.log_drain_source_id, false],
 				)
 				assert.deepStrictEqual(
-					project?.logDrains.map((drain) => [drain.name, drain.toMaple, drain.managedByMaple]),
+					Arr.map(project?.logDrains, (drain) => [drain.name, drain.toMaple, drain.managedByMaple]),
 					[["Maple", true, true]],
 				)
 			}).pipe(Effect.provide(makeLayer(testDb, fake)))
@@ -689,7 +692,7 @@ describe("SupabaseConnectionService log drains", () => {
 			const service = yield* SupabaseConnectionService
 			const connected = yield* connect(fake)
 			assert.deepStrictEqual(
-				connected.projects[0]?.logDrains.map((drain) => [drain.id, drain.managedByMaple]),
+				Arr.map(connected.projects[0]?.logDrains, (drain) => [drain.id, drain.managedByMaple]),
 				[["drain-orphan", true]],
 			)
 			const status = yield* service.updateProject(
@@ -702,7 +705,7 @@ describe("SupabaseConnectionService log drains", () => {
 			assert.strictEqual(stored.length, 1)
 			assert.notStrictEqual(stored[0]?.id, "drain-orphan")
 			assert.deepStrictEqual(
-				status.projects[0]?.logDrains.map((drain) => drain.id),
+				Arr.map(status.projects[0]?.logDrains, (drain) => drain.id),
 				[stored[0]?.id],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
@@ -725,7 +728,7 @@ describe("SupabaseConnectionService log drains", () => {
 			const service = yield* SupabaseConnectionService
 			const connected = yield* connect(fake)
 			assert.deepStrictEqual(
-				connected.projects[0]?.logDrains.map((drain) => [drain.managedByMaple, drain.toMaple]),
+				Arr.map(connected.projects[0]?.logDrains, (drain) => [drain.managedByMaple, drain.toMaple]),
 				[[false, false]],
 			)
 			yield* service.updateProject(
@@ -734,7 +737,7 @@ describe("SupabaseConnectionService log drains", () => {
 				asRef(REF_A),
 				new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
 			)
-			const ids = (fake.state.drains.get(REF_A) ?? []).map((drain) => drain.id)
+			const ids = Arr.map(fake.state.drains.get(REF_A) ?? [], (drain) => drain.id)
 			assert.strictEqual(ids.length, 2)
 			assert.include(ids, "drain-other-install")
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
@@ -866,7 +869,7 @@ describe("SupabaseConnectionService log drains", () => {
 			// The live listing also refreshed the snapshot the card reads.
 			const project = (yield* service.getStatus(ORG)).projects[0]
 			assert.deepStrictEqual(
-				project?.logDrains.map((drain) => drain.id),
+				Arr.map(project?.logDrains, (drain) => drain.id),
 				[MANUAL_MAPLE_DRAIN.id],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
@@ -898,7 +901,7 @@ describe("SupabaseConnectionService log drains", () => {
 		fake.state.drains.set(REF_B, [MANUAL_MAPLE_DRAIN])
 		return Effect.gen(function* () {
 			const status = yield* connect(fake)
-			const byRef = new Map(status.projects.map((project) => [project.ref, project]))
+			const byRef = new Map(Arr.map(status.projects, (project) => [project.ref, project]))
 			assert.deepStrictEqual(byRef.get(asRef(REF_A))?.logDrains, [
 				{
 					id: "drain-datadog",
@@ -954,7 +957,7 @@ describe("SupabaseConnectionService log drains", () => {
 			assert.isNull(summary.error)
 			const project = (yield* service.getStatus(ORG)).projects[0]
 			assert.deepStrictEqual(
-				project?.logDrains.map((drain) => drain.id),
+				Arr.map(project?.logDrains, (drain) => drain.id),
 				["drain-datadog"],
 			)
 			assert.strictEqual(project?.logDrainsCheckedAt, 0)
@@ -983,7 +986,7 @@ describe("SupabaseConnectionService log drains", () => {
 			)
 
 			assert.deepStrictEqual(
-				drainCalls(fake, "DELETE").map((call) => call.path),
+				Arr.map(drainCalls(fake, "DELETE"), (call) => call.path),
 				[`/v2/projects/${REF_A}/analytics/log-drains/${drainId ?? "?"}`],
 			)
 			// The customer's own drain is never touched.
@@ -991,7 +994,7 @@ describe("SupabaseConnectionService log drains", () => {
 			assert.strictEqual(yield* tokenSourceCount(testDb), 0)
 			assert.isFalse(status.projects[0]?.logDrainEnabled ?? true)
 			assert.deepStrictEqual(
-				status.projects[0]?.logDrains.map((drain) => drain.id),
+				Arr.map(status.projects[0]?.logDrains, (drain) => drain.id),
 				["drain-datadog"],
 			)
 			assert.isNull((yield* drainRow(testDb, REF_A))?.log_drain_id ?? null)
@@ -1081,7 +1084,7 @@ describe("SupabaseConnectionService log drains", () => {
 			yield* TestClock.adjust("1 hour")
 			yield* service.discoverOrg(ORG)
 			const status = yield* service.getStatus(ORG)
-			const byRef = new Map(status.projects.map((project) => [project.ref, project]))
+			const byRef = new Map(Arr.map(status.projects, (project) => [project.ref, project]))
 			assert.include(byRef.get(asRef(REF_A))?.logDrainError ?? "", "removed in Supabase")
 			assert.include(
 				byRef.get(asRef(REF_B))?.logDrainError ?? "",

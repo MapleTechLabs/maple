@@ -22,7 +22,7 @@ import * as Hyperdrive from "@distilled.cloud/cloudflare/hyperdrive"
 import * as Workers from "@distilled.cloud/cloudflare/workers"
 import * as Zones from "@distilled.cloud/cloudflare/zones"
 import { IntegrationsRevokedError, IntegrationsUpstreamError } from "@maple/domain/http"
-import { Effect, Layer, Match, Redacted, Schema, Stream } from "effect"
+import { Effect, Layer, Match, Redacted, Schema, Stream, Array as Arr } from "effect"
 import { FetchHttpClient, type HttpClient } from "effect/http"
 
 /** The Effect context a distilled operation requires: resolved credentials + an HTTP client. */
@@ -128,7 +128,7 @@ export const listAccounts: (
 )(function* (accessToken: string, apiBaseUrl?: string) {
 	const response = yield* runMapped(accessToken, Accounts.listAccounts({ perPage: 50 }), apiBaseUrl)
 	yield* Effect.annotateCurrentSpan("maple.cloudflare.account_count", response.result.length)
-	return response.result.map((account) => ({
+	return Arr.map(response.result, (account) => ({
 		id: account.id,
 		name: account.name,
 		type: account.type,
@@ -189,7 +189,7 @@ export const listZones: (
 	yield* Effect.annotateCurrentSpan("maple.cloudflare.zone_count", zones.items.length)
 	yield* Effect.annotateCurrentSpan("maple.cloudflare.zone_listing_truncated", zones.truncated)
 	return {
-		items: zones.items.map((zone) => ({
+		items: Arr.map(zones.items, (zone) => ({
 			id: zone.id,
 			name: zone.name,
 			status: zone.status ?? null,
@@ -223,7 +223,9 @@ export const listWorkerScripts: (
 	yield* Effect.annotateCurrentSpan("maple.cloudflare.script_count", scripts.items.length)
 	yield* Effect.annotateCurrentSpan("maple.cloudflare.script_listing_truncated", scripts.truncated)
 	return {
-		items: scripts.items.flatMap((script) => (script.id == null || script.id === "" ? [] : [script.id])),
+		items: Arr.flatMap(scripts.items, (script) =>
+			script.id == null || script.id === "" ? [] : [script.id],
+		),
 		truncated: scripts.truncated,
 	}
 })
@@ -288,7 +290,7 @@ export const listHyperdriveConfigs: (
 	yield* Effect.annotateCurrentSpan("maple.cloudflare.hyperdrive_config_count", configs.items.length)
 	yield* Effect.annotateCurrentSpan("maple.cloudflare.hyperdrive_listing_truncated", configs.truncated)
 	return {
-		items: configs.items.map((config) => ({
+		items: Arr.map(configs.items, (config) => ({
 			id: config.id,
 			name: config.name,
 			origin: {

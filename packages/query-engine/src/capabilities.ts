@@ -4,7 +4,7 @@
  * useful context, but an optimization is enabled only when the matching live
  * column/index is present.
  */
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 
 export type WarehouseSearchFeature =
 	| "logs.body.tokenbf"
@@ -109,7 +109,7 @@ export const deriveWarehouseCapabilities = (input: {
 			expression: row.expression ?? row.expr ?? "",
 		})
 	}
-	const columns = new Set(input.columns.map((row) => columnKey(row.table, row.name)))
+	const columns = new Set(Arr.map(input.columns, (row) => columnKey(row.table, row.name)))
 	const features = new Set<WarehouseSearchFeature>()
 	const fullTextSetting = input.settings?.find((row) => row.name === "enable_full_text_index")
 	const fullTextSearchSetting =
@@ -136,7 +136,7 @@ export const deriveWarehouseCapabilities = (input: {
 		"idx_log_attr_keys",
 		"idx_log_attr_vals",
 	] as const
-	if (logsBloomNames.every((name) => hasIndexType(indexes, "logs", name, "bloom_filter"))) {
+	if (Arr.every(logsBloomNames, (name) => hasIndexType(indexes, "logs", name, "bloom_filter"))) {
 		features.add("logs.attributes.bloom")
 	}
 
@@ -146,7 +146,7 @@ export const deriveWarehouseCapabilities = (input: {
 		"idx_resource_attr_keys",
 		"idx_resource_attr_vals",
 	] as const
-	if (tracesBloomNames.every((name) => hasIndexType(indexes, "traces", name, "bloom_filter"))) {
+	if (Arr.every(tracesBloomNames, (name) => hasIndexType(indexes, "traces", name, "bloom_filter"))) {
 		features.add("traces.attributes.bloom")
 	}
 
@@ -157,7 +157,8 @@ export const deriveWarehouseCapabilities = (input: {
 	] as const
 	if (
 		fullTextSearchSetting !== "unavailable" &&
-		logsTextItems.every(
+		Arr.every(
+			logsTextItems,
 			([column, index]) =>
 				hasColumn(columns, "logs", column) && hasIndexType(indexes, "logs", index, "text"),
 		)
@@ -172,7 +173,8 @@ export const deriveWarehouseCapabilities = (input: {
 	] as const
 	if (
 		fullTextSearchSetting !== "unavailable" &&
-		tracesTextItems.every(
+		Arr.every(
+			tracesTextItems,
 			([column, index]) =>
 				hasColumn(columns, "traces", column) && hasIndexType(indexes, "traces", index, "text"),
 		)
@@ -182,11 +184,12 @@ export const deriveWarehouseCapabilities = (input: {
 
 	// An empty columns probe (denied or failed) proves nothing; only a probe that
 	// saw `traces` is evidence that a missing optional table is really missing.
-	const probeSawTraces = input.columns.some((row) => row.table === "traces")
+	const probeSawTraces = Arr.some(input.columns, (row) => row.table === "traces")
 	const absentTables = new Set(
 		probeSawTraces
-			? (input.optionalTables ?? []).filter(
-					(table) => !input.columns.some((row) => row.table === table),
+			? Arr.filter(
+					input.optionalTables ?? [],
+					(table) => !Arr.some(input.columns, (row) => row.table === table),
 				)
 			: [],
 	)

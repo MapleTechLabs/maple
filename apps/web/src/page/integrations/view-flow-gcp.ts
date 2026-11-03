@@ -6,7 +6,7 @@ import {
 	gcpScriptNeeded,
 	gcpSetupRunning,
 } from "../../components/integrations/gcp-connector-state"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"
 import { button } from "@maple/views/ui/button"
@@ -80,7 +80,7 @@ const methodChoice = (h: H, configure: ConfigureModel): Html =>
 			heading(h, { level: 3, variant: "subsection" }, ["How do you want to apply the setup?"]),
 			choiceTiles(
 				h,
-				METHODS.map((method) => ({
+				Arr.map(METHODS, (method) => ({
 					title: method.title,
 					description: method.description,
 					tag: method.tag ?? undefined,
@@ -158,7 +158,7 @@ const connectStatus = (h: H, configure: ConfigureModel, connector: V2GcpConnecto
 			return statusRow(h, { tone: "error", text: `That doesn't look like a ${label}.` })
 		case "bad-host":
 			return statusRow(h, {
-				tone: configure.hostProjectId.value.trim() === "" ? "idle" : "error",
+				tone: Str.trim(configure.hostProjectId.value) === "" ? "idle" : "error",
 				text: `${label} looks right. Waiting for a valid host project ID.`,
 			})
 		case "ready":

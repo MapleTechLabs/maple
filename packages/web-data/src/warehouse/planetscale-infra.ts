@@ -1,4 +1,4 @@
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { PlanetScaleInfraTimeseriesRequest } from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
 import { MapleApiV2Http } from "./warehouse-services"
@@ -123,7 +123,7 @@ export const getPlanetScaleQueryInsights = Effect.fn("Integrations.getPlanetScal
 	return {
 		branch: result.branch,
 		unavailableReason: result.unavailable_reason,
-		rows: result.data.map((row): PlanetScaleQueryInsightEntry => ({
+		rows: Arr.map(result.data, (row): PlanetScaleQueryInsightEntry => ({
 			fingerprint: row.fingerprint,
 			normalizedSql: row.normalized_sql,
 			statementType: row.statement_type,
@@ -177,7 +177,7 @@ export const getPlanetScaleEvents = Effect.fn("Integrations.getPlanetScaleEvents
 		}),
 	)
 	return {
-		events: result.data.map((row): PlanetScaleEventEntry => ({
+		events: Arr.map(result.data, (row): PlanetScaleEventEntry => ({
 			id: row.id,
 			databaseName: row.database_name,
 			branchName: row.branch_name,
@@ -221,7 +221,7 @@ export const getPlanetScaleInfraTimeseries = Effect.fn("QueryEngine.getPlanetSca
 		)
 
 		return {
-			buckets: result.data.map((row): PlanetScaleInfraTimeseriesRow => {
+			buckets: Arr.map(result.data, (row): PlanetScaleInfraTimeseriesRow => {
 				const samples = Number(row.storageSamples ?? 0)
 				return {
 					bucket: wireString(row.bucket),

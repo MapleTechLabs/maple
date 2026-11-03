@@ -26,6 +26,7 @@ import type { NodeRow } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { column, columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // `NodeTable` / `NodeTableLoading`.
 
@@ -172,5 +173,5 @@ export const nodeTable = (h: H, nodes: ReadonlyArray<NodeRow>, inputs: NodeTable
 		columns(h, inputs.sort),
 		nodes.length === 0
 			? [dataTableEmpty(h, ["No nodes match your search"])]
-			: nodes.map((node) => nodeRow(h, node, inputs)),
+			: Arr.map(nodes, (node) => nodeRow(h, node, inputs)),
 	)

@@ -7,7 +7,7 @@ import {
 	getSessionTraceSummaries,
 } from "@maple/web-data/warehouse/replays"
 import { getSpanHierarchy } from "@maple/web-data/warehouse/traces"
-import { Clock, Effect, Option, Queue, Result, Schedule, Schema, Stream } from "effect"
+import { Clock, Effect, Option, Queue, Result, Schedule, Schema, Stream, Array as Arr } from "effect"
 import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
@@ -108,7 +108,7 @@ export const FetchRange = Command.define("FetchReplayRange", {
 		getReplayEvents({ data }).pipe(
 			Effect.mapBoth({
 				onSuccess: (response) =>
-					response.chunks.map((chunk) => ({
+					Arr.map(response.chunks, (chunk) => ({
 						chunk_seq: chunk.chunk_seq,
 						events: Option.getOrElse(decodeChunk(chunk.events), () => []),
 					})),
@@ -133,7 +133,7 @@ export const FetchSpans = Command.define("FetchReplayTraceSpans", {
 				getSpanHierarchy({ data: { traceId: id, timestamp } }).pipe(
 					Effect.mapBoth({
 						onSuccess: (response) =>
-							response.spans.map((span) => ({
+							Arr.map(response.spans, (span) => ({
 								spanId: span.spanId,
 								spanName: span.spanName,
 								serviceName: span.serviceName,

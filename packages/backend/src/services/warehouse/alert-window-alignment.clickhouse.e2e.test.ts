@@ -3,7 +3,7 @@
 // ClickHouse at a tick that is NOT W-aligned and compare it with the window's rows.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { MetricName, OrgId, ServiceName, UserId } from "@maple/domain"
 import { baselineWarehouseCapabilities, type QuerySpec } from "@maple/query-engine"
 import { type AlertEvaluateRequest, makeQueryEngineEvaluate } from "@maple/query-engine/runtime"
@@ -32,7 +32,8 @@ const DAY_MS = 86_400_000
 const HOUR_MS = 3_600_000
 const MINUTE_MS = 60_000
 
-const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 19)
+const chDateTime = (epochMs: number): string =>
+	Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 
 // Anchored to now so the 30-day TTL never drops the seed. The tick is 10:03,
 // which is not a multiple of 5 minutes or of 60.
@@ -41,7 +42,7 @@ const TICK_MS = BASE_MS + 10 * HOUR_MS + 3 * MINUTE_MS
 const at = (hour: number, minute: number, second = 0) =>
 	BASE_MS + hour * HOUR_MS + minute * MINUTE_MS + second * 1000
 
-const quote = (value: string): string => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
 
 const decodeJsonRows = Schema.decodeUnknownSync(
 	Schema.fromJsonString(
@@ -121,11 +122,14 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 	{ ms: at(10, 3), status: "Error" },
 	// `hourly` spans fill [08:03, 10:03): both partial edge hours and the whole
 	// 09:00 hour that the hourly rollups answer, plus one row outside each end.
-	...[at(8, 1), at(8, 10), at(9, 30), at(9, 31), at(9, 32), at(10, 1), at(10, 3), at(10, 4)].map((ms) => ({
-		ms,
-		status: "Ok" as const,
-		service: "hourly",
-	})),
+	...Arr.map(
+		[at(8, 1), at(8, 10), at(9, 30), at(9, 31), at(9, 32), at(10, 1), at(10, 3), at(10, 4)],
+		(ms) => ({
+			ms,
+			status: "Ok" as const,
+			service: "hourly",
+		}),
+	),
 ]
 
 // A gauge at 100 in the older part of the window and 0 in the newer part (avg 10),
@@ -147,10 +151,14 @@ const SPARSE_CALLS_POINTS = [
 const EVENT_TIMES = [at(9, 57), at(9, 59), at(10, 0, 30), at(10, 1), at(10, 2, 30), at(10, 3)]
 
 const seed = async (): Promise<void> => {
-	const logRows = SEED_LOGS.map(
-		(row) =>
-			`(${quote(tenant.orgId)}, ${quote(chDateTime(row.ms))}, ${quote(chDateTime(row.ms))}, '', '', 0, 'INFO', 9, ${quote(row.service)}, 'hello', '', map(), '', '', '', map(), map())`,
-	).join(",\n")
+	const logRows = Arr.join(
+		Arr.map(
+			SEED_LOGS,
+			(row) =>
+				`(${quote(tenant.orgId)}, ${quote(chDateTime(row.ms))}, ${quote(chDateTime(row.ms))}, '', '', 0, 'INFO', 9, ${quote(row.service)}, 'hello', '', map(), '', '', '', map(), map())`,
+		),
+		",\n",
+	)
 	await clickhouseExec(
 		`INSERT INTO logs (
   OrgId, Timestamp, TimestampTime, TraceId, SpanId, TraceFlags,
@@ -161,10 +169,14 @@ const seed = async (): Promise<void> => {
 		database,
 	)
 
-	const spanRows = SEED_SPANS.map(
-		(row, index) =>
-			`(${quote(tenant.orgId)}, ${quote(chDateTime(row.ms))}, ${quote(`trace-${index}`)}, ${quote(`span-${index}`)}, '', 'GET /x', 'Server', ${quote(row.service ?? "api")}, 120000000, ${quote(row.status)}, 1)`,
-	).join(",\n")
+	const spanRows = Arr.join(
+		Arr.map(
+			SEED_SPANS,
+			(row, index) =>
+				`(${quote(tenant.orgId)}, ${quote(chDateTime(row.ms))}, ${quote(`trace-${index}`)}, ${quote(`span-${index}`)}, '', 'GET /x', 'Server', ${quote(row.service ?? "api")}, 120000000, ${quote(row.status)}, 1)`,
+		),
+		",\n",
+	)
 	await clickhouseExec(
 		`INSERT INTO traces
 		 (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, SampleRate)
@@ -172,32 +184,42 @@ const seed = async (): Promise<void> => {
 		database,
 	)
 
-	const gaugeRows = GAUGE_POINTS.map(
-		(row) =>
-			`(${quote(tenant.orgId)}, 'api', 'queue.depth', ${quote(chDateTime(row.ms))}, ${quote(chDateTime(row.ms))}, ${row.value})`,
-	).join(",\n")
+	const gaugeRows = Arr.join(
+		Arr.map(
+			GAUGE_POINTS,
+			(row) =>
+				`(${quote(tenant.orgId)}, 'api', 'queue.depth', ${quote(chDateTime(row.ms))}, ${quote(chDateTime(row.ms))}, ${row.value})`,
+		),
+		",\n",
+	)
 	await clickhouseExec(
 		`INSERT INTO metrics_gauge (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value) VALUES\n${gaugeRows}`,
 		database,
 	)
-	const counterRows = [
-		...COUNTER_POINTS.map((row) => ({ ...row, name: "http.requests" })),
-		...SPARSE_CALLS_POINTS.map((row) => ({ ...row, name: "span.metrics.calls" })),
-	]
-		.map(
+	const counterRows = Arr.join(
+		Arr.map(
+			[
+				...Arr.map(COUNTER_POINTS, (row) => ({ ...row, name: "http.requests" })),
+				...Arr.map(SPARSE_CALLS_POINTS, (row) => ({ ...row, name: "span.metrics.calls" })),
+			],
 			(row) =>
 				`(${quote(tenant.orgId)}, 'api', ${quote(row.name)}, ${quote(chDateTime(at(8, 0)))}, ${quote(chDateTime(row.ms))}, ${row.value}, 2, true)`,
-		)
-		.join(",\n")
+		),
+		",\n",
+	)
 	await clickhouseExec(
 		`INSERT INTO metrics_sum (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value, AggregationTemporality, IsMonotonic) VALUES\n${counterRows}`,
 		database,
 	)
 
-	const eventRows = EVENT_TIMES.map(
-		(ms) =>
-			`(${quote(tenant.orgId)}, ${quote(chDateTime(ms))}, 'server', 'u1', 'custom', 'checkout', 'api', map())`,
-	).join(",\n")
+	const eventRows = Arr.join(
+		Arr.map(
+			EVENT_TIMES,
+			(ms) =>
+				`(${quote(tenant.orgId)}, ${quote(chDateTime(ms))}, 'server', 'u1', 'custom', 'checkout', 'api', map())`,
+		),
+		",\n",
+	)
 	await clickhouseExec(
 		`INSERT INTO product_events (OrgId, Timestamp, Source, UserId, Kind, EventName, ServiceName, Attributes) VALUES\n${eventRows}`,
 		database,
@@ -205,7 +227,7 @@ const seed = async (): Promise<void> => {
 }
 
 const valueAt = (request: AlertEvaluateRequest) =>
-	evaluate(tenant, request).pipe(Effect.map((observations) => observations.map((obs) => obs.value)))
+	evaluate(tenant, request).pipe(Effect.map((observations) => Arr.map(observations, (obs) => obs.value)))
 
 describe.skipIf(!clickhouseE2eEnabled)("alert evaluation at a tick that is not window-aligned", () => {
 	beforeAll(async () => {

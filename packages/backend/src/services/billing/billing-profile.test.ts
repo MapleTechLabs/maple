@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Option } from "effect"
+import { Effect, Option, Array as Arr } from "effect"
 import { makeEdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import type { AutumnResult } from "@maple/backend/services/billing/autumn-http"
 import { CUSTOMER_CACHE_BUCKET } from "@maple/backend/services/billing/autumn-client"
@@ -159,7 +159,7 @@ describe("readBillingProfile", () => {
 			assert.strictEqual(profile.address?.city, "Berlin")
 			assert.strictEqual(profile.address?.postalCode, "10115")
 			assert.deepStrictEqual(
-				profile.taxIds.map((t) => ({ ...t })),
+				Arr.map(profile.taxIds, (t) => ({ ...t })),
 				[
 					{
 						id: "txi_1",

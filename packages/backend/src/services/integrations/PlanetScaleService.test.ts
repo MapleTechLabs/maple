@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
-import { ConfigProvider, Effect, Fiber, Layer, Predicate, Schema } from "effect"
+import { ConfigProvider, Effect, Fiber, Layer, Predicate, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -91,7 +91,7 @@ const stubApi = (fixtures: {
 				status: 200,
 				headers: { "content-type": "application/json" },
 			})
-		if (url.includes("/oauth/token")) {
+		if (Str.includes("/oauth/token")(url)) {
 			return json({
 				access_token: "ps-access-token",
 				refresh_token: "ps-refresh-token",
@@ -99,7 +99,7 @@ const stubApi = (fixtures: {
 				expires_in: 3600,
 			})
 		}
-		if (url.includes("/v1/user")) {
+		if (Str.includes("/v1/user")(url)) {
 			return json({ id: "psuser_1" })
 		}
 		if (/\/v1\/organizations\?/.test(url)) {
@@ -118,7 +118,7 @@ const stubApi = (fixtures: {
 				data: fixtures.deployRequestsByDatabase?.[decodeURIComponent(deployRequestsMatch[1])] ?? [],
 			})
 		}
-		if (url.includes("/databases")) {
+		if (Str.includes("/databases")(url)) {
 			return json({ data: fixtures.databases })
 		}
 		return json([])
@@ -332,7 +332,7 @@ describe("PlanetScaleService", () => {
 		const stub = (async (input: string | URL | Request) => {
 			const url =
 				typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
-			if (url.includes("/insights")) {
+			if (Str.includes("/insights")(url)) {
 				insightCalls.push(url)
 				return new Response(
 					JSON.stringify({
@@ -396,7 +396,7 @@ describe("PlanetScaleService", () => {
 		const stub = (async (input: string | URL | Request) => {
 			const url =
 				typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
-			if (url.includes("/insights")) {
+			if (Str.includes("/insights")(url)) {
 				return new Response("{}", { status: 403, headers: { "content-type": "application/json" } })
 			}
 			return baseStub(input)
@@ -428,7 +428,7 @@ describe("PlanetScaleService", () => {
 		const stub = (async (input: string | URL | Request) => {
 			const url =
 				typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
-			if (url.includes("/insights")) {
+			if (Str.includes("/insights")(url)) {
 				return new Response("{}", { status: 404, headers: { "content-type": "application/json" } })
 			}
 			return baseStub(input)
@@ -460,7 +460,7 @@ describe("PlanetScaleService", () => {
 		const stub = (async (input: string | URL | Request) => {
 			const url =
 				typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
-			if (url.includes("/insights")) {
+			if (Str.includes("/insights")(url)) {
 				return new Response("{}", { status: 500, headers: { "content-type": "application/json" } })
 			}
 			return baseStub(input)
@@ -496,7 +496,7 @@ describe("PlanetScaleService", () => {
 		const stub = (async (input: string | URL | Request) => {
 			const url =
 				typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
-			if (url.includes("/insights")) {
+			if (Str.includes("/insights")(url)) {
 				insightCalls.push(url)
 				return new Response(JSON.stringify({ data: [] }), {
 					status: 200,
@@ -647,7 +647,7 @@ describe("PlanetScaleService", () => {
 			// listDatabases hides soft-deleted rows.
 			const rows = yield* service.listDatabases(asOrgId("org_1"))
 			assert.deepStrictEqual(
-				rows.map((row) => row.name),
+				Arr.map(rows, (row) => row.name),
 				["main-db"],
 			)
 		}).pipe(
@@ -705,7 +705,7 @@ describe("PlanetScaleService.listEvents", () => {
 			const service = yield* PlanetScaleService
 			const page = yield* service.listEvents(asOrgId("org_1"), { ...window, limit: 100 })
 			assert.deepStrictEqual(
-				page.events.map((event) => event.id),
+				Arr.map(page.events, (event) => event.id),
 				["b", "a", "c"],
 			)
 			assert.isNull(page.nextCursor)
@@ -722,7 +722,7 @@ describe("PlanetScaleService.listEvents", () => {
 			const service = yield* PlanetScaleService
 			const page = yield* service.listEvents(asOrgId("org_1"), { ...window, limit: 100 })
 			assert.deepStrictEqual(
-				page.events.map((event) => event.id),
+				Arr.map(page.events, (event) => event.id),
 				["inside"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -747,7 +747,10 @@ describe("PlanetScaleService.listEvents", () => {
 				database: "main-db",
 				limit: 100,
 			})
-			assert.deepStrictEqual(byDatabase.events.map((e) => e.id).sort(), ["main-branch", "main-deploy"])
+			assert.deepStrictEqual(Arr.map(byDatabase.events, (e) => e.id).sort(), [
+				"main-branch",
+				"main-deploy",
+			])
 
 			const byCategory = yield* service.listEvents(asOrgId("org_1"), {
 				...window,
@@ -756,7 +759,7 @@ describe("PlanetScaleService.listEvents", () => {
 				limit: 100,
 			})
 			assert.deepStrictEqual(
-				byCategory.events.map((event) => event.id),
+				Arr.map(byCategory.events, (event) => event.id),
 				["main-branch"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -790,7 +793,7 @@ describe("PlanetScaleService.listEvents", () => {
 				branch: "main",
 				limit: 100,
 			})
-			assert.deepStrictEqual(page.events.map((e) => e.id).sort(), ["deploy", "main-ready"])
+			assert.deepStrictEqual(Arr.map(page.events, (e) => e.id).sort(), ["deploy", "main-ready"])
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -804,7 +807,7 @@ describe("PlanetScaleService.listEvents", () => {
 			const service = yield* PlanetScaleService
 			const first = yield* service.listEvents(asOrgId("org_1"), { ...window, limit: 2 })
 			assert.deepStrictEqual(
-				first.events.map((event) => event.id),
+				Arr.map(first.events, (event) => event.id),
 				["e4", "e3"],
 			)
 			assert.isNotNull(first.nextCursor)
@@ -815,7 +818,7 @@ describe("PlanetScaleService.listEvents", () => {
 				cursor: first.nextCursor ?? undefined,
 			})
 			assert.deepStrictEqual(
-				second.events.map((event) => event.id),
+				Arr.map(second.events, (event) => event.id),
 				["e2", "e1"],
 			)
 
@@ -825,7 +828,7 @@ describe("PlanetScaleService.listEvents", () => {
 				cursor: second.nextCursor ?? undefined,
 			})
 			assert.deepStrictEqual(
-				third.events.map((event) => event.id),
+				Arr.map(third.events, (event) => event.id),
 				["e0"],
 			)
 			// Last page: the limit+1 probe found nothing beyond it.
@@ -844,7 +847,7 @@ describe("PlanetScaleService.listEvents", () => {
 			const service = yield* PlanetScaleService
 			const first = yield* service.listEvents(asOrgId("org_1"), { ...window, limit: 2 })
 			assert.deepStrictEqual(
-				first.events.map((event) => event.id),
+				Arr.map(first.events, (event) => event.id),
 				["ccc", "bbb"],
 			)
 			const second = yield* service.listEvents(asOrgId("org_1"), {
@@ -853,7 +856,7 @@ describe("PlanetScaleService.listEvents", () => {
 				cursor: first.nextCursor ?? undefined,
 			})
 			assert.deepStrictEqual(
-				second.events.map((event) => event.id),
+				Arr.map(second.events, (event) => event.id),
 				["aaa"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -871,7 +874,7 @@ describe("PlanetScaleService.listEvents", () => {
 				cursor: "garbage",
 			})
 			assert.deepStrictEqual(
-				page.events.map((event) => event.id),
+				Arr.map(page.events, (event) => event.id),
 				["a"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -1084,13 +1087,13 @@ describe("deployRequestTimelineRows", () => {
 			},
 		})
 		assert.deepStrictEqual(
-			rows.map((row) => row.state),
+			Arr.map(rows, (row) => row.state),
 			["opened", "in_progress", "schema_applied", "closed"],
 		)
 		// The event types must match the webhook vocabulary exactly, or the two
 		// sources stop colliding on the dedupe index and every marker doubles.
 		assert.deepStrictEqual(
-			rows.map((row) => row.eventType),
+			Arr.map(rows, (row) => row.eventType),
 			[
 				"deploy_request.opened",
 				"deploy_request.in_progress",
@@ -1114,7 +1117,7 @@ describe("deployRequestTimelineRows", () => {
 			deployment: { state: "error", finished_at: "2026-08-01T10:15:00Z" },
 		})
 		assert.deepStrictEqual(
-			rows.map((row) => row.state),
+			Arr.map(rows, (row) => row.state),
 			["errored"],
 		)
 	})
@@ -1126,7 +1129,7 @@ describe("deployRequestTimelineRows", () => {
 			closed_at: "2026-08-01T11:00:00Z",
 		})
 		assert.deepStrictEqual(
-			reverted.map((row) => row.state),
+			Arr.map(reverted, (row) => row.state),
 			["reverted"],
 		)
 	})
@@ -1163,7 +1166,7 @@ describe("PlanetScaleService pagination truncation", () => {
 				})
 			if (
 				Predicate.isNotUndefined(options.deployRequestsTotalFor) &&
-				url.includes("/deploy-requests")
+				Str.includes("/deploy-requests")(url)
 			) {
 				const page = pageOf(url)
 				const start = (page - 1) * 100
@@ -1183,7 +1186,7 @@ describe("PlanetScaleService pagination truncation", () => {
 			}
 			if (
 				Predicate.isNotUndefined(options.totalDatabases) &&
-				/\/databases(\?|$)/.test(url.split("#")[0] ?? url)
+				/\/databases(\?|$)/.test(Str.split("#")(url)[0] ?? url)
 			) {
 				const page = pageOf(url)
 				const start = (page - 1) * 100
@@ -1309,7 +1312,7 @@ describe("PlanetScaleService rejected tokens", () => {
 					status,
 					headers: { "content-type": "application/json" },
 				})
-			if (url.includes("/oauth/token")) {
+			if (Str.includes("/oauth/token")(url)) {
 				const body = new URLSearchParams(
 					await new Request(url, { method: "POST", body: init?.body ?? null }).text(),
 				)
@@ -1331,14 +1334,14 @@ describe("PlanetScaleService rejected tokens", () => {
 			const accepted =
 				authorization === "Bearer ps-access-token-refreshed" && options.refreshedTokenWorks
 			// The connect flow's own calls use the original token and must succeed.
-			if (url.includes("/databases") && !accepted && rejectOriginal.value) {
+			if (Str.includes("/databases")(url) && !accepted && rejectOriginal.value) {
 				calls.rejected += 1
 				if (authorization === "Bearer ps-access-token-refreshed") {
 					await options.beforeRefreshedRejection?.()
 				}
 				return json({ code: "unauthorized", message: "invalid_token" }, 401)
 			}
-			if (url.includes("/v1/organizations/")) calls.api += 1
+			if (Str.includes("/v1/organizations/")(url)) calls.api += 1
 			return base(input, init)
 		}) as typeof fetch
 		const rejectOriginal = { value: false }
@@ -1473,7 +1476,7 @@ describe("PlanetScaleService rejected tokens", () => {
 
 describe("PlanetScaleService forbidden grants", () => {
 	/** Answers 403 to `matches` URLs (default: all database calls) while `forbidden.value` is set. */
-	const stubForbidden = (matches: (url: string) => boolean = (url) => url.includes("/databases")) => {
+	const stubForbidden = (matches: (url: string) => boolean = (url) => Str.includes("/databases")(url)) => {
 		const base = stubApi({
 			databases: [{ id: "db_1", name: "main-db" }],
 			branchesByDatabase: { "main-db": [{ id: "br_1", name: "main", production: true }] },
@@ -1644,7 +1647,7 @@ describe("PlanetScaleService forbidden grants", () => {
 
 	it.effect("never revokes the grant over a 403 on one database's branches", () => {
 		const testDb = createTestDb(trackedDbs)
-		const { stub, forbidden } = stubForbidden((url) => url.includes("/branches"))
+		const { stub, forbidden } = stubForbidden((url) => Str.includes("/branches")(url))
 		return Effect.gen(function* () {
 			yield* connect("org_1")
 			forbidden.value = true

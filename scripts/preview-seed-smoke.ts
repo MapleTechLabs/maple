@@ -11,7 +11,7 @@
  * Env: API_URL, WEB_URL, CLERK_SECRET_KEY, optional PREVIEW_SIGNIN_KEY,
  * PREVIEW_SEED_ORG_ID and PREVIEW_SEED_EMAIL.
  */
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -26,15 +26,15 @@ const REQUEST_TIMEOUT_MS = 60_000
 
 const skipSeed = process.argv.includes("--skip-seed")
 
-const missing = ["API_URL", "WEB_URL", "CLERK_SECRET_KEY"].filter((name) => !process.env[name])
+const missing = Arr.filter(["API_URL", "WEB_URL", "CLERK_SECRET_KEY"], (name) => !process.env[name])
 if (missing.length > 0) {
-	console.error(`Missing required env: ${missing.join(", ")}`)
+	console.error(`Missing required env: ${Arr.join(missing, ", ")}`)
 	process.exit(2)
 }
-const apiUrl = process.env.API_URL!.replace(/\/+$/, "")
-const webUrl = process.env.WEB_URL!.replace(/\/+$/, "")
+const apiUrl = Str.replace(/\/+$/, "")(process.env.API_URL!)
+const webUrl = Str.replace(/\/+$/, "")(process.env.WEB_URL!)
 const secretKey = process.env.CLERK_SECRET_KEY!
-if (!secretKey.startsWith("sk_test_")) {
+if (!Str.startsWith("sk_test_")(secretKey)) {
 	console.error("CLERK_SECRET_KEY is not a development key (sk_test_...). Refusing to mint a session.")
 	process.exit(2)
 }
@@ -90,7 +90,7 @@ if (previewSignInKey) {
 		body: encodeJson({ key: previewSignInKey }),
 	})
 	if (response.status !== 200) {
-		fail(`Preview sign-in returned ${response.status}: ${(await response.text()).slice(0, 500)}`)
+		fail(`Preview sign-in returned ${response.status}: ${Str.slice(0, 500)(await response.text())}`)
 	}
 	console.log(`Preview sign-in ready for ${PREVIEW_REVIEWER_EMAIL}`)
 }
@@ -151,7 +151,8 @@ const call = async (name: string, method: "GET" | "POST", path: string, body?: u
 // 4. Seed. Ingest keys are created on first read, so the GET below provisions them.
 if (!skipSeed) {
 	const seeded = await call("/internal/demo/seed", "POST", "/internal/demo/seed", { hours: 6 })
-	if (seeded.status !== "200") fail(`Demo seed returned ${seeded.status}: ${seeded.text.slice(0, 500)}`)
+	if (seeded.status !== "200")
+		fail(`Demo seed returned ${seeded.status}: ${Str.slice(0, 500)(seeded.text)}`)
 	console.log(`Seed: ${seeded.text}`)
 }
 
@@ -183,10 +184,10 @@ await fetch(`${CLERK_API}/sessions/${session.id}/revoke`, {
 	headers: { authorization: `Bearer ${secretKey}` },
 }).catch(() => undefined)
 
-const width = Math.max(...results.map((r) => r.name.length))
-console.log(`\n     ${"Endpoint".padEnd(width)}  Status`)
-for (const r of results) console.log(`${r.ok ? "ok  " : "FAIL"} ${r.name.padEnd(width)}  ${r.status}`)
+const width = Math.max(...Arr.map(results, (r) => r.name.length))
+console.log(`\n     ${Str.padEnd(width)("Endpoint")}  Status`)
+for (const r of results) console.log(`${r.ok ? "ok  " : "FAIL"} ${Str.padEnd(width)(r.name)}  ${r.status}`)
 
-const failed = results.filter((r) => !r.ok)
+const failed = Arr.filter(results, (r) => !r.ok)
 if (failed.length > 0) fail(`${failed.length} preview smoke check(s) failed`)
 console.log("\nPreview smoke test passed.")

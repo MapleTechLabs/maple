@@ -1,6 +1,6 @@
 import { UptimeMonitorId } from "@maple/domain"
 import { getTracesFacets } from "@maple/web-data/warehouse/traces"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { currentWindow } from "../../../data/time-range"
 import { readSupportedTimeZones } from "../../../platform/time-zone"
@@ -23,7 +23,7 @@ export const FetchFormServices = Command.define("FetchUptimeFormServices", {
 	messages: [Message.CompletedFetchServices],
 	execute: currentWindow({ preset: "24h", snap: true }).pipe(
 		Effect.flatMap((window) => getTracesFacets({ data: window })),
-		Effect.map((response) => response.data.services.map((row) => row.name)),
+		Effect.map((response) => Arr.map(response.data.services, (row) => row.name)),
 		Effect.orElseSucceed((): ReadonlyArray<string> => []),
 		Effect.map((services) => Message.CompletedFetchServices({ services })),
 	),

@@ -5,6 +5,7 @@ import {
 } from "@maple/query-engine/query-builder"
 import { type MetricsQueryDraftSchema, toQueryBuilderMetricType } from "@maple/query-model"
 import type { MetricRow } from "../shared"
+import { Array as Arr, String as Str } from "effect"
 
 // Pure parts of the metric detail and its breakdown.
 
@@ -36,7 +37,8 @@ export const summarizeCatalogRows = (
 	metricName: string,
 	metricType: QueryBuilderMetricType | undefined,
 ): CatalogSummary | null => {
-	const matches = rows.filter(
+	const matches = Arr.filter(
+		rows,
 		(row) =>
 			row.metricName === metricName &&
 			toQueryBuilderMetricType(row.metricType) !== null &&
@@ -48,13 +50,24 @@ export const summarizeCatalogRows = (
 	return {
 		metricName,
 		metricType: firstType,
-		services: [...new Set(matches.map((row) => row.serviceName).filter((name) => name !== ""))],
-		description: matches.map((row) => row.metricDescription).find((d) => d.length > 0) ?? "",
-		unit: matches.map((row) => row.metricUnit).find((u) => u.length > 0) ?? "",
-		dataPointCount: matches.reduce((total, row) => total + row.dataPointCount, 0),
-		firstSeen: matches.reduce((min, row) => (row.firstSeen < min ? row.firstSeen : min), first.firstSeen),
-		lastSeen: matches.reduce((max, row) => (row.lastSeen > max ? row.lastSeen : max), first.lastSeen),
-		isMonotonic: matches.some((row) => row.isMonotonic),
+		services: [
+			...new Set(
+				Arr.filter(
+					Arr.map(matches, (row) => row.serviceName),
+					(name) => name !== "",
+				),
+			),
+		],
+		description: Arr.map(matches, (row) => row.metricDescription).find((d) => d.length > 0) ?? "",
+		unit: Arr.map(matches, (row) => row.metricUnit).find((u) => u.length > 0) ?? "",
+		dataPointCount: Arr.reduce(matches, 0, (total, row) => total + row.dataPointCount),
+		firstSeen: Arr.reduce(matches, first.firstSeen, (min, row) =>
+			row.firstSeen < min ? row.firstSeen : min,
+		),
+		lastSeen: Arr.reduce(matches, first.lastSeen, (max, row) =>
+			row.lastSeen > max ? row.lastSeen : max,
+		),
+		isMonotonic: Arr.some(matches, (row) => row.isMonotonic),
 	}
 }
 
@@ -122,15 +135,15 @@ export const buildBreakdownDraft = (draft: MetricsQueryDraft, groupBy: string): 
 	limit: String(BREAKDOWN_LIMIT),
 })
 
-const quoteFilterValue = (value: string): string => `"${value.replaceAll('"', '\\"')}"`
+const quoteFilterValue = (value: string): string => `"${Str.replaceAll('"', '\\"')(value)}"`
 
 /** `appendWhereFilter`: adds `key = "value"`, replacing an existing clause for the same key. */
 export const appendWhereFilter = (where: string, key: string, value: string): string => {
 	const clause = `${key} = ${quoteFilterValue(value)}`
-	const trimmed = where.trim()
+	const trimmed = Str.trim(where)
 	if (!trimmed) return clause
-	const escapedKey = key.replaceAll(".", "\\.")
+	const escapedKey = Str.replaceAll(".", "\\.")(key)
 	const sameKeyClause = new RegExp(`${escapedKey}\\s*=\\s*"(?:[^"\\\\]|\\\\.)*"`)
-	if (sameKeyClause.test(trimmed)) return trimmed.replace(sameKeyClause, clause)
+	if (sameKeyClause.test(trimmed)) return Str.replace(sameKeyClause, clause)(trimmed)
 	return `${trimmed} AND ${clause}`
 }

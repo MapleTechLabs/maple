@@ -1,6 +1,6 @@
 import type { AuthEnv } from "@maple/auth"
 import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infra/config-helpers"
-import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Config, Context, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 
 /**
  * Standalone config for the Electric shape-sync worker. Deliberately a small,
@@ -53,9 +53,9 @@ const syncConfig = Config.all({
 // surface as a per-request defect instead of a startup error.
 const makeSyncConfig = Effect.gen(function* () {
 	const config: SyncConfigValues = yield* syncConfig
-	const authMode = config.MAPLE_AUTH_MODE.toLowerCase()
+	const authMode = Str.toLowerCase(config.MAPLE_AUTH_MODE)
 
-	if (config.MAPLE_DEFAULT_ORG_ID.trim().length === 0) {
+	if (Str.trim(config.MAPLE_DEFAULT_ORG_ID).length === 0) {
 		return yield* new SyncConfigInvalidError({
 			variable: "MAPLE_DEFAULT_ORG_ID",
 			message: "MAPLE_DEFAULT_ORG_ID cannot be empty",

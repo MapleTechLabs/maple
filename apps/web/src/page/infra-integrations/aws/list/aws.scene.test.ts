@@ -2,7 +2,7 @@ import { OrgId } from "@maple/domain"
 import { AwsMetricStream } from "@maple/domain/aws"
 import { Timestamp, type V2AwsConnection, type V2AwsIntegration } from "@maple/domain/http/v2"
 import { AwsAccountId, AwsConnectionId } from "@maple/domain/primitives"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { fromString } from "foldkit/url"
 import { expect as expectView, given, role, scene, selector, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -22,9 +22,9 @@ const NOW = 1_792_000_000_000
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const steps = (model: Model, messages: ReadonlyArray<Message>) =>
-	messages.reduce((current, message) => pageUpdate(current, message).model, model)
+	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message).model)
 
 const stream = Schema.decodeSync(AwsMetricStream)({ regions: ["us-east-1"], namespaces: ["AWS/ECS"] })
 

@@ -1,6 +1,7 @@
 import { asFiniteNumber, cellText, toBreakdownRows } from "@maple/ui/components/charts/_shared/breakdown-rows"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
+import { Array as Arr, String as Str } from "effect"
 
 // The step derivation of `FunnelDropoffChart` (packages/ui/src/components/charts/funnel/
 // funnel-dropoff-chart.tsx): one column per step, with timing and leavers when the route sends them.
@@ -44,25 +45,25 @@ export const fmtSpan = (ms: number): string => {
 const isRecord = (entry: unknown): entry is Row => typeof entry === "object" && entry !== null
 
 const toLeavers = (value: unknown): ReadonlyArray<Leaver> =>
-	Array.isArray(value)
-		? value
-				.filter(isRecord)
-				.map((entry) => ({
+	Arr.isArray(value)
+		? Arr.filter(
+				Arr.map(Arr.filter(value, isRecord), (entry) => ({
 					name: typeof entry.name === "string" ? entry.name : "",
 					count: asFiniteNumber(entry.count),
-				}))
-				.filter((entry) => entry.count > 0)
+				})),
+				(entry) => entry.count > 0,
+			)
 		: []
 
 const optionalNumber = (value: unknown): number | undefined =>
 	typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined
 
 const groupedSteps = (rows: ReadonlyArray<Row>, valueField: string) => {
-	const groups = [...new Set(rows.map((row) => String(row.group)))]
+	const groups = [...new Set(Arr.map(rows, (row) => String(row.group)))]
 	const order: Array<string> = []
 	const byName = new Map<string, { value: number; byGroup: Map<string, number> }>()
-	rows.forEach((row) => {
-		const raw = cellText(row.name).trim()
+	Arr.forEach(rows, (row) => {
+		const raw = Str.trim(cellText(row.name))
 		const name = raw === "" ? "(no value)" : raw
 		const existing = byName.get(name)
 		const step = existing ?? { value: 0, byGroup: new Map<string, number>() }
@@ -77,7 +78,7 @@ const groupedSteps = (rows: ReadonlyArray<Row>, valueField: string) => {
 	})
 	const colors = resolveSeriesColors(groups)
 	const first = byName.get(order[0] ?? "")?.value ?? 0
-	const steps = order.map((name, index): Step => {
+	const steps = Arr.map(order, (name, index): Step => {
 		const step = byName.get(name) ?? { value: 0, byGroup: new Map<string, number>() }
 		const prev = index > 0 ? byName.get(order[index - 1] ?? "") : undefined
 		return {
@@ -88,7 +89,7 @@ const groupedSteps = (rows: ReadonlyArray<Row>, valueField: string) => {
 			ofPrev: prev !== undefined && prev.value > 0 ? step.value / prev.value : null,
 			dropped: prev !== undefined ? Math.max(0, prev.value - step.value) : 0,
 			leavers: [],
-			groups: groups.map((group) => ({
+			groups: Arr.map(groups, (group) => ({
 				name: group,
 				color: colors.get(group) ?? "",
 				value: step.byGroup.get(group) ?? 0,
@@ -96,7 +97,7 @@ const groupedSteps = (rows: ReadonlyArray<Row>, valueField: string) => {
 			})),
 		}
 	})
-	return { steps, legend: groups.map((name) => ({ name, color: colors.get(name) ?? "" })) }
+	return { steps, legend: Arr.map(groups, (name) => ({ name, color: colors.get(name) ?? "" })) }
 }
 
 export type DropoffSteps = Readonly<{
@@ -106,13 +107,13 @@ export type DropoffSteps = Readonly<{
 
 /** `toSteps`: grouped or plain. */
 export const toSteps = (source: ReadonlyArray<Row>, valueField: string): DropoffSteps => {
-	const grouped = source.filter((row) => typeof row.group === "string")
+	const grouped = Arr.filter(source, (row) => typeof row.group === "string")
 	if (grouped.length > 0 && grouped.length === source.length) return groupedSteps(grouped, valueField)
 	const rows = toBreakdownRows(source, valueField)
 	const first = rows[0]?.value ?? 0
 	return {
 		legend: [],
-		steps: rows.map((row, index): Step => {
+		steps: Arr.map(rows, (row, index): Step => {
 			const raw = source[index] ?? {}
 			const prev = rows[index - 1]
 			return {
@@ -132,8 +133,8 @@ export const toSteps = (source: ReadonlyArray<Row>, valueField: string): Dropoff
 /** `leaverRows`: the top leavers as shares of everyone who dropped, the remainder as "Other". */
 export const leaverRows = (leavers: ReadonlyArray<Leaver>, dropped: number) => {
 	const shown = leavers.slice(0, LEAVERS_SHOWN)
-	const named = shown.reduce((acc, entry) => acc + entry.count, 0)
-	const rows = shown.map((entry) => ({
+	const named = Arr.reduce(shown, 0, (acc, entry) => acc + entry.count)
+	const rows = Arr.map(shown, (entry) => ({
 		name: entry.name === "" ? ENDED_LABEL : entry.name,
 		ended: entry.name === "",
 		share: Math.min(1, entry.count / dropped),

@@ -1,7 +1,7 @@
 import { mergeExactThroughput } from "@maple/web-data/warehouse/custom-charts"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
@@ -18,7 +18,11 @@ import {
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { widgetShell } from "../../overview/view-widget"
 import { commitMarkers, markerLayout } from "./derive-markers"
-import { LINKED_CURSOR_STYLE, linkedCursorOverlay, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import {
+	LINKED_CURSOR_STYLE,
+	linkedCursorOverlay,
+	MountLinkedCursor,
+} from "@maple/views/charts/linked-cursor"
 import { markersOverlay } from "./view-markers"
 import { Message } from "./message"
 import type { DetailPoint, Model } from "./model"
@@ -95,7 +99,7 @@ export const mergedPoints = (model: Model): ReadonlyArray<DetailPoint> => {
 		() => [],
 	)
 	const exact = AsyncData.getOrElse(model.refinement.data, () => [])
-	return mergeExactThroughput(base, new Map(exact.map((point) => [point.bucket, point.throughput])))
+	return mergeExactThroughput(base, new Map(Arr.map(exact, (point) => [point.bucket, point.throughput])))
 }
 
 type ChartConfig = (typeof CHARTS)[number]
@@ -109,8 +113,8 @@ const colorsOf = (kind: Kind, theme: ThemeColors): Readonly<Record<string, strin
 		case "Latency":
 			return {
 				...chrome,
-				...Object.fromEntries(
-					LATENCY_SERIES.map((entry) => [entry.key, resolveColor(theme, entry.token)]),
+				...Rec.fromEntries(
+					Arr.map(LATENCY_SERIES, (entry) => [entry.key, resolveColor(theme, entry.token)]),
 				),
 			}
 		case "Throughput":
@@ -218,7 +222,7 @@ export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, state: GridSt
 		onSome: (data) =>
 			commitMarkers(
 				data.releases,
-				points.map((point) => point.bucket),
+				Arr.map(points, (point) => point.bucket),
 				model.commits,
 			),
 	})
@@ -226,7 +230,7 @@ export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, state: GridSt
 		h,
 		{
 			charts: model.charts,
-			rows: points.map((point) => ({ ...point })),
+			rows: Arr.map(points, (point) => ({ ...point })),
 			markers,
 			toChartMessage: (chartId, message) => Message.GotChartMessage({ chartId, message }),
 			linkedCursorMount: MountLinkedCursor(),
@@ -247,7 +251,7 @@ export const metricsGridOf = <M>(h: HtmlBuilder<M>, input: GridInput<M>, state: 
 			h.Class(cn("grid grid-cols-1 md:grid-cols-2 gap-3", refreshingClass(state.isWaiting))),
 			h.Style(LINKED_CURSOR_STYLE),
 		],
-		CHARTS.map((chart) => {
+		Arr.map(CHARTS, (chart) => {
 			const context = state.context
 			const isChart = !state.isLoading && context !== null
 			return h.div(

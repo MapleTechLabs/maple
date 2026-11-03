@@ -14,6 +14,7 @@ import { inlineCodeClassName } from "@maple/views/ui/inline-code"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The pieces the Errors table (and the error modal) draw a failure with.
 
@@ -42,7 +43,7 @@ const pathParts = <M>(
 	keyClassName: string,
 	maskClassName?: string,
 ): Html[] =>
-	parts.map((part) =>
+	Arr.map(parts, (part) =>
 		part.kind === "key"
 			? h.span([h.Class(keyClassName)], [part.text])
 			: maskChip(h, part.label, part.raw, maskClassName),
@@ -67,7 +68,7 @@ const headingToken = <M>(h: HtmlBuilder<M>, token: ErrorTextToken): ReadonlyArra
 }
 
 const headingTokens = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<ErrorTextToken>) =>
-	tokens.flatMap((token) => headingToken(h, token))
+	Arr.flatMap(tokens, (token) => headingToken(h, token))
 
 const HEADING = "font-mono text-lg leading-6.5 font-semibold tracking-tight text-foreground"
 
@@ -84,38 +85,34 @@ export const errorTextHeading = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<Err
 	const path = tokens[pathIndex]
 	const atIndex = tokens[pathIndex - 1]?.kind === "at" ? pathIndex - 1 : pathIndex
 	const tail = tokens.slice(pathIndex + 1)
-	return heading(
-		h,
-		{ level: 2, variant: "code", className: vstackClass({ gap: "0.5", shrink: true }) },
-		[
-			h.span(
-				[h.Class(cn(HEADING, "line-clamp-2 break-words"))],
-				headingTokens(h, tokens.slice(0, atIndex)),
-			),
-			h.span(
-				[h.Class("flex min-w-0 flex-wrap items-baseline gap-3 pl-6 font-mono text-lg leading-6.5")],
-				[
-					h.span([h.Class("text-muted-foreground")], ["at"]),
+	return heading(h, { level: 2, variant: "code", className: vstackClass({ gap: "0.5", shrink: true }) }, [
+		h.span(
+			[h.Class(cn(HEADING, "line-clamp-2 break-words"))],
+			headingTokens(h, tokens.slice(0, atIndex)),
+		),
+		h.span(
+			[h.Class("flex min-w-0 flex-wrap items-baseline gap-3 pl-6 font-mono text-lg leading-6.5")],
+			[
+				h.span([h.Class("text-muted-foreground")], ["at"]),
+				h.span(
+					[h.Class(cn("break-all font-semibold tracking-tight", TONE_TEXT.crit))],
+					path?.kind === "path" ? pathParts(h, path.parts, "", HEADING_MASK) : [],
+				),
+			],
+		),
+		...(tail.length > 0
+			? [
 					h.span(
-						[h.Class(cn("break-all font-semibold tracking-tight", TONE_TEXT.crit))],
-						path?.kind === "path" ? pathParts(h, path.parts, "", HEADING_MASK) : [],
+						[
+							h.Class(
+								"line-clamp-2 break-words pl-6 font-mono text-ui leading-4.5 text-foreground-soft",
+							),
+						],
+						headingTokens(h, tail),
 					),
-				],
-			),
-			...(tail.length > 0
-				? [
-						h.span(
-							[
-								h.Class(
-									"line-clamp-2 break-words pl-6 font-mono text-ui leading-4.5 text-foreground-soft",
-								),
-							],
-							headingTokens(h, tail),
-						),
-					]
-				: []),
-		],
-	)
+				]
+			: []),
+	])
 }
 
 const lineToken = <M>(h: HtmlBuilder<M>, token: ErrorTextToken): Html[] => {
@@ -136,7 +133,7 @@ const lineToken = <M>(h: HtmlBuilder<M>, token: ErrorTextToken): Html[] => {
 }
 
 const lineTokens = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<ErrorTextToken>): Html[] =>
-	tokens.flatMap((token) => lineToken(h, token))
+	Arr.flatMap(tokens, (token) => lineToken(h, token))
 
 /** `ErrorTextLine`: a message on one line; the error path never shrinks. */
 export const errorTextLine = <M>(

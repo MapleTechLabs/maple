@@ -6,6 +6,7 @@ import type {
 	CloudflareWorkerRow,
 	CloudflareZoneRow,
 } from "@maple/web-data/warehouse/cloudflare-infra"
+import { Array as Arr } from "effect"
 
 // Here, not beside the list views: the route's search schema needs it, and it loads at startup.
 export const CLOUDFLARE_VIEWS = ["zones", "workers", "queues"] as const
@@ -87,8 +88,8 @@ export function mergeWorkerRows(
 	workers: ReadonlyArray<CloudflareWorkerRow>,
 	durableObjects: ReadonlyArray<CloudflareDurableObjectRow>,
 ): WorkerListRow[] {
-	const doByWorker = new Map(durableObjects.map((row) => [workerKey(row), row]))
-	const merged: Array<Omit<WorkerListRow, "nameInOtherAccounts">> = workers.map((worker) => {
+	const doByWorker = new Map(Arr.map(durableObjects, (row) => [workerKey(row), row]))
+	const merged: Array<Omit<WorkerListRow, "nameInOtherAccounts">> = Arr.map(workers, (worker) => {
 		const durable = doByWorker.get(workerKey(worker))
 		doByWorker.delete(workerKey(worker))
 		return {
@@ -133,7 +134,7 @@ export function mergeWorkerRows(
 			(accountsPerName.get(row.scriptName) ?? new Set()).add(row.accountId),
 		)
 	}
-	return merged.map((row) => ({
+	return Arr.map(merged, (row) => ({
 		...row,
 		nameInOtherAccounts: (accountsPerName.get(row.scriptName)?.size ?? 0) > 1,
 	}))

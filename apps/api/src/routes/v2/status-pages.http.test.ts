@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema, Array as Arr } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -572,7 +572,7 @@ describe("v2 status pages", () => {
 					body: "Fake.",
 				}),
 			])
-			expect(reads.map((r) => r.status)).toEqual([404, 404, 404, 404, 404, 404, 404])
+			expect(Arr.map(reads, (r) => r.status)).toEqual([404, 404, 404, 404, 404, 404, 404])
 			expect((await harness.request("GET", "/v2/status_pages", outsider)).body.data).toEqual([])
 			expect((await harness.request("GET", "/v2/status_page_incidents", outsider)).body.data).toEqual(
 				[],

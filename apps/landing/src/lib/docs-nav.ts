@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 // Single source of truth for docs navigation ordering. The sidebar
 // (DocsSidebar), the index page, prev/next and search all read from here so
 // section and group order never drift apart. Pure data — client islands import it.
@@ -65,9 +66,10 @@ export type DocSection = (typeof SECTIONS)[number]
 export type DocGroup = DocSection["groups"][number]
 
 /** Doc groups in sidebar order (sections in order, groups within each). */
-export const GROUP_ORDER: readonly DocGroup[] = SECTIONS.flatMap((section) => section.groups)
+export const GROUP_ORDER: readonly DocGroup[] = Arr.flatMap(SECTIONS, (section) => section.groups)
 
-export const isDocGroup = (group: string): group is DocGroup => GROUP_ORDER.some((known) => known === group)
+export const isDocGroup = (group: string): group is DocGroup =>
+	Arr.some(GROUP_ORDER, (known) => known === group)
 
 export const groupRank = (group: string): number => {
 	const i = GROUP_ORDER.findIndex((known) => known === group)
@@ -76,7 +78,7 @@ export const groupRank = (group: string): number => {
 
 /** The section a group belongs to; unknown groups fall into the first one. */
 export const sectionForGroup = (group: string): DocSection =>
-	SECTIONS.find((section) => section.groups.some((known) => known === group)) ?? SECTIONS[0]
+	SECTIONS.find((section) => Arr.some(section.groups, (known) => known === group)) ?? SECTIONS[0]
 
 /** Slug of the instrumentation overview — the "SDKs" entry point everywhere. */
 export const INSTRUMENTATION_SLUG = "instrumentation"

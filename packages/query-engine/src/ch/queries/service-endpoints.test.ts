@@ -7,6 +7,7 @@ import {
 	splitEndpointName,
 } from "./service-endpoints"
 import { OrgId } from "@maple/domain"
+import { String as Str } from "effect"
 
 const baseParams = {
 	orgId: OrgId.make("org_1"),
@@ -41,7 +42,7 @@ describe("serviceEndpointsSummaryQuery", () => {
 			serviceEndpointsSummaryQuery({ serviceName: "api", environments: ["production"] }),
 			baseParams,
 		)
-		expect(sql.split("OrgId = 'org_1'").length - 1).toBe(3)
+		expect(Str.split("OrgId = 'org_1'")(sql).length - 1).toBe(3)
 	})
 
 	it("keeps the all-raw rollback path HTTP-filtered too", () => {

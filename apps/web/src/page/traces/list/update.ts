@@ -53,7 +53,7 @@ export const allRows = (model: Model): ReadonlyArray<TraceRow> => {
 	const first = AsyncData.getData(model.firstPage.data)
 	return Option.isNone(first)
 		? []
-		: [...first.value.rows, ...model.pagination.pages.flatMap((page) => page.rows)].slice(
+		: [...first.value.rows, ...Arr.flatMap(model.pagination.pages, (page) => page.rows)].slice(
 				0,
 				MAX_RETAINED_TRACES,
 			)
@@ -63,7 +63,7 @@ export const hiddenCount = (model: Model): number =>
 	Option.match(AsyncData.getData(model.firstPage.data), {
 		onNone: () => 0,
 		onSome: (first) =>
-			first.hiddenCount + model.pagination.pages.reduce((sum, page) => sum + page.hiddenCount, 0),
+			first.hiddenCount + Arr.reduce(model.pagination.pages, 0, (sum, page) => sum + page.hiddenCount),
 	})
 
 /** More pages exist when the last warehouse page came back full before the noise filter. */
@@ -268,7 +268,10 @@ export const routeChanged = (
 		search: route.search,
 		durationDraft: isSameDuration ? model.durationDraft : durationDraftOf(route.search),
 	}
-	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	const resolve = (): Return => ({
+		model: next,
+		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+	})
 	return routeWindowStep(model.search, route.search, {
 		resolve,
 		requestAll: (mode) =>

@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { ListInfraOutput } from "@maple/domain/mcp-outputs"
 import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
@@ -74,7 +74,7 @@ const SCOPING_FILTERS: ReadonlyArray<keyof InfraFilters> = [
 const supports =
 	(filters: InfraFilters) =>
 	(kind: (typeof INFRA_KINDS)[number]): boolean =>
-		SCOPING_FILTERS.every((key) => filters[key] === undefined || KIND_FILTERS[kind].has(key))
+		Arr.every(SCOPING_FILTERS, (key) => filters[key] === undefined || KIND_FILTERS[kind].has(key))
 
 /** The provider kinds whose integration is connected. Postgres only; a failed read just skips them. */
 const connectedProviderKinds = (orgId: Parameters<IntegrationInventoryService["Service"]["list"]>[0]) =>
@@ -82,14 +82,15 @@ const connectedProviderKinds = (orgId: Parameters<IntegrationInventoryService["S
 		const inventory = yield* IntegrationInventoryService
 		const connected = yield* inventory.list(orgId).pipe(
 			Effect.map(
-				(result) => new Set<string>(result.integrations.map((integration) => integration.provider)),
+				(result) =>
+					new Set<string>(Arr.map(result.integrations, (integration) => integration.provider)),
 			),
 			Effect.tapError((error) =>
 				Effect.logWarning("list_infra could not read integrations", error.message),
 			),
 			Effect.orElseSucceed(() => new Set<string>()),
 		)
-		return PROVIDER_KINDS.filter((kind) => connected.has(PROVIDER_OF[kind]))
+		return Arr.filter(PROVIDER_KINDS, (kind) => connected.has(PROVIDER_OF[kind]))
 	})
 
 export function registerListInfraTool(server: McpToolRegistrar) {
@@ -167,7 +168,7 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 						params.kind === undefined ? Math.min(params.limit, OVERVIEW_ROWS) : params.limit
 					const collectorKinds =
 						params.kind === undefined
-							? collectorReporting.filter(supports(filters))
+							? Arr.filter(collectorReporting, supports(filters))
 							: isProviderKind(params.kind)
 								? []
 								: [params.kind]
@@ -177,22 +178,27 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 						{ concurrency: 3 },
 					)
 					const providerResults = yield* Effect.forEach(
-						params.kind === undefined ? providerKinds.filter(supports(filters)) : providerKinds,
+						params.kind === undefined
+							? Arr.filter(providerKinds, supports(filters))
+							: providerKinds,
 						(kind) => listProviderKind(kind, { window, filters, sort, limit }),
 						{ concurrency: 3 },
 					)
 					return {
 						reporting: [
 							...collectorReporting,
-							...providerResults.filter((r) => r.reported).map((r) => r.section.kind),
+							...Arr.map(
+								Arr.filter(providerResults, (r) => r.reported),
+								(r) => r.section.kind,
+							),
 						],
-						sections: [...collectorSections, ...providerResults.map((r) => r.section)],
+						sections: [...collectorSections, ...Arr.map(providerResults, (r) => r.section)],
 					}
 				}),
 			).pipe(Effect.catchTags(warehouseToMcpHandlers(TOOL)))
 			yield* Effect.annotateCurrentSpan(
 				"result.rowCount",
-				sections.reduce((sum, section) => sum + section.rows.length, 0),
+				Arr.reduce(sections, 0, (sum, section) => sum + section.rows.length),
 			)
 
 			return {
@@ -211,12 +217,12 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 				notices.push(
 					output.reporting.length === 0
 						? `No ${KIND_NOUN[output.kind]} report metrics in this window, and neither does any other kind.`
-						: `No ${KIND_NOUN[output.kind]} report metrics in this window. Reporting: ${output.reporting.join(", ")}.`,
+						: `No ${KIND_NOUN[output.kind]} report metrics in this window. Reporting: ${Arr.join(output.reporting, ", ")}.`,
 				)
 			}
-			const nonEmpty = output.sections.filter((section) => section.rows.length > 0)
+			const nonEmpty = Arr.filter(output.sections, (section) => section.rows.length > 0)
 			const window = { start_time: output.timeRange.start, end_time: output.timeRange.end }
-			const blocks: Array<DocBlock> = nonEmpty.flatMap((section) => {
+			const blocks: Array<DocBlock> = Arr.flatMap(nonEmpty, (section) => {
 				return [
 					doc.heading(KIND_NOUN[section.kind]),
 					doc.text(summaryLine(section, output.status)),
@@ -228,10 +234,13 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 				]
 			})
 			// A search that names one entity exactly is a request to look at that entity.
-			const exact = nonEmpty.flatMap((section) =>
-				section.rows.filter((row) => row.name === output.search).map((row) => ({ section, row })),
+			const exact = Arr.flatMap(nonEmpty, (section) =>
+				Arr.map(
+					Arr.filter(section.rows, (row) => row.name === output.search),
+					(row) => ({ section, row }),
+				),
 			)
-			const exactNext: Array<NextCall> = exact.map(({ section, row }) =>
+			const exactNext: Array<NextCall> = Arr.map(exact, ({ section, row }) =>
 				doc.next(
 					"inspect_infra",
 					{
@@ -247,7 +256,7 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 						: `${row.name} over the window`,
 				),
 			)
-			const next: Array<NextCall> = nonEmpty.flatMap((section) => {
+			const next: Array<NextCall> = Arr.flatMap(nonEmpty, (section) => {
 				const hot = hottest(section)
 				const target = hot ?? section.rows[0]
 				if (target === undefined) return []
@@ -282,7 +291,10 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 						: `Infrastructure: ${KIND_NOUN[output.kind]}`,
 				scope: [
 					["Window", `${windowText(output.timeRange)}; start_time widens it`],
-					["Reporting", output.reporting.length === 0 ? "nothing" : output.reporting.join(", ")],
+					[
+						"Reporting",
+						output.reporting.length === 0 ? "nothing" : Arr.join(output.reporting, ", "),
+					],
 					["Search", output.search],
 					["Sort", output.sort],
 				],
@@ -315,7 +327,10 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 					: undefined),
 				next: [
 					...exactNext,
-					...next.filter((call) => !exactNext.some((e) => e.args.name === call.args.name)),
+					...Arr.filter(
+						next,
+						(call) => !Arr.some(exactNext, (e) => e.args.name === call.args.name),
+					),
 					...(output.reporting.length === 0
 						? [
 								doc.next(

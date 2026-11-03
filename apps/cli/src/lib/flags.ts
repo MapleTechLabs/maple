@@ -1,4 +1,5 @@
 import * as Flag from "effect/cli/Flag"
+import { Array as Arr, String as Str } from "effect"
 
 export const since = Flag.String("since").pipe(
 	Flag.withDescription("Relative window ending now: 30m, 6h, 7d, 2w (default: 6h)"),
@@ -67,10 +68,10 @@ export const severity = Flag.optional(
 	Flag.String("severity").pipe(
 		Flag.withDescription("Filter by log severity: trace, debug, info, warn, error, fatal"),
 		Flag.filter(
-			(value) => SEVERITIES.some((s) => s === value.trim().toUpperCase()),
+			(value) => Arr.some(SEVERITIES, (s) => s === Str.toUpperCase(Str.trim(value))),
 			() => "one of trace, debug, info, warn, error, fatal (any case)",
 		),
-		Flag.map((value) => value.trim().toUpperCase()),
+		Flag.map((value) => Str.toUpperCase(Str.trim(value))),
 	),
 )
 

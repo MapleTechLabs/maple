@@ -1,6 +1,6 @@
 import * as ClickHouseHttp from "@maple-dev/effect-clickhouse-http"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientError } from "effect/http"
-import { Context, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
+import { Context, Effect, Layer, Option, Redacted, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { WarehouseConfigError, WarehouseUpstreamError } from "@maple/domain/http"
 import {
 	BackendDialect,
@@ -241,7 +241,7 @@ const createTinybirdSqlClient = (
 	config: TinybirdBackendConfig,
 ): Effect.Effect<WarehouseSqlClient, never, HttpClient.HttpClient> =>
 	Effect.map(HttpClient.HttpClient, (http): WarehouseSqlClient => {
-		const base = config.host.replace(/\/$/, "")
+		const base = Str.replace(/\/$/, "")(config.host)
 		const token = Redacted.make(config.token)
 		const bodyOf = (response: {
 			readonly stream: Stream.Stream<Uint8Array, HttpClientError.HttpClientError>
@@ -263,7 +263,7 @@ const createTinybirdSqlClient = (
 					Option.map(decodeTinybirdErrorBody(body), (decoded) => decoded.error),
 					() =>
 						body
-							? `Request failed with status ${status}: ${body.slice(0, 500)}`
+							? `Request failed with status ${status}: ${Str.slice(0, 500)(body)}`
 							: `Request failed with status ${status}`,
 				),
 				cause: body,
@@ -296,7 +296,7 @@ const createTinybirdSqlClient = (
 						)
 						// A 2xx with an empty body is how zero rows can come back; it is a
 						// result, not a decode failure.
-						if (body.trim() === "") return { data: [] }
+						if (Str.trim(body) === "") return { data: [] }
 						const decoded = yield* decodeTinybirdSqlResponse(body).pipe(
 							Effect.mapError(
 								(cause) =>
@@ -322,7 +322,10 @@ const createTinybirdSqlClient = (
 									HttpClientRequest.post(`${base}/v0/events`).pipe(
 										HttpClientRequest.setUrlParams({ name: datasource, wait: "false" }),
 										HttpClientRequest.bodyText(
-											rows.map((row) => encodeEventRow(row)).join("\n"),
+											Arr.join(
+												Arr.map(rows, (row) => encodeEventRow(row)),
+												"\n",
+											),
 											"application/x-ndjson",
 										),
 									),

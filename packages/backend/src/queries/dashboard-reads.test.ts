@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, Fiber, Option, Ref, Schema } from "effect"
+import { DateTime, Effect, Fiber, Option, Ref, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { ServiceOperationsRequest, WarehouseConfigError } from "@maple/domain/http"
 import { OrgId, UserId } from "@maple/domain/primitives"
@@ -66,14 +66,14 @@ const traceWarehouse = (options: {
 	readonly spans: number
 }) =>
 	makeWarehouse((sql) => {
-		if (sql.includes("AS relationship")) {
+		if (Str.includes("AS relationship")(sql)) {
 			return Effect.succeed(
 				Array.from({ length: options.spans }, (_, index) =>
-					spanRow(index.toString(16).padStart(16, "0")),
+					spanRow(Str.padStart(16, "0")(index.toString(16))),
 				),
 			)
 		}
-		return Effect.succeed(sql.includes("MaxTimestamp >=") ? options.recentProbe : options.fullProbe)
+		return Effect.succeed(Str.includes("MaxTimestamp >=")(sql) ? options.recentProbe : options.fullProbe)
 	})
 
 interface CacheCall {
@@ -99,7 +99,7 @@ const makeQueryEngine = (
 })
 
 const hierarchyStatement = (statements: ReadonlyArray<string>) =>
-	statements.find((sql) => sql.includes("AS relationship"))
+	statements.find((sql) => Str.includes("AS relationship")(sql))
 
 describe("makeDashboardReads.spanHierarchy", () => {
 	it.effect("reads the caller's window without probing", () =>
@@ -115,7 +115,7 @@ describe("makeDashboardReads.spanHierarchy", () => {
 				endTime: "2026-07-15 12:30:00",
 			})
 			expect(result.rows).toHaveLength(1)
-			expect(calls.map((call) => call.route)).toEqual(["spanHierarchy"])
+			expect(Arr.map(calls, (call) => call.route)).toEqual(["spanHierarchy"])
 			expect(statements).toHaveLength(1)
 			expect(hierarchyStatement(statements)).toContain("'2026-07-15 11:30:00'")
 		}),
@@ -196,7 +196,7 @@ describe("makeDashboardReads.spanHierarchy", () => {
 				}).spanHierarchy(tenant, { traceId: TRACE_ID }),
 			)
 			// The found trace ended a day before "now", so it can no longer change.
-			expect(calls.map((call) => call.ttlSeconds)).toEqual([1, 600])
+			expect(Arr.map(calls, (call) => call.ttlSeconds)).toEqual([1, 600])
 		}),
 	)
 })
@@ -218,8 +218,8 @@ describe("makeDashboardReads.serviceOperations", () => {
 	it.effect("labels a rollup fallback on the caller's span, not the cache's", () =>
 		Effect.gen(function* () {
 			const { warehouse } = makeWarehouse((sql) => {
-				if (sql.includes("service_operations_")) return Effect.fail(missingRollup)
-				if (sql.includes("AS bucket")) return Effect.succeed([])
+				if (Str.includes("service_operations_")(sql)) return Effect.fail(missingRollup)
+				if (Str.includes("AS bucket")(sql)) return Effect.succeed([])
 				return Effect.succeed([
 					{
 						spanName: "GET /checkout",
@@ -240,7 +240,7 @@ describe("makeDashboardReads.serviceOperations", () => {
 			const rows = yield* makeDashboardReads({ warehouse, queryEngine })
 				.serviceOperations(tenant, operationsPayload)
 				.pipe(Effect.withSpan("request"), Effect.withTracer(tracer))
-			expect(rows.map((row) => row.spanName)).toEqual(["GET /checkout"])
+			expect(Arr.map(rows, (row) => row.spanName)).toEqual(["GET /checkout"])
 			expect(spansNamed(spans, "request")[0]?.attributes.get("query.rollup.fallback")).toBe(true)
 			expect(spansNamed(spans, "cache")[0]?.attributes.has("query.rollup.fallback")).toBe(false)
 		}),

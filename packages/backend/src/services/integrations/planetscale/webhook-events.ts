@@ -22,7 +22,7 @@ import {
 	PlanetscaleEvents,
 	type ErrorIssueRow,
 } from "@maple/db/tables"
-import { Clock, Effect, Result, Schema } from "effect"
+import { Clock, Effect, Result, Schema, String as Str } from "effect"
 import { timestampMs } from "@maple/backend/platform/time"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 
@@ -43,7 +43,7 @@ export const verifyPlanetScaleSignature = (
 ): boolean => {
 	if (!signatureHeader) return false
 	const expected = createHmac("sha256", secret).update(rawBody, "utf8").digest("hex")
-	const provided = signatureHeader.trim().toLowerCase()
+	const provided = Str.toLowerCase(Str.trim(signatureHeader))
 	if (provided.length !== expected.length) return false
 	return timingSafeEqual(Buffer.from(expected, "utf8"), Buffer.from(provided, "utf8"))
 }
@@ -368,7 +368,7 @@ export const deployRequestNumber = (payload: PlanetScaleWebhookPayload): string 
 /** The lifecycle state a `deploy_request.*` / `branch.*` event represents. */
 const stateFromEvent = (event: string): string | null => {
 	const dot = event.indexOf(".")
-	return dot === -1 ? null : event.slice(dot + 1)
+	return dot === -1 ? null : Str.slice(dot + 1)(event)
 }
 
 /** The events Maple subscribes its registered webhooks to: every one the map below acts on. */

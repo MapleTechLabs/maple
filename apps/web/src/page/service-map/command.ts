@@ -7,7 +7,7 @@ import {
 	getServiceMapCloudflare,
 	getServiceMapPlanetScale,
 } from "@maple/web-data/warehouse/service-map"
-import { Clock, Duration, Effect, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { loadServicesFacets } from "../../data/services-facets-probe"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -116,7 +116,7 @@ export const FetchFacets = Command.define("FetchServiceMapFacets", {
 	execute: ({ key, window, refresh }) =>
 		loadServicesFacets(window, { key, refresh }).pipe(
 			Effect.mapBoth({
-				onSuccess: ({ data }) => data.environments.map((environment) => environment.name),
+				onSuccess: ({ data }) => Arr.map(data.environments, (environment) => environment.name),
 				onFailure: toLoadFailure,
 			}),
 			Effect.result,
@@ -165,11 +165,11 @@ export const FetchPlanetScaleInventory = Command.define("FetchPlanetScaleInvento
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const response = yield* client.planetscaleIntegration.databases()
-			return response.databases.map((db) => ({
+			return Arr.map(response.databases, (db) => ({
 				name: db.name,
 				kind: db.kind,
 				branchCount: db.branches.length,
-				branches: db.branches.map((branch) => ({
+				branches: Arr.map(db.branches, (branch) => ({
 					name: branch.name,
 					production: branch.production,
 					ready: branch.ready,
@@ -190,7 +190,7 @@ export const FetchHyperdrives = Command.define("FetchCloudflareHyperdrives", {
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			const response = yield* client.integrations.cloudflareHyperdrives()
-			return response.configs.map((config) => ({
+			return Arr.map(response.configs, (config) => ({
 				id: config.id,
 				name: config.name,
 				originHost: config.originHost,

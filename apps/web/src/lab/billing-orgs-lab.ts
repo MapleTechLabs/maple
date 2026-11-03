@@ -9,7 +9,7 @@ import {
 	DailySpendResponse,
 } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import { AsyncData, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message, Model } from "../page/settings/billing/model"
@@ -212,7 +212,8 @@ export const update = (model: Model, message: Message): Return => {
 	const step = billingUpdate(model, message, customer, NOW_MS).step
 	return {
 		model: step.model,
-		commands: (step.commands ?? []).filter(
+		commands: Arr.filter(
+			step.commands ?? [],
 			(command) => !/^(Fetch|Link|Unlink|Update|Open|Attach)/.test(command.name),
 		),
 	}

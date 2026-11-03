@@ -6,6 +6,7 @@
 import type { AiSessionSpan } from "@maple/domain/http"
 
 import { classifyAiSpan, spanModel } from "@maple/agent-sessions"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * The toolbar's filter, applied identically by every view.
@@ -19,13 +20,17 @@ export function filterSpans(
 	query: string,
 	agentSpansOnly: boolean,
 ): readonly AiSessionSpan[] {
-	const needle = query.trim().toLowerCase()
-	return spans.filter((span) => {
+	const needle = Str.toLowerCase(Str.trim(query))
+	return Arr.filter(spans, (span) => {
 		if (agentSpansOnly && !span.isAiSpan) return false
 		if (needle === "") return true
-		return [span.spanName, spanModel(span), span.genAi.toolName, span.genAi.agentName]
-			.filter((value): value is string => value !== undefined)
-			.some((value) => value.toLowerCase().includes(needle))
+		return Arr.some(
+			Arr.filter(
+				[span.spanName, spanModel(span), span.genAi.toolName, span.genAi.agentName],
+				(value): value is string => value !== undefined,
+			),
+			(value) => Str.includes(needle)(Str.toLowerCase(value)),
+		)
 	})
 }
 
@@ -53,6 +58,6 @@ export function isDelegation(span: AiSessionSpan, spansById: ReadonlyMap<string,
  * that have room for the full value should show it in a `title`.
  */
 export function shortTarget(value: string): string {
-	const segment = value.split("/").at(-1)
+	const segment = Str.split("/")(value).at(-1)
 	return segment === undefined || segment === "" ? value : segment
 }

@@ -1,10 +1,11 @@
+import { Array as Arr, Record as Rec } from "effect"
 // A view's inputs as one object, kept by reference while every field is: a `createLazy` slot keyed on
 // it skips the renders that change nothing the view reads.
 
 const sameFields = <R extends object>(previous: R, next: R): boolean => {
-	const before = Object.values(previous)
-	const after = Object.values(next)
-	return before.length === after.length && before.every((value, index) => value === after[index])
+	const before = Rec.values(previous)
+	const after = Rec.values(next)
+	return before.length === after.length && Arr.every(before, (value, index) => value === after[index])
 }
 
 /**

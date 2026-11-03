@@ -1,5 +1,5 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
-import { Clock, Config, Context, Effect, Fiber, Layer, Option, Schema } from "effect"
+import { Clock, Config, Context, Effect, Fiber, Layer, Option, Schema, String as Str } from "effect"
 import { CacheBackend, type EdgeCacheBackend, type EdgeCacheBackendError } from "./cache-backend"
 import { isolateOutboundSlots, trackOutboundSlot, type OutboundSlotsCell } from "./outbound-slots"
 
@@ -124,7 +124,7 @@ const sha256Hex = async (input: string): Promise<string> => {
 	const view = new Uint8Array(digest)
 	let out = ""
 	for (const byte of view) {
-		out += byte.toString(16).padStart(2, "0")
+		out += Str.padStart(2, "0")(byte.toString(16))
 	}
 	return out
 }

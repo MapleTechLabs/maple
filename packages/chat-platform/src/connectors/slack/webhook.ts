@@ -14,7 +14,7 @@
  * to the host, which relays them afterwards — Slack drops an event that is not acknowledged within
  * three seconds and retries it, and an agent turn is not a three-second operation.
  */
-import { Clock, Effect, Option } from "effect"
+import { Clock, Effect, Option, String as Str } from "effect"
 import { HttpServerResponse, type HttpServerRequest } from "effect/http"
 import {
 	ConnectorIngressError,
@@ -80,7 +80,7 @@ const interactivityPayload = (body: string): string | undefined =>
 	new URLSearchParams(body).get("payload") ?? undefined
 
 const isFormEncoded = (request: HttpServerRequest.HttpServerRequest): boolean =>
-	(request.headers["content-type"] ?? "").includes("application/x-www-form-urlencoded")
+	Str.includes("application/x-www-form-urlencoded")(request.headers["content-type"] ?? "")
 
 /**
  * One event, one delivery.

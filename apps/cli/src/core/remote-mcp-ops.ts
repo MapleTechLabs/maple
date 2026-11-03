@@ -4,7 +4,7 @@
 // which backend answered. Where the tool reports less than local mode, the
 // missing field is left empty rather than invented.
 
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { TraceId } from "@maple/domain"
 import type { TracesMetric } from "@maple/query-engine"
 import type {
@@ -67,7 +67,9 @@ export const findErrors = (
 		// The tool counts affected services but does not name one; a --service
 		// filter is the only name known for certain.
 		(out) =>
-			out.errors.map((e): ErrorRow => (p.service === undefined ? e : { ...e, serviceName: p.service })),
+			Arr.map(out.errors, (e): ErrorRow =>
+				p.service === undefined ? e : { ...e, serviceName: p.service },
+			),
 	)
 
 export const errorDetail = (
@@ -87,7 +89,7 @@ export const errorDetail = (
 			fingerprintHash: out.fingerprintHash,
 			timeRange: toTimeRange(out.timeRange),
 			...(out.error === undefined ? undefined : { error: out.error }),
-			traces: out.traces.map((t) => ({
+			traces: Arr.map(out.traces, (t) => ({
 				traceId: t.traceId,
 				rootSpanName: t.rootSpanName,
 				durationMs: t.durationMs,
@@ -117,13 +119,13 @@ export const diagnoseService = (
 			timeRange: toTimeRange(out.timeRange),
 			health: out.health,
 			topErrors: out.topErrors,
-			recentTraces: out.recentTraces.map((t) => ({
+			recentTraces: Arr.map(out.recentTraces, (t) => ({
 				traceId: t.traceId,
 				rootSpanName: t.rootSpanName,
 				durationMs: t.durationMs,
 				hasError: t.hasError,
 			})),
-			recentLogs: out.recentLogs.map((l) => ({
+			recentLogs: Arr.map(out.recentLogs, (l) => ({
 				timestamp: l.timestamp,
 				severityText: l.severityText,
 				serviceName: l.serviceName,
@@ -148,7 +150,7 @@ export const findSlowTraces = (
 		(out): FindSlowTracesOutput => ({
 			timeRange: toTimeRange(out.timeRange),
 			stats: out.stats ?? null,
-			traces: out.traces.map(summaryToSpan),
+			traces: Arr.map(out.traces, summaryToSpan),
 		}),
 	)
 
@@ -185,7 +187,7 @@ export const searchTraces = (
 		}),
 		(out): SearchTracesOutput => ({
 			timeRange: toTimeRange(out.timeRange),
-			spans: out.traces.map(summaryToSpan),
+			spans: Arr.map(out.traces, summaryToSpan),
 			pagination: {
 				offset: out.pagination?.offset ?? p.offset ?? 0,
 				limit: out.pagination?.limit ?? p.limit ?? out.traces.length,
@@ -220,7 +222,7 @@ export const searchLogs = (
 		(out): SearchLogsOutput => ({
 			timeRange: toTimeRange(out.timeRange),
 			total: out.totalCount,
-			logs: out.logs.map((l) => ({ ...l, traceId: l.traceId ?? "", spanId: l.spanId ?? "" })),
+			logs: Arr.map(out.logs, (l) => ({ ...l, traceId: l.traceId ?? "", spanId: l.spanId ?? "" })),
 			pagination: {
 				offset: out.pagination?.offset ?? p.offset ?? 0,
 				limit: out.pagination?.limit ?? p.limit ?? out.logs.length,
@@ -280,12 +282,12 @@ export const attributeKeys = (
 		(out): ReadonlyArray<AttributeKeyResult> =>
 			p.source === "services"
 				? [
-						...(out.environments ?? []).map((e) => ({
+						...Arr.map(out.environments ?? [], (e) => ({
 							key: `environment:${e.name}`,
 							count: e.count,
 							facetType: "environment",
 						})),
-						...(out.commitShas ?? []).map((c) => ({
+						...Arr.map(out.commitShas ?? [], (c) => ({
 							key: `commit_sha:${c.name}`,
 							count: c.count,
 							facetType: "commit_sha",
@@ -335,8 +337,8 @@ export const compareServiceOverview = (
 			environment: p.environment,
 		}),
 		(out) =>
-			out.services.flatMap((s) =>
-				(["previous", "current"] as const).flatMap((period): ReadonlyArray<CompareRow> => {
+			Arr.flatMap(out.services, (s) =>
+				Arr.flatMap(["previous", "current"] as const, (period): ReadonlyArray<CompareRow> => {
 					const stats = s[period]
 					if (stats.throughput <= 0) return []
 					return [

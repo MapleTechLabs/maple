@@ -18,6 +18,7 @@
  */
 import { ChatToolCall } from "./chat-session"
 import type { ChatEvent, ChatMessage, ChatTaskRef, ChatTaskState } from "./chat-session"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * A transcript being folded, event by event.
@@ -190,7 +191,7 @@ const foldInto = (
 			// the retraction that accounts for it, so `retractChars` can legitimately exceed what
 			// actually landed.
 			const message = open(event.messageId)
-			message.text = message.text.slice(0, Math.max(0, message.text.length - event.retractChars))
+			message.text = Str.slice(0, Math.max(0, message.text.length - event.retractChars))(message.text)
 			break
 		}
 		case "turn-end":
@@ -206,7 +207,7 @@ const foldInto = (
 const settleUnfinished = (drafts: Drafts, messageId: string, nested?: Map<string, Drafts>): void => {
 	const message = drafts.byId.get(messageId)
 	if (message === undefined) return
-	message.toolCalls = message.toolCalls.map((call) => {
+	message.toolCalls = Arr.map(message.toolCalls, (call) => {
 		if (call.output !== undefined || call.proposed === true || call.stopped === true) return call
 		const child = nested?.get(call.id)
 		child?.messages.forEach((draft) => settleUnfinished(child, draft.id))

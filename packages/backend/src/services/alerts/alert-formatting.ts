@@ -5,7 +5,7 @@ import {
 	type AlertSeverity,
 	type AlertSignalType,
 } from "@maple/domain/http"
-import { Match, Option } from "effect"
+import { Match, Option, String as Str } from "effect"
 import { resolveSignalDisplay, type SignalDisplay } from "./alert-signal-display"
 import type { NotificationTemplateConfig } from "./alert-templating/renderer"
 
@@ -61,7 +61,7 @@ export const displayGroupKey = (groupKey: string | null): string | null =>
 
 /** Clamp to a provider's field limit, marking the cut with an ellipsis. */
 export const truncate = (value: string, max: number): string =>
-	value.length > max ? `${value.slice(0, max - 1)}…` : value
+	value.length > max ? `${Str.slice(0, max - 1)(value)}…` : value
 
 /** Thousands separators — an unpunctuated `1041923` is unreadable at a glance. */
 const grouped = (value: number): string =>

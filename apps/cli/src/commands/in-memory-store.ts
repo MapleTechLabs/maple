@@ -1,4 +1,4 @@
-import { Clock, Effect, Option } from "effect"
+import { Clock, Effect, Option, Array as Arr, String as Str } from "effect"
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statfsSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -74,7 +74,7 @@ export const isAbandonedStore = (
 /** The PID in a store root's `maple.pid`, when it holds one. */
 const ownerPid = (root: string): Effect.Effect<Option.Option<number>> =>
 	Effect.try({
-		try: () => Number.parseInt(readFileSync(join(root, SERVER_PID_NAME), "utf8").trim(), 10),
+		try: () => Number.parseInt(Str.trim(readFileSync(join(root, SERVER_PID_NAME), "utf8")), 10),
 		catch: stateFileError(join(root, SERVER_PID_NAME), "read"),
 	}).pipe(Effect.option, Effect.map(Option.filter((pid) => Number.isInteger(pid) && pid > 0)))
 
@@ -101,7 +101,10 @@ export const sweepAbandonedStores = (parent: string): Effect.Effect<ReadonlyArra
 			catch: stateFileError(parent, "list"),
 		}).pipe(Effect.orElseSucceed((): Array<string> => []))
 		const abandoned = yield* Effect.filter(
-			names.filter((name) => name.startsWith(IN_MEMORY_STORE_PREFIX)).map((name) => join(parent, name)),
+			Arr.map(
+				Arr.filter(names, (name) => Str.startsWith(IN_MEMORY_STORE_PREFIX)(name)),
+				(name) => join(parent, name),
+			),
 			(root) => isAbandonedRoot(root, nowMs),
 		)
 		yield* Effect.forEach(abandoned, removeTree, { discard: true })
@@ -134,7 +137,7 @@ export const sweepStaleDiscoveryFiles = (
 			try: () => readdirSync(dir),
 			catch: stateFileError(dir, "list"),
 		}).pipe(Effect.orElseSucceed((): Array<string> => []))
-		const stale = names.flatMap((name) => {
+		const stale = Arr.flatMap(names, (name) => {
 			const pid = DISCOVERY_FILE.exec(name)?.[1]
 			return pid !== undefined && !alive(Number(pid)) ? [join(dir, name)] : []
 		})
@@ -176,11 +179,14 @@ export const inMemoryConflicts = (flags: {
 	readonly checkpointIntervalSet: boolean
 	readonly onDirtyStoreSet: boolean
 }): ReadonlyArray<string> =>
-	[
-		flags.background ? "--background" : undefined,
-		flags.dataDir ? "--data-dir" : undefined,
-		flags.reset ? "--reset" : undefined,
-		flags.minimumRawTelemetryRetentionDays ? "--minimum-raw-telemetry-retention-days" : undefined,
-		flags.checkpointIntervalSet ? "--checkpoint-interval" : undefined,
-		flags.onDirtyStoreSet ? "--on-dirty-store" : undefined,
-	].filter((flag): flag is string => flag !== undefined)
+	Arr.filter(
+		[
+			flags.background ? "--background" : undefined,
+			flags.dataDir ? "--data-dir" : undefined,
+			flags.reset ? "--reset" : undefined,
+			flags.minimumRawTelemetryRetentionDays ? "--minimum-raw-telemetry-retention-days" : undefined,
+			flags.checkpointIntervalSet ? "--checkpoint-interval" : undefined,
+			flags.onDirtyStoreSet ? "--on-dirty-store" : undefined,
+		],
+		(flag): flag is string => flag !== undefined,
+	)

@@ -5,7 +5,7 @@ import {
 	decodeLogAttributeFilters,
 	matchesLogAttributeFilters,
 } from "@maple/views/lib/log-attribute-filters"
-import { Duration, Effect, Option, Schema } from "effect"
+import { Duration, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"
 import { FIXTURE_LOG_LINKS } from "@maple/views/fixtures/logs-table-bench-fixture"
@@ -34,7 +34,7 @@ type Step = Update.Step<Model, Message, Resources>
 const visibleLogs = (model: Model) => {
 	const hidden = Math.max(0, LIVE_BACKLOG - model.refreshVersion * ROWS_PER_TICK)
 	const filters = decodeLogAttributeFilters(model.attrs)
-	return ALL_LOGS.slice(hidden).filter((log) =>
+	return Arr.filter(ALL_LOGS.slice(hidden), (log) =>
 		matchesLogAttributeFilters(filters, { log: log.logAttributes, resource: log.resourceAttributes }),
 	)
 }
@@ -42,7 +42,9 @@ const visibleLogs = (model: Model) => {
 /** The stream's rows, rebuilt whenever the data, pins or emptiness change. */
 const rowsOf = (model: Model) => {
 	const time = logTimeFormat(model.timeZone)
-	return (model.isEmpty ? [] : visibleLogs(model)).map((log) => toLogRowView(log, model.pinned, time, FIXTURE_LOG_LINKS))
+	return Arr.map(model.isEmpty ? [] : visibleLogs(model), (log) =>
+		toLogRowView(log, model.pinned, time, FIXTURE_LOG_LINKS),
+	)
 }
 
 const footerOf = (model: Model, shown: number) => {
@@ -80,7 +82,8 @@ export const init = (flags: ViewerFlags & LabShellFlags): Return => {
 			stream: () => LogsStream.init("logs-lab", rows),
 			footerText: () => footerOf(base, rows.length),
 		}),
-		commands: (shell.commands ?? []).map(
+		commands: Arr.map(
+			shell.commands ?? [],
 			Command.mapMessage((message) => Message.GotShellMessage({ message })),
 		),
 	}
@@ -184,7 +187,7 @@ export const update = (model: Model, message: Message): Return =>
 			rederive(
 				modifyFields(model, {
 					pinned: (pinned) =>
-						pinned.includes(key) ? pinned.filter((k) => k !== key) : [...pinned, key],
+						pinned.includes(key) ? Arr.filter(pinned, (k) => k !== key) : [...pinned, key],
 				}),
 			),
 		ClickedReload: () => reload(model),

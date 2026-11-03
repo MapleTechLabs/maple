@@ -1,5 +1,15 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Clock, Effect, Queue, Random, Schema, Stream } from "effect"
+import {
+	Clock,
+	Effect,
+	Queue,
+	Random,
+	Schema,
+	Stream,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -66,7 +76,7 @@ export const failureKind = (failure: LoadFailure): FailureKind => {
 }
 
 const attr = <M>(h: HtmlBuilder<M>, entries: Readonly<Record<string, string>>) =>
-	Object.entries(entries).map(([name, value]) => h.Attribute(name, value))
+	Arr.map(Rec.toEntries(entries), ([name, value]) => h.Attribute(name, value))
 
 const tickAttributes = <M>(h: HtmlBuilder<M>, size: number) =>
 	attr(h, {
@@ -242,11 +252,14 @@ export const failureSentence = (failure: LoadFailure): string => {
 
 /** An auto-retrying failure's message: its own cause, an optional note, then "Retrying automatically…". */
 export const autoRetryMessage = (message: string, note?: string): string =>
-	[
-		message.replace(RETRY_SOON_ENDING, ""),
-		...(note === undefined ? [] : [note]),
-		"Retrying automatically…",
-	].join(" ")
+	Arr.join(
+		[
+			Str.replace(RETRY_SOON_ENDING, "")(message),
+			...(note === undefined ? [] : [note]),
+			"Retrying automatically…",
+		],
+		" ",
+	)
 
 export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>): Html => {
 	const { failure } = options
@@ -272,10 +285,13 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 	const message =
 		autoRetry.length > 0
 			? autoRetryMessage(ownMessage, options.note)
-			: [
-					canRetry ? ownMessage.replace(RETRY_SOON_ENDING, "") : ownMessage,
-					...(options.note === undefined ? [] : [options.note]),
-				].join(" ")
+			: Arr.join(
+					[
+						canRetry ? Str.replace(RETRY_SOON_ENDING, "")(ownMessage) : ownMessage,
+						...(options.note === undefined ? [] : [options.note]),
+					],
+					" ",
+				)
 	// `className` styles the Try again button itself; `retry`'s styles the button row.
 	const retryButtons = (variant: "ghost" | "outline", className?: string) =>
 		options.onRetry === undefined || !showsRetryButton
@@ -397,7 +413,9 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 			...autoRetry,
 		],
 		[
-			emptyMedia(h, { variant: "icon" }, [icon(h, "CircleWarningIcon", { className: "text-destructive" })]),
+			emptyMedia(h, { variant: "icon" }, [
+				icon(h, "CircleWarningIcon", { className: "text-destructive" }),
+			]),
 			emptyHeader(h, [
 				emptyTitle(h, [heading]),
 				emptyDescription(h, [message], "font-mono text-xs whitespace-pre-wrap wrap-anywhere"),

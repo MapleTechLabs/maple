@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import type { CheckPoint } from "./model"
 import { percentileSeries } from "./view-panels"
+import { Array as Arr } from "effect"
 
 const bucket = (index: number, totalCount: number): CheckPoint => ({
 	bucket: new Date(Date.UTC(2026, 9, 27, 13, index)).toISOString(),
@@ -13,7 +14,7 @@ const bucket = (index: number, totalCount: number): CheckPoint => ({
 })
 
 const labels = (counts: ReadonlyArray<number>) =>
-	percentileSeries(counts.map((count, index) => bucket(index, count))).map((entry) => entry.label)
+	Arr.map(percentileSeries(Arr.map(counts, (count, index) => bucket(index, count))), (entry) => entry.label)
 
 describe("response time lines", () => {
 	test("one check a bucket is a single response time line", () => {

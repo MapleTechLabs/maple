@@ -1,6 +1,6 @@
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { getServiceWorkloads } from "@maple/web-data/warehouse/service-infra"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Keyed from "@maple/views/data/keyed"
@@ -74,7 +74,8 @@ export const FetchNames = Command.define("FetchLensServiceNames", {
 						},
 		}).pipe(
 			Effect.mapBoth({
-				onSuccess: (response) => [...new Set(response.data.map((row) => row.serviceName))].sort(),
+				onSuccess: (response) =>
+					[...new Set(Arr.map(response.data, (row) => row.serviceName))].sort(),
 				onFailure: toLoadFailure,
 			}),
 			Effect.result,

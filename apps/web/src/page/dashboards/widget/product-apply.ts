@@ -6,6 +6,7 @@ import {
 import type { EditorState, FunnelDraft, ListColumn, PathsDraft, StepDraft } from "./editor-state"
 import { DEFAULT_LIST_COLUMNS } from "./lowering-list"
 import { ProductEdit, type StepKind, type StepScope, type StepTextField } from "./product-edit"
+import { Array as Arr, String as Str } from "effect"
 
 // What each `ProductEdit` does to the editor state: `ListConfigPanel`'s `onChange`, the
 // `FunnelStepBuilder`'s `onChange`, and `updateFunnel` / `updatePaths`.
@@ -27,7 +28,7 @@ const withKind = (step: StepDraft, kind: StepKind): StepDraft => {
 const move = <T>(items: ReadonlyArray<T>, from: number, to: number): ReadonlyArray<T> => {
 	const item = items[from]
 	if (to < 0 || to >= items.length || item === undefined) return items
-	const rest = items.filter((_, index) => index !== from)
+	const rest = Arr.filter(items, (_, index) => index !== from)
 	return [...rest.slice(0, to), item, ...rest.slice(to)]
 }
 
@@ -52,7 +53,7 @@ const withText = (step: StepDraft, field: StepTextField, value: string): StepDra
 }
 
 const updateAt = <T>(items: ReadonlyArray<T>, index: number, update: (item: T) => T): ReadonlyArray<T> =>
-	items.map((item, position) => (position === index ? update(item) : item))
+	Arr.map(items, (item, position) => (position === index ? update(item) : item))
 
 const editSteps = (
 	state: EditorState,
@@ -121,15 +122,15 @@ const togglePathsAddOn = (current: PathsDraft, key: keyof PathsDraft["addOns"]):
 const withBreakdown = (current: FunnelDraft, value: string | null): FunnelDraft => {
 	const { breakdownBy: _previous, ...rest } = current
 	if (value === null) return rest
-	if (value.startsWith("attribute:") && value.length > "attribute:".length)
-		return { ...rest, breakdownBy: `attribute:${value.slice("attribute:".length)}` }
+	if (Str.startsWith("attribute:")(value) && value.length > "attribute:".length)
+		return { ...rest, breakdownBy: `attribute:${Str.slice("attribute:".length)(value)}` }
 	const dimension = FUNNEL_SESSION_DIMENSIONS.find((candidate) => candidate === value)
 	return dimension === undefined ? rest : { ...rest, breakdownBy: dimension }
 }
 
 /** A funnel step moved; a session step past step 1 is demoted to an event step (`reorder`). */
 const reorderSteps = (steps: ReadonlyArray<StepDraft>, from: number, to: number): ReadonlyArray<StepDraft> =>
-	move(steps, from, to).map((step, index) =>
+	Arr.map(move(steps, from, to), (step, index) =>
 		index > 0 && step.kind === "session" ? withKind(step, "event") : step,
 	)
 
@@ -140,7 +141,7 @@ export const applyProductEdit = (state: EditorState, edit: ProductEdit): EditorS
 			...state,
 			listDataSource: source,
 			listWhereClause: "",
-			listColumns: DEFAULT_LIST_COLUMNS[source].map((column) => ({ ...column })),
+			listColumns: Arr.map(DEFAULT_LIST_COLUMNS[source], (column) => ({ ...column })),
 		}),
 		ToggledListRootOnly: () => ({ ...state, listRootOnly: !state.listRootOnly }),
 		ChangedListWhere: ({ value }) => ({ ...state, listWhereClause: value }),
@@ -152,7 +153,7 @@ export const applyProductEdit = (state: EditorState, edit: ProductEdit): EditorS
 				updateAt(list, index, (column) => ({
 					...column,
 					field,
-					header: field.split(".").pop() ?? field,
+					header: Str.split(".")(field).pop() ?? field,
 				})),
 			),
 		SetListColumnUnit: ({ index, unit }) =>
@@ -165,7 +166,7 @@ export const applyProductEdit = (state: EditorState, edit: ProductEdit): EditorS
 		SetListColumnAlign: ({ index, align }) =>
 			columns(state, (list) => updateAt(list, index, (column) => ({ ...column, align }))),
 		RemovedListColumn: ({ index }) =>
-			columns(state, (list) => list.filter((_, position) => position !== index)),
+			columns(state, (list) => Arr.filter(list, (_, position) => position !== index)),
 		AddedListColumn: () => columns(state, (list) => [...list, { field: "", header: "" }]),
 		MovedListColumn: ({ index, delta }) =>
 			columns(state, (list) =>
@@ -187,7 +188,7 @@ export const applyProductEdit = (state: EditorState, edit: ProductEdit): EditorS
 		RemovedStep: ({ index }) =>
 			funnel(state, (current) => ({
 				...current,
-				steps: current.steps.filter((_, position) => position !== index),
+				steps: Arr.filter(current.steps, (_, position) => position !== index),
 			})),
 		AddedStep: () =>
 			funnel(state, (current) => ({

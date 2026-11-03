@@ -2,7 +2,7 @@ import { getServiceColor } from "@maple/ui/lib/colors"
 import { filterSection, singleCheckboxFilter } from "@maple/views/ui/filters/filter-section"
 import type * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { filterSidebarBody, filterSidebarHeader } from "@maple/views/ui/filters/filter-sidebar"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { filterRailFrame } from "../kit/filter-rail"
@@ -14,7 +14,12 @@ import type { Model } from "./model"
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
-export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: ErrorsFilters, activeFilterCount: number): Html => {
+export const sidebar = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	filters: ErrorsFilters,
+	activeFilterCount: number,
+): Html => {
 	const facets = Option.getOrNull(AsyncData.getData(model.facets.data))
 	const isFetching = AsyncData.isLoading(model.facets.data) || AsyncData.isRefreshing(model.facets.data)
 	const sections = [
@@ -48,7 +53,7 @@ export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: ErrorsFi
 		...filterSidebarBody(
 			h,
 			"errors-filters",
-			sections.filter((section) => section !== null),
+			Arr.filter(sections, (section) => section !== null),
 		),
 	])
 }

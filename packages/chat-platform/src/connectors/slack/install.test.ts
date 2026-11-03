@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Option, Redacted } from "effect"
+import { Effect, Layer, Option, Redacted, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { BOT_SCOPES, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
 import { decodeSlackCredentials } from "./credentials"
@@ -26,7 +26,7 @@ const tokenFetch = (respond: () => Response, bodies: Array<string> = []) =>
 		init?: RequestInit,
 	) => {
 		const url = new Request(input).url
-		if (!url.startsWith(TOKEN_URL)) return Promise.reject(new Error(`unexpected fetch: ${url}`))
+		if (!Str.startsWith(TOKEN_URL)(url)) return Promise.reject(new Error(`unexpected fetch: ${url}`))
 		// Read the body through `Request` rather than off `init`: the client is free to hand fetch a
 		// stream there.
 		return new Request(url, init).text().then((body) => {
@@ -50,7 +50,7 @@ const INSTALLED = {
 	// a fixture secret scanners block the push over.
 	access_token: "xoxb-a-workspaces-own-token",
 	token_type: "bot",
-	scope: BOT_SCOPES.join(","),
+	scope: Arr.join(BOT_SCOPES, ","),
 	app_id: "A0KRD7HC3",
 	team: { id: "T9TK3CUKW", name: "Maple" },
 	authed_user: { id: "U1234" },
@@ -63,7 +63,7 @@ describe("slack authorize URL", () => {
 		const url = new URL(slackAuthorizeUrl("client-1", { state: "nonce", redirectUri: REDIRECT_URI }))
 		assert.strictEqual(url.origin + url.pathname, "https://slack.com/oauth/v2/authorize")
 		assert.strictEqual(url.searchParams.get("client_id"), "client-1")
-		assert.strictEqual(url.searchParams.get("scope"), BOT_SCOPES.join(","))
+		assert.strictEqual(url.searchParams.get("scope"), Arr.join(BOT_SCOPES, ","))
 		assert.strictEqual(url.searchParams.get("redirect_uri"), REDIRECT_URI)
 		assert.strictEqual(url.searchParams.get("state"), "nonce")
 		// No user token is asked for, so Maple never holds an installer's identity.

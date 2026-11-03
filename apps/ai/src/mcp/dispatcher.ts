@@ -45,7 +45,7 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { McpToolResult } from "./tools/types"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
@@ -107,10 +107,13 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 				recordExpectedMcpFailure(error, "Invalid tool input").pipe(
 					Effect.as(
 						failureResult(
-							[
-								`Invalid input${error.parameter === undefined ? "" : ` (\`${error.parameter}\`)`}: ${error.message}`,
-								...(error.example === undefined ? [] : [`Example: ${error.example}`]),
-							].join("\n"),
+							Arr.join(
+								[
+									`Invalid input${error.parameter === undefined ? "" : ` (\`${error.parameter}\`)`}: ${error.message}`,
+									...(error.example === undefined ? [] : [`Example: ${error.example}`]),
+								],
+								"\n",
+							),
 							"invalid_input",
 						),
 					),
@@ -160,9 +163,10 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 		Effect.tap((result) =>
 			Effect.annotateCurrentSpan({
 				"result.isError": result.isError === true,
-				"maple.mcp.result.chars": result.content.reduce(
-					(total, block) => total + block.text.length,
+				"maple.mcp.result.chars": Arr.reduce(
+					result.content,
 					0,
+					(total, block) => total + block.text.length,
 				),
 				"maple.mcp.result.structured": result.structuredContent !== undefined,
 				...(result.failureCategory === undefined

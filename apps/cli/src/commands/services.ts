@@ -1,7 +1,7 @@
 import * as Command from "effect/cli/Command"
 import * as Argument from "effect/cli/Argument"
 import * as Flag from "effect/cli/Flag"
-import { Effect, Option } from "effect"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
 import type { TracesMetric } from "@maple/query-engine"
 import * as f from "../lib/flags"
 import { CliNotFoundError } from "../lib/errors"
@@ -24,7 +24,7 @@ export const assertKnownService = (service: string, range: Range, window: string
 			hint:
 				known.length === 0
 					? "no service reported traces in that window; widen it with --since"
-					: `known services: ${shown.join(", ")}${known.length > shown.length ? `, +${known.length - shown.length} more` : ""}`,
+					: `known services: ${Arr.join(shown, ", ")}${known.length > shown.length ? `, +${known.length - shown.length} more` : ""}`,
 		})
 	})
 
@@ -57,9 +57,10 @@ export const services = Command.make("services", {
 			const range = yield* resolveRangeChecked(a)
 			const needle = Option.getOrUndefined(a.service)?.toLowerCase()
 			const all = yield* Ops.listServices({ range, environment: Option.getOrUndefined(a.environment) })
-			const matching = [...all]
-				.filter((s) => needle === undefined || s.name.toLowerCase().includes(needle))
-				.sort((x, y) => y.throughput - x.throughput)
+			const matching = Arr.filter(
+				[...all],
+				(s) => needle === undefined || Str.includes(needle)(Str.toLowerCase(s.name)),
+			).sort((x, y) => y.throughput - x.throughput)
 			const shown = matching.slice(0, a.limit)
 			yield* printResult(shown, {
 				...servicesView(`No services with traces in ${describeWindow(a, range)}`),

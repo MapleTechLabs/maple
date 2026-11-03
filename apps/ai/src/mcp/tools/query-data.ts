@@ -1,6 +1,6 @@
 import { McpInvalidInputError, McpQueryBudgetError, McpQueryError, type McpToolRegistrar } from "./types"
 import { describeInvalidQuerySpec, tokensFor } from "../lib/query-spec-tokens"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { MetricType, QuerySpec, parseWarehouseDateTime, warehouseDateTime } from "@maple/query-engine"
@@ -132,7 +132,7 @@ const DEFAULT_GROUP_BY = {
 export const isEmptyResult = (result: Output["result"]): boolean =>
 	result.kind === "breakdown"
 		? result.data.length === 0
-		: result.data.every((point) => Object.values(point.series).every((value) => value === 0))
+		: Arr.every(result.data, (point) => Arr.every(Rec.values(point.series), (value) => value === 0))
 
 /** How the handler resolved the request before building the spec. */
 export interface ResolvedQuery {
@@ -190,7 +190,7 @@ export const buildRawSpec = (params: Params, resolved: ResolvedQuery): Record<st
 				: undefined),
 	}
 	const withFilters = (filters: Record<string, unknown>) =>
-		Object.keys(filters).length > 0 ? { ...queryFields, filters } : queryFields
+		Rec.keys(filters).length > 0 ? { ...queryFields, filters } : queryFields
 
 	switch (params.source) {
 		case "traces":
@@ -287,8 +287,10 @@ const queryContextOf = (params: Params): Output["queryContext"] => {
 		...(params.environments && params.environments.length > 0 && { environments: params.environments }),
 		...(params.commit_shas && params.commit_shas.length > 0 && { commitShas: params.commit_shas }),
 		...(params.severity && { severity: params.severity }),
-		...(params.event_name && params.event_name.length > 0 && { eventName: params.event_name.join(",") }),
-		...(params.event_kind && params.event_kind.length > 0 && { eventKind: params.event_kind.join(",") }),
+		...(params.event_name &&
+			params.event_name.length > 0 && { eventName: Arr.join(params.event_name, ",") }),
+		...(params.event_kind &&
+			params.event_kind.length > 0 && { eventKind: Arr.join(params.event_kind, ",") }),
 		...(params.host && { host: params.host }),
 		...(params.page_path && { pagePath: params.page_path }),
 		...(params.metric_name && { metricName: params.metric_name }),
@@ -347,13 +349,13 @@ const samplingNote = (output: Output): string | undefined => {
 	if (output.queryContext.source !== "traces") return undefined
 	if (output.metric === "count")
 		return "count is an estimate of spans that happened, weighted by each span's sample rate and rounded; it is not the number of stored spans."
-	if (output.metric.includes("duration"))
+	if (Str.includes("duration")(output.metric))
 		return "Durations are computed over the stored spans without sample-rate weighting; under tail sampling they lean toward the kept (slow or failed) spans."
 	return undefined
 }
 
 export const renderQueryData = (output: Output): ToolDoc => {
-	const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+	const capitalize = (s: string) => Str.toUpperCase(s.charAt(0)) + Str.slice(1)(s)
 	const title = `${capitalize(output.queryContext.source)} ${capitalize(output.kind)}: ${output.metric}`
 	const scope: ToolDoc["scope"] = [
 		["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
@@ -379,17 +381,19 @@ export const renderQueryData = (output: Output): ToolDoc => {
 		if (points.length === 0) {
 			return { title, scope, empty: emptyWith("No data points found."), blocks: decisions, next }
 		}
-		const seriesKeys = [...new Set(points.flatMap((point) => Object.keys(point.series)))]
+		const seriesKeys = [...new Set(Arr.flatMap(points, (point) => Rec.keys(point.series)))]
 		if (seriesKeys.length === 0) seriesKeys.push("value")
 		const { labels, lastIsPartial } = bucketLabels(
-			points.map((point) => point.bucket),
+			Arr.map(points, (point) => point.bucket),
 			output.timeRange.end,
 			output.queryContext.bucketSeconds,
 		)
 		// A bucket with no rows has no value: printing 0 there reads as a measured all-clear.
 		const cell = (value: number | undefined) =>
 			value === undefined ? "-" : formatMetricValue(output.metric, value)
-		const hasGaps = points.some((point) => seriesKeys.some((key) => point.series[key] === undefined))
+		const hasGaps = Arr.some(points, (point) =>
+			Arr.some(seriesKeys, (key) => point.series[key] === undefined),
+		)
 		return {
 			title,
 			scope,
@@ -398,9 +402,9 @@ export const renderQueryData = (output: Output): ToolDoc => {
 				doc.text(`Data points: ${formatNumber(points.length)}`),
 				doc.table(
 					["Bucket", ...seriesKeys],
-					points.map((point, i) => [
+					Arr.map(points, (point, i) => [
 						labels[i] ?? point.bucket,
-						...seriesKeys.map((key) => cell(point.series[key])),
+						...Arr.map(seriesKeys, (key) => cell(point.series[key])),
 					]),
 				),
 				...(hasGaps ? [doc.text("`-`: no rows in that bucket (no data, not a measured 0).")] : []),
@@ -422,7 +426,7 @@ export const renderQueryData = (output: Output): ToolDoc => {
 			...decisions,
 			doc.table(
 				["Name", isWeightedCount(output) ? "count (estimated)" : output.metric],
-				items.map((item) => [item.name, formatMetricValue(output.metric, item.value)]),
+				Arr.map(items, (item) => [item.name, formatMetricValue(output.metric, item.value)]),
 			),
 			...notes,
 		],
@@ -598,7 +602,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 								new McpInvalidInputError({
 									message:
 										error.details.length > 0
-											? `${error.message}\n${error.details.join("\n")}`
+											? `${error.message}\n${Arr.join(error.details, "\n")}`
 											: error.message,
 								}),
 							),
@@ -620,7 +624,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 					result.kind === "timeseries"
 						? {
 								kind: "timeseries",
-								data: result.data.map((point) => ({
+								data: Arr.map(result.data, (point) => ({
 									bucket: point.bucket,
 									series: { ...point.series },
 								})),
@@ -628,7 +632,10 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 						: result.kind === "breakdown"
 							? {
 									kind: "breakdown",
-									data: result.data.map((item) => ({ name: item.name, value: item.value })),
+									data: Arr.map(result.data, (item) => ({
+										name: item.name,
+										value: item.value,
+									})),
 								}
 							: undefined
 				if (mapped === undefined) {

@@ -34,6 +34,7 @@ import type { Model } from "./model"
 import { CATEGORY_ICON, CATEGORY_TEXT } from "./span-visuals"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The session flow: one lane per turn on the xyflow canvas.
 // TODO(list-navigation): the arrow-key node cursor is not ported.
@@ -144,9 +145,9 @@ const laneLabel = (h: H, lane: FlowLane): Html => {
 const nodesOf = (h: H, model: Model, lanes: ReadonlyArray<FlowLane>): Html =>
 	nodesLayer(
 		h,
-		lanes.flatMap((lane) => [
+		Arr.flatMap(lanes, (lane) => [
 			laneLabel(h, lane),
-			...lane.nodes.map((node) =>
+			...Arr.map(lane.nodes, (node) =>
 				flowNode(h, {
 					id: node.key,
 					type: "step",
@@ -163,8 +164,8 @@ const nodesOf = (h: H, model: Model, lanes: ReadonlyArray<FlowLane>): Html =>
 const edgesOf = (h: H, lanes: ReadonlyArray<FlowLane>, isRelaid: boolean): Html =>
 	edgesLayer(
 		h,
-		lanes.flatMap((lane) =>
-			lane.edges.map(([from, to]) => {
+		Arr.flatMap(lanes, (lane) =>
+			Arr.map(lane.edges, ([from, to]) => {
 				const [path] = getSmoothStepPath({
 					sourceX: from.x + NODE_WIDTH + (isRelaid ? 1 : 0),
 					sourceY: from.y + NODE_HEIGHT / 2 + (isRelaid ? 0.5 : 0),
@@ -251,7 +252,7 @@ const floor = (h: H, model: Model): Html =>
 							),
 						],
 						[
-							...LEGEND.map((category) =>
+							...Arr.map(LEGEND, (category) =>
 								hstack(h, { gap: "1.5", as: "span", attributes: [h.Key(category)] }, [
 									icon(h, CATEGORY_ICON[category], {
 										size: 12,

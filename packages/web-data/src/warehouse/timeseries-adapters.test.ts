@@ -1,6 +1,6 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 import { describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { strict as assert } from "node:assert"
 import { beforeEach, expect, vi } from "vitest"
 import { mockedWarehouse } from "./testing"
@@ -50,8 +50,8 @@ describe("timeseries adapters", () => {
 			const bucket = "2026-01-01T00:00:00.000Z"
 
 			executeQueryEngineMock.mockImplementation((operation: string) => {
-				if (operation.includes("spanMetricsCalls")) return emptyTs()
-				if (operation.includes("allMetrics")) {
+				if (Str.includes("spanMetricsCalls")(operation)) return emptyTs()
+				if (Str.includes("allMetrics")(operation)) {
 					return tsResponse([
 						{
 							bucket,
@@ -109,8 +109,8 @@ describe("timeseries adapters", () => {
 	it.effect("fills service sparklines per service across the selected timeline", () =>
 		Effect.gen(function* () {
 			executeQueryEngineMock.mockImplementation((operation: string) => {
-				if (operation.includes("spanMetricsCalls")) return emptyTs()
-				if (operation.includes("sparklines.allMetrics")) {
+				if (Str.includes("spanMetricsCalls")(operation)) return emptyTs()
+				if (Str.includes("sparklines.allMetrics")(operation)) {
 					return tsResponse([
 						{
 							bucket: "2026-01-01T00:00:00.000Z",
@@ -156,7 +156,7 @@ describe("timeseries adapters", () => {
 				errorRate: 0,
 			})
 
-			const operations = executeQueryEngineMock.mock.calls.map((call) => String(call[0]))
+			const operations = Arr.map(executeQueryEngineMock.mock.calls, (call) => String(call[0]))
 			expect(operations).toContain("queryEngine.sparklines.allMetrics")
 			expect(operations).not.toContain("queryEngine.sparklines.count")
 			expect(operations).not.toContain("queryEngine.sparklines.errorRate")

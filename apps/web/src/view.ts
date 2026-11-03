@@ -1,5 +1,5 @@
 import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { createKeyedLazy, type Document, type Html, type HtmlBuilder } from "foldkit/html"
 import { bootSplash } from "./layout/boot-splash"
@@ -153,7 +153,7 @@ const sourceLinkOf = (model: Model): SourceLink | null => {
 
 /** A signed-in page inside the shell: the frame around the page, then the shell's overlay layers. */
 const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => {
-	const currentPath = hrefOf(model.route).split("?")[0] ?? "/"
+	const currentPath = Str.split("?")(hrefOf(model.route))[0] ?? "/"
 	const clerk = shellClerkOf(model)
 	return [
 		h.submodel({

@@ -1,4 +1,4 @@
-import { Array, Effect, Option, Result, Schema } from "effect"
+import { Array, Effect, Option, Result, Schema, String as Str } from "effect"
 import { Command } from "foldkit"
 import type { ClerkEmailAddressResource, ClerkUserResource } from "../../../../platform/clerk"
 import { ClerkActionError, clerkTry } from "../../../../platform/clerk"
@@ -144,7 +144,7 @@ export const canRemove = (
 	user: { readonly primaryEmailAddressId: string | null; readonly emails: ReadonlyArray<AccountEmail> },
 	address: AccountEmail,
 ): boolean => {
-	const verifiedCount = user.emails.filter((email) => email.isVerified).length
+	const verifiedCount = Array.filter(user.emails, (email) => email.isVerified).length
 	const isPrimary = address.id === user.primaryEmailAddressId
 	return !isPrimary && !(address.isVerified && verifiedCount === 1)
 }
@@ -194,7 +194,7 @@ export const update = (model: Model, message: Message): Return =>
 		ChangedEmail: ({ value }) => ({ model: { ...model, add: { _tag: "Email", value } } }),
 		SubmittedAdd: () => {
 			if (model.add._tag === "Code") return verify(model, OtpField.valueOf(model.code))
-			const email = model.add.value.trim()
+			const email = Str.trim(model.add.value)
 			if (email.length === 0 || model.isBusy) return { model }
 			return { model: { ...model, isBusy: true }, commands: [CreateEmail({ email })] }
 		},

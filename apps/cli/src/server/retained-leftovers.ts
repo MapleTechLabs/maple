@@ -6,7 +6,7 @@
 import { existsSync } from "node:fs"
 import { lstat, readdir, readFile, rm } from "node:fs/promises"
 import { basename, dirname, join, resolve } from "node:path"
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import {
 	checkpointQuarantineRoot,
 	listPreservedCheckpointPins,
@@ -67,7 +67,7 @@ export class RetainedLeftoverError extends Schema.TaggedError<RetainedLeftoverEr
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 const MIGRATION_ID = "[A-Za-z0-9._-]+"
 
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+const escapeRegExp = (value: string): string => Str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")(value)
 
 /** Only the provenance a leftover needs to be attributed to one data dir. */
 const JournalProvenance = Schema.Struct({ sourceDataDir: Schema.String })

@@ -1,4 +1,4 @@
-import { Clock, Effect, Option, Queue, Schema, Stream } from "effect"
+import { Clock, Effect, Option, Queue, Schema, Stream, Array as Arr, Record as Rec } from "effect"
 import { Command, Mount } from "foldkit"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import { dataSourceTransform, toReadyData } from "../dashboards/kit/widget-data"
@@ -139,10 +139,10 @@ export const FetchBatch = Command.define("FetchShareWidgetBatch", {
 	},
 	messages: [Message.CompletedFetchBatch],
 	execute: ({ token, batchId, startTime, endTime, variableValues, requests }) => {
-		const keys = Object.fromEntries(requests.map((request) => [request.widgetId, request.key]))
+		const keys = Rec.fromEntries(Arr.map(requests, (request) => [request.widgetId, request.key]))
 		const failAll = (message: string) =>
-			Object.fromEntries(
-				requests.map((request): [string, WidgetState] => [
+			Rec.fromEntries(
+				Arr.map(requests, (request): [string, WidgetState] => [
 					request.widgetId,
 					{ _tag: "Error", message, kind: null },
 				]),
@@ -152,7 +152,7 @@ export const FetchBatch = Command.define("FetchShareWidgetBatch", {
 			const response = yield* client.sharePublic.widgetData({
 				payload: {
 					token,
-					requests: requests.map((request) =>
+					requests: Arr.map(requests, (request) =>
 						request.maxDataPoints === undefined
 							? { widgetId: request.widgetId }
 							: { widgetId: request.widgetId, maxDataPoints: request.maxDataPoints },
@@ -161,9 +161,9 @@ export const FetchBatch = Command.define("FetchShareWidgetBatch", {
 					variableValues,
 				},
 			})
-			const transforms = new Map(requests.map((request) => [request.widgetId, request.transform]))
-			const states = Object.fromEntries(
-				response.results.map((result): [string, WidgetState] => [
+			const transforms = new Map(Arr.map(requests, (request) => [request.widgetId, request.transform]))
+			const states = Rec.fromEntries(
+				Arr.map(response.results, (result): [string, WidgetState] => [
 					result.widgetId,
 					result.ok === true
 						? {
@@ -262,7 +262,7 @@ export const WatchTile = Mount.defineStream("WatchShareTile", {
 						)
 					report(element.getBoundingClientRect().width)
 					const observer = new ResizeObserver((entries) =>
-						entries.forEach((entry) => report(entry.contentRect.width)),
+						Arr.forEach(entries, (entry) => report(entry.contentRect.width)),
 					)
 					observer.observe(element)
 					return observer

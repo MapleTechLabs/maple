@@ -1,4 +1,5 @@
 import type { Ecosystem, LockedPackage, Relation } from "../types.ts"
+import { Array as Arr, String as Str } from "effect"
 
 const RANK = { direct: 3, dev: 2, transitive: 1, unknown: 0 } satisfies Record<Relation, number>
 
@@ -6,12 +7,12 @@ const strongest = (a: Relation, b: Relation): Relation => (RANK[a] >= RANK[b] ? 
 
 /** One entry per (name, version), keeping the strongest relation, sorted for stable output. */
 export const dedupePackages = (packages: ReadonlyArray<LockedPackage>): ReadonlyArray<LockedPackage> => {
-	const byKey = packages.reduce((acc, pkg) => {
+	const byKey = Arr.reduce(packages, new Map<string, LockedPackage>(), (acc, pkg) => {
 		const key = `${pkg.name}@${pkg.version}`
 		const seen = acc.get(key)
 		acc.set(key, seen === undefined ? pkg : { ...seen, relation: strongest(seen.relation, pkg.relation) })
 		return acc
-	}, new Map<string, LockedPackage>())
+	})
 	return [...byKey.values()].sort((a, b) =>
 		a.name === b.name
 			? a.version < b.version
@@ -40,11 +41,11 @@ export const pkg = (
 /** Splits `name@version` (scoped names keep their leading `@`). */
 export const splitNameAt = (spec: string): { readonly name: string; readonly rest: string } | undefined => {
 	const at = spec.indexOf("@", 1)
-	return at <= 0 ? undefined : { name: spec.slice(0, at), rest: spec.slice(at + 1) }
+	return at <= 0 ? undefined : { name: Str.slice(0, at)(spec), rest: Str.slice(at + 1)(spec) }
 }
 
 /** Registry versions start with a digit; protocols (file:, link:, git+...) and URLs do not. */
 export const isRegistryVersion = (version: string): boolean => /^\d[^:/\s]*$/.test(version)
 
 export const isRecord = (u: unknown): u is Record<string, unknown> =>
-	typeof u === "object" && u !== null && !Array.isArray(u)
+	typeof u === "object" && u !== null && !Arr.isArray(u)

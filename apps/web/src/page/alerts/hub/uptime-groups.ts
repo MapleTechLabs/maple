@@ -1,5 +1,5 @@
 import { isMapleService } from "@maple/domain/uptime"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { UptimeMonitor } from "../shared/uptime-derive"
 
 // The Uptime tab's namespace groups. A monitor stores only its service's name, so its namespace is
@@ -19,26 +19,32 @@ type OverviewRow = Readonly<{ serviceName: string; serviceNamespace: string; spa
  * environment). A name reported under several namespaces takes the one with the most spans.
  */
 export const serviceNamespaces = (rows: ReadonlyArray<OverviewRow>): ServiceNamespaces => {
-	const spans = rows
-		.filter((row) => !isMapleService(row))
-		.reduce((acc, row) => {
+	const spans = Arr.reduce(
+		Arr.filter(rows, (row) => !isMapleService(row)),
+		new Map<string, { service: string; namespace: string; spans: number }>(),
+		(acc, row) => {
 			const key = `${row.serviceName}\u0000${row.serviceNamespace}`
 			return acc.set(key, {
 				service: row.serviceName,
 				namespace: row.serviceNamespace,
 				spans: (acc.get(key)?.spans ?? 0) + row.spanCount,
 			})
-		}, new Map<string, { service: string; namespace: string; spans: number }>())
-	const busiest = [...spans.values()].reduce((acc, entry) => {
-		const current = acc.get(entry.service)
-		return current === undefined || entry.spans > current.spans ? acc.set(entry.service, entry) : acc
-	}, new Map<string, { namespace: string; spans: number }>())
-	return Object.fromEntries([...busiest].map(([service, entry]) => [service, entry.namespace]))
+		},
+	)
+	const busiest = Arr.reduce(
+		[...spans.values()],
+		new Map<string, { namespace: string; spans: number }>(),
+		(acc, entry) => {
+			const current = acc.get(entry.service)
+			return current === undefined || entry.spans > current.spans ? acc.set(entry.service, entry) : acc
+		},
+	)
+	return Rec.fromEntries(Arr.map([...busiest], ([service, entry]) => [service, entry.namespace]))
 }
 
 /** Own keys only: a service named `constructor` must not read `Object.prototype`. */
 export const monitorNamespace = (monitor: UptimeMonitor, namespaces: ServiceNamespaces): string =>
-	monitor.service_name !== null && Object.hasOwn(namespaces, monitor.service_name)
+	monitor.service_name !== null && Rec.has(namespaces, monitor.service_name)
 		? (namespaces[monitor.service_name] ?? NO_NAMESPACE)
 		: NO_NAMESPACE
 
@@ -52,12 +58,13 @@ export const groupMonitors = (
 	monitors: ReadonlyArray<UptimeMonitor>,
 	namespaces: ServiceNamespaces,
 ): ReadonlyArray<MonitorGroup> => {
-	const groups = monitors.reduce((acc, monitor) => {
+	const groups = Arr.reduce(monitors, new Map<string, ReadonlyArray<UptimeMonitor>>(), (acc, monitor) => {
 		const namespace = monitorNamespace(monitor, namespaces)
 		return acc.set(namespace, [...(acc.get(namespace) ?? []), monitor])
-	}, new Map<string, ReadonlyArray<UptimeMonitor>>())
-	if (![...groups.keys()].some((namespace) => namespace !== NO_NAMESPACE)) return [[NO_NAMESPACE, monitors]]
+	})
+	if (!Arr.some([...groups.keys()], (namespace) => namespace !== NO_NAMESPACE))
+		return [[NO_NAMESPACE, monitors]]
 	return [...groups].toSorted(([a], [b]) =>
-		a === NO_NAMESPACE ? 1 : b === NO_NAMESPACE ? -1 : a.localeCompare(b),
+		a === NO_NAMESPACE ? 1 : b === NO_NAMESPACE ? -1 : Str.localeCompare(b)(a),
 	)
 }

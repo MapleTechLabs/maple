@@ -4,9 +4,10 @@ import {
 	matchHyperdriveConfigs,
 	type HyperdriveConfigInput,
 } from "./service-map-hyperdrive"
+import { Array as Arr, String as Str } from "effect"
 
 const config = (overrides: Partial<HyperdriveConfigInput> = {}): HyperdriveConfigInput => ({
-	id: "a".repeat(32),
+	id: Str.repeat(32)("a"),
 	name: "maple-db",
 	originHost: "aws.connect.psdb.cloud",
 	originPort: 3306,
@@ -19,7 +20,7 @@ const config = (overrides: Partial<HyperdriveConfigInput> = {}): HyperdriveConfi
 const inventory = (
 	entries: ReadonlyArray<{ name: string; kind: string }>,
 ): Map<string, { name: string; kind: string }> =>
-	new Map(entries.map((entry) => [entry.name.toLowerCase(), entry]))
+	new Map(Arr.map(entries, (entry) => [Str.toLowerCase(entry.name), entry]))
 
 describe("isPlanetScaleHost", () => {
 	it("matches psdb.cloud gateways case-insensitively", () => {
@@ -74,7 +75,7 @@ describe("matchHyperdriveConfigs", () => {
 			[
 				config({ originHost: "db.internal.example.com", originDatabase: "appdb" }),
 				config({
-					id: "b".repeat(32),
+					id: Str.repeat(32)("b"),
 					originHost: null,
 					originPort: null,
 					originScheme: "postgres",
@@ -83,7 +84,7 @@ describe("matchHyperdriveConfigs", () => {
 			],
 			inventory([]),
 		)
-		expect(results.map((result) => result.isPlanetScaleHost)).toEqual([false, false])
-		expect(results.map((result) => result.matched)).toEqual([undefined, undefined])
+		expect(Arr.map(results, (result) => result.isPlanetScaleHost)).toEqual([false, false])
+		expect(Arr.map(results, (result) => result.matched)).toEqual([undefined, undefined])
 	})
 })

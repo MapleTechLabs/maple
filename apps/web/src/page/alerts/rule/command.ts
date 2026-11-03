@@ -1,7 +1,7 @@
 import { AlertRuleId, IsoDateTimeString } from "@maple/domain/http"
 import { V2AlertRulePreviewParams, V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { v2CheckToDocument } from "@maple/web-data/alerts/form-utils"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Duration, Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
@@ -74,7 +74,7 @@ export const FetchRuleChecks = Command.define("FetchAlertRuleChecks", {
 				{ concurrency: "unbounded" },
 			)
 			return {
-				checks: response.data.map(v2CheckToDocument),
+				checks: Arr.map(response.data, v2CheckToDocument),
 				hasMore: response.has_more,
 				nextCursor: response.next_cursor,
 				summary,
@@ -97,7 +97,7 @@ export const FetchBucketChecks = Command.define("FetchAlertRuleBucketChecks", {
 				params: { id: ruleId },
 				query: { since, until, limit: PAGE_LIMIT },
 			})
-			return page.data.map(v2CheckToDocument)
+			return Arr.map(page.data, v2CheckToDocument)
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
@@ -124,7 +124,7 @@ export const LoadMoreChecks = Command.define("LoadMoreAlertRuleChecks", {
 				params: { id: ruleId },
 				query: status === "all" ? query : { ...query, status },
 			})
-			return { checks: page.data.map(v2CheckToDocument), nextCursor: page.next_cursor }
+			return { checks: Arr.map(page.data, v2CheckToDocument), nextCursor: page.next_cursor }
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,

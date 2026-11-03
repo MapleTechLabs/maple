@@ -27,6 +27,7 @@ import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { railwayFleetBand, railwayFleetBandLoading } from "./view-band"
 import { type Clock, railwayTable, railwayTableLoading, triggerIds } from "./view-table"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `RailwayPage`.
 
@@ -41,7 +42,7 @@ const tooltipContent = (
 	clock: Clock,
 	triggerId: string,
 ): ReadonlyArray<Html | string> =>
-	services.flatMap((row): ReadonlyArray<Html | string> => {
+	Arr.flatMap(services, (row): ReadonlyArray<Html | string> => {
 		const ids = triggerIds(row)
 		if (triggerId === ids.memory)
 			return [
@@ -110,7 +111,7 @@ export const servicesList = (
 		view: Tooltip.view,
 		toParentMessage: (message) => Message.GotRowTooltipMessage({ message }),
 		viewInputs: {
-			triggerIds: filtered.flatMap((row) => Object.values(triggerIds(row))),
+			triggerIds: Arr.flatMap(filtered, (row) => Rec.values(triggerIds(row))),
 			toContent: (triggerId) => tooltipContent(h, filtered, clock, triggerId),
 			toView: ({ trigger, portal }) =>
 				h.div(

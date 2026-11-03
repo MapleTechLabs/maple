@@ -1,4 +1,4 @@
-import { DateTime, Effect, Exit } from "effect"
+import { DateTime, Effect, Exit, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { auditEntryOf, digestSession, stripeFeedbackOf } from "./evidence"
 
@@ -68,7 +68,7 @@ describe("stripeFeedbackOf", () => {
 	})
 
 	it("drops an address the length cut splits rather than quoting half of it", () => {
-		const comment = `${"y".repeat(995)} ada@acme.io`
+		const comment = `${Str.repeat(995)("y")} ada@acme.io`
 		const result = feedback({
 			data: [
 				{
@@ -109,12 +109,15 @@ describe("digestSession", () => {
 	})
 
 	it("lists the pages in order, a reload or query change on the same page once", () => {
-		const pages = [
-			"https://app.maple.dev/traces",
-			"https://app.maple.dev/traces?service=api",
-			"https://app.maple.dev/billing",
-			"https://app.maple.dev/traces",
-		].map((url) => event("navigation", { url }))
+		const pages = Arr.map(
+			[
+				"https://app.maple.dev/traces",
+				"https://app.maple.dev/traces?service=api",
+				"https://app.maple.dev/billing",
+				"https://app.maple.dev/traces",
+			],
+			(url) => event("navigation", { url }),
+		)
 		const digest = digestSession(Date.parse("2026-10-08T09:00:00Z"), row, pages, [])
 		expect(digest.pages).toEqual(["/traces", "/billing", "/traces"])
 		expect(digest.startedAt).toBe("2026-10-06T10:00:00.000Z")
@@ -127,7 +130,7 @@ describe("digestSession", () => {
 			event("error", { message: "Boom for ada@acme.test" }),
 			event("error", { message: "Boom for ada@acme.test" }),
 			// Redacted before it is cut, so an address at the cut never half-survives.
-			event("error", { message: `${"go ".repeat(63)}ada@acme.test` }),
+			event("error", { message: `${Str.repeat(63)("go ")}ada@acme.test` }),
 			event("network", { netUrl: "https://api.maple.dev/v1/keys?token=secret", netStatus: 403 }),
 			// Maple's own app, not the customer's: never shown as their problem.
 			event("console", {
@@ -137,7 +140,7 @@ describe("digestSession", () => {
 		]
 		expect(digestSession(0, row, [], problems).problems).toEqual([
 			"Boom for [email]",
-			`${"go ".repeat(63)}[email]`,
+			`${Str.repeat(63)("go ")}[email]`,
 			"POST /v1/keys failed with 403",
 		])
 	})

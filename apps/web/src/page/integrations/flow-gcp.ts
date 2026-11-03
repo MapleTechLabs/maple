@@ -12,6 +12,7 @@ import { isScopeReady, runConfirmed } from "./gcp-configure-derive"
 import type { ConfigureModel } from "./gcp-configure-schema"
 import type { Model } from "./model"
 import { configureConnector } from "./update-gcp-configure"
+import { String as Str } from "effect"
 
 // Google Cloud's place in the connect flow: a scope by ID, what to collect, then the setup in
 // Google Cloud. The connection is created at the end of Choose data, so Go live has its setup.
@@ -36,7 +37,7 @@ export type ScopeCheck = "empty" | "bad-id" | "bad-host" | "ready"
 
 /** What the typed IDs say before anything is sent: the only check there is without a sign-in. */
 export const scopeCheck = (configure: ConfigureModel): ScopeCheck => {
-	const scopeId = configure.scopeId.value.trim()
+	const scopeId = Str.trim(configure.scopeId.value)
 	if (isScopeReady(configure)) return "ready"
 	if (scopeId === "") return "empty"
 	const idValid = configure.scopeType === "project" ? isGcpProjectId(scopeId) : isGcpResourceNumber(scopeId)
@@ -64,7 +65,7 @@ export const gcpFlow = (model: Model): FlowSpec => {
 		connector !== null
 			? gcpScopeLabel(connector)
 			: configure !== null && check === "ready"
-				? `${GCP_SCOPE_NAMES[configure.scopeType]} ${configure.scopeId.value.trim()}`
+				? `${GCP_SCOPE_NAMES[configure.scopeType]} ${Str.trim(configure.scopeId.value)}`
 				: null
 	const live = configure === null || connector === null ? "pending" : liveOf(model, configure, connector)
 	return {

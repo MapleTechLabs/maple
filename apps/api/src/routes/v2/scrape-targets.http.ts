@@ -9,7 +9,7 @@ import {
 	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
 import type { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { auditDiff, redactAuditUrl } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
@@ -75,7 +75,7 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const response = yield* service.list(tenant.orgId)
-					const page = yield* paginateArray(response.targets.map(toV2ScrapeTarget), query)
+					const page = yield* paginateArray(Arr.map(response.targets, toV2ScrapeTarget), query)
 					return { object: "list" as const, ...page }
 				}),
 			)
@@ -246,7 +246,7 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 							})
 							.pipe(
 								Effect.map((rows): ReadonlyArray<V2ScrapeTargetCheck> =>
-									rows.map((row) => ({
+									Arr.map(rows, (row) => ({
 										object: "scrape_target.check" as const,
 										timestamp: timestamp(new Date(row.checkedAt).toISOString()),
 										success: row.error === null,

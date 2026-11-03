@@ -4,7 +4,7 @@ import { strict as assert } from "node:assert"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Duration, Effect, Option } from "effect"
+import { Duration, Effect, Option, Record as Rec } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
 import { autoBackend, discoverLocalUrl, discoverServers, probeLocal } from "./mode"
@@ -101,7 +101,7 @@ describe("server discovery scan", () => {
 	const scan = async (files: Readonly<Record<string, unknown>>) => {
 		const dir = mkdtempSync(join(tmpdir(), "maple-scan-"))
 		try {
-			for (const [name, body] of Object.entries(files))
+			for (const [name, body] of Rec.toEntries(files))
 				writeFileSync(join(dir, name), JSON.stringify(body))
 			return await Effect.runPromise(
 				Effect.flatMap(FileSystem, (fs) => discoverServers(fs, dir)).pipe(

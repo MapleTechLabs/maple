@@ -1,5 +1,6 @@
 import { ErrorIssueEventType } from "./http/errors"
 import { type PublicIdPrefix, PublicIdPrefixes } from "./http/v2/public-id"
+import { Array as Arr, Record as Rec } from "effect"
 
 /**
  * Every audited action in Maple, grouped by the resource it acts on.
@@ -350,8 +351,8 @@ export const AuditActionLabels = {
 
 /** Every declared `<resource>.<verb>`, in catalog order. */
 export const auditActions = (): ReadonlyArray<string> =>
-	Object.entries(AuditResources).flatMap(([resource, { verbs }]) =>
-		verbs.map((verb) => `${resource}.${verb}`),
+	Arr.flatMap(Rec.toEntries(AuditResources), ([resource, { verbs }]) =>
+		Arr.map(verbs, (verb) => `${resource}.${verb}`),
 	)
 
 const isAuditAction = (action: string): action is AuditAction => Object.hasOwn(AuditActionLabels, action)

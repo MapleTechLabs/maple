@@ -1,5 +1,5 @@
 import { formatNumber } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
@@ -42,7 +42,7 @@ const TYPE_ITEMS = [
 	{ value: "exponential_histogram", label: "Exp histogram" },
 ] as const
 
-const TYPE_ENTRIES: ReadonlyArray<SelectEntry> = TYPE_ITEMS.map((item) => ({
+const TYPE_ENTRIES: ReadonlyArray<SelectEntry> = Arr.map(TYPE_ITEMS, (item) => ({
 	_tag: "Item",
 	item: { value: item.value, label: item.label },
 }))
@@ -57,7 +57,7 @@ const typeItem =
 			rows === undefined
 				? undefined
 				: option.value === "all"
-					? rows.reduce((total, next) => total + next.metricCount, 0)
+					? Arr.reduce(rows, 0, (total, next) => total + next.metricCount)
 					: (row?.metricCount ?? 0)
 		const dataPoints =
 			option.value === "all"

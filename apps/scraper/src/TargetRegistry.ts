@@ -1,4 +1,4 @@
-import { type Array as Arr, Clock, Context, Effect, Layer, Option, Ref } from "effect"
+import { type Array as Arr, Clock, Context, Effect, Layer, Option, Ref, Array as EArr } from "effect"
 import type { InternalScrapeTarget } from "@maple/domain/http"
 import { ApiClient, type ApiRequestError } from "./ApiClient"
 
@@ -10,7 +10,7 @@ export type TargetGroup = Arr.NonEmptyReadonlyArray<InternalScrapeTarget>
 
 /** Group rows by parent target id, last row winning per sub-target key. */
 export const groupTargets = (list: ReadonlyArray<InternalScrapeTarget>): ReadonlyMap<string, TargetGroup> => {
-	const deduped = new Map(list.map((target) => [targetKey(target), target]))
+	const deduped = new Map(EArr.map(list, (target) => [targetKey(target), target]))
 	const groups = new Map<string, TargetGroup>()
 	deduped.forEach((target) => {
 		const existing = groups.get(target.id)

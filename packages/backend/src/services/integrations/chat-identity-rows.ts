@@ -15,7 +15,7 @@ import {
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
-import { Effect, Option } from "effect"
+import { Effect, Option, Array as Arr } from "effect"
 import type { DatabaseApi, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 
@@ -91,7 +91,7 @@ export const listChatIdentities = (
 					.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId)]),
 			),
 		)
-		return rows.map((row) => ({ ...readRow(row), connector: row.connector }))
+		return Arr.map(rows, (row) => ({ ...readRow(row), connector: row.connector }))
 	})
 
 /**

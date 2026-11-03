@@ -10,6 +10,7 @@ import { valueState } from "./view-fields"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 import { skeletonSwitchClass } from "@maple/views/ui/skeleton"
+import { Array as Arr } from "effect"
 
 // `RulesFormView` before its config loads: the real field labels and hints, bars for the values.
 
@@ -84,7 +85,7 @@ export const rulesFormSkeleton = <M>(h: HtmlBuilder<M>, mode: Mode): Html => {
 				),
 				h.div(
 					[h.Class("grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3")],
-					ALL_CATEGORIES.map(() =>
+					Arr.map(ALL_CATEGORIES, () =>
 						h.span(
 							[h.Class("flex h-5 items-center gap-2")],
 							[bar(h, "size-4"), bar(h, "h-3 w-24")],

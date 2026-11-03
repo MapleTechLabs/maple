@@ -2,7 +2,7 @@ import { OrgId } from "@maple/domain"
 import { AwsMetricStream } from "@maple/domain/aws"
 import { Timestamp, type V2AwsConnection, type V2AwsIntegration } from "@maple/domain/http/v2"
 import { AwsAccountId, AwsConnectionId } from "@maple/domain/primitives"
-import { Effect, Option, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import type { HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -137,7 +137,7 @@ const SPARK_METRIC = {
 
 const keysOf = (resource: Resource) => [...resource.identity, REGION, ACCOUNT]
 
-const FLEET: ReadonlyArray<FleetRead> = (["ecs", "ec2", "loadBalancers"] as const).map((kind) => ({
+const FLEET: ReadonlyArray<FleetRead> = Arr.map(["ecs", "ec2", "loadBalancers"] as const, (kind) => ({
 	kind,
 	failed: false,
 	points: RESOURCES[kind].flatMap((resource) =>
@@ -159,7 +159,7 @@ const BUCKET_COUNT = Math.floor((WINDOW_END_MS - WINDOW_START_MS) / (BUCKET_SECO
 const sparkFor = (kind: keyof typeof SPARK_METRIC, resource: Resource, seed: number): SparkRead["points"] => {
 	const metric = SPARK_METRIC[kind]
 	const base = resource.values[metric] ?? 0
-	const perBucket = metric.endsWith(".sum") ? base / BUCKET_COUNT : base
+	const perBucket = Str.endsWith(".sum")(metric) ? base / BUCKET_COUNT : base
 	return Array.from({ length: BUCKET_COUNT }, (_, index) => ({
 		keys: keysOf(resource),
 		bucket: new Date(WINDOW_START_MS + index * BUCKET_SECONDS * 1000).toISOString(),
@@ -254,7 +254,7 @@ const step = (result: PageReturn<PageModel, PageMessage>): Return => {
 	return {
 		model: { page: settled.model },
 		commands: Command.mapMessages(
-			(settled.commands ?? []).filter((command) => !isRead(command.name)),
+			Arr.filter(settled.commands ?? [], (command) => !isRead(command.name)),
 			(message) => Message.GotPageMessage({ message }),
 		),
 	}

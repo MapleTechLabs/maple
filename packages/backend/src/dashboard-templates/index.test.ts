@@ -2,12 +2,14 @@ import { describe, expect, it } from "@effect/vitest"
 import { DashboardTemplatePreviewKind, type PortableDashboardDocument } from "@maple/domain/http"
 import { DASHBOARD_TEMPLATES, buildTemplatePreview, listTemplateMetadata } from "./index"
 import type { WidgetDef } from "./types"
+import { Array as Arr } from "effect"
 
 const PREVIEW_KINDS = new Set<string>(DashboardTemplatePreviewKind.literals)
 
 /** The root canvas plus each section's first tab: what a viewer sees on opening. */
 const firstTabWidgets = ({ widgets, sections = [] }: PortableDashboardDocument) =>
-	widgets.filter(
+	Arr.filter(
+		widgets,
 		(w) =>
 			w.sectionId === undefined ||
 			w.tabId === sections.find((section) => section.id === w.sectionId)?.tabs[0]?.id,
@@ -23,17 +25,17 @@ function expectGaplessRows(templateId: string, widgets: ReadonlyArray<WidgetDef>
 	for (const [y, row] of [...rows].sort(([a], [b]) => a - b)) {
 		expect(y, `${templateId}: row starts at ${y}, expected ${expectedY}`).toBe(expectedY)
 
-		const heights = new Set(row.map((w) => w.layout.h))
+		const heights = new Set(Arr.map(row, (w) => w.layout.h))
 		expect(heights.size, `${templateId}: row y=${y} mixes heights`).toBe(1)
 
-		const width = row.reduce((sum, w) => sum + w.layout.w, 0)
+		const width = Arr.reduce(row, 0, (sum, w) => sum + w.layout.w)
 		expect(width, `${templateId}: row y=${y} spans ${width} of 12 columns`).toBe(12)
 
 		const spans = [...row].sort((a, b) => a.layout.x - b.layout.x)
-		spans.reduce((edge, w) => {
+		Arr.reduce(spans, 0, (edge, w) => {
 			expect(w.layout.x, `${templateId}: row y=${y} overlaps at x=${w.layout.x}`).toBe(edge)
 			return edge + w.layout.w
-		}, 0)
+		})
 
 		expectedY += row[0].layout.h
 	}
@@ -76,8 +78,11 @@ describe("dashboard template previews", () => {
 		const built = gcp.build({})
 		const preview = buildTemplatePreview(gcp)
 		const firstTab = built.sections?.[0]?.tabs[0]?.id
-		expect(preview.map((w) => w.title)).toEqual(
-			built.widgets.filter((w) => w.tabId === firstTab).map((w) => w.display.title),
+		expect(Arr.map(preview, (w) => w.title)).toEqual(
+			Arr.map(
+				Arr.filter(built.widgets, (w) => w.tabId === firstTab),
+				(w) => w.display.title,
+			),
 		)
 	})
 
@@ -93,7 +98,7 @@ describe("dashboard template previews", () => {
 
 	it("maps chart display ids to line/area/bar kinds", () => {
 		const postgres = DASHBOARD_TEMPLATES.find((t) => t.id === "postgres-overview")!
-		const kinds = buildTemplatePreview(postgres).map((w) => w.kind)
+		const kinds = Arr.map(buildTemplatePreview(postgres), (w) => w.kind)
 		expect(kinds).toContain("line")
 		expect(kinds).toContain("area")
 	})

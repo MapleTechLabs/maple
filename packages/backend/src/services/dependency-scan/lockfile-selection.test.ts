@@ -6,6 +6,7 @@ import {
 	sameLockfiles,
 	selectLockfiles,
 } from "./lockfile-selection"
+import { Array as Arr } from "effect"
 
 const file = (path: string, sha = `sha-${path}`) => ({ path, sha, size: 100 })
 
@@ -22,7 +23,7 @@ describe("selectLockfiles", () => {
 			file("test/fixtures/yarn.lock"),
 			file("vendor/github.com/x/go.mod"),
 		])
-		expect(selected.map((lockfile) => [lockfile.file.path, lockfile.kind])).toEqual([
+		expect(Arr.map(selected, (lockfile) => [lockfile.file.path, lockfile.kind])).toEqual([
 			["package-lock.json", "package-lock"],
 			["tools/go.sum", "go-sum"],
 			["crates/core/Cargo.lock", "cargo-lock"],
@@ -37,7 +38,7 @@ describe("selectLockfiles", () => {
 		expect(selected).toHaveLength(MAX_LOCKFILES)
 		expect(skipped).toHaveLength(3)
 		// Every lockfile is either read or recorded as skipped, never dropped.
-		expect(new Set([...selected, ...skipped].map((lockfile) => lockfile.file.path)).size).toBe(
+		expect(new Set(Arr.map([...selected, ...skipped], (lockfile) => lockfile.file.path)).size).toBe(
 			many.length,
 		)
 	})
@@ -57,10 +58,9 @@ describe("manifestsFor", () => {
 	})
 
 	it("hands a yarn lockfile the package.json files under its directory, relative to it", () => {
-		expect(manifestsFor(lockfile("web/yarn.lock", "yarn-v1"), tree).map((m) => m.relativePath)).toEqual([
-			"package.json",
-			"packages/ui/package.json",
-		])
+		expect(
+			Arr.map(manifestsFor(lockfile("web/yarn.lock", "yarn-v1"), tree), (m) => m.relativePath),
+		).toEqual(["package.json", "packages/ui/package.json"])
 	})
 
 	it("reads no manifests for formats that record direct and dev dependencies themselves", () => {

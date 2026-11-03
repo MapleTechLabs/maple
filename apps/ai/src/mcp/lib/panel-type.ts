@@ -10,6 +10,7 @@ import {
 	type WidgetTypeMeta,
 } from "@maple/domain/http"
 import { stringifyJson } from "./json"
+import { Array as Arr } from "effect"
 
 /**
  * One decision, one field.
@@ -48,7 +49,10 @@ export type PanelTypeResolution =
 	| { readonly ok: true; readonly resolved: ResolvedPanelType }
 	| { readonly ok: false; readonly error: string; readonly example?: string }
 
-const panelTypeList = MCP_PANEL_TYPES.map((panel) => `"${panel}"`).join(", ")
+const panelTypeList = Arr.join(
+	Arr.map(MCP_PANEL_TYPES, (panel) => `"${panel}"`),
+	", ",
+)
 
 export const resolvePanelType = (input: PanelTypeInput): PanelTypeResolution => {
 	const panelTypeRaw = input.panel_type?.trim()
@@ -81,7 +85,13 @@ export const resolvePanelType = (input: PanelTypeInput): PanelTypeResolution => 
 	if (!panelTypeRaw && visualizationRaw && !isMcpVisualization(visualizationRaw)) {
 		return {
 			ok: false,
-			error: `\`visualization\` must be one of: ${[...new Set(MCP_PANEL_TYPES.map((p) => WIDGET_TYPES[p].visualization))].map((v) => `"${v}"`).join(", ")}. Got: ${stringifyJson(visualizationRaw)}. Prefer \`panel_type\`, which takes one of: ${panelTypeList}.`,
+			error: `\`visualization\` must be one of: ${Arr.join(
+				Arr.map(
+					[...new Set(Arr.map(MCP_PANEL_TYPES, (p) => WIDGET_TYPES[p].visualization))],
+					(v) => `"${v}"`,
+				),
+				", ",
+			)}. Got: ${stringifyJson(visualizationRaw)}. Prefer \`panel_type\`, which takes one of: ${panelTypeList}.`,
 			example: '{ "panel_type": "line" }',
 		}
 	}

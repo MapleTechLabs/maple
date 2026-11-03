@@ -1,5 +1,5 @@
 import * as Markdown from "@foldkit/markdown"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 
 // The one markdown parse every page uses (chat, agent sessions). `@foldkit/markdown`'s pipeline
 // includes remark-directive, which reads `:name` in prose as an inline directive and rejects the
@@ -17,18 +17,19 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})/
 
 /** Escapes `:` before a word character in prose (outside code spans), so remark reads it as text. */
 const escapeLine = (line: string): string =>
-	line
-		.split(/(`+[^`]*`+)/)
-		.map((piece, index) => (index % 2 === 1 ? piece : piece.replace(/:(?=[\p{L}\p{N}_])/gu, "\\:")))
-		.join("")
+	Arr.join(
+		Arr.map(Str.split(/(`+[^`]*`+)/)(line), (piece, index) =>
+			index % 2 === 1 ? piece : Str.replace(/:(?=[\p{L}\p{N}_])/gu, "\\:")(piece),
+		),
+		"",
+	)
 
 type Scan = Readonly<{ lines: ReadonlyArray<string>; fence: string | null }>
 
 /** Every prose line escaped; lines inside a fenced block pass through until its closing fence. */
 export const escapeDirectives = (text: string): string =>
-	text
-		.split("\n")
-		.reduce<Scan>(
+	Arr.join(
+		Str.split("\n")(text).reduce<Scan>(
 			(acc, line) => {
 				const marker = FENCE.exec(line)?.[1]
 				if (acc.fence !== null) {
@@ -42,8 +43,9 @@ export const escapeDirectives = (text: string): string =>
 				return { lines: [...acc.lines, escapeLine(line)], fence: null }
 			},
 			{ lines: [], fence: null },
-		)
-		.lines.join("\n")
+		).lines,
+		"\n",
+	)
 
 /** The remark pipeline threw on a text. */
 export class MarkdownParseError extends Schema.TaggedError<MarkdownParseError>()(

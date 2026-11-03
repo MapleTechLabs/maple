@@ -27,6 +27,7 @@ import {
 } from "./command"
 import { eventsInputOf, filtersOf, insightsInputOf, timeseriesInputOf } from "./derive"
 import { Message, type Model, type RequestMode } from "./model"
+import { Array as Arr, Record as Rec } from "effect"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -135,7 +136,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		insights: Keyed.idle(),
 		measure: "connections",
 		breakdownSort: { key: "value", dir: "desc" },
-		charts: Object.fromEntries(CHART_METRICS.map((metric) => [metric, Chart.init()])),
+		charts: Rec.fromEntries(Arr.map(CHART_METRICS, (metric) => [metric, Chart.init()])),
 		branchSelect: Select.init("planetscale-branch-select", { value: "", selectedIndex: null }),
 		filterSections: FilterSections.init(),
 		tooltip: Tooltip.init("planetscale-db-tooltip"),
@@ -170,7 +171,10 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 		const scoped = requestScoped(next, context, "Load")
 		return {
 			model: scoped.model,
-			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion)), ...(scoped.commands ?? [])],
+			commands: [
+				resolveCommand(next, context, snapModeOf(model.refreshVersion)),
+				...(scoped.commands ?? []),
+			],
 		}
 	}
 	return routeWindowStep(model.search, route.search, {

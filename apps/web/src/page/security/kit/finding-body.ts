@@ -7,6 +7,7 @@ import { panel, panelHeader } from "@maple/views/ui/panel"
 import type { FindingRecord } from "./format"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The finding's own record: what is wrong, the trace, how it is exploited, how to fix it.
 
@@ -83,15 +84,15 @@ const whatIsWrong = <M>(h: HtmlBuilder<M>, record: FindingRecord): Html =>
 
 const traceAndEvidence = <M>(h: HtmlBuilder<M>, record: FindingRecord): Html => {
 	const files = new Set([
-		...record.trace.map((step) => step.file),
-		...record.evidence.map((item) => item.file),
+		...Arr.map(record.trace, (step) => step.file),
+		...Arr.map(record.evidence, (item) => item.file),
 	])
 	return section(
 		h,
 		"Trace and evidence",
 		`${files.size} ${files.size === 1 ? "file" : "files"} · every cited line re-read by the validator`,
 		[
-			...record.trace.map((step, index) =>
+			...Arr.map(record.trace, (step, index) =>
 				vstack(h, { gap: "1", attributes: [h.Key(`trace-${index}`)] }, [
 					hstack(h, { gap: "2", wrap: true }, [
 						badge(h, { variant: "tag" }, [step.kind]),
@@ -108,7 +109,7 @@ const traceAndEvidence = <M>(h: HtmlBuilder<M>, record: FindingRecord): Html => 
 							[h.Class("flex flex-col gap-2 border-t pt-3")],
 							[
 								eyebrow(h, { as: "div" }, ["Evidence"]),
-								...record.evidence.map((item, index) =>
+								...Arr.map(record.evidence, (item, index) =>
 									vstack(h, { gap: "0.5", attributes: [h.Key(`evidence-${index}`)] }, [
 										typography(h, { size: "sm", mono: true }, [
 											`${item.file}:${item.line}`,
@@ -131,7 +132,7 @@ const exploitation = <M>(h: HtmlBuilder<M>, record: Confirmed): Html =>
 			: [
 					hstack(h, { gap: "2", wrap: true, className: typographyClass({ size: "xs" }) }, [
 						h.span([h.Class("text-muted-foreground")], ["Conditions"]),
-						...record.conditions.map((condition, index) =>
+						...Arr.map(record.conditions, (condition, index) =>
 							badge(
 								h,
 								{
@@ -144,13 +145,13 @@ const exploitation = <M>(h: HtmlBuilder<M>, record: Confirmed): Html =>
 						),
 					]),
 				]),
-		...record.execution.payloads.map((payload) => codeBlock(h, payload)),
+		...Arr.map(record.execution.payloads, (payload) => codeBlock(h, payload)),
 		...(record.execution.instructions.length === 0
 			? []
 			: [
 					h.ol(
 						[h.Class("flex list-decimal flex-col gap-1.5 pl-5 text-sm")],
-						record.execution.instructions.map((step, index) =>
+						Arr.map(record.execution.instructions, (step, index) =>
 							h.li([h.Key(`i-${index}`)], [step]),
 						),
 					),
@@ -183,7 +184,7 @@ const assessment = <M>(h: HtmlBuilder<M>, record: Confirmed): Html =>
 const remediation = <M>(h: HtmlBuilder<M>, record: Confirmed): Html =>
 	section(h, "How to fix it", null, [
 		prose(h, record.remediation.strategy),
-		...(record.remediation.code_changes ?? []).map((change) =>
+		...Arr.map(record.remediation.code_changes ?? [], (change) =>
 			codeBlock(h, change.fixed_code, change.file_name),
 		),
 	])
@@ -208,7 +209,7 @@ const whyNotProven = <M>(h: HtmlBuilder<M>, record: NeedsValidation): Html | nul
 		: section(h, "Why it is not proven", null, [
 				h.ul(
 					[h.Class("flex list-disc flex-col gap-1.5 pl-5 text-sm")],
-					record.blockers.map((blocker, index) => h.li([h.Key(`b-${index}`)], [blocker])),
+					Arr.map(record.blockers, (blocker, index) => h.li([h.Key(`b-${index}`)], [blocker])),
 				),
 			])
 

@@ -84,12 +84,15 @@ import { stepStatements } from "../src/server/local-store-migrations/step-execut
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // Steps are table rows now; the decoding tests below exercise their compiled modules.
-const [v7ToV8AppleCrashFramesModule] = localStoreMigrations.filter(
+const [v7ToV8AppleCrashFramesModule] = Arr.filter(
+	localStoreMigrations,
 	(migration) => migration.id === "local-0007-to-0008-apple-crash-frames",
 )
-const [v10ToV11ProductEventsModule] = localStoreMigrations.filter(
+const [v10ToV11ProductEventsModule] = Arr.filter(
+	localStoreMigrations,
 	(migration) => migration.id === "local-0010-to-0011-product-events",
 )
 
@@ -109,7 +112,7 @@ describe("current local schema identity", () => {
 		expect(CURRENT_LOCAL_SCHEMA.version).toBe(44)
 		expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V44)
 		const logs = LOCAL_SCHEMA_MANIFEST.objects.find((object) => object.name === "logs")
-		expect(logs?.columns.some((column) => column.name.startsWith("idx_"))).toBe(false)
+		expect(logs?.columns.some((column) => Str.startsWith("idx_")(column.name))).toBe(false)
 		expect(logs?.indexes).toContain("idx_lower_body")
 		const serviceMapIngress = LOCAL_SCHEMA_MANIFEST.objects.find(
 			(object) => object.name === "service_map_edges_hourly_ingest",
@@ -142,10 +145,13 @@ describe("current local schema identity", () => {
 			(object) => object.name === "web_events_mv",
 		)
 		expect(webEventsView?.definition).toContain("FROM session_events")
-		const v3Names = new Set(LOCAL_SCHEMA_V3_MANIFEST.objects.map((object) => object.name))
+		const v3Names = new Set(Arr.map(LOCAL_SCHEMA_V3_MANIFEST.objects, (object) => object.name))
 		expect(v3Names.has("web_events")).toBe(false)
-		const v4Names = new Set(LOCAL_SCHEMA_V4_MANIFEST.objects.map((object) => object.name))
-		expect([...v4Names].filter((name) => !v3Names.has(name))).toEqual(["web_events", "web_events_mv"])
+		const v4Names = new Set(Arr.map(LOCAL_SCHEMA_V4_MANIFEST.objects, (object) => object.name))
+		expect(Arr.filter([...v4Names], (name) => !v3Names.has(name))).toEqual([
+			"web_events",
+			"web_events_mv",
+		])
 
 		// v5 is exactly v4 plus the minutely service-overview rollup and its view.
 		// Asserted against the frozen v4 manifest, same as above, so a later
@@ -164,9 +170,9 @@ describe("current local schema identity", () => {
 		// migration's backfill double-count into a table that cannot be rebuilt.
 		expect(minutelyView?.definition).toContain("FROM traces")
 		expect(minutelyView?.definition).not.toContain("FROM service_overview_minutely")
-		const v5Names = new Set(LOCAL_SCHEMA_V5_MANIFEST.objects.map((object) => object.name))
-		const currentNames = new Set(LOCAL_SCHEMA_MANIFEST.objects.map((object) => object.name))
-		expect([...v5Names].filter((name) => !v4Names.has(name))).toEqual([
+		const v5Names = new Set(Arr.map(LOCAL_SCHEMA_V5_MANIFEST.objects, (object) => object.name))
+		const currentNames = new Set(Arr.map(LOCAL_SCHEMA_MANIFEST.objects, (object) => object.name))
+		expect(Arr.filter([...v5Names], (name) => !v4Names.has(name))).toEqual([
 			"service_overview_minutely",
 			"service_overview_minutely_mv",
 		])
@@ -180,7 +186,7 @@ describe("current local schema identity", () => {
 		// `trace_facets_hourly` and its view; v33 adds `trace_index` and its view; v35 removes `trace_detail_spans` and its view; v37 adds `source_usage_hourly` and its six views; v38 adds `ci_runs`, `ci_jobs` and their views; v39 adds `service_endpoint_details_hourly` and its view; v41 adds `service_map_db_edges_minutely` and its view. Asserted as an exact set difference rather than a
 		// relaxed check, so a future edge still cannot add or drop an object
 		// unnoticed.
-		expect([...v5Names].filter((name) => !currentNames.has(name))).toEqual([
+		expect(Arr.filter([...v5Names], (name) => !currentNames.has(name))).toEqual([
 			"error_spans",
 			"error_spans_mv",
 			"trace_detail_spans",
@@ -188,7 +194,7 @@ describe("current local schema identity", () => {
 			"web_events",
 			"web_events_mv",
 		])
-		expect([...currentNames].filter((name) => !v5Names.has(name))).toEqual([
+		expect(Arr.filter([...currentNames], (name) => !v5Names.has(name))).toEqual([
 			"ai_crawler_requests",
 			"ai_crawler_requests_mv",
 			"ai_trace_index",
@@ -296,17 +302,20 @@ describe("current local schema identity", () => {
 			"UserId",
 			"GroupId",
 		])
-		const v10Names = new Set(LOCAL_SCHEMA_V10_MANIFEST.objects.map((object) => object.name))
+		const v10Names = new Set(Arr.map(LOCAL_SCHEMA_V10_MANIFEST.objects, (object) => object.name))
 		// The frozen v11 manifest, not the current one: v14 adds objects of its
 		// own, and this assertion pins what v11 itself introduced.
-		const v11Names = new Set(LOCAL_SCHEMA_V11_MANIFEST.objects.map((object) => object.name))
-		expect([...v11Names].filter((name) => !v10Names.has(name))).toEqual([
+		const v11Names = new Set(Arr.map(LOCAL_SCHEMA_V11_MANIFEST.objects, (object) => object.name))
+		expect(Arr.filter([...v11Names], (name) => !v10Names.has(name))).toEqual([
 			"identity_links",
 			"identity_links_mv",
 			"product_events",
 			"product_events_mv",
 		])
-		expect([...v10Names].filter((name) => !v11Names.has(name))).toEqual(["web_events", "web_events_mv"])
+		expect(Arr.filter([...v10Names], (name) => !v11Names.has(name))).toEqual([
+			"web_events",
+			"web_events_mv",
+		])
 
 		// v12 replaces two view bodies and v13 adds columns to two rollups; neither
 		// adds an object. v14 is exactly the GenAI span index and its view, created
@@ -315,13 +324,13 @@ describe("current local schema identity", () => {
 		// `ci_runs`, `ci_jobs` and their views, filled forward; v39 adds
 		// `service_endpoint_details_hourly` and its view, backfilled; v41 adds
 		// `service_map_db_edges_minutely` and its view, filled forward.
-		const v12Names = new Set(LOCAL_SCHEMA_V12_MANIFEST.objects.map((object) => object.name))
-		const v13Names = new Set(LOCAL_SCHEMA_V13_MANIFEST.objects.map((object) => object.name))
-		const currentSchemaNames = new Set(LOCAL_SCHEMA_MANIFEST.objects.map((object) => object.name))
-		expect([...v12Names].filter((name) => !v11Names.has(name))).toEqual([])
-		expect([...v13Names].filter((name) => !v12Names.has(name))).toEqual([])
-		expect([...v12Names].filter((name) => !v13Names.has(name))).toEqual([])
-		expect([...currentSchemaNames].filter((name) => !v13Names.has(name))).toEqual([
+		const v12Names = new Set(Arr.map(LOCAL_SCHEMA_V12_MANIFEST.objects, (object) => object.name))
+		const v13Names = new Set(Arr.map(LOCAL_SCHEMA_V13_MANIFEST.objects, (object) => object.name))
+		const currentSchemaNames = new Set(Arr.map(LOCAL_SCHEMA_MANIFEST.objects, (object) => object.name))
+		expect(Arr.filter([...v12Names], (name) => !v11Names.has(name))).toEqual([])
+		expect(Arr.filter([...v13Names], (name) => !v12Names.has(name))).toEqual([])
+		expect(Arr.filter([...v12Names], (name) => !v13Names.has(name))).toEqual([])
+		expect(Arr.filter([...currentSchemaNames], (name) => !v13Names.has(name))).toEqual([
 			"ai_crawler_requests",
 			"ai_crawler_requests_mv",
 			"ai_trace_index",
@@ -352,7 +361,7 @@ describe("current local schema identity", () => {
 			"trace_index",
 			"trace_index_mv",
 		])
-		expect([...v13Names].filter((name) => !currentSchemaNames.has(name))).toEqual([
+		expect(Arr.filter([...v13Names], (name) => !currentSchemaNames.has(name))).toEqual([
 			"trace_detail_spans",
 			"trace_detail_spans_mv",
 		])
@@ -434,7 +443,10 @@ describe("local migration registry", () => {
 			),
 		).toThrow(/newer than this build/)
 		expect(() =>
-			resolveMigrationChain({ ...CURRENT_LOCAL_SCHEMA, digest: "f".repeat(64) }, CURRENT_LOCAL_SCHEMA),
+			resolveMigrationChain(
+				{ ...CURRENT_LOCAL_SCHEMA, digest: Str.repeat(64)("f") },
+				CURRENT_LOCAL_SCHEMA,
+			),
 		).toThrow(/unknown fingerprint/)
 		const duplicate: LocalStoreMigration = {
 			id: "duplicate",
@@ -464,7 +476,12 @@ describe("local migration registry", () => {
 			moduleVersion: 1,
 			description: "fixture-only second edge",
 			from: LOCAL_SCHEMA_V1,
-			to: { ...LOCAL_SCHEMA_V1, version: 2, fingerprint: "2222222222222222", digest: "2".repeat(64) },
+			to: {
+				...LOCAL_SCHEMA_V1,
+				version: 2,
+				fingerprint: "2222222222222222",
+				digest: Str.repeat(64)("2"),
+			},
 			operations: [{ id: "fixture", description: "fixture transform", requiresQuiescence: true }],
 			dispositions: [],
 			decodeState: (value) => value,
@@ -487,7 +504,7 @@ describe("local migration registry", () => {
 			recover: async () => ({}),
 		}
 		const chain = resolveMigrationChain(LEGACY_LOCAL_SCHEMA, v2.to, [legacyToCurrentModule, v2])
-		expect(chain.map((migration) => migration.id)).toEqual([
+		expect(Arr.map(chain, (migration) => migration.id)).toEqual([
 			"local-0000-to-0001-raw-replay",
 			"local-0001-to-0002-fixture",
 		])
@@ -598,8 +615,8 @@ describe("local migration registry", () => {
 			const match = /^local-(\d{4})-to-(\d{4})-[a-z0-9]+(-[a-z0-9]+)*$/.exec(id)
 			return { from: Number(match?.[1]), to: Number(match?.[2]) }
 		}
-		expect(localStoreMigrations.map((migration) => migration.id)).toEqual(expected)
-		expect(LOCAL_STORE_STEPS.map((step) => step.id)).toEqual(expected.slice(1))
+		expect(Arr.map(localStoreMigrations, (migration) => migration.id)).toEqual(expected)
+		expect(Arr.map(LOCAL_STORE_STEPS, (step) => step.id)).toEqual(expected.slice(1))
 		expect(resolveMigrationChain(LEGACY_LOCAL_SCHEMA, CURRENT_LOCAL_SCHEMA)).toEqual(localStoreMigrations)
 		for (const [index, step] of LOCAL_STORE_STEPS.entries()) {
 			const migration = localStoreMigrations[index + 1]
@@ -622,7 +639,7 @@ describe("local migration registry", () => {
 					chdb: CURRENT_LOCAL_SCHEMA.chdb,
 				})
 			}
-			const operationIds = migration?.operations.map((operation) => operation.id) ?? []
+			const operationIds = Arr.map(migration?.operations, (operation) => operation.id) ?? []
 			expect(operationIds[0]).toBe(`clone-v${step.from}-store`)
 			expect(operationIds.at(-1)).toBe(`verify-v${step.to}-schema`)
 			expect(migration?.dispositions[0]?.name).toBe("local store")
@@ -643,7 +660,7 @@ describe("local migration registry", () => {
 		const plan = planMigration(LEGACY_LOCAL_SCHEMA)
 		expect(plan.dispositions.find((entry) => entry.name === "logs")?.disposition).toBe("preserve-exact")
 		expect(
-			plan.dispositions.some((entry) => entry.disposition === "rebuild-within-retention-horizon"),
+			Arr.some(plan.dispositions, (entry) => entry.disposition === "rebuild-within-retention-horizon"),
 		).toBe(true)
 		expect(plan.rollbackBoundary).toMatch(/pre-cutover/)
 		expect(plan.checkpointDisposition).toMatch(/not claimed restorable/)
@@ -774,7 +791,7 @@ describe("durable migration recovery", () => {
 			phase: "promotion-started",
 			chain: [
 				{
-					id: migrationId.slice(0, migrationId.lastIndexOf("-recovery")),
+					id: Str.slice(0, migrationId.lastIndexOf("-recovery"))(migrationId),
 					moduleVersion: 1,
 					from: LEGACY_LOCAL_SCHEMA,
 					to: LOCAL_SCHEMA_V1,
@@ -823,7 +840,7 @@ describe("durable migration recovery", () => {
 			// final active marker write was interrupted.
 			await durableJson(migrationJournalPath(dataDir), journal)
 			const preview = await runLocalStoreMigration({ dataDir, dryRun: true })
-			expect("chain" in preview && preview.chain.map((step) => step.id)).toEqual([
+			expect("chain" in preview && Arr.map(preview.chain, (step) => step.id)).toEqual([
 				"local-0000-to-0001-raw-replay",
 			])
 			const recovered = await runLocalStoreMigration({ dataDir })
@@ -846,7 +863,7 @@ describe("durable migration recovery", () => {
 			...LOCAL_SCHEMA_V1,
 			version: 2,
 			fingerprint: "2222222222222222",
-			digest: "2".repeat(64),
+			digest: Str.repeat(64)("2"),
 		} as const
 		const makeFixtureModule = (
 			id: string,
@@ -865,7 +882,7 @@ describe("durable migration recovery", () => {
 				if (
 					typeof value !== "object" ||
 					value === null ||
-					Array.isArray(value) ||
+					Arr.isArray(value) ||
 					(value as Record<string, unknown>).module !== id ||
 					(value as Record<string, unknown>).version !== 1
 				)
@@ -874,7 +891,7 @@ describe("durable migration recovery", () => {
 			},
 			decodeProgress: (value) => {
 				if (value === undefined) return undefined
-				if (typeof value !== "object" || value === null || Array.isArray(value))
+				if (typeof value !== "object" || value === null || Arr.isArray(value))
 					throw new Error(`${id} progress is invalid`)
 				return value
 			},
@@ -983,7 +1000,7 @@ describe("durable migration recovery", () => {
 				])
 			}
 			expect(completed.currentStepIndex).toBe(2)
-			expect(completed.chain.every((step) => step.status === "completed")).toBe(true)
+			expect(Arr.every(completed.chain, (step) => step.status === "completed")).toBe(true)
 			const result = await promoteLocalStoreMigration(dataDir, completed)
 			expect(result.phase).toBe("promoted")
 			expect(readMarker(dataDir)).toMatchObject({
@@ -1068,7 +1085,7 @@ describe("durable migration recovery", () => {
 				...journal,
 				phase: "promotion-started" as const,
 				currentStepIndex: 1,
-				chain: journal.chain.map((step) => ({ ...step, status: "completed" as const })),
+				chain: Arr.map(journal.chain, (step) => ({ ...step, status: "completed" as const })),
 			}
 			await durableJson(migrationJournalPath(dataDir), promotionJournal)
 			await expect(abandonLocalStoreMigrationPreservingSource(dataDir)).rejects.toThrow(
@@ -1239,7 +1256,7 @@ describe("physical-schema comparison", () => {
 				},
 			],
 		})
-		expect(mismatches.map((mismatch) => mismatch.reason)).toEqual(
+		expect(Arr.map(mismatches, (mismatch) => mismatch.reason)).toEqual(
 			expect.arrayContaining([
 				"missing column OrgId",
 				"sorting key differs ((OrgId, ServiceName, Timestamp) vs (OrgId, Timestamp))",
@@ -1275,7 +1292,7 @@ describe("physical-schema comparison", () => {
 		}
 		const floored = withRawTelemetryRetentionFloor(bundled, ["logs"], 120)
 		// The floor only moves the raw-telemetry tables; a rollup keeps its own TTL.
-		expect(floored.objects.map((object) => object.ttl)).toEqual([
+		expect(Arr.map(floored.objects, (object) => object.ttl)).toEqual([
 			"toDate(TimestampTime) + INTERVAL 120 DAY",
 			"toDate(Hour) + INTERVAL 30 DAY",
 		])
@@ -1303,24 +1320,27 @@ describe("physical-schema comparison", () => {
 		).toEqual([])
 		// Anything other than the floored value still fails closed.
 		expect(
-			comparePhysicalSchema(floored, {
-				objects: [
-					{
-						name: "logs",
-						kind: "table",
-						columns: [],
-						engine: "MergeTree",
-						ttl: "toDate(TimestampTime) + toIntervalDay(30)",
-					},
-					{
-						name: "logs_aggregates_hourly",
-						kind: "table",
-						columns: [],
-						engine: "AggregatingMergeTree",
-						ttl: "toDate(Hour) + toIntervalDay(30)",
-					},
-				],
-			}).map((mismatch) => mismatch.reason),
+			Arr.map(
+				comparePhysicalSchema(floored, {
+					objects: [
+						{
+							name: "logs",
+							kind: "table",
+							columns: [],
+							engine: "MergeTree",
+							ttl: "toDate(TimestampTime) + toIntervalDay(30)",
+						},
+						{
+							name: "logs_aggregates_hourly",
+							kind: "table",
+							columns: [],
+							engine: "AggregatingMergeTree",
+							ttl: "toDate(Hour) + toIntervalDay(30)",
+						},
+					],
+				}),
+				(mismatch) => mismatch.reason,
+			),
 		).toEqual([
 			"TTL differs (toDate(TimestampTime) + toIntervalDay(30) vs toDate(TimestampTime) + INTERVAL 120 DAY)",
 		])
@@ -1413,7 +1433,7 @@ describe("v7 -> v8 journal state decoding", () => {
 		"metrics_histogram",
 		"metrics_exponential_histogram",
 	]
-	const rawRows = Object.fromEntries(RAW_TABLES.map((table) => [table, "12"]))
+	const rawRows = Rec.fromEntries(Arr.map(RAW_TABLES, (table) => [table, "12"]))
 	const state = { module: "local-0007-to-0008-apple-crash-frames", version: 1, rawRows }
 
 	it("rejects row counts that are not unsigned decimal strings", () => {
@@ -1474,7 +1494,7 @@ describe("legacy raw replay progress decoding", () => {
 		lastTieBreak: "4",
 		lastKeyCount: 1,
 		lastKeyExhausted: false,
-		signature: "a".repeat(64),
+		signature: Str.repeat(64)("a"),
 	}
 	const progress = { sourceInventory: { logs: inventory }, copied: { logs: copied } }
 	const decode = (value: unknown) => legacyToCurrentModule.decodeProgress(value)
@@ -1530,7 +1550,7 @@ describe("legacy raw replay progress decoding", () => {
 	it("rejects a pending batch that is empty or wrongly signed", () => {
 		// An empty batch would commit nothing while advancing the cursor past it.
 		expect(() => decode({ ...progress, pendingBatch: { ...pendingBatch, rowCount: 0 } })).toThrow()
-		for (const bad of ["a".repeat(63), "z".repeat(64), ""]) {
+		for (const bad of [Str.repeat(63)("a"), Str.repeat(64)("z"), ""]) {
 			expect(() => decode({ ...progress, pendingBatch: { ...pendingBatch, signature: bad } })).toThrow()
 		}
 	})
@@ -1563,7 +1583,7 @@ describe("v10 -> v11 product events module", () => {
 		expect(v10ToV11ProductEventsModule.from).toEqual(LOCAL_SCHEMA_V10)
 		expect(v10ToV11ProductEventsModule.to).toEqual(LOCAL_SCHEMA_V11)
 		expect(v10ToV11ProductEventsModule.from).not.toBe(CURRENT_LOCAL_SCHEMA)
-		expect(v10ToV11ProductEventsModule.operations.map((operation) => operation.id)).toEqual([
+		expect(Arr.map(v10ToV11ProductEventsModule.operations, (operation) => operation.id)).toEqual([
 			"clone-v10-store",
 			"add-session-event-identity",
 			"install-product-events",
@@ -1571,7 +1591,7 @@ describe("v10 -> v11 product events module", () => {
 		])
 		// The chain must reach v11 through this module and only this module.
 		const chain = resolveMigrationChain(LOCAL_SCHEMA_V10, CURRENT_LOCAL_SCHEMA)
-		expect(chain.map((migration) => migration.id)).toEqual([
+		expect(Arr.map(chain, (migration) => migration.id)).toEqual([
 			"local-0010-to-0011-product-events",
 			"local-0011-to-0012-service-map-edge-quantiles",
 			"local-0012-to-0013-service-operations-discriminators",
@@ -1611,7 +1631,7 @@ describe("v10 -> v11 product events module", () => {
 		// The dropped table is declared, and the backfilled ones say what they
 		// are rebuilt from.
 		const dispositions = new Map(
-			v10ToV11ProductEventsModule.dispositions.map((entry) => [entry.name, entry.disposition]),
+			Arr.map(v10ToV11ProductEventsModule.dispositions, (entry) => [entry.name, entry.disposition]),
 		)
 		expect(dispositions.get("web_events")).toBe("invalidate")
 		expect(dispositions.get("product_events")).toBe("rebuild-complete")
@@ -1768,7 +1788,7 @@ describe("legacy raw replay 64-bit exactness", () => {
 		// output; without it chDB emits Duration as a JSON number and the decode
 		// below would round it before reinsertion.
 		expect(sourceQueries[0]).toContain("SETTINGS output_format_json_quote_64bit_integers = 1")
-		const insert = targetStatements.find((sql) => sql.startsWith("INSERT INTO"))
+		const insert = targetStatements.find((sql) => Str.startsWith("INSERT INTO")(sql))
 		expect(insert).toBeDefined()
 		expect(insert).toContain(`"Duration":"${bigDuration}"`)
 	})

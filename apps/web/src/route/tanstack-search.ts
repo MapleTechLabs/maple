@@ -1,4 +1,4 @@
-import { Option, Predicate, Record, Schema, SchemaGetter } from "effect"
+import { Option, Predicate, Record, Schema, SchemaGetter, Array as Arr } from "effect"
 
 const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 const decodeFullJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))
@@ -32,7 +32,7 @@ const parseSearch = (record: Readonly<Record<string, string>>) => ({ search: Rec
 
 const stringifySearch = (decoded: unknown): Record<string, string> =>
 	Predicate.isObject(decoded) && "search" in decoded && Predicate.isObject(decoded.search)
-		? Record.getSomes(Record.map(Record.fromEntries(Object.entries(decoded.search)), stringifyValue))
+		? Record.getSomes(Record.map(Record.fromEntries(Record.toEntries(decoded.search)), stringifyValue))
 		: {}
 
 /**
@@ -41,7 +41,7 @@ const stringifySearch = (decoded: unknown): Record<string, string> =>
  */
 export const orderedSearch = (entries: ReadonlyArray<readonly [string, string | undefined]>): string => {
 	const query = new URLSearchParams(
-		entries.flatMap(([key, value]) =>
+		Arr.flatMap(entries, ([key, value]) =>
 			Option.toArray(Option.map(stringifyValue(value), (raw) => [key, raw])),
 		),
 	).toString()

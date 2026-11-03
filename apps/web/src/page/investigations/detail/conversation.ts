@@ -15,6 +15,7 @@ import { LoadKnownServices } from "./command"
 import { investigationOf, tabOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { String as Str } from "effect"
 
 // The Chat and Transcript tabs: the investigation's conversation, whose subject the server
 // seeded into the thread.
@@ -30,7 +31,7 @@ export const contextOf = (investigation: V2Investigation): InvestigationContext 
 			: subject.type === "fix_verification"
 				? "error"
 				: subject.incident_kind
-	const signalType = snapshot.facts.find((fact) => fact.label.toLowerCase() === "signal")?.value
+	const signalType = snapshot.facts.find((fact) => Str.toLowerCase(fact.label) === "signal")?.value
 	return {
 		kind,
 		title: snapshot.title,

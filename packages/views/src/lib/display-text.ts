@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 // Log bodies and attribute values can be megabytes, and views rerun on every message. These keep
 // what a view parses and builds bounded, whatever the size of the value it shows.
@@ -48,26 +48,26 @@ export const capForDisplay = (
 ): { readonly shown: string; readonly omitted: number } =>
 	text.length <= limit
 		? { shown: text, omitted: 0 }
-		: { shown: text.slice(0, limit), omitted: text.length - limit }
+		: { shown: Str.slice(0, limit)(text), omitted: text.length - limit }
 
 /** At most `limit` characters of `text`, opening just before the first `query` match so it stays visible. */
 export const textWindow = (text: string, query: string | undefined, limit: number): string => {
 	if (text.length <= limit) return text
 	const needle = query?.trim().toLowerCase() ?? ""
-	const hit = needle === "" ? -1 : text.toLowerCase().indexOf(needle)
+	const hit = needle === "" ? -1 : Str.toLowerCase(text).indexOf(needle)
 	const at = hit === -1 ? 0 : Math.max(0, hit - MATCH_LEAD_CHARS)
-	return `${at > 0 ? "…" : ""}${text.slice(at, at + limit)}${at + limit < text.length ? "…" : ""}`
+	return `${at > 0 ? "…" : ""}${Str.slice(at, at + limit)(text)}${at + limit < text.length ? "…" : ""}`
 }
 
 /** The first `count` lines of `text`. */
-export const headLines = (text: string, count: number): string => text.split("\n", count).join("\n")
+export const headLines = (text: string, count: number): string => Arr.join(text.split("\n", count), "\n")
 
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 const encodePrettyJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 /** An object or array body, else `None`. */
 export const tryParseJson = (value: string): Option.Option<unknown> => {
-	const trimmed = value.trimStart()
+	const trimmed = Str.trimStart(value)
 	return trimmed[0] !== "{" && trimmed[0] !== "[" ? Option.none() : decodeJson(value)
 }
 

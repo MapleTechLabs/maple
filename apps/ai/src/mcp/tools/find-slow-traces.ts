@@ -5,7 +5,7 @@ import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
 import { formatDurationFromMs, toSecondTimestamp, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { FindSlowTracesOutput } from "@maple/domain/mcp-outputs"
 import { findSlowTraces } from "@maple/query-engine/observability"
 
@@ -42,7 +42,7 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 			return {
 				timeRange: { start: st, end: et },
 				...(result.stats === null ? undefined : { stats: result.stats }),
-				traces: result.traces.map((t) => ({
+				traces: Arr.map(result.traces, (t) => ({
 					traceId: t.traceId,
 					rootSpanName: t.spanName,
 					durationMs: t.durationMs,
@@ -89,17 +89,17 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 							]),
 					doc.table(
 						["Start", "Trace ID", "Root Span", "Duration", "Service", "Error"],
-						output.traces.map((t) => [
+						Arr.map(output.traces, (t) => [
 							t.startTime === undefined ? "" : toSecondTimestamp(t.startTime),
 							t.traceId,
 							truncate(t.rootSpanName, 30),
 							formatDurationFromMs(t.durationMs),
-							t.services.join(", "),
+							Arr.join(t.services, ", "),
 							t.hasError ? "Yes" : "",
 						]),
 					),
 				],
-				next: output.traces.slice(0, 3).map((t) =>
+				next: Arr.map(output.traces.slice(0, 3), (t) =>
 					doc.next(
 						"inspect_trace",
 						{

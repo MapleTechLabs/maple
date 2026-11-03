@@ -21,6 +21,7 @@ import {
 	rateCaption,
 	usageMeter,
 } from "./spend"
+import { Array as Arr, Record as Rec } from "effect"
 
 // Mock builders construct only the consumed subset of each domain schema.
 const CYCLE_START = Date.UTC(2026, 6, 1)
@@ -61,7 +62,7 @@ const buildCustomer = (
 ): BillingCustomer =>
 	new BillingCustomer({
 		id: "cus_1",
-		subscriptions: (
+		subscriptions: Arr.map(
 			overrides.subscriptions ?? [
 				{
 					planId: "startup",
@@ -70,24 +71,28 @@ const buildCustomer = (
 					currentPeriodStart: CYCLE_START,
 					currentPeriodEnd: CYCLE_END,
 				},
-			]
-		).map((subscription) => new BillingSubscription(subscription)),
-		balances: Object.fromEntries(
-			Object.entries(
-				overrides.balances ?? {
-					logs: { granted: 100 },
-					traces: { granted: 100 },
-					metrics: { granted: 100 },
-					browser_sessions: { granted: 5_000 },
-					product_events: { granted: 1_000_000 },
-				},
-			).map(([featureId, balance]) => [featureId, new BillingBalance(balance)]),
+			],
+			(subscription) => new BillingSubscription(subscription),
+		),
+		balances: Rec.fromEntries(
+			Arr.map(
+				Rec.toEntries(
+					overrides.balances ?? {
+						logs: { granted: 100 },
+						traces: { granted: 100 },
+						metrics: { granted: 100 },
+						browser_sessions: { granted: 5_000 },
+						product_events: { granted: 1_000_000 },
+					},
+				),
+				([featureId, balance]) => [featureId, new BillingBalance(balance)],
+			),
 		),
 	})
 
 const usageOf = (sums: Record<string, number>): BillingUsage["total"] =>
-	Object.fromEntries(
-		Object.entries(sums).map(([featureId, sum]) => [featureId, new BillingUsageFeature({ sum })]),
+	Rec.fromEntries(
+		Arr.map(Rec.toEntries(sums), ([featureId, sum]) => [featureId, new BillingUsageFeature({ sum })]),
 	)
 
 const usage = usageOf({
@@ -176,7 +181,7 @@ describe("buildSpendModel", () => {
 			nowMs: NOW,
 		})
 		if (result === null) throw new Error("expected a model")
-		const byId = Object.fromEntries(result.features.map((feature) => [feature.featureId, feature]))
+		const byId = Rec.fromEntries(Arr.map(result.features, (feature) => [feature.featureId, feature]))
 		expect(byId.metrics?.used).toBe(379.75)
 		expect(byId.metrics?.overageUnits).toBeCloseTo(279.75)
 		expect(byId.browser_sessions?.used).toBe(101_928)
@@ -267,11 +272,13 @@ describe("buildSpendModel", () => {
 				product_events: { unlimited: true },
 			},
 		})
-		const plan = startupPlanWith(startupPlan.items.filter((planItem) => planItem.featureId !== "metrics"))
+		const plan = startupPlanWith(
+			Arr.filter(startupPlan.items, (planItem) => planItem.featureId !== "metrics"),
+		)
 		const result = buildSpendModel({ customer, plans: [plan], usage, nowMs: NOW })
 		if (result === null) throw new Error("expected a model")
-		const captions = Object.fromEntries(
-			result.features.map((feature) => [feature.featureId, rateCaption(feature)]),
+		const captions = Rec.fromEntries(
+			Arr.map(result.features, (feature) => [feature.featureId, rateCaption(feature)]),
 		)
 		expect(captions).toEqual({
 			logs: "No overage",
@@ -285,8 +292,8 @@ describe("buildSpendModel", () => {
 	it("labels rates the way the price list quotes them", () => {
 		const result = model()
 		if (result === null) throw new Error("expected a model")
-		const labels = Object.fromEntries(
-			result.features.map((feature) => [feature.featureId, formatRateLabel(feature)]),
+		const labels = Rec.fromEntries(
+			Arr.map(result.features, (feature) => [feature.featureId, formatRateLabel(feature)]),
 		)
 		expect(labels).toEqual({
 			logs: "$0.30/GB",
@@ -344,12 +351,12 @@ describe("costBreakdown", () => {
 		if (result === null) throw new Error("expected a model")
 		const lines = costBreakdown(result)
 
-		expect(lines.map((line) => [line.label, line.cents])).toEqual([
+		expect(Arr.map(lines, (line) => [line.label, line.cents])).toEqual([
 			["Startup plan", 3_900],
 			["Bring your own cloud add-on", 9_900],
 			["Usage overage", result.overageCents],
 		])
-		expect(lines.reduce((sum, line) => sum + (line.cents ?? 0), 0)).toBe(result.spendCents)
+		expect(Arr.reduce(lines, 0, (sum, line) => sum + (line.cents ?? 0))).toBe(result.spendCents)
 		expect(lines[2]?.detail).toBe(
 			"Logs, traces, metrics and browser sessions past what's included, per feature in Usage",
 		)
@@ -385,7 +392,7 @@ describe("costBreakdown", () => {
 
 		expect(result.partial).toBe(true)
 		expect(result.baseCents).toBe(3_900)
-		expect(costBreakdown(result).map((line) => [line.label, line.cents])).toEqual([
+		expect(Arr.map(costBreakdown(result), (line) => [line.label, line.cents])).toEqual([
 			["Startup plan", 3_900],
 			["retired_addon add-on", null],
 			["Usage overage", result.overageCents],
@@ -435,14 +442,15 @@ describe("costBreakdown", () => {
 		})
 		if (result === null) throw new Error("expected a model")
 
-		expect(costBreakdown(result).map((line) => line.cents)).toEqual([null, result.overageCents])
+		expect(Arr.map(costBreakdown(result), (line) => line.cents)).toEqual([null, result.overageCents])
 	})
 })
 
 describe("buildCumulativeSeries", () => {
 	const daily = (days: ReadonlyArray<{ date: string; logsGB: number }>): DailySpendResponse =>
 		new DailySpendResponse({
-			days: days.map(
+			days: Arr.map(
+				days,
 				(day) =>
 					new DailyVolume({
 						date: day.date,
@@ -483,9 +491,9 @@ describe("buildCumulativeSeries", () => {
 			model: spendModel,
 		})
 
-		expect(series.map((point) => point.logs)).toEqual([0, 6, 24])
+		expect(Arr.map(series, (point) => point.logs)).toEqual([0, 6, 24])
 		// The base fee is owed on day 1, so it's a flat band, never a slope.
-		expect(series.map((point) => point.base)).toEqual([39, 39, 39])
+		expect(Arr.map(series, (point) => point.base)).toEqual([39, 39, 39])
 		expect(series[2]?.total).toBe(63)
 	})
 
@@ -501,7 +509,7 @@ describe("buildCumulativeSeries", () => {
 			model: spendModel,
 		})
 
-		expect(series.map((point) => point.logs)).toEqual([15, 15, 30])
+		expect(Arr.map(series, (point) => point.logs)).toEqual([15, 15, 30])
 	})
 
 	it("stops the actual bands at today and carries the projection to the cycle end", () => {
@@ -517,15 +525,15 @@ describe("buildCumulativeSeries", () => {
 			model: spendModel,
 		})
 
-		expect(series.map((point) => point.future)).toEqual([false, false, true, true])
+		expect(Arr.map(series, (point) => point.future)).toEqual([false, false, true, true])
 		// Future days carry no bands: a flat line to the end of the cycle would
 		// read as "spend stops here" rather than "these days haven't happened".
-		expect(series.map((point) => point.base)).toEqual([39, 39, null, null])
-		expect(series.map((point) => point.total)).toEqual([39, 39, null, null])
+		expect(Arr.map(series, (point) => point.base)).toEqual([39, 39, null, null])
+		expect(Arr.map(series, (point) => point.total)).toEqual([39, 39, null, null])
 
 		// Exactly two projection anchors — today's actual total and the projected
 		// total on the last day — so the dashed segment is a straight line.
-		expect(series.map((point) => point.projected)).toEqual([
+		expect(Arr.map(series, (point) => point.projected)).toEqual([
 			null,
 			39,
 			null,
@@ -544,7 +552,7 @@ describe("buildCumulativeSeries", () => {
 			model: spendModel,
 		})
 
-		expect(series.map((point) => point.projected)).toEqual([null, 39])
+		expect(Arr.map(series, (point) => point.projected)).toEqual([null, 39])
 	})
 
 	it("scales the warehouse shape onto the metered total, so the chart matches the KPI", () => {
@@ -585,7 +593,9 @@ describe("usageMeter", () => {
 			nowMs: NOW,
 		})
 		if (result === null) throw new Error("expected a model")
-		return Object.fromEntries(result.features.map((feature) => [feature.featureId, usageMeter(feature)]))
+		return Rec.fromEntries(
+			Arr.map(result.features, (feature) => [feature.featureId, usageMeter(feature)]),
+		)
 	}
 
 	it("leaves an unlimited feature's bar empty instead of full", () => {

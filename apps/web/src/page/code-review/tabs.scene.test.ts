@@ -1,4 +1,4 @@
-import { Result } from "effect"
+import { Result, Array as Arr } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
 import { all, expect as expectView, expectAll, given, role, scene } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -25,18 +25,22 @@ const analyticsLoaded = (): Model => {
 	).model
 	if (windowed.tab._tag !== "Analytics") return windowed
 	const { analytics, frame } = windowed.tab.model
-	return [
-		AnalyticsMessage.Message.CompletedFetchAnalytics({
-			key: analytics.key ?? "",
-			result: Result.succeed(analyticsOf(3, ["ada-l"])),
-		}),
-		AnalyticsMessage.Message.GotFrameMessage({
-			message: FrameMessage.CompletedFetchGithubStatus({
-				key: frame.githubStatus.key ?? "",
-				result: Result.succeed(githubStatusOf([{ name: "shop", reviewed: true }])),
+	return Arr.reduce(
+		[
+			AnalyticsMessage.Message.CompletedFetchAnalytics({
+				key: analytics.key ?? "",
+				result: Result.succeed(analyticsOf(3, ["ada-l"])),
 			}),
-		}),
-	].reduce((model, message) => pageUpdate(model, Message.GotAnalyticsMessage({ message })).model, windowed)
+			AnalyticsMessage.Message.GotFrameMessage({
+				message: FrameMessage.CompletedFetchGithubStatus({
+					key: frame.githubStatus.key ?? "",
+					result: Result.succeed(githubStatusOf([{ name: "shop", reviewed: true }])),
+				}),
+			}),
+		],
+		windowed,
+		(model, message) => pageUpdate(model, Message.GotAnalyticsMessage({ message })).model,
+	)
 }
 
 describe("code review tabs", () => {
@@ -83,7 +87,8 @@ describe("code review tabs", () => {
 describe("code review tab strip", () => {
 	const config = {
 		update: (active: CodeReviewTab, _message: never) => ({ model: active }),
-		view: (active: CodeReviewTab, h: HtmlBuilder<never>) => codeReviewLayout({ h, active, search: {} }, []),
+		view: (active: CodeReviewTab, h: HtmlBuilder<never>) =>
+			codeReviewLayout({ h, active, search: {} }, []),
 	}
 
 	test("exactly one tab link is the current page", () => {

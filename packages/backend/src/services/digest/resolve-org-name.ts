@@ -1,6 +1,6 @@
 import { createClerkClient } from "@clerk/backend"
 import type { OrgId } from "@maple/domain/http"
-import { Effect, Option, Redacted } from "effect"
+import { Effect, Option, Redacted, String as Str } from "effect"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 
 /**
@@ -16,7 +16,7 @@ export const resolveOrgName = Effect.fn("Digest.resolveOrgName")(function* (
 	orgId: OrgId,
 ) {
 	yield* Effect.annotateCurrentSpan("orgId", orgId)
-	if (env.MAPLE_AUTH_MODE.toLowerCase() !== "clerk") return String(orgId)
+	if (Str.toLowerCase(env.MAPLE_AUTH_MODE) !== "clerk") return String(orgId)
 	if (Option.isNone(env.CLERK_SECRET_KEY)) return String(orgId)
 
 	const clerk = createClerkClient({ secretKey: Redacted.value(env.CLERK_SECRET_KEY.value) })

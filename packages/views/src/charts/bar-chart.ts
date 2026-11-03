@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html } from "foldkit/html"
 import type { Message, Model } from "./chart"
@@ -52,12 +52,14 @@ type Row = Readonly<Record<string, string | number | boolean>>
 export const bucketBarSeries = (data: ReadonlyArray<Row>): ReadonlyArray<Row> => {
 	const seriesKeys = [
 		...new Set(
-			data.flatMap((row) => Object.keys(row).filter((key) => key !== "bucket" && key !== "partial")),
+			Arr.flatMap(data, (row) =>
+				Arr.filter(Rec.keys(row), (key) => key !== "bucket" && key !== "partial"),
+			),
 		),
 	]
 	if (seriesKeys.length <= MAX_BAR_SERIES) return data
 	const { rows } = bucketTimeseries(data, seriesKeys, MAX_BAR_SERIES)
-	return rows.map((row, index) => (data[index]?.partial === true ? { ...row, partial: true } : row))
+	return Arr.map(rows, (row, index) => (data[index]?.partial === true ? { ...row, partial: true } : row))
 }
 
 const barSpec = specCache(
@@ -70,8 +72,8 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 	const { definitions } = seriesDefinitionsOf(data)
 	const tokens = seriesColorTokens(definitions)
 	const otherColor = resolveColor(inputs.theme, "--muted-foreground")
-	const colors = Object.fromEntries(
-		definitions.map((definition) => [
+	const colors = Rec.fromEntries(
+		Arr.map(definitions, (definition) => [
 			definition.chartKey,
 			definition.rawKey === OTHER_LABEL
 				? otherColor
@@ -82,7 +84,7 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 					),
 		]),
 	)
-	const series = definitions.map((definition) => ({
+	const series = Arr.map(definitions, (definition) => ({
 		key: definition.chartKey,
 		label: definition.rawKey,
 		color: colors[definition.chartKey] ?? SERIES_FALLBACK_COLOR,

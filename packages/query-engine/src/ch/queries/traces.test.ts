@@ -1,4 +1,4 @@
-import { DateTime } from "effect"
+import { DateTime, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
@@ -355,7 +355,7 @@ function pageSubquery(sql: string): string {
 	let depth = 1
 	for (let i = start + marker.length; i < sql.length; i++) {
 		if (sql[i] === "(") depth++
-		else if (sql[i] === ")" && --depth === 0) return sql.slice(start + marker.length, i)
+		else if (sql[i] === ")" && --depth === 0) return Str.slice(start + marker.length, i)(sql)
 	}
 	throw new Error("unbalanced page subquery")
 }
@@ -400,24 +400,24 @@ describe("traceListQuery", () => {
 		type Cursor = { timestamp: DateTime.Utc; traceId: string }
 		const second = (ts: DateTime.Utc) => Math.floor(DateTime.toEpochMillis(ts) / 1000) * 1000
 		const desc = (key: (r: Root) => number) => (a: Root, b: Root) =>
-			key(b) - key(a) || b.traceId.localeCompare(a.traceId)
+			key(b) - key(a) || Str.localeCompare(a.traceId)(b.traceId)
 
 		/** Evaluates one page the way ClickHouse would, reading stage 2's order off the SQL. */
 		const page = (cursor: Cursor | undefined): Root[] => {
 			const { sql } = compileUnsafe(traceListQuery({ limit: 2, cursor }), baseParams)
 			expect(pageSubquery(sql)).toContain("FROM trace_list_mv")
-			const outerOrder = sql.slice(sql.lastIndexOf("ORDER BY "))
+			const outerOrder = Str.slice(sql.lastIndexOf("ORDER BY "))(sql)
 			const cut = cursor && { ts: second(cursor.timestamp), traceId: cursor.traceId }
-			const stage1 = roots
-				.filter(
-					(r) =>
-						!cut ||
-						second(r.startTime) < cut.ts ||
-						(second(r.startTime) === cut.ts && r.traceId < cut.traceId),
-				)
+			const stage1 = Arr.filter(
+				roots,
+				(r) =>
+					!cut ||
+					second(r.startTime) < cut.ts ||
+					(second(r.startTime) === cut.ts && r.traceId < cut.traceId),
+			)
 				.sort(desc((r) => second(r.startTime)))
 				.slice(0, 2)
-			const stage2Key = outerOrder.startsWith("ORDER BY startSecond")
+			const stage2Key = Str.startsWith("ORDER BY startSecond")(outerOrder)
 				? (r: Root) => second(r.startTime)
 				: (r: Root) => DateTime.toEpochMillis(r.startTime)
 			return stage1.sort(desc(stage2Key))
@@ -428,7 +428,7 @@ describe("traceListQuery", () => {
 			let cursor: Cursor | undefined
 			for (let i = 0; i < 5; i++) {
 				const rows = page(cursor)
-				seen.push(...rows.map((r) => r.traceId))
+				seen.push(...Arr.map(rows, (r) => r.traceId))
 				const last = rows.at(-1)
 				if (!last) break
 				cursor = { timestamp: last.startTime, traceId: last.traceId }
@@ -556,7 +556,7 @@ describe("traceListQuery", () => {
 		expect(inner).toContain("OFFSET 20")
 		// The outer aggregate re-caps at `limit` but must never re-apply the
 		// offset — that would skip the first 20 traces of the page.
-		expect(sql.slice(sql.indexOf("GROUP BY traceId"))).not.toContain("OFFSET")
+		expect(Str.slice(sql.indexOf("GROUP BY traceId"))(sql)).not.toContain("OFFSET")
 	})
 
 	it("filters traces in the paging stage, and never re-filters the aggregate", () => {
@@ -577,7 +577,7 @@ describe("traceListQuery", () => {
 		// count, and an exact time bound would clip children that outlive the
 		// window — but a completely unbounded aggregate defeats partition pruning
 		// and times out on prod retention, hence the ±1h pad.
-		const outer = sql.slice(sql.indexOf("FROM traces")).replace(inner, "")
+		const outer = Str.replace(inner, "")(Str.slice(sql.indexOf("FROM traces"))(sql))
 		expect(outer).toContain("OrgId = 'org_1'")
 		expect(outer).not.toContain("ServiceName = 'api'")
 		expect(outer).toContain("Timestamp >= subtractHours(toDateTime('2024-01-01 00:00:00'), 1)")

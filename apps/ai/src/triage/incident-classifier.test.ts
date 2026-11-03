@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { IncidentTriagePriorDiagnosis, IncidentTriageRequest } from "@maple/domain/http"
 import { InvestigationId } from "@maple/domain/primitives"
-import { Effect, Redacted, Schema } from "effect"
+import { Effect, Redacted, Schema, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { layerDecisionModel } from "../platform/Llm"
 import { classifyIncident } from "./incident-classifier"
@@ -123,7 +123,7 @@ describe("classifyIncident", () => {
 							? await input.text()
 							: ""
 				bodies.push(body)
-				const isPriorQuestion = body.includes("prior_2")
+				const isPriorQuestion = Str.includes("prior_2")(body)
 				return new Response(
 					JSON.stringify(
 						isPriorQuestion
@@ -190,7 +190,7 @@ describe("classifyIncident", () => {
 							: ""
 				return new Response(
 					JSON.stringify(
-						body.includes("prior_1")
+						Str.includes("prior_1")(body)
 							? {
 									model: "@cf/cloudflare/clef",
 									answers: {

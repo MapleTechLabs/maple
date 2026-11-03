@@ -2,7 +2,7 @@
  * Pieces the error-issue tools share: the `issue_id` parameter and how the issue services'
  * typed failures reach a model.
  */
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import {
 	ErrorIssueId,
 	MACHINE_OWNED_WORKFLOW_STATES,
@@ -20,11 +20,12 @@ import * as P from "../lib/params"
  * The workflow states a caller may ask for. `regressed` and `verifying` are observations
  * Maple's ticks make, not states an agent asserts, so no issue tool publishes them.
  */
-export const SELECTABLE_STATES = WORKFLOW_STATE_ORDER.filter(
+export const SELECTABLE_STATES = Arr.filter(
+	WORKFLOW_STATE_ORDER,
 	(state) => !MACHINE_OWNED_WORKFLOW_STATES.has(state),
 )
 
-const STATE_LIST = SELECTABLE_STATES.join(", ")
+const STATE_LIST = Arr.join(SELECTABLE_STATES, ", ")
 
 /** The `to_state` parameter; the description lists the enum because agents guess names. */
 export const toStateParam = (prefix = "Target state") =>
@@ -83,7 +84,9 @@ export const validationFailed = (parameter?: string) => (error: ErrorValidationE
 	Effect.fail(
 		new McpInvalidInputError({
 			message:
-				error.details.length === 0 ? error.message : `${error.message}: ${error.details.join(", ")}`,
+				error.details.length === 0
+					? error.message
+					: `${error.message}: ${Arr.join(error.details, ", ")}`,
 			...(parameter === undefined ? undefined : { parameter }),
 		}),
 	)

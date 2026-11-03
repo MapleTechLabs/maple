@@ -7,7 +7,7 @@ import {
 } from "../../../components/infra/pod-restarts"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { laneLink } from "@maple/views/ui/lane-link"
@@ -112,7 +112,10 @@ export const podTableLoading = <M>(h: HtmlBuilder<M>): Html =>
 /** `RestartMarker`: beside the name, only when the pod restarted in the window. */
 const restartMarker = <M>(h: HtmlBuilder<M>, summary: PodRestartSummary | undefined): Html => {
 	if (summary === undefined || summary.restarts <= 0) return null
-	const label = [formatRestarts(summary.restarts), summary.lastTerminatedReason].filter(Boolean).join(" · ")
+	const label = Arr.join(
+		Arr.filter([formatRestarts(summary.restarts), summary.lastTerminatedReason], Boolean),
+		" · ",
+	)
 	return h.span(
 		[
 			h.Class(
@@ -252,5 +255,5 @@ export const podTable = <M>(
 		columns(h, { key: inputs.sortBy, dir: inputs.sortDir }, inputs.onSort),
 		pods.length === 0
 			? [dataTableEmpty(h, ["No pods match these filters"])]
-			: pods.map((pod) => podRow(h, pod, inputs)),
+			: Arr.map(pods, (pod) => podRow(h, pod, inputs)),
 	)

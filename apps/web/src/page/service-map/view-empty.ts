@@ -1,25 +1,36 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import {
+	empty,
+	emptyContent,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
 import { presenceOf } from "@maple/views/data/signal-presence"
 import { docsLink, signalEmptyState } from "../kit/signal-empty-state"
 import type { Message } from "./message"
 import type { Model } from "./model"
+import { Array as Arr, Record as Rec } from "effect"
 
 // The service map's empty state: the dotted
 // grid and a faint ghost graph over the presence-aware empty copy.
 
 /** The keyframes' CSS text, whitespace included (it is part of the page's text). */
-const FLOW_CSS = [
-	"",
-	"\t\t\t\t\t\t@keyframes sm-empty-flow { to { stroke-dashoffset: -16; } }",
-	"\t\t\t\t\t\t.sm-empty-flow { animation: sm-empty-flow 1.8s linear infinite; }",
-	"\t\t\t\t\t\t@media (prefers-reduced-motion: reduce) { .sm-empty-flow { animation: none; } }",
-	"\t\t\t\t\t",
-].join("\n")
+const FLOW_CSS = Arr.join(
+	[
+		"",
+		"\t\t\t\t\t\t@keyframes sm-empty-flow { to { stroke-dashoffset: -16; } }",
+		"\t\t\t\t\t\t.sm-empty-flow { animation: sm-empty-flow 1.8s linear infinite; }",
+		"\t\t\t\t\t\t@media (prefers-reduced-motion: reduce) { .sm-empty-flow { animation: none; } }",
+		"\t\t\t\t\t",
+	],
+	"\n",
+)
 
 const attrs = <M>(h: HtmlBuilder<M>, values: Readonly<Record<string, string>>) =>
-	Object.entries(values).map(([name, value]) => h.Attribute(name, value))
+	Arr.map(Rec.toEntries(values), ([name, value]) => h.Attribute(name, value))
 
 const ghostNode = <M>(h: HtmlBuilder<M>, x: number, y: number, color: string): Html =>
 	h.g(

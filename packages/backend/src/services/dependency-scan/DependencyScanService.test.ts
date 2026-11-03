@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { DependencyFindingId } from "@maple/domain/dependency-scan"
 import { GitCommitSha, VcsRepositoryId, type VcsSyncJob } from "@maple/domain/http"
 import { OrgId, UserId } from "@maple/domain/primitives"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
@@ -25,7 +25,7 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 
 const org = Schema.decodeSync(OrgId)("org_deps")
 const admin = Schema.decodeSync(UserId)("user_admin")
-const sha = (digit: string) => Schema.decodeSync(GitCommitSha)(digit.repeat(40))
+const sha = (digit: string) => Schema.decodeSync(GitCommitSha)(Str.repeat(40)(digit))
 
 const tenant = systemTenant(org)
 
@@ -132,7 +132,7 @@ describe("DependencyScanService", () => {
 			const api = yield* seed
 			const before = yield* service.listRepositories(tenant)
 			assert.deepStrictEqual(
-				before.repositories.map((repository) => [repository.fullName, repository.latestScan]),
+				Arr.map(before.repositories, (repository) => [repository.fullName, repository.latestScan]),
 				[
 					["octo/api", null],
 					["octo/web", null],
@@ -199,7 +199,11 @@ describe("DependencyScanService", () => {
 			yield* recordScan(api.id, "a", true)
 			const { findings } = yield* service.listFindings(tenant, {})
 			assert.deepStrictEqual(
-				findings.map((finding) => [finding.repositoryFullName, finding.packageName, finding.status]),
+				Arr.map(findings, (finding) => [
+					finding.repositoryFullName,
+					finding.packageName,
+					finding.status,
+				]),
 				[["octo/api", "lodash", "open"]],
 			)
 			const [finding] = findings
@@ -214,7 +218,7 @@ describe("DependencyScanService", () => {
 			)
 			assert.deepStrictEqual((yield* service.listFindings(tenant, { status: "open" })).findings, [])
 
-			const missing = Schema.decodeSync(DependencyFindingId)("0".repeat(32))
+			const missing = Schema.decodeSync(DependencyFindingId)(Str.repeat(32)("0"))
 			const error = yield* Effect.flip(service.updateFinding(org, admin, missing, { status: "open" }))
 			assert.strictEqual(error._tag, "@maple/http/dependency-scan/DependencyFindingNotFoundError")
 		}).pipe(Effect.provide(serviceFor(sent)))
@@ -222,7 +226,7 @@ describe("DependencyScanService", () => {
 })
 
 const commitOf = (digit: string) => ({
-	sha: digit.repeat(40),
+	sha: Str.repeat(40)(digit),
 	message: `commit ${digit}`,
 	authorName: null,
 	authorEmail: null,
@@ -230,7 +234,7 @@ const commitOf = (digit: string) => ({
 	authorAvatarUrl: null,
 	authoredAt: null,
 	committedAt: 1,
-	htmlUrl: `https://github.com/octo/api/commit/${digit.repeat(40)}`,
+	htmlUrl: `https://github.com/octo/api/commit/${Str.repeat(40)(digit)}`,
 })
 
 const running = (
@@ -241,7 +245,7 @@ const running = (
 ): RunningCommitRow => ({
 	serviceName,
 	environment,
-	commitSha: commit.length === 1 ? commit.repeat(40) : commit,
+	commitSha: commit.length === 1 ? Str.repeat(40)(commit) : commit,
 	spanCount,
 })
 
@@ -280,7 +284,7 @@ describe("DependencyScanService production", () => {
 					findings[0]?.production?.map((s) => [
 						s.serviceName,
 						s.environment,
-						s.commitSha.slice(0, 1),
+						Str.slice(0, 1)(s.commitSha),
 						s.spanCount,
 					]),
 					[
@@ -293,14 +297,14 @@ describe("DependencyScanService production", () => {
 
 				const { repositories } = yield* service.listRepositories(tenant)
 				assert.deepStrictEqual(
-					sent.map((job) =>
+					Arr.map(sent, (job) =>
 						job.kind === "dependency-scan" ? [job.trigger, job.commitSha] : [job.kind],
 					),
 					[["production", sha("d")]],
 				)
 				assert.deepStrictEqual(
 					repositories[0]?.runningCommits?.map((commit) => [
-						commit.commitSha.slice(0, 1),
+						Str.slice(0, 1)(commit.commitSha),
 						commit.scanStatus,
 					]),
 					[
@@ -339,7 +343,7 @@ describe("DependencyScanService production", () => {
 
 				const { findings } = yield* service.listFindings(tenant, {})
 				assert.deepStrictEqual(
-					findings.map((finding) => finding.production?.map((s) => s.serviceName)),
+					Arr.map(findings, (finding) => finding.production?.map((s) => s.serviceName)),
 					[["api-server"]],
 				)
 				assert.deepStrictEqual(sent, [])
@@ -347,7 +351,7 @@ describe("DependencyScanService production", () => {
 				yield* TestClock.adjust("61 minutes")
 				yield* service.listRepositories(tenant)
 				assert.deepStrictEqual(
-					sent.map((job) => (job.kind === "dependency-scan" ? job.commitSha : undefined)),
+					Arr.map(sent, (job) => (job.kind === "dependency-scan" ? job.commitSha : undefined)),
 					[sha("c")],
 				)
 			}).pipe(Effect.provide(serviceFor(sent, telemetry)))
@@ -367,7 +371,7 @@ describe("DependencyScanService production", () => {
 			)
 			const { repositories: listed } = yield* service.listRepositories(tenant)
 			assert.deepStrictEqual(
-				listed.map((repository) => repository.runningCommits.length),
+				Arr.map(listed, (repository) => repository.runningCommits.length),
 				[0, 0],
 			)
 			assert.deepStrictEqual(sent, [])
@@ -378,13 +382,13 @@ describe("DependencyScanService production", () => {
 		const sent: Array<VcsSyncJob> = []
 		const digits = "0123456789abcdef".split("")
 		const telemetry: Telemetry = {
-			rows: digits.map((digit, i) => running(`svc-${i}`, "production", digit, 100 - i)),
+			rows: Arr.map(digits, (digit, i) => running(`svc-${i}`, "production", digit, 100 - i)),
 		}
 		return Effect.gen(function* () {
 			const service = yield* DependencyScanService
 			const vcs = yield* VcsRepository
 			const api = yield* seed
-			yield* vcs.upsertCommits(api, digits.map(commitOf))
+			yield* vcs.upsertCommits(api, Arr.map(digits, commitOf))
 			yield* service.listRepositories(tenant)
 			assert.strictEqual(sent.length, PRODUCTION_SCANS_PER_READ)
 			assert.strictEqual(sent[0]?.kind === "dependency-scan" ? sent[0].commitSha : undefined, sha("0"))
@@ -405,7 +409,7 @@ describe("DependencyScanService production", () => {
 				complete: false,
 			})
 			assert.deepStrictEqual(
-				findings.map((finding) => [finding.packageName, finding.production]),
+				Arr.map(findings, (finding) => [finding.packageName, finding.production]),
 				[["lodash", []]],
 			)
 		}).pipe(Effect.provide(serviceFor(sent, { rows: undefined })))

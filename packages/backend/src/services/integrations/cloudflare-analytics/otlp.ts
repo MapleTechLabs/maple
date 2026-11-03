@@ -18,7 +18,7 @@
 import type { MetricAttrs, MetricGaugeRow, MetricSumRow } from "@maple/backend/services/warehouse/metric-rows"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { SOURCE_ID_ATTRIBUTE } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec } from "effect"
 
 interface OtlpKeyValue {
 	readonly key: string
@@ -67,7 +67,7 @@ export interface OtlpMetricsPayload {
 }
 
 const toKeyValues = (attrs: MetricAttrs): OtlpKeyValue[] =>
-	Object.entries(attrs).map(([key, value]) => ({ key, value: { stringValue: value } }))
+	Arr.map(Rec.toEntries(attrs), ([key, value]) => ({ key, value: { stringValue: value } }))
 
 /** ClickHouse DateTime64 literal ("YYYY-MM-DD HH:MM:SS.mmm", UTC) → unix-nanosecond string. */
 const tsToUnixNano = (ts: string): string => {
@@ -90,7 +90,7 @@ const dataPoint = (row: MetricGaugeRow): OtlpNumberDataPoint => ({
 const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const stableJson = (attrs: MetricAttrs): string =>
-	encodeJsonSync(Object.entries(attrs).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+	encodeJsonSync(Rec.toEntries(attrs).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
 
 interface ScopeAcc {
 	readonly scope: OtlpScopeMetrics["scope"]
@@ -191,10 +191,10 @@ export const metricRowsToOtlp = (
 	}
 
 	return {
-		resourceMetrics: [...resources.values()].map((resource) => ({
+		resourceMetrics: Arr.map([...resources.values()], (resource) => ({
 			resource: resource.resource,
 			schemaUrl: resource.schemaUrl,
-			scopeMetrics: [...resource.scopes.values()].map((scope) => ({
+			scopeMetrics: Arr.map([...resource.scopes.values()], (scope) => ({
 				scope: scope.scope,
 				schemaUrl: scope.schemaUrl,
 				metrics: [...scope.metrics.values()],

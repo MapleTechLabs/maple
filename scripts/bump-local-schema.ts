@@ -15,7 +15,7 @@
  *   bun run local-schema:bump <slug> [--description "..."]
  *   bun run local-schema:bump --control
  */
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { buildLocalSchemaManifest } from "../packages/local-server/src/schema-manifest"
@@ -58,20 +58,24 @@ const plan = (path: string, edits: ReadonlyArray<readonly [string | RegExp, stri
 	for (const [needle, replacement] of edits) {
 		const matches =
 			typeof needle === "string"
-				? source.split(needle).length - 1
-				: [...source.matchAll(new RegExp(needle.source, `${needle.flags.replace("g", "")}g`))].length
+				? Str.split(needle)(source).length - 1
+				: [...source.matchAll(new RegExp(needle.source, `${Str.replace("g", "")(needle.flags)}g`))]
+						.length
 		if (matches === 0) fail(`${path}: anchor did not match, so the bump was not applied:\n  ${needle}`)
 		if (typeof needle === "string" && matches > 1)
 			fail(`${path}: anchor matched ${matches} times, expected exactly one:\n  ${needle}`)
 		source =
 			typeof needle === "string"
-				? source.replace(needle, replacement)
-				: source.replace(new RegExp(needle.source, `${needle.flags.replace("g", "")}g`), replacement)
+				? Str.replace(needle, replacement)(source)
+				: Str.replace(
+						new RegExp(needle.source, `${Str.replace("g", "")(needle.flags)}g`),
+						replacement,
+					)(source)
 	}
 	return { path, content: source }
 }
 
-const pad = (version: number): string => String(version).padStart(4, "0")
+const pad = (version: number): string => Str.padStart(4, "0")(String(version))
 
 // ---------------------------------------------------------------------------
 // Arguments and current state
@@ -89,7 +93,8 @@ const description = descriptionIndex === -1 ? undefined : args[descriptionIndex 
 // Guard the -1 case: with no `--description`, `descriptionIndex + 1` is 0, which
 // would skip the slug itself.
 const slug = args.find(
-	(arg, index) => !arg.startsWith("--") && !(descriptionIndex !== -1 && index === descriptionIndex + 1),
+	(arg, index) =>
+		!Str.startsWith("--")(arg) && !(descriptionIndex !== -1 && index === descriptionIndex + 1),
 )
 
 if (!slug || !/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(slug))
@@ -124,7 +129,7 @@ const identity = {
 }
 
 const historySource = read(`${SERVER_DIR}/local-schema-history.ts`)
-if (historySource.includes(`fingerprint: "${identity.fingerprint}"`))
+if (Str.includes(`fingerprint: "${identity.fingerprint}"`)(historySource))
 	fail(
 		`the generated schema still hashes to an identity already in the history (${identity.fingerprint}).\nEdit the schema and run \`bun run clickhouse:schema\` before bumping.`,
 	)
@@ -140,7 +145,7 @@ const previousModuleId = new RegExp(`id: "(local-${pad(from - 1)}-to-${pad(from)
 )?.[1]
 if (!previousModuleId) fail(`no v${from - 1} -> v${from} row in ${STEPS_FILE} to follow`)
 const moduleId = `local-${pad(from)}-to-${pad(to)}-${slug}`
-if (stepsSource.includes(`"${moduleId}"`)) fail(`${moduleId} is already in ${STEPS_FILE}`)
+if (Str.includes(`"${moduleId}"`)(stepsSource)) fail(`${moduleId} is already in ${STEPS_FILE}`)
 
 const STEPS_ANCHOR = "\t// local-schema:bump appends the next step above this line.\n"
 const newRow = `\t{

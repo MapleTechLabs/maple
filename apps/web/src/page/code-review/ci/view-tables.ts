@@ -10,13 +10,23 @@ import { badge } from "@maple/views/ui/display"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
-import { clickableRowClass, laneTableCell, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import {
+	clickableRowClass,
+	laneTableCell,
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "@maple/views/ui/table"
 import { truncatedId } from "@maple/views/ui/truncated-id"
 import { ciResultBadge, traceKept } from "../kit/parts"
 import { listRelativeTime, relativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `WorkflowsTable`, `RedStreakLine` and `JobsTable`.
 
@@ -31,7 +41,10 @@ const repositoryLabel = (row: { readonly owner: string; readonly repository: str
 	row.owner === "" ? row.repository : `${row.owner}/${row.repository}`
 
 const rateClass = (rate: number | null) =>
-	cn(typographyClass({ numeric: true, className: "px-3 text-right" }), rate !== null && rate > 0 ? TONE_TEXT.crit : "text-muted-foreground")
+	cn(
+		typographyClass({ numeric: true, className: "px-3 text-right" }),
+		rate !== null && rate > 0 ? TONE_TEXT.crit : "text-muted-foreground",
+	)
 
 const head = (h: H, cells: ReadonlyArray<readonly [string, string, string?]>) =>
 	tableHeader(
@@ -39,7 +52,7 @@ const head = (h: H, cells: ReadonlyArray<readonly [string, string, string?]>) =>
 		[
 			tableRow(
 				h,
-				cells.map(([label, className, title]) =>
+				Arr.map(cells, ([label, className, title]) =>
 					tableHead(h, [label], className, title === undefined ? [] : [h.Title(title)]),
 				),
 			),
@@ -120,7 +133,11 @@ const workflowRow = (
 							attributes: [h.OnClick(select, { propagation: "Stop" })],
 						},
 						[
-							typography(h, { weight: "medium", truncate: true, attributes: [h.Title(row.pipeline)] }, [row.pipeline]),
+							typography(
+								h,
+								{ weight: "medium", truncate: true, attributes: [h.Title(row.pipeline)] },
+								[row.pipeline],
+							),
 							...(row.red
 								? [
 										badge(h, { size: "sm", className: cn("shrink-0", TONE_SOFT.crit) }, [
@@ -144,7 +161,11 @@ const workflowRow = (
 				],
 				"px-4 py-2.5 leading-normal",
 			),
-			tableCell(h, [formatNumber(row.runs)], typographyClass({ numeric: true, className: "px-3 text-right" })),
+			tableCell(
+				h,
+				[formatNumber(row.runs)],
+				typographyClass({ numeric: true, className: "px-3 text-right" }),
+			),
 			tableCell(h, [rateOf(rate)], rateClass(rate)),
 			tableCell(
 				h,
@@ -164,17 +185,15 @@ const workflowRow = (
 			tableCell(
 				h,
 				[
-					hstack(h, { gap: "2", as: "span" },
-						[
-							ciResultBadge(h, row.lastResult),
-							listRelativeTime(h, {
-								value: row.lastStartedAt,
-								variant: "short",
-								className: typographyClass({ size: "xs", tone: "muted" }),
-								...time,
-							}),
-						],
-					),
+					hstack(h, { gap: "2", as: "span" }, [
+						ciResultBadge(h, row.lastResult),
+						listRelativeTime(h, {
+							value: row.lastStartedAt,
+							variant: "short",
+							className: typographyClass({ size: "xs", tone: "muted" }),
+							...time,
+						}),
+					]),
 				],
 				"hidden px-4 sm:table-cell",
 			),
@@ -206,7 +225,7 @@ export const workflowsTable = (
 					]),
 					tableBody(
 						h,
-						pipelines.map((row) => workflowRow(h, row, selected, time)),
+						Arr.map(pipelines, (row) => workflowRow(h, row, selected, time)),
 					),
 				]),
 	])
@@ -221,7 +240,11 @@ const jobRow = (h: H, row: CodeReviewCiJob): Html => {
 			tableCell(
 				h,
 				[
-					typography(h, { weight: "medium", truncate: true, as: "div", attributes: [h.Title(row.job)] }, [row.job]),
+					typography(
+						h,
+						{ weight: "medium", truncate: true, as: "div", attributes: [h.Title(row.job)] },
+						[row.job],
+					),
 					h.div(
 						[
 							h.Class("mt-0.5 truncate text-xs text-muted-foreground"),
@@ -232,7 +255,11 @@ const jobRow = (h: H, row: CodeReviewCiJob): Html => {
 				],
 				"px-4 py-2.5 leading-normal",
 			),
-			tableCell(h, [formatNumber(row.runs)], typographyClass({ numeric: true, className: "px-3 text-right" })),
+			tableCell(
+				h,
+				[formatNumber(row.runs)],
+				typographyClass({ numeric: true, className: "px-3 text-right" }),
+			),
 			tableCell(h, [rateOf(rate)], rateClass(rate)),
 			tableCell(
 				h,
@@ -283,7 +310,7 @@ export const jobsTable = (h: H, jobs: ReadonlyArray<CodeReviewCiJob>): Html =>
 					]),
 					tableBody(
 						h,
-						jobs.map((row) => jobRow(h, row)),
+						Arr.map(jobs, (row) => jobRow(h, row)),
 					),
 				]),
 	])

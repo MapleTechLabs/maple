@@ -1,6 +1,6 @@
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { isSameFailure, type LoadFailure } from "@maple/views/data/load-failure"
@@ -57,17 +57,20 @@ const facetSection = (
 
 /** Any filter narrowing the stream, the search and trace scope included. */
 export const hasActiveFilters = (search: Search): boolean =>
-	[
-		search.services,
-		search.severities,
-		search.deploymentEnvs,
-		search.namespaces,
-		search.excludedServices,
-		search.excludedSeverities,
-		search.excludedDeploymentEnvs,
-		search.excludedNamespaces,
-		search.attrs,
-	].some((values) => (values?.length ?? 0) > 0) ||
+	Arr.some(
+		[
+			search.services,
+			search.severities,
+			search.deploymentEnvs,
+			search.namespaces,
+			search.excludedServices,
+			search.excludedSeverities,
+			search.excludedDeploymentEnvs,
+			search.excludedNamespaces,
+			search.attrs,
+		],
+		(values) => (values?.length ?? 0) > 0,
+	) ||
 	!!search.search ||
 	!!search.traceId
 
@@ -144,7 +147,7 @@ const loadedRail = (
 				isSearchable: true,
 				// `serviceColorMap` covers the facet's services only: a selected unknown one has no swatch.
 				colorOf: (name) =>
-					facets.services.some((option) => option.name === name)
+					Arr.some(facets.services, (option) => option.name === name)
 						? getServiceColor(name)
 						: undefined,
 			}),

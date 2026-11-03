@@ -16,6 +16,7 @@ import { parseWarehouseDateTime } from "@maple/query-engine"
 import type { EvalRuntime } from "./eval-runtime"
 import type { FixtureRule } from "./fake-warehouse"
 import { FIXTURES } from "./utils"
+import { Array as Arr, String as Str } from "effect"
 
 export const INTEGRATION_WORLD = {
 	brokenRepo: "acme/api",
@@ -335,7 +336,7 @@ export const seedCommitWorld = async (rt: EvalRuntime) => {
 	}
 }
 
-const wire = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ")
+const wire = (ms: number) => Str.replace("T", " ")(Str.slice(0, 19)(new Date(ms).toISOString()))
 
 interface CiRunFixture {
 	readonly traceId: string
@@ -347,67 +348,68 @@ interface CiRunFixture {
 	readonly minutes: number
 }
 
-const CI_RUNS: ReadonlyArray<CiRunFixture> = [
-	{
-		traceId: "c1",
-		repository: "shop",
-		pipeline: "CI",
-		result: "failure",
-		revision: CI_WORLD.head,
-		hoursAgo: 10,
-		minutes: 14,
-	},
-	{
-		traceId: "c2",
-		repository: "shop",
-		pipeline: "Deploy",
-		result: "success",
-		revision: CI_WORLD.head,
-		hoursAgo: 10,
-		minutes: 6,
-	},
-	{
-		traceId: "c3",
-		repository: "shop",
-		pipeline: "CI",
-		result: "failure",
-		revision: CI_WORLD.retryCommit,
-		hoursAgo: 20,
-		minutes: 13,
-	},
-	{
-		traceId: "c4",
-		repository: "shop",
-		pipeline: "CI",
-		result: "failure",
-		revision: CI_WORLD.couponCommit,
-		hoursAgo: 30,
-		minutes: 15,
-	},
-	{
-		traceId: "c5",
-		repository: "shop",
-		pipeline: "CI",
-		result: "success",
-		revision: CI_WORLD.base,
-		hoursAgo: 50,
-		minutes: 9,
-	},
-	{
-		traceId: "c6",
-		repository: "api",
-		pipeline: "CI",
-		result: "success",
-		revision: "1d4e7a9c2b5f8e0d3a6c9b2e5f8a1d4c7b0e3f6a",
-		hoursAgo: 6,
-		minutes: 7,
-	},
-]
-	.map((run) => ({ ...run, traceId: run.traceId.padEnd(32, "0") }))
-	.sort((a, b) => a.hoursAgo - b.hoursAgo)
+const CI_RUNS: ReadonlyArray<CiRunFixture> = Arr.map(
+	[
+		{
+			traceId: "c1",
+			repository: "shop",
+			pipeline: "CI",
+			result: "failure",
+			revision: CI_WORLD.head,
+			hoursAgo: 10,
+			minutes: 14,
+		},
+		{
+			traceId: "c2",
+			repository: "shop",
+			pipeline: "Deploy",
+			result: "success",
+			revision: CI_WORLD.head,
+			hoursAgo: 10,
+			minutes: 6,
+		},
+		{
+			traceId: "c3",
+			repository: "shop",
+			pipeline: "CI",
+			result: "failure",
+			revision: CI_WORLD.retryCommit,
+			hoursAgo: 20,
+			minutes: 13,
+		},
+		{
+			traceId: "c4",
+			repository: "shop",
+			pipeline: "CI",
+			result: "failure",
+			revision: CI_WORLD.couponCommit,
+			hoursAgo: 30,
+			minutes: 15,
+		},
+		{
+			traceId: "c5",
+			repository: "shop",
+			pipeline: "CI",
+			result: "success",
+			revision: CI_WORLD.base,
+			hoursAgo: 50,
+			minutes: 9,
+		},
+		{
+			traceId: "c6",
+			repository: "api",
+			pipeline: "CI",
+			result: "success",
+			revision: "1d4e7a9c2b5f8e0d3a6c9b2e5f8a1d4c7b0e3f6a",
+			hoursAgo: 6,
+			minutes: 7,
+		},
+	],
+	(run) => ({ ...run, traceId: Str.padEnd(32, "0")(run.traceId) }),
+).sort((a, b) => a.hoursAgo - b.hoursAgo)
 
 const inWindow = (sql: string, hoursAgo: number) => {
-	const stamps = [...sql.matchAll(/'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)'/g)].map((m) =>
+	const stamps = Arr.map([...sql.matchAll(/'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)'/g)], (m) =>
 		parseWarehouseDateTime(m[1] ?? ""),
 	)
 	const at = Date.now() - hoursAgo * 3_600_000
@@ -416,15 +418,19 @@ const inWindow = (sql: string, hoursAgo: number) => {
 
 export const integrationFixtureRules = (): FixtureRule[] => [
 	{
-		match: (sql) => sql.includes("FROM ci_runs"),
+		match: (sql) => Str.includes("FROM ci_runs")(sql),
 		rows: (sql) =>
-			CI_RUNS.filter((run) => inWindow(sql, run.hoursAgo))
-				.filter((run) => !sql.includes("'failure'") || run.result === "failure")
-				.filter(
+			Arr.map(
+				Arr.filter(
+					Arr.filter(
+						Arr.filter(CI_RUNS, (run) => inWindow(sql, run.hoursAgo)),
+						(run) => !Str.includes("'failure'")(sql) || run.result === "failure",
+					),
 					(run) =>
-						!sql.includes("Repository = '") || sql.includes(`Repository = '${run.repository}'`),
-				)
-				.map((run) => ({
+						!Str.includes("Repository = '")(sql) ||
+						Str.includes(`Repository = '${run.repository}'`)(sql),
+				),
+				(run) => ({
 					traceId: run.traceId,
 					pipeline: run.pipeline,
 					runId: `9${run.hoursAgo}0001`,
@@ -439,41 +445,48 @@ export const integrationFixtureRules = (): FixtureRule[] => [
 					pullRequest: 0,
 					durationMs: run.minutes * 60_000,
 					startedAt: wire(Date.now() - run.hoursAgo * 3_600_000),
-				})),
+				}),
+			),
 	},
 	{
-		match: (sql) => sql.includes("FROM ci_jobs"),
-		rows: CI_RUNS.filter((run) => run.result === "failure").map((run) => ({
-			traceId: run.traceId,
-			job: CI_WORLD.failingJob,
-			result: "failure",
-			reason: CI_WORLD.failureReason,
-			url: `https://github.com/acme/shop/actions/runs/9${run.hoursAgo}0001/job/1`,
-			durationMs: 9 * 60_000,
-		})),
+		match: (sql) => Str.includes("FROM ci_jobs")(sql),
+		rows: Arr.map(
+			Arr.filter(CI_RUNS, (run) => run.result === "failure"),
+			(run) => ({
+				traceId: run.traceId,
+				job: CI_WORLD.failingJob,
+				result: "failure",
+				reason: CI_WORLD.failureReason,
+				url: `https://github.com/acme/shop/actions/runs/9${run.hoursAgo}0001/job/1`,
+				durationMs: 9 * 60_000,
+			}),
+		),
 	},
 	{
 		// service_deployments / compare_commits: checkout's two versions in production.
-		match: (sql) => sql.includes(" AS commitSha") && sql.includes("lastSeen"),
+		match: (sql) => Str.includes(" AS commitSha")(sql) && Str.includes("lastSeen")(sql),
 		rows: (sql) =>
-			sql.includes("'checkout'") || !sql.includes("ServiceName = '")
-				? [
-						{ commit: CI_WORLD.head, from: 10, to: 0, spans: 412_000, errors: 3_100 },
-						{ commit: CI_WORLD.base, from: 50, to: 10, spans: 1_640_000, errors: 4_900 },
-					].map((v) => ({
-						serviceName: "checkout",
-						environment: "production",
-						commitSha: v.commit,
-						firstSeen: wire(Date.now() - v.from * 3_600_000),
-						lastSeen: wire(Date.now() - v.to * 3_600_000),
-						spanCount: v.spans,
-						errorCount: v.errors,
-						p50LatencyMs: 84,
-						p95LatencyMs: 410,
-						p99LatencyMs: 900,
-						apdexSatisfiedCount: v.spans * 0.9,
-						apdexToleratingCount: v.spans * 0.08,
-					}))
+			Str.includes("'checkout'")(sql) || !Str.includes("ServiceName = '")(sql)
+				? Arr.map(
+						[
+							{ commit: CI_WORLD.head, from: 10, to: 0, spans: 412_000, errors: 3_100 },
+							{ commit: CI_WORLD.base, from: 50, to: 10, spans: 1_640_000, errors: 4_900 },
+						],
+						(v) => ({
+							serviceName: "checkout",
+							environment: "production",
+							commitSha: v.commit,
+							firstSeen: wire(Date.now() - v.from * 3_600_000),
+							lastSeen: wire(Date.now() - v.to * 3_600_000),
+							spanCount: v.spans,
+							errorCount: v.errors,
+							p50LatencyMs: 84,
+							p95LatencyMs: 410,
+							p99LatencyMs: 900,
+							apdexSatisfiedCount: v.spans * 0.9,
+							apdexToleratingCount: v.spans * 0.08,
+						}),
+					)
 				: [],
 	},
 ]

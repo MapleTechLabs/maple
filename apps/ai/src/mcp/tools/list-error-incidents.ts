@@ -1,5 +1,5 @@
 import type { McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListErrorIncidentsOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { doc } from "../lib/tool-doc"
@@ -50,7 +50,7 @@ export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
 
 			const incidents = result.incidents
 			return {
-				incidents: incidents.map((i) => ({
+				incidents: Arr.map(incidents, (i) => ({
 					id: i.id,
 					issueId: i.issueId,
 					status: i.status,
@@ -61,7 +61,7 @@ export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
 					occurrenceCount: i.occurrenceCount,
 				})),
 				total: incidents.length,
-				openCount: incidents.filter((i) => i.status === "open").length,
+				openCount: Arr.filter(incidents, (i) => i.status === "open").length,
 				...(params.issue_id === undefined ? undefined : { issueId: params.issue_id }),
 			}
 		}),
@@ -86,13 +86,13 @@ export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
 							// Full issue id: a prefix cannot be passed to the issue tools.
 							doc.table(
 								["Issue", "Status", "Reason", "Events", "Opened", "Last triggered"],
-								output.incidents.map((i) => [
+								Arr.map(output.incidents, (i) => [
 									i.issueId,
 									i.status,
 									i.reason,
 									String(i.occurrenceCount),
-									i.firstTriggeredAt.slice(0, 19),
-									i.lastTriggeredAt.slice(0, 19),
+									Str.slice(0, 19)(i.firstTriggeredAt),
+									Str.slice(0, 19)(i.lastTriggeredAt),
 								]),
 							),
 						],

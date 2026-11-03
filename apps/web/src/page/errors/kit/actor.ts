@@ -10,6 +10,7 @@ import { avatarFallback } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
 import { typography } from "@maple/views/ui/typography"
+import { String as Str } from "effect"
 
 // Actor avatars and chips.
 // TODO(actor-directory): people should resolve through the Clerk member directory; here every
@@ -29,7 +30,7 @@ export interface ActorIdentity {
 
 /** `shortId` (hooks/use-actor-directory.ts). */
 const shortId = (id: string): string => {
-	const withoutPrefix = id.includes("_") ? (id.split("_").at(-1) ?? id) : id
+	const withoutPrefix = Str.includes("_")(id) ? (Str.split("_")(id).at(-1) ?? id) : id
 	return truncateId(withoutPrefix, "generic", { length: 6 })
 }
 

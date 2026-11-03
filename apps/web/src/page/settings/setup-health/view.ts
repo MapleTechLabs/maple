@@ -30,6 +30,7 @@ import { Message, type Model } from "./model"
 import { linkButton } from "@maple/views/ui/button"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string }>
@@ -127,56 +128,50 @@ const findingRow = (h: H, check: V2SetupAuditCheck): Html => {
 						className: cn("mt-0.5 shrink-0", severity.text),
 						attributes: [h.AriaLabel(severity.label)],
 					}),
-					vstack(h, { gap: "1.5", shrink: true },
-						[
-							h.div(
-								[h.Class("flex flex-wrap items-center gap-x-2 gap-y-0.5")],
-								[
-									typography(h, { size: "sm", weight: "medium" }, [check.title]),
-									typography(h, { size: "2xs", tone: "subtle" },
-										[CATEGORY_LABEL[check.category]],
+					vstack(h, { gap: "1.5", shrink: true }, [
+						h.div(
+							[h.Class("flex flex-wrap items-center gap-x-2 gap-y-0.5")],
+							[
+								typography(h, { size: "sm", weight: "medium" }, [check.title]),
+								typography(h, { size: "2xs", tone: "subtle" }, [
+									CATEGORY_LABEL[check.category],
+								]),
+							],
+						),
+						...(check.detail === null
+							? []
+							: [
+									typography(
+										h,
+										{ size: "xs", tone: "muted", as: "p", className: "leading-relaxed" },
+										[check.detail],
 									),
-								],
-							),
-							...(check.detail === null
-								? []
-								: [
-										typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" },
-											[check.detail],
-										),
-									]),
-							h.p(
-								[h.Class("text-foreground-subtle text-xs leading-relaxed")],
-								[check.fix_hint],
-							),
-							...(check.affected.length === 0
-								? []
-								: [
-										h.div(
-											[h.Class("flex flex-wrap items-center gap-1.5 pt-0.5")],
-											[
-												...check.affected.map((entity, index) =>
-													affectedChip(h, entity, index),
-												),
-												...(check.affected_count > check.affected.length
-													? [
-															typography(h, { size: "2xs", tone: "subtle" },
-																[
-																	"+",
-																	String(
-																		check.affected_count -
-																			check.affected.length,
-																	),
-																	" more",
-																],
+								]),
+						h.p([h.Class("text-foreground-subtle text-xs leading-relaxed")], [check.fix_hint]),
+						...(check.affected.length === 0
+							? []
+							: [
+									h.div(
+										[h.Class("flex flex-wrap items-center gap-1.5 pt-0.5")],
+										[
+											...Arr.map(check.affected, (entity, index) =>
+												affectedChip(h, entity, index),
+											),
+											...(check.affected_count > check.affected.length
+												? [
+														typography(h, { size: "2xs", tone: "subtle" }, [
+															"+",
+															String(
+																check.affected_count - check.affected.length,
 															),
-														]
-													: []),
-											],
-										),
-									]),
-						],
-					),
+															" more",
+														]),
+													]
+												: []),
+										],
+									),
+								]),
+					]),
 				],
 			),
 			...(action === null ? [] : [h.div([h.Class("pl-7 sm:pl-0")], [actionButton(h, action)])]),
@@ -200,16 +195,14 @@ const summaryPanel = (h: H, audit: V2SetupAudit, isRefreshing: boolean, inputs: 
 					],
 				),
 				h.div([h.Class("grow")], []),
-				typography(h, { size: "2xs", tone: "subtle" },
-					[
-						"Last run ",
-						relativeTime(h, {
-							value: audit.generated_at,
-							nowMs: inputs.nowMs,
-							timeZone: inputs.timeZone,
-						}),
-					],
-				),
+				typography(h, { size: "2xs", tone: "subtle" }, [
+					"Last run ",
+					relativeTime(h, {
+						value: audit.generated_at,
+						nowMs: inputs.nowMs,
+						timeZone: inputs.timeZone,
+					}),
+				]),
 				refreshButton(h, {
 					variant: "ghost",
 					label: "Re-run",
@@ -220,7 +213,7 @@ const summaryPanel = (h: H, audit: V2SetupAudit, isRefreshing: boolean, inputs: 
 		),
 		h.div(
 			[h.Class("flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full"), h.AriaHidden(true)],
-			segments.map(({ segment, count }) =>
+			Arr.map(segments, ({ segment, count }) =>
 				h.div(
 					[
 						h.Key(segment),
@@ -233,7 +226,7 @@ const summaryPanel = (h: H, audit: V2SetupAudit, isRefreshing: boolean, inputs: 
 		),
 		h.ul(
 			[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1")],
-			segments.map(({ segment, count }) =>
+			Arr.map(segments, ({ segment, count }) =>
 				h.li(
 					[h.Key(segment), h.Class("flex items-center gap-1.5 text-2xs")],
 					[
@@ -285,17 +278,17 @@ const findings = (h: H, audit: V2SetupAudit): Html => {
 						[h.Class("flex flex-col items-center gap-2 px-4 py-10 text-center")],
 						[
 							icon(h, "CircleCheckIcon", { size: 20, className: TONE_TEXT.info }),
-							typography(h, { size: "sm", weight: "medium", as: "p" }, ["Everything checks out"]),
-							typography(h, { size: "xs", tone: "muted", as: "p" },
-								[
-									"Alerts can deliver, and your telemetry follows the conventions Maple reads.",
-								],
-							),
+							typography(h, { size: "sm", weight: "medium", as: "p" }, [
+								"Everything checks out",
+							]),
+							typography(h, { size: "xs", tone: "muted", as: "p" }, [
+								"Alerts can deliver, and your telemetry follows the conventions Maple reads.",
+							]),
 						],
 					)
 				: h.ul(
 						[h.Class("divide-border divide-y")],
-						rows.map((check) => findingRow(h, check)),
+						Arr.map(rows, (check) => findingRow(h, check)),
 					),
 		],
 	)
@@ -326,9 +319,9 @@ const passingDisclosure = (
 						}),
 						icon(h, "CircleCheckIcon", { size: 16, className: cn("shrink-0", TONE_TEXT.info) }),
 						typography(h, { size: "sm", weight: "medium" }, [label]),
-						typography(h, { size: "xs", tone: "muted", className: "min-w-0 flex-1" },
-							["Checks are skipped only when telemetry could not be read"],
-						),
+						typography(h, { size: "xs", tone: "muted", className: "min-w-0 flex-1" }, [
+							"Checks are skipped only when telemetry could not be read",
+						]),
 					],
 				},
 				[
@@ -337,7 +330,7 @@ const passingDisclosure = (
 						[
 							h.ul(
 								[h.Class("divide-border divide-y border-t")],
-								passing.map((check) =>
+								Arr.map(passing, (check) =>
 									h.li(
 										[h.Key(check.id), h.Class("flex items-center gap-3 px-4 py-2.5")],
 										[
@@ -352,11 +345,15 @@ const passingDisclosure = (
 													}),
 											h.span([h.Class("min-w-0 flex-1 text-xs")], [check.title]),
 											...(check.status === "skip"
-												? [badge(h, { variant: "secondary", size: "xs" }, ["Skipped"])]
+												? [
+														badge(h, { variant: "secondary", size: "xs" }, [
+															"Skipped",
+														]),
+													]
 												: []),
-											typography(h, { size: "2xs", tone: "subtle" },
-												[CATEGORY_LABEL[check.category]],
-											),
+											typography(h, { size: "2xs", tone: "subtle" }, [
+												CATEGORY_LABEL[check.category],
+											]),
 										],
 									),
 								),
@@ -390,14 +387,10 @@ export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, 
 	const audit = AsyncData.getOrElse(model.audit, () => null)
 	const top = AsyncData.match(model.audit, {
 		onIdle: () => [
-			vstack(h, { gap: "4" },
-				[skeletonBlock(h, { height: "24" }), skeletonBlock(h, { height: "48" })],
-			),
+			vstack(h, { gap: "4" }, [skeletonBlock(h, { height: "24" }), skeletonBlock(h, { height: "48" })]),
 		],
 		onLoading: () => [
-			vstack(h, { gap: "4" },
-				[skeletonBlock(h, { height: "24" }), skeletonBlock(h, { height: "48" })],
-			),
+			vstack(h, { gap: "4" }, [skeletonBlock(h, { height: "24" }), skeletonBlock(h, { height: "48" })]),
 		],
 		onFailure: (failure) => [
 			errorState(h, { failure, title: "Couldn't check setup health", onRetry: Message.ClickedRetry() }),

@@ -7,7 +7,7 @@ import { areaY, d3Curve, defineChart, dot, lineY, ruleX, stack } from "@tanstack
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip } from "./plot-constants"
@@ -38,27 +38,35 @@ const dateLabel = (value: string) =>
 export const buildSpendCumulative = (spec: SpendSpec): BuiltChart<SpendDatum, Date, number> => {
 	const points = spec.points
 	const at = (point: Point) => new Date(point.dayMs)
-	const keys = spec.bands.map((band) => band.key)
+	const keys = Arr.map(spec.bands, (band) => band.key)
 	const colorOf = (key: string) => spec.bands.find((band) => band.key === key)?.color ?? spec.chrome.border
 	const todayPoint = points.findLast((point) => !point.future)
 	const lastPoint = points[points.length - 1]
 	const hasFuture = lastPoint !== undefined && lastPoint.future
 	const axis = makeBucketAxis(
-		points.map((point) => point.date),
+		Arr.map(points, (point) => point.date),
 		SPEND_TIME_ZONE,
 	)
-	const cells: ReadonlyArray<SpendCell> = points.flatMap((point) =>
-		keys.map((band) => ({ point, band, value: point.bands[band] ?? null })),
+	const cells: ReadonlyArray<SpendCell> = Arr.flatMap(points, (point) =>
+		Arr.map(keys, (band) => ({ point, band, value: point.bands[band] ?? null })),
 	)
 	// The series anchors the projection at today and the cycle's end only; every day between gets its
 	// point on that straight line so hovering a day to come reads its projected total.
 	const projectionOf = (point: Point): number | null => {
-		if (!hasFuture || todayPoint === undefined || lastPoint === undefined || point.dayMs < todayPoint.dayMs) return null
+		if (
+			!hasFuture ||
+			todayPoint === undefined ||
+			lastPoint === undefined ||
+			point.dayMs < todayPoint.dayMs
+		)
+			return null
 		const start = todayPoint.projected ?? 0
 		const span = lastPoint.dayMs - todayPoint.dayMs
-		return span <= 0 ? spec.projected : start + ((spec.projected - start) * (point.dayMs - todayPoint.dayMs)) / span
+		return span <= 0
+			? spec.projected
+			: start + ((spec.projected - start) * (point.dayMs - todayPoint.dayMs)) / span
 	}
-	const projectedPoints = points.filter((point) => projectionOf(point) !== null)
+	const projectedPoints = Arr.filter(points, (point) => projectionOf(point) !== null)
 
 	const definition = defineChart({
 		marks: [
@@ -94,7 +102,12 @@ export const buildSpendCumulative = (spec: SpendSpec): BuiltChart<SpendDatum, Da
 				? []
 				: [
 						decorative(
-							ruleX([todayPoint], { x: at, stroke: spec.chrome.border, strokeOpacity: 1, strokeWidth: 1 }),
+							ruleX([todayPoint], {
+								x: at,
+								stroke: spec.chrome.border,
+								strokeOpacity: 1,
+								strokeWidth: 1,
+							}),
 						),
 					]),
 			focusCrosshair(spec.chrome),
@@ -123,13 +136,16 @@ export const buildSpendCumulative = (spec: SpendSpec): BuiltChart<SpendDatum, Da
 			Option.map(Option.fromNullishOr(focused[0]?.datum), (datum) => {
 				const day = dayOf(datum)
 				const money = (value: number) => formatCurrency(value, spec.currency)
-				const actual = spec.bands.flatMap((band) => {
+				const actual = Arr.flatMap(spec.bands, (band) => {
 					const value = day.bands[band.key]
 					return value === null || value === undefined || (value === 0 && band.key !== "base")
 						? []
 						: [{ label: band.label, color: band.color, dashed: false, value: money(value) }]
 				})
-				const spent = actual.length === 0 ? null : spec.bands.reduce((sum, band) => sum + (day.bands[band.key] ?? 0), 0)
+				const spent =
+					actual.length === 0
+						? null
+						: Arr.reduce(spec.bands, 0, (sum, band) => sum + (day.bands[band.key] ?? 0))
 				const projection = day.future ? projectionOf(day) : null
 				return ChartTooltip.Bucket({
 					heading: day.future ? `${dateLabel(day.date)} · projected` : dateLabel(day.date),
@@ -137,7 +153,14 @@ export const buildSpendCumulative = (spec: SpendSpec): BuiltChart<SpendDatum, Da
 						...actual,
 						...(projection === null
 							? []
-							: [{ label: "Projected", color: spec.primary, dashed: true, value: money(projection) }]),
+							: [
+									{
+										label: "Projected",
+										color: spec.primary,
+										dashed: true,
+										value: money(projection),
+									},
+								]),
 					],
 					...(spent !== null && actual.length > 1 && { total: money(spent) }),
 				})

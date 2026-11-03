@@ -1,4 +1,5 @@
 import type { AdvisorySeverity } from "@maple/domain/runtime-advisories"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // CVSS 3.0 / 3.1 base score from a vector string (FIRST's specification, section 7). Advisories
 // without a curated severity (most Go ones) only carry the vector.
@@ -17,7 +18,7 @@ const PR_WEIGHTS = {
 } as const
 
 const pick = <T extends Record<string, number>>(table: T, key: string | undefined): number | undefined =>
-	key !== undefined && Object.hasOwn(table, key) ? table[key] : undefined
+	key !== undefined && Rec.has(table, key) ? table[key] : undefined
 
 /** CVSS 3.1 Roundup: the smallest one-decimal number at or above the input, free of float noise. */
 const roundUp = (value: number): number => {
@@ -27,11 +28,11 @@ const roundUp = (value: number): number => {
 
 /** The base score of a `CVSS:3.x/...` vector, undefined for any other or malformed vector. */
 export function cvss3BaseScore(vector: string): number | undefined {
-	const [prefix, ...parts] = vector.trim().split("/")
+	const [prefix, ...parts] = Str.split("/")(Str.trim(vector))
 	if (prefix !== "CVSS:3.0" && prefix !== "CVSS:3.1") return undefined
 	const metrics = new Map(
-		parts.flatMap((part) => {
-			const [key, value] = part.split(":")
+		Arr.flatMap(parts, (part) => {
+			const [key, value] = Str.split(":")(part)
 			return key === undefined || value === undefined ? [] : [[key, value] as const]
 		}),
 	)

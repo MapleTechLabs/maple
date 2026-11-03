@@ -1,4 +1,4 @@
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { orgOfKey, type RequestKey } from "./request-key"
 
@@ -38,16 +38,19 @@ export const idle = <A, E>(): Keyed<A, E> => ({ key: null, data: AsyncData.Idle(
 const GENERATION_SEPARATOR = "\u0001"
 
 /** The request key a slot key was built from (a superseding re-read adds a generation). */
-export const baseKey = (key: RequestKey): RequestKey => key.split(GENERATION_SEPARATOR)[0] ?? key
+export const baseKey = (key: RequestKey): RequestKey => Str.split(GENERATION_SEPARATOR)(key)[0] ?? key
 
 const generationOf = (key: RequestKey | null): number =>
-	key === null ? 0 : Number(key.split(GENERATION_SEPARATOR)[1] ?? "0")
+	key === null ? 0 : Number(Str.split(GENERATION_SEPARATOR)(key)[1] ?? "0")
 
 /** A slot just requested: its key is the one to fetch with. */
 export type Requested<A, E> = Keyed<A, E> & Readonly<{ key: RequestKey }>
 
 /** The fetch time a slot carries to its next state; a stand-in stays one only under its own key. */
-const shownMeta = <A, E>(slot: Keyed<A, E>, isSameKey: boolean): Pick<Keyed<A, E>, "updatedAtMs" | "isStandIn"> => {
+const shownMeta = <A, E>(
+	slot: Keyed<A, E>,
+	isSameKey: boolean,
+): Pick<Keyed<A, E>, "updatedAtMs" | "isStandIn"> => {
 	const { updatedAtMs } = slot
 	const isStandIn = isSameKey && slot.isStandIn === true
 	if (updatedAtMs === undefined) return isStandIn ? { isStandIn: true } : {}
@@ -86,13 +89,16 @@ export const request = <A, E>(
 			mode === "Load" ? AsyncData.loadIfMissing(slot.data) : AsyncData.revalidateOrLoad(slot.data)
 		// The slot's own key, generation included, so a read it superseded stays dropped.
 		const current = slot.key
-		return Option.map(transition, (data) => withRetained(current, data, slot.retained === true, shownMeta(slot, true)))
+		return Option.map(transition, (data) =>
+			withRetained(current, data, slot.retained === true, shownMeta(slot, true)),
+		)
 	}
 	const sameOrg = slot.key !== null && orgOfKey(slot.key) === orgOfKey(key)
 	return Option.some(
 		Option.match(sameOrg ? AsyncData.getData(slot.data) : Option.none(), {
 			onNone: (): Requested<A, E> => ({ key, data: AsyncData.Loading(), ...shownMeta(slot, false) }),
-			onSome: (previous) => withRetained(key, AsyncData.Refreshing({ data: previous }), true, shownMeta(slot, false)),
+			onSome: (previous) =>
+				withRetained(key, AsyncData.Refreshing({ data: previous }), true, shownMeta(slot, false)),
 		}),
 	)
 }
@@ -106,7 +112,10 @@ export const requestKeepingFailure = <A, E>(
 	key: RequestKey,
 	mode: RequestMode,
 ): Option.Option<Requested<A, E>> =>
-	mode === "Load" && slot.key !== null && baseKey(slot.key) === baseKey(key) && AsyncData.isFailure(slot.data)
+	mode === "Load" &&
+	slot.key !== null &&
+	baseKey(slot.key) === baseKey(key) &&
+	AsyncData.isFailure(slot.data)
 		? Option.none()
 		: request(slot, key, mode)
 
@@ -172,8 +181,11 @@ export const acceptCached = <A, E>(
 	cached: CachedAnswer<A>,
 	isFresh: boolean,
 ): Keyed<A, E> => {
-	if (slot.key !== key || (Option.isSome(AsyncData.getData(slot.data)) && slot.retained !== true)) return slot
-	const data = isFresh ? AsyncData.Success({ data: cached.data }) : AsyncData.Refreshing({ data: cached.data })
+	if (slot.key !== key || (Option.isSome(AsyncData.getData(slot.data)) && slot.retained !== true))
+		return slot
+	const data = isFresh
+		? AsyncData.Success({ data: cached.data })
+		: AsyncData.Refreshing({ data: cached.data })
 	return cached.isStandIn
 		? { key, data, updatedAtMs: cached.updatedAtMs, isStandIn: true }
 		: { key, data, updatedAtMs: cached.updatedAtMs }

@@ -11,6 +11,7 @@ import {
 	Result,
 	Schedule,
 	Semaphore,
+	Array as Arr,
 } from "effect"
 import { ScrapeResultReport, type InternalScrapeTarget } from "@maple/domain/http"
 import { ScraperEnv } from "./Env"
@@ -91,10 +92,10 @@ const nextBackoffs = (
 	baseMs: number,
 	endedAt: number,
 ): ReadonlyMap<string, Backoff> => {
-	const live = new Set(group.map(targetKey))
-	const kept = Array.from(current).filter(([key]) => live.has(key))
-	const scraped = new Set(scrapes.map((scrape) => targetKey(scrape.target)))
-	const updated = scrapes.flatMap((scrape): ReadonlyArray<readonly [string, Backoff]> => {
+	const live = new Set(Arr.map(group, targetKey))
+	const kept = Arr.filter(Array.from(current), ([key]) => live.has(key))
+	const scraped = new Set(Arr.map(scrapes, (scrape) => targetKey(scrape.target)))
+	const updated = Arr.flatMap(scrapes, (scrape): ReadonlyArray<readonly [string, Backoff]> => {
 		const failure = Result.isFailure(scrape.result) ? scrape.result.failure : null
 		if (failure === null || !shouldBackOff(failure) || failure.reason === "delivery_blocked") return []
 		const key = targetKey(scrape.target)
@@ -108,7 +109,7 @@ const nextBackoffs = (
 		}
 		return [[key, backoff]]
 	})
-	return new Map([...kept.filter(([key]) => !scraped.has(key)), ...updated])
+	return new Map([...Arr.filter(kept, ([key]) => !scraped.has(key)), ...updated])
 }
 
 export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSchedulerApi>()(

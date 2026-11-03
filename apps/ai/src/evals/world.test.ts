@@ -8,6 +8,7 @@ import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../m
 import { installFakeWarehouse, restoreWarehouse } from "../mcp/__evals__/fake-warehouse"
 import { FIXTURES } from "../mcp/__evals__/utils"
 import { seedWorld, WORLD_SERVICES, worldRules } from "./world"
+import { Array as Arr } from "effect"
 
 let rt: EvalRuntime
 
@@ -27,7 +28,7 @@ const render = async (name: string, params: unknown) => markdown(await runToolDi
 describe("eval world", () => {
 	it("lists every world service", async () => {
 		const text = await render("list_services", {})
-		WORLD_SERVICES.forEach((service) => expect(text).toContain(`| ${service.name} |`))
+		Arr.forEach(WORLD_SERVICES, (service) => expect(text).toContain(`| ${service.name} |`))
 	})
 
 	it("reads as freshly ingesting", async () => {

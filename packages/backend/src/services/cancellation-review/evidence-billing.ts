@@ -10,7 +10,7 @@ import type {
 	CancellationReviewedSubscription,
 } from "@maple/domain/http"
 import { CancellationBillingInterval, CancellationStripeReason } from "@maple/domain/http"
-import { Option, Cause, Context, Effect, Layer, Schema } from "effect"
+import { Option, Cause, Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { ensureOk } from "@maple/backend/services/billing/autumn-client"
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"
@@ -47,9 +47,10 @@ export const reviewedSubscriptionOf = <S extends { readonly canceledAt?: number 
 	atMs: number,
 ): S | undefined => {
 	const distance = (sub: S) => Math.abs((sub.canceledAt ?? 0) * 1000 - atMs)
-	return subscriptions
-		.filter((sub) => sub.canceledAt != null && distance(sub) <= SAME_CANCELLATION_MS)
-		.toSorted((a, b) => distance(a) - distance(b))[0]
+	return Arr.filter(
+		subscriptions,
+		(sub) => sub.canceledAt != null && distance(sub) <= SAME_CANCELLATION_MS,
+	).toSorted((a, b) => distance(a) - distance(b))[0]
 }
 
 /** Only what is read off Stripe's subscription list (camelised, discounts expanded). */
@@ -105,12 +106,12 @@ const reviewedOf = (sub: StripeSubscription, atMs: number): CancellationReviewed
 	const reason = sub.cancellationDetails?.reason
 	const interval = sub.items.data.find((item) => item.price.recurring != null)?.price.recurring?.interval
 	// Usage-billed prices carry a per-unit amount, not what the interval costs.
-	const fixed = sub.items.data.filter((item) => item.price.recurring?.usageType !== "metered")
+	const fixed = Arr.filter(sub.items.data, (item) => item.price.recurring?.usageType !== "metered")
 	// A tiered price has no flat amount, and an all-metered plan has no fixed part:
 	// either way the interval's cost is unknown, not 0.
 	const fixedCents =
-		fixed.length > 0 && fixed.every((item) => item.price.unitAmount != null)
-			? fixed.reduce((sum, item) => sum + (item.price.unitAmount ?? 0) * (item.quantity ?? 1), 0)
+		fixed.length > 0 && Arr.every(fixed, (item) => item.price.unitAmount != null)
+			? Arr.reduce(fixed, 0, (sum, item) => sum + (item.price.unitAmount ?? 0) * (item.quantity ?? 1))
 			: null
 	const discount = Option.getOrUndefined(decodeDiscount(sub.discounts?.[0]))
 	return {
@@ -144,7 +145,8 @@ const otherOf = (
 	return {
 		startedDaysBeforeCancel: daysBefore(atMs, sub.startDate),
 		canceledDaysBeforeCancel: canceledAt === null ? null : daysBefore(atMs, canceledAt),
-		switchedPlan: all.some(
+		switchedPlan: Arr.some(
+			all,
 			(next) =>
 				next !== sub &&
 				canceledAt !== null &&
@@ -160,14 +162,18 @@ export const subscriptionsEvidenceOf = (response: unknown, atMs: number) =>
 	Schema.decodeUnknownEffect(StripeSubscriptions)(response).pipe(
 		Effect.map(({ data }): NonNullable<BillingEvidence["subscriptions"]> => {
 			const reviewed = reviewedSubscriptionOf(data, atMs)
-			const started = data.filter((sub) => !ABANDONED_STATUSES.has(sub.status))
+			const started = Arr.filter(data, (sub) => !ABANDONED_STATUSES.has(sub.status))
 			return {
 				reviewed: reviewed === undefined ? null : reviewedOf(reviewed, atMs),
-				others: started
-					.filter((sub) => sub !== reviewed && knownAtCancel(atMs, sub.startDate * 1000))
-					.toSorted((a, b) => b.startDate - a.startDate)
-					.slice(0, OTHER_SUBSCRIPTIONS_SHOWN)
-					.map((sub) => otherOf(sub, started, atMs)),
+				others: Arr.map(
+					Arr.filter(
+						started,
+						(sub) => sub !== reviewed && knownAtCancel(atMs, sub.startDate * 1000),
+					)
+						.toSorted((a, b) => b.startDate - a.startDate)
+						.slice(0, OTHER_SUBSCRIPTIONS_SHOWN),
+					(sub) => otherOf(sub, started, atMs),
+				),
 			}
 		}),
 	)
@@ -193,21 +199,25 @@ const AutumnInvoices = Schema.Struct({
 export const invoicesEvidenceOf = (customer: unknown, atMs: number) =>
 	Schema.decodeUnknownEffect(AutumnInvoices)(customer).pipe(
 		Effect.map(({ invoices }): NonNullable<BillingEvidence["invoices"]> => {
-			const newestFirst = (invoices ?? [])
-				.filter((invoice) => knownAtCancel(atMs, invoice.createdAt))
-				.toSorted((a, b) => b.createdAt - a.createdAt)
-			const paid = newestFirst.filter((invoice) => invoice.status === "paid" && invoice.total !== 0)
+			const newestFirst = Arr.filter(invoices ?? [], (invoice) =>
+				knownAtCancel(atMs, invoice.createdAt),
+			).toSorted((a, b) => b.createdAt - a.createdAt)
+			const paid = Arr.filter(
+				newestFirst,
+				(invoice) => invoice.status === "paid" && invoice.total !== 0,
+			)
 			const firstPaid = paid.at(-1)
 			return {
-				latest: newestFirst.slice(0, INVOICES_SHOWN).map((invoice): CancellationInvoice => ({
+				latest: Arr.map(newestFirst.slice(0, INVOICES_SHOWN), (invoice): CancellationInvoice => ({
 					daysBeforeCancel: daysBeforeCancel(atMs, invoice.createdAt),
 					totalDollars: invoice.total,
 					status: invoice.status,
 					planIds: invoice.planIds ?? [],
 				})),
 				paid: paid.length,
-				open: newestFirst.filter((invoice) => invoice.status === "open").length,
-				uncollectible: newestFirst.filter((invoice) => invoice.status === "uncollectible").length,
+				open: Arr.filter(newestFirst, (invoice) => invoice.status === "open").length,
+				uncollectible: Arr.filter(newestFirst, (invoice) => invoice.status === "uncollectible")
+					.length,
 				firstPaidDaysBeforeCancel:
 					firstPaid === undefined ? null : daysBeforeCancel(atMs, firstPaid.createdAt),
 			}
@@ -230,8 +240,8 @@ const AutumnBillingControls = Schema.Struct({
 export const billingControlsEvidenceOf = (customer: unknown) =>
 	Schema.decodeUnknownEffect(AutumnBillingControls)(customer).pipe(
 		Effect.map(({ billingControls }): NonNullable<BillingEvidence["billingControls"]> => ({
-			spendLimitSet: (billingControls?.spendLimits ?? []).some((limit) => limit.enabled === true),
-			usageAlertSet: (billingControls?.usageAlerts ?? []).some((alert) => alert.enabled !== false),
+			spendLimitSet: Arr.some(billingControls?.spendLimits ?? [], (limit) => limit.enabled === true),
+			usageAlertSet: Arr.some(billingControls?.usageAlerts ?? [], (alert) => alert.enabled !== false),
 		})),
 	)
 
@@ -252,19 +262,18 @@ const StripeCharges = Schema.Struct({
 export const chargesEvidenceOf = (response: unknown, atMs: number) =>
 	Schema.decodeUnknownEffect(StripeCharges)(response).pipe(
 		Effect.map(({ data }): NonNullable<BillingEvidence["charges"]> => {
-			const charges = data
-				.filter(
-					(charge) =>
-						charge.created * 1000 >= atMs - CHARGE_WINDOW_MS &&
-						knownAtCancel(atMs, charge.created * 1000),
-				)
-				.toSorted((a, b) => b.created - a.created)
-			const failed = charges.filter((charge) => charge.status === "failed")
+			const charges = Arr.filter(
+				data,
+				(charge) =>
+					charge.created * 1000 >= atMs - CHARGE_WINDOW_MS &&
+					knownAtCancel(atMs, charge.created * 1000),
+			).toSorted((a, b) => b.created - a.created)
+			const failed = Arr.filter(charges, (charge) => charge.status === "failed")
 			return {
 				failed: failed.length,
 				latestFailureCode: failed[0]?.failureCode ?? null,
-				refunded: charges.filter((charge) => charge.amountRefunded > 0).length,
-				disputed: charges.filter((charge) => charge.disputed).length,
+				refunded: Arr.filter(charges, (charge) => charge.amountRefunded > 0).length,
+				disputed: Arr.filter(charges, (charge) => charge.disputed).length,
 			}
 		}),
 	)

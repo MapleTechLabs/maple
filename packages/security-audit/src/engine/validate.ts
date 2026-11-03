@@ -4,7 +4,7 @@
  * `quick`, a second fresh verifier checks each final confirmed and needs_validation record, and a
  * material replacement only applies after yet another fresh verifier agrees.
  */
-import { Effect, Ref, Schema } from "effect"
+import { Effect, Ref, Schema, Array as Arr } from "effect"
 import { candidateVerifierPrompt, companionFileOf, recordVerifierPrompt } from "../prompts"
 import {
 	type Candidate,
@@ -43,18 +43,19 @@ const claimEstimate = (engine: Engine, claim: Candidate | Finding): EstimatedSev
 }
 
 const files = (record: Finding): ReadonlyArray<string> => [
-	...new Set([...record.trace.map((t) => t.file), ...record.evidence.map((e) => e.file)]),
+	...new Set([...Arr.map(record.trace, (t) => t.file), ...Arr.map(record.evidence, (e) => e.file)]),
 ]
 
 const linkedUnits = (ledger: ReadonlyArray<LedgerUnit>, fingerprint: string) =>
-	ledger.filter(
+	Arr.filter(
+		ledger,
 		(unit) => unit.result_fingerprints.includes(fingerprint) || unit.carried_fingerprint === fingerprint,
 	)
 
 const validationBlocks = (units: ReadonlyArray<LedgerUnit>): ReadonlyArray<string> => [
 	...new Set(
-		units.flatMap((unit) =>
-			unit.selected_companion_blocks.map((ref) => `${companionFileOf(ref)}#Validation rules`),
+		Arr.flatMap(units, (unit) =>
+			Arr.map(unit.selected_companion_blocks, (ref) => `${companionFileOf(ref)}#Validation rules`),
 		),
 	),
 ]
@@ -64,22 +65,24 @@ const validationBlocks = (units: ReadonlyArray<LedgerUnit>): ReadonlyArray<strin
  * claim is what the verifier checks, and every carried unit still takes the decision.
  */
 const items = (s: EngineState): ReadonlyArray<ValidationItem> => {
-	const carried = s.carried.reduce(
+	const carried = Arr.reduce(
+		s.carried,
+		new Map<string, { readonly record: Finding; readonly units: ReadonlyArray<string> }>(),
 		(acc, c) =>
 			new Map(acc).set(c.record.fingerprint, {
 				record: c.record,
 				units: [...(acc.get(c.record.fingerprint)?.units ?? []), c.coverageId],
 			}),
-		new Map<string, { readonly record: Finding; readonly units: ReadonlyArray<string> }>(),
 	)
-	const raised = [...s.candidates].flatMap(([fingerprint, entries]): ReadonlyArray<ValidationItem> => {
+	const raised = Arr.flatMap([...s.candidates], ([fingerprint, entries]): ReadonlyArray<ValidationItem> => {
 		const best = strongest(entries)
 		if (best === undefined) return []
 		return [{ fingerprint, claim: best.candidate, carriedUnits: carried.get(fingerprint)?.units ?? [] }]
 	})
-	const onlyCarried = [...carried]
-		.filter(([fingerprint]) => !s.candidates.has(fingerprint))
-		.map(([fingerprint, c]) => ({ fingerprint, claim: c.record, carriedUnits: c.units }))
+	const onlyCarried = Arr.map(
+		Arr.filter([...carried], ([fingerprint]) => !s.candidates.has(fingerprint)),
+		([fingerprint, c]) => ({ fingerprint, claim: c.record, carriedUnits: c.units }),
+	)
 	return [...raised, ...onlyCarried].sort((a, b) =>
 		a.fingerprint < b.fingerprint ? -1 : a.fingerprint > b.fingerprint ? 1 : 0,
 	)
@@ -100,7 +103,7 @@ const recordDecision = (
 	estimate: EstimatedSeverity | null,
 	verifierId: string,
 ): EngineState => {
-	const ledger = s.ledger.map((unit): LedgerUnit => {
+	const ledger = Arr.map(s.ledger, (unit): LedgerUnit => {
 		const carries = item.carriedUnits.includes(unit.coverage_id)
 		if (carries && unit.status === "candidate" && unit.agent_id !== null) {
 			// A unit carrying several records: each later decision adds its own check and fingerprint.
@@ -163,10 +166,11 @@ const validateOne = (engine: Engine, item: ValidationItem, index: number) =>
 				const prompt = candidateVerifierPrompt(
 					{
 						candidate: item.claim,
-						linkedChecks: linked.flatMap((unit) => unit.local_checks),
+						linkedChecks: Arr.flatMap(linked, (unit) => unit.local_checks),
 						architectureFacts: s.architectureMd,
 						companionValidationBlocks: validationBlocks(linked),
-						priorRecords: (engine.input.prior?.findings ?? []).filter(
+						priorRecords: Arr.filter(
+							engine.input.prior?.findings ?? [],
 							(r) => r.fingerprint === item.fingerprint,
 						),
 						priorEstimate: engine.input.prior?.estimates?.get(item.fingerprint) ?? null,
@@ -209,7 +213,7 @@ const validateOne = (engine: Engine, item: ValidationItem, index: number) =>
 				undefined,
 				{
 					...s,
-					ledger: s.ledger.map((unit) =>
+					ledger: Arr.map(s.ledger, (unit) =>
 						unit.result_fingerprints.includes(item.fingerprint) ||
 						item.carriedUnits.includes(unit.coverage_id)
 							? { ...unit, unresolved: [...unit.unresolved, `${item.fingerprint}: ${reason}`] }
@@ -244,7 +248,7 @@ export const runCandidateValidation = (engine: Engine) =>
 			undefined,
 			{
 				...c,
-				ledger: c.ledger.map((unit) =>
+				ledger: Arr.map(c.ledger, (unit) =>
 					unit.status === "planned" && unit.carried_fingerprint !== undefined
 						? {
 								...unit,
@@ -262,7 +266,7 @@ export const runCandidateValidation = (engine: Engine) =>
 	})
 
 /** The trace's structure: step kinds, files and scopes, without line numbers or prose. */
-const tracePath = (record: Finding) => record.trace.map(({ kind, file, scope }) => [kind, file, scope])
+const tracePath = (record: Finding) => Arr.map(record.trace, ({ kind, file, scope }) => [kind, file, scope])
 
 /** A record's material fields; prose reasons and descriptions are wording, not meaning. */
 const materialView = (record: Finding) => {
@@ -270,7 +274,7 @@ const materialView = (record: Finding) => {
 		case "confirmed":
 			return {
 				root_cause: record.root_cause,
-				conditions: record.conditions.map((c) => c.kind),
+				conditions: Arr.map(record.conditions, (c) => c.kind),
 				payloads: record.execution.payloads,
 				instructions: record.execution.instructions,
 				likelihood: record.severity.likelihood.score,
@@ -357,9 +361,9 @@ export const runRecordVerification = (engine: Engine) =>
 	Effect.gen(function* () {
 		if (engine.input.profile === "quick") return
 		const s = yield* Ref.get(engine.state)
-		const records = [...s.findings.values()]
-			.filter((record) => record.verdict !== "rejected")
-			.sort((a, b) => (a.fingerprint < b.fingerprint ? -1 : 1))
+		const records = Arr.filter([...s.findings.values()], (record) => record.verdict !== "rejected").sort(
+			(a, b) => (a.fingerprint < b.fingerprint ? -1 : 1),
+		)
 		yield* engine.event({
 			_tag: "Phase",
 			phase: "record-verification",
@@ -381,7 +385,7 @@ export const runRecordVerification = (engine: Engine) =>
 							undefined,
 							{
 								...c,
-								ledger: c.ledger.map((unit) =>
+								ledger: Arr.map(c.ledger, (unit) =>
 									unit.result_fingerprints.includes(record.fingerprint) ||
 									unit.carried_fingerprint === record.fingerprint
 										? {
@@ -427,7 +431,7 @@ export const runRecordVerification = (engine: Engine) =>
 							...c,
 							findings: new Map(c.findings).set(final.fingerprint, final),
 							estimates: withEstimate(c.estimates, final.fingerprint, checked.estimate),
-							ledger: c.ledger.map((unit) =>
+							ledger: Arr.map(c.ledger, (unit) =>
 								unit.result_fingerprints.includes(final.fingerprint)
 									? {
 											...unit,

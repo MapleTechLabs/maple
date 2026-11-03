@@ -1,4 +1,4 @@
-import { Duration, Option, Schema, Stream } from "effect"
+import { Duration, Option, Schema, Stream, Array as Arr } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import type { PageSubscriptionInput } from "../../contract"
 import { Message, type Model } from "./model"
@@ -11,7 +11,7 @@ const isActive = (model: Model) =>
 	Option.match(AsyncData.getData(model.reviews.data), {
 		onNone: () => false,
 		onSome: (response) =>
-			response.reviews.some((review) => review.status === "queued" || review.status === "running"),
+			Arr.some(response.reviews, (review) => review.status === "queued" || review.status === "running"),
 	})
 
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message>()((entry) => ({
@@ -21,11 +21,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 		{
 			modelToDependencies: ({ model }) => ({ isActive: isActive(model) }),
 			dependenciesToStream: ({ isActive: active }) =>
-				active
-					? pollTicks(POLL).pipe(
-							Stream.map(() => Message.TickedPoll()),
-						)
-					: Stream.empty,
+				active ? pollTicks(POLL).pipe(Stream.map(() => Message.TickedPoll())) : Stream.empty,
 		},
 	),
 }))

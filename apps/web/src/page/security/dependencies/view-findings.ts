@@ -50,6 +50,7 @@ import { Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The findings table: one row per advisory on a package in a lockfile, worst first as the server
 // sorts them, under a status and a repository filter.
@@ -78,7 +79,7 @@ export const advisoryLink = (h: H, finding: DependencyFindingView, className?: s
 export const versionsLabel = (finding: DependencyFindingView): string =>
 	finding.versions.length === 0
 		? finding.packageName
-		: `${finding.packageName}@${finding.versions.join(", ")}`
+		: `${finding.packageName}@${Arr.join(finding.versions, ", ")}`
 
 export const item = (value: string, label: string): SelectView.SelectEntry => ({
 	_tag: "Item",
@@ -119,7 +120,7 @@ const toolbar = (h: H, model: Model, findings: ReadonlyArray<DependencyFindingVi
 			filterSelect(
 				h,
 				model.statusSelect,
-				STATUS_FILTERS.map((status) =>
+				Arr.map(STATUS_FILTERS, (status) =>
 					item(
 						status,
 						`${STATUS_FILTER_LABEL[status]} (${filteredFindings(findings, status, repositoryFilterOf(model)).length})`,
@@ -143,8 +144,8 @@ export const productionScanStates = (
 	repositories: ReadonlyArray<DependencyScanRepository>,
 ): ReadonlyMap<string, ProductionScanState> =>
 	new Map(
-		repositories.flatMap((repository): ReadonlyArray<readonly [string, ProductionScanState]> => {
-			const statuses = repository.runningCommits.map((commit) => commit.scanStatus)
+		Arr.flatMap(repositories, (repository): ReadonlyArray<readonly [string, ProductionScanState]> => {
+			const statuses = Arr.map(repository.runningCommits, (commit) => commit.scanStatus)
 			if (statuses.includes("running")) return [[repository.id, "running"]]
 			// No scan row: queued from this read, or past the per-read cap, so nothing claims it is running.
 			if (statuses.includes(null)) return [[repository.id, "unscanned"]]
@@ -154,7 +155,7 @@ export const productionScanStates = (
 
 /** Spans a finding's running services served over the last day. */
 export const productionSpans = (finding: DependencyFindingView): number =>
-	finding.production.reduce((sum, service) => sum + service.spanCount, 0)
+	Arr.reduce(finding.production, 0, (sum, service) => sum + service.spanCount)
 
 /**
  * What to say when no running service carries a package: a running commit not scanned yet may,
@@ -183,7 +184,7 @@ const productionCell = (
 ): Html => {
 	const [busiest] = finding.production
 	if (busiest === undefined) return muted(h, notRunningLabel(production, scans.get(finding.repositoryId)))
-	const others = new Set(finding.production.map((service) => service.serviceName)).size - 1
+	const others = new Set(Arr.map(finding.production, (service) => service.serviceName)).size - 1
 	return h.span(
 		[h.Class("flex min-w-0 max-w-48 flex-col")],
 		[
@@ -260,7 +261,7 @@ const findingRow = (
 						),
 						muted(
 							h,
-							`${finding.ecosystem} · ${finding.versions.join(", ")}`,
+							`${finding.ecosystem} · ${Arr.join(finding.versions, ", ")}`,
 							typographyClass({ mono: true, truncate: true }),
 						),
 					],
@@ -353,20 +354,20 @@ const findingsTable = (
 		]),
 		tableBody(
 			h,
-			rows.map((finding) =>
+			Arr.map(rows, (finding) =>
 				findingRow(h, finding, finding.id === selectedId, clock, production, scans, showRepository),
 			),
 		),
 	])
 
 const packagesChecked = (repositories: ReadonlyArray<DependencyScanRepository>): number =>
-	repositories.reduce((sum, repository) => sum + (repository.latestScan?.packageCount ?? 0), 0)
+	Arr.reduce(repositories, 0, (sum, repository) => sum + (repository.latestScan?.packageCount ?? 0))
 
 /** A repository is only clean when its latest scan completed whole and read every lockfile it found. */
 export const readEverything = (repository: DependencyScanRepository): boolean =>
 	repository.latestScan?.status === "completed" &&
 	repository.latestScan.error === null &&
-	repository.latestScan.lockfiles.every((lockfile) => lockfile.status === "parsed")
+	Arr.every(repository.latestScan.lockfiles, (lockfile) => lockfile.status === "parsed")
 
 /** Scanned and nothing open: a calm line, not an alarm. */
 export const cleanState = (h: H, repositories: ReadonlyArray<DependencyScanRepository>): Html =>
@@ -417,7 +418,7 @@ export const findingsSection = (
 					repositoryId === null,
 				)
 			: // Clean only when every repository's latest scan read its lockfiles; a failed or missing one is not a clean bill.
-				status === "open" && repositoryId === null && repositories.every(readEverything)
+				status === "open" && repositoryId === null && Arr.every(repositories, readEverything)
 				? cleanState(h, repositories)
 				: h.div(
 						[h.Class("p-4")],
@@ -428,7 +429,7 @@ export const findingsSection = (
 								description:
 									status === "all"
 										? ""
-										: `Showing ${STATUS_FILTER_LABEL[status].toLowerCase()} findings only.`,
+										: `Showing ${Str.toLowerCase(STATUS_FILTER_LABEL[status])} findings only.`,
 							}),
 						],
 					)

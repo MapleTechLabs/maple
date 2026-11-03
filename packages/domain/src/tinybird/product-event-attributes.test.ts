@@ -6,6 +6,7 @@ import {
 	PRODUCT_EVENT_PROP_PREFIX,
 } from "./product-event-attributes"
 import { productEvents } from "./datasources"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 describe("product event span attributes", () => {
 	it("casts the base map to the target key type", () => {
@@ -90,18 +91,21 @@ describe("product event span attributes", () => {
 				if (char === "(") depth++
 				if (char === ")") depth--
 				if (char === "," && depth === 0) {
-					parts.push(input.slice(start, index))
+					parts.push(Str.slice(start, index)(input))
 					start = index + 1
 				}
 			}
-			parts.push(input.slice(start))
-			return parts.map((part) => part.trim()).filter((part) => part.length > 0)
+			parts.push(Str.slice(start)(input))
+			return Arr.filter(
+				Arr.map(parts, (part) => Str.trim(part)),
+				(part) => part.length > 0,
+			)
 		}
 
-		const projected = topLevelParts(PRODUCT_EVENTS_TRACE_PROJECTION_SQL).map((part) => {
+		const projected = Arr.map(topLevelParts(PRODUCT_EVENTS_TRACE_PROJECTION_SQL), (part) => {
 			const aliased = /\bAS ([A-Za-z][A-Za-z0-9_]*)$/.exec(part)
 			return aliased ? aliased[1]! : part
 		})
-		expect(projected).toEqual(Object.keys(productEvents._schema))
+		expect(projected).toEqual(Rec.keys(productEvents._schema))
 	})
 })

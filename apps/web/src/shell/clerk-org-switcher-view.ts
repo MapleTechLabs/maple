@@ -2,7 +2,7 @@ import { MAPLE_REGION_LABELS, MapleRegion } from "@maple/domain/organization-reg
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { cn } from "@maple/ui/lib/utils"
 import { currentRegion, hasMultipleRegions } from "../lib/region"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import type { ClerkOrganization } from "../platform/clerk"
@@ -119,7 +119,7 @@ const namespaceSubmenu = (h: H, model: Model, scope: NamespaceScope): MenuView.M
 		...(rows.isFiltered
 			? []
 			: [namespaceItem(h, ALL_NAMESPACES, "All namespaces", Option.isNone(pinned))]),
-		...rows.matches.map((name) =>
+		...Arr.map(rows.matches, (name) =>
 			namespaceItem(h, `${NAMESPACE_PREFIX}${name}`, name, Option.contains(pinned, name)),
 		),
 		...Option.match(rows.unseenPin, {
@@ -183,7 +183,7 @@ const entriesOf = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<MenuVi
 	{
 		_tag: "Group",
 		label: "Organizations",
-		entries: inputs.memberships.map((organization) =>
+		entries: Arr.map(inputs.memberships, (organization) =>
 			organizationItem(h, organization, Option.contains(inputs.activeOrgId, organization.id)),
 		),
 	},
@@ -200,7 +200,7 @@ const entriesOf = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<MenuVi
 /** `CreateOrganizationDialog`: a `FormDialog` with the name field and, with several regions, the region. */
 const createDialog = (h: H, model: Model): Html => {
 	const id = model.createDialog.id
-	const isBlank = model.name.trim() === ""
+	const isBlank = Str.trim(model.name) === ""
 	return h.submodel({
 		slotId: id,
 		model: model.createDialog,
@@ -290,7 +290,7 @@ const regionField = (h: H, model: Model): Html => {
 	const config: RadioGroup.RadioGroupViewConfig<Message> = {
 		model: RadioGroup.init(model.region),
 		toParentMessage: (message) => Message.GotRegionMessage({ message }),
-		items: MapleRegion.literals.map((region) => ({
+		items: Arr.map(MapleRegion.literals, (region) => ({
 			value: region,
 			id: regionIdOf(model, region),
 			inputId: `${regionIdOf(model, region)}-input`,
@@ -309,7 +309,7 @@ const regionField = (h: H, model: Model): Html => {
 		RadioGroup.radioGroup(
 			h,
 			{ className: "gap-0 divide-y divide-border overflow-hidden rounded-md border" },
-			MapleRegion.literals.map((region) =>
+			Arr.map(MapleRegion.literals, (region) =>
 				label(
 					h,
 					{

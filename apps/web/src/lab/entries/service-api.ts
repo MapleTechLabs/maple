@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Effect, Option, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import type { HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -49,7 +49,8 @@ const RELEASES = [
 	{ bucket: "2026-10-24T11:41:00.000Z", commitSha: "3f9c21a", count: 120, errorCount: 0 },
 ]
 
-const isPending = (data: AsyncData.AsyncData<unknown, unknown>) => AsyncData.isLoading(data) || AsyncData.isRefreshing(data)
+const isPending = (data: AsyncData.AsyncData<unknown, unknown>) =>
+	AsyncData.isLoading(data) || AsyncData.isRefreshing(data)
 
 /** The answers to every read still pending, as the Messages their fetches would have sent. */
 const answers = (model: PageModel, isFailed: boolean): ReadonlyArray<PageMessage> => [
@@ -65,12 +66,19 @@ const answers = (model: PageModel, isFailed: boolean): ReadonlyArray<PageMessage
 		? [
 				PageMessage.CompletedFetchEndpoints({
 					key: model.endpoints.key ?? "",
-					result: isFailed ? Result.fail(toLoadFailure("endpoints store down")) : Result.succeed(LAB_ENDPOINTS),
+					result: isFailed
+						? Result.fail(toLoadFailure("endpoints store down"))
+						: Result.succeed(LAB_ENDPOINTS),
 				}),
 			]
 		: []),
 	...(isPending(model.apiOverview.data)
-		? [PageMessage.CompletedFetchApiOverview({ key: model.apiOverview.key ?? "", result: Result.succeed(LAB_API_OVERVIEW) })]
+		? [
+				PageMessage.CompletedFetchApiOverview({
+					key: model.apiOverview.key ?? "",
+					result: Result.succeed(LAB_API_OVERVIEW),
+				}),
+			]
 		: []),
 	...(isPending(model.statusBreakdown.data)
 		? [
@@ -88,12 +96,16 @@ const answers = (model: PageModel, isFailed: boolean): ReadonlyArray<PageMessage
 				}),
 			]
 		: []),
-	...Object.entries(model.endpointPeek.details).flatMap(([spanName, slot]) => {
+	...Arr.flatMap(Rec.toEntries(model.endpointPeek.details), ([spanName, slot]) => {
 		const detail = LAB_ENDPOINT_DETAILS.get(spanName)
 		return isPending(slot.data) && detail !== undefined
 			? [
 					PageMessage.GotEndpointPeekMessage({
-						message: PeekMessage.CompletedFetchDetail({ spanName, key: slot.key ?? "", result: Result.succeed(detail) }),
+						message: PeekMessage.CompletedFetchDetail({
+							spanName,
+							key: slot.key ?? "",
+							result: Result.succeed(detail),
+						}),
 					}),
 				]
 			: []
@@ -126,7 +138,7 @@ const step = (result: PageReturn<PageModel, PageMessage>, isFailed = false): Ret
 	return {
 		model: { page: settled.model },
 		commands: Command.mapMessages(
-			(settled.commands ?? []).filter((command) => !isRead(command.name)),
+			Arr.filter(settled.commands ?? [], (command) => !isRead(command.name)),
 			(message) => Message.GotPageMessage({ message }),
 		),
 	}
@@ -152,7 +164,10 @@ const init = (flags: Flags): Return => {
 		PageMessage.CompletedResolveClock({ nowMs: LAB_NOW, mode: "Load" }),
 		CONTEXT,
 	)
-	return step({ ...clocked, commands: [...(started.commands ?? []), ...(clocked.commands ?? [])] }, flags.isFailed)
+	return step(
+		{ ...clocked, commands: [...(started.commands ?? []), ...(clocked.commands ?? [])] },
+		flags.isFailed,
+	)
 }
 
 const update = (model: Model, message: Message): Return =>

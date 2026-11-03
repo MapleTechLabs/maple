@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * Tag grouping for the alerts Rules tab, generic over the item type via a
  * `getTags` accessor.
@@ -37,9 +38,10 @@ export function groupByTag<T>(items: readonly T[], getTags: (item: T) => readonl
 		}
 	}
 
-	const groups: TagGroup<T>[] = [...tagged.entries()]
-		.sort(([a], [b]) => a.localeCompare(b))
-		.map(([key, groupItems]) => ({ key, label: key, count: groupItems.length, items: groupItems }))
+	const groups: TagGroup<T>[] = Arr.map(
+		[...tagged.entries()].sort(([a], [b]) => Str.localeCompare(b)(a)),
+		([key, groupItems]) => ({ key, label: key, count: groupItems.length, items: groupItems }),
+	)
 
 	if (untagged.length > 0) {
 		groups.push({ key: UNTAGGED_KEY, label: UNTAGGED_LABEL, count: untagged.length, items: untagged })

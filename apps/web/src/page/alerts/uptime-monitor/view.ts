@@ -1,5 +1,5 @@
 import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -50,16 +50,20 @@ type H = HtmlBuilder<Message>
 const expectation = (monitor: UptimeMonitor): string | null => {
 	if (monitor.config.type !== "http") return null
 	const assertions = monitor.config.assertions ?? []
-	const status = assertions.flatMap((assertion) =>
+	const status = Arr.flatMap(assertions, (assertion) =>
 		assertion.type === "status" && assertion.op === "is" ? [assertion.value] : [],
 	)[0]
-	const latency = assertions.flatMap((assertion) =>
+	const latency = Arr.flatMap(assertions, (assertion) =>
 		assertion.type === "latency" ? [assertion.under_ms] : [],
 	)[0]
 	if (status === undefined && latency === undefined) return null
-	return ["expects", status ?? "", latency === undefined ? "" : `under ${latency} ms`]
-		.filter((part) => part !== "")
-		.join(" ")
+	return Arr.join(
+		Arr.filter(
+			["expects", status ?? "", latency === undefined ? "" : `under ${latency} ms`],
+			(part) => part !== "",
+		),
+		" ",
+	)
 }
 
 const eyebrowLine = (monitor: UptimeMonitor): string =>
@@ -182,7 +186,7 @@ const body = (
 						...(monitor.config.type === "http"
 							? [phaseBreakdownPanel(h, model, chartContext)]
 							: []),
-						...[checksScatterPanel(h, model, timeZone)].flatMap((panel) =>
+						...Arr.flatMap([checksScatterPanel(h, model, timeZone)], (panel) =>
 							panel === null ? [] : [panel],
 						),
 						checksPanel(h, monitor, timeZone),
