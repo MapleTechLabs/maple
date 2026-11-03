@@ -46,7 +46,7 @@ export const modelFor = (role: AuditRole, models: AuditModels): ResolvedModel =>
  * Only a hung-agent backstop: the library requires a finite duration and its step needs a timeout.
  * Tool calls and turns are unbounded; spend is bounded by the run budget and org spend limit.
  */
-const AGENT_MAX_DURATION: Duration.Input = "60 minutes"
+export const AGENT_MAX_DURATION: Duration.Input = "60 minutes"
 
 const INSTRUCTIONS = `You are one isolated agent in a defensive, source-first security audit run by Maple. The user message is your complete assignment: follow it exactly, and only it. You have no memory of other agents and they cannot see your work.
 

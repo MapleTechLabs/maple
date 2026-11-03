@@ -11,6 +11,7 @@ import {
 	ExecutorRunResponse,
 	ExecutorDestroyResponse,
 	ExecutorUnavailable,
+	EXECUTOR_INACTIVITY_TIMEOUT_MS,
 } from "@maple/domain/executor"
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers"
 import { Effect, Schema, Semaphore, String as Str } from "effect"
@@ -28,12 +29,6 @@ export class RegistryGateway extends WorkerEntrypoint<unknown, GatewayProps> {
 }
 
 const REPORT_KEY = `probe:v${EXECUTOR_PROBE_VERSION}`
-
-/**
- * Outlasts reconnaissance and synthesis, which send no commands after prepare: parallel recon, its
- * retries and up to two syntheses at 60 minutes each. The run destroys its executor when it ends.
- */
-const INACTIVITY_TIMEOUT_MS = 4 * 60 * 60 * 1000
 
 /** Commands from one run's agents at once. The instance has one vCPU; the rest queue. */
 const CONCURRENT_COMMANDS = 3
@@ -153,7 +148,7 @@ export class Executor extends DurableObject<ExecutorEnv> {
 					container.start({ enableInternet: false })
 					this.interceptedFor = undefined
 				}
-				await container.setInactivityTimeout(INACTIVITY_TIMEOUT_MS)
+				await container.setInactivityTimeout(EXECUTOR_INACTIVITY_TIMEOUT_MS)
 				// Registered again when the credential changes: the gateway's props carry it.
 				const token = gateway.git?.token ?? ""
 				if (this.interceptedFor !== token) {
