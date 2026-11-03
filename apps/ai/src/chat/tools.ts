@@ -738,7 +738,7 @@ export const buildDiagnosisCompletion = (
 	} satisfies RunCompletion
 }
 
-/** The pull request a review or reply session is about, which its diff tools always read. */
+/** The pull request a review session is about, which its diff tools always read. */
 export interface SessionPullRequest {
 	readonly repository: string
 	readonly number: number

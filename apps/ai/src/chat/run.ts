@@ -135,7 +135,7 @@ export interface ChatRunInput {
 	 */
 	readonly review?: ReviewTurnState
 	/**
-	 * The pull request a review or reply session is about. Its diff tools read this one whatever
+	 * The pull request a review session is about. Its diff tools read this one whatever
 	 * repository or number the model passes: a wrong guess there failed the call, and enough of
 	 * those stopped the review.
 	 */
