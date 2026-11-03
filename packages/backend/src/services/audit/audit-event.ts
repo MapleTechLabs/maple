@@ -122,7 +122,7 @@ export const auditEventToEntry = (event: AuditLogEvent, recordedAtMs: number): A
 const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
 
 /** `''` in the warehouse row is "absent"; everything else decodes through `schema`. */
-const emptyAsNull = <S extends Schema.Codec<any, string, any, any>>(schema: S) =>
+const emptyAsNull = <S extends Schema.Codec<unknown, string, unknown, unknown>>(schema: S) =>
 	Schema.String.pipe(
 		Schema.decodeTo(
 			Schema.NullOr(Schema.String),

@@ -1761,7 +1761,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 										...(settings?.enabled === false ? { enabled: false } : undefined),
 										updatedAt: now,
 									}
-									const key = `${set.settingsJson}|${set.quantilesAvailable}|${set.enabled ?? ""}`
+									const key = `${String(set.settingsJson)}|${String(set.quantilesAvailable)}|${String(set.enabled ?? "")}`
 									const group = updates.get(key)
 									if (group) group.ids.push(row.id)
 									else updates.set(key, { ids: [row.id], set })

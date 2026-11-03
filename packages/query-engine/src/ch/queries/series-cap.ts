@@ -64,7 +64,7 @@ export function finalizeTimeseries<Output extends Record<string, unknown>>(
 	// while reading the tenant-scoped inner query once.
 	// Read back by name through `outputColumns`, so the inner query's own output
 	// type is not needed past this point.
-	const base: CHQuery<ColumnDefs, any, Record<string, ColumnDefs>> = inner.orderBy()
+	const base: CHQuery<ColumnDefs, Record<string, unknown>, Record<string, ColumnDefs>> = inner.orderBy()
 	const peaks = fromQuery(base, "__series_base").select(() => ({
 		...passthrough,
 		__series_peak: CH.over(

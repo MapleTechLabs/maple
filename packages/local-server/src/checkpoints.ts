@@ -639,7 +639,7 @@ const countFrom = (rows: ReadonlyArray<Record<string, unknown>>): number => {
 	if (!row) throw new Error("count query returned no rows")
 	const value = row["count()"] ?? row.count
 	const count = typeof value === "number" ? value : Number(value ?? 0)
-	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid count result: ${value}`)
+	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid count result: ${String(value)}`)
 	return count
 }
 

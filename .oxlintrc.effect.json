@@ -56,6 +56,7 @@
 		"effecttsgo/schema-sync-in-effect": "error",
 		"effecttsgo/unsafe-effect-type-assertion": "error",
 		"typescript/no-floating-promises": "error",
+		"typescript/restrict-template-expressions": "error",
 		"typescript/require-array-sort-compare": "error"
 	},
 	"overrides": [
@@ -117,6 +118,7 @@
 				"effecttsgo/strict-effect-provide": "off",
 				// Tests sort ids and tuples to compare them as sets; the default order is fine there.
 				"typescript/require-array-sort-compare": "off",
+				"typescript/restrict-template-expressions": "off",
 				"effecttsgo/yield-in-call-argument": "off"
 			}
 		}

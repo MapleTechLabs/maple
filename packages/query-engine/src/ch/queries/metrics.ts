@@ -9,7 +9,7 @@ import type { AttributeFilter, MetricType } from "@maple/domain/query-engine"
 import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { param } from "@maple-dev/effect-orm/clickhouse"
-import { from, type CHQuery } from "@maple-dev/effect-orm/clickhouse"
+import { from, type CHQuery, type ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import { table } from "@maple-dev/effect-orm/clickhouse"
 import {
 	MetricsSum,
@@ -227,7 +227,7 @@ function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean 
 
 function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 	opts: MetricsRateTimeseriesOpts,
-): CHQuery<any, MetricsRateTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, MetricsRateTimeseriesOutput, {}> {
 	const bucket = CH.toStartOfInterval(
 		CH.toDateTime(utcSecondsParam("startTime")),
 		param.int("bucketSeconds"),
@@ -378,7 +378,7 @@ export function metricDeltaExpr(args: {
 
 export function metricsTimeseriesRateQuery(
 	opts: MetricsRateTimeseriesOpts,
-): CHQuery<any, MetricsRateTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, MetricsRateTimeseriesOutput, {}> {
 	if (canUseSpanMetricsCallsHourly(opts)) return metricsTimeseriesRateFromSpanMetricsCallsHourly(opts)
 
 	// Prometheus-style counters often land as gauges (or as sums flagged
