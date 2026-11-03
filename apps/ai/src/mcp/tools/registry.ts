@@ -631,7 +631,7 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 			)
 		}
 		return yield* new McpToolNotFoundError({
-			name,
+			toolName: name,
 			message: `Unknown MCP tool: ${name}`,
 		})
 	}

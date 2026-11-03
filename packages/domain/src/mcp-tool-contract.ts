@@ -30,7 +30,7 @@ export interface McpToolDescriptor {
 export class McpToolNotFoundError extends Schema.TaggedError<McpToolNotFoundError>()(
 	"@maple/mcp/ToolNotFoundError",
 	{
-		name: Schema.String,
+		toolName: Schema.String,
 		message: Schema.String,
 	},
 ) {}

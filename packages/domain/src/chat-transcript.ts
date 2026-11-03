@@ -259,8 +259,12 @@ const foldTaskEvent = (
 
 	// `ChatToolCall` is the readonly wire type, so the call is rebuilt rather than mutated. Keying
 	// the nested transcript by task id rather than by object identity is what makes that safe.
+	// Plain on purpose: `task.messages` must stay the live `child.messages`, which a class
+	// constructor would copy. Like the top-level drafts, the HTTP edge rebuilds real instances.
+	// @effect-diagnostics-next-line schemaClassObjectLiteral:off
 	parent.toolCalls[index] = {
 		...parent.toolCalls[index],
+		// @effect-diagnostics-next-line schemaClassObjectLiteral:off
 		task: {
 			id: ref.id,
 			agent: ref.agent,

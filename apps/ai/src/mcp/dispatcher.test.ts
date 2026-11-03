@@ -183,7 +183,7 @@ describe("MCP dispatcher", () => {
 				// Same answer as a name that was never registered, so probing cannot
 				// tell the two apart.
 				expect(error._tag).toBe("@maple/mcp/ToolNotFoundError")
-				expect(error.name).toBe("sandbox_exec")
+				expect(error.toolName).toBe("sandbox_exec")
 			}),
 		)
 
@@ -235,7 +235,7 @@ describe("MCP dispatcher", () => {
 				>,
 			)
 			expect(error._tag).toBe("@maple/mcp/ToolNotFoundError")
-			expect(error.name).toBe("not_a_maple_tool")
+			expect(error.toolName).toBe("not_a_maple_tool")
 		}),
 	)
 
