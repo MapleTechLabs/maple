@@ -142,6 +142,48 @@ describe("mapWarehouseError", () => {
 				)
 			})
 
+			// Run_sql failures from prod (2026-11-01/02), as Tinybird returns them: the type
+			// followed by `(version ...)` or `(query_id=...)`, or no type in the text at all.
+			const tinybirdSuffixed = [
+				"[Error] You cannot use the aggregate function 'any(LogAttributes) AS LogAttributes is found in GROUP BY in query. (ILLEGAL_AGGREGATION) (version 25.8.40.3 (official build))\\n'' or its alias inside another aggregate function. (query_id=01M6F82AEM8S814XAYWXPNP6EB)",
+				"[Error] Cannot load time zone %Asia/Tokyo: In scope SELECT min(formatDateTime(toDateTime(Timestamp, '%Asia/Tokyo'), '%H:%i')) AS f FROM logs WHERE $__orgFilter LIMIT 20. (BAD_ARGUMENTS) (query_id=01M6DDV3RJZY99C4238Z06TZ3J)",
+				"[Error] Cannot determine join keys in JOIN ON expression [Predcates: () Residual filter: ((less(abs(dateDiff('millisecond'_String, __table5.Timestamp, __table2.Timestamp)), 1500_UInt16)))]. (INVALID_JOIN_ON_EXPRESSION) (query_id=01M6C4Q99ZD7YNSK69C0AXQFT7)",
+				"[Error] You cannot use the aggregate function 'median(n)' or its alias inside another aggregate function. (query_id=01M6DRGTQTDNMDG6T67C3CA3KQ)",
+				"[Error] Neither IPv4 nor IPv6 address: '' (query_id=01M6F9GZN546YBS057R6GEXWC3)",
+			]
+
+			it.each(tinybirdSuffixed)("reports caller SQL Tinybird refused as invalid SQL: %s", (message) => {
+				expect(classify("rawSqlQuery", { message, status: 400 }, "caller")).toBeInstanceOf(
+					WarehouseInvalidSqlError,
+				)
+			})
+
+			it("reads the exception type past Tinybird's version and query_id groups", () => {
+				expect(
+					classify("rawSqlQuery", { message: tinybirdSuffixed[0] }, "caller").clickhouseType,
+				).toBe("ILLEGAL_AGGREGATION")
+				expect(
+					classify("rawSqlQuery", { message: tinybirdSuffixed[2] }, "caller").clickhouseType,
+				).toBe("INVALID_JOIN_ON_EXPRESSION")
+			})
+
+			it("keeps an upper-case group inside echoed SQL from posing as the type", () => {
+				expect(
+					classify("rawSqlQuery", {
+						message: "[Error] boom near (FOO_BAR) in SELECT 1. (query_id=abc)",
+					}).clickhouseType,
+				).toBeUndefined()
+			})
+
+			it.each(tinybirdSuffixed)(
+				"leaves the same message in Maple's own SQL unclaimed as invalid SQL: %s",
+				(message) => {
+					expect(classify("p", { message, status: 400 }, "maple")).not.toBeInstanceOf(
+						WarehouseInvalidSqlError,
+					)
+				},
+			)
+
 			// A 500 must not make a typo transient: only WarehouseUpstreamError is retried.
 			const typed500 = {
 				message:

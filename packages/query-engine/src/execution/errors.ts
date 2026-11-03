@@ -250,11 +250,16 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 			"CANNOT_PARSE_DATETIME",
 			"NOT_AN_AGGREGATE",
 			"UNKNOWN_AGGREGATE_FUNCTION",
+			// A range join (`ON abs(dateDiff(...)) < 1500`), a bad timezone or format argument.
+			"INVALID_JOIN_ON_EXPRESSION",
+			"BAD_ARGUMENTS",
 		]),
+		// Some Tinybird messages name no exception type at all, so they match by wording:
+		// a nested aggregate (`median(median(x))`) and an IP function fed an empty string.
 		// `modifiers FINAL`: `FROM t FINAL` on Tinybird, whose tenant filter makes every table a
 		// subquery. Matched by message: its UNSUPPORTED_METHOD type also covers server-side limits.
 		pattern:
-			/There is no supertype|Illegal type .* of argument|Number of arguments doesn't match|Syntax error|Array does not start with '\['|Unknown (?:aggregate )?function|is not under aggregate function|modifiers FINAL are not supported/i,
+			/There is no supertype|Illegal type .* of argument|Number of arguments doesn't match|Syntax error|Array does not start with '\['|Unknown (?:aggregate )?function|is not under aggregate function|modifiers FINAL are not supported|inside another aggregate function|Neither IPv4 nor IPv6 address/i,
 		make: (base) => new WarehouseInvalidSqlError(base),
 	},
 	{
@@ -332,11 +337,15 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 	},
 ]
 
-/** `[Error] Unknown expression identifier `x` ... FORMAT JSON. (UNKNOWN_IDENTIFIER)` */
-const TRAILING_EXCEPTION_TYPE = /\(([A-Z][A-Z0-9_]{2,})\)\s*$/
+/**
+ * `[Error] ... FORMAT JSON. (UNKNOWN_IDENTIFIER)`, which Tinybird may follow with
+ * `(version 25.8.40.3 (official build))` and `(query_id=...)`. The type is the
+ * last upper-case group ending the message or followed by one of those two.
+ */
+const EXCEPTION_TYPE = /\(([A-Z][A-Z0-9_]{2,})\)(?=\s*(?:$|\(version |\(query_id=))/g
 
 const exceptionTypeFromMessage = (message: string): string | undefined =>
-	TRAILING_EXCEPTION_TYPE.exec(message)?.[1]
+	Array.from(Str.matchAll(EXCEPTION_TYPE)(message)).at(-1)?.[1]
 
 export const toWarehouseQueryError = (pipe: string, error: unknown) => {
 	const rawMessage = unknownToMessage(error, "Warehouse query failed")
@@ -364,6 +373,9 @@ export const mapWarehouseError = (
 	const { code, type } = error
 	const redacted = redactWarehouseCredentials(rawMessage)
 	const message = cleanErrorMessage(rawMessage)
+	// Tinybird names the exception only in its text. Read it for caller SQL alone, so the
+	// classification of Maple's own queries is unchanged. A named type outranks the HTTP status.
+	const ruleType = type ?? (authoredBy === "caller" ? exceptionTypeFromMessage(rawMessage) : undefined)
 	const base: ClassifiedBase = {
 		pipeName: pipe,
 		message,
@@ -371,7 +383,8 @@ export const mapWarehouseError = (
 		// leak it through Effect's cause/stack rendering even with a clean message.
 		cause: redacted === rawMessage ? error : redacted,
 		clickhouseCode: code,
-		clickhouseType: type,
+		// On the span as `error.type`, so a caller's ILLEGAL_AGGREGATION reads as itself.
+		clickhouseType: ruleType,
 	}
 
 	// The driver refused to run: an endpoint it cannot address, settings it will
@@ -385,9 +398,6 @@ export const mapWarehouseError = (
 	}
 
 	const upstreamStatus = error.status ?? extractUpstreamStatus(rawMessage)
-	// Tinybird names the exception only in its text. Read it for caller SQL alone, so the
-	// classification of Maple's own queries is unchanged. A named type outranks the HTTP status.
-	const ruleType = type ?? (authoredBy === "caller" ? exceptionTypeFromMessage(rawMessage) : undefined)
 	const hasIdentity = code !== undefined || ruleType !== undefined
 	for (const rule of CLASSIFICATION_RULES) {
 		if (rule.authoredBy !== undefined && rule.authoredBy !== authoredBy) continue
