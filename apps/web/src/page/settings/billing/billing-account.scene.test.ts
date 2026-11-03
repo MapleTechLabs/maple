@@ -2,11 +2,12 @@ import { BillingAccount, BillingAccountUsageResponse, BillingCustomer } from "@m
 import { OrgId } from "@maple/domain"
 import { AsyncData } from "foldkit"
 import { Result, Schema, Array as Arr } from "effect"
-import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
 import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 import { view as billingView } from "./view"
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
@@ -70,6 +71,20 @@ describe("billing account", () => {
 			expectView(text("Billed through Acme")).toExist(),
 			expectView(role("button", { name: "Stop billing through Acme" })).toExist(),
 			expectView(text("Invoices")).not.toExist(),
+		)
+	})
+
+	test("Compare plans states the DPA and the audits in progress", () => {
+		const read = run(init(true, false, true).model, accountRead(standalone), Message.ClickedCompare())
+		scene(
+			{ update: step, view },
+			given({ ...read, plans: AsyncData.Success({ data: [] }) }),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("DPA available · SOC 2 Type II and ISO 27001 in progress")).toExist(),
+			expectView(role("link", { name: "Request the DPA" })).toHaveAttr(
+				"href",
+				"mailto:privacy@maple.dev?subject=DPA%20request",
+			),
 		)
 	})
 

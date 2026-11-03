@@ -17,6 +17,7 @@ import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
 import { settingsSection } from "../kit/section"
+import { compliance } from "../../kit/compliance-line"
 import { Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -421,6 +422,7 @@ const planOffer = (
 						...Arr.map(offers, (plan) =>
 							offerPanel(h, model, plan, addOns, { isCustom, trialText }),
 						),
+						compliance(h),
 					],
 				),
 			]
