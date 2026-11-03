@@ -30,10 +30,10 @@ export class RegistryGateway extends WorkerEntrypoint<unknown, GatewayProps> {
 const REPORT_KEY = `probe:v${EXECUTOR_PROBE_VERSION}`
 
 /**
- * Outlasts reconnaissance and synthesis (no commands, up to 30 minutes after prepare) and agents'
- * pauses; the run destroys its executor when it ends.
+ * Outlasts reconnaissance and synthesis, which send no commands after prepare: parallel recon, its
+ * retries and up to two syntheses at 60 minutes each. The run destroys its executor when it ends.
  */
-const INACTIVITY_TIMEOUT_MS = 90 * 60 * 1000
+const INACTIVITY_TIMEOUT_MS = 4 * 60 * 60 * 1000
 
 /** Commands from one run's agents at once. The instance has one vCPU; the rest queue. */
 const CONCURRENT_COMMANDS = 3
