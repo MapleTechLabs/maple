@@ -14,9 +14,12 @@ export const authorAvatar = <M>(h: HtmlBuilder<M>, login: string, className?: st
 		Str.toUpperCase(Str.slice(0, 1)(login)),
 	)
 
-/** Avatar and login on one line, the way an author is shown everywhere in Code Review. */
-export const authorLabel = <M>(h: HtmlBuilder<M>, login: string, className?: string): Html =>
+/**
+ * Avatar and login on one line, the way an author is shown everywhere in Code Review. `wrap` breaks
+ * a long login instead of truncating it, for cards the pointer passes through (no title to hover).
+ */
+export const authorLabel = <M>(h: HtmlBuilder<M>, login: string, className?: string, wrap = false): Html =>
 	h.span(
 		[h.Class(cn("inline-flex min-w-0 items-center gap-1.5", className))],
-		[authorAvatar(h, login), h.span([h.Class("truncate"), h.Title(login)], [login])],
+		[authorAvatar(h, login), h.span([h.Class(wrap ? "break-all" : "truncate"), h.Title(login)], [login])],
 	)

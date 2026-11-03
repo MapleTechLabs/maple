@@ -64,7 +64,8 @@ describe("hover card scene", () => {
 		const delayOf = (interactive: boolean) => {
 			const [command] =
 				update(init(ID, { isOpen: true, interactive }), Message.LeftTrigger()).commands ?? []
-			return command?.name === WaitHoverDelay.name ? command.args.delayMs : undefined
+			const delayMs = command?.name === WaitHoverDelay.name ? command.args?.delayMs : undefined
+			return typeof delayMs === "number" ? delayMs : undefined
 		}
 		const readout = delayOf(false)
 		const interactive = delayOf(true)
