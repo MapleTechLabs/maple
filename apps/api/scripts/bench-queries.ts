@@ -408,7 +408,8 @@ const catalogHandler = Effect.fn("bench.catalog")(function* (config: {
 			}).pipe(
 				Effect.flatMap((value) =>
 					Effect.isEffect(value)
-						? (value as Effect.Effect<unknown, unknown>).pipe(
+						? // oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- a suite module's default export, checked by isEffect
+							(value as Effect.Effect<unknown, unknown>).pipe(
 								Effect.mapError(
 									(cause) =>
 										new BenchFileError({
@@ -488,10 +489,7 @@ const BenchServicesLive = Tinybird.layer.pipe(Layer.provide(FetchHttpClient.laye
 const BenchLive = Layer.mergeAll(BenchServicesLive, BunServices.layer)
 
 if (["catalog", "fetch"].includes(process.argv[2] ?? "")) {
-	Command.run(rootCommand, { version: "0.2.0" }).pipe(
-		Effect.provide(BenchLive),
-		BunRuntime.runMain,
-	)
+	Command.run(rootCommand, { version: "0.2.0" }).pipe(Effect.provide(BenchLive), BunRuntime.runMain)
 } else {
 	process.exitCode = await runCli(process.argv.slice(2))
 }

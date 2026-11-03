@@ -2142,12 +2142,15 @@ const readCheckpointFailures = (dataDir: string): Effect.Effect<CheckpointFailur
 	Effect.tryPromise({
 		try: async () =>
 			existsSync(checkpointFailuresPath(dataDir))
-				? Schema.decodeUnknownSync(CheckpointFailuresSchema)(
-						decodeJsonSync(await readFile(checkpointFailuresPath(dataDir), "utf8")),
-					)
+				? decodeJsonSync(await readFile(checkpointFailuresPath(dataDir), "utf8"))
 				: null,
 		catch: checkpointFileError,
-	}).pipe(Effect.orElseSucceed(() => null))
+	}).pipe(
+		Effect.flatMap((raw) =>
+			raw === null ? Effect.succeed(null) : Schema.decodeUnknownEffect(CheckpointFailuresSchema)(raw),
+		),
+		Effect.orElseSucceed(() => null),
+	)
 
 const recordCheckpointFailure = (dataDir: string, message: string): Effect.Effect<void> =>
 	Effect.flatMap(readCheckpointFailures(dataDir), (previous) =>

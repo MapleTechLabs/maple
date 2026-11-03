@@ -53,6 +53,8 @@
 		"effecttsgo/unnecessary-pipe-chain": "error",
 		"effecttsgo/unnecessary-typeof-type": "error",
 		"effecttsgo/yield-in-call-argument": "error",
+		"effecttsgo/schema-sync-in-effect": "error",
+		"effecttsgo/unsafe-effect-type-assertion": "error",
 		"typescript/no-floating-promises": "error",
 		"typescript/require-array-sort-compare": "error"
 	},
@@ -109,6 +111,9 @@
 				"effecttsgo/new-promise": "off",
 				"effecttsgo/node-builtin-import": "off",
 				"effecttsgo/process-env": "off",
+				// Tests decode fixtures inline and cast partial layers on purpose.
+				"effecttsgo/schema-sync-in-effect": "off",
+				"effecttsgo/unsafe-effect-type-assertion": "off",
 				"effecttsgo/strict-effect-provide": "off",
 				// Tests sort ids and tuples to compare them as sets; the default order is fine there.
 				"typescript/require-array-sort-compare": "off",

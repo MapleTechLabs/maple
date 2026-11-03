@@ -264,10 +264,9 @@ export class LocalEventingRuntime extends Context.Service<LocalEventingRuntime, 
 			yield* Effect.fromResult(checkSignalProjectionInputBudget(candidate)).pipe(
 				Effect.mapError(activationInvalid),
 			)
-			const spec = yield* Effect.try({
-				try: () => Schema.decodeUnknownSync(SignalProjectionSpecSchema)(candidate),
-				catch: activationInvalid,
-			})
+			const spec = yield* Schema.decodeUnknownEffect(SignalProjectionSpecSchema)(candidate).pipe(
+				Effect.mapError(activationInvalid),
+			)
 			if (spec.tenantId !== TENANT_ID)
 				return yield* new ProjectionActivationInvalid({
 					message: `Maple Local only accepts projections for tenant ${TENANT_ID}`,
