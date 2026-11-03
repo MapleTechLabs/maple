@@ -25,9 +25,9 @@ import { hostnameOf } from "./prometheus"
 import { AUTH_TYPE_LABELS, type ScheduledStatus, toneBadge } from "./view-prometheus"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 
 // `ScrapeTargetDetails`, `MetricBox` and `ScrapeTargetChecksTable`.
-// TODO(tooltip): a check's message renders its trigger; the full-message popup is the overlay port's.
 
 type H = HtmlBuilder<Message>
 
@@ -124,6 +124,8 @@ const checksRows = (h: H, checks: ReadonlyArray<V2ScrapeTargetCheck>, timeZone: 
 																"text-muted-foreground mt-0.5 cursor-default truncate",
 															),
 															h.DataAttribute("slot", "tooltip-trigger"),
+															h.Tabindex(0),
+															...tooltipTrigger(h, check.message),
 														],
 														[check.message],
 													),

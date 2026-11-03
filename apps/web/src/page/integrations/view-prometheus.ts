@@ -39,9 +39,9 @@ import { targetDetails } from "./view-prometheus-details"
 import { targetDialogs } from "./view-prometheus-form"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 
 // `ScrapeTargetsSection` and `ScrapeTargetRow`, with the Prometheus and WarpStream intro alerts.
-// TODO(tooltip): the last-error line renders its trigger; the raw-error popup is the overlay port's.
 
 type H = HtmlBuilder<Message>
 
@@ -240,6 +240,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 											"mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground",
 										),
 										h.DataAttribute("slot", "tooltip-trigger"),
+										...tooltipTrigger(h, target.last_scrape_error),
 									],
 									[
 										icon(h, "CircleInfoIcon", { size: 12, className: "shrink-0" }),

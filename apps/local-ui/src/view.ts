@@ -2,6 +2,7 @@ import { fillRegion } from "@maple/views/ui/scroll-region"
 import { sidebarInset, sidebarTrigger, sidebarWrapper } from "@maple/views/ui/sidebar"
 import { hstack } from "@maple/views/ui/stack"
 import * as ToastView from "@maple/views/ui/toast-view"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
@@ -77,6 +78,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
 			[h.Id("app")],
 			[
 				...ToastView.regions(h, model.toasts, (message) => Message.GotToastMessage({ message })),
+				TooltipHost.view(h, model.tooltip, (message) => Message.GotTooltipMessage({ message })),
 				sidebarWrapper(
 					h,
 					[

@@ -7,9 +7,9 @@ import { filterChip } from "@maple/views/ui/filter-chip"
 import { searchInput } from "@maple/views/ui/search-input"
 import { listToolbar } from "../../kit/list-toolbar"
 import { hstackClass } from "@maple/views/ui/stack"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 
 // The replays toolbar: the URL search and the triage chips.
-// TODO(tooltip): the chips' hover tooltips.
 
 export type ReplaysToolbarOptions<M> = Readonly<{
 	/** What is typed; the caller debounces it into `q` like `ToolbarSearch`. */
@@ -35,6 +35,7 @@ const triageChip = <M>(
 		tone: Tone
 		label: string
 		count: number | undefined
+		tooltip: string
 	}>,
 ): Html =>
 	filterChip(
@@ -46,6 +47,7 @@ const triageChip = <M>(
 			hasDot: true,
 			size: "sm",
 			count: options.count === undefined ? undefined : formatNumber(options.count),
+			attributes: tooltipTrigger(h, options.tooltip),
 		},
 		[options.label],
 	)
@@ -79,6 +81,9 @@ export const replaysToolbar = <M>(h: HtmlBuilder<M>, options: ReplaysToolbarOpti
 						tone: "crit",
 						label: "With errors",
 						count: options.errorSessions,
+						tooltip: options.isErrorsOnly
+							? "Show all sessions"
+							: "Show only sessions with errors",
 					}),
 					triageChip(h, {
 						isPressed: options.isEngagedOnly,
@@ -86,6 +91,9 @@ export const replaysToolbar = <M>(h: HtmlBuilder<M>, options: ReplaysToolbarOpti
 						tone: "ok",
 						label: "Engaged",
 						count: options.engagedSessions,
+						tooltip: options.isEngagedOnly
+							? "Show every session type"
+							: "Hide bots, bounces, idle tabs and glances",
 					}),
 				],
 			),

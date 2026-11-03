@@ -12,6 +12,7 @@ import type { Resources } from "./platform/resources"
 import { readSessionToken } from "./platform/auth-api"
 import { readEffectiveTimeZone } from "./platform/time-zone"
 import * as Toast from "@maple/views/ui/toast"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 import { urlToAppRoute } from "./route"
 import * as Shell from "./shell"
 import { settle } from "./update"
@@ -60,6 +61,7 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		toasts: Toast.init("toasts"),
 		toastActions: {},
 		toastRootActions: {},
+		tooltip: TooltipHost.init("tooltip"),
 		page: null,
 		pageInstances: 0,
 		parkedPages: [],

@@ -37,6 +37,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { stripClass } from "@maple/views/ui/rule"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 
 // `AlertsRoutingTab` and `DestinationRow`: the hub's Routing tab.
 
@@ -309,24 +310,37 @@ const ATTEMPT_CLASS = new Map<AlertDeliveryEventDocument["status"], string>([
 	["processing", "bg-foreground-faint"],
 ])
 
-// TODO(tooltip): the strip's hover tooltip ("Last N attempts delivered") is not drawn yet.
-const deliveryStrip = (h: H, recent: ReadonlyArray<AlertDeliveryEventDocument>, failed: number): Html =>
-	recent.length === 0
-		? typography(h, { size: "xs", tone: "muted" }, ["No deliveries yet"])
-		: h.span(
-				[
-					h.Class("flex h-3.5 cursor-default items-stretch gap-px"),
-					h.DataAttribute("slot", "tooltip-trigger"),
-					h.AriaLabel(
-						failed === 0
-							? `Last ${recent.length} attempts delivered`
-							: `${failed} of the last ${recent.length} attempts failed`,
-					),
-				],
-				[...recent].reverse().map((event) =>
-					h.span([h.Key(event.id), h.Class(cn("w-1 rounded-2xs", ATTEMPT_CLASS.get(event.status)))]),
-				),
-			)
+const deliveryStrip = (h: H, recent: ReadonlyArray<AlertDeliveryEventDocument>, failed: number): Html => {
+	if (recent.length === 0) return typography(h, { size: "xs", tone: "muted" }, ["No deliveries yet"])
+	const pending = recent.filter((event) => event.status === "queued" || event.status === "processing").length
+	const total = recent.length
+	// One attempt reads as itself, not "1 of the last 1 attempts".
+	const summary =
+		total === 1
+			? failed > 0
+				? "The last attempt failed"
+				: pending > 0
+					? "The last attempt is pending"
+					: "The last attempt was delivered"
+			: failed > 0
+				? `${failed} of the last ${total} attempts failed`
+				: pending > 0
+					? `${total - pending} of the last ${total} attempts delivered, ${pending} pending`
+					: `Last ${total} attempts delivered`
+	return h.span(
+		[
+			h.Class("flex h-3.5 cursor-default items-stretch gap-px"),
+			h.DataAttribute("slot", "tooltip-trigger"),
+			h.AriaLabel(summary),
+			...tooltipTrigger(h, summary),
+		],
+		[...recent]
+			.reverse()
+			.map((event) =>
+				h.span([h.Key(event.id), h.Class(cn("w-1 rounded-2xs", ATTEMPT_CLASS.get(event.status)))]),
+			),
+	)
+}
 
 // DELIVERY LOG
 
@@ -468,14 +482,13 @@ const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryE
 					: [],
 			"max-w-0",
 		),
-		// TODO(tooltip): the full date-time tooltip on the time cell is not drawn yet; it is the title.
 		tableCell(
 			h,
 			[
 				h.span(
 					[
 						h.Class("cursor-default text-muted-foreground tabular-nums"),
-						h.Title(formatAlertDateTime(event.scheduledAt, inputs.timeZone)),
+						...tooltipTrigger(h, formatAlertDateTime(event.scheduledAt, inputs.timeZone)),
 					],
 					[formatAlertTime(event.scheduledAt, inputs.timeZone)],
 				),

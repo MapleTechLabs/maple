@@ -9,9 +9,9 @@ import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { searchInput } from "@maple/views/ui/search-input"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 
 // The agent sessions toolbar, its search over `SearchInput`.
-// TODO(tooltip): the count's and the switch's tooltips are drawn as triggers only.
 
 type H = HtmlBuilder<Message>
 
@@ -37,10 +37,11 @@ const count = (h: H, value: number, total: number | undefined): Html =>
 			: countLabel(value, "session"),
 	])
 
-const tooltipTrigger = <M>(h: HtmlBuilder<M>, id: string) => [
+const triggerAttributes = <M>(h: HtmlBuilder<M>, id: string, text: string) => [
 	h.DataAttribute("base-ui-tooltip-trigger", ""),
 	h.DataAttribute("slot", "tooltip-trigger"),
 	h.Id(id),
+	...tooltipTrigger(h, text),
 ]
 
 export const toolbar = (
@@ -71,7 +72,14 @@ export const toolbar = (
 								h.span(
 									[
 										h.Class("hidden sm:block"),
-										...tooltipTrigger(h, "agent-sessions-count"),
+										// Only a partial count has more to load.
+										...(options.totalCount !== undefined && options.totalCount > options.sessionCount
+											? triggerAttributes(
+													h,
+													"agent-sessions-count",
+													"Loaded so far; more load as you scroll",
+												)
+											: []),
 									],
 									[count(h, options.sessionCount, options.totalCount)],
 								),
@@ -80,7 +88,11 @@ export const toolbar = (
 						h,
 						{
 							className: "cursor-pointer text-xs sm:text-xs",
-							attributes: tooltipTrigger(h, ERRORS_LABEL_ID),
+							attributes: triggerAttributes(
+								h,
+								ERRORS_LABEL_ID,
+								"Only sessions with a failed turn, tool call or span",
+							),
 						},
 						[
 							...switchControl(h, {

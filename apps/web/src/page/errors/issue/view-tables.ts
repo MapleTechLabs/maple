@@ -1,4 +1,8 @@
-import type { ErrorIncidentDocument, ErrorIssueSampleTrace } from "@maple/domain/http"
+import {
+	ERROR_INCIDENT_AUTO_RESOLVE_MINUTES,
+	type ErrorIncidentDocument,
+	type ErrorIssueSampleTrace,
+} from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -22,9 +26,9 @@ import { relativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 
 // The issue incidents and occurrences tables.
-// TODO(tooltip): the incident status's explanation popup; its trigger is ported.
 
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
@@ -33,6 +37,12 @@ const REASON_LABEL = {
 	regression: "Regression",
 	manual: "Manual",
 } satisfies Record<ErrorIncidentDocument["reason"], string>
+
+// Nothing asks you to close an incident, so `resolved` is spelled out.
+const STATUS_EXPLANATION = {
+	open: "Open until the error goes quiet, or you mark the issue Done.",
+	resolved: `Incidents resolve on their own when the error goes quiet: no new occurrences for ${ERROR_INCIDENT_AUTO_RESOLVE_MINUTES} minutes after the last one. Marking the issue Done resolves its open incidents too.`,
+} satisfies Record<ErrorIncidentDocument["status"], string>
 
 const incidentRow = <M>(h: HtmlBuilder<M>, incident: ErrorIncidentDocument, clock: Clock): Html => {
 	const isOpen = incident.status === "open"
@@ -52,6 +62,8 @@ const incidentRow = <M>(h: HtmlBuilder<M>, incident: ErrorIncidentDocument, cloc
 				[
 					h.Class("inline-flex cursor-default items-center gap-2"),
 					h.DataAttribute("base-ui-tooltip-trigger", ""),
+					h.Tabindex(0),
+					...tooltipTrigger(h, STATUS_EXPLANATION[incident.status]),
 				],
 				[
 					statusDot(h, { tone: isOpen ? "crit" : "neutral" }),

@@ -12,6 +12,7 @@ import { icon, type IconName } from "@maple/views/ui/icon"
 import { segmentedBar } from "@maple/views/ui/meter"
 import { statFigure } from "@maple/views/ui/stat-figure"
 import { statusDot } from "@maple/views/ui/status-dot"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { browserIconFor, deviceIconFor } from "../kit/sessions-parts"
 import { recordedMarker } from "../kit/replay-window"
@@ -22,7 +23,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { scrollRegion } from "@maple/views/ui/scroll-region"
 
 // The rail's Session tab.
-// TODO(tooltip): the identity links' and copy buttons' hover tooltips.
 
 type H = HtmlBuilder<Message>
 
@@ -67,8 +67,8 @@ export const copy = (
 		className,
 	})
 
-const link = (h: H, href: string, text: string, className: string): Html =>
-	h.a([h.Href(href), h.Class(className)], [text])
+const link = (h: H, href: string, text: string, className: string, tooltip: string): Html =>
+	h.a([h.Href(href), h.Class(className), ...tooltipTrigger(h, tooltip)], [text])
 
 const stat = (h: H, iconName: IconName, label: string, count: number, isDanger = false): Html =>
 	h.div(
@@ -205,6 +205,7 @@ const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null 
 							hrefOf(AppRoute.Replays({ search: { userId } })),
 							userId,
 							"truncate font-mono text-xs text-primary underline-offset-2 hover:underline active:underline",
+							"All sessions from this user",
 						),
 						copy(h, model, "userId", userId, "User ID"),
 					]),
@@ -227,6 +228,7 @@ const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null 
 										hrefOf(AppRoute.Replays({ search: { group: groupName } })),
 										groupName,
 										"truncate text-xs text-primary underline-offset-2 hover:underline active:underline",
+										"All sessions from this group",
 									)
 								: value(h, groupId, { isMono: true, className: "truncate" }),
 						],
@@ -404,6 +406,7 @@ export const sessionTab = (h: H, model: SessionView, session: ReplayDetail): Htm
 								hrefOf(AppRoute.Replays({ search: { visitorId: session.visitorId } })),
 								shortId(session.visitorId, "generic", { ellipsis: true }),
 								"truncate font-mono text-xs text-primary underline-offset-2 hover:underline active:underline",
+								"All sessions from this visitor",
 							),
 						]),
 						row(h, { icon: "UserIcon", label: "Visitor" }, [

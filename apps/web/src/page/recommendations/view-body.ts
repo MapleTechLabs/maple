@@ -5,6 +5,7 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import { icon } from "@maple/views/ui/icon"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { panel } from "@maple/views/ui/panel"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { sectionHeading } from "../kit/section-heading"
@@ -174,7 +175,6 @@ const mappingBlock = (h: H, model: Model, issue: V2Recommendation): Html => {
 						typography(h, { size: "xs", tone: "muted" }, [
 							live ? "This mapping is live" : "Ingest attribute mapping",
 						]),
-						// TODO(tooltip): the "Copy" tooltip popup on hover.
 						CopyButton.view(h, {
 							model: model.copy,
 							value: snippet,
@@ -182,7 +182,17 @@ const mappingBlock = (h: H, model: Model, issue: V2Recommendation): Html => {
 							size: "icon-sm",
 							slot: "tooltip-trigger",
 							toParentMessage: (message) => Message.GotCopyMessage({ message }),
-							attributes: [h.DataAttribute("base-ui-tooltip-trigger", "")],
+							attributes: [
+								h.DataAttribute("base-ui-tooltip-trigger", ""),
+								...tooltipTrigger(
+									h,
+									model.copy.status === "copied"
+										? "Copied"
+										: model.copy.status === "error"
+											? "Couldn't copy"
+											: "Copy Mapping",
+								),
+							],
 						}),
 					],
 				),

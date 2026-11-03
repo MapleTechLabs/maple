@@ -23,6 +23,7 @@ import * as Shell from "./shell"
 import { resolveSourceLink, type SourceLink } from "./shell/source-link"
 import { heading } from "@maple/views/ui/heading"
 import * as ToastView from "@maple/views/ui/toast-view"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 import { typography } from "@maple/views/ui/typography"
 
 /** Placeholder for a route that is not ported yet: its tag and the session's org. */
@@ -273,6 +274,7 @@ const body = (model: Model, h: HtmlBuilder<Message>): Html =>
 		// insertion point of a page's new nodes would no longer be a child of #app.
 		[
 			...ToastView.regions(h, model.toasts, (message) => Message.GotToastMessage({ message })),
+			TooltipHost.view(h, model.tooltip, (message) => Message.GotTooltipMessage({ message })),
 			...content(model, h),
 		],
 	)

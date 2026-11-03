@@ -1,9 +1,11 @@
 import type { TranscriptRow } from "@maple/agent-sessions"
+import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
 import { textLink } from "@maple/views/ui/text-link"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disclosed, messageBody, viewSwitch } from "./payload-view"
@@ -31,7 +33,6 @@ export const rowViewSwitch = (h: H, model: Model, rowKey: string, text: string, 
 const historyToggle = (h: H, model: Model, user: Extract<TranscriptRow, { kind: "user" }>): Html => {
 	const historyKey = `${user.key}:history`
 	const isShown = disclosed(model.openRows, historyKey, false)
-	// TODO(tooltip): "N earlier messages re-sent with this one, shown once" is drawn as its trigger.
 	return textLink(
 		h,
 		{
@@ -42,6 +43,10 @@ const historyToggle = (h: H, model: Model, user: Extract<TranscriptRow, { kind: 
 				h.AriaExpanded(isShown),
 				h.DataAttribute("base-ui-tooltip-trigger", ""),
 				h.DataAttribute("slot", "tooltip-trigger"),
+				...tooltipTrigger(
+					h,
+					`${countLabel(user.earlierCount, "earlier message")} re-sent with this one, shown once`,
+				),
 			],
 		},
 		[isShown ? "hide history" : `+${user.earlierCount} re-sent`],

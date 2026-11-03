@@ -10,6 +10,7 @@ import type { LoadFailure } from "@maple/views/data/load-failure"
 import { errorState } from "@maple/views/ui/error-state"
 import { pageTitle } from "@maple/views/ui/page-layout"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { timeControls } from "../../kit/time-controls"
@@ -31,8 +32,6 @@ import { errorsTable, prepare } from "./view-errors"
 import * as ErrorModal from "./error-modal-model"
 import * as ErrorModalView from "./view-error-modal"
 import { sessionsPanel } from "./view-sessions"
-
-// TODO(tooltip): the description's tooltip is drawn as its trigger.
 
 type H = HtmlBuilder<Message>
 
@@ -73,6 +72,7 @@ const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, cont
 												),
 												h.DataAttribute("base-ui-tooltip-trigger", ""),
 												h.DataAttribute("slot", "tooltip-trigger"),
+												...tooltipTrigger(h, totals.description, { isOverflowOnly: true }),
 												h.Tabindex(0),
 											],
 											[totals.description],

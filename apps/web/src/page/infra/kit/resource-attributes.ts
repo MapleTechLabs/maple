@@ -7,7 +7,6 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { typography } from "@maple/views/ui/typography"
 
 // `ResourceAttributesCard` / `ResourceAttributesCardSkeleton` and `DetailRail.MetaRow` with its copy buttons.
-// TODO(tooltip): a row's `tooltip` renders its trigger; the hover popup is not wired yet.
 
 /** Copy status per row label: each row's `CopyButton` keeps its own `useCopy` state. */
 export const Copies = Schema.Record(Schema.String, CopyButton.Model)

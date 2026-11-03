@@ -6,6 +6,7 @@ import { filterChip } from "@maple/views/ui/filter-chip"
 import { activeFilterChips } from "@maple/views/ui/filters/active-filter-chips"
 import { skeleton } from "@maple/views/ui/skeleton"
 import * as TabsView from "@maple/views/ui/tabs-view"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
@@ -25,7 +26,6 @@ import { filtersRail } from "./view-filters"
 import { listBody } from "./view-list"
 
 // The anomalies page.
-// TODO(tooltip): the Live chip's "Auto-refreshing every 15s" tooltip popup.
 
 type H = HtmlBuilder<Message>
 
@@ -40,7 +40,15 @@ const liveChip = (h: H, isLive: boolean): Html =>
 			tone: "ok",
 			hasDot: true,
 			slot: "tooltip-trigger",
-			attributes: [h.DataAttribute("base-ui-tooltip-trigger", "")],
+			attributes: [
+				h.DataAttribute("base-ui-tooltip-trigger", ""),
+				...tooltipTrigger(
+					h,
+					isLive
+						? "Auto-refreshing every 15s. Click to pause."
+						: "Paused. Click to resume auto-refresh.",
+				),
+			],
 		},
 		[isLive ? "Live" : "Paused"],
 	)

@@ -20,6 +20,7 @@ import * as Toast from "@maple/views/ui/toast"
 import type { ClerkSnapshot } from "./platform/clerk"
 import { subscriptions } from "./subscription"
 import { settle, update } from "./update"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const NOW = Date.parse("2026-10-01T12:00:00Z")
@@ -33,6 +34,7 @@ const base = (route: AppRoute): Model => ({
 	toasts: Toast.init("toasts"),
 	toastActions: {},
 	toastRootActions: {},
+	tooltip: TooltipHost.init("tooltip"),
 	page: null,
 	pageInstances: 0,
 	parkedPages: [],

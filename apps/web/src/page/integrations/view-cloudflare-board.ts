@@ -32,9 +32,9 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 
 // `CloudflareZoneBoard`, `ResourceRow`, `CountChip` and `CloudflareWorkersCard`.
-// TODO(tooltip): the "Details" trigger renders; its popup with the raw error is the overlay port's.
 
 type H = HtmlBuilder<Message>
 
@@ -58,6 +58,7 @@ const detailView = (h: H, detail: ZoneDetail): ReadonlyArray<Html | string> =>
 											"cursor-help font-medium underline decoration-dotted underline-offset-2",
 										),
 										h.DataAttribute("slot", "tooltip-trigger"),
+										...tooltipTrigger(h, detail.raw),
 									],
 									["Details"],
 								),

@@ -3,6 +3,7 @@ import { refreshButtonIconPendingStyles, refreshButtonIconStyles } from "@maple/
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import { icon } from "./icon"
+import { tooltipTrigger } from "./tooltip-host"
 
 export type RefreshButtonOptions<Message> = Readonly<{
 	onRefresh: Message
@@ -19,10 +20,7 @@ export type RefreshButtonOptions<Message> = Readonly<{
 	triggerId?: string
 }>
 
-/**
- * `<RefreshButton>`: the icon spins while pending and the button disables.
- * TODO(tooltip): the icon-only form renders the tooltip trigger only; the popup is the overlay port's.
- */
+/** `<RefreshButton>`: the icon spins while pending and the button disables. */
 export const refreshButton = <Message>(
 	h: HtmlBuilder<Message>,
 	options: RefreshButtonOptions<Message>,
@@ -51,6 +49,7 @@ export const refreshButton = <Message>(
 					...common,
 					h.AriaLabel(label),
 					h.DataAttribute("base-ui-tooltip-trigger", ""),
+					...tooltipTrigger(h, label, { layout: "icon-button" }),
 					...(options.triggerId === undefined ? [] : [h.Id(options.triggerId)]),
 				],
 			},
