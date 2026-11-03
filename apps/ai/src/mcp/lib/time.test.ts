@@ -154,6 +154,16 @@ describe("resolveWindow", () => {
 		expect(result._tag === "Resolved" && result.notices.join()).toContain("in the future")
 	})
 
+	it("reads the last 15 minutes for a start_time minutes ahead of server now, and says so", () => {
+		const result = resolve("2026-08-20 17:10:00")
+		expect(result).toMatchObject({
+			_tag: "Resolved",
+			st: "2026-08-20 16:49:05",
+			et: "2026-08-20 17:04:05",
+		})
+		expect(result._tag === "Resolved" && result.notices.join()).toContain("ahead of server now")
+	})
+
 	it("rejects a start_time that is not in the past, naming server now", () => {
 		const result = resolve("2026-08-20 18:00:00")
 		expect(result._tag).toBe("Rejected")

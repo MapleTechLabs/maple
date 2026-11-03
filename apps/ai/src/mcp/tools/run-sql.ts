@@ -179,27 +179,25 @@ const runSqlSchema = Schema.Struct({
 		`Clip each rendered cell to this many characters (default ${DEFAULT_CELL_CHARS}, max ${MAX_CELL_CHARS}). Raise it to read long values such as log bodies or stack traces.`,
 	),
 	show_sql: P.optionalFlag("Also return the macro-expanded SQL that ran (default false)."),
+	reason: P.optionalText(
+		"Why you are running this query, in a sentence. Recorded for usage review; does not change the query.",
+	),
 })
+
+/** Longest `reason` kept on the span. */
+const MAX_REASON_CHARS = 200
 
 const runSqlDescription =
 	"Run one read-only ClickHouse SELECT against the org's warehouse and return its rows: " +
 	`at most ${MAX_RAW_SQL_RESULT_ROWS} are fetched and the first ${MAX_RENDERED_ROWS} rendered, with the count reported. ` +
-	"Use it to answer what query_data cannot express, to spot-check data, or to test SQL before saving it " +
-	"as a raw_sql widget with add_dashboard_widget. For trends and top-N prefer query_data. " +
-	"Spans are in `traces` (there is no otel_spans, otel_traces or spans table) and log lines in `logs`. " +
-	"Main tables: traces, logs, metrics_sum/metrics_gauge/metrics_histogram, error_events, session_replays, product_events. " +
-	"Time columns: Timestamp on traces, logs, error_events and product_events; TimeUnix on metrics_*; StartTime on session_replays; " +
-	"Hour on *_hourly rollups and service_usage; Minute on *_minutely. " +
-	"service_usage is a SummingMergeTree (always sum() its counts; TraceCount counts spans); metrics_sum cumulative counters " +
-	"carry running totals (never sum Value across points); product_events properties are in Attributes. " +
-	"Select 64-bit IDs and hashes as toString(col) to keep their precision. " +
-	"traces columns include SpanName (not Name), StatusCode ('Ok'/'Error'/'Unset', no Status), Duration (ns), " +
-	"SpanAttributes and ResourceAttributes (no Attributes column on traces). " +
-	"Attribute columns are Map(String, String): read them as SpanAttributes['http.route'], never with JSON* functions. " +
-	"Compare timestamps to 'YYYY-MM-DD HH:MM:SS' or toDateTime64('...', 9), not ISO strings with T/Z; " +
-	"bucket with toStartOfInterval(Timestamp, INTERVAL 5 MINUTE) or toStartOfMinute/Hour (no toStartOfTenSeconds, no intDiv on DateTime64). " +
-	"Every non-aggregated SELECT column must be in GROUP BY. " +
-	"describe_warehouse_tables gives every table's columns and notes."
+	"Use it for what query_data cannot express, to spot-check data, or to test SQL for a raw_sql widget. For trends and top-N prefer query_data. " +
+	"The SQL must AND in `$__orgFilter`; macros are listed on `sql`. " +
+	"Spans are in `traces` (no otel_spans/spans table), log lines in `logs`; also metrics_sum/metrics_gauge/metrics_histogram, " +
+	"error_events, session_replays, product_events and *_hourly/*_minutely rollups. " +
+	"Select 64-bit IDs and hashes as toString(col). Attribute columns are Map(String, String): SpanAttributes['http.route'], never JSON* functions. " +
+	"In traces the name is SpanName, StatusCode is 'Ok'/'Error' and Duration is nanoseconds. " +
+	"Compare timestamps to 'YYYY-MM-DD HH:MM:SS', not ISO T/Z strings; bucket with toStartOfInterval. " +
+	"Call describe_warehouse_tables for a table's columns, units and enum casing before guessing names."
 
 /** Twelve significant digits: hides binary float noise (8282.599999999999) without losing real precision. */
 const roundFloat = (value: number): number =>
@@ -322,6 +320,12 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 		hints: { readOnly: true },
 		phrases: ["Running a query", "Running SQL", "Querying the warehouse"],
 		handler: Effect.fn("McpTool.runSql")(function* (params) {
+			if (params.reason !== undefined) {
+				yield* Effect.annotateCurrentSpan(
+					"maple.mcp.run_sql.reason",
+					params.reason.slice(0, MAX_REASON_CHARS),
+				)
+			}
 			const tenant = yield* CurrentMcpTenant
 			const { st, et } = yield* WINDOW.resolve(params, "run_sql")
 			const granularitySeconds = params.granularity_seconds ?? autoBucketSeconds(st, et)

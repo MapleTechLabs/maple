@@ -49,7 +49,7 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 			"across dependencies and runtimes, with what was checked and found clean (version exposure, not exploitation).",
 		parameters: Schema.Struct({
 			id: P.text(
-				"A code fingerprint, dependency finding id, runtime key (product@version), answered probe (service:/path) or advisory id (CVE-…, GHSA-…)",
+				"From list_security_findings: a code audit finding fingerprint (not an error fingerprint from find_errors), dependency finding id, runtime key (product@version), answered probe (service:/path) or advisory id (CVE-…, GHSA-…)",
 			),
 			repository: P.optionalText(
 				"Only this repository (owner/name), when a fingerprint exists in several",

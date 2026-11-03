@@ -24,6 +24,18 @@ export const SELECTABLE_STATES = WORKFLOW_STATE_ORDER.filter(
 	(state) => !MACHINE_OWNED_WORKFLOW_STATES.has(state),
 )
 
+const STATE_LIST = SELECTABLE_STATES.join(", ")
+
+/** The `to_state` parameter; the description lists the enum because agents guess names. */
+export const toStateParam = (prefix = "Target state") =>
+	P.oneOf(SELECTABLE_STATES, `${prefix}: ${STATE_LIST}`)
+
+export const optionalToStateParam = (prefix: string, suffix: string) =>
+	P.optionalOneOf(SELECTABLE_STATES, `${prefix}: ${STATE_LIST}. ${suffix}`)
+
+/** Retired and model-guessed spellings of `to_state`. */
+export const TO_STATE_ALIASES = { workflow_state: "to_state" } as const
+
 /**
  * An issue id is its UUID or its REST id (`iss_…`). A fingerprint (a decimal UInt64 from
  * find_errors) is the usual wrong value, so the description names where the right one comes from.

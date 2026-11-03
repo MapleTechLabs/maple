@@ -34,6 +34,12 @@ const toolName = ($: TracesRow) => $.SpanAttributes.get("gen_ai.tool.name")
 const errorType = ($: TracesRow) => $.SpanAttributes.get("error.type")
 const userAgent = ($: TracesRow) => $.SpanAttributes.get("user_agent.original")
 const failed = ($: TracesRow) => errorType($).neq("")
+/**
+ * Why a call failed: the status message, else `error.message`. An `isError` tool result is a
+ * successful JSON-RPC call with status Ok, so its reason can only ride on the attribute.
+ */
+const errorMessage = ($: TracesRow) =>
+	CH.if_($.StatusMessage.neq(""), $.StatusMessage, $.SpanAttributes.get("error.message"))
 
 /** The end user: OpenTelemetry `user.id`, else the deprecated `enduser.id`. */
 const userId = ($: TracesRow) =>
@@ -242,7 +248,7 @@ export function mcpSpanSummaryQuery() {
 			inSession: CH.countIf($.SpanAttributes.get("mcp.session.id").neq("").or(userId($).neq(""))),
 			// A call with a caller span from `params._meta` links the HTTP span instead of hanging off it.
 			withCallerTrace: CH.countIf(CH.arrayElement($.LinksTraceId, 1).neq("")),
-			withMessage: CH.countIf($.StatusMessage.neq("")),
+			withMessage: CH.countIf(errorMessage($).neq("")),
 			firstSpan: CH.min_($.Timestamp),
 			protocolVersion: nonEmpty($.SpanAttributes.get("mcp.protocol.version")),
 			transport: nonEmpty($.SpanAttributes.get("network.transport")),
@@ -357,7 +363,7 @@ export function mcpErrorGroupsQuery(filter: McpCallFilter) {
 	return from(Traces)
 		.select(($) => ({
 			errorType: errorType($),
-			message: $.StatusMessage,
+			message: errorMessage($),
 			count: CH.count(),
 			clients: CH.uniqExact(mcpClientName($)),
 			lastSeen: CH.max_($.Timestamp),
@@ -375,10 +381,10 @@ export function mcpErrorTrendQuery(filter: McpCallFilter, messages: ReadonlyArra
 		.select(($) => ({
 			bucket: isoBucket($.Timestamp),
 			errorType: errorType($),
-			message: $.StatusMessage,
+			message: errorMessage($),
 			count: CH.count(),
 		}))
-		.where(($) => [...calls($, filter), failed($), CH.inList($.StatusMessage, messages)])
+		.where(($) => [...calls($, filter), failed($), CH.inList(errorMessage($), messages)])
 		.groupBy("bucket", "errorType", "message")
 		.format("JSON")
 }
@@ -546,7 +552,7 @@ const requestColumns = ($: TracesRow) => ({
 	protocolVersion: $.SpanAttributes.get("mcp.protocol.version"),
 	duration: $.Duration,
 	errorType: errorType($),
-	message: $.StatusMessage,
+	message: errorMessage($),
 	traceId: $.TraceId,
 	spanId: $.SpanId,
 	linkTraceId: CH.arrayElement($.LinksTraceId, 1),

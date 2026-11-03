@@ -996,6 +996,9 @@ const enforceRawBreakdownSpanBudget = Effect.fn("QueryEngineService.enforceRawBr
 			return yield* new QueryEngineValidationError({
 				message: verdict.exceeded.message,
 				details: [...verdict.exceeded.details],
+				...(verdict.exceeded.fittingRangeSeconds === undefined
+					? undefined
+					: { fittingRangeSeconds: verdict.exceeded.fittingRangeSeconds }),
 			})
 		}
 	},

@@ -84,30 +84,27 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "List Security Findings",
 		description:
-			"Security findings across Maple's Security Center, worst first: the AI code audit's vulnerabilities in " +
-			"connected repositories (`code`), known-vulnerable packages in their lockfiles (`dependencies`), scanner probes for secrets, .git, debug endpoints and exploits " +
-			"that services answered with a 2xx, plus who is scanning (`exposure`), and services on runtime versions with " +
-			"known CVEs, past end of life or behind on patches (`runtimes`). With no `area`, an overview of all four: " +
-			"per-area state and counts plus the worst findings. With an `area`, every matching finding of that area and " +
-			"its detail tables (probe categories and scanning sources; every service's runtime). `Runs in` names the " +
-			"production services running a commit of the finding's repository, so `service` narrows code and " +
-			"dependency findings too. Severity is the code " +
-			"audit's rating (estimated for unconfirmed leads), the advisory's, critical for a served secrets or .git " +
-			"probe and high for other served probes; a runtime takes its worst CVE, else medium past end of life, low " +
-			"when behind. Answers 'what are our security issues', 'are we vulnerable', 'is anyone scanning us', 'which " +
-			"services run an EOL Node'. `inspect_security_finding` reads one finding or answers 'are we affected by CVE-…'.",
+			"Security Center findings, worst first: code audit vulnerabilities (`code`), vulnerable lockfile packages (`dependencies`), " +
+			"scanner probes services answered with a 2xx and who is scanning (`exposure`), outdated or CVE-affected runtimes (`runtimes`). " +
+			"No `area` gives an overview of all four; an `area` lists every finding with detail. " +
+			"inspect_security_finding reads one finding or answers 'are we affected by CVE-...'.",
 		parameters: Schema.Struct({
 			area: P.optionalOneOf(
 				SECURITY_AREAS,
 				"Only this area, with every finding and its detail. Omit for the overview",
 			),
-			severity: P.optionalOneOf(SEVERITY_FLOORS, "Only findings at this severity or worse"),
+			severity: P.optionalOneOf(
+				SEVERITY_FLOORS,
+				"Only findings at this severity or worse. Severity is the audit's or advisory's rating; a served secrets or .git probe is critical, other served probes high; a runtime takes its worst CVE, else medium past end of life, low when behind",
+			),
 			status: P.optionalOneOf(
 				STATUS_FILTERS,
 				"Triage state of code and dependency findings (default open). Telemetry findings are always current",
 			),
 			repository: P.optionalText("Only code and dependency findings of this repository (owner/name)"),
-			service: P.service("Only findings that reach this service (exact `service.name`)"),
+			service: P.service(
+				"Only findings that reach this service (exact `service.name`); includes code and dependency findings of repositories it runs",
+			),
 			limit: P.limit({ default: 30, max: 200, noun: "findings" }),
 			offset: P.offset({ max: 2000 }),
 			...WINDOW.fields,

@@ -167,7 +167,7 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 			trace_id: P.text("The trace ID the span belongs to"),
 			span_id: P.text("The span ID to inspect (from `inspect_trace` output)"),
 			timestamp: P.optionalTimestamp(
-				"Timestamp of the span (e.g. from search_traces). Narrows the scan to ±1h and saves an AI span the lookup that resolves its trace's bounds",
+				"Timestamp of the span (from search_traces or inspect_trace). Reads the hour around it and skips the lookup of the trace's bounds",
 			),
 			payload_chars: P.limit({
 				default: 2_000,

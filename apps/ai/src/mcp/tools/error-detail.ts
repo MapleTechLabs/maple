@@ -244,7 +244,7 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 		name: "error_detail",
 		title: "Error Detail",
 		description:
-			"One error: what it is (exception, message, services, count, first/last seen), sample traces with the failing span, and correlated logs. Takes a `fingerprint` (decimal UInt64 from find_errors) or an `issue_id` (UUID from list_error_issues). Without a window it reads around the error's last occurrence. Use inspect_trace on a trace_id for the full span tree.",
+			"Sample traces (failing span, correlated logs) and a summary for one error, by `fingerprint` (decimal UInt64 from find_errors) or `issue_id` (UUID from list_error_issues). Without start_time/end_time it counts the last 30 days and samples the 6 hours before the last occurrence. Use inspect_trace on a trace_id for the full span tree.",
 		parameters: Schema.Struct({
 			fingerprint: P.optionalText(
 				'The error FingerprintHash from find_errors or list_error_issues: a decimal UInt64 string, e.g. "11640295108927840024".',
@@ -253,6 +253,10 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 				"An error issue id from list_error_issues (its UUID or its REST id, iss_…), instead of fingerprint.",
 			),
 			...WINDOW.fields,
+			start_time: WINDOW.fields.start_time.annotate({
+				description:
+					"Start of the window, UTC (YYYY-MM-DD HH:mm:ss or ISO 8601). Omit both bounds to anchor on the error's last occurrence in the past 30 days.",
+			}),
 			service: P.service(),
 			include_timeseries: P.optionalFlag(
 				"Include error count over time to see if the error is trending up or down",
