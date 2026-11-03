@@ -140,7 +140,7 @@ const rowActions = (h: H, row: EventRow): Html =>
 				variant: "ghost",
 				size: "xs",
 				attributes: [
-					h.AriaLabel(`Paths after ${row.eventName}`),
+					h.AriaLabel(`Paths from ${row.eventName}`),
 					h.OnClick(
 						Message.ClickedStartPaths({ anchor: { kind: "event", eventName: row.eventName } }),
 					),
