@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import type { QueryEngineResult } from "@maple/query-engine"
-import { Effect } from "effect"
+import { Clock, Effect } from "effect"
 import { QueryEngineExecutionError } from "@maple/domain/http"
 import { runQueryEngineBatch } from "@/routes/query-engine-batch"
 
@@ -54,7 +54,7 @@ describe("runQueryEngineBatch", () => {
 
 	it.live("bounds total wall time with a deadline shared by every item", () =>
 		Effect.gen(function* () {
-			const started = Date.now()
+			const started = yield* Clock.currentTimeMillis
 			// 8 items at concurrency 2 = 4 waves. Each query would take 200ms, so
 			// a per-item timeout would let this run ~800ms; the SHARED deadline has
 			// to cut it off at ~120ms instead.
@@ -64,7 +64,7 @@ describe("runQueryEngineBatch", () => {
 				deadlineMs: 120,
 				concurrency: 2,
 			})
-			const elapsed = Date.now() - started
+			const elapsed = (yield* Clock.currentTimeMillis) - started
 
 			assert.strictEqual(outcomes.length, 8)
 			// Bound chosen to discriminate: a SHARED deadline finishes in ~120ms

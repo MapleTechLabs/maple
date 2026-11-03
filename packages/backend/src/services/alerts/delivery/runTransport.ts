@@ -10,7 +10,7 @@ import {
 	type AlertDeliveryFailure,
 	type AlertDestinationType,
 } from "@maple/domain/http"
-import { Duration, Effect, Option, Result, String as Str } from "effect"
+import { Duration, Effect, Option, String as Str } from "effect"
 import { constTrue } from "effect/Function"
 import { HttpBody, HttpClient, HttpClientRequest } from "effect/http"
 import type { HttpClientResponse } from "effect/http"
@@ -224,10 +224,7 @@ export const runHttpTransport = <Config>(
 					),
 				),
 			)
-			const ack = yield* Result.match(transport.interpret(input, rawBody), {
-				onSuccess: (value) => Effect.succeed(value),
-				onFailure: (error) => Effect.fail(error),
-			})
+			const ack = yield* Effect.fromResult(transport.interpret(input, rawBody))
 			return { ...ack, responseCode: response.status }
 		}
 

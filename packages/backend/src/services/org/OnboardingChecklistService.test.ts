@@ -30,8 +30,8 @@ import { SupportChannelService } from "@maple/backend/services/support/SupportCh
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_checklist")
-const USER = Schema.decodeUnknownSync(UserId)("user_checklist")
+const ORG = Schema.decodeSync(OrgId)("org_checklist")
+const USER = Schema.decodeSync(UserId)("user_checklist")
 const tenant: TenantContext = { orgId: ORG, userId: USER, roles: ["org:admin"], authMode: "self_hosted" }
 
 const die = () => Effect.die(new Error("not exercised by this test"))
@@ -158,7 +158,7 @@ const stubs = (world: World) =>
 						? Effect.die(new Error("clerk unreachable"))
 						: Effect.succeed(
 								Array.from({ length: world.memberCount }, (_, index) => ({
-									userId: Schema.decodeUnknownSync(UserId)(`user_${index}`),
+									userId: Schema.decodeSync(UserId)(`user_${index}`),
 									email: `member${index}@example.com`,
 									name: null,
 									imageUrl: null,

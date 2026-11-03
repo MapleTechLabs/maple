@@ -56,8 +56,8 @@ const makeLayer = (testDb: TestDb) =>
 		DashboardPersistenceService.layer,
 		SharedDashboardService.layer,
 		Layer.succeed(CurrentMcpTenant, {
-			orgId: Schema.decodeUnknownSync(OrgId)(ORG),
-			userId: Schema.decodeUnknownSync(UserId)("internal-service"),
+			orgId: Schema.decodeSync(OrgId)(ORG),
+			userId: Schema.decodeSync(UserId)("internal-service"),
 			roles: [],
 			authMode: "self_hosted",
 		}),
@@ -283,7 +283,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 describe("legacy v2 payloads get a corrective error", () => {
 	// The parameter schemas the widget tools publish; a failure is what the registry reports.
 	const decodeErrorOf = (json: string) =>
-		Effect.flip(Schema.decodeUnknownEffect(dataSourceJson("test"))(json)).pipe(
+		Effect.flip(Schema.decodeEffect(dataSourceJson("test"))(json)).pipe(
 			Effect.map((error) => error.message),
 		)
 
@@ -330,7 +330,7 @@ describe("legacy v2 payloads get a corrective error", () => {
 	it.effect("a whole widget carrying a v2 dataSource gets the same hint", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(
-				Schema.decodeUnknownEffect(widgetJson("test"))(
+				Schema.decodeEffect(widgetJson("test"))(
 					JSON.stringify({
 						id: "w1",
 						visualization: "markdown",
@@ -358,7 +358,7 @@ describe("legacy v2 payloads get a corrective error", () => {
 	it.effect("a widget with endpoint/params on itself instead of a dataSource is named", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(
-				Schema.decodeUnknownEffect(widgetJson("test"))(
+				Schema.decodeEffect(widgetJson("test"))(
 					JSON.stringify({
 						visualization: "chart",
 						endpoint: "service_overview",
@@ -374,7 +374,7 @@ describe("legacy v2 payloads get a corrective error", () => {
 
 	it.effect("a valid v3 source still decodes untouched", () =>
 		Effect.gen(function* () {
-			const source = yield* Schema.decodeUnknownEffect(dataSourceJson("test"))('{"kind":"static"}')
+			const source = yield* Schema.decodeEffect(dataSourceJson("test"))('{"kind":"static"}')
 			assert.deepStrictEqual(source, { kind: "static" })
 		}),
 	)

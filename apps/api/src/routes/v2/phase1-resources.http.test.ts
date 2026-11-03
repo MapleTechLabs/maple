@@ -377,8 +377,8 @@ const testConfig = () =>
 		}),
 	)
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_phase1_e2e")
-const USER = Schema.decodeUnknownSync(UserId)("user_phase1_e2e")
+const ORG = Schema.decodeSync(OrgId)("org_phase1_e2e")
+const USER = Schema.decodeSync(UserId)("user_phase1_e2e")
 
 type InvestigationStartMode = "success" | "unavailable" | "restart_not_found"
 type IssueReadFailure =
@@ -486,7 +486,7 @@ const makeHarness = (
 			submitDiagnosis: die,
 		}),
 		Layer.succeed(AnomalyDetectionService, {
-			runTick: die,
+			runTick: die(),
 			listIncidents: (_org, options) => {
 				const offset = options?.offset ?? 0
 				return Effect.succeed(
@@ -582,7 +582,7 @@ const makeHarness = (
 				),
 			proposeFix: die,
 			recordAnomalyLinkEvent: () => Effect.void,
-			runTick: die,
+			runTick: die(),
 		}),
 		Layer.succeed(ErrorIssueWorkflowService, {
 			rowToIssue: dieSync,

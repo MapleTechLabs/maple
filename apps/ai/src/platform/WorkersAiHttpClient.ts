@@ -116,7 +116,7 @@ const readJsonBody = (request: HttpClientRequest.HttpClientRequest) => {
 			),
 		)
 	}
-	return Schema.decodeUnknownEffect(JsonObjectFromString)(text).pipe(
+	return Schema.decodeEffect(JsonObjectFromString)(text).pipe(
 		Effect.mapBoth({
 			onSuccess: (parsed): Record<string, unknown> => ({ ...parsed }),
 			onFailure: (cause) =>
@@ -143,7 +143,7 @@ const readJsonBody = (request: HttpClientRequest.HttpClientRequest) => {
 const isNativeWorkersAiTrailer = (payload: string): boolean =>
 	payload !== "[DONE]" &&
 	Option.exists(
-		Schema.decodeUnknownOption(JsonObjectFromString)(payload),
+		Schema.decodeOption(JsonObjectFromString)(payload),
 		(frame) =>
 			!("choices" in frame) &&
 			!("object" in frame) &&

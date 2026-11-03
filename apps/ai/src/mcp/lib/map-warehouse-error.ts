@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { type WarehouseError, WarehouseQuotaExceededError, WarehouseSchemaDriftError } from "@maple/domain"
 import {
 	warehouseHandlers,
@@ -22,7 +22,7 @@ const SCHEMA_DRIFT_HINT =
  * Row-decoding failures have their own tag and never receive this hint.
  */
 export const warehouseErrorText = (error: WarehouseError): string =>
-	error instanceof WarehouseSchemaDriftError ? `${error.message}${SCHEMA_DRIFT_HINT}` : error.message
+	Schema.is(WarehouseSchemaDriftError)(error) ? `${error.message}${SCHEMA_DRIFT_HINT}` : error.message
 
 const BUDGET_GUIDANCE = {
 	max_execution_time:
@@ -43,7 +43,7 @@ const BUDGET_GUIDANCE = {
 export const toMcpQueryError =
 	(pipe: string) =>
 	(error: WarehouseError): McpQueryError | McpQueryBudgetError =>
-		error instanceof WarehouseQuotaExceededError
+		Schema.is(WarehouseQuotaExceededError)(error)
 			? new McpQueryBudgetError({
 					message: BUDGET_GUIDANCE[error.setting],
 					pipeName: pipe,

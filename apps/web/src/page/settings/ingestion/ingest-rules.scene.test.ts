@@ -98,7 +98,7 @@ describe("ingest rules section", () => {
 	})
 
 	test("the last 24 hours show what each rule dropped or redacted, and No hits for the rest", () => {
-		const stats = Schema.decodeUnknownSync(V2IngestRuleStats)({
+		const stats = Schema.decodeSync(V2IngestRuleStats)({
 			object: "ingest_rule_stats",
 			start_time: "2026-10-27T12:00:00.000Z",
 			end_time: "2026-10-28T12:00:00.000Z",

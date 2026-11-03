@@ -15,7 +15,7 @@ import { init } from "./update"
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 
-const document = Schema.decodeUnknownSync(DashboardDocument)({
+const document = Schema.decodeSync(DashboardDocument)({
 	id: "dash_metrics",
 	name: "Metrics",
 	timeRange: { type: "relative", value: "1h" },

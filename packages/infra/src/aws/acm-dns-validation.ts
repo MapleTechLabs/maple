@@ -108,98 +108,96 @@ const describe = (certificateArn: string, region: AwsRegionName) =>
 /** ACM returns validation record names fully qualified with a trailing dot; DNS APIs do not want it. */
 const stripTrailingDot = (name: string): string => Str.replace(/\.$/, "")(name)
 
-export const AcmValidationRecordProvider = () =>
-	Provider.succeed(AcmValidationRecord, {
-		// Nothing to delete; without the skip, nuke loops on "deleted but still there".
-		nuke: { skip: true },
-		// No `stables`: `certificateArn` changes when the certificate is replaced, and
-		// a stable's OLD value would plan the ALB listener against the deleted cert.
-		list: () => Effect.succeed([]),
-		delete: () => Effect.void,
-		reconcile: Effect.fn(function* ({ news }) {
-			const found = yield* describe(news.certificateArn, news.region).pipe(
-				Effect.flatMap((detail) => {
-					const options = detail?.DomainValidationOptions ?? []
-					const records = Arr.flatMap(options, (option) =>
-						option.ResourceRecord?.Name && option.ResourceRecord.Value
-							? [{ name: option.ResourceRecord.Name, value: option.ResourceRecord.Value }]
-							: [],
-					)
-					// Not yet published, retry.
-					if (records.length === 0 || records.length < options.length) {
-						return Effect.fail(
-							new AcmValidationError({
-								certificateArn: news.certificateArn,
-								message: "ACM has not published a DNS validation record yet",
-							}),
-						)
-					}
-					// SANs often share one record. Distinct records are not modeled: publishing
-					// only the first would stall short of ISSUED with no reason given.
-					const distinct = new Map(Arr.map(records, (record) => [record.name, record]))
-					const [first] = [...distinct.values()]
-					if (distinct.size > 1 || first === undefined) {
-						// oxlint-disable-next-line maple/no-effect-die -- unsupported stack shape, see above
-						return Effect.die(
-							new AcmValidationError({
-								certificateArn: news.certificateArn,
-								message: `certificate needs ${distinct.size} distinct validation records (${Arr.join([...distinct.keys()], ", ")}); this resource publishes one`,
-							}),
-						)
-					}
-					return Effect.succeed(first)
-				}),
-				Effect.retry({
-					while: (error) => error._tag === "Maple.ACM.ValidationError",
-					schedule: RECORD_POLL,
-				}),
-			)
-			return {
-				certificateArn: news.certificateArn,
-				recordName: stripTrailingDot(found.name),
-				recordValue: found.value,
-			} satisfies AcmValidationRecordAttributes
-		}),
-	})
-
-export const AcmCertificateIssuedProvider = () =>
-	Provider.succeed(AcmCertificateIssued, {
-		nuke: { skip: true },
-		// No `stables`, see `AcmValidationRecordProvider`.
-		list: () => Effect.succeed([]),
-		delete: () => Effect.void,
-		reconcile: Effect.fn(function* ({ news }) {
-			const status = yield* describe(news.certificateArn, news.region).pipe(
-				Effect.flatMap((detail) => {
-					if (detail?.Status === "ISSUED") return Effect.succeed(detail.Status)
-					// Terminal: fail now with ACM's reason instead of retrying.
-					if (isTerminalFailure(detail?.Status)) {
-						// oxlint-disable-next-line maple/no-effect-die -- the certificate can never issue, see above
-						return Effect.die(
-							new AcmValidationError({
-								certificateArn: news.certificateArn,
-								message: `certificate issuance failed: ${detail?.Status}${detail?.FailureReason ? ` (${detail.FailureReason})` : ""}`,
-							}),
-						)
-					}
+export const AcmValidationRecordProvider = Provider.succeed(AcmValidationRecord, {
+	// Nothing to delete; without the skip, nuke loops on "deleted but still there".
+	nuke: { skip: true },
+	// No `stables`: `certificateArn` changes when the certificate is replaced, and
+	// a stable's OLD value would plan the ALB listener against the deleted cert.
+	list: () => Effect.succeed([]),
+	delete: () => Effect.void,
+	reconcile: Effect.fn(function* ({ news }) {
+		const found = yield* describe(news.certificateArn, news.region).pipe(
+			Effect.flatMap((detail) => {
+				const options = detail?.DomainValidationOptions ?? []
+				const records = Arr.flatMap(options, (option) =>
+					option.ResourceRecord?.Name && option.ResourceRecord.Value
+						? [{ name: option.ResourceRecord.Name, value: option.ResourceRecord.Value }]
+						: [],
+				)
+				// Not yet published, retry.
+				if (records.length === 0 || records.length < options.length) {
 					return Effect.fail(
 						new AcmValidationError({
 							certificateArn: news.certificateArn,
-							message: `certificate is ${detail?.Status ?? "unknown"}, not ISSUED`,
+							message: "ACM has not published a DNS validation record yet",
 						}),
 					)
-				}),
-				Effect.retry({
-					while: (error) => error._tag === "Maple.ACM.ValidationError",
-					schedule: ISSUED_POLL,
-				}),
-			)
-			return { certificateArn: news.certificateArn, status } satisfies AcmCertificateIssuedAttributes
-		}),
-	})
+				}
+				// SANs often share one record. Distinct records are not modeled: publishing
+				// only the first would stall short of ISSUED with no reason given.
+				const distinct = new Map(Arr.map(records, (record) => [record.name, record]))
+				const [first] = [...distinct.values()]
+				if (distinct.size > 1 || first === undefined) {
+					// oxlint-disable-next-line maple/no-effect-die -- unsupported stack shape, see above
+					return Effect.die(
+						new AcmValidationError({
+							certificateArn: news.certificateArn,
+							message: `certificate needs ${distinct.size} distinct validation records (${Arr.join([...distinct.keys()], ", ")}); this resource publishes one`,
+						}),
+					)
+				}
+				return Effect.succeed(first)
+			}),
+			Effect.retry({
+				while: (error) => error._tag === "Maple.ACM.ValidationError",
+				schedule: RECORD_POLL,
+			}),
+		)
+		return {
+			certificateArn: news.certificateArn,
+			recordName: stripTrailingDot(found.name),
+			recordValue: found.value,
+		} satisfies AcmValidationRecordAttributes
+	}),
+})
+
+export const AcmCertificateIssuedProvider = Provider.succeed(AcmCertificateIssued, {
+	nuke: { skip: true },
+	// No `stables`, see `AcmValidationRecordProvider`.
+	list: () => Effect.succeed([]),
+	delete: () => Effect.void,
+	reconcile: Effect.fn(function* ({ news }) {
+		const status = yield* describe(news.certificateArn, news.region).pipe(
+			Effect.flatMap((detail) => {
+				if (detail?.Status === "ISSUED") return Effect.succeed(detail.Status)
+				// Terminal: fail now with ACM's reason instead of retrying.
+				if (isTerminalFailure(detail?.Status)) {
+					// oxlint-disable-next-line maple/no-effect-die -- the certificate can never issue, see above
+					return Effect.die(
+						new AcmValidationError({
+							certificateArn: news.certificateArn,
+							message: `certificate issuance failed: ${detail?.Status}${detail?.FailureReason ? ` (${detail.FailureReason})` : ""}`,
+						}),
+					)
+				}
+				return Effect.fail(
+					new AcmValidationError({
+						certificateArn: news.certificateArn,
+						message: `certificate is ${detail?.Status ?? "unknown"}, not ISSUED`,
+					}),
+				)
+			}),
+			Effect.retry({
+				while: (error) => error._tag === "Maple.ACM.ValidationError",
+				schedule: ISSUED_POLL,
+			}),
+		)
+		return { certificateArn: news.certificateArn, status } satisfies AcmCertificateIssuedAttributes
+	}),
+})
 
 /** Merge alongside `AWS.providers()`, whose credentials and HTTP client these reads use. */
-export const providers = () => Layer.mergeAll(AcmValidationRecordProvider(), AcmCertificateIssuedProvider())
+export const providers = Layer.mergeAll(AcmValidationRecordProvider, AcmCertificateIssuedProvider)
 
 /**
  * Resolve the Cloudflare zone by hostname (read, never managed). A missing zone

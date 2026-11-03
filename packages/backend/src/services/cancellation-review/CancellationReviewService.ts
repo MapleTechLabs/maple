@@ -36,6 +36,7 @@ import {
 } from "@maple/domain/http"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Cause, Clock, Context, DateTime, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -198,6 +199,7 @@ export class CancellationReviewService extends Context.Service<
 		const onboarding = yield* OnboardingService
 		const dailySpend = yield* DailySpendService
 		const warehouse = yield* WarehouseQueryService
+		const random = yield* SecureRandom.SecureRandom
 		const ingestKeys = yield* OrgIngestKeysService
 		const autumn = yield* AutumnClient
 		const slack = yield* SupportSlackClient
@@ -555,10 +557,11 @@ export class CancellationReviewService extends Context.Service<
 				.execute((db) =>
 					Effect.gen(function* () {
 						const subscriptionStartedAt = job.startedAt ?? job.canceledAt ?? 0
+						const id = yield* random.uuidV4()
 						const inserted = yield* db.run(
 							PG.insertInto(CancellationReviews)
 								.values({
-									id: crypto.randomUUID(),
+									id,
 									orgId: job.orgId,
 									planId: job.planId,
 									subscriptionStartedAt,
@@ -950,6 +953,7 @@ export class CancellationReviewService extends Context.Service<
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(
+				SecureRandom.layerWebCrypto,
 				OrganizationRegionService.layer,
 				OrganizationService.layer,
 				OrgMembersService.layer,

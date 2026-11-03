@@ -179,7 +179,7 @@ const pages = <B extends { readonly nextPageToken?: string | undefined }, E, R>(
 const readToEnd = <B extends { readonly nextPageToken?: string | undefined }>(last: Option.Option<B>) =>
 	Option.isSome(last) && last.value.nextPageToken === undefined
 
-const SYSTEM_USER_ID = Schema.decodeUnknownSync(UserId)("system-gcp-metrics")
+const SYSTEM_USER_ID = Schema.decodeSync(UserId)("system-gcp-metrics")
 
 const RETRIES = "Maple retries in 5 minutes."
 const NOT_STORED = `${RETRIES} Nothing to do.`
@@ -288,7 +288,7 @@ const FAILED: ConnectorOutcome = { ...NOTHING, failed: true }
 
 export interface GcpMetricsServiceApi {
 	/** No-op unless `MAPLE_GCP_SERVICE_ACCOUNT_KEY` is set. */
-	readonly pollAll: () => Effect.Effect<GcpMetricsPollSummary, IntegrationsPersistenceError | GcpApiError>
+	readonly pollAll: Effect.Effect<GcpMetricsPollSummary, IntegrationsPersistenceError | GcpApiError>
 }
 
 export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMetricsServiceApi>()(
@@ -780,7 +780,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					),
 			)
 
-			const pollAll = Effect.fn("GcpMetricsService.pollAll")(function* () {
+			const pollAll = Effect.gen(function* () {
 				const encodedKey = env.MAPLE_GCP_SERVICE_ACCOUNT_KEY
 				if (Option.isNone(encodedKey)) return IDLE
 				const now = yield* Clock.currentTimeMillis
@@ -867,7 +867,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					incompleteMetrics: polled.reduce((sum, outcome) => sum + outcome.incompleteMetrics, 0),
 					calls: budget.calls,
 				} satisfies GcpMetricsPollSummary
-			})
+			}).pipe(Effect.withSpan("GcpMetricsService.pollAll"))
 
 			return { pollAll } satisfies GcpMetricsServiceApi
 		}),

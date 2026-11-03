@@ -568,16 +568,29 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 	Object.freeze({
-		// TODO(v45): what changed, whether any part is rewritten or any row
-		// moves, and what this edge does NOT backfill.
+		// v45 recreates the error-events views: a single-case value with three digit
+		// runs folds. No row is rewritten; stored hashes are not backfilled.
 		//
 		// projectRevision is carried forward deliberately: it is a hardcoded
 		// constant that no longer tracks the generator's header, and the identity
 		// this gate compares is the fingerprint/digest pair.
 		version: 45,
-		fingerprint: "6f371b316cbde0ce",
-		digest: "6f371b316cbde0ce4a52d45954cb1ca13b2a9bba9a94d949495a3e774ad8f2d4",
-		manifestDigest: "e53cc89302ecdc6f6ebddfd965f983a684f604497b9c67ab81d76c5b731fc859",
+		fingerprint: "51c2621a62c86fd0",
+		digest: "51c2621a62c86fd0e928cb3671592ccef6cda18b296eefdc6c4f1e8a50ddc1cc",
+		manifestDigest: "a9e59221736d9ef7225601bc6ad9571e46aaab5a3e6032ff60e3e100a518ee27",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// v46: error_events views read a maple.fingerprint attribute as the grouping
+		// key. No stored row is rewritten or moved; only new occurrences hash with it.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 46,
+		fingerprint: "3871c915576e1793",
+		digest: "3871c915576e1793230af632eeb14ea3cc5e2112c8801bd32c8b7b7d0c8f5eda",
+		manifestDigest: "1ac5925ec42c2f51511137762410c05d8f5543b626241f5238e9f1e315c9df38",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 ] as const)

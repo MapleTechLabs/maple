@@ -23,8 +23,8 @@ import { UptimeHeartbeatRouter, UptimeInternalRouter } from "./uptime-internal.h
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_uptime_internal")
-const USER = Schema.decodeUnknownSync(UserId)("user_uptime_internal")
+const ORG = Schema.decodeSync(OrgId)("org_uptime_internal")
+const USER = Schema.decodeSync(UserId)("user_uptime_internal")
 const asIso = Schema.decodeUnknownSync(IsoDateTimeString)
 const die = () => Effect.die(new Error("not used by the uptime routes"))
 

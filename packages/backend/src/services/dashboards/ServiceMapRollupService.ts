@@ -55,7 +55,7 @@ export interface ServiceMapRollupServiceApi {
 	 * `LOOKBACK_HOURS` window not yet present in `service_map_edges_hourly`, and
 	 * ingest them. Per-org failures are logged and counted, never thrown.
 	 */
-	readonly runRollupTick: () => Effect.Effect<ServiceMapRollupResult, DatabaseError>
+	readonly runRollupTick: Effect.Effect<ServiceMapRollupResult, DatabaseError>
 }
 
 /**
@@ -235,9 +235,7 @@ export class ServiceMapRollupService extends Context.Service<
 				)
 		})
 
-		const runRollupTick: ServiceMapRollupServiceApi["runRollupTick"] = Effect.fn(
-			"ServiceMapRollupService.runRollupTick",
-		)(function* () {
+		const runRollupTick: ServiceMapRollupServiceApi["runRollupTick"] = Effect.gen(function* () {
 			const orgRows = yield* database.execute((db) =>
 				db.run(PG.from(OrgIngestKeys).select("orgId").distinct()),
 			)
@@ -309,7 +307,7 @@ export class ServiceMapRollupService extends Context.Service<
 				emptyResolutionHours: results.reduce((sum, r) => sum + r.emptyResolutionHours, 0),
 				orgFailures: results.filter((r) => r.failed).length,
 			}
-		})
+		}).pipe(Effect.withSpan("ServiceMapRollupService.runRollupTick"))
 
 		return { runRollupTick }
 	}),

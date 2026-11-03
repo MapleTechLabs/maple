@@ -19,7 +19,7 @@ const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 
-const document = Schema.decodeUnknownSync(DashboardDocument)({
+const document = Schema.decodeSync(DashboardDocument)({
 	id: "dash_platform",
 	name: "Platform overview",
 	timeRange: { type: "relative", value: "6h" },

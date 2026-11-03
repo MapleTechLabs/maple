@@ -202,11 +202,13 @@ const messageOf = (error: unknown): string | undefined =>
 		? error.message
 		: undefined
 
-const isRangeError = (error: unknown): boolean =>
-	error instanceof QueryEngineValidationError && /time range too large/i.test(error.message)
+const isValidationError = Schema.is(QueryEngineValidationError)
+const isWarehouseDecodeError = Schema.is(WarehouseDecodeError)
 
-const isDecodeError = (error: unknown): boolean =>
-	error instanceof WarehouseDecodeError || error instanceof QueryEngineValidationError
+const isRangeError = (error: unknown): boolean =>
+	isValidationError(error) && /time range too large/i.test(error.message)
+
+const isDecodeError = (error: unknown): boolean => isWarehouseDecodeError(error) || isValidationError(error)
 
 /** The tile's error state for a failed fetch. */
 export const toWidgetFailure = (error: unknown): WidgetFailure => {

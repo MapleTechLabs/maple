@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, DateTime } from "effect"
 import { TestClock } from "effect/testing"
 import { CreateSourceRequest, OrgId, UpdateSourceRequest, UserId } from "@maple/domain/http"
 import { SourceId } from "@maple/domain/primitives"
@@ -36,10 +36,10 @@ const config = ConfigProvider.layer(
 const makeLayer = (testDb: TestDb) =>
 	SourcesService.layer.pipe(Layer.provide(testDb.layer), Layer.provide(Env.layer), Layer.provide(config))
 
-const orgA = Schema.decodeUnknownSync(OrgId)("org_a")
-const orgB = Schema.decodeUnknownSync(OrgId)("org_b")
-const user = Schema.decodeUnknownSync(UserId)("user_a")
-const missingId = Schema.decodeUnknownSync(SourceId)("0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b")
+const orgA = Schema.decodeSync(OrgId)("org_a")
+const orgB = Schema.decodeSync(OrgId)("org_b")
+const user = Schema.decodeSync(UserId)("user_a")
+const missingId = Schema.decodeSync(SourceId)("0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b")
 
 /**
  * An integration source as its service creates it, with what its poller last reported. Fixture
@@ -57,15 +57,15 @@ const insertSource = (
 			testDb,
 			`INSERT INTO sources (id, org_id, name, platform, kind, last_poll_ok_at, last_poll_error,
 				disconnected_at, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, 'integration', $5, $6, $7, now(), now())`,
+			 VALUES ($1, $2, $3, $4, 'integration', $5, $6, CASE WHEN $7 THEN now() END, now(), now())`,
 			[
 				id,
 				orgA,
 				name,
 				platform,
-				poll.okAt === undefined ? null : new Date(poll.okAt).toISOString(),
+				poll.okAt === undefined ? null : DateTime.formatIso(DateTime.makeUnsafe(poll.okAt)),
 				poll.error ?? null,
-				poll.disconnected === true ? new Date().toISOString() : null,
+				poll.disconnected === true,
 			],
 		),
 	)
@@ -512,7 +512,7 @@ describe("SourcesService", () => {
 						id,
 						orgA,
 						name,
-						lastScrapeAt === null ? null : new Date(lastScrapeAt).toISOString(),
+						lastScrapeAt === null ? null : DateTime.formatIso(DateTime.makeUnsafe(lastScrapeAt)),
 						error,
 					],
 				),
@@ -615,7 +615,7 @@ describe("SourcesService", () => {
 	it.effect("reads an AWS source's health from its metric stream, not from the role check", () => {
 		const testDb = createTestDb(trackedDbs)
 		const now = 2 * 3_600_000
-		const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOString())
+		const iso = (ms: number | null) => (ms === null ? null : DateTime.formatIso(DateTime.makeUnsafe(ms)))
 		const insertAws = (
 			id: string,
 			name: string,
@@ -721,7 +721,7 @@ describe("SourcesService", () => {
 			// Last data is the last delivery: a passing role check is not data.
 			assert.strictEqual(
 				sources.find((source) => source.name === "streaming")?.health.lastDataAt,
-				new Date(now - 2 * 60_000).toISOString(),
+				DateTime.formatIso(DateTime.makeUnsafe(now - 2 * 60_000)),
 			)
 			assert.isNull(sources.find((source) => source.name === "never delivered")?.health.lastDataAt)
 		}).pipe(Effect.provide(makeLayer(testDb)))

@@ -52,7 +52,7 @@ const adminOnly = (tool: string) =>
 const decodeInterval = (raw: number | undefined) =>
 	raw === undefined
 		? Effect.undefined
-		: Schema.decodeUnknownEffect(UptimeIntervalSeconds)(raw).pipe(
+		: Schema.decodeEffect(UptimeIntervalSeconds)(raw).pipe(
 				Effect.mapError(
 					() =>
 						new McpInvalidInputError({

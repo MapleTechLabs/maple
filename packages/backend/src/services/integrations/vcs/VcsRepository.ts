@@ -67,10 +67,10 @@ const decodeBranch = Schema.decodeUnknownSync(VcsBranch)
 // Validate the SHA shape via the branded type (the regex lives only there);
 // a malformed SHA throws and is caught into a VcsRepoDecodeError on write.
 const decodeGitSha = Schema.decodeUnknownSync(GitCommitSha)
-const newInstallationId = () => Schema.decodeUnknownSync(VcsInstallationId)(randomUUID())
-const newRepositoryId = () => Schema.decodeUnknownSync(VcsRepositoryId)(randomUUID())
-const newCommitRowId = () => Schema.decodeUnknownSync(VcsCommitRowId)(randomUUID())
-const newBranchId = () => Schema.decodeUnknownSync(VcsBranchId)(randomUUID())
+const newInstallationId = () => Schema.decodeSync(VcsInstallationId)(randomUUID())
+const newRepositoryId = () => Schema.decodeSync(VcsRepositoryId)(randomUUID())
+const newCommitRowId = () => Schema.decodeSync(VcsCommitRowId)(randomUUID())
+const newBranchId = () => Schema.decodeSync(VcsBranchId)(randomUUID())
 
 // Share-lock a repository row for the child upserts' purge gate (see upsertRepositories).
 const lockRepositoryRow = (orgId: OrgId, repositoryId: VcsRepositoryId) =>

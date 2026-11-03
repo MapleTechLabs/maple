@@ -1724,9 +1724,36 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0044-to-0045-error-custom-fingerprint",
+		id: "local-0044-to-0045-error-fingerprint-interleaved-values",
 		from: 44,
 		to: 45,
+		description: "Recreate the error_events MVs: single-case interleaved value tokens fold",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events views so a value token whose case never mixes (a request reference, a team id) no longer mints one issue per occurrence",
+			],
+		],
+		verifies: "Verify the v45 physical schema and retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their FingerprintHash untouched; only occurrences whose message carries a single-case interleaved value hash differently after the migration.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
+	{
+		id: "local-0045-to-0046-error-custom-fingerprint",
+		from: 45,
+		to: 46,
 		description: "Recreate the error_events MVs: a maple.fingerprint attribute sets the grouping key",
 		clonedBefore: "the views are replaced",
 		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
@@ -1736,7 +1763,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Drop and recreate the error-events views so an error carrying maple.fingerprint groups by that key per org and service",
 			],
 		],
-		verifies: "Verify the v45 physical schema and retained raw telemetry counts",
+		verifies: "Verify the v46 physical schema and retained raw telemetry counts",
 		dispositions: [
 			TRACES_UNDER_REPLACED_VIEWS,
 			{

@@ -16,7 +16,7 @@ const NOW = Date.parse("2026-08-04T12:00:00Z")
 const iso = (epochMs: number) => new Date(epochMs).toISOString()
 
 const target = (over: Partial<V2PlanetScaleScrapeTarget> = {}): V2PlanetScaleScrapeTarget => ({
-	id: Schema.decodeUnknownSync(ScrapeTargetId)("11111111-1111-4111-8111-111111111111"),
+	id: Schema.decodeSync(ScrapeTargetId)("11111111-1111-4111-8111-111111111111"),
 	object: "planetscale_integration.scrape_target",
 	enabled: true,
 	scrape_interval_seconds: 30,

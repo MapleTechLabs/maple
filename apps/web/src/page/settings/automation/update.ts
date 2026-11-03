@@ -261,7 +261,7 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedEvaluate: () => {
 			if (model.isEvaluating || model.isDirty) return { model }
 			const severity = Option.getOrElse(
-				Schema.decodeUnknownOption(DecisionSource)(model.source),
+				Schema.decodeOption(DecisionSource)(model.source),
 				() => "ai" as const,
 			)
 			const request = new EscalationPolicyEvaluationRequest({

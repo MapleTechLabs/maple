@@ -13,12 +13,12 @@ import { makeMemoryAuditLog } from "./AuditLogService"
 import { auditAttribution, recordMcpToolAudit, recordRawSqlAudit, withAuditedRead } from "./audit-access"
 import { AuditLogService } from "./AuditLogService"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_audit_access_test")
-const USER = Schema.decodeUnknownSync(UserId)("user_audit_access_test")
+const ORG = Schema.decodeSync(OrgId)("org_audit_access_test")
+const USER = Schema.decodeSync(UserId)("user_audit_access_test")
 /** The sentinel an investigation's own pass runs under, and the connector placeholder. */
-const SERVICE_USER = Schema.decodeUnknownSync(UserId)("internal-service")
-const CONNECTOR_PLACEHOLDER_USER = Schema.decodeUnknownSync(UserId)("chat-connector")
-const CONNECTOR_ACTOR = Schema.decodeUnknownSync(ActorId)("00000000-0000-4000-8000-00000000c0de")
+const SERVICE_USER = Schema.decodeSync(UserId)("internal-service")
+const CONNECTOR_PLACEHOLDER_USER = Schema.decodeSync(UserId)("chat-connector")
+const CONNECTOR_ACTOR = Schema.decodeSync(ActorId)("00000000-0000-4000-8000-00000000c0de")
 
 const CONNECTOR_ORIGIN: ChatTurnOrigin = {
 	kind: "connector",
@@ -127,7 +127,7 @@ describe("withAuditedRead", () => {
 
 describe("auditAttribution", () => {
 	it("attributes an agent tenant to the agent acting for the user", () => {
-		const actorId = Schema.decodeUnknownSync(Schema.String)("actor_1")
+		const actorId = Schema.decodeSync(Schema.String)("actor_1")
 		const attribution = auditAttribution(
 			{
 				orgId: ORG,
@@ -146,7 +146,7 @@ describe("auditAttribution", () => {
 	})
 
 	it("freezes the API key's name onto the entry", () => {
-		const apiKeyId = Schema.decodeUnknownSync(Schema.String)("key_1")
+		const apiKeyId = Schema.decodeSync(Schema.String)("key_1")
 		expect(
 			auditAttribution(
 				{ orgId: ORG, userId: USER },

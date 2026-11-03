@@ -465,7 +465,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 						publicMetadata: organizationRegionMetadata(region),
 					}),
 				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
-				const orgId = yield* Schema.decodeUnknownEffect(OrgId)(org.id).pipe(
+				const orgId = yield* Schema.decodeEffect(OrgId)(org.id).pipe(
 					Effect.mapError(
 						() =>
 							new OrganizationProviderError({

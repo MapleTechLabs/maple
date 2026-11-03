@@ -67,27 +67,27 @@ import {
 	Record as Rec,
 	String as Str,
 } from "effect"
-import { AGENTS } from "@/chat/agents"
-import type { ChatTurnEvent } from "@/chat/events"
-import { withToolTranscript } from "@/chat/close-out"
-import { PR_REVIEW_RULESET, PR_REVIEW_TOOLS } from "@/chat/permissions"
-import { normalizeArguments, argumentWarnings } from "@/mcp/lib/decode-issues"
-import { PR_REVIEW_CLOSE_OUT_PROMPT } from "@/chat/prompts"
-import { makeChildFindings } from "@/chat/review-child-findings"
-import { makeReviewCoverage } from "@/chat/review-coverage"
-import { makeReviewLedger } from "@/chat/review-ledger"
-import { runChatTurn, type SettledChild } from "@/chat/run"
-import { makeRunUsage, savedFindingsRequest } from "@/chat/tools"
-import type { McpToolExecutorApi } from "@/mcp/dispatcher"
+import { AGENTS } from "../src/chat/agents"
+import type { ChatTurnEvent } from "../src/chat/events"
+import { withToolTranscript } from "../src/chat/close-out"
+import { PR_REVIEW_RULESET, PR_REVIEW_TOOLS } from "../src/chat/permissions"
+import { normalizeArguments, argumentWarnings } from "../src/mcp/lib/decode-issues"
+import { PR_REVIEW_CLOSE_OUT_PROMPT } from "../src/chat/prompts"
+import { makeChildFindings } from "../src/chat/review-child-findings"
+import { makeReviewCoverage } from "../src/chat/review-coverage"
+import { makeReviewLedger } from "../src/chat/review-ledger"
+import { runChatTurn, type SettledChild } from "../src/chat/run"
+import { makeRunUsage, savedFindingsRequest } from "../src/chat/tools"
+import type { McpToolExecutorApi } from "../src/mcp/dispatcher"
 import { inProcessCodeExecutorLayer } from "@yielded/agent-testing/code-executor-substitute"
 import {
 	annotatePatch,
 	renderChangedFiles,
 	renderFileDiffs,
 	renderPullRequestContext,
-} from "@/mcp/tools/pull-request"
-import type { McpToolResult } from "@/mcp/tools/types"
-import { layerLlm, loadLlmSettings, resolveReviewModel, type ResolvedModel } from "@/platform/Llm"
+} from "../src/mcp/tools/pull-request"
+import type { McpToolResult } from "../src/mcp/tools/types"
+import { layerLlm, loadLlmSettings, resolveReviewModel, type ResolvedModel } from "../src/platform/Llm"
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 
@@ -335,7 +335,7 @@ const readRange = (args: Args, dir: string) => {
 	const [baseRef, headRef = ""] = Str.split("..")(args.range ?? "")
 	const head = Str.trim(must(["git", "rev-parse", "--verify", `${headRef}^{commit}`], dir))
 	const base = Str.trim(must(["git", "merge-base", baseRef, head], dir))
-	const sha = (value: string) => orExit(Schema.decodeUnknownOption(GitCommitSha)(value), "commit")
+	const sha = (value: string) => orExit(Schema.decodeOption(GitCommitSha)(value), "commit")
 	const subject = Str.trim(must(["git", "log", "-1", "--format=%s", head], dir))
 	const body = Str.trim(must(["git", "log", "-1", "--format=%b", head], dir))
 	const author = Str.trim(must(["git", "log", "-1", "--format=%an", head], dir))
@@ -544,7 +544,7 @@ const fetchPullRequestContext = (args: Args, headSha: string): PullRequestContex
 	const slug = `repos/${args.owner}/${args.repo}`
 	// Decoded at the boundary, one schema per read.
 	const read = <A>(schema: Schema.Decoder<A>, path: string): A =>
-		Schema.decodeUnknownSync(Schema.fromJsonString(schema))(must(["gh", "api", path]))
+		Schema.decodeSync(Schema.fromJsonString(schema))(must(["gh", "api", path]))
 	const commits = read(GhContextCommits, `${slug}/pulls/${args.number}/commits?per_page=100`)
 	const comments = [
 		...read(
@@ -1126,6 +1126,7 @@ export const reviewLocally = async (
 			append,
 			onChildSettled: (child) => children.push(child),
 		}).pipe(
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide
 			Effect.provide(layerLlm(settings)),
 			// The engine logs every tool execution at info; the progress lines above are the readable view.
 			Effect.provideService(References.MinimumLogLevel, "Warn"),

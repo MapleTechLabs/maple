@@ -39,7 +39,7 @@ const row = (commit: string, firstSeen: string) => ({
 	apdexScore: 1,
 })
 
-const data = Schema.decodeUnknownSync(ReleasesData)({
+const data = Schema.decodeSync(ReleasesData)({
 	releases: [row(BASE, "2026-09-30T10:00:00.000Z"), row(HEAD, "2026-10-01T10:00:00.000Z")],
 	timeline: [],
 	truncated: false,
@@ -79,7 +79,7 @@ const point = (bucket: string) => ({
 	totalCount: 10,
 	partial: false,
 })
-const detail = Schema.decodeUnknownSync(ReleaseDetail)({
+const detail = Schema.decodeSync(ReleaseDetail)({
 	versions: data.releases,
 	timeline: [],
 	points: [point("2026-10-01T10:00:00.000Z")],

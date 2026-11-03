@@ -20,7 +20,7 @@ const run = (model: Model, messages: ReadonlyArray<Message>) =>
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 
-const document = Schema.decodeUnknownSync(DashboardDocument)({
+const document = Schema.decodeSync(DashboardDocument)({
 	id: "dash_rw",
 	name: "Writes",
 	timeRange: { type: "relative", value: "6h" },

@@ -128,7 +128,7 @@ export const UptimeMonitorsServiceStubLayer = Layer.succeed(UptimeMonitorsServic
 	create: die,
 	update: die,
 	delete: die,
-	listProbeTargets: die,
+	listProbeTargets: die(),
 	recordChecks: die,
 	recordPing: die,
 	testHttp: die,
@@ -371,7 +371,7 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 		failInvestigation: die,
 	}),
 	Layer.succeed(AnomalyDetectionService, {
-		runTick: die,
+		runTick: die(),
 		listIncidents: die,
 		countIncidentsByService: die,
 		getIncident: die,
@@ -394,7 +394,7 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 		claimIssue: die,
 		proposeFix: die,
 		recordAnomalyLinkEvent: die,
-		runTick: die,
+		runTick: die(),
 	}),
 	Layer.succeed(ErrorIssueWorkflowService, {
 		rowToIssue: dieSync,
@@ -548,7 +548,7 @@ export const PlanetScaleServiceStubsLayer = Layer.mergeAll(
 		disconnect: die,
 	}),
 	Layer.succeed(PlanetScaleService, {
-		pollAllOrgs: die,
+		pollAllOrgs: die(),
 		listDatabases: die,
 		listEvents: die,
 		queryInsights: die,

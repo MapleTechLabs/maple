@@ -177,11 +177,11 @@ const foldInto = (
 				break
 			}
 			if (call !== undefined) {
-				message.toolCalls[index] = {
+				message.toolCalls[index] = new ChatToolCall({
 					...call,
 					output: event.output,
 					...(event.isError === true ? { isError: true } : undefined),
-				} as ChatToolCall
+				})
 			}
 			break
 		}
@@ -213,7 +213,7 @@ const settleUnfinished = (drafts: Drafts, messageId: string, nested?: Map<string
 		child?.messages.forEach((draft) => settleUnfinished(child, draft.id))
 		const task =
 			call.task?.status === "running" ? { ...call.task, status: "aborted" as const } : call.task
-		return { ...call, stopped: true, ...(task === undefined ? undefined : { task }) } as ChatToolCall
+		return new ChatToolCall({ ...call, stopped: true, ...(task === undefined ? undefined : { task }) })
 	})
 }
 

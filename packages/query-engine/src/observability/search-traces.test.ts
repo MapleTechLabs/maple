@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Array as Arr, String as Str } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { OrgId } from "@maple/domain/http"
 import { WarehouseQuotaExceededError } from "@maple/domain/http/warehouse-errors"
 import { searchTraces } from "./search-traces"
@@ -58,7 +58,7 @@ const sixHours = { startTime: "2026-04-01 00:00:00", endTime: "2026-04-01 06:00:
 
 const run = (executor: WarehouseExecutorApi, input: Partial<Parameters<typeof searchTraces>[0]> = {}) =>
 	searchTraces({ timeRange: sixHours, spanName: "checkout", limit: 2, ...input }).pipe(
-		Effect.provide(Layer.succeed(WarehouseExecutor, executor)),
+		Effect.provideService(WarehouseExecutor, executor),
 	)
 
 describe("searchTraces by span name", () => {

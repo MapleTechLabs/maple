@@ -12,8 +12,8 @@ import { executeLocalQuery, type LocalQueryError } from "@maple/query-engine/loc
 import { debugLog } from "../lib/debug"
 
 /** The single tenant every local store is written under. */
-export const LOCAL_ORG_ID = Schema.decodeUnknownSync(OrgId)("local")
-const LOCAL_USER_ID = Schema.decodeUnknownSync(UserId)("local")
+export const LOCAL_ORG_ID = Schema.decodeSync(OrgId)("local")
+const LOCAL_USER_ID = Schema.decodeSync(UserId)("local")
 const LOCAL_TENANT = { orgId: LOCAL_ORG_ID, userId: LOCAL_USER_ID, authMode: "local" as const }
 
 /**

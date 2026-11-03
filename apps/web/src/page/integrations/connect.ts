@@ -106,7 +106,7 @@ export const PROVIDERS = {
 } satisfies { readonly [K in ConnectProvider]: ProviderSpec }
 
 const decodeReturnPath = Schema.decodeUnknownResult(IntegrationReturnPath)
-const RETURN_PATH_ROOT = Schema.decodeUnknownSync(IntegrationReturnPath)("/")
+const RETURN_PATH_ROOT = Schema.decodeSync(IntegrationReturnPath)("/")
 
 /** `currentReturnPath()`: the callback only accepts a dashboard-relative path. */
 export const currentReturnPath = Effect.sync(() =>

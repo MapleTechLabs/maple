@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import type { QueryEngineResult } from "@maple/domain/query-engine"
 import type { QueryBuilderQueryDraftPayload, QuerySet } from "@maple/query-model"
 import { runBreakdownQuerySet } from "./breakdown"
@@ -139,7 +139,7 @@ describe("runBreakdownQuerySet", () => {
 
 			assert.isTrue(outcome._tag === "Failure")
 			if (outcome._tag !== "Failure") return
-			assert.isTrue(outcome.failure instanceof QuerySetNoDataError)
+			assert.isTrue(Schema.is(QuerySetNoDataError)(outcome.failure))
 		}),
 	)
 
@@ -209,7 +209,7 @@ describe("runListQuerySet", () => {
 
 			assert.isTrue(outcome._tag === "Failure")
 			if (outcome._tag !== "Failure") return
-			assert.isTrue(outcome.failure instanceof QuerySetInputError)
+			assert.isTrue(Schema.is(QuerySetInputError)(outcome.failure))
 		}),
 	)
 

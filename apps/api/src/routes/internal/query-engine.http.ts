@@ -201,10 +201,8 @@ const DB_EDGES_BUDGET = Duration.seconds(12)
 /** Endpoint detail has no raw fallback: without migration 0048 the panel is empty. */
 const orEmptyWithoutEndpointDetails = <A, E, R>(effect: Effect.Effect<A, E, R>, empty: A) =>
 	effect.pipe(
-		Effect.catch((error) =>
-			isMissingServiceEndpointDetails(error)
-				? Effect.as(Effect.annotateCurrentSpan("query.rollup.missing", true), empty)
-				: Effect.fail(error),
+		Effect.catchIf(isMissingServiceEndpointDetails, () =>
+			Effect.as(Effect.annotateCurrentSpan("query.rollup.missing", true), empty),
 		),
 	)
 

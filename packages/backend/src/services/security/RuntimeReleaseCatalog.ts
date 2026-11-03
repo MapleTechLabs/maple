@@ -110,13 +110,6 @@ export class RuntimeReleaseCatalog extends Context.Service<RuntimeReleaseCatalog
 								? Option.none()
 								: Option.some([product, result.value] as const),
 						),
-						// A cache error falls back to the read; only a failed read leaves the product out.
-						Effect.catch(() =>
-							fetchReleases(product).pipe(
-								Effect.map((value) => Option.some([product, value] as const)),
-								Effect.orElseSucceed(() => Option.none()),
-							),
-						),
 					)
 
 			const releases = Effect.fn("RuntimeReleaseCatalog.releases")(function* (

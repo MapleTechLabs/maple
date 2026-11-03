@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { gcpConnectorResourceNames, gcpSetupPlan, type GcpSetupPlanInput } from "./gcp"
 import { GcpConnectorId, GcpProjectId } from "./primitives"
 
-const connectorId = Schema.decodeUnknownSync(GcpConnectorId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
+const connectorId = Schema.decodeSync(GcpConnectorId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
 
 describe("gcpConnectorResourceNames", () => {
 	it("derives a service account id inside Google's limits from the connector id alone", () => {
@@ -22,7 +22,7 @@ describe("gcpConnectorResourceNames", () => {
 })
 
 describe("gcpSetupPlan", () => {
-	const project = Schema.decodeUnknownSync(GcpProjectId)("acme-prod")
+	const project = Schema.decodeSync(GcpProjectId)("acme-prod")
 	const input: GcpSetupPlanInput = {
 		connectorId,
 		scopeType: "project",

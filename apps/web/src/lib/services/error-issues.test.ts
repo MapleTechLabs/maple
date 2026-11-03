@@ -60,7 +60,7 @@ describe("error issue v2 queries", () => {
 describe("errorIssueFromV2", () => {
 	it("adapts the snake_case v2 resource to the existing issue view model", () => {
 		const id = "00000000-0000-4000-8000-000000000001"
-		const issue = Schema.decodeUnknownSync(V2ErrorIssue)({
+		const issue = Schema.decodeSync(V2ErrorIssue)({
 			id: encodePublicId("iss", id),
 			object: "error_issue",
 			kind: "error",

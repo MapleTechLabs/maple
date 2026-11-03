@@ -45,8 +45,8 @@ export const FetchSettingsCustomer = Command.define("FetchSettingsCustomer", {
 			return yield* (yield* BillingCustomerCache).get(orgId === null ? { refresh } : { refresh, orgId })
 		}).pipe(
 			Effect.timeoutOrElse({ duration: CUSTOMER_TIMEOUT, orElse: () => Effect.fail(NetworkErrorBody) }),
-			Effect.catchDefect((defect) => Effect.fail(defect)),
 			Effect.mapError(toLoadFailure),
+			Effect.catchDefect((defect) => Effect.fail(toLoadFailure(defect))),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchCustomer({ result })),
 		),

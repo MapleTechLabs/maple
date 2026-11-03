@@ -16,7 +16,7 @@ import {
 } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { productEventsFunnel } from "@maple/query-engine/observability"
 import { PRODUCT_EVENTS_FUNNEL_ENDPOINT } from "@maple/widgets/dashboard"
-import { QuerySpec, type QueryEngineResult } from "@maple/query-engine"
+import { QueryEngineExecuteRequest, QuerySpec, type QueryEngineResult } from "@maple/query-engine"
 import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
 import {
 	buildFormulaResults,
@@ -598,11 +598,14 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 					const decodedSpec = decodedSpecResult.success
 
 					const exit = yield* queryEngine
-						.execute(tenant, {
-							startTime: timeRange.startTime,
-							endTime: timeRange.endTime,
-							query: decodedSpec,
-						})
+						.execute(
+							tenant,
+							new QueryEngineExecuteRequest({
+								startTime: timeRange.startTime,
+								endTime: timeRange.endTime,
+								query: decodedSpec,
+							}),
+						)
 						.pipe(Effect.exit)
 
 					if (Exit.isFailure(exit)) {

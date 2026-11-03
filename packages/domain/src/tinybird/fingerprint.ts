@@ -340,6 +340,19 @@ export const ERROR_MSG_REDACTIONS: Redactions = [
 	[`${TOKEN_OPEN}([^${TOKEN_CLOSE}A-Z]*)${TOKEN_CLOSE}`, "$1"],
 	[`${TOKEN_OPEN}([^${TOKEN_CLOSE}a-z]*)${TOKEN_CLOSE}`, "$1"],
 	[`${TOKEN_OPEN}[^${TOKEN_CLOSE}]*${TOKEN_CLOSE}`, "#"],
+	// A single-case value (`reference = skqdd7q56j7h4ovn7obivsp1`) slipped the token pass,
+	// one issue per occurrence. Three digit runs split by letters mark a value; a name
+	// holding `_`, `-` or both cases, or a `0x` literal, is left to the passes around it.
+	["(^|[^A-Za-z0-9_-])([A-Za-z0-9_-]{10,})", `$1${TOKEN_OPEN}$2${TOKEN_CLOSE}`],
+	[`${TOKEN_OPEN}([^${TOKEN_CLOSE}]*[_-][^${TOKEN_CLOSE}]*)${TOKEN_CLOSE}`, "$1"],
+	[`${TOKEN_OPEN}(0[xX][0-9a-fA-F]*)${TOKEN_CLOSE}`, "$1"],
+	[`${TOKEN_OPEN}([^${TOKEN_CLOSE}]*[a-z][^${TOKEN_CLOSE}]*[A-Z][^${TOKEN_CLOSE}]*)${TOKEN_CLOSE}`, "$1"],
+	[`${TOKEN_OPEN}([^${TOKEN_CLOSE}]*[A-Z][^${TOKEN_CLOSE}]*[a-z][^${TOKEN_CLOSE}]*)${TOKEN_CLOSE}`, "$1"],
+	[
+		`${TOKEN_OPEN}[^${TOKEN_CLOSE}]*[0-9][A-Za-z]+[0-9]+[A-Za-z]+[0-9][^${TOKEN_CLOSE}]*${TOKEN_CLOSE}`,
+		"#",
+	],
+	[`${TOKEN_OPEN}([^${TOKEN_CLOSE}]*)${TOKEN_CLOSE}`, "$1"],
 	// MSG_TEXT_REDACTIONS' own number pass, unchanged except that it keeps tagged statuses.
 	["(§[1-4][0-9][0-9]|§500|§5xx)|[0-9a-fA-F-]{6,}|[0-9]+", "$1#"],
 	["§([1-4][0-9][0-9]|500|5xx)#", "$1"],
@@ -699,7 +712,7 @@ export function computeFingerprintInputs(args: {
  * character scan, keeping compact JSON log lines out of the frames, keeping the
  * status of `statusCode: N` and `(N GET url)`, stripping origins and emails
  * from JSON values, folding JSON path values and masked secrets, and dropping
- * runtime-internal and repeated frames.)
+ * runtime-internal and repeated frames. So did folding single-case interleaved values.)
  *
  * Deliberately NOT a ClickHouse column. Old and new hashes cannot collide, so
  * the warehouse needs no discriminator — only the Postgres row does.

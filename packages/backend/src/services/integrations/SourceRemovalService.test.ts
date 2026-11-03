@@ -38,12 +38,12 @@ const config = ConfigProvider.layer(
 	}),
 )
 
-const org = Schema.decodeUnknownSync(OrgId)("org_a")
-const user = Schema.decodeUnknownSync(UserId)("user_a")
+const org = Schema.decodeSync(OrgId)("org_a")
+const user = Schema.decodeSync(UserId)("user_a")
 const decodeSourceId = Schema.decodeUnknownSync(SourceId)
 
-const projectId = Schema.decodeUnknownSync(GcpProjectId)("acme-prod")
-const accountId = Schema.decodeUnknownSync(AwsAccountId)("123456789012")
+const projectId = Schema.decodeSync(GcpProjectId)("acme-prod")
+const accountId = Schema.decodeSync(AwsAccountId)("123456789012")
 
 const die = () => Effect.die("not used by SourceRemovalService")
 
@@ -102,7 +102,7 @@ const makeLayer = (testDb: TestDb, calls: string[]) => {
 			update: die,
 			setup: die,
 			check: die,
-			checkDue: die,
+			checkDue: die(),
 			delete: (_orgId, connectionId) =>
 				Effect.as(record(`aws:${connectionId}`), {
 					connection: {
@@ -140,7 +140,7 @@ const makeLayer = (testDb: TestDb, calls: string[]) => {
 			disconnect: disconnected("railway"),
 			sync: die,
 			pollOrg: die,
-			pollAllOrgs: die,
+			pollAllOrgs: die(),
 		}),
 		Layer.succeed(PlanetScaleConnectionService, {
 			getStatus: die,
@@ -158,7 +158,7 @@ const makeLayer = (testDb: TestDb, calls: string[]) => {
 			updateProject: die,
 			disconnect: disconnected("supabase"),
 			discoverOrg: die,
-			discoverAllOrgs: die,
+			discoverAllOrgs: die(),
 		}),
 	)
 	const sources = SourcesService.layer.pipe(Layer.provide(Env.layer), Layer.provide(config))

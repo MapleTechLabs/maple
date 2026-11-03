@@ -20,10 +20,9 @@ import {
 	type IncidentPushEvent,
 } from "./MobilePushService"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_push_test")
-const USER = Schema.decodeUnknownSync(UserId)("user_push_test")
-const deviceId = (n: number) =>
-	Schema.decodeUnknownSync(MobileDeviceId)(`00000000-0000-4000-8000-00000000000${n}`)
+const ORG = Schema.decodeSync(OrgId)("org_push_test")
+const USER = Schema.decodeSync(UserId)("user_push_test")
+const deviceId = (n: number) => Schema.decodeSync(MobileDeviceId)(`00000000-0000-4000-8000-00000000000${n}`)
 
 const device = (n: number, overrides: Partial<MobileDevice> = {}): MobileDevice => ({
 	id: deviceId(n),

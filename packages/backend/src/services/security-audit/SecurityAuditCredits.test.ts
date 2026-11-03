@@ -16,7 +16,7 @@ const customer = (balances: Record<string, unknown>) =>
 		balances,
 	})
 
-const withoutBalances = Schema.decodeUnknownSync(BillingCustomer)({
+const withoutBalances = Schema.decodeSync(BillingCustomer)({
 	id: "org_a",
 	subscriptions: [{ planId: "startup", status: "active" }],
 })
@@ -55,8 +55,8 @@ describe("missingCredits", () => {
 })
 
 describe("SecurityAuditCredits", () => {
-	const CUSTOMER_ORG = Schema.decodeUnknownSync(OrgId)("org_customer")
-	const MAPLE_ORG = Schema.decodeUnknownSync(OrgId)("default")
+	const CUSTOMER_ORG = Schema.decodeSync(OrgId)("org_customer")
+	const MAPLE_ORG = Schema.decodeSync(OrgId)("default")
 
 	/** The service over a stubbed Autumn that answers every call with `status` and `body`. */
 	const ensureFor = (

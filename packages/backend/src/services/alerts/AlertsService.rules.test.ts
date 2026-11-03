@@ -9,7 +9,7 @@ import {
 } from "@maple/domain/http"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Exit, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Duration, Effect, Exit, Layer, Schema, Array as Arr, String as Str, DateTime } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	AlertDestinationInUseError,
@@ -103,7 +103,12 @@ describe("AlertsService", () => {
 									bucket: Str.slice(
 										0,
 										19,
-									)(Str.replace("T", " ")(new Date(DEFAULT_CLOCK_EPOCH_MS).toISOString())),
+									)(
+										Str.replace(
+											"T",
+											" ",
+										)(DateTime.formatIso(DateTime.makeUnsafe(DEFAULT_CLOCK_EPOCH_MS))),
+									),
 									groupName: "all",
 									count: 42,
 								},
@@ -184,7 +189,12 @@ describe("AlertsService", () => {
 								bucket: Str.slice(
 									0,
 									19,
-								)(Str.replace("T", " ")(new Date(DEFAULT_CLOCK_EPOCH_MS).toISOString())),
+								)(
+									Str.replace(
+										"T",
+										" ",
+									)(DateTime.formatIso(DateTime.makeUnsafe(DEFAULT_CLOCK_EPOCH_MS))),
+								),
 								groupName: "all",
 								count: 42,
 							},
@@ -449,7 +459,7 @@ describe("AlertsService", () => {
 
 	it.effect("names only a channel the workspace lists, on create and on a channel change", () => {
 		const testDb = createTestDb(trackedDbs)
-		const workspaceId = Schema.decodeUnknownSync(ChatWorkspaceId)("33333333-3333-4333-8333-333333333333")
+		const workspaceId = Schema.decodeSync(ChatWorkspaceId)("33333333-3333-4333-8333-333333333333")
 		const orgId = asOrgId("org_chat_dest")
 		const userId = asUserId("user_chat")
 		// The workspace's listing, as the real poster reads it from the connector: a channel not in
@@ -468,7 +478,7 @@ describe("AlertsService", () => {
 					return channelName === undefined
 						? Effect.fail(new AlertValidationError({ message: "not listed", details: [] }))
 						: Effect.succeed({
-								connector: Schema.decodeUnknownSync(ChatConnectorId)("testchat"),
+								connector: Schema.decodeSync(ChatConnectorId)("testchat"),
 								workspaceName: "Acme Engineering",
 								channelName,
 							})

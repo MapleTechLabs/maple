@@ -21,7 +21,11 @@ interface Sent {
 const recordingFetch = (respond: () => Response = () => Response.json([])) => {
 	const sent: Array<Sent> = []
 	const stub = async (input: string | URL | Request, init?: RequestInit) => {
-		sent.push({ url: String(input), headers: new Headers(init?.headers), redirect: init?.redirect })
+		sent.push({
+			url: typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+			headers: new Headers(init?.headers),
+			redirect: init?.redirect,
+		})
 		return respond()
 	}
 	// SAFETY: the client only calls fetch(url, init), which `stub` implements.

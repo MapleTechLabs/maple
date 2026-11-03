@@ -140,7 +140,7 @@ const fetchReleasesPage = (page: number) =>
 		const text = yield* response.text.pipe(
 			Effect.mapError((error) => toUpdateError("could not read GitHub release response", error)),
 		)
-		return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ReleasesResponse))(text).pipe(
+		return yield* Schema.decodeEffect(Schema.fromJsonString(ReleasesResponse))(text).pipe(
 			Effect.mapError((error) => toUpdateError("could not decode GitHub release response", error)),
 		)
 	})

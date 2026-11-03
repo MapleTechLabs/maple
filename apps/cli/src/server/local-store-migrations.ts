@@ -128,15 +128,15 @@ export const validateMigrationRegistry = (
 		}
 		if (migration.operations.length === 0) throw new Error(`migration ${migration.id} has no operations`)
 		for (const handler of [
-			migration.decodeState,
-			migration.decodeProgress,
-			migration.preflight,
-			migration.prepareTarget,
-			migration.apply,
-			migration.verify,
-			migration.recover,
-		]) {
-			if (typeof handler !== "function")
+			"decodeState",
+			"decodeProgress",
+			"preflight",
+			"prepareTarget",
+			"apply",
+			"verify",
+			"recover",
+		] as const) {
+			if (typeof migration[handler] !== "function")
 				throw new Error(`migration ${migration.id} is missing a module handler`)
 		}
 	}

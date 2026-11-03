@@ -430,7 +430,7 @@ export interface ScoredCase {
 	}>
 }
 
-const REVIEW_ID = Schema.decodeUnknownSync(PrReviewId)("00000000-0000-4000-8000-000000000000")
+const REVIEW_ID = Schema.decodeSync(PrReviewId)("00000000-0000-4000-8000-000000000000")
 const decodeSha = Schema.decodeUnknownSync(GitCommitSha)
 
 export const scoreCase = (

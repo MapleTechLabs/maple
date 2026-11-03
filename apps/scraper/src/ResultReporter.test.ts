@@ -26,8 +26,8 @@ const reporterLayer = (harness: Harness) =>
 	ResultReporter.layer.pipe(
 		Layer.provide(
 			Layer.succeed(ApiClient, {
-				listTargets: () => Effect.succeed([]),
-				listUptimeTargets: () => Effect.succeed([]),
+				listTargets: Effect.succeed([]),
+				listUptimeTargets: Effect.succeed([]),
 				reportUptimeResults: () => Effect.void,
 				reportResults: (results) =>
 					Effect.suspend(() => harness.reportImpl()).pipe(
@@ -221,8 +221,8 @@ describe("UptimeReporter", () => {
 			const layer = UptimeReporter.layer.pipe(
 				Layer.provide(
 					Layer.succeed(ApiClient, {
-						listTargets: () => Effect.succeed([]),
-						listUptimeTargets: () => Effect.succeed([]),
+						listTargets: Effect.succeed([]),
+						listUptimeTargets: Effect.succeed([]),
 						reportResults: () => Effect.void,
 						reportUptimeResults: (results) => Effect.sync(() => void delivered.push(results)),
 					}),

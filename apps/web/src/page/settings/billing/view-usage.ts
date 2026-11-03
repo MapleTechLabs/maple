@@ -181,7 +181,7 @@ const featureRow = (
 	const hasOverage = feature.overageUnits > 0 && !isHardCapped
 	const meter = usageMeter(feature)
 	const isEditing = model.editingCap === feature.featureId
-	const featureId = Option.getOrNull(Schema.decodeUnknownOption(SpendFeatureId)(feature.featureId))
+	const featureId = Option.getOrNull(Schema.decodeOption(SpendFeatureId)(feature.featureId))
 	const color = FEATURE_COLORS[feature.featureId]
 	return tableRow(
 		h,

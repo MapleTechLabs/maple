@@ -77,7 +77,7 @@ export const decodeAgentJson = <S extends Schema.Top>(role: string, schema: S, t
 		if (!Str.startsWith("{")(body) || !Str.endsWith("}")(body)) {
 			return yield* fail(`${role} answered prose, not exactly one JSON object`, [])
 		}
-		return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(body).pipe(
+		return yield* Schema.decodeEffect(Schema.fromJsonString(schema))(body).pipe(
 			Effect.mapError((cause) =>
 				fail(
 					`${role} result is not valid JSON for its contract: ${cause.message}`,

@@ -14,6 +14,7 @@ import {
 } from "@maple/domain/executor"
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers"
 import { Effect, Schema, Semaphore, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { type GatewayProps, gatewayFetch } from "./executor-gateway"
 import { EXECUTOR_PROBE_VERSION, GATEWAY_HOST, GATEWAY_TLS_HOST } from "./executor-probe"
 import { type ExecutorContainer, type ExecutorProbeReport, probeOnce } from "./executor-run"
@@ -38,6 +39,7 @@ const INACTIVITY_TIMEOUT_MS = 90 * 60 * 1000
 const CONCURRENT_COMMANDS = 3
 
 const decoder = new TextDecoder()
+const secureRandom = SecureRandom.make(SecureRandom.randomBytesUnsafe)
 
 /** `exec()` passes on only `PATH`; the scripts expect the rest of what a login shell had. */
 const EXEC_ENV = { HOME: "/root", LANG: "C.UTF-8" }
@@ -121,7 +123,9 @@ export class Executor extends DurableObject<ExecutorEnv> {
 		return Effect.runPromise(
 			decodeRun(request).pipe(
 				Effect.flatMap((decoded) =>
-					this.commands.withPermits(1)(run(this.host, decoded, crypto.randomUUID())),
+					Effect.flatMap(secureRandom.uuidV4(), (id) =>
+						this.commands.withPermits(1)(run(this.host, decoded, id)),
+					),
 				),
 				Effect.orElseSucceed(() => unreadable),
 				Effect.map(encodeRun),

@@ -16,7 +16,7 @@ const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 
-const pending = Schema.decodeUnknownSync(V2PlanetScaleIntegration)({
+const pending = Schema.decodeSync(V2PlanetScaleIntegration)({
 	object: "planetscale_integration",
 	connected: false,
 	pending_org_selection: true,
@@ -137,7 +137,7 @@ describe("planetscale card", () => {
 				Message.CompletedLoadPlanetscale({
 					key: model.statuses.planetscale.key ?? "",
 					result: Result.succeed(
-						Schema.decodeUnknownSync(V2PlanetScaleIntegration)({
+						Schema.decodeSync(V2PlanetScaleIntegration)({
 							object: "planetscale_integration",
 							connected: true,
 							pending_org_selection: false,
