@@ -24,7 +24,7 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "Route Usage",
 		description:
-			'HTTP endpoints (`METHOD /route`, from `http.route`, falling back to `url.path`) per service with request count, error rate, p95 and first/last seen, over up to 90 days from the operations rollup. Answers "is this route still called, and by how much?" in one call. `sort=least_recent` lists the stalest routes first. Last seen is hour-grained for hours wholly inside the window. Outbound HTTP calls named like an endpoint can appear under the calling service.',
+			'HTTP endpoints (`METHOD /route`, from `http.route`, falling back to `url.path`) per service with request count, error rate, p95 and first/last seen, over up to 90 days from the operations rollup. Answers "is this route still called, and by how much?" in one call. `sort=least_recent` lists the stalest routes first. Last seen is hour-grained for hours wholly inside the window. Outbound HTTP calls named like an endpoint can appear under the calling service. All span names of one service ranked by a metric: get_service_top_operations.',
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			service: P.service(),

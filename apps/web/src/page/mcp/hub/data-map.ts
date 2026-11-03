@@ -110,7 +110,7 @@ export const coverageRows = (coverage: Overview["coverage"]): ReadonlyArray<McpC
 		{
 			isPresent: coverage.errorsWithMessage > 0,
 			label: "Why a tool failed",
-			attributes: ["exception", "gen_ai.tool.call.result"],
+			attributes: ["error.message", "exception"],
 			detail:
 				coverage.errorsWithMessage > 0
 					? `${coverage.errorsWithMessage.toLocaleString()} of ${plural(coverage.toolErrors, "failed call")} say why.`

@@ -21,6 +21,8 @@ export interface SpanBudgetVerdict {
 	readonly exceeded?: {
 		readonly message: string
 		readonly details: ReadonlyArray<string>
+		/** The widest window that fits, in whole hours; absent when not even an hour does. */
+		readonly fittingRangeSeconds?: number
 	}
 }
 
@@ -109,6 +111,7 @@ export function rawBreakdownSpanVerdict(
 				`This window holds about ${compactCount(estimatedSpans)} spans for the selected services; a breakdown over raw spans can aggregate about ${compactCount(budget)} before it times out`,
 				`${narrower}, or filter to fewer services`,
 			],
+			...(fittingHours >= 1 ? { fittingRangeSeconds: fittingHours * SECONDS_PER_HOUR } : undefined),
 		},
 	}
 }

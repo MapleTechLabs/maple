@@ -57,7 +57,9 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 				LOG_SEVERITIES,
 				"Only logs at this severity level (matches every SDK spelling of it)",
 			),
-			search: P.optionalText("Substring of the log body"),
+			search: P.optionalText(
+				"Substring of the log body. Scans every body in the window: pair it with `service` or a short window",
+			),
 			trace_id: P.optionalText(
 				"Only logs under this trace. Without start_time, searches the last 7 days instead of 6 hours.",
 			),
@@ -65,7 +67,7 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 			offset: P.offset({ max: 10_000 }),
 			limit: P.limit({ default: 30, max: 200, noun: "logs" }),
 		}),
-		aliases: P.SERVICE_ALIASES,
+		aliases: { ...P.SERVICE_ALIASES, query: "search" },
 		output: SearchLogsOutput,
 		hints: { readOnly: true },
 		phrases: ["Searching logs", "Reading through logs"],
@@ -107,6 +109,7 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 			return {
 				timeRange: { start: st, end: et },
 				totalCount: result.total,
+				...(result.totalIsLowerBound === true ? { totalIsLowerBound: true } : undefined),
 				pagination: {
 					offset: params.offset,
 					limit: params.limit,
@@ -175,7 +178,10 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 			].slice(0, 3)
 			const spanPivot = output.logs.find((l) => l.spanId && l.traceId)
 			return {
-				title: `Logs (${formatNumber(output.totalCount)} total)`,
+				title:
+					output.totalIsLowerBound === true
+						? `Logs (at least ${formatNumber(output.totalCount)}; the exact count did not finish)`
+						: `Logs (${formatNumber(output.totalCount)} total)`,
 				scope,
 				blocks: [doc.text(Arr.join(lines, "\n"))],
 				...(nextOffset === undefined

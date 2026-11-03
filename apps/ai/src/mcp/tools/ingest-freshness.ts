@@ -74,7 +74,7 @@ export function registerIngestFreshnessTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "Ingest Freshness",
 		description:
-			"Newest received timestamp per signal (traces, logs, metrics) for the whole org, with the lag behind end_time and the last hour that had data. Use it before reading silence as an outage: one service gone quiet while its signals keep arriving is the service, every signal stalled at once is ingest. Timestamps in the last hour of the window are exact for logs and metrics and minute-grained for traces; older activity is hour-grained.",
+			"Newest received timestamp per signal (traces, logs, metrics) for the whole org, with the lag behind end_time and the last hour that had data. Use it before reading silence as an outage: one service gone quiet while its signals keep arriving is the service, every signal stalled at once is ingest. Timestamps in the last hour of the window are exact for logs and metrics and minute-grained for traces; older activity is hour-grained. Which source stopped: list_sources; whether the setup is configured correctly: audit_setup.",
 		parameters: Schema.Struct({ ...WINDOW.fields }),
 		output: IngestFreshnessOutput,
 		hints: { readOnly: true },

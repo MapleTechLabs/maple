@@ -98,12 +98,9 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "List Infrastructure",
 		description:
-			"Hosts, Kubernetes pods/nodes/workloads and Docker containers reporting resource metrics, closest to a limit first: CPU, memory and disk use, CPU/memory against limits, pod counts. " +
-			"Also infrastructure from connected integrations: Cloudflare zones (requests, 5xx rate, cache hit rate, edge TTFB) and Workers (invocations, errors, duration, CPU time), Railway services (CPU/memory against limits, replicas) and PlanetScale databases (CPU, memory, storage, connections, replica lag). " +
-			"Without `kind` it returns an overview of every kind that reports, with fleet counts and the top 5 of each. " +
-			"Filter with search, namespace, node, host, workload, environment, and status (hot, at_limit, no_limits; for Cloudflare kinds hot is a 1% error rate, at_limit 5%). " +
-			"Use it to answer 'is anything running hot?', 'which pods have no limits?', 'what runs on this node?', then inspect_infra for one entity over time. " +
-			"Status reflects the window peak, not the latest sample.",
+			"Hosts, Kubernetes pods/nodes/workloads, Docker containers and connected-integration infrastructure (Cloudflare, Railway, PlanetScale), " +
+			"closest to a limit first: CPU, memory and disk use against limits. Without `kind`, an overview of every kind that reports with the top 5 of each. " +
+			"Status reflects the window peak, not the latest sample. Then inspect_infra for one entity over time.",
 		parameters: Schema.Struct({
 			kind: optionalInfraKind("Which kind to list. Omit for an overview of every kind that reports"),
 			search: P.optionalText("Case-insensitive substring of the entity name"),
@@ -123,7 +120,7 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 			),
 			status: P.optionalOneOf(
 				STATUSES,
-				"hot: peak at 60% or more of a limit (hosts: average CPU/memory or fullest disk); at_limit: 90% or more; no_limits: pods and workloads with no CPU or memory limit",
+				"hot: peak at 60% or more of a limit (hosts: average CPU/memory or fullest disk); at_limit: 90% or more; no_limits: pods and workloads with no CPU or memory limit. Cloudflare kinds: hot is a 1% error rate, at_limit 5%",
 			),
 			include_ended: P.optionalFlag(
 				"Pods only: also list pods that stopped reporting during the window (rollouts, OOM kills)",

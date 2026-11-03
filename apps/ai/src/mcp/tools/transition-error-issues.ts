@@ -1,11 +1,11 @@
 import type { McpToolRegistrar } from "./types"
-import { Effect, Schema, Array as Arr } from "effect"
+import { Effect, Schema } from "effect"
 import { TransitionErrorIssuesOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { resolveActorId } from "../lib/resolve-actor"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { SELECTABLE_STATES } from "./error-issue-shared"
+import { TO_STATE_ALIASES, toStateParam } from "./error-issue-shared"
 import { MAX_BATCH_ISSUES, decodeIssueIds, runIssueBatch } from "./error-issue-batch"
 import { transitionIssueFrom } from "./transition-error-issue"
 
@@ -13,17 +13,11 @@ export function registerTransitionErrorIssuesTool(server: McpToolRegistrar) {
 	server.define({
 		name: "transition_error_issues",
 		title: "Transition Error Issues",
-		description: Arr.join(
-			[
-				`Move up to ${MAX_BATCH_ISSUES} error issues to one workflow state in a single call, with one note stored on each issue's timeline.`,
-				"Every issue is checked on its own, exactly as transition_error_issue would: an illegal move, an unknown id or a bad id fails for that issue only and names the states allowed from where it is.",
-				"Moving to `in_progress` claims each issue. `regressed` and `verifying` cannot be requested, and issues with a linked PR should not be closed by hand.",
-			],
-			" ",
-		),
+		description: `Batch form of transition_error_issue, same rules: up to ${MAX_BATCH_ISSUES} issues to one state, one note on each. Each issue is checked on its own; a refused move or bad id fails only that issue.`,
+		aliases: TO_STATE_ALIASES,
 		parameters: Schema.Struct({
 			issue_ids: P.list(`Error issue IDs from list_error_issues, at most ${MAX_BATCH_ISSUES}`),
-			to_state: P.oneOf(SELECTABLE_STATES, "Target workflow state for every issue"),
+			to_state: toStateParam("Target state for every issue"),
 			note: P.optionalText("Reasoning or context, stored on every issue's timeline with the move"),
 			snooze_until: P.optionalTimestamp(
 				"For a `wontfix` move: time after which new occurrences reopen each issue as `triage`",
@@ -47,7 +41,7 @@ export function registerTransitionErrorIssuesTool(server: McpToolRegistrar) {
 					})),
 				),
 			)
-			const succeeded = Arr.filter(results, (result) => result.ok).length
+			const succeeded = results.filter((result) => result.ok).length
 			return {
 				toState: params.to_state,
 				succeeded,
@@ -57,7 +51,7 @@ export function registerTransitionErrorIssuesTool(server: McpToolRegistrar) {
 			}
 		}),
 		render: (output) => {
-			const failures = Arr.filter(output.results, (result) => !result.ok)
+			const failures = output.results.filter((result) => !result.ok)
 			return {
 				title: "Error issues transitioned",
 				blocks: [
@@ -72,7 +66,7 @@ export function registerTransitionErrorIssuesTool(server: McpToolRegistrar) {
 						: [
 								doc.table(
 									["Issue", "Error"],
-									Arr.map(failures, (result) => [result.id, result.error ?? ""]),
+									failures.map((result) => [result.id, result.error ?? ""]),
 								),
 							]),
 				],

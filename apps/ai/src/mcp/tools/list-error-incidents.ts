@@ -11,11 +11,11 @@ export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
 		name: "list_error_incidents",
 		title: "List Error Incidents",
 		description:
-			"List error incidents: time-bounded flare-ups under an error issue. Each issue can have many incidents: a 'first_seen' incident when the issue opens, then 'regression' incidents if new occurrences arrive after the issue was resolved. Incidents auto-resolve after the issue is silent for ~30 min.",
+			"Error incidents: flare-ups of an error issue (alert-rule breaches are list_alert_incidents). An issue gets a 'first_seen' incident when it opens and a 'regression' incident when it fires after being resolved; incidents auto-resolve after ~30 min of silence. No time window: without issue_id, every currently open incident in the org (newest 500); with it, that issue's incidents, open and resolved (newest 200).",
 		parameters: Schema.Struct({
 			issue_id: Schema.optional(
 				issueIdParam(
-					"Optional: narrow to incidents for this issue ID. If omitted, returns org-wide open incidents.",
+					"Only this issue's incidents, resolved ones included. Omit for open incidents org-wide.",
 				),
 			),
 		}),

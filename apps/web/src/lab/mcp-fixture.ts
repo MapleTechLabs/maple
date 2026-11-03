@@ -395,7 +395,7 @@ export const MCP_OVERVIEW: McpServerOverview = {
 		{
 			isPresent: false,
 			label: "Why a tool failed",
-			attributes: ["exception", "gen_ai.tool.call.result"],
+			attributes: ["error.message", "exception"],
 			detail: "Tool errors carry no message, so failures can't be grouped by cause.",
 		},
 	],

@@ -5,7 +5,7 @@ import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
 import { formatDurationFromMs, toSecondTimestamp, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { Effect, Schema, Array as Arr } from "effect"
+import { Effect, Schema } from "effect"
 import { SearchTracesOutput } from "@maple/domain/mcp-outputs"
 import { searchTraces } from "@maple/query-engine/observability"
 import { resolveAttributeScope } from "../lib/attribute-scope"
@@ -22,7 +22,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 		name: "search_traces",
 		title: "Search Traces",
 		description:
-			"Find traces, newest first, by service, duration, error status, HTTP method, span name, or one span attribute. Without `span_name` the filters apply to each trace's entry span and one row per trace comes back; with `span_name` every span is searched and each row is a matching span. Each row has the full trace id, span id and start time; pass the start as inspect_trace `timestamp`. For the slowest traces ranked by duration with percentiles, use find_slow_traces. explore_attributes lists attribute keys and values.",
+			"Find traces, newest first, by service, duration, error status, HTTP method, span name, or one span attribute. Without `span_name` the filters apply to each trace's entry span and one row per trace comes back; with `span_name` every span is searched and each row is a matching span. Each row has the full trace id, span id and start time; pass the start as inspect_trace `timestamp`. There is no free-text search: log text is search_logs. For the slowest traces ranked by duration with percentiles, use find_slow_traces. explore_attributes lists attribute keys and values.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			service: P.service(
@@ -34,7 +34,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			max_duration_ms: P.optionalNumber("Maximum duration in milliseconds"),
 			http_method: P.optionalText("Only spans with this HTTP method"),
 			span_name: P.optionalText(
-				"Case-insensitive substring of the span name. Switches the search to span level",
+				"Case-insensitive substring of the span name. Switches the search to span level; set `service` too, or a rare name across every service can run out of time",
 			),
 			trace_id: P.optionalText("Only this trace"),
 			attribute_key: P.optionalText(
@@ -124,6 +124,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 
 			return {
 				timeRange: { start: st, end: et },
+				...(result.coveredFrom === undefined ? undefined : { coveredFrom: result.coveredFrom }),
 				pagination: {
 					offset: params.offset,
 					limit: params.limit,
@@ -131,7 +132,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 					...(hasMore ? { nextOffset: params.offset + spans.length } : undefined),
 				},
 				// No spanCount: these rows read one span per trace and cannot count the rest.
-				traces: Arr.map(spans, (s) => ({
+				traces: spans.map((s) => ({
 					traceId: s.traceId,
 					...(s.spanId ? { spanId: s.spanId } : undefined),
 					rootSpanName: s.spanName,
@@ -182,11 +183,20 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 				],
 			]
 			const title = output.spanLevel ? "Matching Spans" : "Traces"
+			const partial =
+				output.coveredFrom === undefined
+					? undefined
+					: {
+							notices: [
+								`Only ${output.coveredFrom} to ${output.timeRange.end} was searched: the earlier part did not finish within the query limits. Set \`service\` or query the earlier part with its own end_time.`,
+							],
+						}
 			if (output.traces.length === 0) {
 				return {
 					title,
 					scope,
 					blocks: [],
+					...partial,
 					empty: {
 						message: `No ${noun} found matching the filters in this window.`,
 						hints: [
@@ -201,6 +211,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			return {
 				title,
 				scope,
+				...partial,
 				blocks: [
 					output.spanLevel
 						? doc.table(
@@ -213,24 +224,24 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 									"Duration",
 									"Status",
 								],
-								Arr.map(output.traces, (t) => [
+								output.traces.map((t) => [
 									startCell(t.startTime),
 									t.traceId,
 									t.spanId ?? "",
 									truncate(t.rootSpanName, 40),
-									Arr.join(t.services, ", "),
+									t.services.join(", "),
 									formatDurationFromMs(t.durationMs),
 									t.hasError ? "Error" : "",
 								]),
 							)
 						: doc.table(
 								["Start", "Trace ID", "Root Span", "Duration", "Service", "Error"],
-								Arr.map(output.traces, (t) => [
+								output.traces.map((t) => [
 									startCell(t.startTime),
 									t.traceId,
 									truncate(t.rootSpanName, 30),
 									formatDurationFromMs(t.durationMs),
-									Arr.join(t.services, ", "),
+									t.services.join(", "),
 									t.hasError ? "Yes" : "",
 								]),
 							),
@@ -265,14 +276,16 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 							},
 						}),
 				next: [
-					...Arr.map(output.traces.slice(0, 3), (t) =>
-						doc.next(
-							"inspect_trace",
-							{ trace_id: t.traceId, timestamp: hintOf(t.startTime) },
-							"full span tree",
+					...output.traces
+						.slice(0, 3)
+						.map((t) =>
+							doc.next(
+								"inspect_trace",
+								{ trace_id: t.traceId, timestamp: hintOf(t.startTime) },
+								"full span tree",
+							),
 						),
-					),
-					...Arr.flatMap(output.traces.slice(0, output.spanLevel ? 1 : 0), (t) =>
+					...output.traces.slice(0, output.spanLevel ? 1 : 0).flatMap((t) =>
 						t.spanId === undefined
 							? []
 							: [

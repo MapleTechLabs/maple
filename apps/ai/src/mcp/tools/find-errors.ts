@@ -47,7 +47,7 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 		// issue id is a UUID. Conflating them was the sole cause of every production
 		// error_detail failure.
 		description:
-			"Find and categorize errors by type with counts and affected services. Each error has a stable `fingerprint` (a decimal UInt64): pass it to error_detail for sample traces. The error-issue tools take an `issue_id` UUID from list_error_issues instead, which is a separate identity.",
+			"Ad-hoc error counts by type and affected services for a time window, with no triage state (tracked issues with workflow state and assignee: list_error_issues). Each error has a stable `fingerprint` (a decimal UInt64): pass it to error_detail for sample traces. The error-issue tools take an `issue_id` UUID from list_error_issues instead.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			service: P.service(),

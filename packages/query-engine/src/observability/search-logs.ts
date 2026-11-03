@@ -53,15 +53,34 @@ export const searchLogs = Effect.fn("Observability.searchLogs")(function* (input
 				profile: "list",
 				settings: searchSettings,
 			}),
-			executor.query<LogsCountOutput>(
-				"logs_count",
-				{
-					start_time: input.timeRange.startTime,
-					end_time: input.timeRange.endTime,
-					...optionalParams,
-				},
-				{ profile: "discovery", settings: searchSettings },
-			),
+			// The exact count scans every match while the page stops at `limit`, so on a body search
+			// it was the half that timed out. Losing it must not lose the page.
+			executor
+				.query<LogsCountOutput>(
+					"logs_count",
+					{
+						start_time: input.timeRange.startTime,
+						end_time: input.timeRange.endTime,
+						...optionalParams,
+					},
+					{ profile: "discovery", settings: searchSettings },
+				)
+				.pipe(
+					Effect.map((result) => Number(result.data[0]?.total ?? 0)),
+					Effect.catchTags({
+						"@maple/http/errors/WarehouseQuotaExceededError": (error) =>
+							Effect.as(
+								Effect.annotateCurrentSpan("maple.logs.count_error", error._tag),
+								undefined,
+							),
+						// The executor's own client timeout; a real SQL error fails the page read too.
+						"@maple/http/errors/WarehouseQueryError": (error) =>
+							Effect.as(
+								Effect.annotateCurrentSpan("maple.logs.count_error", error._tag),
+								undefined,
+							),
+					}),
+				),
 		],
 		{ concurrency: "unbounded" },
 	)
@@ -75,11 +94,13 @@ export const searchLogs = Effect.fn("Observability.searchLogs")(function* (input
 			...(input.includeAttributes === true && { attributes }),
 		})),
 	)
-	const total = Number(countResult.data[0]?.total ?? 0)
+	// Without the count, what this page proves exists.
+	const total = countResult ?? (logs.length === 0 ? 0 : offset + logs.length)
 
 	return {
 		timeRange: input.timeRange,
 		total,
+		...(countResult === undefined ? { totalIsLowerBound: true } : undefined),
 		logs,
 		pagination: { offset, limit, hasMore: logs.length === limit },
 	}

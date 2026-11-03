@@ -68,7 +68,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 				"The failing tool (exact `gen_ai.tool.name`, as `get_agent_tools_overview` lists it)",
 			).check(Schema.isMaxLength(AI_TOOLS_SELECTION_MAX_CHARS)),
 			fingerprint: P.text(
-				"The error group, as `get_agent_tools_overview` reported it for this tool (a decimal number)",
+				"The agent tool failure group, the decimal Fingerprint column of `get_agent_tools_overview tool=…`; not an error fingerprint from find_errors",
 			),
 			...agentToolScopeParams,
 			samples_session: boundedText(

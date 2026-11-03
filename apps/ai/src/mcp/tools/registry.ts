@@ -1,7 +1,7 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { Effect, Schema, type SchemaAST, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Clock, Effect, Schema, type SchemaAST } from "effect"
 import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
 import { registerDescribeWarehouseTablesTool } from "./describe-warehouse-tables"
 import { registerComparePeriodsTool } from "./compare-periods"
@@ -145,12 +145,12 @@ class McpDecodeError extends Schema.TaggedError<McpDecodeError>()("@maple/mcp/er
 export const toOutputSchema = (schema: Schema.Top): Record<string, unknown> => {
 	const document = Schema.toJsonSchemaDocument(schema)
 	const base: Record<string, unknown> =
-		Rec.keys(document.definitions).length > 0
+		Object.keys(document.definitions).length > 0
 			? { ...document.schema, $defs: document.definitions }
 			: document.schema
 	if (base.type !== "object" && !("$ref" in base)) {
 		throw new Error(
-			`MCP tool output schemas must have an object root; got ${Str.slice(0, 200)(String(stringifyJson(base)))}. Wrap the output in a Schema.Struct.`,
+			`MCP tool output schemas must have an object root; got ${String(stringifyJson(base)).slice(0, 200)}. Wrap the output in a Schema.Struct.`,
 		)
 	}
 	return base
@@ -166,17 +166,17 @@ const isEmptyStructSchema = (base: Record<string, unknown>): boolean => {
 	if ("type" in base || "properties" in base) return false
 	const not = base.not
 	if (typeof not === "object" && not !== null) {
-		const keys = Arr.filter(Rec.keys(base), (key) => key !== "$defs")
+		const keys = Object.keys(base).filter((key) => key !== "$defs")
 		if (keys.length === 1 && (not as { type?: unknown }).type === "null") {
-			return Rec.keys(not).length === 1
+			return Object.keys(not).length === 1
 		}
 	}
 	const anyOf = base.anyOf
-	if (!Arr.isArray(anyOf) || anyOf.length === 0) return false
-	return Arr.every(anyOf, (member) => {
+	if (!Array.isArray(anyOf) || anyOf.length === 0) return false
+	return anyOf.every((member) => {
 		if (typeof member !== "object" || member === null) return false
 		const type = (member as { type?: unknown }).type
-		return Rec.keys(member).length === 1 && (type === "object" || type === "array")
+		return Object.keys(member).length === 1 && (type === "object" || type === "array")
 	})
 }
 
@@ -200,13 +200,13 @@ const isEmptyStructSchema = (base: Record<string, unknown>): boolean => {
  * The one exception, `P.optionalNullableNumberOneOf`, is optional and names null in its description.
  */
 const collapseNullableUnions = (node: unknown): unknown => {
-	if (Arr.isArray(node)) return Arr.map(node, collapseNullableUnions)
+	if (Array.isArray(node)) return node.map(collapseNullableUnions)
 	if (node === null || typeof node !== "object") return node
 	const obj = node as Record<string, unknown>
 	const anyOf = obj.anyOf
-	if (Arr.isArray(anyOf)) {
+	if (Array.isArray(anyOf)) {
 		// Nested unions arrive flattened: `optional(Union([A, B]))` is `anyOf: [A, B, null]`.
-		const kept = Arr.filter(anyOf, (member) => !isJsonObject(member) || member.type !== "null")
+		const kept = anyOf.filter((member) => !isJsonObject(member) || member.type !== "null")
 		if (kept.length > 0 && kept.length < anyOf.length) {
 			const { anyOf: _replaced, ...siblings } = obj
 			// Siblings last: a `description` on the property outranks one on the branch.
@@ -217,13 +217,11 @@ const collapseNullableUnions = (node: unknown): unknown => {
 			)
 		}
 	}
-	return Rec.fromEntries(
-		Arr.map(Rec.toEntries(obj), ([key, value]) => [key, collapseNullableUnions(value)]),
-	)
+	return Object.fromEntries(Object.entries(obj).map(([key, value]) => [key, collapseNullableUnions(value)]))
 }
 
 const isJsonObject = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Arr.isArray(value)
+	typeof value === "object" && value !== null && !Array.isArray(value)
 
 const DEFS_PREFIX = "#/$defs/"
 
@@ -237,14 +235,11 @@ const inlineDefinitions = (root: Record<string, unknown>): Record<string, unknow
 	const defs = isJsonObject(root.$defs) ? root.$defs : {}
 	const kept = new Set<string>()
 	const visit = (node: unknown, trail: ReadonlySet<string>): unknown => {
-		if (Arr.isArray(node)) return Arr.map(node, (item) => visit(item, trail))
+		if (Array.isArray(node)) return node.map((item) => visit(item, trail))
 		if (!isJsonObject(node)) return node
 		const ref = node.$ref
-		if (typeof ref === "string" && Str.startsWith(DEFS_PREFIX)(ref)) {
-			const name = Str.replaceAll(
-				"~0",
-				"~",
-			)(Str.replaceAll("~1", "/")(Str.slice(DEFS_PREFIX.length)(ref)))
+		if (typeof ref === "string" && ref.startsWith(DEFS_PREFIX)) {
+			const name = ref.slice(DEFS_PREFIX.length).replaceAll("~1", "/").replaceAll("~0", "~")
 			const definition = defs[name]
 			const expanded =
 				isJsonObject(definition) && !trail.has(name)
@@ -257,8 +252,8 @@ const inlineDefinitions = (root: Record<string, unknown>): Record<string, unknow
 			kept.add(name)
 			return node
 		}
-		return Rec.fromEntries(
-			Arr.flatMap(Rec.toEntries(node), ([key, value]) =>
+		return Object.fromEntries(
+			Object.entries(node).flatMap(([key, value]) =>
 				key === "$defs" ? [] : [[key, visit(value, trail)]],
 			),
 		)
@@ -267,7 +262,7 @@ const inlineDefinitions = (root: Record<string, unknown>): Record<string, unknow
 	const inlined = isJsonObject(visited) ? visited : root
 	return kept.size === 0
 		? inlined
-		: { ...inlined, $defs: Rec.fromEntries(Arr.map([...kept], (name) => [name, defs[name]])) }
+		: { ...inlined, $defs: Object.fromEntries([...kept].map((name) => [name, defs[name]])) }
 }
 
 const CANONICAL_TYPES: ReadonlySet<unknown> = new Set(["number", "boolean", "array"])
@@ -285,16 +280,16 @@ const canonicalBranch = (branches: ReadonlyArray<unknown>): unknown => {
 	if (jsonText !== undefined || branches.length !== 2) return jsonText
 	const isString = (branch: unknown) => isJsonObject(branch) && branch.type === "string"
 	const other = branches.find((branch) => !isString(branch))
-	return Arr.some(branches, isString) && isJsonObject(other) && CANONICAL_TYPES.has(other.type)
+	return branches.some(isString) && isJsonObject(other) && CANONICAL_TYPES.has(other.type)
 		? other
 		: undefined
 }
 
 const publishCanonical = (node: unknown): unknown => {
-	if (Arr.isArray(node)) return Arr.map(node, publishCanonical)
+	if (Array.isArray(node)) return node.map(publishCanonical)
 	if (!isJsonObject(node)) return node
 	const anyOf = node.anyOf
-	if (Arr.isArray(anyOf)) {
+	if (Array.isArray(anyOf)) {
 		const canonical = canonicalBranch(anyOf)
 		if (isJsonObject(canonical)) {
 			const { anyOf: _anyOf, ...siblings } = node
@@ -304,9 +299,7 @@ const publishCanonical = (node: unknown): unknown => {
 	// `format: "uuid"` says what the UUID regex says, in a word instead of ~200 characters.
 	const { pattern: _pattern, ...unpatterned } = node
 	const published = node.format === "uuid" ? unpatterned : node
-	return Rec.fromEntries(
-		Arr.map(Rec.toEntries(published), ([key, value]) => [key, publishCanonical(value)]),
-	)
+	return Object.fromEntries(Object.entries(published).map(([key, value]) => [key, publishCanonical(value)]))
 }
 
 export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
@@ -316,7 +309,7 @@ export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
 	// schema all 57 public MCP tools advertise.
 	const document = Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" })
 	const rawBase =
-		Rec.keys(document.definitions).length > 0
+		Object.keys(document.definitions).length > 0
 			? { ...document.schema, $defs: document.definitions }
 			: document.schema
 	const base = publishCanonical(collapseNullableUnions(inlineDefinitions(rawBase))) as typeof rawBase
@@ -340,7 +333,7 @@ export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
 	// module init, so it surfaces in tests and at worker boot rather than in the wire.
 	if (record.type !== "object" && !("$ref" in record)) {
 		throw new Error(
-			`MCP tool input schemas must have an object root; got ${Str.slice(0, 200)(String(stringifyJson(record)))}. Wrap the tool input in a Schema.Struct.`,
+			`MCP tool input schemas must have an object root; got ${String(stringifyJson(record)).slice(0, 200)}. Wrap the tool input in a Schema.Struct.`,
 		)
 	}
 	return base
@@ -477,8 +470,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 const mapleToolDefinitions = collectMapleToolDefinitions()
 
 /** Handler-free registry view for schemas, permissions, MCP discovery, and tests. */
-export const mapleToolCatalog: ReadonlyArray<MapleToolCatalogEntry> = Arr.map(
-	mapleToolDefinitions,
+export const mapleToolCatalog: ReadonlyArray<MapleToolCatalogEntry> = mapleToolDefinitions.map(
 	({ run: _run, ...entry }) => entry,
 )
 
@@ -496,15 +488,15 @@ export const inputSchemaOf = (entry: MapleToolCatalogEntry): Record<string, unkn
 
 const parameterNames = (entry: MapleToolCatalogEntry): ReadonlyArray<string> => {
 	const properties = inputSchemaOf(entry).properties
-	return typeof properties === "object" && properties !== null ? Rec.keys(properties) : []
+	return typeof properties === "object" && properties !== null ? Object.keys(properties) : []
 }
 
 /** How a call's arguments are read before decoding: aliases applied, enum case fixed, unknowns dropped. */
-const normalizeFor = (entry: MapleToolCatalogEntry, input: unknown) =>
-	normalizeArguments(input, parameterNames(entry), entry.aliases, enumValues(inputSchemaOf(entry)))
+const normalizeFor = (entry: MapleToolCatalogEntry, input: unknown, nowMs?: number) =>
+	normalizeArguments(input, parameterNames(entry), entry.aliases, enumValues(inputSchemaOf(entry)), nowMs)
 
 const isArgumentRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-	typeof value === "object" && value !== null && !Arr.isArray(value)
+	typeof value === "object" && value !== null && !Array.isArray(value)
 
 /**
  * A call read the way the dispatcher reads it, without running it: aliases applied, enum case
@@ -526,14 +518,14 @@ export const readToolCall = (
 	const normalized = normalizeFor(definition, input ?? {})
 	return {
 		args: isArgumentRecord(normalized.args) ? normalized.args : {},
-		unknown: Arr.map(normalized.unknown, (entry) => entry.key),
+		unknown: normalized.unknown.map((entry) => entry.key),
 		decodes:
 			Schema.decodeUnknownOption(definition.schema)(normalized.args, definition.parseOptions)._tag ===
 			"Some",
 	}
 }
 
-const phrasesByName = new Map(Arr.map(mapleToolDefinitions, ({ name, phrases }) => [name, phrases]))
+const phrasesByName = new Map(mapleToolDefinitions.map(({ name, phrases }) => [name, phrases]))
 
 /**
  * One of a tool's {@link McpToolPhrases}, at random, or undefined for a name outside the
@@ -547,7 +539,7 @@ export const mapleToolPhrase = (name: string): string | undefined => {
 
 /** The catalog as one surface sees it. What a surface cannot see, it cannot call either. */
 export const mapleToolCatalogFor = (surface: McpToolSurface): ReadonlyArray<MapleToolCatalogEntry> =>
-	Arr.filter(mapleToolCatalog, (definition) => audienceAdmits(definition.audience, surface))
+	mapleToolCatalog.filter((definition) => audienceAdmits(definition.audience, surface))
 
 const toDecodeErrorMessage = (
 	definition: MapleToolDefinition,
@@ -584,16 +576,13 @@ const finish = Effect.fnUntraced(function* (
 	warnings: ReadonlyArray<string>,
 	surface: McpToolSurface,
 ) {
-	const invalid = Arr.filter(nextCallsOf(run.doc), (call) => !isValidNextCall(call, surface))
-	const undecodable = Arr.filter(invalid, (call) => !isHiddenOn(call.tool, surface))
+	const invalid = nextCallsOf(run.doc).filter((call) => !isValidNextCall(call, surface))
+	const undecodable = invalid.filter((call) => !isHiddenOn(call.tool, surface))
 	if (undecodable.length > 0) {
 		yield* Effect.logWarning("MCP tool suggested a call that does not decode").pipe(
 			Effect.annotateLogs({
 				"maple.mcp.tool": definition.name,
-				"maple.mcp.next_calls": Arr.join(
-					Arr.map(undecodable, (call) => call.tool),
-					",",
-				),
+				"maple.mcp.next_calls": undecodable.map((call) => call.tool).join(","),
 			}),
 		)
 	}
@@ -634,29 +623,19 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 		})
 	}
 
-	const normalized = normalizeFor(definition, input ?? {})
+	const nowMs = yield* Clock.currentTimeMillis
+	const normalized = normalizeFor(definition, input ?? {}, nowMs)
 	yield* Effect.annotateCurrentSpan({
 		"maple.mcp.tool": definition.name,
-		"maple.mcp.tool.arguments": Arr.join(
-			Object.keys(typeof input === "object" && input !== null ? input : {}).sort(),
-			",",
-		),
+		"maple.mcp.tool.arguments": Object.keys(typeof input === "object" && input !== null ? input : {})
+			.sort()
+			.join(","),
 		...(normalized.unknown.length === 0
 			? undefined
-			: {
-					"maple.mcp.tool.unknown_arguments": Arr.join(
-						Arr.map(normalized.unknown, ({ key }) => key),
-						",",
-					),
-				}),
+			: { "maple.mcp.tool.unknown_arguments": normalized.unknown.map(({ key }) => key).join(",") }),
 		...(normalized.renamed.length === 0
 			? undefined
-			: {
-					"maple.mcp.tool.aliased_arguments": Arr.join(
-						Arr.map(normalized.renamed, ([from]) => from),
-						",",
-					),
-				}),
+			: { "maple.mcp.tool.aliased_arguments": normalized.renamed.map(([from]) => from).join(",") }),
 	})
 	const decoded = yield* Schema.decodeUnknownEffect(definition.schema)(
 		normalized.args,

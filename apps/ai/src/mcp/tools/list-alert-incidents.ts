@@ -20,7 +20,7 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 		name: "list_alert_incidents",
 		title: "List Alert Incidents",
 		description:
-			"List triggered alert incidents (open and resolved) with severity, group, condition and last observed value. For one rule's history with trigger, notify and resolve timestamps use get_incident_timeline.",
+			"Alert incidents: alert-rule breaches, open and resolved, with severity, group, condition and last observed value (flare-ups of an error issue are list_error_incidents). For one rule's trigger, notify and resolve timestamps use get_incident_timeline.",
 		parameters: Schema.Struct({
 			status: P.optionalOneOf(ALERT_INCIDENT_STATUSES, "Only incidents in this status"),
 			severity: P.optionalOneOf(ALERT_SEVERITIES, "Only incidents with this severity"),

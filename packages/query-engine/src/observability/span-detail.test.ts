@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, String as Str } from "effect"
+import { Effect, Layer } from "effect"
 import { spanDetail } from "./span-detail"
 import { WarehouseExecutor, type WarehouseExecutorApi } from "./WarehouseExecutor"
 import { compiledQueryOf } from "../execution/compiled-input"
@@ -24,22 +24,44 @@ const detailRow = {
 	resourceAttributes: "{}",
 }
 
-/** Answers only unbounded lookups, as if the hinted window missed the span. */
-const makeExecutor = (sqls: string[]): WarehouseExecutorApi => ({
+const probeRow = {
+	traceId: TRACE_ID,
+	timestamp: "2026-03-20 07:59:58.000000000",
+	endTimestamp: "2026-03-20 08:00:03.000000000",
+}
+
+const isProbe = (sql: string) => sql.includes("FROM trace_index") && !sql.includes("FROM traces")
+
+/**
+ * A warehouse holding the span. A hinted (bounded) lookup misses unless `boundedHit`, as if the
+ * hint pointed elsewhere; the trace-bounds probe answers when `indexed`.
+ */
+const makeExecutor = (
+	sqls: string[],
+	opts: { readonly indexed?: boolean; readonly boundedHit?: boolean } = {},
+): WarehouseExecutorApi => ({
 	orgId: OrgId.make("org_test"),
 	compiledQuery: (compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
 	compiledQueryFirst: (compiled) => {
 		const query = compiledQueryOf(compiled)
 		sqls.push(query.sql)
-		const bounded = Str.includes("Timestamp >=")(query.sql)
-		return query.decodeFirstRow(bounded ? [] : [detailRow]).pipe(Effect.orDie)
+		if (isProbe(query.sql))
+			return query.decodeFirstRow(opts.indexed === false ? [] : [probeRow]).pipe(Effect.orDie)
+		const bounded = query.sql.includes("Timestamp >=")
+		return query
+			.decodeFirstRow(!bounded || opts.boundedHit === true ? [detailRow] : [])
+			.pipe(Effect.orDie)
 	},
 	query: () => Effect.succeed({ data: [] }),
 })
 
-const run = (sqls: string[], timestampHint?: Date) =>
+const run = (
+	sqls: string[],
+	timestampHint?: Date,
+	opts?: { readonly indexed?: boolean; readonly boundedHit?: boolean },
+) =>
 	spanDetail({ traceId: TRACE_ID, spanId: SPAN_ID, timestampHint }).pipe(
-		Effect.provide(Layer.succeed(WarehouseExecutor, makeExecutor(sqls))),
+		Effect.provide(Layer.succeed(WarehouseExecutor, makeExecutor(sqls, opts))),
 	)
 
 describe("spanDetail", () => {
@@ -50,23 +72,45 @@ describe("spanDetail", () => {
 			assert.isTrue(result.found)
 			assert.isTrue(result.widened)
 			assert.lengthOf(sqls, 2)
+			assert.isFalse(sqls.some(isProbe))
 			assert.deepStrictEqual(result.spanAttributes, { "http.route": "/orders" })
 		}),
 	)
 
-	it.effect("does one lookup without a hint", () =>
+	it.effect("without a hint, reads the span inside the trace's indexed bounds", () =>
 		Effect.gen(function* () {
 			const sqls: string[] = []
-			const result = yield* run(sqls)
+			const result = yield* run(sqls, undefined, { boundedHit: true })
 			assert.isTrue(result.found)
 			assert.isFalse(result.widened)
+			assert.lengthOf(sqls, 2)
+			assert.isTrue(isProbe(sqls[0]!))
+			assert.include(sqls[1]!, "Timestamp >=")
+		}),
+	)
+
+	it.effect("reports an unindexed trace as not found without scanning retention", () =>
+		Effect.gen(function* () {
+			const sqls: string[] = []
+			const result = yield* run(sqls, undefined, { indexed: false })
+			assert.isFalse(result.found)
 			assert.lengthOf(sqls, 1)
+		}),
+	)
+
+	it.effect("does not widen a miss inside the trace's own bounds", () =>
+		Effect.gen(function* () {
+			const sqls: string[] = []
+			const result = yield* run(sqls, undefined, { boundedHit: false })
+			assert.isFalse(result.found)
+			assert.isFalse(result.widened)
+			assert.lengthOf(sqls, 2)
 		}),
 	)
 
 	it.effect("returns the stored name, status and timing beside the attributes", () =>
 		Effect.gen(function* () {
-			const result = yield* run([])
+			const result = yield* run([], undefined, { boundedHit: true })
 			assert.deepStrictEqual(result.span, {
 				spanName: "GET /orders",
 				rawSpanName: "GET",

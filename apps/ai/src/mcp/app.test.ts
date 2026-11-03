@@ -668,7 +668,11 @@ describe("MCP server spans", () => {
 			AuthService.layer,
 			// The tool fails the way a tool does: a result with `isError`, not a JSON-RPC error.
 			makeMcpToolExecutorStubLayer(() =>
-				Effect.succeed({ isError: true, content: [{ type: "text" as const, text: "bad input" }] }),
+				Effect.succeed({
+					isError: true,
+					content: [{ type: "text" as const, text: "Invalid input (`trace_id`): bad input" }],
+					failureCategory: "invalid_input",
+				}),
 			),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
@@ -740,6 +744,8 @@ describe("MCP server spans", () => {
 				tool: span.attributes.get("gen_ai.tool.name"),
 				operation: span.attributes.get("gen_ai.operation.name"),
 				errorType: span.attributes.get("error.type"),
+				errorMessage: span.attributes.get("error.message"),
+				errorCategory: span.attributes.get("maple.mcp.error.category"),
 				requestId: span.attributes.get("jsonrpc.request.id"),
 				userAgent: span.attributes.get("user_agent.original"),
 				user: span.attributes.get("user.id"),
@@ -753,6 +759,8 @@ describe("MCP server spans", () => {
 				tool: undefined,
 				operation: undefined,
 				errorType: undefined,
+				errorMessage: undefined,
+				errorCategory: undefined,
 				requestId: "1",
 				userAgent: "claude-code/2.1.312 (cli)",
 				user: "user_test",
@@ -765,6 +773,9 @@ describe("MCP server spans", () => {
 				tool: "inspect_trace",
 				operation: "execute_tool",
 				errorType: "tool_error",
+				// Why it failed rides on the span, so the hub can group failures by cause.
+				errorMessage: "Invalid input (`trace_id`): bad input",
+				errorCategory: "invalid_input",
 				requestId: "2",
 				userAgent: "claude-code/2.1.312 (cli)",
 				user: "user_test",

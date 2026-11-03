@@ -1,9 +1,9 @@
 import { McpInvalidInputError, McpQueryBudgetError, McpQueryError, type McpToolRegistrar } from "./types"
 import { describeInvalidQuerySpec, tokensFor } from "../lib/query-spec-tokens"
-import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Schema } from "effect"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import { MetricType, QuerySpec } from "@maple/query-engine"
+import { MetricType, QuerySpec, parseWarehouseDateTime, warehouseDateTime } from "@maple/query-engine"
 import { describeQuerySpecDecodeError } from "@maple/domain/query-engine"
 import { ProductEventKind } from "@maple/domain/query-engine"
 import { QueryDataOutput } from "@maple/domain/mcp-outputs"
@@ -100,7 +100,9 @@ type Params = typeof queryDataSchema.Type
 const queryDataDescription =
 	"Aggregate traces, logs, metrics or product events into a timeseries or a top-N breakdown. " +
 	"Start here for trends, comparisons and top-N; for errors prefer find_errors and error_detail; " +
-	"for a shape this tool cannot express, run_sql. Applied defaults are listed in the result."
+	"for a shape this tool cannot express, run_sql. Applied defaults are listed in the result. " +
+	"A traces breakdown by span_name or attribute reads raw spans: set `service` and keep the window short " +
+	"(a window too large is narrowed, with a note). For endpoint volume over days use route_usage."
 
 /** Default metric/group_by per source, as `[default, available]` for the decisions list. */
 const DEFAULT_METRIC = {
@@ -130,7 +132,7 @@ const DEFAULT_GROUP_BY = {
 export const isEmptyResult = (result: Output["result"]): boolean =>
 	result.kind === "breakdown"
 		? result.data.length === 0
-		: Arr.every(result.data, (point) => Arr.every(Rec.values(point.series), (value) => value === 0))
+		: result.data.every((point) => Object.values(point.series).every((value) => value === 0))
 
 /** How the handler resolved the request before building the spec. */
 export interface ResolvedQuery {
@@ -188,7 +190,7 @@ export const buildRawSpec = (params: Params, resolved: ResolvedQuery): Record<st
 				: undefined),
 	}
 	const withFilters = (filters: Record<string, unknown>) =>
-		Rec.keys(filters).length > 0 ? { ...queryFields, filters } : queryFields
+		Object.keys(filters).length > 0 ? { ...queryFields, filters } : queryFields
 
 	switch (params.source) {
 		case "traces":
@@ -285,10 +287,8 @@ const queryContextOf = (params: Params): Output["queryContext"] => {
 		...(params.environments && params.environments.length > 0 && { environments: params.environments }),
 		...(params.commit_shas && params.commit_shas.length > 0 && { commitShas: params.commit_shas }),
 		...(params.severity && { severity: params.severity }),
-		...(params.event_name &&
-			params.event_name.length > 0 && { eventName: Arr.join(params.event_name, ",") }),
-		...(params.event_kind &&
-			params.event_kind.length > 0 && { eventKind: Arr.join(params.event_kind, ",") }),
+		...(params.event_name && params.event_name.length > 0 && { eventName: params.event_name.join(",") }),
+		...(params.event_kind && params.event_kind.length > 0 && { eventKind: params.event_kind.join(",") }),
 		...(params.host && { host: params.host }),
 		...(params.page_path && { pagePath: params.page_path }),
 		...(params.metric_name && { metricName: params.metric_name }),
@@ -347,13 +347,13 @@ const samplingNote = (output: Output): string | undefined => {
 	if (output.queryContext.source !== "traces") return undefined
 	if (output.metric === "count")
 		return "count is an estimate of spans that happened, weighted by each span's sample rate and rounded; it is not the number of stored spans."
-	if (Str.includes("duration")(output.metric))
+	if (output.metric.includes("duration"))
 		return "Durations are computed over the stored spans without sample-rate weighting; under tail sampling they lean toward the kept (slow or failed) spans."
 	return undefined
 }
 
 export const renderQueryData = (output: Output): ToolDoc => {
-	const capitalize = (s: string) => Str.toUpperCase(s.charAt(0)) + Str.slice(1)(s)
+	const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 	const title = `${capitalize(output.queryContext.source)} ${capitalize(output.kind)}: ${output.metric}`
 	const scope: ToolDoc["scope"] = [
 		["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
@@ -379,19 +379,17 @@ export const renderQueryData = (output: Output): ToolDoc => {
 		if (points.length === 0) {
 			return { title, scope, empty: emptyWith("No data points found."), blocks: decisions, next }
 		}
-		const seriesKeys = [...new Set(Arr.flatMap(points, (point) => Rec.keys(point.series)))]
+		const seriesKeys = [...new Set(points.flatMap((point) => Object.keys(point.series)))]
 		if (seriesKeys.length === 0) seriesKeys.push("value")
 		const { labels, lastIsPartial } = bucketLabels(
-			Arr.map(points, (point) => point.bucket),
+			points.map((point) => point.bucket),
 			output.timeRange.end,
 			output.queryContext.bucketSeconds,
 		)
 		// A bucket with no rows has no value: printing 0 there reads as a measured all-clear.
 		const cell = (value: number | undefined) =>
 			value === undefined ? "-" : formatMetricValue(output.metric, value)
-		const hasGaps = Arr.some(points, (point) =>
-			Arr.some(seriesKeys, (key) => point.series[key] === undefined),
-		)
+		const hasGaps = points.some((point) => seriesKeys.some((key) => point.series[key] === undefined))
 		return {
 			title,
 			scope,
@@ -400,9 +398,9 @@ export const renderQueryData = (output: Output): ToolDoc => {
 				doc.text(`Data points: ${formatNumber(points.length)}`),
 				doc.table(
 					["Bucket", ...seriesKeys],
-					Arr.map(points, (point, i) => [
+					points.map((point, i) => [
 						labels[i] ?? point.bucket,
-						...Arr.map(seriesKeys, (key) => cell(point.series[key])),
+						...seriesKeys.map((key) => cell(point.series[key])),
 					]),
 				),
 				...(hasGaps ? [doc.text("`-`: no rows in that bucket (no data, not a measured 0).")] : []),
@@ -424,7 +422,7 @@ export const renderQueryData = (output: Output): ToolDoc => {
 			...decisions,
 			doc.table(
 				["Name", isWeightedCount(output) ? "count (estimated)" : output.metric],
-				Arr.map(items, (item) => [item.name, formatMetricValue(output.metric, item.value)]),
+				items.map((item) => [item.name, formatMetricValue(output.metric, item.value)]),
 			),
 			...notes,
 		],
@@ -443,7 +441,10 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 		hints: { readOnly: true },
 		phrases: ["Querying telemetry", "Running a query", "Pulling the numbers"],
 		handler: Effect.fn("McpTool.queryData")(function* (params) {
-			const { st, et } = yield* WINDOW.resolve(params, "query_data")
+			const resolvedWindow = yield* WINDOW.resolve(params, "query_data")
+			const et = resolvedWindow.et
+			// Moved forward by `execute` when the window is past a breakdown limit.
+			let st = resolvedWindow.st
 
 			if (params.attribute_value !== undefined && params.attribute_key === undefined) {
 				return yield* new McpInvalidInputError({
@@ -567,38 +568,59 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 							}),
 					),
 				)
-				const response = yield* queryEngine
-					.execute(tenant, { startTime: st, endTime: et, query })
-					.pipe(
-						Effect.catchTags({
-							"@maple/http/errors/QueryEngineValidationError": (error) =>
-								Effect.fail(
-									new McpInvalidInputError({
-										message:
-											error.details.length > 0
-												? `${error.message}\n${Arr.join(error.details, "\n")}`
-												: error.message,
-									}),
-								),
-							"@maple/http/errors/QueryEngineTimeoutError": () =>
-								Effect.fail(
-									new McpQueryBudgetError({
-										message:
-											"The query ran past its time limit. Narrow start_time/end_time, add filters, or use a coarser bucket_seconds.",
-										pipeName: "query_data",
-										setting: "max_execution_time",
-									}),
-								),
-							// Shared exact warehouse table; the mapping appends the schema-apply hint for drift.
-							...warehouseReadToMcpHandlers("query_data"),
+				// Moves start_time forward when the window is past a breakdown limit: the range cap,
+				// then the span budget, so at most twice, and only ever to a narrower window.
+				const execute = (narrowings: number): ReturnType<typeof queryEngine.execute> =>
+					queryEngine.execute(tenant, { startTime: st, endTime: et, query }).pipe(
+						Effect.catchTag("@maple/http/errors/QueryEngineValidationError", (error) => {
+							const fitting = error.fittingRangeSeconds
+							const narrowedMs =
+								fitting === undefined
+									? undefined
+									: parseWarehouseDateTime(et) - fitting * 1000
+							if (
+								narrowedMs === undefined ||
+								narrowedMs <= parseWarehouseDateTime(st) ||
+								narrowings >= 2
+							)
+								return Effect.fail(error)
+							st = warehouseDateTime(narrowedMs)
+							decisions.push(
+								`start_time: moved to ${st}, the widest window this breakdown runs on (${error.details[0] ?? error.message}). Query the earlier part with its own end_time.`,
+							)
+							return execute(narrowings + 1)
 						}),
 					)
+				const response = yield* execute(0).pipe(
+					Effect.catchTags({
+						"@maple/http/errors/QueryEngineValidationError": (error) =>
+							Effect.fail(
+								new McpInvalidInputError({
+									message:
+										error.details.length > 0
+											? `${error.message}\n${error.details.join("\n")}`
+											: error.message,
+								}),
+							),
+						"@maple/http/errors/QueryEngineTimeoutError": () =>
+							Effect.fail(
+								new McpQueryBudgetError({
+									message:
+										"The query ran past its time limit. Narrow start_time/end_time, add filters, or use a coarser bucket_seconds.",
+									pipeName: "query_data",
+									setting: "max_execution_time",
+								}),
+							),
+						// Shared exact warehouse table; the mapping appends the schema-apply hint for drift.
+						...warehouseReadToMcpHandlers("query_data"),
+					}),
+				)
 				const result = response.result
 				const mapped: Output["result"] | undefined =
 					result.kind === "timeseries"
 						? {
 								kind: "timeseries",
-								data: Arr.map(result.data, (point) => ({
+								data: result.data.map((point) => ({
 									bucket: point.bucket,
 									series: { ...point.series },
 								})),
@@ -606,10 +628,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 						: result.kind === "breakdown"
 							? {
 									kind: "breakdown",
-									data: Arr.map(result.data, (item) => ({
-										name: item.name,
-										value: item.value,
-									})),
+									data: result.data.map((item) => ({ name: item.name, value: item.value })),
 								}
 							: undefined
 				if (mapped === undefined) {

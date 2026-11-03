@@ -23,7 +23,8 @@ export function registerListSourcesTool(server: McpToolRegistrar) {
 			"(each with its own token, or the default ingest keys), Kubernetes clusters, Docker hosts, Prometheus scrape " +
 			"targets and connected integrations (Cloudflare, Google Cloud, Railway, PlanetScale, GitHub CI). Each source " +
 			"says whether data is arriving and when it last did. Telemetry carries its source in the `maple_source_id` " +
-			"resource attribute, so a source id filters traces, logs and metrics.",
+			"resource attribute, so a source id filters traces, logs and metrics. Use it to find which sender stopped; " +
+			"ingest_freshness says whether any data arrives at all, list_integrations covers provider credentials and pollers.",
 		parameters: Schema.Struct({
 			platform: P.optionalOneOf(SourcePlatform.literals, "Only sources of this platform"),
 		}),
