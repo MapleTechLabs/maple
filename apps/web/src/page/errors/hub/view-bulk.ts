@@ -1,4 +1,4 @@
-import { allowedTransitionsForAll, type WorkflowState } from "@maple/domain/http"
+import { allowedTransitionsForAll, MAX_ISSUE_MERGE_SOURCES, type WorkflowState } from "@maple/domain/http"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
@@ -135,12 +135,23 @@ const mergeEntries = (selected: ReadonlyArray<ErrorSignal>): ReadonlyArray<MenuV
 	},
 ]
 
+/**
+ * Whether the selection can be merged: 2+ issues, all error issues (alert and
+ * integration issues own no fingerprints), and few enough for one request, which
+ * keeps one issue and folds at most MAX_ISSUE_MERGE_SOURCES into it.
+ */
+export const canMergeSelection = (
+	signals: ReadonlyArray<{ readonly issue: { readonly kind: ErrorSignal["issue"]["kind"] } }>,
+): boolean =>
+	signals.length >= 2 &&
+	signals.length <= MAX_ISSUE_MERGE_SOURCES + 1 &&
+	Arr.every(signals, (signal) => signal.issue.kind === "error")
+
 export const bulkBar = (h: H, model: Model): ReadonlyArray<Html> => {
 	const signals = Arr.filter(signalsOf(model), (signal) => model.selectedIds.includes(signal.id))
 	const selected = Arr.map(signals, (signal) => ({ id: signal.id, state: signal.issue.workflowState }))
 	if (selected.length === 0) return []
-	// Only error issues own fingerprints; alert and integration issues have nothing to merge.
-	const canMerge = signals.length >= 2 && Arr.every(signals, (signal) => signal.issue.kind === "error")
+	const canMerge = canMergeSelection(signals)
 	return [
 		h.div(
 			[
