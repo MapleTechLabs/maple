@@ -42,6 +42,19 @@ describe("compilePipeQuery", () => {
 		}
 	})
 
+	it("service_apdex_time_series filters by deployment_env on every tier", () => {
+		// 300s buckets read the rollups; 60s buckets read the raw entry-point spans.
+		for (const bucket_seconds of [300, 60]) {
+			const sql = compilePipeQuery("service_apdex_time_series", {
+				...baseParams(),
+				service_name: "checkout",
+				bucket_seconds,
+				deployment_env: "production",
+			})!.sql
+			expect(sql).toContain("'production'")
+		}
+	})
+
 	it("list_logs pages by offset", () => {
 		const first = compilePipeQuery("list_logs", { ...baseParams(), limit: 30 })!.sql
 		const second = compilePipeQuery("list_logs", { ...baseParams(), limit: 30, offset: 30 })!.sql

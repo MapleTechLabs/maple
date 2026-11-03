@@ -432,6 +432,7 @@ export function compilePipeQuery(
 						compile(
 							serviceApdexTimeseriesQuery({
 								serviceName,
+								environments: strList("deployment_env"),
 								apdexThresholdMs: int("apdex_threshold_ms", 500),
 								bucketSeconds,
 							}),

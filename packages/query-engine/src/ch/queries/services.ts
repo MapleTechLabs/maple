@@ -700,6 +700,7 @@ export function serviceEnvironmentsQuery(opts: ServiceEnvironmentsOpts = {}) {
 
 export interface ServiceApdexTimeseriesOpts {
 	serviceName: string
+	environments?: readonly string[]
 	apdexThresholdMs?: number
 	/**
 	 * The bucket width the result is grouped into. Needed at build time, not just
@@ -729,7 +730,10 @@ export function serviceApdexTimeseriesQuery(
 	const tiers = serviceWindowTiersForBucket(opts.bucketSeconds)
 
 	if (thresholdMs === 500 && tiers !== "raw") {
-		return serviceOverviewWindows({ serviceName: opts.serviceName }, tiers)
+		return serviceOverviewWindows(
+			{ serviceName: opts.serviceName, environments: opts.environments },
+			tiers,
+		)
 			.select(($) => {
 				const total = CH.sum($.bSpanCount)
 				const satisfied = CH.sum($.bApdexSatisfiedCount)
@@ -764,7 +768,12 @@ export function serviceApdexTimeseriesQuery(
 			totalCount: CH.count(),
 			...apdexExprs($.Duration.div(1000000), thresholdMs, $.StatusCode.eq("Error")),
 		}))
-		.where(($) => serviceOverviewWhereConditions($, { serviceName: opts.serviceName }))
+		.where(($) =>
+			serviceOverviewWhereConditions($, {
+				serviceName: opts.serviceName,
+				environments: opts.environments,
+			}),
+		)
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])
 		.format("JSON") as CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput, {}>

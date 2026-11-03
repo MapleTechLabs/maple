@@ -70,6 +70,7 @@ export const diagnoseService = Effect.fn("Observability.diagnoseService")(functi
 					start_time: input.timeRange.startTime,
 					end_time: input.timeRange.endTime,
 					bucket_seconds: 300,
+					...(input.environment && { deployment_env: input.environment }),
 				},
 				{ profile: "aggregation" },
 			),
