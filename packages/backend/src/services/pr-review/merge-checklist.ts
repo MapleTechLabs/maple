@@ -71,6 +71,13 @@ const looksSecret = (name: string) =>
 	/SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|API_?KEY|_KEY$|_DSN$|SIGNING/.test(name) &&
 	!/PUBLISHABLE|PUBLIC/.test(name)
 
+/**
+ * A name only a test run reads: a whole `TEST` or `E2E` token, as in `STRIPE_E2E_TEST_SECRET_KEY`.
+ * Whole tokens only, so `LATEST_RELEASE` and `CONTEST_KEY` still count.
+ */
+const testOnlyName = (name: string) =>
+	Arr.some(Str.split("_")(name), (token) => token === "TEST" || token === "E2E")
+
 /** Names every runtime or CI provides; never something to add. */
 const PROVIDED = new Set([
 	"NODE_ENV",
@@ -227,6 +234,8 @@ export const detectMergeSteps = (files: ReadonlyArray<PullRequestFile>): Detecte
 		if (!readsNamesIn(path)) continue
 		const remember = (candidate: MergeStepName) => {
 			if (PROVIDED.has(candidate.name) || names.has(candidate.name)) return
+			// A CI secret for an e2e run still has to be added to the repository; a runtime read does not.
+			if (!candidate.ci && testOnlyName(candidate.name)) return
 			names.set(candidate.name, candidate)
 		}
 		for (const { text, line } of added) {

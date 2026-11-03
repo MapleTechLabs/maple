@@ -132,6 +132,32 @@ describe("detectMergeSteps", () => {
 		}
 	})
 
+	it("skips names only a test run reads, by whole TEST or E2E token", () => {
+		const read = (name: string) =>
+			file("src/checkout.ts", `@@ -1 +1 @@\n+const v = process.env.${name}`)
+		assert.deepEqual(
+			names([
+				read("STRIPE_E2E_TEST_SECRET_KEY"),
+				read("STRIPE_E2E_REQUIRED"),
+				read("TEST_DATABASE_URL"),
+				read("LATEST_RELEASE_TOKEN"),
+				read("CONTEST_API_KEY"),
+				read("TESTING_MODE"),
+			]),
+			["secret:LATEST_RELEASE_TOKEN", "secret:CONTEST_API_KEY", "env:TESTING_MODE"],
+		)
+	})
+
+	it("still lists a test-only CI secret, which the repository must hold", () => {
+		const detected = detectMergeSteps([
+			file(".github/workflows/e2e.yml", "@@ -1 +1 @@\n+  token: ${{ secrets.E2E_TOKEN }}"),
+		])
+		assert.deepEqual(
+			Arr.map(detected.names, (candidate) => [candidate.kind, candidate.name, candidate.ci]),
+			[["secret", "E2E_TOKEN", true]],
+		)
+	})
+
 	it("reads CI secrets and variables from workflows, and keys from env templates", () => {
 		const detected = detectMergeSteps([
 			file(
