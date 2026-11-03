@@ -2693,7 +2693,7 @@ describe("ErrorsService.runTick", () => {
 			yield* TestClock.setTime(TICK_MS)
 			const owner = asIssueId(randomUUID())
 			const mergedAway = asIssueId(randomUUID())
-			yield* seedIssue(owner, { fingerprintHash: "22222222222222222222" })
+			yield* seedIssue(owner, { fingerprintHash: "2222222222222222222" })
 			yield* seedIssue(mergedAway, {
 				fingerprintHash: SCAN_FINGERPRINT,
 				archivedAt: TICK_MS - 1_000,
