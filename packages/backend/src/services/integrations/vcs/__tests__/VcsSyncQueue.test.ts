@@ -1,32 +1,49 @@
 import { assert, describe, it } from "@effect/vitest"
 import { VcsQueueError, type VcsSyncJob } from "@maple/domain/http"
-import { type QueueProducer, QueueSendError, VcsSyncQueueProducer } from "@maple/backend/platform/bindings"
+import {
+	type QueueProducer,
+	QueueSendError,
+	VcsBackfillQueueProducer,
+	VcsSyncQueueProducer,
+} from "@maple/backend/platform/bindings"
 import { Effect, Exit, Layer, Tracer } from "effect"
 import {
-	MESSAGING_DESTINATION,
 	MESSAGING_SYSTEM,
 	QUEUE_BATCH_MAX_BYTES,
 	QUEUE_BATCH_MAX_MESSAGES,
+	VCS_BACKFILL_QUEUE,
+	VCS_SYNC_QUEUE,
+	type VcsQueueName,
 	VcsSyncQueue,
 } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import { findError } from "./harness"
 
 type CapturedMessage = { readonly body: unknown }
 
-// Fake queue producer that captures each chunk passed to `sendBatch`.
-// `reject` makes every call fail so the VcsQueueError path can be exercised.
+const kindOf = (body: unknown): string | undefined =>
+	typeof body === "object" && body !== null && "kind" in body && typeof body.kind === "string"
+		? body.kind
+		: undefined
+
+// Fake producers for both queues that capture each chunk passed to `sendBatch`, and which queue
+// it went to. `reject` makes every call fail so the VcsQueueError path can be exercised.
 const fakeQueueEnv = (opts?: { reject?: boolean }) => {
 	const chunks: CapturedMessage[][] = []
-	const producer: QueueProducer = {
+	const sentTo: Array<{ readonly queue: VcsQueueName; readonly kinds: ReadonlyArray<string | undefined> }> = []
+	const producer = (queue: VcsQueueName): QueueProducer => ({
 		sendBatch: (messages) =>
 			opts?.reject
 				? Effect.fail(new QueueSendError({ message: "simulated queue outage", cause: undefined }))
 				: Effect.sync(() => {
 						chunks.push([...messages])
+						sentTo.push({ queue, kinds: messages.map((m) => kindOf(m.body)) })
 					}),
-	}
-	const layer = Layer.succeed(VcsSyncQueueProducer, producer)
-	return { layer, chunks }
+	})
+	const layer = Layer.mergeAll(
+		Layer.succeed(VcsSyncQueueProducer, producer(VCS_SYNC_QUEUE)),
+		Layer.succeed(VcsBackfillQueueProducer, producer(VCS_BACKFILL_QUEUE)),
+	)
+	return { layer, chunks, sentTo }
 }
 
 const chunkSizes = (chunks: ReadonlyArray<ReadonlyArray<CapturedMessage>>): number[] =>
@@ -85,7 +102,7 @@ const pushJob = (i: number, messageBytes: number): VcsSyncJob => ({
 	],
 })
 
-const provideQueue = (layer: Layer.Layer<VcsSyncQueueProducer>) =>
+const provideQueue = (layer: Layer.Layer<VcsSyncQueueProducer | VcsBackfillQueueProducer>) =>
 	Effect.provide(VcsSyncQueue.layer.pipe(Layer.provide(layer)))
 
 /** Records every span so the producer span's kind and messaging attributes are assertable. */
@@ -122,9 +139,39 @@ describe("VcsSyncQueue producer spans", () => {
 			for (const span of produced) {
 				assert.strictEqual(span.kind, "producer", `${span.name} is Producer-kind`)
 				assert.strictEqual(span.attributes.get("messaging.system"), MESSAGING_SYSTEM)
-				assert.strictEqual(span.attributes.get("messaging.destination.name"), MESSAGING_DESTINATION)
+				// A scheduled installation sync is a bulk refresh: it goes to the backfill queue.
+				assert.strictEqual(span.attributes.get("messaging.destination.name"), VCS_BACKFILL_QUEUE)
 				assert.strictEqual(span.attributes.get("messaging.operation.name"), "send")
 			}
+		}).pipe(provideQueue(layer))
+	})
+})
+
+// The incident behind the split: a scheduled sync's fan-out held webhook jobs back for 15 minutes.
+describe("VcsSyncQueue routing", () => {
+	it.effect("keeps webhook deltas off the queue the bulk refreshes use", () => {
+		const { layer, sentTo } = fakeQueueEnv()
+		const connectSync: VcsSyncJob = { ...installSyncJob(9), reason: "created" }
+		const scan: VcsSyncJob = {
+			kind: "dependency-scan",
+			provider: "github",
+			externalInstallationId: "42",
+			externalRepoId: "7",
+			trigger: "schedule",
+		}
+		return Effect.gen(function* () {
+			const queue = yield* VcsSyncQueue
+			yield* queue.sendBatch([installSyncJob(1), pushJob(1, 10), scan, connectSync])
+			yield* queue.send(scan)
+			yield* queue.send(pushJob(2, 10))
+			const kindsOn = (name: VcsQueueName) =>
+				sentTo.filter((s) => s.queue === name).flatMap((s) => s.kinds)
+			assert.deepStrictEqual(kindsOn(VCS_SYNC_QUEUE), ["push", "installation-sync", "push"])
+			assert.deepStrictEqual(kindsOn(VCS_BACKFILL_QUEUE), [
+				"installation-sync",
+				"dependency-scan",
+				"dependency-scan",
+			])
 		}).pipe(provideQueue(layer))
 	})
 })
