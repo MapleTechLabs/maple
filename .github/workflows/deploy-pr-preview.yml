@@ -96,9 +96,6 @@ jobs:
             MAPLE_PREVIEW_WEB_ONLY: >-
                 ${{ contains(github.event.pull_request.labels.*.name, 'preview:web')
                 && !contains(github.event.pull_request.labels.*.name, 'preview') && '1' || '' }}
-            # A preview's Postgres forks Neon's empty default branch and holds only the seed, so its
-            # alerting crons see no real org: run them, and seeded errors become issues.
-            MAPLE_ALERTING_ALLOW_NONPROD: "1"
             # Opt-in collector (prd-only otherwise, see `profile.deploys.collector`).
             MAPLE_DEPLOY_AWS_COLLECTOR: ${{ contains(github.event.pull_request.labels.*.name, 'preview') && contains(github.event.pull_request.labels.*.name, 'preview:collector') && '1' || '' }}
             PR_NUMBER: ${{ github.event.pull_request.number }}
