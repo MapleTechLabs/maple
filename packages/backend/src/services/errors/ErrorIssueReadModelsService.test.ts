@@ -310,12 +310,12 @@ describe("ErrorIssueReadModelsService", () => {
 			const owner = asIssueId(randomUUID())
 			const other = asIssueId(randomUUID())
 			yield* seedIssue(ORG, owner, now, { fingerprintHash: "11111111111111111111" })
-			yield* seedIssue(ORG, other, now, { fingerprintHash: "44444444444444444444" })
+			yield* seedIssue(ORG, other, now, { fingerprintHash: "4444444444444444444" })
 			yield* database.execute((db) =>
 				db.run(
 					PG.insertInto(ErrorIssueFingerprints).values({
 						orgId: ORG,
-						fingerprintHash: "33333333333333333333",
+						fingerprintHash: "3333333333333333333",
 						issueId: owner,
 						source: "merge",
 						createdAt: now,
@@ -326,15 +326,15 @@ describe("ErrorIssueReadModelsService", () => {
 			const detail = yield* readModels.getIssue(ORG, owner, {})
 			assert.deepStrictEqual(detail.issue.fingerprintHashes, [
 				"11111111111111111111",
-				"33333333333333333333",
+				"3333333333333333333",
 			])
 			// Timeseries, samples and environments each ask for both hashes.
 			const issueReads = Arr.filter(sqls, (sql) => sql.includes("11111111111111111111"))
 			assert.lengthOf(issueReads, 3)
-			for (const sql of issueReads) expect(sql).toContain("33333333333333333333")
+			for (const sql of issueReads) expect(sql).toContain("3333333333333333333")
 
 			// The volume-ranked list asks by hash; a merged-in one finds its owner.
-			const listed = yield* readModels.listIssues(ORG, { fingerprintHashes: ["33333333333333333333"] })
+			const listed = yield* readModels.listIssues(ORG, { fingerprintHashes: ["3333333333333333333"] })
 			assert.deepStrictEqual(
 				Arr.map(listed.issues, (issue) => issue.id),
 				[owner],
