@@ -1263,4 +1263,33 @@ describe("grouping residuals from a production replay", () => {
 
 		expect(frames(...recursion, "    at main (/app/main.js:1:1)")).toBe("    at walk (/app/tree.js)")
 	})
+
+	it("folds a single-case value, so each occurrence is not its own issue", () => {
+		const d1 = (reference: string) =>
+			signature(`Failed to execute statement: D1_ERROR: internal error; reference = ${reference}`)
+
+		expect(d1("skqdd7q56j7h4ovn7obivsp1")).toBe(d1("m1p0v1bnpbu67m8u0hm8ldo0"))
+		expect(d1("skqdd7q56j7h4ovn7obivsp1")).toBe(
+			"Failed to execute statement: D#_ERROR: internal error; reference = #",
+		)
+		expect(signature("No configuration for team 39E3Q3IEJ6")).toBe(
+			signature("No configuration for team V3KA9MAW2H"),
+		)
+	})
+
+	it("keeps names that interleave letters and digits", () => {
+		const undefinedName = (name: string) => signature(`${name} is not defined`)
+
+		expect(undefinedName("Float32x4Array")).not.toBe(undefinedName("Int32Array2D"))
+		expect(undefinedName("feedbackHandler2")).not.toBe(undefinedName("feedbackHandler3x"))
+		expect(undefinedName("utf8mb4_unicode_520_ci")).not.toBe(undefinedName("utf8mb4_0900_ai_ci"))
+		expect(undefinedName("v1beta2client")).toBe("v#beta#client is not defined")
+		expect(signature("web2#build: command exited (1)")).toBe("web##build: command exited (#)")
+	})
+
+	it("reads a hex literal the same whatever its digits", () => {
+		const selector = (value: string) => signature(`Function selector ${value} does not match value()`)
+
+		expect(selector("0x722713f7")).toBe(selector("0x18160ddd"))
+	})
 })

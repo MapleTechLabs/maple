@@ -1104,12 +1104,31 @@ describe("GithubProvider.webhookToJobs", () => {
 	)
 })
 
+// fetchBranches only reads externalInstallationId off the installation.
+const BRANCH_INSTALLATION = Schema.decodeSync(VcsInstallation)({
+	id: "00000000-0000-4000-8000-000000000042",
+	orgId: "org_test",
+	provider: "github",
+	externalInstallationId: "42",
+	accountLogin: "octo",
+	accountType: "organization",
+	externalAccountId: "1",
+	accountAvatarUrl: null,
+	repositorySelection: "all",
+	status: "active",
+	suspendedAt: null,
+	ciTracesEnabled: true,
+	repositoryDiscovery: null,
+	installedByUserId: "user_1",
+	createdAt: 0,
+	updatedAt: 0,
+})
+
 describe("GithubProvider.fetchBranches", () => {
 	it.effect("lists branch names + heads and reports not-truncated", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
-			// fetchBranches only reads externalInstallationId off the installation.
-			const installation = { externalInstallationId: "42" } as VcsInstallation
+			const installation = BRANCH_INSTALLATION
 			const result = yield* provider.fetchBranches(installation, {
 				externalRepoId: "7",
 				owner: "octo",
@@ -1145,7 +1164,7 @@ describe("GithubProvider.fetchBranches", () => {
 	it.effect("classifies a 451 legal block as a terminal VcsRepositoryBlockedError", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
-			const installation = { externalInstallationId: "42" } as VcsInstallation
+			const installation = BRANCH_INSTALLATION
 			const error = yield* Effect.flip(
 				provider.fetchBranches(installation, {
 					externalRepoId: "7",
@@ -1173,7 +1192,7 @@ describe("GithubProvider.fetchBranches", () => {
 	it.effect("classifies a 403 carrying a block body as terminal, a plain 403 as transient", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
-			const installation = { externalInstallationId: "42" } as VcsInstallation
+			const installation = BRANCH_INSTALLATION
 			const ref = { externalRepoId: "7", owner: "octo", name: "repo" }
 			const blocked = yield* Effect.flip(provider.fetchBranches(installation, ref))
 			assert.strictEqual(blocked._tag, "@maple/http/errors/VcsRepositoryBlockedError")
@@ -4281,7 +4300,7 @@ describe("git SHA validation (branded type)", () => {
 // inline; surface long ones (backfill → partial `next`; repos → VcsRateLimitedError).
 describe("GithubProvider rate-limit handling", () => {
 	const REPO = { externalRepoId: "7", owner: "octo", name: "repo" }
-	const installation = Schema.decodeUnknownSync(VcsInstallation)({
+	const installation = Schema.decodeSync(VcsInstallation)({
 		id: randomUUID(),
 		orgId: "org_test",
 		provider: "github",

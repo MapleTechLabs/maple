@@ -74,7 +74,7 @@ describe("alert incident", () => {
 			init(route(), context).model,
 			(model, message) => step(model, message).model,
 		)
-		const preview = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+		const preview = Schema.decodeSync(AlertRulePreviewResponse)({
 			bucketSeconds: 300,
 			windowMinutes: 5,
 			threshold: 800,

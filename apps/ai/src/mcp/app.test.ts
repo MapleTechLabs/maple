@@ -140,8 +140,8 @@ describe("MCP HTTP authorization", () => {
 			}),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -256,8 +256,8 @@ describe("MCP HTTP authorization", () => {
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -338,8 +338,8 @@ describe("MCP HTTP authorization", () => {
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -458,8 +458,8 @@ describe("MCP HTTP authorization", () => {
 				return Effect.succeed("limited" as const)
 			}),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -523,8 +523,8 @@ describe("MCP HTTP authorization", () => {
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -578,8 +578,8 @@ describe("MCP HTTP authorization", () => {
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
@@ -676,8 +676,8 @@ describe("MCP server spans", () => {
 			),
 			makeRateLimiterStubLayer(),
 		).pipe(Layer.provideMerge(base))
-		const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-		const userId = Schema.decodeUnknownSync(UserId)("user_test")
+		const orgId = Schema.decodeSync(OrgId)("org_test")
+		const userId = Schema.decodeSync(UserId)("user_test")
 		const key = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService

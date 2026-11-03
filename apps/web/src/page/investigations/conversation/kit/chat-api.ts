@@ -27,12 +27,14 @@ export const TURN_IN_FLIGHT_MESSAGE =
 const sessionUrl = (sessionId: string, suffix: string): string =>
 	`${apiBaseUrl}/api/chat/sessions/${encodeURIComponent(sessionId)}${suffix}`
 
+const isChatRequestError = Schema.is(ChatRequestError)
+
 /** A browser `TypeError` and friends surface as their own `message` text. */
 const failWith =
 	(message: string) =>
 	<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, ChatRequestError, R> =>
 		Effect.mapError(effect, (error) =>
-			error instanceof ChatRequestError ? error : new ChatRequestError({ message }),
+			isChatRequestError(error) ? error : new ChatRequestError({ message }),
 		)
 
 /** `GET .../history`: the durable transcript, its resume cursor, and whether a turn is running. */
@@ -190,7 +192,7 @@ export const tailEvents = (
 					Stream.catch((error) =>
 						retry(
 							failures,
-							error instanceof ChatRequestError ? error.message : "Lost connection to chat.",
+							isChatRequestError(error) ? error.message : "Lost connection to chat.",
 						),
 					),
 				)

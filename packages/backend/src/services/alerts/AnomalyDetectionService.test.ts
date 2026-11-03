@@ -270,7 +270,7 @@ describe("AnomalyDetectionService.runTick baseline cache", () => {
 				),
 			)
 			const service = yield* AnomalyDetectionService
-			yield* service.runTick()
+			yield* service.runTick
 
 			// The tick evaluated the org: it fetched the current windows fresh...
 			expect(contexts).toContain("anomalyTraceSignalsCurrent")
@@ -333,7 +333,7 @@ describe("AnomalyDetectionService.runTick baseline cache", () => {
 				),
 			)
 			const service = yield* AnomalyDetectionService
-			yield* service.runTick()
+			yield* service.runTick
 			expect(baselineContexts()).toEqual([
 				"anomalyErrorSpikeBaseline",
 				"anomalyLogVolumeBaseline",
@@ -349,7 +349,7 @@ describe("AnomalyDetectionService.runTick baseline cache", () => {
 				),
 			)
 			contexts.length = 0
-			yield* service.runTick()
+			yield* service.runTick
 			expect(contexts).toContain("anomalyTraceSignalsCurrent")
 			expect(baselineContexts()).toEqual([])
 		}).pipe(Effect.provide(layer))
@@ -408,7 +408,7 @@ describe("AnomalyDetectionService.runTick org config priming", () => {
 			)
 
 			const result = yield* AnomalyDetectionService.pipe(
-				Effect.flatMap((service) => service.runTick()),
+				Effect.flatMap((service) => service.runTick),
 				Effect.provide(layer),
 			)
 
@@ -549,7 +549,7 @@ describe("AnomalyDetectionService.runTick outbound budget", () => {
 			)
 			const startedAt = yield* Clock.currentTimeMillis
 			const result = yield* AnomalyDetectionService.pipe(
-				Effect.flatMap((service) => service.runTick()),
+				Effect.flatMap((service) => service.runTick),
 				Effect.provide(layer),
 			)
 			return {

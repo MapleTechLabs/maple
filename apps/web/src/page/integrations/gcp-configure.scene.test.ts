@@ -163,7 +163,7 @@ describe("google cloud connect flow: a new connection", () => {
 			Message.CompletedLoadGcp({
 				key: start.statuses.gcp.key ?? "",
 				result: Result.succeed(
-					Schema.decodeUnknownSync(V2GcpIntegration)({
+					Schema.decodeSync(V2GcpIntegration)({
 						object: "gcp_integration",
 						metrics_available: false,
 						connectors: [],

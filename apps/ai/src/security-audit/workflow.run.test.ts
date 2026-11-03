@@ -205,11 +205,11 @@ const testLayer = () =>
 	)
 
 const setup = Effect.gen(function* () {
-	const store = (yield* SecurityAuditStore).forOrg(Schema.decodeUnknownSync(OrgIdSchema)("org_a"))
+	const store = (yield* SecurityAuditStore).forOrg(Schema.decodeSync(OrgIdSchema)("org_a"))
 	const target = yield* store.createTarget({
 		repository: "acme/api",
 		branch: "main",
-		createdBy: Schema.decodeUnknownSync(UserId)("user_a"),
+		createdBy: Schema.decodeSync(UserId)("user_a"),
 	})
 	return { store, target }
 })
@@ -443,7 +443,7 @@ describe("auditWithAgents", () => {
 					monthlySpendLimitUsd: 1,
 					discoveryModel: "deepseek/deepseek-v4.1-flash-1017:nitro",
 					validationModel: "anthropic/claude-sonnet-5.5",
-					updatedBy: Schema.decodeUnknownSync(UserId)("user_a"),
+					updatedBy: Schema.decodeSync(UserId)("user_a"),
 				})
 				const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
 				const calls: Array<string> = []
@@ -1030,7 +1030,7 @@ describe("auditWithAgents, prior runs", () => {
 			const sibling = yield* store.createTarget({
 				repository: "acme/api",
 				branch: "release",
-				createdBy: Schema.decodeUnknownSync(UserId)("user_a"),
+				createdBy: Schema.decodeSync(UserId)("user_a"),
 			})
 			const unfinished = yield* store.startRun({ targetId: sibling.id, kind: "manual", sourceRef: SHA })
 			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
@@ -1263,7 +1263,7 @@ describe("auditWithAgents, settling", () => {
 				const cancelling: AuditAgentsApi = {
 					run: (invocation) =>
 						store
-							.cancelRun(next.id, Schema.decodeUnknownSync(UserId)("user_admin"))
+							.cancelRun(next.id, Schema.decodeSync(UserId)("user_admin"))
 							.pipe(Effect.orDie, Effect.andThen(scripted.run(invocation))),
 				}
 				const result = yield* auditWithAgents(payloadFor(next.id, prior.id), () =>

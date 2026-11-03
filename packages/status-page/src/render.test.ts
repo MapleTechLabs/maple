@@ -227,7 +227,7 @@ const PageData = Schema.Struct({
 
 /** The JSON the page script pages through, read back the way the browser would. */
 const pageDataOf = (html: string) =>
-	Schema.decodeUnknownSync(Schema.fromJsonString(PageData))(
+	Schema.decodeSync(Schema.fromJsonString(PageData))(
 		html.match(/<script type="application\/json" id="sp-data">([\s\S]*?)<\/script>/u)?.[1] ?? "",
 	)
 

@@ -1,6 +1,6 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { Clock, Context, Effect, Layer, Metric, type Schema } from "effect"
-import { QueryEngineExecuteResponse, type QueryEngineExecuteRequest } from "@maple/query-engine"
+import { QueryEngineExecuteRequest, QueryEngineExecuteResponse } from "@maple/query-engine"
 import type { QueryEngineTimeoutError } from "@maple/domain/http"
 import {
 	buildCacheKey,
@@ -272,12 +272,15 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 						endMs: range.endMs,
 					},
 					({ startMs, endMs }) =>
-						executeImpl(tenant, {
-							...request,
-							query: pinnedQuery,
-							startTime: msToTinybirdDateTime(startMs),
-							endTime: msToTinybirdDateTime(endMs),
-						}).pipe(
+						executeImpl(
+							tenant,
+							new QueryEngineExecuteRequest({
+								...request,
+								query: pinnedQuery,
+								startTime: msToTinybirdDateTime(startMs),
+								endTime: msToTinybirdDateTime(endMs),
+							}),
+						).pipe(
 							Effect.map((response) =>
 								response.result.kind === "timeseries" ? response.result.data : [],
 							),

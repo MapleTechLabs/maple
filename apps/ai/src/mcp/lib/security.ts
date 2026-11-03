@@ -96,7 +96,7 @@ export const readCode = (tenant: TenantContext) =>
 			} satisfies CodeRead
 		}
 		const store = (yield* SecurityAuditStore).forOrg(tenant.orgId)
-		const targets = yield* store.listTargets()
+		const targets = yield* store.listTargets
 		if (targets.length === 0) {
 			return {
 				_tag: "not_connected",

@@ -194,7 +194,7 @@ export interface UptimeMonitorsServiceApi {
 		monitorId: UptimeMonitorId,
 	) => Effect.Effect<UptimeMonitorId, UptimeMonitorNotFoundError | UptimeMonitorPersistenceError>
 	/** Every enabled http/tcp/dns monitor across orgs, for the scraper. */
-	readonly listProbeTargets: () => Effect.Effect<
+	readonly listProbeTargets: Effect.Effect<
 		ReadonlyArray<UptimeProbeTargetRow>,
 		UptimeMonitorPersistenceError
 	>
@@ -964,7 +964,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				return monitorId
 			})
 
-			const listProbeTargets = Effect.fn("UptimeMonitorsService.listProbeTargets")(function* () {
+			const listProbeTargets = Effect.gen(function* () {
 				const rows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(UptimeMonitors)
@@ -1009,7 +1009,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 					),
 				)
 				return Arr.flatten(targets)
-			})
+			}).pipe(Effect.withSpan("UptimeMonitorsService.listProbeTargets"))
 
 			const recordChecks = Effect.fn("UptimeMonitorsService.recordChecks")(function* (
 				reports: ReadonlyArray<UptimeCheckReport>,

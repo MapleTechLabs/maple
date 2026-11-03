@@ -31,7 +31,7 @@ export interface EdgeCacheBackend {
 		bucket: string,
 		hash: string,
 		nowMs: number,
-	) => Effect.Effect<unknown | undefined, EdgeCacheBackendError>
+	) => Effect.Effect<unknown, EdgeCacheBackendError>
 	readonly put: (
 		bucket: string,
 		hash: string,

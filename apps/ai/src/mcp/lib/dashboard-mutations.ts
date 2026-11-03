@@ -313,7 +313,7 @@ export const withDashboardMutation = Effect.fn("McpDashboardMutations.withDashbo
 		)
 		.pipe(
 			Effect.mapError((error) =>
-				error instanceof McpInvalidInputError ? error : toMcpDashboardError(tool)(error),
+				Schema.is(McpInvalidInputError)(error) ? error : toMcpDashboardError(tool)(error),
 			),
 		)
 })

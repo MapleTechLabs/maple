@@ -75,7 +75,7 @@ const CROSS_ORG_BUILDERS: ReadonlySet<string> = new Set([
 describe("sql catalog", () => {
 	const pipeEntries = collectPipeCatalog()
 	const specEntries = collectQuerySpecCatalog()
-	const entries = Effect.runSync(collectQueryCatalog())
+	const entries = Effect.runSync(collectQueryCatalog)
 
 	it("exports the same compiled cases for replay without decoder internals", async () => {
 		const suite = await Effect.runPromise(suiteFromCatalog(entries))

@@ -89,7 +89,7 @@ const row = (overrides: Readonly<Record<string, unknown>>) => ({
 })
 
 const investigationOf = (overrides: Readonly<Record<string, unknown>> = {}): V2Investigation => {
-	const decoded = rowsToInvestigation(Schema.decodeUnknownSync(InvestigationRowSchema)(row(overrides)))
+	const decoded = rowsToInvestigation(Schema.decodeSync(InvestigationRowSchema)(row(overrides)))
 	if (decoded === null) return expect.unreachable("fixture row must decode")
 	return decoded
 }

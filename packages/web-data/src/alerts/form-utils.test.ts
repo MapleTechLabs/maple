@@ -240,7 +240,7 @@ describe("telegram destination params", () => {
 })
 
 describe("chat destination params", () => {
-	const WORKSPACE = Schema.decodeUnknownSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
+	const WORKSPACE = Schema.decodeSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
 
 	it("names the linked workspace and the picked channel, never the connector or a name", () => {
 		const params = buildDestinationCreateParamsV2({
@@ -496,7 +496,7 @@ describe("linear destination params", () => {
 	})
 
 	it("an edit preselects the stored team and names it from the summary", () => {
-		const destination = Schema.decodeUnknownSync(AlertDestinationDocument)({
+		const destination = Schema.decodeSync(AlertDestinationDocument)({
 			id: "0199a001-0000-7000-8000-0000000000aa",
 			name: "Platform tickets",
 			type: "linear",
@@ -520,7 +520,7 @@ describe("linear destination params", () => {
 
 describe("suggestedDestinationName", () => {
 	it("names a destination after where it delivers", () => {
-		const workspace = Schema.decodeUnknownSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
+		const workspace = Schema.decodeSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
 		expect(
 			suggestedDestinationName({
 				...chatDestinationForm("slack", workspace),
@@ -557,7 +557,7 @@ describe("pickDefaultDestination", () => {
 	})
 
 	it("skips auto-disabled destinations and picks nothing when none is in use", () => {
-		const disabledAt = Schema.decodeUnknownSync(AlertDestinationDocument.fields.createdAt)(
+		const disabledAt = Schema.decodeSync(AlertDestinationDocument.fields.createdAt)(
 			"2026-10-06T00:00:00.000Z",
 		)
 		const disabled = { id: b, enabled: true, disabledAt }

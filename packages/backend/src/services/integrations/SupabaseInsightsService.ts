@@ -109,7 +109,7 @@ export interface SupabaseInsightsServiceApi {
 	readonly pollOrg: (
 		orgId: OrgId,
 	) => Effect.Effect<SupabaseInsightsPollOrgSummary, IntegrationsPersistenceError>
-	readonly pollAllOrgs: () => Effect.Effect<SupabaseInsightsPollAllSummary, IntegrationsPersistenceError>
+	readonly pollAllOrgs: Effect.Effect<SupabaseInsightsPollAllSummary, IntegrationsPersistenceError>
 }
 
 export class SupabaseInsightsService extends Context.Service<
@@ -404,7 +404,7 @@ export class SupabaseInsightsService extends Context.Service<
 		const pollOrg = (orgId: OrgId) =>
 			Clock.currentTimeMillis.pipe(Effect.flatMap((started) => pollOrgAt(orgId, started)))
 
-		const pollAllOrgs = Effect.fn("SupabaseInsightsService.pollAllOrgs")(function* () {
+		const pollAllOrgs = Effect.gen(function* () {
 			const started = yield* Clock.currentTimeMillis
 			const orgs = yield* dbExecute((db) => db.run(PG.from(SupabaseConnections).select("orgId")))
 			const summaries = yield* Effect.forEach(
@@ -445,7 +445,7 @@ export class SupabaseInsightsService extends Context.Service<
 				"maple.supabase.insights.failures": summary.failures,
 			})
 			return summary
-		})
+		}).pipe(Effect.withSpan("SupabaseInsightsService.pollAllOrgs"))
 
 		return { getInsights, pollOrg, pollAllOrgs } satisfies SupabaseInsightsServiceApi
 	}),

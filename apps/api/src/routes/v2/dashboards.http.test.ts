@@ -42,7 +42,7 @@ import {
 
 const createdDbs: TestDb[] = []
 const encodeDashboardPublicId = Schema.encodeUnknownSync(DashboardPublicId)
-const USER_OTHER = Schema.decodeUnknownSync(UserId)("user_other_org")
+const USER_OTHER = Schema.decodeSync(UserId)("user_other_org")
 afterEach(() => cleanupTestDbs(createdDbs))
 
 const testConfig = () =>
@@ -126,8 +126,8 @@ const makeHarness = () => {
 		disableLogger: true,
 	})
 	const runtime = ManagedRuntime.make(servicesLive)
-	const ORG = Schema.decodeUnknownSync(OrgId)("org_dashboard_e2e")
-	const USER = Schema.decodeUnknownSync(UserId)("user_dashboard_e2e")
+	const ORG = Schema.decodeSync(OrgId)("org_dashboard_e2e")
+	const USER = Schema.decodeSync(UserId)("user_dashboard_e2e")
 
 	const bootstrapKey = (scopes?: ReadonlyArray<string>) =>
 		runtime.runPromise(
@@ -897,7 +897,7 @@ describe("v2 dashboard shares", () => {
 		const foreign = await harness.runtime.runPromise(
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
-				return yield* service.create(Schema.decodeUnknownSync(OrgId)("org_other"), USER_OTHER, {
+				return yield* service.create(Schema.decodeSync(OrgId)("org_other"), USER_OTHER, {
 					name: "other-org",
 					scopes: ["dashboards:write"],
 				})

@@ -89,22 +89,20 @@ const connectedRow = (
 						),
 					),
 				],
-				[
-					// A failed read says so once above the list; the row keeps a muted "Unknown".
-					...(connected === null && overview.kind === "unavailable" && overview.reason === "failed"
-						? [
-								statusDot(h, { tone: "neutral" }),
-								typography(h, { size: "xs", tone: "muted" }, ["Unknown"]),
-							]
-						: [
-								statusDot(h, {
-									tone: connected !== null ? HEALTH_TONE[connected.health] : "neutral",
-								}),
-								typography(h, { size: "xs", truncate: true }, [
-									connected?.stateLabel ?? "Not configured",
-								]),
+				// A failed read says so once above the list; the row keeps a muted "Unknown".
+				connected === null && overview.kind === "unavailable" && overview.reason === "failed"
+					? [
+							statusDot(h, { tone: "neutral" }),
+							typography(h, { size: "xs", tone: "muted" }, ["Unknown"]),
+						]
+					: [
+							statusDot(h, {
+								tone: connected !== null ? HEALTH_TONE[connected.health] : "neutral",
+							}),
+							typography(h, { size: "xs", truncate: true }, [
+								connected?.stateLabel ?? "Not configured",
 							]),
-				],
+						],
 			),
 			...(connected?.stat
 				? [

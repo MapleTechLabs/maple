@@ -254,7 +254,7 @@ export class ConnectorRelay {
 	): Effect.Effect<void, ConversationNotRecorded> {
 		const here = "channelId" in event ? event.channelId : undefined
 		const name = connectorConversationRelayName(event.connector, conversation.target)
-		const write: Effect.Effect<void, unknown> =
+		const write: Effect.Effect<void, ConnectorRelayStorageError> =
 			here === conversation.target.channelId
 				? this.remember(conversation.conversationKey)
 				: Effect.try({
@@ -268,7 +268,19 @@ export class ConnectorRelay {
 					}).pipe(
 						// No namespace bound: nothing to write to, and the answer still goes out.
 						Effect.flatMap((relay) =>
-							relay === undefined ? Effect.void : relay.remember(conversation.conversationKey),
+							relay === undefined
+								? Effect.void
+								: relay.remember(conversation.conversationKey).pipe(
+										Effect.mapError(
+											(cause) =>
+												new ConnectorRelayStorageError({
+													operation: "rememberRemoteConversation",
+													message:
+														"The conversation's relay object could not record it",
+													cause,
+												}),
+										),
+									),
 						),
 					)
 		return write.pipe(

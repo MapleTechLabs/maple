@@ -59,7 +59,7 @@ const Int64FromString = Schema.BigIntFromString.check(
 	Schema.makeFilter((value) => value >= INT64_MIN && value <= INT64_MAX, { expected: "signed int64" }),
 )
 const parseInt64 = (value: string): bigint | null =>
-	Option.getOrNull(Schema.decodeUnknownOption(Int64FromString)(value))
+	Option.getOrNull(Schema.decodeOption(Int64FromString)(value))
 
 /** Guard topology before the recursive codec, including persisted and compile inputs. */
 export const decodeSignalProjectionSpec = (candidate: unknown): SignalProjectionSpec => {

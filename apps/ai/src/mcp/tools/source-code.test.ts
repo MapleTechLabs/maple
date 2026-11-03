@@ -25,7 +25,7 @@ const tools = new Map<string, Run>()
 registerSourceCodeTools({
 	define: (spec) => {
 		const run = (params: Readonly<Record<string, unknown>>) =>
-			Schema.decodeUnknownEffect(spec.parameters)(params).pipe(
+			Schema.decodeEffect(spec.parameters)(params).pipe(
 				Effect.flatMap(spec.handler),
 				Effect.map((output) => ({
 					text: renderToolDoc(spec.render(output)),
@@ -37,8 +37,8 @@ registerSourceCodeTools({
 } satisfies McpToolRegistrar)
 
 const tenant = Layer.succeed(CurrentMcpTenant, {
-	orgId: Schema.decodeUnknownSync(OrgId)("org_tools"),
-	userId: Schema.decodeUnknownSync(UserId)("user_tools"),
+	orgId: Schema.decodeSync(OrgId)("org_tools"),
+	userId: Schema.decodeSync(UserId)("user_tools"),
 	roles: [],
 	authMode: "self_hosted",
 } as CurrentMcpTenant["Service"])

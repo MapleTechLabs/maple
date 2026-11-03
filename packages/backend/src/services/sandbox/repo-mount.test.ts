@@ -3,7 +3,7 @@ import { OrgId } from "@maple/domain/http"
 import { Option, Schema } from "effect"
 import { formatRepoMountSource, parseRepoMountSource, repoMount } from "./repo-mount"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_mount_test")
+const ORG = Schema.decodeSync(OrgId)("org_mount_test")
 
 describe("the repository mount source", () => {
 	it("round-trips an org, repository and ref", () => {

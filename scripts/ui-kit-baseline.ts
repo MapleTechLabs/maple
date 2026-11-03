@@ -45,7 +45,7 @@ const Report = Schema.Struct({
 	),
 })
 const Baseline = Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Number))
-const { diagnostics } = Schema.decodeUnknownSync(Schema.fromJsonString(Report))(lint.stdout.toString())
+const { diagnostics } = Schema.decodeSync(Schema.fromJsonString(Report))(lint.stdout.toString())
 
 const counts: Record<string, Record<string, number>> = Rec.fromEntries(Arr.map(RULES, (rule) => [rule, {}]))
 for (const { code, filename } of diagnostics) {
@@ -54,7 +54,7 @@ for (const { code, filename } of diagnostics) {
 	counts[rule][filename] = (counts[rule][filename] ?? 0) + 1
 }
 
-const previous = Schema.decodeUnknownSync(Schema.fromJsonString(Baseline))(readFileSync(baselineFile, "utf8"))
+const previous = Schema.decodeSync(Schema.fromJsonString(Baseline))(readFileSync(baselineFile, "utf8"))
 const grew = Arr.flatMap(RULES, (rule) =>
 	Arr.map(
 		Arr.filter(Rec.toEntries(counts[rule]), ([file, count]) => count > (previous[rule]?.[file] ?? 0)),

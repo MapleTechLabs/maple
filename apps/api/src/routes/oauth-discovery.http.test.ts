@@ -230,9 +230,9 @@ describe("MCP OAuth HTTP routes", () => {
 				Effect.gen(function* () {
 					const oauth = yield* McpOAuthService
 					return yield* oauth.approve(requestId, {
-						orgId: Schema.decodeUnknownSync(OrgId)("org_http"),
-						userId: Schema.decodeUnknownSync(UserId)("user_http"),
-						roles: [Schema.decodeUnknownSync(RoleName)("org:member")],
+						orgId: Schema.decodeSync(OrgId)("org_http"),
+						userId: Schema.decodeSync(UserId)("user_http"),
+						roles: [Schema.decodeSync(RoleName)("org:member")],
 						userEmail: null,
 					})
 				}),

@@ -13,7 +13,7 @@ import { init, retainedOf, update } from "./update"
 import { view as pageView } from "./view"
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
-const settings = Schema.decodeUnknownSync(GithubPrReviewSettingsResponse)({
+const settings = Schema.decodeSync(GithubPrReviewSettingsResponse)({
 	settings: {
 		model: "anthropic/claude-sonnet-5.5",
 		defaults: { instructions: "Check OrgId.", dailyLimit: 40 },

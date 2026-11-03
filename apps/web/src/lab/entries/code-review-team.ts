@@ -101,7 +101,7 @@ const activityAt = (nowMs: number) => {
 
 // Logins no GitHub account holds, so the avatars fall back to initials.
 const teamAt = (nowMs: number) =>
-	Schema.decodeUnknownSync(CodeReviewTeam)({
+	Schema.decodeSync(CodeReviewTeam)({
 		startTime: nowMs - 30 * DAY,
 		endTime: nowMs,
 		activityStartTime: nowMs - 365 * DAY,

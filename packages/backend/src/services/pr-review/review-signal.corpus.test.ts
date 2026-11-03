@@ -14,7 +14,7 @@ import {
 } from "./review-signal-corpus"
 
 const DIR = join(import.meta.dirname, "__fixtures__", "review-signal")
-const labels = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewSignalLabelFile))(
+const labels = Schema.decodeSync(Schema.fromJsonString(ReviewSignalLabelFile))(
 	readFileSync(join(DIR, "labels.json"), "utf8"),
 )
 const decodeCase = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewSignalCase))

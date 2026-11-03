@@ -4,7 +4,7 @@ import { ErrorIncidentId, ErrorIssueId, OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIncidents, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
-import { Clock, Effect, Layer, Schema, Array as Arr } from "effect"
+import { Clock, Effect, Layer, Schema, Array as Arr, DateTime } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -225,7 +225,7 @@ describe("ErrorIssueReadModelsService", () => {
 			yield* seedIssue(ORG, ongoing, now, { firstSeenAt: now - 86_400_000 })
 
 			const listed = yield* readModels.listIssues(ORG, {
-				introducedAfter: new Date(now - 120_000).toISOString(),
+				introducedAfter: DateTime.formatIso(DateTime.makeUnsafe(now - 120_000)),
 			})
 			expect(Arr.map(listed.issues, (issue) => issue.id).toSorted()).toEqual(
 				[fresh, regressed].toSorted(),

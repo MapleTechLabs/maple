@@ -22,6 +22,7 @@ import { reportedCostOf } from "../platform/genai-spans"
 import type { LlmClients, ResolvedModel } from "../platform/Llm"
 import { type AuditExecutionApi, EXECUTION_TOOLKIT, executionToolHandlers } from "./execution"
 import { AUDIT_TOOLKIT, auditToolHandlers, type SourceReaderApi } from "./source"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 
 export interface AuditModels {
 	readonly discovery: ResolvedModel
@@ -108,6 +109,8 @@ const reportedCost: RunCostEstimator = (request) => {
  * The `AuditAgents` implementation. The LLM clients are acquired here, at construction, so a run's
  * `run` has no requirements of its own.
  */
+const secureRandom = SecureRandom.make(SecureRandom.randomBytesUnsafe)
+
 export const makeAuditAgents = (
 	models: AuditModels,
 	source: SourceReaderApi,
@@ -126,7 +129,8 @@ export const makeAuditAgents = (
 				// What the parent promoted during this invocation: the only artifacts a `local` check may cite.
 				const promoted = yield* Ref.make<ReadonlyArray<string>>([])
 				// A retried attempt gets its own uid and scratch: it never sees the failed attempt's files.
-				const attempt = Str.slice(0, 8)(crypto.randomUUID())
+				const uid = yield* secureRandom.uuidV4()
+				const attempt = Str.slice(0, 8)(uid)
 				const sandbox: AuditExecutionApi | undefined =
 					execution !== undefined && EXECUTING_ROLES.has(invocation.role)
 						? { run: (agentId, command) => execution.run(`${agentId}-${attempt}`, command) }

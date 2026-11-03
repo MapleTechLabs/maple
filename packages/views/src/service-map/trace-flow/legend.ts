@@ -35,14 +35,16 @@ export const flowLegend = <M>(
 			// Groups are split by the gap alone, so a wrapped line never starts with a separator.
 			...(services.length > 0
 				? [
-						hstack(h, { gap: "3" }, [
-							...Arr.map(services, (service) =>
+						hstack(
+							h,
+							{ gap: "3" },
+							Arr.map(services, (service) =>
 								hstack(h, { gap: "1.5" }, [
 									serviceDot(h, service, "size-2.5"),
 									h.span([h.Class("font-medium")], [service]),
 								]),
 							),
-						]),
+						),
 					]
 				: []),
 			// The error swatch closes the span-kind group, so it never strands at the far right.

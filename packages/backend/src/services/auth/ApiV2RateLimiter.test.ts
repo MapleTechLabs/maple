@@ -5,8 +5,8 @@ import { ApiV2RateLimit, RateLimitBindingError, type RateLimiter } from "@maple/
 import { testEnv } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 import { ApiV2RateLimiter, makeApiV2RateLimitKey } from "./ApiV2RateLimiter"
 
-const KEY_A = Schema.decodeUnknownSync(ApiKeyId)("00000000-0000-4000-8000-000000000001")
-const KEY_B = Schema.decodeUnknownSync(ApiKeyId)("00000000-0000-4000-8000-000000000002")
+const KEY_A = Schema.decodeSync(ApiKeyId)("00000000-0000-4000-8000-000000000001")
+const KEY_B = Schema.decodeSync(ApiKeyId)("00000000-0000-4000-8000-000000000002")
 
 /** The limiter over a fake binding port (or none at all), keyed under the given deployment. */
 const limiterLayer = (limiter: RateLimiter | undefined, environment = "stg") =>

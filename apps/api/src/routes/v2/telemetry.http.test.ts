@@ -346,8 +346,8 @@ const makeHarness = (
 	)
 	const { handler, dispose: disposeHandler } = HttpRouter.toWebHandler(routes, { disableLogger: true })
 	const runtime = ManagedRuntime.make(servicesLive)
-	const org = Schema.decodeUnknownSync(OrgId)("org_telemetry_e2e")
-	const user = Schema.decodeUnknownSync(UserId)("user_telemetry_e2e")
+	const org = Schema.decodeSync(OrgId)("org_telemetry_e2e")
+	const user = Schema.decodeSync(UserId)("user_telemetry_e2e")
 	const bootstrapKey = (scopes?: ReadonlyArray<string>) =>
 		runtime.runPromise(
 			Effect.gen(function* () {

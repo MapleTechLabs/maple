@@ -76,7 +76,7 @@ describe("services, metrics and query tools on define", () => {
 			const result = await call(name, params)
 			expect(result.isError, markdown(result)).toBeUndefined()
 			// Decoding throws a readable schema error naming the failing path.
-			Schema.decodeUnknownSync(schema)(result.structuredContent)
+			Schema.decodeSync(schema)(result.structuredContent)
 			expect(markdown(result)).not.toContain("__maple_ui")
 		})
 	}

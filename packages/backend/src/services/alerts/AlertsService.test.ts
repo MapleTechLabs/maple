@@ -2,7 +2,7 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { AlertValidationError, WebhookAlertDestinationConfig } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, Duration, Effect, Exit, Schema, Array as Arr, String as Str } from "effect"
+import { Cause, Duration, Effect, Exit, Schema, Array as Arr, String as Str, DateTime } from "effect"
 import { TestClock } from "effect/testing"
 import { projectAlertLifecycleEvent } from "@maple/alerting-core"
 import { AlertRuleUpsertRequest, OrgId, UserId } from "@maple/domain/http"
@@ -316,7 +316,7 @@ describe("AlertsService", () => {
 							executeSql(
 								testDb,
 								"insert into alert_rule_claims (rule_id, org_id, last_scheduled_at) values ($1, $2, $3) on conflict (rule_id) do update set last_scheduled_at = excluded.last_scheduled_at",
-								[rule.id, orgId, new Date(tickAt).toISOString()],
+								[rule.id, orgId, DateTime.formatIso(DateTime.makeUnsafe(tickAt))],
 							),
 						),
 					),
@@ -662,12 +662,12 @@ describe("AlertsService", () => {
 
 			// Another worker took this one moments ago: inside SCHEDULER_LOCK_TTL_MS,
 			// so this tick must lose it and leave its timestamp untouched.
-			const heldAt = new Date(DEFAULT_CLOCK_EPOCH_MS - 1_000)
+			const heldAtMs = DEFAULT_CLOCK_EPOCH_MS - 1_000
 			yield* Effect.promise(() =>
 				executeSql(
 					testDb,
 					`insert into alert_rule_claims (rule_id, org_id, last_scheduled_at) values ($1, $2, $3)`,
-					[ruleHeld.id, orgId, heldAt],
+					[ruleHeld.id, orgId, DateTime.formatIso(DateTime.makeUnsafe(heldAtMs))],
 				),
 			)
 
@@ -700,7 +700,7 @@ describe("AlertsService", () => {
 			// ...while the held one keeps the other worker's timestamp exactly.
 			assert.strictEqual(
 				claimHeld?.lastScheduledAt?.getTime(),
-				heldAt.getTime(),
+				heldAtMs,
 				"a rule held inside the lock TTL is not stolen by the batch",
 			)
 		}).pipe(
@@ -1649,7 +1649,8 @@ describe("AlertsService", () => {
 					[ruleId],
 				),
 			)
-		const ms = (value: Date | string | undefined) => new Date(value ?? 0).getTime()
+		const ms = (value: Date | string | undefined) =>
+			DateTime.toEpochMillis(DateTime.makeUnsafe(value ?? 0))
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
@@ -1732,7 +1733,8 @@ describe("AlertsService", () => {
 			] as ReadonlyArray<Record<string, unknown>>,
 		}
 
-		const ms = (value: Date | string | undefined) => new Date(value ?? 0).getTime()
+		const ms = (value: Date | string | undefined) =>
+			DateTime.toEpochMillis(DateTime.makeUnsafe(value ?? 0))
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
@@ -1867,7 +1869,7 @@ describe("AlertsService", () => {
 							sampleCount: 0,
 						},
 						linkUrl: "http://127.0.0.1:3471/alerts",
-						sentAt: new Date(fixedTime).toISOString(),
+						sentAt: DateTime.formatIso(DateTime.makeUnsafe(fixedTime)),
 					}),
 				}),
 			)
@@ -2164,7 +2166,7 @@ describe("AlertsService", () => {
 							sampleCount: 0,
 						},
 						linkUrl: "http://127.0.0.1:3471/alerts",
-						sentAt: new Date(fixedTime).toISOString(),
+						sentAt: DateTime.formatIso(DateTime.makeUnsafe(fixedTime)),
 					}),
 				}),
 			)
@@ -2286,7 +2288,7 @@ describe("AlertsService", () => {
 							sampleCount: 200,
 						},
 						linkUrl: "http://127.0.0.1:3471/alerts",
-						sentAt: new Date(fixedTime).toISOString(),
+						sentAt: DateTime.formatIso(DateTime.makeUnsafe(fixedTime)),
 					}),
 				}),
 			)
@@ -2359,7 +2361,7 @@ describe("AlertsService", () => {
 							},
 							observed: { value: 0, sampleCount: 0 },
 							linkUrl: "http://127.0.0.1:3471/alerts",
-							sentAt: new Date(fixedTime).toISOString(),
+							sentAt: DateTime.formatIso(DateTime.makeUnsafe(fixedTime)),
 						}),
 					}),
 				)
@@ -2469,7 +2471,7 @@ describe("AlertsService", () => {
 							sampleCount: 0,
 						},
 						linkUrl: "http://127.0.0.1:3471/alerts",
-						sentAt: new Date(fixedTime).toISOString(),
+						sentAt: DateTime.formatIso(DateTime.makeUnsafe(fixedTime)),
 						futureAdditiveField: { preserve: true },
 					}),
 				}),
@@ -2583,7 +2585,7 @@ describe("AlertsService", () => {
 							sampleCount: 0,
 						},
 						linkUrl: "http://127.0.0.1:3471/alerts",
-						sentAt: new Date(fixedTime).toISOString(),
+						sentAt: DateTime.formatIso(DateTime.makeUnsafe(fixedTime)),
 					}),
 				}),
 			)

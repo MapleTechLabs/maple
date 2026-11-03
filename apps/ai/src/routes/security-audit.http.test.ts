@@ -70,9 +70,9 @@ const trackedDbs: TestDb[] = []
 const NO_ESTIMATES: ReadonlyMap<string, EstimatedSeverity> = new Map()
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG_A = Schema.decodeUnknownSync(OrgId)("org_audit_a")
-const ORG_B = Schema.decodeUnknownSync(OrgId)("org_audit_b")
-const USER = Schema.decodeUnknownSync(UserId)("user_audit")
+const ORG_A = Schema.decodeSync(OrgId)("org_audit_a")
+const ORG_B = Schema.decodeSync(OrgId)("org_audit_b")
+const USER = Schema.decodeSync(UserId)("user_audit")
 const decodeRole = Schema.decodeUnknownSync(RoleName)
 
 /** The bearer token names the caller: `<orgId>|<role>`, so one harness serves several tenants. */
@@ -86,7 +86,7 @@ const AuthorizationStubLayer = Layer.succeed(
 					Str.replace("Bearer ", "")(request.headers.authorization ?? ""),
 				)
 				const tenant = new CurrentTenant.TenantSchema({
-					orgId: Schema.decodeUnknownSync(OrgId)(org),
+					orgId: Schema.decodeSync(OrgId)(org),
 					userId: USER,
 					roles: [decodeRole(role)],
 					authMode: "clerk",

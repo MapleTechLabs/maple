@@ -19,7 +19,7 @@ import { webhookTransport } from "./webhook"
  * providers had no coverage at all.
  */
 
-const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
+const DESTINATION_ID = Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 const LINK = "https://web.localhost/alerts"
 const CHAT = "https://web.localhost/alerts/rule_1"
@@ -353,7 +353,7 @@ describe("transport render: uptime monitors", () => {
 	const uptimeInput = <Config>(config: Config, overrides: Partial<DispatchContext> = {}) =>
 		inputFor(config, { context: { ...uptime, ...overrides } })
 	const discord = (overrides: Partial<DispatchContext> = {}) =>
-		Schema.decodeUnknownSync(
+		Schema.decodeSync(
 			Schema.fromJsonString(
 				Schema.Struct({
 					content: Schema.String,
@@ -395,7 +395,7 @@ describe("transport render: uptime monitors", () => {
 	})
 
 	it("puts the check's error in the PagerDuty summary and details", () => {
-		const body = Schema.decodeUnknownSync(
+		const body = Schema.decodeSync(
 			Schema.fromJsonString(
 				Schema.Struct({
 					payload: Schema.Struct({
@@ -410,7 +410,7 @@ describe("transport render: uptime monitors", () => {
 	})
 
 	it("writes the Telegram message from the check's error", () => {
-		const body = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ text: Schema.String })))(
+		const body = Schema.decodeSync(Schema.fromJsonString(Schema.Struct({ text: Schema.String })))(
 			telegramTransport.render(
 				uptimeInput({ type: "telegram", botToken: "123456789:AA-token", chatId: "-100123" }),
 			).body,

@@ -189,7 +189,7 @@ const requestedDimensions = (request: ScopedDeleteRequest): ReadonlyArray<Dimens
 export const floorToHour = (ms: number): number => Math.floor(ms / HOUR_MS) * HOUR_MS
 
 const sqlString = (value: string): string =>
-	`'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+	`'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 const sourceExpression = (source: DimensionSource, dimension: Dimension): string => {
 	if ("column" in source) return source.column
@@ -739,7 +739,7 @@ const readPending = (dataDir: string) =>
 		const path = pendingDeletePath(dataDir)
 		if (!existsSync(path)) return Option.none<PendingDelete>()
 		const text = yield* run("read pending delete", () => readRealFile(path, "pending delete journal"))
-		const pending = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(PendingDelete))(text).pipe(
+		const pending = yield* Schema.decodeEffect(Schema.fromJsonString(PendingDelete))(text).pipe(
 			Effect.mapError(
 				(cause) =>
 					new ScopedDeleteError({ message: `malformed pending delete journal ${path}`, cause }),

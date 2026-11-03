@@ -58,7 +58,7 @@ beforeEach(() => {
 		sent.push({
 			url,
 			keepalive: init.keepalive === true,
-			bytes: body instanceof Uint8Array ? body.byteLength : String(body).length,
+			bytes: body instanceof Uint8Array ? body.byteLength : typeof body === "string" ? body.length : 0,
 			names,
 			headers: init.headers as Record<string, string>,
 		})

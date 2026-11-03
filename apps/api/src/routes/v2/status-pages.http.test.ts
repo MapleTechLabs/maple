@@ -36,9 +36,9 @@ import {
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_status_pages_e2e")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_status_pages_other")
-const USER = Schema.decodeUnknownSync(UserId)("user_status_pages_e2e")
+const ORG = Schema.decodeSync(OrgId)("org_status_pages_e2e")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_status_pages_other")
+const USER = Schema.decodeSync(UserId)("user_status_pages_e2e")
 const MEMBER = { source: "maple_cli", roles: ["org:member"], deviceName: "laptop" }
 
 const testConfig = () =>

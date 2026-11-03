@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs"
 import { deserialize } from "node:v8"
 import { PGlite } from "@electric-sql/pglite"
 import { Effect, Layer, Schema, Tracer, Array as Arr, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { inject } from "vitest"
 
 import { FixtureMemoryFS, type PgliteFixture } from "../../test/pglite-fixture"
@@ -162,7 +163,7 @@ export const insertTestSource = async (
 		readonly id?: string
 	},
 ): Promise<string> => {
-	const id = source.id ?? crypto.randomUUID()
+	const id = source.id ?? SecureRandom.uuidV4Unsafe()
 	await db.pglite.query(
 		`INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, 'integration', now(), now())`,

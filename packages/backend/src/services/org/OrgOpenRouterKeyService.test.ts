@@ -12,8 +12,8 @@ import { OrgOpenRouterKeyService } from "./OrgOpenRouterKeyService"
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_byok")
-const USER = Schema.decodeUnknownSync(UserId)("user_byok")
+const ORG = Schema.decodeSync(OrgId)("org_byok")
+const USER = Schema.decodeSync(UserId)("user_byok")
 const KEY = "sk-or-v1-0123456789abcdef0123456789abcdef"
 
 interface World {

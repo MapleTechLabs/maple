@@ -11,8 +11,8 @@ afterEach(() => cleanupTestDbs(createdDbs))
 const makeLayer = (testDb: TestDb = createTestDb(createdDbs)) =>
 	Layer.effect(IngestRuleService, IngestRuleService.make).pipe(Layer.provide(testDb.layer))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_rules")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_other")
+const ORG = Schema.decodeSync(OrgId)("org_rules")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_other")
 
 const dropDebug: IngestRuleSpec = {
 	signals: ["logs"],

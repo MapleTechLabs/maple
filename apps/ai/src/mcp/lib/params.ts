@@ -200,9 +200,7 @@ export const decodeResourceId =
 		return Option.match(internalIdOf(kind, raw), {
 			onNone: () => Effect.fail(invalidId(kind, raw, parameter)),
 			onSome: (id) =>
-				Schema.decodeUnknownEffect(schema)(id).pipe(
-					Effect.mapError(() => invalidId(kind, raw, parameter)),
-				),
+				Schema.decodeEffect(schema)(id).pipe(Effect.mapError(() => invalidId(kind, raw, parameter))),
 		})
 	}
 

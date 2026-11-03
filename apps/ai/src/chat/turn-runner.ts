@@ -410,19 +410,17 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			const target =
 				prReviewId === undefined
 					? Option.none()
-					: yield* reviews
-							.reviewTarget(tenant.orgId, prReviewId)
-							.pipe(
-								Effect.catch((error) =>
-									Effect.logInfo("Could not read the review's target").pipe(
-										Effect.annotateLogs({
-											sessionId: input.sessionId,
-											error: error.message,
-										}),
-										Effect.as(Option.none()),
-									),
+					: yield* reviews.reviewTarget(tenant.orgId, prReviewId).pipe(
+							Effect.catch((error) =>
+								Effect.logInfo("Could not read the review's target").pipe(
+									Effect.annotateLogs({
+										sessionId: input.sessionId,
+										error: error.message,
+									}),
+									Effect.as(Option.none()),
 								),
-							)
+							),
+						)
 			// Clone the commit while the model reads the diff, rather than when its first source tool
 			// asks and waits on it. A child of the turn (no request Scope here, so `forkRequestScoped`
 			// parents it on this fiber): a clone still running when the turn ends carries on in the container.
@@ -637,7 +635,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 
 			// A pass that failed is a pass with no diagnosis yet, not a dead turn: the close-out below
 			// still gets its say. Interrupts stay interrupts.
-			const recoverAutonomousFailure = <R>(effect: Effect.Effect<ChatRunOutcome, unknown, R>) =>
+			const recoverAutonomousFailure = <E, R>(effect: Effect.Effect<ChatRunOutcome, E, R>) =>
 				effect.pipe(
 					Effect.catchCauseIf(
 						(cause) => !Cause.hasInterruptsOnly(cause),

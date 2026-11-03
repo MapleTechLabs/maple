@@ -49,7 +49,7 @@ const UUID = "0199a0e1-0000-7000-8000-000000000002"
 const PUBLIC_ID = encodePublicId(PublicIdPrefixes.source, UUID)
 
 const source = (fields: Readonly<Record<string, unknown>> = {}) =>
-	Schema.decodeUnknownSync(V2Source)({
+	Schema.decodeSync(V2Source)({
 		id: PUBLIC_ID,
 		object: "source",
 		name: "Checkout API",
@@ -447,7 +447,7 @@ describe("integration sources", () => {
 		const connectorId = encodePublicId(PublicIdPrefixes.gcpConnector, connectorUuid)
 		const gcp = (integrationId: string | null) =>
 			prometheus({ name: "Google Cloud acme-prod", platform: "gcp", integration_id: integrationId })
-		const gcpStatus = Schema.decodeUnknownSync(V2GcpIntegration)({
+		const gcpStatus = Schema.decodeSync(V2GcpIntegration)({
 			object: "gcp_integration",
 			metrics_available: true,
 			connectors: [
@@ -596,7 +596,7 @@ describe("integration sources", () => {
 			Message.CompletedFetchUsage({
 				key: model.usage.key ?? "",
 				result: Result.succeed(
-					Schema.decodeUnknownSync(V2SourceUsage)({
+					Schema.decodeSync(V2SourceUsage)({
 						object: "source_usage",
 						window_start: "2026-09-30T13:00:00.000Z",
 						window_end: "2026-10-01T12:00:00.000Z",
@@ -637,7 +637,7 @@ describe("integration sources", () => {
 })
 
 const awsConnection = (id: AwsConnectionId): V2AwsConnection =>
-	Schema.decodeUnknownSync(V2AwsConnection)({
+	Schema.decodeSync(V2AwsConnection)({
 		id: encodePublicId(PublicIdPrefixes.awsConnection, id),
 		object: "aws_connection",
 		account_id: "123456789012",

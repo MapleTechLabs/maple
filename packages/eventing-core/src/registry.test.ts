@@ -457,7 +457,7 @@ describe("schema topology boundary", () => {
 			field: { namespace: "attribute", key: "x", type: "string" },
 		}
 		for (let i = 0; i < 10000; i++) selector = { op: "not", clause: selector }
-		const decoded = Schema.decodeUnknownResult(SignalProjectionSpecSchema)({ ...projection(), selector })
+		const decoded = Schema.decodeResult(SignalProjectionSpecSchema)({ ...projection(), selector })
 		expect(Result.isFailure(decoded)).toBe(true)
 		if (Result.isFailure(decoded)) expect(decoded.failure.message).toContain("depth")
 	})

@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema, Scope, Array as Arr, String as Str } from "effect"
+import { DateTime, Effect, Layer, Schema, Scope, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { afterEach, expect, vi } from "vitest"
 import { make, makeHandle, MapleEvents } from "./events.js"
@@ -72,7 +72,7 @@ describe("MapleEvents (server)", () => {
 						groupId: "org_1",
 						visitorId: "v-1",
 						sessionId: "s-1",
-						timestamp: new Date("2026-08-17T10:00:00.000Z"),
+						timestamp: DateTime.toDateUtc(DateTime.makeUnsafe("2026-08-17T10:00:00.000Z")),
 						url: "https://app.example.com/billing",
 						pagePath: "/billing",
 						attributes: { plan: "startup", seats: 5, trial: false, dropped: undefined },

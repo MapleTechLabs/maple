@@ -4,7 +4,8 @@ import { MapleApiClient } from "../platform/api-clients"
 import { SessionBearer } from "../platform/session-bearer"
 
 type Tenant = CurrentTenant.TenantSchema
-type Entry = Readonly<{ token: Option.Option<string>; result: Deferred.Deferred<Tenant, unknown> }>
+type Entry<E> = Readonly<{ token: Option.Option<string>; result: Deferred.Deferred<Tenant, E> }>
+type SessionError = Effect.Error<ReturnType<MapleApiClient["Service"]["auth"]["session"]>>
 
 const sameToken = (a: Option.Option<string>, b: Option.Option<string>): boolean =>
 	Option.getOrNull(a) === Option.getOrNull(b)
@@ -13,15 +14,15 @@ const sameToken = (a: Option.Option<string>, b: Option.Option<string>): boolean 
  * One read per session token, shared by every reader. A failed read is dropped once it settles,
  * so the next reader asks again rather than keeping the failure until the token renews.
  */
-export const makeSessionTenantCache = (
-	fetchTenant: Effect.Effect<Tenant, unknown>,
+export const makeSessionTenantCache = <E>(
+	fetchTenant: Effect.Effect<Tenant, E>,
 	token: Effect.Effect<Option.Option<string>>,
-): Effect.Effect<{ readonly get: Effect.Effect<Tenant, unknown> }, never, Scope.Scope> =>
+): Effect.Effect<{ readonly get: Effect.Effect<Tenant, E> }, never, Scope.Scope> =>
 	Effect.gen(function* () {
 		const scope = yield* Effect.scope
-		const current = yield* SynchronizedRef.make(Option.none<Entry>())
+		const current = yield* SynchronizedRef.make(Option.none<Entry<E>>())
 
-		const dropIfCurrent = (result: Entry["result"]) =>
+		const dropIfCurrent = (result: Entry<E>["result"]) =>
 			SynchronizedRef.update(current, (existing) =>
 				Option.isSome(existing) && existing.value.result === result ? Option.none() : existing,
 			)
@@ -31,10 +32,10 @@ export const makeSessionTenantCache = (
 				if (Option.isSome(existing) && sameToken(existing.value.token, forToken))
 					return Effect.succeed([existing.value, existing] as const)
 				return Effect.gen(function* () {
-					const result = yield* Deferred.make<Tenant, unknown>()
+					const result = yield* Deferred.make<Tenant, E>()
 					const read = fetchTenant.pipe(Effect.onError(() => dropIfCurrent(result)))
 					yield* Effect.forkIn(Deferred.complete(result, read), scope)
-					const entry: Entry = { token: forToken, result }
+					const entry: Entry<E> = { token: forToken, result }
 					return [entry, Option.some(entry)] as const
 				})
 			})
@@ -52,7 +53,7 @@ export const makeSessionTenantCache = (
  */
 export class SessionTenant extends Context.Service<
 	SessionTenant,
-	{ readonly get: Effect.Effect<Tenant, unknown> }
+	{ readonly get: Effect.Effect<Tenant, SessionError> }
 >()("@maple/web/SessionTenant") {
 	static readonly layer = Layer.effect(
 		this,

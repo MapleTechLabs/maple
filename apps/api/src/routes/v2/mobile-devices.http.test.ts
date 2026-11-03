@@ -34,9 +34,9 @@ import {
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_mobile_e2e")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_mobile_other")
-const USER = Schema.decodeUnknownSync(UserId)("user_mobile_e2e")
+const ORG = Schema.decodeSync(OrgId)("org_mobile_e2e")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_mobile_other")
+const USER = Schema.decodeSync(UserId)("user_mobile_e2e")
 const TOKEN = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
 /** ActivityKit's two extra tokens: one starts an activity, one updates it. */
 const START_TOKEN = "b1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"

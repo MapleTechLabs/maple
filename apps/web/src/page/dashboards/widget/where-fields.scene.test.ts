@@ -19,7 +19,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 const anchor = { left: 0, top: 0, bottom: 32, width: 400, viewportHeight: 900 }
 const COUNTRY: FunnelPopulationFilterField = "country"
 
-const document = Schema.decodeUnknownSync(DashboardDocument)({
+const document = Schema.decodeSync(DashboardDocument)({
 	id: "dash_platform",
 	name: "Platform overview",
 	timeRange: { type: "relative", value: "6h" },

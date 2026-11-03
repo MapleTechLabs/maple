@@ -883,7 +883,7 @@ const startDetached = (options: DetachedStart) =>
 			})
 		}
 
-		const assets = options.offline ? yield* resolveUiAssets() : undefined
+		const assets = options.offline ? yield* resolveUiAssets : undefined
 		const dashboardUrl = options.offline
 			? assets !== undefined
 				? `${connectAddr}/`
@@ -1251,7 +1251,7 @@ export const start = Command.make("start", {
 							dim(`◌ opening chDB at ${prettyPath(dataDir)} (bootstrapping schema)…\n`),
 						),
 					)
-					const assets = yield* resolveUiAssets()
+					const assets = yield* resolveUiAssets
 
 					const { port: boundPort } = yield* startServer({
 						hostname: bindHost,

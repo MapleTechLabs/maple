@@ -63,8 +63,8 @@ export const stubFetch = (
 /** A resolver that always authenticates, as `orgId`. */
 export const fixedTenantLayer = (orgId: string) => {
 	const tenant: TenantContext = {
-		orgId: Schema.decodeUnknownSync(OrgId)(orgId),
-		userId: Schema.decodeUnknownSync(UserId)("user_test"),
+		orgId: Schema.decodeSync(OrgId)(orgId),
+		userId: Schema.decodeSync(UserId)("user_test"),
 		roles: [],
 		authMode: "self_hosted",
 	}

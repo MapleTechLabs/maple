@@ -29,6 +29,7 @@ import {
 	Context,
 	Stream,
 } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import {
 	computeDelta,
 	deriveDigestStatus,
@@ -279,6 +280,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 		const env = yield* Env
 		const warehouse = yield* WarehouseQueryService
 		const edgeCache = yield* EdgeCacheService
+		const random = yield* SecureRandom.SecureRandom
 		const linkConfig = {
 			secret: Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
 			appBaseUrl: env.MAPLE_APP_BASE_URL,
@@ -329,7 +331,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			yield* Effect.annotateCurrentSpan("tenant.userId", userId)
 
 			const now = yield* Clock.currentTimeMillis
-			const id = crypto.randomUUID()
+			const id = yield* random.uuidV4()
 
 			yield* dbExecute((db) =>
 				db.run(
@@ -679,7 +681,12 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			const curUsage = sumUsage(curUsageData)
 			const prevUsage = sumUsage(prevUsageData)
 
-			const formatDate = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+			const formatDate = (ms: number) =>
+				DateTime.formatUtc(DateTime.makeUnsafe(ms), {
+					locale: "en-US",
+					month: "short",
+					day: "numeric",
+				})
 
 			// Per-service WoW deltas, matched on the grain the query actually
 			// returns rather than on the service name alone.
@@ -771,8 +778,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			const props: WeeklyDigestProps = {
 				orgName,
 				dateRange: {
-					start: formatDate(new Date(currentStartMs)),
-					end: formatDate(new Date(todayStartMs - DAY_MS)),
+					start: formatDate(currentStartMs),
+					end: formatDate(todayStartMs - DAY_MS),
 				},
 				scope,
 				summary: {
@@ -943,29 +950,33 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			yield* Effect.forEach(
 				clerkMemberships,
 				(m) =>
-					dbExecute((db) =>
-						db.run(
-							PG.insertInto(DigestSubscriptions)
-								.values({
-									id: crypto.randomUUID(),
-									orgId: m.orgId,
-									userId: m.userId,
-									email: m.email,
-									enabled: true,
-									dayOfWeek: 1,
-									timezone: "UTC",
-									createdAt: now,
-									updatedAt: now,
-								})
-								.onConflictDoUpdate({
-									target: ["orgId", "userId"],
-									set: ($) => ({
+					Effect.flatMap(random.uuidV4(), (id) =>
+						dbExecute((db) =>
+							db.run(
+								PG.insertInto(DigestSubscriptions)
+									.values({
+										id,
+										orgId: m.orgId,
+										userId: m.userId,
 										email: m.email,
-										enabled: PG.asBoolean($.optedOutAt.isNull()),
-										webAnalyticsEnabled: PG.asBoolean($.webAnalyticsOptedOutAt.isNull()),
+										enabled: true,
+										dayOfWeek: 1,
+										timezone: "UTC",
+										createdAt: now,
 										updatedAt: now,
+									})
+									.onConflictDoUpdate({
+										target: ["orgId", "userId"],
+										set: ($) => ({
+											email: m.email,
+											enabled: PG.asBoolean($.optedOutAt.isNull()),
+											webAnalyticsEnabled: PG.asBoolean(
+												$.webAnalyticsOptedOutAt.isNull(),
+											),
+											updatedAt: now,
+										}),
 									}),
-								}),
+							),
 						),
 					),
 				{ discard: true },
@@ -1258,7 +1269,9 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, EmailService.layer)),
+		Layer.provide(
+			Layer.mergeAll(WarehouseQueryService.layer, EmailService.layer, SecureRandom.layerWebCrypto),
+		),
 	)
 }
 

@@ -69,7 +69,7 @@ const database = uniqueDatabase("maple_query_benchmark_e2e")
 
 // Analyze every named case, including distinct decoder contracts that happen
 // to emit the same SQL fingerprint. This is the exact catalog the CLI exports.
-const catalog = Effect.runSync(collectWarehouseQueryCatalog())
+const catalog = Effect.runSync(collectWarehouseQueryCatalog)
 
 // Keep command logs and JSON as reviewable evidence; only this suite's database
 // is removed in afterAll. The artifact directory is already gitignored.
@@ -249,7 +249,7 @@ describe.skipIf(!clickhouseE2eEnabled)("Query benchmark catalog analyzer sweep",
 		const exportedPath = join(artifacts, "catalog.json")
 		const exported = await runCli("catalog", ["catalog", "--out", exportedPath])
 		assert.equal(exported.code, 0, exported.output)
-		const exportedSuite = Schema.decodeUnknownSync(Schema.fromJsonString(Suite))(
+		const exportedSuite = Schema.decodeSync(Schema.fromJsonString(Suite))(
 			await readFile(exportedPath, "utf8"),
 		)
 		assert.deepEqual(
@@ -314,7 +314,7 @@ describe.skipIf(!clickhouseE2eEnabled)("Query benchmark catalog analyzer sweep",
 		const facets = await Effect.runPromise(CH.compileUnion(CH.servicesFacetsQuery(), inputs))
 		assert.notInclude(raw.sql, "service_overview_minutely")
 		assert.include(rollup.sql, "service_overview_minutely")
-		const rows = Schema.decodeUnknownSync(
+		const rows = Schema.decodeSync(
 			Schema.fromJsonString(
 				Schema.Struct({ data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)) }),
 			),
@@ -371,7 +371,7 @@ export default Bench.defineSuite({ name: "populated-maple-e2e", dataset: ${JSON.
 		]) {
 			const run = await runCli(label, ["run", suitePath, ...controls, "--out", outputPath])
 			assert.equal(run.code, 0, run.output)
-			const report = Schema.decodeUnknownSync(Schema.fromJsonString(RunOutput))(
+			const report = Schema.decodeSync(Schema.fromJsonString(RunOutput))(
 				await readFile(outputPath, "utf8"),
 			)
 			assert.lengthOf(report.results, 2)
@@ -398,10 +398,10 @@ export default Bench.defineSuite({ name: "populated-maple-e2e", dataset: ${JSON.
 			comparisonPath,
 		])
 		assert.equal(comparison.code, 0, comparison.output)
-		const before = Schema.decodeUnknownSync(Schema.fromJsonString(RunOutput))(
+		const before = Schema.decodeSync(Schema.fromJsonString(RunOutput))(
 			await readFile(baselinePath, "utf8"),
 		)
-		const after = Schema.decodeUnknownSync(Schema.fromJsonString(RunOutput))(
+		const after = Schema.decodeSync(Schema.fromJsonString(RunOutput))(
 			await readFile(candidatePath, "utf8"),
 		)
 		assert.isBelow(

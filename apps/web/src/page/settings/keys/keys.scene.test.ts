@@ -12,7 +12,7 @@ import { init, update } from "./update"
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 
-const key = Schema.decodeUnknownSync(V2ApiKey)({
+const key = Schema.decodeSync(V2ApiKey)({
 	id: "key_aXwpxqBkqtYwtBtmsGbR41",
 	object: "api_key",
 	name: "CI deploy",
@@ -82,7 +82,7 @@ describe("keys tab", () => {
 			),
 		])
 		expect(names(update(refilled, create(CreateDialog.Message.ClickedCreate())).commands)).toEqual([])
-		const secret = Schema.decodeUnknownSync(V2ApiKeyWithSecret)({
+		const secret = Schema.decodeSync(V2ApiKeyWithSecret)({
 			...Schema.encodeSync(V2ApiKey)(key),
 			secret: "maple_ak_secret",
 		})
@@ -98,7 +98,7 @@ describe("keys tab", () => {
 
 	test("a member revokes their own phone's device key from its row", () => {
 		const member = "user_2Nk8mXqPfR3yZ1aB4cD5eF6g"
-		const device = Schema.decodeUnknownSync(V2ApiKey)({
+		const device = Schema.decodeSync(V2ApiKey)({
 			...Schema.encodeSync(V2ApiKey)(key),
 			id: "key_bXwpxqBkqtYwtBtmsGbR42",
 			name: "Home Screen widgets",

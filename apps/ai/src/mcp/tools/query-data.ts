@@ -3,7 +3,13 @@ import { describeInvalidQuerySpec, tokensFor } from "../lib/query-spec-tokens"
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import { MetricType, QuerySpec, parseWarehouseDateTime, warehouseDateTime } from "@maple/query-engine"
+import {
+	MetricType,
+	QueryEngineExecuteRequest,
+	QuerySpec,
+	parseWarehouseDateTime,
+	warehouseDateTime,
+} from "@maple/query-engine"
 import { describeQuerySpecDecodeError } from "@maple/domain/query-engine"
 import { ProductEventKind } from "@maple/domain/query-engine"
 import { QueryDataOutput } from "@maple/domain/mcp-outputs"
@@ -575,26 +581,28 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				// Moves start_time forward when the window is past a breakdown limit: the range cap,
 				// then the span budget, so at most twice, and only ever to a narrower window.
 				const execute = (narrowings: number): ReturnType<typeof queryEngine.execute> =>
-					queryEngine.execute(tenant, { startTime: st, endTime: et, query }).pipe(
-						Effect.catchTag("@maple/http/errors/QueryEngineValidationError", (error) => {
-							const fitting = error.fittingRangeSeconds
-							const narrowedMs =
-								fitting === undefined
-									? undefined
-									: parseWarehouseDateTime(et) - fitting * 1000
-							if (
-								narrowedMs === undefined ||
-								narrowedMs <= parseWarehouseDateTime(st) ||
-								narrowings >= 2
-							)
-								return Effect.fail(error)
-							st = warehouseDateTime(narrowedMs)
-							decisions.push(
-								`start_time: moved to ${st}, the widest window this breakdown runs on (${error.details[0] ?? error.message}). Query the earlier part with its own end_time.`,
-							)
-							return execute(narrowings + 1)
-						}),
-					)
+					queryEngine
+						.execute(tenant, new QueryEngineExecuteRequest({ startTime: st, endTime: et, query }))
+						.pipe(
+							Effect.catchTag("@maple/http/errors/QueryEngineValidationError", (error) => {
+								const fitting = error.fittingRangeSeconds
+								const narrowedMs =
+									fitting === undefined
+										? undefined
+										: parseWarehouseDateTime(et) - fitting * 1000
+								if (
+									narrowedMs === undefined ||
+									narrowedMs <= parseWarehouseDateTime(st) ||
+									narrowings >= 2
+								)
+									return Effect.fail(error)
+								st = warehouseDateTime(narrowedMs)
+								decisions.push(
+									`start_time: moved to ${st}, the widest window this breakdown runs on (${error.details[0] ?? error.message}). Query the earlier part with its own end_time.`,
+								)
+								return execute(narrowings + 1)
+							}),
+						)
 				const response = yield* execute(0).pipe(
 					Effect.catchTags({
 						"@maple/http/errors/QueryEngineValidationError": (error) =>

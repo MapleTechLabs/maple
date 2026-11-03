@@ -36,9 +36,9 @@ import { UptimeMonitorsService } from "./UptimeMonitorsService"
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_uptime")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_uptime_other")
-const USER = Schema.decodeUnknownSync(UserId)("user_uptime")
+const ORG = Schema.decodeSync(OrgId)("org_uptime")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_uptime_other")
+const USER = Schema.decodeSync(UserId)("user_uptime")
 const UNKNOWN_ID = UptimeMonitorId.make("00000000-0000-4000-8000-000000000000")
 
 const config = () =>
@@ -196,7 +196,7 @@ describe("UptimeMonitorsService", () => {
 			assert.isFalse(paused.enabled)
 			assert.strictEqual(paused.state.status, "paused")
 			// The scraper stops probing a paused monitor; other orgs' monitors are unaffected.
-			const targets = yield* service.listProbeTargets()
+			const targets = yield* service.listProbeTargets
 			assert.deepStrictEqual(
 				Arr.map(targets, (target) => target.id),
 				[other.id],
@@ -482,7 +482,7 @@ describe("UptimeMonitorsService", () => {
 					[corrupt.id],
 				),
 			)
-			const targets = yield* service.listProbeTargets()
+			const targets = yield* service.listProbeTargets
 			assert.deepStrictEqual(
 				Arr.map(targets, (target) => target.id),
 				[healthy.id],
@@ -787,7 +787,7 @@ describe("UptimeMonitorsService", () => {
 			const url = monitor.heartbeatUrl ?? ""
 			assert.match(url, /^https:\/\/api\.maple\.test\/hb\/[A-Za-z0-9_-]{22,}$/u)
 			const token = Str.slice(url.lastIndexOf("/") + 1)(url)
-			assert.deepStrictEqual(yield* service.listProbeTargets(), [])
+			assert.deepStrictEqual(yield* service.listProbeTargets, [])
 
 			yield* service.recordPing(token, true)
 			const up = yield* service.get(ORG, monitor.id)

@@ -42,7 +42,7 @@ const DEST_ID = "0e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a6b"
 const INCIDENT_ID = "11111111-2222-4333-8444-555555555555"
 const NOW = "2026-09-24T10:00:00.000Z"
 
-const rule = Schema.decodeUnknownSync(AlertRuleDocument)({
+const rule = Schema.decodeSync(AlertRuleDocument)({
 	id: RULE_ID,
 	name: "Checkout errors",
 	notes: null,
@@ -158,8 +158,8 @@ interface Seen {
 const layer = (seen: Seen) =>
 	Layer.mergeAll(
 		Layer.succeed(CurrentMcpTenant, {
-			orgId: Schema.decodeUnknownSync(OrgId)("org_tools"),
-			userId: Schema.decodeUnknownSync(UserId)("user_tools"),
+			orgId: Schema.decodeSync(OrgId)("org_tools"),
+			userId: Schema.decodeSync(UserId)("user_tools"),
 			roles: [],
 			authMode: "self_hosted",
 		} as never),
@@ -170,7 +170,7 @@ const layer = (seen: Seen) =>
 				seen.created = request
 				// Echo the fields the write warnings read, so a raw-SQL create reads back as one.
 				return Effect.succeed(
-					Schema.decodeUnknownSync(AlertRuleDocument)({
+					Schema.decodeSync(AlertRuleDocument)({
 						...rule,
 						signalType: request.signalType,
 						rawQuerySql: request.rawQuerySql ?? null,
@@ -247,7 +247,7 @@ const layer = (seen: Seen) =>
 				return Effect.succeed(
 					id === RULE_ID
 						? rule
-						: Schema.decodeUnknownSync(AlertRuleDocument)({
+						: Schema.decodeSync(AlertRuleDocument)({
 								...rule,
 								id,
 								name: "Latency",
@@ -260,7 +260,7 @@ const layer = (seen: Seen) =>
 			},
 			listDestinations: () =>
 				Effect.succeed(
-					Schema.decodeUnknownSync(AlertDestinationsListResponse)({
+					Schema.decodeSync(AlertDestinationsListResponse)({
 						destinations: [
 							{
 								id: DEST_ID,
@@ -299,7 +299,7 @@ const layer = (seen: Seen) =>
 			listRuleChecks: (_org: unknown, _rule: unknown, options: unknown) => {
 				seen.checkOptions = options
 				return Effect.succeed(
-					Schema.decodeUnknownSync(AlertChecksListResponse)({
+					Schema.decodeSync(AlertChecksListResponse)({
 						checks: [
 							{
 								timestamp: NOW,
@@ -660,7 +660,7 @@ describe("alert tools", () => {
 			rawQueryReducer: null,
 		})
 
-		const range = Schema.decodeUnknownSync(AlertRuleDocument)({
+		const range = Schema.decodeSync(AlertRuleDocument)({
 			...rule,
 			comparator: "between",
 			thresholdUpper: 10,
@@ -675,7 +675,7 @@ describe("alert tools", () => {
 	})
 
 	it("update_alert_rule drops a recovery value the new threshold invalidates", () => {
-		const recovering = Schema.decodeUnknownSync(AlertRuleDocument)({
+		const recovering = Schema.decodeSync(AlertRuleDocument)({
 			...rule,
 			comparator: "gt",
 			thresholds: [
@@ -696,7 +696,7 @@ describe("alert tools", () => {
 	})
 
 	it("update_alert_rule keeps a picked interval until the window gets shorter than it", () => {
-		const hourly = Schema.decodeUnknownSync(AlertRuleDocument)({
+		const hourly = Schema.decodeSync(AlertRuleDocument)({
 			...rule,
 			windowMinutes: 60,
 			evaluationIntervalMinutes: 30,
@@ -709,7 +709,7 @@ describe("alert tools", () => {
 	})
 
 	it("update_alert_rule keeps a two-tier rule's tiers and refuses to merge them", () => {
-		const tiered = Schema.decodeUnknownSync(AlertRuleDocument)({
+		const tiered = Schema.decodeSync(AlertRuleDocument)({
 			...rule,
 			breachesOutOf: 5,
 			thresholds: [
@@ -862,7 +862,7 @@ describe("alert tools", () => {
 		expect(none._tag === "Failure" && invalidParameter(none.failure)).toBe("rule_id")
 	})
 	/** A raw-SQL rule the scheduler slowed from every 5m to every 10m after repeated timeouts. */
-	const slowedRule = Schema.decodeUnknownSync(AlertRuleDocument)({
+	const slowedRule = Schema.decodeSync(AlertRuleDocument)({
 		...rule,
 		signalType: "raw_query",
 		rawQuerySql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",

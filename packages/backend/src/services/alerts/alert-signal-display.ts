@@ -14,7 +14,7 @@
  * metrics query is an unknown unit that must render as a plain number. Deriving
  * them separately is how the observed value and its threshold drift apart.
  */
-import type { AlertSignalType, QueryBuilderQueryDraftPayload } from "@maple/domain/http"
+import type { QueryBuilderQueryDraftPayload } from "@maple/domain/http"
 import { AGGREGATIONS_BY_SOURCE } from "@maple/query-engine/query-builder"
 import type { ChartUnit } from "@maple/widgets/chart/static-chart"
 import { Array as Arr, String as Str } from "effect"
@@ -28,7 +28,7 @@ export interface SignalDisplay {
 }
 
 export interface SignalDisplayInput {
-	readonly signalType: AlertSignalType | string
+	readonly signalType: string
 	readonly queryBuilderDraft?: QueryBuilderQueryDraftPayload | null
 	/**
 	 * Widened to `string` so the undecoded `alert_rules.reducer` column can be

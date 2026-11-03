@@ -392,7 +392,8 @@ export const createArchiveGeneration = async (
 	signalName: string,
 	rangeDate: string,
 	tuning: ArchiveTuning,
-	checkpointSelector: "current" | "previous" | string = "current",
+	/** `current`, `previous` or a checkpoint id, validated by `parseCheckpointSelector`. */
+	checkpointSelector: string = "current",
 	faults: ArchiveGenerationFaults = {},
 	options: ArchiveGenerationOptions = {},
 ): Promise<ArchiveGenerationResult> => {

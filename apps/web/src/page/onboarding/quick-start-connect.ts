@@ -96,24 +96,28 @@ const LoadConnected = Command.define("LoadOnboardingConnectedProviders", {
 		Effect.gen(function* () {
 			const statuses = yield* IntegrationStatuses
 			const options = { refresh: true, orgId }
-			const read = (provider: StatusProvider): Effect.Effect<boolean, unknown> =>
+			const connectedOf = <E>(status: Effect.Effect<{ readonly connected: boolean }, E>) =>
+				Effect.option(Effect.map(status, (read) => read.connected))
+			const read = (provider: StatusProvider): Effect.Effect<Option.Option<boolean>> =>
 				provider === "cloudflare"
-					? Effect.map(statuses.cloudflare(options), (status) => status.connected)
+					? connectedOf(statuses.cloudflare(options))
 					: provider === "railway"
-						? Effect.map(statuses.railway(options), (status) => status.connected)
+						? connectedOf(statuses.railway(options))
 						: provider === "supabase"
-							? Effect.map(statuses.supabase(options), (status) => status.connected)
-							: Effect.map(statuses.planetscale(options), (status) => status.connected)
+							? connectedOf(statuses.supabase(options))
+							: connectedOf(statuses.planetscale(options))
 			const [entries, maybeSources] = yield* Effect.all(
 				[
 					Effect.forEach(
 						Arr.filter(platforms, isStatusProvider),
 						(provider) =>
-							read(provider).pipe(
-								Effect.map((isConnected): ReadonlyArray<readonly [string, boolean]> => [
-									[provider, isConnected],
-								]),
-								Effect.orElseSucceed(() => []),
+							Effect.map(
+								read(provider),
+								(isConnected): ReadonlyArray<readonly [string, boolean]> =>
+									Option.match(isConnected, {
+										onNone: () => [],
+										onSome: (value) => [[provider, value]],
+									}),
 							),
 						{ concurrency: "unbounded" },
 					),

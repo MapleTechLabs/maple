@@ -13,7 +13,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const NOW = 10 * 86_400_000
-const customer = Schema.decodeUnknownSync(BillingCustomer)({
+const customer = Schema.decodeSync(BillingCustomer)({
 	id: "org_acme",
 	subscriptions: [
 		{ planId: "startup", status: "active", currentPeriodStart: 0, currentPeriodEnd: 30 * 86_400_000 },
@@ -166,7 +166,7 @@ describe("billing account", () => {
 				"FetchBillingAccountUsage",
 			]),
 		)
-		const usage = Schema.decodeUnknownSync(BillingAccountUsageResponse)({
+		const usage = Schema.decodeSync(BillingAccountUsageResponse)({
 			cycleStartMs: 0,
 			cycleEndMs: 30 * 86_400_000,
 			orgs: [
