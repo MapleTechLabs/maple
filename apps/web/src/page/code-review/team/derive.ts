@@ -1,5 +1,5 @@
 import type { CodeReviewTeamMember } from "@maple/domain/http"
-import type { CodeReviewTeamSort } from "../../../route/search"
+import type { CodeReviewTeamSearch, CodeReviewTeamSort } from "../../../route/search"
 import { medianOf, type Score } from "./score"
 
 // The scorecard's numbers from the members' counts: rates, the team median of each, the order, the
@@ -13,6 +13,11 @@ const STEADY_CI_MIN_RUNS = 10
 const FAST_MERGE_MIN_MERGED = 3
 
 export type Metric = Exclude<CodeReviewTeamSort, "person">
+
+/** A bare `/code-review/team` opens ranked by score; the URL only names a different choice. */
+export const DEFAULT_SORT: CodeReviewTeamSort = "score"
+export const sortOf = (search: typeof CodeReviewTeamSearch.Type): CodeReviewTeamSort => search.sort ?? DEFAULT_SORT
+export const isRanked = (search: typeof CodeReviewTeamSearch.Type): boolean => search.ranked ?? true
 
 const ratio = (part: number, whole: number) => (whole === 0 ? null : part / whole)
 

@@ -81,10 +81,24 @@ const notices = (h: H, source: V2Source, nowMs: number): ReadonlyArray<Html> => 
 		: []),
 	...(source.health.problem !== null && source.status !== "paused" && source.status !== "expired"
 		? [
-				alert(h, { variant: source.health.status === "stale" ? "warn" : "crit" }, [
-					alertTitle(h, [sourceStatusLabel(source.health.status)]),
-					alertDescription(h, [source.health.problem], "text-xs"),
-				]),
+				// A healthy source with a problem still receives data; its integration reports the rest.
+				alert(
+					h,
+					{
+						variant:
+							source.health.status === "stale" || source.health.status === "healthy"
+								? "warn"
+								: "crit",
+					},
+					[
+						alertTitle(h, [
+							source.health.status === "healthy"
+								? "Receiving, with an integration problem"
+								: sourceStatusLabel(source.health.status),
+						]),
+						alertDescription(h, [source.health.problem], "text-xs"),
+					],
+				),
 			]
 		: []),
 ]

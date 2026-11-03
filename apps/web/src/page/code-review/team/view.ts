@@ -45,20 +45,26 @@ import {
 import {
 	ASCENDING,
 	highlightsOf,
+	isRanked,
 	type Metric,
 	metricOf,
 	RANK_MIN_PULL_REQUESTS,
 	RANKABLE,
 	rankedMetric,
 	scorecardRows,
+	sortOf,
 	teamMedian,
 	type TeamScores,
 } from "./derive"
 import { teamScores } from "./score"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
-import { typographyClass } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import * as HoverCard from "@maple/views/ui/hover-card"
+import { contributionCalendar, contributionLevel } from "@maple/views/ui/contribution-calendar"
+import { type ActivityCount, type ActivityDay, activityByDay, daysOf, totalOf } from "./activity"
+import { ACTIVITY_CARD_ID } from "./update"
 
 // `CodeReviewTeamPage`: team KPIs, a few highlights, and the per-person scorecard against the team
 // median, ranked only on request.
@@ -86,7 +92,7 @@ const COLUMNS: ReadonlyArray<Column> = [
 	{
 		metric: "score",
 		label: "Score",
-		hint: "Every rate, merge time and merged volume in one 0-100 score, CI time left out: mostly quality, the rest volume. Few merged pull requests read close to the team until there is more to judge",
+		hint: "Quality and merged volume in one 0-100 score, the team at about 50: 80% quality (findings merged unfixed, critical findings, first-try CI failures, each against the team), 20% merged pull requests against the team median. Few pull requests read close to the team until there is more to judge",
 		className: "w-20",
 		format: (value) => (value === null ? EMPTY_VALUE : formatNumber(Math.round(value))),
 		detail: (member, scores) => {
@@ -290,8 +296,209 @@ const highlights = (h: H, members: ReadonlyArray<CodeReviewTeamMember>): Html | 
 	)
 }
 
+/** People and repositories a day card lists before folding the rest into a count. */
+const CARD_PEOPLE = 6
+const CARD_REPOSITORIES = 4
+
+/** A `YYYY-MM-DD` as "Tue, Oct 14": the day is already in the viewer's zone. */
+const dayLabelOf = (
+	day: string,
+	options: Intl.DateTimeFormatOptions = { weekday: "short", month: "short", day: "numeric" },
+) => new Date(`${day}T00:00:00Z`).toLocaleDateString("en-US", { ...options, timeZone: "UTC" })
+
+const countLine = (count: { readonly opened: number; readonly merged: number }) =>
+	[
+		count.opened > 0 ? `${formatNumber(count.opened)} opened` : null,
+		count.merged > 0 ? `${formatNumber(count.merged)} merged` : null,
+	]
+		.filter((part) => part !== null)
+		.join(", ")
+
+const pullRequestCount = (count: number) => `${formatNumber(count)} pull request${count === 1 ? "" : "s"}`
+
+const cardSection = (h: H, title: string, rows: ReadonlyArray<Html>, more: number): Html =>
+	vstack(h, { gap: "1.5", className: "border-t px-3 py-2.5" }, [
+		typography(h, { size: "2xs", tone: "muted", weight: "medium" }, [title]),
+		...rows,
+		...(more > 0
+			? [typography(h, { size: "2xs", tone: "muted" }, [`and ${formatNumber(more)} more`])]
+			: []),
+	])
+
+const countCell = (h: H, count: ActivityCount): Html =>
+	typography(h, { size: "xs", tone: "muted", numeric: true, className: "shrink-0" }, [countLine(count)])
+
+const repositoryLabel = (h: H, repository: string): Html =>
+	typography(
+		h,
+		{ size: "xs", mono: true, truncate: true, className: "min-w-0", attributes: [h.Title(repository)] },
+		[repository],
+	)
+
+/** What a calendar day's card says: the totals, then who and where. */
+const dayCard = (h: H, day: string, activity: ActivityDay | undefined): ReadonlyArray<Html> => [
+	vstack(h, { gap: "0.5", className: "px-3 py-2.5" }, [
+		typography(h, { size: "xs", weight: "medium" }, [
+			dayLabelOf(day, { weekday: "long", month: "long", day: "numeric", year: "numeric" }),
+		]),
+		typography(h, { size: "xs", tone: "muted" }, [
+			activity === undefined
+				? "No pull requests"
+				: `${pullRequestCount(totalOf(activity))}: ${countLine(activity)}`,
+		]),
+	]),
+	...(activity === undefined
+		? []
+		: [
+				cardSection(
+					h,
+					"People",
+					activity.people
+						.slice(0, CARD_PEOPLE)
+						.map((person) =>
+							hstack(h, { gap: "3", justify: "between", attributes: [h.Key(person.key)] }, [
+								authorLabel(h, person.key, "text-xs"),
+								countCell(h, person),
+							]),
+						),
+					activity.people.length - CARD_PEOPLE,
+				),
+				cardSection(
+					h,
+					"Repositories",
+					activity.repositories
+						.slice(0, CARD_REPOSITORIES)
+						.map((repository) =>
+							hstack(h, { gap: "3", justify: "between", attributes: [h.Key(repository.key)] }, [
+								repositoryLabel(h, repository.key),
+								countCell(h, repository),
+							]),
+						),
+					activity.repositories.length - CARD_REPOSITORIES,
+				),
+			]),
+]
+
+const dayTriggerId = (day: string) => `${ACTIVITY_CARD_ID}-day-${day}`
+const dayOfTrigger = (triggerId: string) => triggerId.slice(-10)
+
+/** The window's busiest people or repositories with a bar each, beside the calendar. */
+const topList = (
+	h: H,
+	title: string,
+	byDay: ReadonlyMap<string, ActivityDay>,
+	countsOf: (day: ActivityDay) => ReadonlyArray<ActivityCount>,
+	label: (key: string) => Html,
+): Html | null => {
+	const totals = new Map<string, number>()
+	for (const day of byDay.values())
+		for (const count of countsOf(day))
+			totals.set(count.key, (totals.get(count.key) ?? 0) + totalOf(count))
+	const ranked = [...totals.entries()]
+		.toSorted((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+		.slice(0, 5)
+	const max = ranked[0]?.[1] ?? 0
+	if (ranked.length === 0) return null
+	return vstack(h, { gap: "2.5", className: "min-w-0" }, [
+		typography(h, { size: "2xs", tone: "muted", weight: "medium" }, [title]),
+		...ranked.map(([key, total]) =>
+			vstack(h, { gap: "1", attributes: [h.Key(key)] }, [
+				hstack(h, { gap: "3", justify: "between" }, [
+					label(key),
+					typography(h, { size: "xs", tone: "muted", numeric: true, className: "shrink-0" }, [
+						formatNumber(total),
+					]),
+				]),
+				h.div(
+					[h.Class("h-1 w-full rounded-full bg-muted")],
+					[
+						h.div([
+							h.Class("h-full rounded-full"),
+							h.Style({
+								width: `${(total / max) * 100}%`,
+								"background-color": "var(--heatmap-amber-3)",
+							}),
+						]),
+					],
+				),
+			]),
+		),
+	])
+}
+
+/** A GitHub-style calendar of the team's pull requests, a card per day naming who and where. */
+const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: string): Html => {
+	const byDay = activityByDay(team.activity)
+	const days = daysOf(team.activityStartTime, team.endTime, timeZone)
+	const max = Math.max(0, ...[...byDay.values()].map(totalOf))
+	const opened = team.activity.reduce((sum, row) => sum + row.opened, 0)
+	const merged = team.activity.reduce((sum, row) => sum + row.merged, 0)
+	const ids = days.map(dayTriggerId)
+	const sides = [
+		topList(
+			h,
+			"Most active people",
+			byDay,
+			(day) => day.people,
+			(login) => authorLabel(h, login, "text-xs"),
+		),
+		topList(
+			h,
+			"Most active repositories",
+			byDay,
+			(day) => day.repositories,
+			(repository) => repositoryLabel(h, repository),
+		),
+	].filter((side): side is Html => side !== null)
+	return h.submodel({
+		slotId: ACTIVITY_CARD_ID,
+		model: model.activityCard,
+		view: HoverCard.view,
+		toParentMessage: (message) => Message.GotActivityCardMessage({ message }),
+		viewInputs: {
+			triggerIds: ids,
+			className: "w-72 p-0",
+			toContent: (triggerId) => {
+				const day = dayOfTrigger(triggerId)
+				return dayCard(h, day, byDay.get(day))
+			},
+			toView: ({ triggerFor, portal }) =>
+				panel(h, {}, [
+					panelHeader(h, {
+						title: "Activity",
+						action: typography(h, { size: "xs", tone: "muted" }, ["Last 12 months"]),
+					}),
+					vstack(h, { gap: "0" }, [
+						contributionCalendar(h, {
+							ariaLabel: "Pull requests opened and merged per day",
+							className: "px-5 pt-5 pb-4",
+							summary:
+								opened + merged === 0
+									? "No pull requests in the last 12 months"
+									: `${formatNumber(opened)} opened and ${formatNumber(merged)} merged in the last 12 months`,
+							days: days.map((day) => {
+								const activity = byDay.get(day)
+								const total = activity === undefined ? 0 : totalOf(activity)
+								return {
+									day,
+									level: contributionLevel(total, max),
+									label: `${dayLabelOf(day)}: ${activity === undefined ? "no pull requests" : countLine(activity)}`,
+									attributes: triggerFor(dayTriggerId(day)),
+								}
+							}),
+						}),
+						...(sides.length === 0
+							? []
+							: [h.div([h.Class("grid gap-8 border-t px-5 py-4 md:grid-cols-2")], sides)]),
+						...(portal === null ? [] : [portal]),
+					]),
+				]),
+		},
+	})
+}
+
 const sortHead = (h: H, column: Column, model: Model, ranked: boolean): Html => {
-	const sort = model.search.sort ?? "person"
+	const sort = sortOf(model.search)
 	const isActive = ranked ? rankedMetric(sort) === column.metric : sort === column.metric
 	const isAscending = ASCENDING.has(column.metric)
 	const className = cn("px-3 text-right font-normal", column.className)
@@ -319,7 +526,7 @@ const sortHead = (h: H, column: Column, model: Model, ranked: boolean): Html => 
 }
 
 const personHead = (h: H, model: Model): Html => {
-	const isActive = (model.search.sort ?? "person") === "person" && model.search.ranked !== true
+	const isActive = sortOf(model.search) === "person" && !isRanked(model.search)
 	return tableHead(
 		h,
 		[
@@ -389,9 +596,7 @@ const memberRow = (
 	)
 
 const scorecardTitle = (model: Model) =>
-	model.search.ranked === true
-		? `Ranked by ${RANKED_BY[rankedMetric(model.search.sort ?? "person")]}`
-		: "Scorecard"
+	isRanked(model.search) ? `Ranked by ${RANKED_BY[rankedMetric(sortOf(model.search))]}` : "Scorecard"
 
 const scorecardFooter = (h: H, ranked: boolean): Html =>
 	h.footer(
@@ -404,9 +609,9 @@ const scorecardFooter = (h: H, ranked: boolean): Html =>
 	)
 
 const scorecard = (h: H, model: Model, members: ReadonlyArray<CodeReviewTeamMember>): Html => {
-	const ranked = model.search.ranked === true
+	const ranked = isRanked(model.search)
 	const scores = teamScores(members)
-	const rows = scorecardRows(members, model.search.sort ?? "person", ranked, scores)
+	const rows = scorecardRows(members, sortOf(model.search), ranked, scores)
 	return panel(h, {}, [
 		panelHeader(h, {
 			title: scorecardTitle(model),
@@ -450,7 +655,7 @@ const scorecard = (h: H, model: Model, members: ReadonlyArray<CodeReviewTeamMemb
 
 /** The headline and scorecard with their real labels, columns and footer, values still loading. */
 const teamSkeleton = (h: H, model: Model): Html => {
-	const ranked = model.search.ranked === true
+	const ranked = isRanked(model.search)
 	const columns: ReadonlyArray<SkeletonColumn> = [
 		...(ranked ? [{ label: "#", head: "w-10 px-3", cell: "px-3", bar: "h-3 w-4" }] : []),
 		{ label: "Person", head: "px-4", cell: "px-4 py-2.5", bar: "h-3 w-28" },
@@ -506,22 +711,23 @@ const noTeamData = (h: H): Html =>
 		emptyFrameClass("dashed"),
 	)
 
-const teamView = (h: H, model: Model, team: CodeReviewTeam): Html => {
+const teamView = (h: H, model: Model, team: CodeReviewTeam, timeZone: string): Html => {
 	const highlighted = highlights(h, team.members)
 	return vstack(h, { gap: "6" }, [
 		headlineStrip(h, team.totals),
 		...(highlighted === null ? [] : [highlighted]),
+		activityPanel(h, model, team, timeZone),
 		scorecard(h, model, team.members),
 	])
 }
 
-const content = (h: H, model: Model): Html =>
+const content = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.team.data, {
 		onEmpty: () => teamSkeleton(h, model),
 		onFailure: (failure) =>
 			errorState(h, { failure, title: "Couldn't load the team", onRetry: Message.ClickedRetry() }),
 		onData: (team) => {
-			if (team.members.length > 0) return teamView(h, model, team)
+			if (team.members.length > 0) return teamView(h, model, team, timeZone)
 			if (model.search.repo === undefined && team.totals.runnerMs === 0) return noTeamData(h)
 			const filtered = model.search.repo !== undefined
 			if (filtered)
@@ -546,7 +752,7 @@ const content = (h: H, model: Model): Html =>
 		},
 	})
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const filters = filtersView(h, {
 		frame: model.frame,
 		search: model.search,
@@ -568,6 +774,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			// The repository alone: the team is everyone, never one author.
 			filters: filters.filters.slice(0, 1),
 		},
-		[content(h, model)],
+		[content(h, model, inputs.context.timeZone)],
 	)
 })

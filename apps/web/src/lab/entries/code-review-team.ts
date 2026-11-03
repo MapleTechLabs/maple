@@ -54,11 +54,53 @@ const member = (
 	runnerMs: counts.runnerHours * HOUR_MS,
 })
 
+const REPOSITORIES = ["acme/web", "acme/api", "acme/ingest", "acme/infra"] as const
+/** How often each person shows up on a weekday, out of 1. */
+const CADENCE = [
+	["acme-ada", 0.8],
+	["acme-jonas", 0.55],
+	["acme-mei", 0.2],
+	["acme-priya", 0.45],
+	["acme-sam", 0.1],
+	["acme-tomas", 0.3],
+] as const
+
+/** A year of the calendar, seeded so every load draws the same one; weekends stay quiet. */
+const activityAt = (nowMs: number) => {
+	let seed = 7
+	const next = () => {
+		seed = (seed * 16_807) % 2_147_483_647
+		return seed / 2_147_483_647
+	}
+	return Array.from({ length: 365 }, (_, index) => index).flatMap((index) => {
+		const at = nowMs - (364 - index) * DAY
+		// Busy and quiet stretches, like a real year: a release push, a summer lull.
+		const season = 0.55 + 0.45 * Math.sin(index / 38)
+		const day = new Date(at).toISOString().slice(0, 10)
+		const weekday = new Date(at).getUTCDay()
+		const busy = (weekday === 0 || weekday === 6 ? 0.15 : 1) * season
+		return CADENCE.flatMap(([login, cadence]) =>
+			next() < cadence * busy
+				? [
+						{
+							day,
+							login,
+							repository: REPOSITORIES[Math.floor(next() * REPOSITORIES.length)] ?? "acme/web",
+							opened: 1 + Math.floor(next() * 3),
+							merged: Math.floor(next() * 3),
+						},
+					]
+				: [],
+		)
+	})
+}
+
 // Logins no GitHub account holds, so the avatars fall back to initials.
 const teamAt = (nowMs: number) =>
 	Schema.decodeUnknownSync(CodeReviewTeam)({
 		startTime: nowMs - 30 * DAY,
 		endTime: nowMs,
+		activityStartTime: nowMs - 365 * DAY,
 		totals: {
 			pullRequests: 101,
 			mergedPullRequests: 88,
@@ -190,6 +232,7 @@ const teamAt = (nowMs: number) =>
 				runnerHours: 35,
 			}),
 		],
+		activity: activityAt(nowMs),
 	})
 
 const context: PageContext = {

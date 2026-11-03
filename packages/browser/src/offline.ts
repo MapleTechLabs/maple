@@ -1,7 +1,7 @@
 // The eager half of the offline queue: span batches the exporter gave up on
 // (after its own retries) are handed to the deferred chunk, which stores them
 // and sends them again once the browser is back online.
-import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base"
+import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace"
 
 type SpanStash = (spans: ReadableSpan[]) => void
 
