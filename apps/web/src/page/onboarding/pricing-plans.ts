@@ -94,13 +94,6 @@ export const ENTERPRISE_DATA_FEATURES: ReadonlyArray<FeatureRow> = [
 	{ featureId: "product_events", label: "Product Events", value: "Custom", detail: null },
 ]
 
-/**
- * The landing's `lib/compliance.ts`, which web cannot import. Only the DPA may read as held:
- * SOC 2 and ISO 27001 are audits in progress, not certifications.
- */
-export const COMPLIANCE_LINE = "DPA available · SOC 2 Type II and ISO 27001 in progress"
-export const DPA_REQUEST_URL = "mailto:privacy@maple.dev?subject=DPA%20request"
-
 export type Scenario = "new" | "active" | "scheduled" | "upgrade" | "downgrade"
 
 export const getScenario = (plan: CatalogPlan): Scenario => {

@@ -5,6 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CreateOrg from "../../page/onboarding/create-org"
 import * as CreateOrgView from "../../page/onboarding/create-org-view"
 import * as PricingCardsView from "../../page/onboarding/pricing-cards-view"
+import { compliance } from "../../page/kit/compliance-line"
 import * as QuickStartTeamView from "../../page/onboarding/quick-start-team-view"
 import * as QuickStartView from "../../page/onboarding/quick-start-view"
 import { button, linkButton } from "@maple/views/ui/button"
@@ -222,7 +223,7 @@ const createOrgStep = (model: Model, message: CreateOrg.Message): Return => {
 const plansView = Submodel.defineView<null, PricingCards.Message>((_, h) =>
 	h.div(
 		[h.Class("space-y-6")],
-		[PricingCardsView.planCards(h, PLANS, null), PricingCardsView.compliance(h)],
+		[PricingCardsView.planCards(h, PLANS, null), compliance(h)],
 	),
 )
 

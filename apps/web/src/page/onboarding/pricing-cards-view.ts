@@ -12,11 +12,9 @@ import { icon } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { panel } from "@maple/views/ui/panel"
 import { spinner } from "@maple/views/ui/spinner"
-import { textLink } from "@maple/views/ui/text-link"
+import { compliance } from "../kit/compliance-line"
 import { Message, type Model } from "./pricing-cards"
 import {
-	COMPLIANCE_LINE,
-	DPA_REQUEST_URL,
 	ENTERPRISE_DATA_FEATURES,
 	FEATURE_ICONS,
 	type FeatureRow,
@@ -343,18 +341,6 @@ const plansGrid = (h: H, plans: ReadonlyArray<CatalogPlan>, model: Model): Html 
 			compliance(h),
 		],
 	)
-
-/**
- * `Compliance`: one quiet line under the plans, in the cards' own footnote style. Only the DPA
- * reads as held; SOC 2 and ISO 27001 are audits in progress.
- */
-export const compliance = <M>(h: HtmlBuilder<M>): Html =>
-	hstack(h, { gap: "1.5", justify: "center", wrap: true, className: "text-xs text-muted-foreground" }, [
-		icon(h, "ShieldCheckIcon", { className: "size-3.5" }),
-		h.span([], [COMPLIANCE_LINE]),
-		h.span([h.AriaHidden(true)], ["·"]),
-		textLink(h, { href: DPA_REQUEST_URL }, ["Request the DPA"]),
-	])
 
 const dataIncluded = (h: H, rows: ReadonlyArray<FeatureRow>, isDetailed: boolean): Html =>
 	h.div(
