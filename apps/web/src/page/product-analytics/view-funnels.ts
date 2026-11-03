@@ -274,7 +274,7 @@ const results = (h: H, model: Model): Html =>
 					}),
 					panelChartBody(h, [chart(h, model, rows, isDropoff)]),
 				]),
-				panel(h, {}, [panelHeader(h, { title: "Steps" }), stepsTable(h, rows, keyBy, hasDetails)]),
+				panel(h, {}, [panelHeader(h, { title: "Steps" }), stepsTable(h, rows, keyBy, isDropoff)]),
 			])
 		},
 	})
