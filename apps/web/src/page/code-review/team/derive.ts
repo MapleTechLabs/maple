@@ -1,6 +1,7 @@
 import type { CodeReviewTeamMember } from "@maple/domain/http"
 import type { CodeReviewTeamSearch, CodeReviewTeamSort } from "../../../route/search"
 import { medianOf, type Score } from "./score"
+import { Array as Arr, String as Str } from "effect"
 
 // The scorecard's numbers from the members' counts: rates, the team median of each, the order, the
 // ranked view and the highlights.
@@ -16,7 +17,8 @@ export type Metric = Exclude<CodeReviewTeamSort, "person">
 
 /** A bare `/code-review/team` opens ranked by score; the URL only names a different choice. */
 export const DEFAULT_SORT: CodeReviewTeamSort = "score"
-export const sortOf = (search: typeof CodeReviewTeamSearch.Type): CodeReviewTeamSort => search.sort ?? DEFAULT_SORT
+export const sortOf = (search: typeof CodeReviewTeamSearch.Type): CodeReviewTeamSort =>
+	search.sort ?? DEFAULT_SORT
 export const isRanked = (search: typeof CodeReviewTeamSearch.Type): boolean => search.ranked ?? true
 
 const ratio = (part: number, whole: number) => (whole === 0 ? null : part / whole)
@@ -71,7 +73,7 @@ export const teamMedian = (
 	scores: TeamScores,
 ): number | null =>
 	medianOf(
-		members.flatMap((member) => {
+		Arr.flatMap(members, (member) => {
 			const value = metricOf(member, metric, scores)
 			return value === null ? [] : [value]
 		}),
@@ -95,8 +97,10 @@ export const scorecardRows = (
 	scores: TeamScores,
 ): ReadonlyArray<ScoredRow> => {
 	const metric: Metric | null = ranked ? rankedMetric(sort) : sort === "person" ? null : sort
-	const pool = ranked ? members.filter((member) => member.pullRequests >= RANK_MIN_PULL_REQUESTS) : members
-	if (metric === null) return pool.toSorted(byLogin).map((member) => ({ member, rank: null }))
+	const pool = ranked
+		? Arr.filter(members, (member) => member.pullRequests >= RANK_MIN_PULL_REQUESTS)
+		: members
+	if (metric === null) return Arr.map(pool.toSorted(byLogin), (member) => ({ member, rank: null }))
 	const direction = ASCENDING.has(metric) ? 1 : -1
 	const ordered = pool.toSorted((a, b) => {
 		const left = metricOf(a, metric, scores)
@@ -104,11 +108,11 @@ export const scorecardRows = (
 		if (left === null || right === null) return left === right ? byLogin(a, b) : left === null ? 1 : -1
 		return left === right ? byLogin(a, b) : (left - right) * direction
 	})
-	if (!ranked) return ordered.map((member) => ({ member, rank: null }))
+	if (!ranked) return Arr.map(ordered, (member) => ({ member, rank: null }))
 	// Equal values share a rank; people the column does not measure get none.
 	let rank = 0
 	let previous: number | null = null
-	return ordered.map((member, index) => {
+	return Arr.map(ordered, (member, index) => {
 		const value = metricOf(member, metric, scores)
 		if (value === null) return { member, rank: null }
 		if (value !== previous) rank = index + 1
@@ -130,13 +134,15 @@ const best = (
 	valueOf: (member: CodeReviewTeamMember) => number | null,
 	lowest: boolean,
 ): { login: string; value: number } | undefined => {
-	const scored = members.flatMap((member) => {
+	const scored = Arr.flatMap(members, (member) => {
 		const value = valueOf(member)
 		return value === null ? [] : [{ login: member.login, value }]
 	})
 	return scored
 		.toSorted((a, b) =>
-			a.value === b.value ? a.login.localeCompare(b.login) : (a.value - b.value) * (lowest ? 1 : -1),
+			a.value === b.value
+				? Str.localeCompare(b.login)(a.login)
+				: (a.value - b.value) * (lowest ? 1 : -1),
 		)
 		.at(0)
 }

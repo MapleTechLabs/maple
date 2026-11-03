@@ -1,7 +1,7 @@
 import { McpToolCatalogEntry } from "@maple/domain/http"
 import { V2McpConnection } from "@maple/domain/http/v2"
 import { MCP_CLIENTS } from "../../../components/settings/mcp-client-config"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -35,5 +35,5 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-export const CLIENT_VALUES = MCP_CLIENTS.map((client) => client.id)
-export const CLIENT_LABELS = MCP_CLIENTS.map((client) => client.label)
+export const CLIENT_VALUES = Arr.map(MCP_CLIENTS, (client) => client.id)
+export const CLIENT_LABELS = Arr.map(MCP_CLIENTS, (client) => client.label)

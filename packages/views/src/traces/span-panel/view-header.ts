@@ -18,6 +18,7 @@ import type { Model } from "./model"
 import { outcomeBadgeStyle, type PlatformInfo } from "./platform"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The panel's header, summary stats, cache and platform blocks (`SpanDetailPanel`).
 
@@ -207,7 +208,7 @@ export const platformSummary = (h: H, model: Model, platform: PlatformInfo): Htm
 					...(platform.location === null
 						? []
 						: [keyValue(h, { label: "Location", mono: true }, [platform.location])]),
-					...platform.fields.map((field) =>
+					...Arr.map(platform.fields, (field) =>
 						keyValue(
 							h,
 							{

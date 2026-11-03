@@ -4,6 +4,7 @@
  */
 
 import type { IconName } from "@maple/views/ui/icons.generated"
+import { Array as Arr } from "effect"
 
 export type Guide = {
 	href: string
@@ -187,4 +188,4 @@ export const guideCategories: GuideCategory[] = [
 	},
 ]
 
-export const allGuides: Guide[] = guideCategories.flatMap((category) => category.guides)
+export const allGuides: Guide[] = Arr.flatMap(guideCategories, (category) => category.guides)

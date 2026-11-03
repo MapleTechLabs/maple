@@ -13,6 +13,7 @@ import { payloadActions, payloadBody, toolIo, toolIoSummary, truncatedBadge, tru
 import { clockOf, META, ON_HOVER, row } from "./transcript-shell"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The transcript's tool cards and payload sections (`ToolBlock`, `PayloadSection`).
 
@@ -126,16 +127,19 @@ export const payloadSection = (
 			hstack(h, { gap: "2", wrap: true }, [
 				eyebrow(h, { variant: "mono" }, [options.label]),
 				typography(h, { size: "3xs", tone: "muted", mono: true }, [
-					[
-						formatBytes(payload.byteLength),
-						...(payload.lineCount > 1 ? [`${payload.lineCount} lines`] : []),
-					].join(" · "),
+					Arr.join(
+						[
+							formatBytes(payload.byteLength),
+							...(payload.lineCount > 1 ? [`${payload.lineCount} lines`] : []),
+						],
+						" · ",
+					),
 				]),
 				...(payload.truncatedByEmitter ? [truncatedBadge(h)] : []),
 				...payloadActions(h, model, {
 					payload,
 					textKey: options.textKey,
-					label: options.label.toLowerCase(),
+					label: Str.toLowerCase(options.label),
 				}),
 			]),
 			...payloadBody(h, model, { payload, textKey: options.textKey, clampLines: 14 }),

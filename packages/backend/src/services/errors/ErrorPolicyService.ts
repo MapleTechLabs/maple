@@ -158,7 +158,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 		// Per entry: one unreadable id must not hide the valid destinations next to it.
 		Option.match(decodeStoredJsonArray(raw), {
 			onNone: () => [],
-			onSome: (parsed) => Arr.getSomes(parsed.map((value) => decodeAlertDestinationId(value))),
+			onSome: (parsed) => Arr.getSomes(Arr.map(parsed, (value) => decodeAlertDestinationId(value))),
 		})
 
 	const notificationRowToDocument = (row: ErrorNotificationPolicyRow) =>
@@ -231,7 +231,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 						const unknown = Arr.filter(requested, (id) => !HashSet.has(ownedIds, id))
 						if (unknown.length > 0) {
 							return yield* new ErrorNotificationUnknownDestinationError({
-								message: `Unknown alert destination${unknown.length === 1 ? "" : "s"} for this org: ${unknown.join(", ")}`,
+								message: `Unknown alert destination${unknown.length === 1 ? "" : "s"} for this org: ${Arr.join(unknown, ", ")}`,
 								destinationIds: unknown,
 							})
 						}
@@ -301,12 +301,10 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 				(rule, index) => rules.findIndex((other) => other.severity === rule.severity) !== index,
 			)
 			if (duplicate !== undefined) {
-				return yield* Effect.fail(
-					new ErrorValidationError({
-						message: "Escalation policy has duplicate severity rules",
-						details: [duplicate.severity],
-					}),
-				)
+				return yield* new ErrorValidationError({
+					message: "Escalation policy has duplicate severity rules",
+					details: [duplicate.severity],
+				})
 			}
 
 			// Reject destination IDs that don't belong to this org at write time.
@@ -326,12 +324,10 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 				const owned = HashSet.fromIterable(Arr.map(ownedRows, (row) => row.id))
 				const unknown = Arr.filter(referencedIds, (id) => !HashSet.has(owned, id))
 				if (unknown.length > 0) {
-					return yield* Effect.fail(
-						new ErrorValidationError({
-							message: "Escalation policy references unknown destinations",
-							details: unknown,
-						}),
-					)
+					return yield* new ErrorValidationError({
+						message: "Escalation policy references unknown destinations",
+						details: unknown,
+					})
 				}
 			}
 		}
@@ -413,7 +409,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 			severity: request.severity,
 			source: request.source,
 			...(!(request.confidence === undefined) ? { confidence: request.confidence } : undefined),
-			enabledDestinationIds: new Set(enabledRows.map((row) => row.id)),
+			enabledDestinationIds: new Set(Arr.map(enabledRows, (row) => row.id)),
 		})
 		return new EscalationPolicyEvaluationDocument({
 			outcome: decision.outcome,
@@ -434,7 +430,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 					.orderBy(["createdAt", "desc"]),
 			),
 		)
-		return new IssueEscalationAttemptsResponse({ attempts: rows.map(escalationAttemptDocument) })
+		return new IssueEscalationAttemptsResponse({ attempts: Arr.map(rows, escalationAttemptDocument) })
 	})
 
 	const listRecentEscalations: ErrorPolicyServiceApi["listRecentEscalations"] = Effect.fn(
@@ -450,7 +446,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 					.limit(limit ?? 25),
 			),
 		)
-		return new IssueEscalationAttemptsResponse({ attempts: rows.map(escalationAttemptDocument) })
+		return new IssueEscalationAttemptsResponse({ attempts: Arr.map(rows, escalationAttemptDocument) })
 	})
 
 	return {

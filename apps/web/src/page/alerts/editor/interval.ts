@@ -2,6 +2,7 @@ import { alertQueryLimits, alertRuleIntervalMinutes } from "@maple/query-engine/
 import { ALERT_EVALUATION_INTERVALS, type AlertQueryTiming } from "@maple/domain/http"
 import { formEvaluationInterval } from "@maple/web-data/alerts/form-utils"
 import type { RuleForm } from "./form"
+import { Array as Arr, String as Str } from "effect"
 
 // The check interval picker's pure half: its options, and what each one allows a raw SQL query.
 
@@ -9,7 +10,7 @@ import type { RuleForm } from "./form"
 export const AUTO_INTERVAL = "auto"
 
 export const intervalRadioValue = (formValue: string): string =>
-	formValue.trim().length === 0 ? AUTO_INTERVAL : formValue
+	Str.trim(formValue).length === 0 ? AUTO_INTERVAL : formValue
 
 export interface IntervalOption {
 	readonly value: string
@@ -24,7 +25,7 @@ export interface IntervalOption {
 }
 
 const windowOf = (form: RuleForm): number | null => {
-	const minutes = Number(form.windowMinutes.trim())
+	const minutes = Number(Str.trim(form.windowMinutes))
 	return Number.isFinite(minutes) && minutes > 0 ? minutes : null
 }
 
@@ -42,7 +43,10 @@ export const autoIntervalMinutes = (form: RuleForm): number =>
 	alertRuleIntervalMinutes({ windowMinutes: windowOf(form) ?? 5, evaluationIntervalMinutes: null })
 
 /** "Auto" first, then every interval a rule can pick. */
-export const intervalOptions = (form: RuleForm, timing: AlertQueryTiming | null): ReadonlyArray<IntervalOption> => {
+export const intervalOptions = (
+	form: RuleForm,
+	timing: AlertQueryTiming | null,
+): ReadonlyArray<IntervalOption> => {
 	const window = windowOf(form)
 	const auto = alertRuleIntervalMinutes({ windowMinutes: window ?? 5, evaluationIntervalMinutes: null })
 	const option = (value: string, minutes: number, label: string): IntervalOption => ({
@@ -55,11 +59,13 @@ export const intervalOptions = (form: RuleForm, timing: AlertQueryTiming | null)
 		isTooSlow:
 			timing !== null &&
 			timing.failure !== "query_too_much_memory" &&
-			!timing.fitsIntervalMinutes.some((fits) => fits <= minutes),
+			!Arr.some(timing.fitsIntervalMinutes, (fits) => fits <= minutes),
 	})
 	return [
 		option(AUTO_INTERVAL, auto, `Auto · ${minutesLabel(auto)}`),
-		...ALERT_EVALUATION_INTERVALS.map((minutes) => option(String(minutes), minutes, minutesLabel(minutes))),
+		...Arr.map(ALERT_EVALUATION_INTERVALS, (minutes) =>
+			option(String(minutes), minutes, minutesLabel(minutes)),
+		),
 	]
 }
 
@@ -67,14 +73,16 @@ export const intervalOptions = (form: RuleForm, timing: AlertQueryTiming | null)
 export const intervalWindowIssue = (form: RuleForm): string | null => {
 	const picked = formEvaluationInterval(form)
 	const window = windowOf(form)
-	return picked !== null && window !== null && picked > window ? "Check interval longer than the window" : null
+	return picked !== null && window !== null && picked > window
+		? "Check interval longer than the window"
+		: null
 }
 
 /** The shortest interval the timed query fits within the window, when it does not fit the one picked. */
 export const shortestFittingInterval = (form: RuleForm, timing: AlertQueryTiming | null): number | null => {
 	if (timing === null || timing.elapsedMs === null) return null
 	const current = formIntervalMinutes(form)
-	if (timing.fitsIntervalMinutes.some((fits) => fits <= current)) return null
+	if (Arr.some(timing.fitsIntervalMinutes, (fits) => fits <= current)) return null
 	const window = windowOf(form)
 	return timing.fitsIntervalMinutes.find((fits) => window === null || fits <= window) ?? null
 }

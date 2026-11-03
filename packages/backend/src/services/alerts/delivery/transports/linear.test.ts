@@ -1,7 +1,7 @@
 import type { AlertDestinationRow } from "@maple/db/tables"
 import { AlertDeliveryError, AlertDestinationId, OrgId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import type { DispatchContext } from "../context"
 import type { LinearDeliveryPort, LinearThread, RenderInput, SecretConfigOf } from "../Transport"
 import { LINEAR_REOPEN_WINDOW_MS, linearEntityId, linearTransport } from "./linear"
@@ -98,8 +98,8 @@ const fakeLinear = (
 		raced?: ReadonlyArray<string>
 	} = {},
 ) => {
-	const issues = new Map((seed.issues ?? []).map((issue) => [issue.id, issue]))
-	const threads = new Map((seed.threads ?? []).map((thread) => [thread.threadKey, thread]))
+	const issues = new Map(Arr.map(seed.issues ?? [], (issue) => [issue.id, issue]))
+	const threads = new Map(Arr.map(seed.threads ?? [], (thread) => [thread.threadKey, thread]))
 	const calls: Call[] = []
 	const answer = (name: string, variables: Record<string, unknown>): object | null => {
 		switch (name) {
@@ -170,7 +170,7 @@ const fakeLinear = (
 	return { send, calls, threads, issues }
 }
 
-const names = (calls: ReadonlyArray<Call>) => calls.map((call) => call.name)
+const names = (calls: ReadonlyArray<Call>) => Arr.map(calls, (call) => call.name)
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null
@@ -364,7 +364,7 @@ describe("linear transport", () => {
 			linear.threads.clear()
 			yield* linear.send(inputFor({ deliveryKey: "delivery_b", severity: "warning" }))
 			assert.lengthOf(
-				linear.calls.filter((call) => call.name === "MapleIssueCreate"),
+				Arr.filter(linear.calls, (call) => call.name === "MapleIssueCreate"),
 				1,
 			)
 		}),
@@ -432,7 +432,7 @@ describe("linear transport after a resolve or a team change", () => {
 			const linear = fakeLinear({ raced: [id] })
 			const result = yield* linear.send(inputFor())
 			assert.lengthOf(
-				linear.calls.filter((call) => call.name === "MapleIssueCreate"),
+				Arr.filter(linear.calls, (call) => call.name === "MapleIssueCreate"),
 				1,
 			)
 			assert.strictEqual(result.providerMessage, "Opened Linear issue ENG-50")
@@ -444,7 +444,7 @@ describe("linear transport after a resolve or a team change", () => {
 			const held = linearEntityId("issue", DESTINATION_ID, "team_1", "inc_1", "")
 			const linear = fakeLinear({ taken: [held] })
 			const result = yield* linear.send(inputFor())
-			const creates = linear.calls.filter((call) => call.name === "MapleIssueCreate")
+			const creates = Arr.filter(linear.calls, (call) => call.name === "MapleIssueCreate")
 			assert.lengthOf(creates, 2)
 			assert.strictEqual(result.providerMessage, "Opened Linear issue ENG-1")
 		}),

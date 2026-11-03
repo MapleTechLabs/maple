@@ -41,8 +41,8 @@ import type { DashboardId } from "@maple/domain/primitives"
 import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS } from "@maple/query-engine"
 import { hashShareToken, shareOgId, verifyAlertChartId, verifyChatChartId, verifyShareOgId } from "@maple/db"
 import { ChatSessions } from "@maple/backend/platform/bindings"
-import { redactForShare, variablesForWidget } from "@maple/widgets/dashboard"
-import { Effect, Option, Redacted, Schema } from "effect"
+import { DashboardDocument, redactForShare, variablesForWidget } from "@maple/widgets/dashboard"
+import { Effect, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import {
@@ -106,15 +106,13 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 			// person could rate-limit everyone. Skip the IP limit there; the per-token
 			// limit still applies, and it is the one that bounds a leaked link.
 			const outcomes = yield* Effect.all([
-				rateLimiter.check(shareTokenRateLimitKey(tokenHash.slice(0, 24))),
+				rateLimiter.check(shareTokenRateLimitKey(Str.slice(0, 24)(tokenHash))),
 				...(ip === undefined ? [] : [rateLimiter.check(shareIpRateLimitKey(ip))]),
 			])
-			if (outcomes.some((outcome) => outcome === "limited")) {
-				return yield* Effect.fail(
-					new ShareRateLimitedError({
-						message: "This shared dashboard is receiving too many requests. Try again shortly.",
-					}),
-				)
+			if (Arr.some(outcomes, (outcome) => outcome === "limited")) {
+				return yield* new ShareRateLimitedError({
+					message: "This shared dashboard is receiving too many requests. Try again shortly.",
+				})
 			}
 		})
 
@@ -130,13 +128,11 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		 * board.
 		 */
 		const enforceOgRateLimit = Effect.fn("HttpV2SharePublic.ogRateLimit")(function* (shareKey: string) {
-			const outcome = yield* rateLimiter.check(shareOgRateLimitKey(shareKey.slice(0, 24)))
+			const outcome = yield* rateLimiter.check(shareOgRateLimitKey(Str.slice(0, 24)(shareKey)))
 			if (outcome === "limited") {
-				return yield* Effect.fail(
-					new ShareRateLimitedError({
-						message: "This shared dashboard is receiving too many requests. Try again shortly.",
-					}),
-				)
+				return yield* new ShareRateLimitedError({
+					message: "This shared dashboard is receiving too many requests. Try again shortly.",
+				})
 			}
 		})
 
@@ -153,14 +149,12 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		const enforceChartRateLimit = Effect.fn("HttpV2SharePublic.chartRateLimit")(function* (
 			chartId: string,
 		) {
-			const signature = chartId.slice(chartId.indexOf(".") + 1)
-			const outcome = yield* rateLimiter.check(shareOgRateLimitKey(signature.slice(0, 24)))
+			const signature = Str.slice(chartId.indexOf(".") + 1)(chartId)
+			const outcome = yield* rateLimiter.check(shareOgRateLimitKey(Str.slice(0, 24)(signature)))
 			if (outcome === "limited") {
-				return yield* Effect.fail(
-					new ShareRateLimitedError({
-						message: "This shared dashboard is receiving too many requests. Try again shortly.",
-					}),
-				)
+				return yield* new ShareRateLimitedError({
+					message: "This shared dashboard is receiving too many requests. Try again shortly.",
+				})
 			}
 		})
 
@@ -229,11 +223,9 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 				if (Option.isNone(tenant)) {
 					// No org name here: the caller is anonymous, and naming the owning
 					// org would tell them something the link itself does not.
-					return yield* Effect.fail(
-						new ShareSignInRequiredError({
-							message: "This dashboard is shared with its organization only.",
-						}),
-					)
+					return yield* new ShareSignInRequiredError({
+						message: "This dashboard is shared with its organization only.",
+					})
 				}
 
 				// Only the org that owns the board. Note an API key cannot reach this
@@ -242,11 +234,9 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 				// sign in — which is right, since "a member of the org" is a statement
 				// about a person, not about an org-scoped key.
 				if (tenant.value.orgId !== orgId) {
-					return yield* Effect.fail(
-						new ShareWrongOrgError({
-							message: "This dashboard belongs to a different organization.",
-						}),
-					)
+					return yield* new ShareWrongOrgError({
+						message: "This dashboard belongs to a different organization.",
+					})
 				}
 			}
 
@@ -297,15 +287,15 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					const scoped =
 						share.widgetId === undefined || document.variables === undefined
 							? document
-							: {
+							: new DashboardDocument({
 									...document,
 									variables:
 										sharedWidget === undefined
 											? []
 											: variablesForWidget(document.variables, sharedWidget),
-								}
+								})
 					const { results, variables } = yield* widgetData.resolveBatch(orgId, scoped, {
-						requests: payload.requests.map((request) => ({
+						requests: Arr.map(payload.requests, (request) => ({
 							widgetId: request.widgetId,
 							source: request.source ?? "primary",
 							...(request.maxDataPoints === undefined
@@ -467,7 +457,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// One series, because that is what a rule measures. The card puts
 					// its latest value in the header rather than drawing a legend for
 					// a chart with nothing to tell apart.
-					const points = series.points.map((point) => [point[0], point[1]] as const)
+					const points = Arr.map(series.points, (point) => [point[0], point[1]] as const)
 					return new ChartTimeseries({
 						kind: "area",
 						title: claims.title,

@@ -6,8 +6,11 @@ import { sharedLoader } from "./integration-statuses"
 const counting = (failing: ReadonlyArray<number>) =>
 	Effect.map(Ref.make(0), (runs) => ({
 		runs,
-		load: Effect.flatMap(Ref.updateAndGet(runs, (n) => n + 1), (run) =>
-			failing.includes(run) ? Effect.fail(`run ${run} failed`) : Effect.succeed(run),
+		load: Ref.updateAndGet(runs, (n) => n + 1).pipe(
+			Effect.filterOrFail(
+				(run) => !failing.includes(run),
+				(run) => `run ${run} failed`,
+			),
 		),
 	}))
 

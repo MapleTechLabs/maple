@@ -12,6 +12,7 @@ import { NARROW_RANGE_LABEL } from "./widget-data"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { swatch } from "@maple/views/ui/swatch"
+import { Array as Arr } from "effect"
 
 /** `useId` of the grid's hidden rearranging instructions, which every grip describes itself by. */
 export const GRID_INSTRUCTIONS_ID = "dashboard-grid-instructions"
@@ -51,7 +52,7 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<LegendItem>): H
 			),
 		],
 		[
-			...visible.map((item) =>
+			...Arr.map(visible, (item) =>
 				h.span(
 					[h.Class("flex min-w-0 shrink items-center gap-1.5 text-3xs text-muted-foreground")],
 					[
@@ -62,7 +63,21 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<LegendItem>): H
 			),
 			...(overflow > 0
 				? [
-						typography(h, { size: "3xs", tone: "muted", className: "shrink-0", attributes: [h.Title(items.map((i) => i.label).join(", "))] },
+						typography(
+							h,
+							{
+								size: "3xs",
+								tone: "muted",
+								className: "shrink-0",
+								attributes: [
+									h.Title(
+										Arr.join(
+											Arr.map(items, (i) => i.label),
+											", ",
+										),
+									),
+								],
+							},
 							[`+${overflow}`],
 						),
 					]
@@ -106,27 +121,25 @@ export const widgetShell = <M>(
 			cardHeader(
 				h,
 				[
-					hstack(h, { gap: "2", shrink: true },
-						[
-							...(options.isEdit && options.hasGrip ? [grip(h, options.title)] : []),
-							eyebrow(
-								h,
-								{
-									variant: "label",
-									as: "div",
-									className: "min-w-0 truncate",
-									attributes: [h.Title(options.title)],
-								},
-								[options.title],
-							),
-							...(options.timeRangeLabel === undefined
-								? []
-								: [timeRangeChip(h, options.timeRangeLabel)]),
-							...(options.legendItems !== undefined && options.legendItems.length >= 2
-								? [headerLegend(h, options.legendItems)]
-								: []),
-						],
-					),
+					hstack(h, { gap: "2", shrink: true }, [
+						...(options.isEdit && options.hasGrip ? [grip(h, options.title)] : []),
+						eyebrow(
+							h,
+							{
+								variant: "label",
+								as: "div",
+								className: "min-w-0 truncate",
+								attributes: [h.Title(options.title)],
+							},
+							[options.title],
+						),
+						...(options.timeRangeLabel === undefined
+							? []
+							: [timeRangeChip(h, options.timeRangeLabel)]),
+						...(options.legendItems !== undefined && options.legendItems.length >= 2
+							? [headerLegend(h, options.legendItems)]
+							: []),
+					]),
 					...(options.menu === null
 						? []
 						: [
@@ -175,18 +188,14 @@ const mutedError = <M>(
 	h.div(
 		[h.Class("flex items-center justify-center h-full flex-col gap-1.5 px-3")],
 		[
-			typography(h, { size: "xs", tone: "muted", weight: "medium" },
-				[state.title ?? (state.kind === "range" ? "Range too wide" : "Not configured")],
-			),
+			typography(h, { size: "xs", tone: "muted", weight: "medium" }, [
+				state.title ?? (state.kind === "range" ? "Range too wide" : "Not configured"),
+			]),
 			...(state.message === null
 				? []
 				: [
 						h.span(
-							[
-								h.Class(
-									"text-3xs text-foreground-subtle max-w-full text-center line-clamp-3",
-								),
-							],
+							[h.Class("text-3xs text-foreground-subtle max-w-full text-center line-clamp-3")],
 							[state.message],
 						),
 					]),
@@ -230,7 +239,10 @@ const failedState = <M>(
 	h.div(
 		[h.Class("flex items-center justify-center h-full flex-col gap-1.5 px-3")],
 		[
-			h.span([h.Class(cn(typographyClass({ size: "xs", weight: "medium" }), TONE_TEXT.crit))], [state.title ?? "Unable to load"]),
+			h.span(
+				[h.Class(cn(typographyClass({ size: "xs", weight: "medium" }), TONE_TEXT.crit))],
+				[state.title ?? "Unable to load"],
+			),
 			...(state.message === null
 				? []
 				: [

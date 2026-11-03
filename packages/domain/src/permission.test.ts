@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { evaluatePermission, isToolVisible, PermissionRule, type PermissionRuleset } from "./permission"
+import { Array as Arr } from "effect"
 
 const rules = (...pairs: ReadonlyArray<[string, "allow" | "ask" | "deny"]>): PermissionRuleset =>
-	pairs.map(([tool, action]) => new PermissionRule({ tool, action }))
+	Arr.map(pairs, ([tool, action]) => new PermissionRule({ tool, action }))
 
 describe("evaluatePermission", () => {
 	it("lets the last matching rule win, so a ruleset reads as base plus exceptions", () => {

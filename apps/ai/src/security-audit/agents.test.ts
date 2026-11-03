@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { AuditRole } from "@maple/security-audit"
 import { resolveSecurityAuditModel } from "../platform/Llm"
 import { modelFor } from "./agents"
+import { Array as Arr, Record as Rec } from "effect"
 
 const models = {
 	discovery: resolveSecurityAuditModel({}, "discovery"),
@@ -18,7 +19,7 @@ describe("modelFor", () => {
 			"candidate-verifier",
 			"record-verifier",
 		]
-		expect(Object.fromEntries(roles.map((role) => [role, modelFor(role, models).name]))).toEqual({
+		expect(Rec.fromEntries(Arr.map(roles, (role) => [role, modelFor(role, models).name]))).toEqual({
 			recon: models.discovery.name,
 			synthesis: models.discovery.name,
 			hunter: models.discovery.name,

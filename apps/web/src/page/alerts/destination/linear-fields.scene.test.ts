@@ -1,5 +1,5 @@
 import { defaultDestinationForm } from "@maple/web-data/alerts/form-utils"
-import { Result } from "effect"
+import { Result, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -11,7 +11,7 @@ import { init, type LinearStatus, Message, type Model, reset, update } from "./l
 import { linearFields } from "./linear-fields-view"
 
 const names = (step: { readonly commands: ReadonlyArray<{ readonly name: string }> }) =>
-	step.commands.map(({ name }) => name)
+	Arr.map(step.commands, ({ name }) => name)
 const form = defaultDestinationForm("linear")
 const team = { id: "team_eng", key: "ENG", name: "Engineering" }
 const CONNECTED: LinearStatus = { connected: true, revoked: false, workspaceName: "Acme" }
@@ -57,7 +57,7 @@ const shows = (model: Model, ...lines: ReadonlyArray<string>) =>
 			view: render(),
 		},
 		given(model),
-		...lines.map((line) => expectView(text(line)).toExist()),
+		...Arr.map(lines, (line) => expectView(text(line)).toExist()),
 	)
 
 describe("linear destination fields", () => {
@@ -118,7 +118,10 @@ describe("linear destination fields", () => {
 		).model
 		const stale = update(
 			closed,
-			Message.CompletedFetchStatus({ key: closed.status.key ?? "", result: Result.succeed(NOT_CONNECTED) }),
+			Message.CompletedFetchStatus({
+				key: closed.status.key ?? "",
+				result: Result.succeed(NOT_CONNECTED),
+			}),
 			form,
 		).model
 		expect(names(update(stale, Message.ReturnedConnect(), form))).toEqual(["FetchAlertLinearStatus"])

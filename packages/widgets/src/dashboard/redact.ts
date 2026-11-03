@@ -16,7 +16,7 @@
  * denylist would leak every future field by default, which is exactly the wrong
  * direction for a payload served without a session.
  */
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 
 import { dataSourceEndpoint, dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "./access"
 import type { DashboardVariable } from "./shared/variables"
@@ -103,7 +103,7 @@ const redactDataSource = (dataSource: unknown): RedactedDataSource => {
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 /**
  * The display config, with the one field that embeds a data source redacted.
@@ -169,7 +169,7 @@ export const variablesForWidget = (
 	widget: ShareWidgetInput,
 ): ReadonlyArray<DashboardVariable> => {
 	const referenced = referencedVariableNames(widget)
-	return variables.filter((variable) => referenced.has(variable.name))
+	return Arr.filter(variables, (variable) => referenced.has(variable.name))
 }
 
 /**
@@ -228,7 +228,7 @@ export function redactForShare(
 		id: document.id,
 		name: document.name,
 		timeRange: document.timeRange,
-		widgets: document.widgets.map(redactWidget),
+		widgets: Arr.map(document.widgets, redactWidget),
 	}
 	if (document.description !== undefined) redacted = { ...redacted, description: document.description }
 	if (document.sections !== undefined) redacted = { ...redacted, sections: document.sections }

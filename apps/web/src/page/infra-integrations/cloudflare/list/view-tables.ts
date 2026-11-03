@@ -41,6 +41,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr, String as Str } from "effect"
 
 // `CloudflareZoneTable`, `CloudflareWorkerTable`, `CloudflareQueueTable`.
 
@@ -144,7 +145,7 @@ const requestSpark = (
 						view: Sparkline.view,
 						toParentMessage: (message: Chart.Message) => Message.GotSparklineMessage({ message }),
 						viewInputs: {
-							chartId: `cf-spark-${zone.zoneName.replace(/\W+/g, "_")}`,
+							chartId: `cf-spark-${Str.replace(/\W+/g, "_")(zone.zoneName)}`,
 							values,
 							color: resolveColor(ctx.theme, "--chart-2"),
 							className: "h-full w-full",
@@ -324,14 +325,14 @@ export const zoneTable = (
 ): Html => {
 	const sorted = sortRowsByField(options.zones, options.sort)
 	// Latency quantiles are plan-gated; four always-empty columns were most of the old table.
-	const showLatency = options.zones.some((zone) => zone.ttfbP99Ms > 0)
+	const showLatency = Arr.some(options.zones, (zone) => zone.ttfbP99Ms > 0)
 	return dataTable(
 		h,
 		{ ariaLabel: "Cloudflare zones" },
 		zoneColumns(h, options.sort, options.accounts !== undefined, showLatency),
 		sorted.length === 0
 			? [dataTableEmpty(h, [options.emptyMessage ?? "No zone traffic in this window"])]
-			: sorted.map((zone) =>
+			: Arr.map(sorted, (zone) =>
 					zoneRow(h, zone, {
 						sparks: options.sparks,
 						accounts: options.accounts,
@@ -485,7 +486,7 @@ export const workerTable = (
 		],
 		options.rows.length === 0
 			? [dataTableEmpty(h, [options.emptyMessage ?? "No Worker invocations in this window"])]
-			: options.rows.map((row) => workerRow(h, row, options.accounts)),
+			: Arr.map(options.rows, (row) => workerRow(h, row, options.accounts)),
 	)
 
 // QUEUES
@@ -544,7 +545,7 @@ export const queueTable = (
 		],
 		sorted.length === 0
 			? [dataTableEmpty(h, ["No queue activity in this window"])]
-			: sorted.map((queue) =>
+			: Arr.map(sorted, (queue) =>
 					h.div(
 						[h.Key(queue.serviceName), h.Class(QUEUE_ROW)],
 						[

@@ -13,6 +13,7 @@ import { hrefFor } from "../../route"
 import { refreshButton, timeRangeSelect } from "../kit/toolbar"
 import { Message } from "./message"
 import type { ServiceCatalogEntry } from "../services/model"
+import { Array as Arr } from "effect"
 
 // The header and stat cards of the service detail page.
 
@@ -51,7 +52,7 @@ export const detailHeader = (
 				serviceDot(h, { serviceName: options.serviceName }),
 				typography(h, { size: "sm", weight: "medium", truncate: true }, [options.serviceName]),
 			]),
-			...options.environments.map((environment) =>
+			...Arr.map(options.environments, (environment) =>
 				badge(
 					h,
 					{

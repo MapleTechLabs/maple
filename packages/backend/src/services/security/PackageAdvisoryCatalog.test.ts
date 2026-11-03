@@ -2,7 +2,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { EdgeCacheService } from "@maple/cache"
 import { type PackageRef, packageKey } from "@maple/domain/package-advisories"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Array as Arr, String as Str } from "effect"
 import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import fixture from "./__fixtures__/osv.json"
 import { MAX_VULNERABILITIES, PackageAdvisoryCatalog } from "./PackageAdvisoryCatalog"
@@ -48,14 +48,14 @@ const osv = (fake: FakeOsv) =>
 						: { queries: [] }
 				fake.requests.push(`querybatch:${body.queries.length}`)
 				if (fake.failBatch === true) return json(request, { message: "unavailable" }, 503)
-				return json(request, { results: body.queries.map(fake.answer ?? capturedAnswer) })
+				return json(request, { results: Arr.map(body.queries, fake.answer ?? capturedAnswer) })
 			}
-			const id = decodeURIComponent(url.pathname.replace("/v1/vulns/", ""))
+			const id = decodeURIComponent(Str.replace("/v1/vulns/", "")(url.pathname))
 			fake.requests.push(`vuln:${id}`)
 			const vuln = fixture.vulns.find((candidate) => candidate.id === id)
 			if (vuln !== undefined) return json(request, vuln)
 			// Synthetic ids a test invents answer with a bare record.
-			return id.startsWith("GHSA-many-")
+			return Str.startsWith("GHSA-many-")(id)
 				? json(request, { id, aliases: [] })
 				: json(request, { message: "not found" }, 404)
 		}),
@@ -71,7 +71,7 @@ const catalogWith = (fake: FakeOsv) =>
 		),
 	)
 
-const refs: ReadonlyArray<PackageRef> = fixture.queries.map((query) => ({
+const refs: ReadonlyArray<PackageRef> = Arr.map(fixture.queries, (query) => ({
 	ecosystem:
 		query.package.ecosystem === "Go"
 			? "Go"
@@ -102,8 +102,8 @@ describe("PackageAdvisoryCatalog", () => {
 			assert.strictEqual(first.get(keyOf("lodash"))?.length, 6)
 			assert.isFalse(first.has(keyOf("left-pad")))
 
-			const batches = fake.requests.filter((request) => request.startsWith("querybatch"))
-			const reads = fake.requests.filter((request) => request.startsWith("vuln:"))
+			const batches = Arr.filter(fake.requests, (request) => Str.startsWith("querybatch")(request))
+			const reads = Arr.filter(fake.requests, (request) => Str.startsWith("vuln:")(request))
 			assert.deepStrictEqual(batches, [`querybatch:${refs.length}`])
 			assert.strictEqual(reads.length, new Set(reads).size)
 			assert.strictEqual(reads.length, fixture.vulns.length)
@@ -136,7 +136,7 @@ describe("PackageAdvisoryCatalog", () => {
 				["GHSA-29mw-wpgm-hmr9", "GHSA-p6mc-m468-83gw"],
 			)
 			assert.deepStrictEqual(
-				fake.requests.filter((request) => request.startsWith("querybatch")),
+				Arr.filter(fake.requests, (request) => Str.startsWith("querybatch")(request)),
 				[`querybatch:${refs.length}`, "querybatch:1"],
 			)
 		}).pipe(Effect.provide(catalogWith(fake)))
@@ -154,7 +154,7 @@ describe("PackageAdvisoryCatalog", () => {
 
 	it.effect("reads at most the capped number of vulnerabilities and counts the rest as unread", () => {
 		const many = Array.from({ length: MAX_VULNERABILITIES + 3 }, (_, i) => ({
-			id: `GHSA-many-${String(i).padStart(4, "0")}`,
+			id: `GHSA-many-${Str.padStart(4, "0")(String(i))}`,
 			modified: "1",
 		}))
 		const fake: FakeOsv = {
@@ -166,7 +166,7 @@ describe("PackageAdvisoryCatalog", () => {
 			const { unread } = yield* catalog.advisories(refs)
 			assert.strictEqual(unread, 3)
 			assert.strictEqual(
-				fake.requests.filter((request) => request.startsWith("vuln:")).length,
+				Arr.filter(fake.requests, (request) => Str.startsWith("vuln:")(request)).length,
 				MAX_VULNERABILITIES,
 			)
 		}).pipe(Effect.provide(catalogWith(fake)))

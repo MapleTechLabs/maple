@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Array as Arr, Record as Rec } from "effect"
 import { compile, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 import { anomalyLogVolumeQuery, anomalyTraceSignalTimeseriesQuery } from "./anomaly"
@@ -41,7 +41,7 @@ const decodeTimes = <Row>(compiled: CompiledQuery<Row>, fields: ReadonlyArray<ke
 	})
 
 const sampleRow = (fields: ReadonlyArray<string>): Record<string, unknown> => ({
-	...Object.fromEntries(fields.map((field) => [field, WIRE])),
+	...Rec.fromEntries(Arr.map(fields, (field) => [field, WIRE])),
 	serviceName: "api",
 	serviceNamespace: "",
 	environment: "production",

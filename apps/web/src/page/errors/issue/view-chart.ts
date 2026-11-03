@@ -1,7 +1,7 @@
 import type { IssueSeverity } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
 import { densifySpark, surgeRatio } from "../../../lib/models/error-signal"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { bucketTooltipBody } from "@maple/views/charts/bucket-tooltip"
@@ -23,7 +23,7 @@ type H = HtmlBuilder<Message>
 type Point = Readonly<{ bucket: string; count: number }>
 
 /** The tokens the chart reads off the theme: each severity's colour, and primary for unset. */
-export const OCCURRENCE_TOKENS = [...Object.values(SEVERITY_TOKEN), "--primary"]
+export const OCCURRENCE_TOKENS = [...Rec.values(SEVERITY_TOKEN), "--primary"]
 
 const formatBucket = (bucketMs: number): string => {
 	const seconds = Math.round(bucketMs / 1000)
@@ -84,7 +84,7 @@ export const occurrencePanel = (
 	theme: ThemeColors,
 	timeZone: string,
 ): Html => {
-	const peak = points.reduce((max, point) => Math.max(max, point.count), 0)
+	const peak = Arr.reduce(points, 0, (max, point) => Math.max(max, point.count))
 	return panel(h, { className: "shrink-0 overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Occurrences",

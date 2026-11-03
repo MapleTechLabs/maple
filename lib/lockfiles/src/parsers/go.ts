@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { LockfileParseError } from "../errors.ts"
 import { pkg } from "../internal/collect.ts"
 import type { LockedPackage, LockfileInput } from "../types.ts"
@@ -38,10 +38,10 @@ const DIRECTIVES = new Set([
 ])
 
 const tokenize = (code: string): ReadonlyArray<string> =>
-	code
-		.split(/\s+/)
-		.filter((t) => t !== "")
-		.map((t) => t.replace(/^"(.*)"$/, "$1").replace(/^`(.*)`$/, "$1"))
+	Arr.map(
+		Arr.filter(Str.split(/\s+/)(code), (t) => t !== ""),
+		(t) => Str.replace(/^`(.*)`$/, "$1")(Str.replace(/^"(.*)"$/, "$1")(t)),
+	)
 
 const parseReplace = (tokens: ReadonlyArray<string>): Replace | undefined => {
 	const arrow = tokens.indexOf("=>")
@@ -79,8 +79,8 @@ const apply = (
 
 const step = (state: GoModState, rawLine: string): GoModState => {
 	const commentAt = rawLine.indexOf("//")
-	const code = (commentAt === -1 ? rawLine : rawLine.slice(0, commentAt)).trim()
-	const indirect = commentAt !== -1 && /^\/\/\s*indirect\b/.test(rawLine.slice(commentAt))
+	const code = Str.trim(commentAt === -1 ? rawLine : Str.slice(0, commentAt)(rawLine))
+	const indirect = commentAt !== -1 && /^\/\/\s*indirect\b/.test(Str.slice(commentAt)(rawLine))
 	if (code === "") return state
 	if (state.block !== undefined) {
 		return code === ")"
@@ -107,16 +107,19 @@ const resolve = (req: Require, replaces: ReadonlyArray<Replace>): Require | unde
 
 export const parseGoMod = Effect.fn("lockfiles.parseGoMod")(function* (input: LockfileInput) {
 	const initial: GoModState = { block: undefined, requires: [], replaces: [], errors: [] }
-	const state = input.content.split(/\r?\n/).reduce(step, initial)
+	const state = Arr.reduce(Str.split(/\r?\n/)(input.content), initial, step)
 	const errors =
 		state.block === undefined ? state.errors : [...state.errors, `unclosed ${state.block} block`]
 	if (errors.length > 0)
-		return yield* new LockfileParseError({ path: input.path, message: errors.slice(0, 3).join("; ") })
-	const resolved = state.requires.map((req) => ({ req, to: resolve(req, state.replaces) }))
-	const packages = resolved.flatMap(({ to }): ReadonlyArray<LockedPackage> =>
+		return yield* new LockfileParseError({
+			path: input.path,
+			message: Arr.join(errors.slice(0, 3), "; "),
+		})
+	const resolved = Arr.map(state.requires, (req) => ({ req, to: resolve(req, state.replaces) }))
+	const packages = Arr.flatMap(resolved, ({ to }): ReadonlyArray<LockedPackage> =>
 		to === undefined ? [] : [pkg("Go", to.path, to.version, to.indirect ? "transitive" : "direct")],
 	)
-	const warnings = resolved.flatMap(({ req, to }) =>
+	const warnings = Arr.flatMap(resolved, ({ req, to }) =>
 		to === undefined ? [`${req.path} is replaced by a local directory`] : [],
 	)
 	const output: ParserOutput = { kind: "go-mod", packages, warnings }
@@ -124,19 +127,19 @@ export const parseGoMod = Effect.fn("lockfiles.parseGoMod")(function* (input: Lo
 })
 
 export const parseGoSum = Effect.fn("lockfiles.parseGoSum")(function* (input: LockfileInput) {
-	const lines = input.content
-		.split(/\r?\n/)
-		.map((line) => line.trim())
-		.filter((line) => line !== "")
-	const rows = lines.map((line) => line.split(/\s+/))
-	const bad = rows.find((row) => row.length !== 3 || !(row[2] ?? "").includes(":"))
+	const lines = Arr.filter(
+		Arr.map(Str.split(/\r?\n/)(input.content), (line) => Str.trim(line)),
+		(line) => line !== "",
+	)
+	const rows = Arr.map(lines, (line) => Str.split(/\s+/)(line))
+	const bad = rows.find((row) => row.length !== 3 || !Str.includes(":")(row[2] ?? ""))
 	if (bad !== undefined)
 		return yield* new LockfileParseError({
 			path: input.path,
-			message: `bad go.sum line: ${bad.join(" ")}`,
+			message: `bad go.sum line: ${Arr.join(bad, " ")}`,
 		})
-	const packages = rows.flatMap(([path = "", version = ""]): ReadonlyArray<LockedPackage> =>
-		version.endsWith("/go.mod") ? [] : [pkg("Go", path, version, "unknown")],
+	const packages = Arr.flatMap(rows, ([path, version = ""]): ReadonlyArray<LockedPackage> =>
+		Str.endsWith("/go.mod")(version) ? [] : [pkg("Go", path, version, "unknown")],
 	)
 	const output: ParserOutput = {
 		kind: "go-sum",

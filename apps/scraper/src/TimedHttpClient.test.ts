@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import { brotliCompressSync, deflateSync, gzipSync } from "node:zlib"
 import { assert, describe, it } from "@effect/vitest"
-import { Deferred, Duration, Effect, Ref, Result } from "effect"
+import { Deferred, Duration, Effect, Ref, Result, String as Str } from "effect"
 import { HttpClientRequest } from "effect/http"
 import { readTextPrefix } from "@maple/safe-fetch"
 import { timedHttpClient } from "./TimedHttpClient"
@@ -104,7 +104,9 @@ describe("timedHttpClient", () => {
 
 	it.live("stops reading a large body at the budget", () =>
 		Effect.gen(function* () {
-			const server = yield* serve((_, __, response) => response.writeHead(200).end("x".repeat(200_000)))
+			const server = yield* serve((_, __, response) =>
+				response.writeHead(200).end(Str.repeat(200_000)("x")),
+			)
 			const prefix = yield* timedHttpClient.get(urlOf(server)).pipe(
 				Effect.flatMap((response) => readTextPrefix(response, 1024)),
 				Effect.scoped,

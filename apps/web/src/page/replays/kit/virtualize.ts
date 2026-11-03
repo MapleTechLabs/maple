@@ -1,5 +1,5 @@
 import { elementScroll, observeElementOffset, observeElementRect, Virtualizer } from "@tanstack/virtual-core"
-import { Effect, Queue, Schema, Stream } from "effect"
+import { Effect, Queue, Schema, Stream, Array as Arr, String as Str } from "effect"
 
 // `SessionsList`'s `useVirtualizer` over the page scroller (`usePageScrollMargin`), on
 // @tanstack/virtual-core: same estimate, overscan, item keys and measuring of every mounted row.
@@ -21,27 +21,36 @@ export type VirtualWindow = typeof VirtualWindow.Type
 
 export const emptyWindow: VirtualWindow = { rows: [], totalSize: 0, scrollMargin: 0 }
 
-export const keysValue = (keys: ReadonlyArray<string>): string => keys.join("\n")
+export const keysValue = (keys: ReadonlyArray<string>): string => Arr.join(keys, "\n")
 
 const keysOf = (list: HTMLElement): ReadonlyArray<string> => {
 	const raw = list.getAttribute(`data-${KEYS_ATTRIBUTE}`) ?? ""
-	return raw === "" ? [] : raw.split("\n")
+	return raw === "" ? [] : Str.split("\n")(raw)
 }
 
 const marginBetween = (list: HTMLElement, scroller: HTMLElement): number =>
 	Math.max(
 		0,
-		Math.round(list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop),
+		Math.round(
+			list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop,
+		),
 	)
 
 const sameWindow = (a: VirtualWindow, b: VirtualWindow): boolean =>
 	a.totalSize === b.totalSize &&
 	a.scrollMargin === b.scrollMargin &&
 	a.rows.length === b.rows.length &&
-	a.rows.every((row, i) => row.index === b.rows[i]?.index && row.start === b.rows[i]?.start && row.end === b.rows[i]?.end)
+	Arr.every(
+		a.rows,
+		(row, i) =>
+			row.index === b.rows[i]?.index && row.start === b.rows[i]?.start && row.end === b.rows[i]?.end,
+	)
 
 /** Runs the virtualizer for the list element; every window change becomes `toMessage(window)`. */
-export const virtualizeSessions = <A>(list: HTMLElement, toMessage: (window: VirtualWindow) => A): Stream.Stream<A> =>
+export const virtualizeSessions = <A>(
+	list: HTMLElement,
+	toMessage: (window: VirtualWindow) => A,
+): Stream.Stream<A> =>
 	Stream.callback<A>((queue) =>
 		Effect.acquireRelease(
 			Effect.sync(() => {
@@ -49,7 +58,11 @@ export const virtualizeSessions = <A>(list: HTMLElement, toMessage: (window: Vir
 				const state = { keys: keysOf(list), scrollMargin: 0, last: emptyWindow, isScheduled: false }
 				const emit = (instance: Virtualizer<HTMLElement, HTMLElement>) => {
 					const next: VirtualWindow = {
-						rows: instance.getVirtualItems().map((item) => ({ index: item.index, start: item.start, end: item.end })),
+						rows: Arr.map(instance.getVirtualItems(), (item) => ({
+							index: item.index,
+							start: item.start,
+							end: item.end,
+						})),
 						totalSize: instance.getTotalSize(),
 						scrollMargin: state.scrollMargin,
 					}
@@ -85,7 +98,9 @@ export const virtualizeSessions = <A>(list: HTMLElement, toMessage: (window: Vir
 					schedule(virtualizer)
 				}
 				const measureRows = () =>
-					list.querySelectorAll<HTMLElement>(":scope > [data-index]").forEach((node) => virtualizer.measureElement(node))
+					list
+						.querySelectorAll<HTMLElement>(":scope > [data-index]")
+						.forEach((node) => virtualizer.measureElement(node))
 				const rowObserver = new MutationObserver(measureRows)
 				rowObserver.observe(list, { childList: true })
 				const keysObserver = new MutationObserver(() => {

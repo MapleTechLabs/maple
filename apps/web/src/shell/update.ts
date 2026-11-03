@@ -480,7 +480,7 @@ const foldMessage = (model: Model, message: Message): UpdateReturn =>
 			const next = Checklist.update(model.checklist, child)
 			return {
 				model: modifyFields(model, { checklist: () => next.model }),
-				commands: (next.commands ?? []).map(toChecklist),
+				commands: Array.map(next.commands ?? [], toChecklist),
 			}
 		},
 		GotConnectMessage: ({ message: child }) => {
@@ -530,7 +530,7 @@ const foldMessage = (model: Model, message: Message): UpdateReturn =>
 export const update = (model: Model, message: Message): UpdateReturn => {
 	const result = foldMessage(model, message)
 	const next = result.model
-	return next !== model && Struct.keys(model).every((key) => model[key] === next[key])
+	return next !== model && Array.every(Struct.keys(model), (key) => model[key] === next[key])
 		? { ...result, model }
 		: result
 }

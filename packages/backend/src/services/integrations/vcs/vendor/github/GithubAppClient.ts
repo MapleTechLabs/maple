@@ -11,6 +11,7 @@ import {
 	Schedule,
 	Schema,
 	Stream,
+	String as Str,
 } from "effect"
 import { constTrue } from "effect/Function"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
@@ -122,7 +123,7 @@ const collectPages = <A, E, R>(
 	).pipe(
 		Stream.runCollect,
 		Effect.map((pages) => ({
-			items: pages.flatMap((page) => page.items),
+			items: Arr.flatMap(pages, (page) => page.items),
 			truncated: pages.at(-1)?.full === true,
 		})),
 	)
@@ -645,7 +646,9 @@ const decodeCommentStates = Schema.decodeUnknownEffect(GithubCommentStatesRespon
 
 /** GitHub.com serves GraphQL at `/graphql`; Enterprise at `/api/graphql` beside `/api/v3`. */
 const graphqlUrl = (apiBaseUrl: string) =>
-	apiBaseUrl.endsWith("/api/v3") ? `${apiBaseUrl.slice(0, -"/v3".length)}/graphql` : `${apiBaseUrl}/graphql`
+	Str.endsWith("/api/v3")(apiBaseUrl)
+		? `${Str.slice(0, -"/v3".length)(apiBaseUrl)}/graphql`
+		: `${apiBaseUrl}/graphql`
 const decodeReview = Schema.decodeUnknownEffect(GithubApiReviewSchema)
 const decodeIssueComment = Schema.decodeUnknownEffect(GithubApiIssueCommentSchema)
 const decodeIssueCommentList = Schema.decodeUnknownEffect(GithubApiIssueCommentList)
@@ -675,12 +678,12 @@ const PKCS8_RSA_PREFIX = Buffer.from("020100300d06092a864886f70d0101010500", "he
  * so a PKCS#1 body is wrapped in a PKCS#8 PrivateKeyInfo.
  */
 export const pemToPkcs8 = (pem: string): ArrayBuffer => {
-	const body = pem
-		.replace(/-----BEGIN[^-]+-----/g, "")
-		.replace(/-----END[^-]+-----/g, "")
-		.replace(/\s+/g, "")
+	const body = Str.replace(
+		/\s+/g,
+		"",
+	)(Str.replace(/-----END[^-]+-----/g, "")(Str.replace(/-----BEGIN[^-]+-----/g, "")(pem)))
 	const der = Buffer.from(body, "base64")
-	const buf = pem.includes("BEGIN RSA PRIVATE KEY")
+	const buf = Str.includes("BEGIN RSA PRIVATE KEY")(pem)
 		? derNode(0x30, Buffer.concat([PKCS8_RSA_PREFIX, derNode(0x04, der)]))
 		: der
 	return new Uint8Array(buf).buffer
@@ -692,7 +695,7 @@ const rejectsCredentials = (response: HttpClientResponse.HttpClientResponse) =>
 		? Effect.succeed(true)
 		: response.status === 403
 			? response.text.pipe(
-					Effect.map((body) => body.includes("Bad credentials")),
+					Effect.map((body) => Str.includes("Bad credentials")(body)),
 					Effect.orElseSucceed(() => false),
 				)
 			: Effect.succeed(false)
@@ -877,13 +880,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 								}),
 						),
 					)
-					return yield* Effect.fail(
-						new GithubAppError({
-							message: `${context} failed: ${response.status} ${body.slice(0, 300)}`,
-							status: response.status,
-							scope,
-						}),
-					)
+					return yield* new GithubAppError({
+						message: `${context} failed: ${response.status} ${body.slice(0, 300)}`,
+						status: response.status,
+						scope,
+					})
 				})
 
 			const parseJson = (response: HttpClientResponse.HttpClientResponse, context: string) =>
@@ -1091,7 +1092,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					error: RepositoryListingError,
 					commits: ReadonlyArray<GithubApiCommit>,
 				) =>
-					!(error instanceof GithubAppError) || error.retryAfterSeconds === undefined
+					!Schema.is(GithubAppError)(error) || error.retryAfterSeconds === undefined
 						? Effect.fail(error)
 						: Effect.succeed({
 								commits,
@@ -2355,10 +2356,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							{ headers: { "user-agent": USER_AGENT } },
 							"GitHub job log download failed",
 						).pipe(
-							Effect.flatMap((response) =>
-								response.status === 503
-									? failure(response, "Download job log", "repository")
-									: Effect.succeed(response),
+							Effect.filterOrElse(
+								(response) => response.status !== 503,
+								(response) => failure(response, "Download job log", "repository"),
 							),
 							Effect.retry({
 								while: (error) => error.status === 503,

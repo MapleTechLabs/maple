@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { GithubIntegrationStatus, GithubInstallationSelection } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -16,7 +16,7 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const REPO = "0199a005-0000-7000-8000-000000000001"
 
 const status = Schema.decodeUnknownSync(GithubIntegrationStatus)({

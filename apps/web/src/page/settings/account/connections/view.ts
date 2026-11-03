@@ -11,6 +11,7 @@ import type { AccountUser } from "../user"
 import { Message, type Model } from "./model"
 import { PROVIDERS, providerOf } from "./update"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -113,7 +114,7 @@ const loaded = (h: H, model: Model, user: AccountUser): Html => {
 			[
 				h.div(
 					[h.Class("divide-y")],
-					PROVIDERS.map((provider) => providerRow(h, model, user, provider)),
+					Arr.map(PROVIDERS, (provider) => providerRow(h, model, user, provider)),
 				),
 			],
 		),
@@ -130,7 +131,6 @@ const loaded = (h: H, model: Model, user: AccountUser): Html => {
 	])
 }
 
-export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>(
-	(model, _inputs, h) =>
-		!model.isLoaded || model.user === null ? accountSectionSkeleton(h) : loaded(h, model, model.user),
+export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>((model, _inputs, h) =>
+	!model.isLoaded || model.user === null ? accountSectionSkeleton(h) : loaded(h, model, model.user),
 )

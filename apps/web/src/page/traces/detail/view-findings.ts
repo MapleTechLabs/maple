@@ -13,11 +13,12 @@ import { Message } from "./message"
 import type { ProductEvent } from "./model"
 import { type SpanNodeData, toSpanNode } from "@maple/views/traces/trace-data"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr, Record as Rec } from "effect"
 
 // The trace's error callout and product events.
 
 export const traceErrors = (rootSpans: ReadonlyArray<SpanNodeData>): TraceErrors =>
-	collectTraceErrors(rootSpans.map(toSpanNode))
+	collectTraceErrors(Arr.map(rootSpans, toSpanNode))
 
 /** The failure up front: where the trace most likely broke and why, one click from its span. */
 export const errorCallout = (
@@ -85,7 +86,7 @@ const productEventRow = (h: HtmlBuilder<Message>, event: ProductEvent): Html => 
 		h.span([h.Class("font-medium")], [event.eventName]),
 		event.serviceName === "" ? null : h.span([h.Class("text-muted-foreground")], [event.serviceName]),
 		person === "" ? null : h.span([h.Class("text-muted-foreground")], ["· ", person]),
-		...Object.entries(event.attributes).map(([key, value]) =>
+		...Arr.map(Rec.toEntries(event.attributes), ([key, value]) =>
 			badge(h, { variant: "secondary", className: "font-normal" }, [key, ": ", value]),
 		),
 	]
@@ -119,23 +120,19 @@ export const productEvents = (h: HtmlBuilder<Message>, events: ReadonlyArray<Pro
 						h.div(
 							[h.Class("flex items-baseline gap-2.5")],
 							[
-								heading(
-									h,
-									{ level: 2, variant: "subsection" },
-									[
-										"Product events",
-										h.span(
-											[h.Class("ml-2 font-mono text-xs text-muted-foreground")],
-											[String(events.length)],
-										),
-									],
-								),
+								heading(h, { level: 2, variant: "subsection" }, [
+									"Product events",
+									h.span(
+										[h.Class("ml-2 font-mono text-xs text-muted-foreground")],
+										[String(events.length)],
+									),
+								]),
 							],
 						),
 					],
 				),
 				h.ul(
 					[h.Class("divide-y")],
-					events.map((event) => productEventRow(h, event)),
+					Arr.map(events, (event) => productEventRow(h, event)),
 				),
 			])

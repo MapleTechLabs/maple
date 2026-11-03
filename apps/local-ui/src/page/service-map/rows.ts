@@ -4,13 +4,20 @@ import type {
 	ServiceMapEdgeRow,
 	ServicePlatform,
 } from "@maple/ui/components/service-map/service-map-types"
+import { Array as Arr } from "effect"
 
 // `aggregateEdges`, `toDbEdge`, `classifyPlatform`: the map's raw rows folded into edges and
 // database nodes.
 
 type EdgeBucket = Pick<
 	CH.ServiceMapEdgesHourlyOutput,
-	"SourceService" | "TargetService" | "CallCount" | "ErrorCount" | "DurationSumMs" | "MaxDurationMs" | "SampleRateSum"
+	| "SourceService"
+	| "TargetService"
+	| "CallCount"
+	| "ErrorCount"
+	| "DurationSumMs"
+	| "MaxDurationMs"
+	| "SampleRateSum"
 >
 
 interface EdgeTotals {
@@ -23,7 +30,10 @@ interface EdgeTotals {
 	readonly estimatedSpanCount: number
 }
 
-const addBucket = (totals: ReadonlyMap<string, EdgeTotals>, row: EdgeBucket): ReadonlyMap<string, EdgeTotals> => {
+const addBucket = (
+	totals: ReadonlyMap<string, EdgeTotals>,
+	row: EdgeBucket,
+): ReadonlyMap<string, EdgeTotals> => {
 	const key = `${row.SourceService}\u0000${row.TargetService}`
 	const entry = totals.get(key) ?? {
 		source: row.SourceService,
@@ -40,13 +50,17 @@ const addBucket = (totals: ReadonlyMap<string, EdgeTotals>, row: EdgeBucket): Re
 		errorCount: entry.errorCount + row.ErrorCount,
 		durationSumMs: entry.durationSumMs + row.DurationSumMs,
 		maxDurationMs: Math.max(entry.maxDurationMs, row.MaxDurationMs),
-		estimatedSpanCount: entry.estimatedSpanCount + (row.SampleRateSum > 0 ? row.SampleRateSum : row.CallCount),
+		estimatedSpanCount:
+			entry.estimatedSpanCount + (row.SampleRateSum > 0 ? row.SampleRateSum : row.CallCount),
 	})
 }
 
 /** Service-to-service edges over the whole window, summed from the raw span join's buckets. */
-export const aggregateEdges = (rows: ReadonlyArray<EdgeBucket>, durationSeconds: number): Array<ServiceMapEdgeRow> =>
-	Array.from(rows.reduce(addBucket, new Map<string, EdgeTotals>()).values(), (t) => {
+export const aggregateEdges = (
+	rows: ReadonlyArray<EdgeBucket>,
+	durationSeconds: number,
+): Array<ServiceMapEdgeRow> =>
+	Array.from(Arr.reduce(rows, new Map<string, EdgeTotals>(), addBucket).values(), (t) => {
 		const sampling = summarizeSampling(t.estimatedSpanCount, t.callCount, durationSeconds)
 		return {
 			sourceService: t.source,

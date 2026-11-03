@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro"
 import { experimental_AstroContainer as AstroContainer } from "astro/container"
 import { getCollection, render } from "astro:content"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import BrandMarkIcon from "../../components/BrandMarkIcon.astro"
 import DocsCategoryIcon from "../../components/docs/DocsCategoryIcon.astro"
 import LanguageLogo from "../../components/docs/LanguageLogo.astro"
@@ -68,9 +68,9 @@ export const GET: APIRoute = async () => {
 
 	const payload: SearchIndexPayload = {
 		docs: records,
-		icons: Object.fromEntries(
+		icons: Rec.fromEntries(
 			await Promise.all(
-				Object.entries(icons).map(async ([key, svg]) => [key, (await svg).trim()] as const),
+				Arr.map(Rec.toEntries(icons), async ([key, svg]) => [key, Str.trim(await svg)] as const),
 			),
 		),
 	}

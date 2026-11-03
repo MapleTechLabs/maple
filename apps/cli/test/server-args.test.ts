@@ -27,6 +27,7 @@ import {
 	parseProcStartedAtMs,
 	startedBeforeWrite,
 } from "@maple/local-server/store-claim"
+import { Array as Arr } from "effect"
 
 describe("local server bind host", () => {
 	it("defaults to loopback and accepts a trimmed environment override", () => {
@@ -125,7 +126,7 @@ describe("buildDetachedChildArgs", () => {
 				"--projector-module",
 				"/tmp/second.mjs",
 			])
-			strictEqual(args.filter((arg) => arg === "--on-dirty-store").length, 1)
+			strictEqual(Arr.filter(args, (arg) => arg === "--on-dirty-store").length, 1)
 			strictEqual(args.includes("--background"), false)
 			strictEqual(args.includes("-d"), false)
 		})

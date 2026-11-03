@@ -13,13 +13,16 @@ import type { Model } from "./model"
 import { databasePanel } from "./view-db-panel"
 import { servicePanel } from "@maple/views/service-map/panel/service-panel"
 import { hrefFor } from "../../route"
+import { String as Str } from "effect"
 
 // `ServiceMapFlowCanvas` with local mode's empty state and detail panels.
 
 const toMap = (message: ServiceMap.Message) => Message.GotMapMessage({ message })
 
-const serviceHref = (range: string) => (serviceName: string): string =>
-	hrefFor(`/services/${encodeURIComponent(serviceName)}`, new URLSearchParams({ range }))
+const serviceHref =
+	(range: string) =>
+	(serviceName: string): string =>
+		hrefFor(`/services/${encodeURIComponent(serviceName)}`, new URLSearchParams({ range }))
 
 /** Span scope: most services never own a trace's root span. */
 const tracesHref = (serviceName: string, range: string): string =>
@@ -31,7 +34,7 @@ const detailPanel =
 	(selectedId: string): Html => {
 		const durationSeconds = durationSecondsOf(inputs.context)
 		const range = rangeOf(inputs.context)
-		if (selectedId.startsWith(DB_NODE_PREFIX))
+		if (Str.startsWith(DB_NODE_PREFIX)(selectedId))
 			return databasePanel(h, {
 				...parseDbNodeId(selectedId),
 				data,

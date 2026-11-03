@@ -13,6 +13,7 @@ import {
 import { facetsOf, filtersOf, hasAnomalyFilters } from "./derive"
 import { type Facet, Message } from "./message"
 import type { Model } from "./model"
+import { Array as Arr } from "effect"
 
 // `AnomaliesFilterSidebar`: the list's filter rail.
 
@@ -21,7 +22,7 @@ type H = HtmlBuilder<Message>
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
 const options = (entries: ReadonlyArray<readonly [string, number]>): ReadonlyArray<FilterOption> =>
-	entries.map(([name, count]) => ({ name, count }))
+	Arr.map(entries, ([name, count]) => ({ name, count }))
 
 export const filtersRail = (
 	h: H,
@@ -44,13 +45,14 @@ export const filtersRail = (
 			title,
 			options: options(entries),
 			selected: model.search[facet] ?? [],
-			excluded: (facet === "severity"
-				? model.search.excludedSeverity
-				: facet === "signals"
-					? model.search.excludedSignals
-					: facet === "services"
-						? model.search.excludedServices
-						: model.search.excludedEnvs) ?? [],
+			excluded:
+				(facet === "severity"
+					? model.search.excludedSeverity
+					: facet === "signals"
+						? model.search.excludedSignals
+						: facet === "services"
+							? model.search.excludedServices
+							: model.search.excludedEnvs) ?? [],
 			sections: model.filterSections,
 			toSectionsMessage: toSections,
 			onToggle: (name) => Message.ToggledFacetOption({ facet, name }),
@@ -63,12 +65,19 @@ export const filtersRail = (
 		...filterSidebarBody(
 			h,
 			"anomalies-filters",
-			[
-				section("Severity", "severity", facets.severity, { getOptionLabel: facets.severityLabel }),
-				section("Signal", "signals", facets.signals, { getOptionLabel: facets.signalLabel }),
-				section("Service", "services", facets.services, { colorOf: (name) => getServiceColor(name) }),
-				section("Environment", "envs", facets.envs),
-			].filter((node): node is Html => node !== null),
+			Arr.filter(
+				[
+					section("Severity", "severity", facets.severity, {
+						getOptionLabel: facets.severityLabel,
+					}),
+					section("Signal", "signals", facets.signals, { getOptionLabel: facets.signalLabel }),
+					section("Service", "services", facets.services, {
+						colorOf: (name) => getServiceColor(name),
+					}),
+					section("Environment", "envs", facets.envs),
+				],
+				(node): node is Html => node !== null,
+			),
 		),
 	])
 }

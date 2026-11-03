@@ -4,7 +4,7 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { errorState } from "@maple/views/ui/error-state"
@@ -61,8 +61,8 @@ const NODE_SORT_ACCESSORS: SortAccessors<NodeRow> = new Map<string, (row: NodeRo
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
 const loadedRail = (h: H, model: Model, facets: NodeFacets): Html => {
-	const hasFilters = Object.values(filtersOf(model.search)).some((values) => (values?.length ?? 0) > 0)
-	if (!hasFilters && Object.values(facets).every((options) => options.length === 0))
+	const hasFilters = Arr.some(Rec.values(filtersOf(model.search)), (values) => (values?.length ?? 0) > 0)
+	if (!hasFilters && Arr.every(Rec.values(facets), (options) => options.length === 0))
 		return filterSidebarEmpty(h)
 	const section = (
 		title: string,
@@ -92,7 +92,8 @@ const toInstall = (message: InstallModal.Message) => Message.GotInstallMessage({
 
 const nodeList = (h: H, model: Model, nodes: ReadonlyArray<NodeRow>, inputs: PageViewInputs): Html => {
 	const isWaiting = AsyncData.isRefreshing(model.nodes.data)
-	const hasStructuredFilter = Object.values(filtersOf(model.search)).some(
+	const hasStructuredFilter = Arr.some(
+		Rec.values(filtersOf(model.search)),
 		(values) => (values?.length ?? 0) > 0,
 	)
 	if (nodes.length === 0 && !hasStructuredFilter)
@@ -114,12 +115,13 @@ const nodeList = (h: H, model: Model, nodes: ReadonlyArray<NodeRow>, inputs: Pag
 	const endTime = model.frame.window?.endTime ?? ""
 	const statusOf = (node: NodeRow) => deriveHostStatus(node.lastSeen, endTime)
 	const searchText = model.search.q ?? ""
-	const q = searchText.trim().toLowerCase()
+	const q = Str.toLowerCase(Str.trim(searchText))
 	const statusScope = model.search.status
-	const named = q === "" ? nodes : nodes.filter((node) => node.nodeName.toLowerCase().includes(q))
+	const named =
+		q === "" ? nodes : Arr.filter(nodes, (node) => Str.includes(q)(Str.toLowerCase(node.nodeName)))
 	const filtered =
-		statusScope === undefined ? named : named.filter((node) => statusOf(node) === statusScope)
-	const countOf = (status: HostStatus) => nodes.filter((node) => statusOf(node) === status).length
+		statusScope === undefined ? named : Arr.filter(named, (node) => statusOf(node) === statusScope)
+	const countOf = (status: HostStatus) => Arr.filter(nodes, (node) => statusOf(node) === status).length
 	return h.div(
 		[h.Class(cn("space-y-5", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
 		[
@@ -127,12 +129,12 @@ const nodeList = (h: H, model: Model, nodes: ReadonlyArray<NodeRow>, inputs: Pag
 				total: nodes.length,
 				noun: "node",
 				caption: "share of the fleet by collector freshness",
-				segments: STATUS_CELLS.map(({ status }) => ({
-					key: statusLabel(status).toLowerCase(),
+				segments: Arr.map(STATUS_CELLS, ({ status }) => ({
+					key: Str.toLowerCase(statusLabel(status)),
 					count: countOf(status),
 					className: STATUS_SEGMENT.get(status) ?? "",
 				})),
-				cells: STATUS_CELLS.map(({ status, hint, tone }) => ({
+				cells: Arr.map(STATUS_CELLS, ({ status, hint, tone }) => ({
 					scope: status,
 					label: statusLabel(status),
 					hint,

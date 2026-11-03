@@ -26,6 +26,7 @@ import {
 	type DigestTopError,
 	type WeeklyDigestProps,
 } from "./weekly-digest-core"
+import { Array as Arr } from "effect"
 
 // Re-export the react-free core so existing importers keep working. New code
 // that only needs types/derivation should import "./weekly-digest-core"
@@ -106,8 +107,8 @@ function sparkline(series: ReadonlyArray<DigestSeriesPoint>): {
 	bars: string
 	labels: string
 } {
-	const maxReq = Math.max(1, ...series.map((point) => point.requests))
-	const bars = series.map((point) => {
+	const maxReq = Math.max(1, ...Arr.map(series, (point) => point.requests))
+	const bars = Arr.map(series, (point) => {
 		const reqH = point.requests > 0 ? Math.max(2, Math.round((point.requests / maxReq) * MAX_BAR)) : 0
 		let errH = point.requests > 0 ? Math.round((point.errors / point.requests) * reqH) : 0
 		if (point.errors > 0) errH = Math.max(2, errH)
@@ -134,8 +135,8 @@ function sparkline(series: ReadonlyArray<DigestSeriesPoint>): {
 			},
 		)
 	})
-	const labels = series.map((point) => fill(FRAGMENTS.sparkLabel, { label: point.label }))
-	return { bars: bars.join(""), labels: labels.join("") }
+	const labels = Arr.map(series, (point) => fill(FRAGMENTS.sparkLabel, { label: point.label }))
+	return { bars: Arr.join(bars, ""), labels: Arr.join(labels, "") }
 }
 
 function summaryCard(label: string, value: string, delta: Delta, invertColor = false): string {
@@ -192,10 +193,13 @@ function serviceRow(
 	baseUrl: string,
 	showEnvChip: boolean,
 ): string {
-	const chips = [
-		showEnvChip && service.environment !== "" ? service.environment : null,
-		service.namespace !== "" ? service.namespace : null,
-	].filter((label): label is string => label !== null)
+	const chips = Arr.filter(
+		[
+			showEnvChip && service.environment !== "" ? service.environment : null,
+			service.namespace !== "" ? service.namespace : null,
+		],
+		(label): label is string => label !== null,
+	)
 
 	return fill(
 		FRAGMENTS.serviceRow,
@@ -211,7 +215,10 @@ function serviceRow(
 		},
 		{
 			serviceRequestsDelta: trendLine(FRAGMENTS.serviceRequestsDelta, service.requestsDelta),
-			serviceScope: chips.map((label) => fill(FRAGMENTS.scopeChip, { label })).join(""),
+			serviceScope: Arr.join(
+				Arr.map(chips, (label) => fill(FRAGMENTS.scopeChip, { label })),
+				"",
+			),
 		},
 	)
 }
@@ -225,7 +232,7 @@ function serviceRow(
  * of each group) is the one without a separator.
  */
 function servicesSection(groups: ReadonlyArray<DigestEnvironmentGroup>, baseUrl: string): string {
-	const totalRows = groups.reduce((sum, group) => sum + group.services.length, 0)
+	const totalRows = Arr.reduce(groups, 0, (sum, group) => sum + group.services.length)
 	if (totalRows === 0) return ""
 
 	const showHeaders = groups.length > 1
@@ -251,7 +258,7 @@ function servicesSection(groups: ReadonlyArray<DigestEnvironmentGroup>, baseUrl:
 		}
 	}
 
-	return fill(FRAGMENTS.servicesSection, {}, { serviceRows: rows.join("\n") })
+	return fill(FRAGMENTS.servicesSection, {}, { serviceRows: Arr.join(rows, "\n") })
 }
 
 function breakdownTable(heading: string, rows: ReadonlyArray<DigestBreakdownRow>): string {
@@ -260,8 +267,8 @@ function breakdownTable(heading: string, rows: ReadonlyArray<DigestBreakdownRow>
 		FRAGMENTS.breakdownTable,
 		{ heading },
 		{
-			breakdownRows: rows
-				.map((row, index) =>
+			breakdownRows: Arr.join(
+				Arr.map(rows, (row, index) =>
 					fill(
 						FRAGMENTS.breakdownRow,
 						{
@@ -273,8 +280,9 @@ function breakdownTable(heading: string, rows: ReadonlyArray<DigestBreakdownRow>
 						},
 						{ breakdownDelta: trendLine(FRAGMENTS.serviceRequestsDelta, row.requestsDelta) },
 					),
-				)
-				.join("\n"),
+				),
+				"\n",
+			),
 		},
 	)
 }
@@ -321,30 +329,34 @@ export function renderWeeklyDigest(props: WeeklyDigestProps): string {
 					FRAGMENTS.errorsSection,
 					{ errorsUrl: `${props.baseUrl}/errors?timePreset=7d` },
 					{
-						errorRows: topErrors
-							.map((error, index) => errorRow(error, index, topErrors.length))
-							.join("\n"),
+						errorRows: Arr.join(
+							Arr.map(topErrors, (error, index) => errorRow(error, index, topErrors.length)),
+							"\n",
+						),
 					},
 				)
 
-	const ingestionCells = [
-		{ label: "Logs", value: fmtNum(ingestion.logs), delta: null },
-		{ label: "Traces", value: fmtNum(ingestion.traces), delta: null },
-		{ label: "Metrics", value: fmtNum(ingestion.metrics), delta: null },
-		{
-			label: "Total",
-			value: fmtBytes(ingestion.totalBytes),
-			delta: summary.dataVolume.delta,
-		},
-	]
-		.map(({ label, value, delta }) =>
-			fill(
-				FRAGMENTS.ingestionCell,
-				{ label, value },
-				{ ingestionDelta: delta === null ? "" : trendLine(FRAGMENTS.ingestionDelta, delta) },
-			),
-		)
-		.join("")
+	const ingestionCells = Arr.join(
+		Arr.map(
+			[
+				{ label: "Logs", value: fmtNum(ingestion.logs), delta: null },
+				{ label: "Traces", value: fmtNum(ingestion.traces), delta: null },
+				{ label: "Metrics", value: fmtNum(ingestion.metrics), delta: null },
+				{
+					label: "Total",
+					value: fmtBytes(ingestion.totalBytes),
+					delta: summary.dataVolume.delta,
+				},
+			],
+			({ label, value, delta }) =>
+				fill(
+					FRAGMENTS.ingestionCell,
+					{ label, value },
+					{ ingestionDelta: delta === null ? "" : trendLine(FRAGMENTS.ingestionDelta, delta) },
+				),
+		),
+		"",
+	)
 
 	const scopeLabel = fmtScopeLabel(props.scope)
 

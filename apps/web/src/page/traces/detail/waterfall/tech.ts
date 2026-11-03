@@ -5,6 +5,7 @@ import { DB_ICON } from "@maple/views/service-map/map/node-card"
 import { resolveRuntimeGlyph } from "@maple/views/service-map/map/runtime"
 import type { IconName } from "@maple/views/ui/icon"
 import { modelVendorIcon } from "../../../agent-sessions/kit/vendor"
+import { Array as Arr, String as Str } from "effect"
 
 // The marks a waterfall row carries: what the span called (gen_ai, then db, messaging, rpc,
 // the order Jaeger and Uptrace settle on) and what runs the service it enters.
@@ -25,11 +26,13 @@ const systemOf = (attrs: Record<string, string>, ...keys: ReadonlyArray<string>)
 		.toLowerCase() ?? null
 
 const titleCase = (system: string): string =>
-	system
-		.split(/[._\s-]+/)
-		.filter((word) => word !== "")
-		.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-		.join(" ")
+	Arr.join(
+		Arr.map(
+			Arr.filter(Str.split(/[._\s-]+/)(system), (word) => word !== ""),
+			(word) => Str.toUpperCase(word.charAt(0)) + Str.slice(1)(word),
+		),
+		" ",
+	)
 
 // `gen_ai.provider.name` values (and the older `gen_ai.system`): the `modelVendorIcon` slug and
 // the name a reader knows. Anything else keeps its own value as the slug.

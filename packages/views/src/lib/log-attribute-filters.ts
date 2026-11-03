@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /** Which map an attribute lives in: `LogAttributes` or `ResourceAttributes`. */
 export type LogAttributeSource = "log" | "resource"
 
@@ -14,7 +15,7 @@ export interface LogAttributeFilter {
  * after the first `=`, so it may hold `=` itself; the key escapes `%` and `=`.
  */
 export function encodeLogAttributeFilter(filter: LogAttributeFilter): string {
-	const key = filter.key.replace(/%/g, "%25").replace(/=/g, "%3D")
+	const key = Str.replace(/=/g, "%3D")(Str.replace(/%/g, "%25")(filter.key))
 	const scope = filter.source === "resource" ? "res" : "log"
 	return `${filter.negated ? "!" : ""}${scope}:${key}=${filter.value}`
 }
@@ -31,7 +32,7 @@ export function decodeLogAttributeFilter(entry: string): LogAttributeFilter | un
 }
 
 export function decodeLogAttributeFilters(entries: readonly string[] | undefined): LogAttributeFilter[] {
-	return (entries ?? []).flatMap((entry) => {
+	return Arr.flatMap(entries ?? [], (entry) => {
 		const filter = decodeLogAttributeFilter(entry)
 		return filter ? [filter] : []
 	})
@@ -47,7 +48,7 @@ export function addLogAttributeFilter(
 ): string[] {
 	const opposite = encodeLogAttributeFilter({ ...filter, negated: !filter.negated })
 	const next = encodeLogAttributeFilter(filter)
-	const kept = (entries ?? []).filter((entry) => entry !== opposite && entry !== next)
+	const kept = Arr.filter(entries ?? [], (entry) => entry !== opposite && entry !== next)
 	return [...kept, next]
 }
 
@@ -66,9 +67,9 @@ export function logAttributeQueryFilters(entries: readonly string[] | undefined)
 } {
 	const filters = decodeLogAttributeFilters(entries)
 	const toQuery = (source: LogAttributeSource): LogAttributeQueryFilter[] | undefined => {
-		const matching = filters
-			.filter((filter) => filter.source === source)
-			.map((filter) => {
+		const matching = Arr.map(
+			Arr.filter(filters, (filter) => filter.source === source),
+			(filter) => {
 				const query: LogAttributeQueryFilter = {
 					key: filter.key,
 					value: filter.value,
@@ -76,7 +77,8 @@ export function logAttributeQueryFilters(entries: readonly string[] | undefined)
 				}
 				if (filter.negated) query.negated = true
 				return query
-			})
+			},
+		)
 		return matching.length > 0 ? matching : undefined
 	}
 	return { attributeFilters: toQuery("log"), resourceAttributeFilters: toQuery("resource") }
@@ -87,7 +89,7 @@ export function matchesLogAttributeFilters(
 	filters: readonly LogAttributeFilter[],
 	attributes: { log: Record<string, string>; resource: Record<string, string> },
 ): boolean {
-	return filters.every((filter) => {
+	return Arr.every(filters, (filter) => {
 		const actual = (filter.source === "resource" ? attributes.resource : attributes.log)[filter.key] ?? ""
 		return (actual === filter.value) !== filter.negated
 	})

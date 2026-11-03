@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { deployMarkers, failureRows, untracedExceptions, workerOutcomeTotals } from "./worker-signals"
+import { Array as Arr } from "effect"
 
 const outcome = (bucket: string, status: string, requests: number) => ({ bucket, status, requests })
 
@@ -43,7 +44,7 @@ describe("deployMarkers", () => {
 			"2026-10-14T00:00:00.000Z",
 			300,
 		)
-		expect(markers.map((m) => m.label)).toEqual(["d7a6ee7"])
+		expect(Arr.map(markers, (m) => m.label)).toEqual(["d7a6ee7"])
 	})
 })
 

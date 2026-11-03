@@ -10,7 +10,7 @@ import {
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Chart from "@maple/views/charts/chart"
@@ -91,12 +91,10 @@ const kpiTile = (h: H, tile: Tile, theme: ThemeColors | null): Html =>
 	h.div(
 		[h.Key(tile.label), h.Class("flex min-w-0 flex-col px-5 py-4 last:col-span-2 md:last:col-span-1")],
 		[
-			hstack(h, { gap: "1.5" },
-				[
-					...(tile.dot === undefined ? [] : [statusDot(h, { tone: tile.dot })]),
-					typography(h, { size: "2xs", tone: "muted", weight: "medium", truncate: true }, [tile.label]),
-				],
-			),
+			hstack(h, { gap: "1.5" }, [
+				...(tile.dot === undefined ? [] : [statusDot(h, { tone: tile.dot })]),
+				typography(h, { size: "2xs", tone: "muted", weight: "medium", truncate: true }, [tile.label]),
+			]),
 			statFigure(h, {
 				value: tile.value,
 				unit: tile.unit,
@@ -127,8 +125,8 @@ const kpiTile = (h: H, tile: Tile, theme: ThemeColors | null): Html =>
 /** "mostly 402 (98%)": the code most of a class's responses carried; blank while it loads. */
 const leadingCode = (summaries: ReadonlyArray<StatusCodeSummary> | null, isServer: boolean): string => {
 	if (summaries === null) return ""
-	const codes = summaries.filter((summary) => isServerError(summary.code) === isServer)
-	const total = codes.reduce((sum, summary) => sum + summary.count, 0)
+	const codes = Arr.filter(summaries, (summary) => isServerError(summary.code) === isServer)
+	const total = Arr.reduce(codes, 0, (sum, summary) => sum + summary.count)
 	const [top] = codes
 	if (top === undefined || total === 0) return "none"
 	const share = top.count / total
@@ -139,7 +137,9 @@ const leadingCode = (summaries: ReadonlyArray<StatusCodeSummary> | null, isServe
 /** "3.0 MB/s" as value and unit, so the unit sits small beside the figure like "req/s". */
 const splitUnit = (text: string): Readonly<{ value: string; unit?: string }> => {
 	const space = text.indexOf(" ")
-	return space < 0 ? { value: text } : { value: text.slice(0, space), unit: text.slice(space + 1) }
+	return space < 0
+		? { value: text }
+		: { value: Str.slice(0, space)(text), unit: Str.slice(space + 1)(text) }
 }
 
 /** "+12%" / "−8%"; under half a percent either way reads as unchanged. */
@@ -212,7 +212,7 @@ const kpiStrip = (
 	return statRail(
 		h,
 		{ columns: 5, className: "w-full overflow-hidden" },
-		tiles.map((tile) => kpiTile(h, tile, theme)),
+		Arr.map(tiles, (tile) => kpiTile(h, tile, theme)),
 	)
 }
 
@@ -238,7 +238,7 @@ const responsesChart = (
 		onSome: (data) =>
 			commitMarkers(
 				data.releases,
-				overview.buckets.map((bucket) => bucket.bucket),
+				Arr.map(overview.buckets, (bucket) => bucket.bucket),
 				model.commits,
 			),
 	})
@@ -321,50 +321,42 @@ const responsesChart = (
 const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 	const isServer = isServerError(summary.code)
 	const [errorType] = summary.errorTypes
-	return vstack(h, { gap: "1", attributes: [h.Key(summary.code)] },
-		[
-			h.div(
-				[h.Class("flex items-baseline gap-2 text-2xs tabular-nums")],
-				[
-					h.span(
-						[
-							h.Class(
-								cn(
-									"rounded-sm bg-muted px-1 font-medium",
-									TONE_TEXT[isServer ? "crit" : "warn"],
-								),
-							),
-						],
-						[summary.code],
-					),
-					typography(h, { tone: "foreground", truncate: true }, [reasonPhrase(summary.code)]),
-					h.span([h.Class("ml-auto text-foreground")], [formatNumber(Math.round(summary.count))]),
-					h.span(
-						[h.Class("w-11 text-right text-muted-foreground")],
-						[formatErrorRate(summary.share)],
-					),
-				],
-			),
-			h.div(
-				[h.Class("h-1 w-full rounded-full bg-muted")],
-				[
-					h.div([
-						h.Class(cn("h-1 rounded-full", TONE_FILL[isServer ? "crit" : "warn"])),
-						h.Style({ width: `${Math.max(summary.share * 100, 1)}%` }),
-					]),
-				],
-			),
-			h.span(
-				[h.Class("block w-full truncate text-3xs text-muted-foreground")],
-				[
-					...(errorType === undefined
-						? []
-						: [h.span([h.Class("text-foreground-soft")], [errorType.name]), " · "]),
-					routeList(summary.routes),
-				],
-			),
-		],
-	)
+	return vstack(h, { gap: "1", attributes: [h.Key(summary.code)] }, [
+		h.div(
+			[h.Class("flex items-baseline gap-2 text-2xs tabular-nums")],
+			[
+				h.span(
+					[
+						h.Class(
+							cn("rounded-sm bg-muted px-1 font-medium", TONE_TEXT[isServer ? "crit" : "warn"]),
+						),
+					],
+					[summary.code],
+				),
+				typography(h, { tone: "foreground", truncate: true }, [reasonPhrase(summary.code)]),
+				h.span([h.Class("ml-auto text-foreground")], [formatNumber(Math.round(summary.count))]),
+				h.span([h.Class("w-11 text-right text-muted-foreground")], [formatErrorRate(summary.share)]),
+			],
+		),
+		h.div(
+			[h.Class("h-1 w-full rounded-full bg-muted")],
+			[
+				h.div([
+					h.Class(cn("h-1 rounded-full", TONE_FILL[isServer ? "crit" : "warn"])),
+					h.Style({ width: `${Math.max(summary.share * 100, 1)}%` }),
+				]),
+			],
+		),
+		h.span(
+			[h.Class("block w-full truncate text-3xs text-muted-foreground")],
+			[
+				...(errorType === undefined
+					? []
+					: [h.span([h.Class("text-foreground-soft")], [errorType.name]), " · "]),
+				routeList(summary.routes),
+			],
+		),
+	])
 }
 
 const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null): Html => {
@@ -389,15 +381,19 @@ const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null
 			h,
 			[
 				summaries === null
-					? vstack(h, { gap: "3", attributes: [h.AriaBusy(true)] },
-							[0, 1, 2, 3].map((index) =>
+					? vstack(
+							h,
+							{ gap: "3", attributes: [h.AriaBusy(true)] },
+							Arr.map([0, 1, 2, 3], (index) =>
 								h.div([h.Key(String(index))], [skeleton(h, "h-9 w-full")]),
 							),
 						)
 					: summaries.length === 0
 						? emptyMessage(h, {}, ["Every response in this window was below 400"])
-						: vstack(h, { gap: "3" },
-								summaries.slice(0, 4).map((summary) => codeRow(h, summary)),
+						: vstack(
+								h,
+								{ gap: "3" },
+								Arr.map(summaries.slice(0, 4), (summary) => codeRow(h, summary)),
 							),
 			],
 			"p-4",
@@ -411,45 +407,45 @@ const toolbar = (h: H, model: Model, count: number): Html =>
 	tableTitle(h, {
 		title: "Endpoints",
 		count,
-		action: hstack(h, { gap: "3", wrap: true },
-			[
-				...(AsyncData.isFailure(model.endpointSeries.data)
-					? [
-							h.span(
-								[h.Class("text-2xs text-severity-error")],
-								["Trends failed to load; Reload to retry."],
-							),
-						]
-					: []),
-				segmentedSelect(h, {
-					options: ENDPOINT_FILTERS.map((filter) => ({ value: filter, label: ENDPOINT_FILTER_LABELS[filter] })),
-					value: model.endpointFilter,
-					onChange: (filter) => Message.ClickedEndpointFilter({ filter }),
-					size: "xs",
-					ariaLabel: "Filter endpoints",
-				}),
-				searchInput(h, {
-					id: "service-endpoint-search",
-					value: model.endpointQuery,
-					placeholder: "Filter routes…",
-					ariaLabel: "Filter routes",
-					onInput: (value) => Message.ChangedEndpointQuery({ value }),
-					onClear: Message.ChangedEndpointQuery({ value: "" }),
-					className: "w-60",
-				}),
-			],
-		),
+		action: hstack(h, { gap: "3", wrap: true }, [
+			...(AsyncData.isFailure(model.endpointSeries.data)
+				? [
+						h.span(
+							[h.Class("text-2xs text-severity-error")],
+							["Trends failed to load; Reload to retry."],
+						),
+					]
+				: []),
+			segmentedSelect(h, {
+				options: Arr.map(ENDPOINT_FILTERS, (filter) => ({
+					value: filter,
+					label: ENDPOINT_FILTER_LABELS[filter],
+				})),
+				value: model.endpointFilter,
+				onChange: (filter) => Message.ClickedEndpointFilter({ filter }),
+				size: "xs",
+				ariaLabel: "Filter endpoints",
+			}),
+			searchInput(h, {
+				id: "service-endpoint-search",
+				value: model.endpointQuery,
+				placeholder: "Filter routes…",
+				ariaLabel: "Filter routes",
+				onInput: (value) => Message.ChangedEndpointQuery({ value }),
+				onClear: Message.ChangedEndpointQuery({ value: "" }),
+				className: "w-60",
+			}),
+		]),
 	})
 
 /** Request rate per bucket by span name on one axis; a bucket an endpoint was quiet in reads 0. */
 const sparksBySpanName = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number, window: WindowMs) => {
 	const axis = bucketAxis(buckets, bucketSeconds, window)
-	const bySpanName = buckets.reduce(
-		(acc, bucket) => acc.set(bucket.spanName, [...(acc.get(bucket.spanName) ?? []), bucket]),
-		new Map<string, ReadonlyArray<ApiBucket>>(),
+	const bySpanName = Arr.reduce(buckets, new Map<string, ReadonlyArray<ApiBucket>>(), (acc, bucket) =>
+		acc.set(bucket.spanName, [...(acc.get(bucket.spanName) ?? []), bucket]),
 	)
 	return new Map(
-		[...bySpanName].map(([spanName, rows]) => [
+		Arr.map([...bySpanName], ([spanName, rows]) => [
 			spanName,
 			onAxis(axis, rows, (bucket) => bucket.estimatedSpanCount / Math.max(1, bucketSeconds)),
 		]),
@@ -465,7 +461,7 @@ const endpointsTable = (
 ): Html => {
 	const sort = model.sorts.endpoints
 	const seconds = model.window === null ? 0 : windowSeconds(model.window)
-	const visible = endpoints.filter((endpoint) =>
+	const visible = Arr.filter(endpoints, (endpoint) =>
 		matchesFilter(endpoint, model.endpointFilter, model.endpointQuery),
 	)
 	const groups = groupsOf(visible, sort)
@@ -479,7 +475,7 @@ const endpointsTable = (
 		theme,
 		selected: model.search.endpoint,
 		slowest: slowestEndpoint(visible),
-		isOneMethod: new Set(visible.map((endpoint) => endpoint.method)).size === 1,
+		isOneMethod: new Set(Arr.map(visible, (endpoint) => endpoint.method)).size === 1,
 	}
 	const column = (sortKey: string, label: string, className: string, align?: "left", title?: string) =>
 		sortColumnHead(h, {
@@ -492,7 +488,7 @@ const endpointsTable = (
 			title,
 		})
 	// A sampled endpoint's rate is scaled up from its traced spans; the header says so.
-	const isEstimated = visible.some((endpoint) => endpoint.estimatedSpanCount > endpoint.spanCount)
+	const isEstimated = Arr.some(visible, (endpoint) => endpoint.estimatedSpanCount > endpoint.spanCount)
 	return panel(h, { className: "w-full" }, [
 		toolbar(h, model, visible.length),
 		table(h, {}, [
@@ -546,7 +542,7 @@ const endpointsTable = (
 								"hover:bg-transparent active:bg-transparent",
 							),
 						]
-					: groups.flatMap((group) =>
+					: Arr.flatMap(groups, (group) =>
 							groupRows(h, group, context, model.expandedEndpointGroups.includes(group.kind)),
 						),
 			),
@@ -557,36 +553,40 @@ const endpointsTable = (
 // STATES
 
 const loadingState = (h: H): Html =>
-	vstack(h, { gap: "3" },
-		[
-			kpiSkeleton(h),
+	vstack(h, { gap: "3" }, [
+		kpiSkeleton(h),
+		h.div(
+			[h.Class("flex flex-col gap-3 lg:flex-row")],
+			[
+				skeleton(h, "h-[282px] flex-1 rounded-md"),
+				skeleton(h, "h-[282px] w-full rounded-md lg:w-[400px]"),
+			],
+		),
+		panel(h, {}, [
+			...tableSkeletonHead(h, "Endpoints"),
 			h.div(
-				[h.Class("flex flex-col gap-3 lg:flex-row")],
-				[
-					skeleton(h, "h-[282px] flex-1 rounded-md"),
-					skeleton(h, "h-[282px] w-full rounded-md lg:w-[400px]"),
-				],
-			),
-			panel(h, {}, [
-				...tableSkeletonHead(h, "Endpoints"),
-				h.div(
-					[h.AriaBusy(true), h.Class("flex flex-col")],
-					Array.from({ length: 8 }, (_, index) =>
-						hstack(h, { gap: "3", className: stripClass("skeletonRow"), attributes: [h.Key(String(index))] },
-							[
-								skeleton(h, "h-2.5 w-9"),
-								skeleton(h, "h-2.5 w-40"),
-								h.span([h.Class("flex-1")]),
-								skeleton(h, "h-2.5 w-24"),
-								skeleton(h, "h-2.5 w-24"),
-								skeleton(h, "h-2.5 w-12"),
-							],
-						),
+				[h.AriaBusy(true), h.Class("flex flex-col")],
+				Array.from({ length: 8 }, (_, index) =>
+					hstack(
+						h,
+						{
+							gap: "3",
+							className: stripClass("skeletonRow"),
+							attributes: [h.Key(String(index))],
+						},
+						[
+							skeleton(h, "h-2.5 w-9"),
+							skeleton(h, "h-2.5 w-40"),
+							h.span([h.Class("flex-1")]),
+							skeleton(h, "h-2.5 w-24"),
+							skeleton(h, "h-2.5 w-24"),
+							skeleton(h, "h-2.5 w-12"),
+						],
 					),
 				),
-			]),
-		],
-	)
+			),
+		]),
+	])
 
 /** `ApiEmptyState`: names the two conditions an endpoint needs. */
 const emptyState = (h: H, serviceName: string): Html => {
@@ -616,11 +616,9 @@ const emptyState = (h: H, serviceName: string): Html => {
 const notes = (h: H, count: number, seconds: number): ReadonlyArray<Html> => [
 	...(isTruncated(count)
 		? [
-				typography(h, { size: "xs", tone: "muted", as: "p" },
-					[
-						`Showing the ${ENDPOINTS_LIMIT} busiest endpoints. This service has more. Narrow the time range or environment to see the rest.`,
-					],
-				),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					`Showing the ${ENDPOINTS_LIMIT} busiest endpoints. This service has more. Narrow the time range or environment to see the rest.`,
+				]),
 			]
 		: []),
 	...(seconds > TRACE_DETAIL_LIMIT_SECONDS ? [rangeNote(h, "Endpoint")] : []),
@@ -706,7 +704,8 @@ export const apiTab = (h: H, model: Model, inputs: ApiTabInputs, theme: ThemeCol
 	AsyncData.match(model.endpoints.data, {
 		onIdle: () => loadingState(h),
 		onLoading: () => loadingState(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load endpoints", onRetry: retryEndpoints }),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Couldn't load endpoints", onRetry: retryEndpoints }),
 		onStale: ({ error }) =>
 			errorState(h, { failure: error, title: "Couldn't load endpoints", onRetry: retryEndpoints }),
 		onRefreshing: (endpoints) => loaded(h, model, endpoints, true, inputs, theme),

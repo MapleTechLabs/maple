@@ -1,6 +1,7 @@
 import { httpStatusTone } from "@maple/ui/lib/http"
 import { spanStartMs } from "@maple/ui/lib/span-tree"
 import type { SpanNode } from "@maple/ui/lib/types"
+import { Array as Arr } from "effect"
 
 /** The span's HTTP response status, read off the attribute: `getHttpInfo` gives up on names with no method. */
 export function spanHttpStatus(span: SpanNode): number | undefined {
@@ -33,7 +34,7 @@ export function collectTraceErrors(rootSpans: ReadonlyArray<SpanNode>): TraceErr
 
 	// Returns whether the subtree holds a failed span.
 	const visit = (span: SpanNode): boolean => {
-		const descendantFailed = span.children.map(visit).some(Boolean)
+		const descendantFailed = Arr.some(Arr.map(span.children, visit), Boolean)
 		const failed = isErrorSpan(span)
 		if (failed) {
 			spans.push(span)

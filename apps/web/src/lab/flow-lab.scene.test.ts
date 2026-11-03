@@ -1,5 +1,5 @@
 import { FLOW_LAB_TRACE } from "@maple/views/fixtures/flow-fixture"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
 import { click, expect, given, hover, Mount, role, scene, selector, testId, within } from "foldkit/scene"
 import { describe, test, expect as expectValue } from "vitest"
@@ -22,7 +22,7 @@ const flowView = (model: TraceFlow.Model, h: HtmlBuilder<TraceFlow.Message>) =>
 
 /** What the Mount reports for a 280x56 card with React Flow's 2x2 handles at the top and bottom centre. */
 const measuredCards = Canvas.Message.MeasuredNodes({
-	nodes: graph.nodes.map((node) => ({
+	nodes: Arr.map(graph.nodes, (node) => ({
 		id: node.id,
 		width: 280,
 		height: 56,

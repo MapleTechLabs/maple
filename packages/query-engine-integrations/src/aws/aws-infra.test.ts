@@ -9,6 +9,7 @@ import {
 	awsInfraSparklinesSQL,
 	awsInfraTimeseriesSQL,
 } from "./aws-infra"
+import { Array as Arr, String as Str } from "effect"
 
 const params = {
 	orgId: OrgId.make("org_1"),
@@ -17,7 +18,7 @@ const params = {
 }
 
 const metricNames = (sql: string) =>
-	[...sql.matchAll(/'(aws\.(?!dimension\.)[a-z0-9_.]+)'/g)].map((m) => m[1])
+	Arr.map([...sql.matchAll(/'(aws\.(?!dimension\.)[a-z0-9_.]+)'/g)], (m) => m[1])
 
 describe("awsInfraMetricsSQL", () => {
 	it("reads a load balancer's own series, never its per-target-group or per-zone copies", () => {
@@ -40,13 +41,13 @@ describe("awsInfraMetricsSQL", () => {
 		for (const kind of AWS_INFRA_KIND_IDS) {
 			const { sql } = compileUnsafe(awsInfraMetricsSQL(kind), params)
 			expect(sql, kind).not.toContain("IN ()")
-			const [sums = "", gauges = ""] = sql.split("FROM metrics_gauge")
+			const [sums, gauges = ""] = Str.split("FROM metrics_gauge")(sql)
 			const metrics = AWS_INFRA_KINDS[kind].metrics
 			for (const metric of metrics) {
 				const branch = metric.table === "sum" ? sums : gauges
 				expect(branch, `${kind} ${metric.name}`).toContain(`'${metric.name}'`)
 			}
-			expect(metricNames(sql).sort(), kind).toEqual(metrics.map((metric) => metric.name).sort())
+			expect(metricNames(sql).sort(), kind).toEqual(Arr.map(metrics, (metric) => metric.name).sort())
 		}
 	})
 })
@@ -89,8 +90,8 @@ describe("awsInfraTimeseriesSQL", () => {
 describe("awsInfraPresenceSQL", () => {
 	it("asks the catalog about every kind's metrics", () => {
 		const { sql } = compileUnsafe(awsInfraPresenceSQL(), params)
-		const expected = AWS_INFRA_KIND_IDS.flatMap((kind) =>
-			AWS_INFRA_KINDS[kind].metrics.map((m) => m.name),
+		const expected = Arr.flatMap(AWS_INFRA_KIND_IDS, (kind) =>
+			Arr.map(AWS_INFRA_KINDS[kind].metrics, (m) => m.name),
 		)
 		expect(metricNames(sql).sort()).toEqual([...new Set(expected)].sort())
 	})

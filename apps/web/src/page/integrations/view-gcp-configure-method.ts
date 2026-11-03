@@ -28,6 +28,7 @@ import { runStatus } from "./view-gcp-configure-status"
 import { type ScriptFailure, SMALL } from "./view-gcp-parts"
 import { manualSteps, removalItem } from "./view-gcp-setup-methods"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `GcpMethodStage` and `GcpMethodApplyView`: how Google Cloud is set up, and the setup without the script.
 
@@ -90,62 +91,54 @@ const removalSection = (
 	const removal = gcpRemovalList(connector)
 	if (removal.length === 0) return []
 	// Parts Maple never saw working may not exist: listed, but there is nothing to confirm.
-	const confirmable = removal.some((item) => item.confirmed)
+	const confirmable = Arr.some(removal, (item) => item.confirmed)
 	return [
-		vstack(h, { gap: "3", as: "section" },
-			[
-				vstack(h, { gap: "0.5" },
+		vstack(h, { gap: "3", as: "section" }, [
+			vstack(h, { gap: "0.5" }, [
+				heading(h, { level: 3, variant: "subsection" }, [
+					isCode
+						? "If your file didn't create these, delete them in the console"
+						: confirmable
+							? "Delete these in the Google Cloud console"
+							: "If you created these, delete them in the console",
+				]),
+				h.p(
+					[h.Class(SMALL)],
 					[
-						heading(
-							h,
-							{ level: 3, variant: "subsection" },
-							[
-								isCode
-									? "If your file didn't create these, delete them in the console"
-									: confirmable
-										? "Delete these in the Google Cloud console"
-										: "If you created these, delete them in the console",
-							],
-						),
-						h.p(
-							[h.Class(SMALL)],
-							[
-								"In this order: Google keeps routing to the topic for a while.",
-								" ",
-								externalLink(h, `${MANUAL_DOCS}#removing`, "Details"),
-							],
-						),
+						"In this order: Google keeps routing to the topic for a while.",
+						" ",
+						externalLink(h, `${MANUAL_DOCS}#removing`, "Details"),
 					],
 				),
-				h.ol(
-					[h.Class("flex list-decimal flex-col gap-2 pl-5 text-xs/5")],
-					removal.map((item) => removalItem(h, model, item)),
-				),
-				...(confirmable
-					? [
-							h.div(
-								[h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-2")],
-								[
-									h.p(
-										[h.Class(SMALL)],
-										["Maple can't see a removal. Tell it once it is done."],
-									),
-									button(
-										h,
-										{
-											size: "sm",
-											variant: "outline",
-											isLoading: configure.isConfirmingRemoval,
-											attributes: [h.OnClick(Message.ClickedGcpConfirmRemoval())],
-										},
-										["I've removed them"],
-									),
-								],
-							),
-						]
-					: []),
-			],
-		),
+			]),
+			h.ol(
+				[h.Class("flex list-decimal flex-col gap-2 pl-5 text-xs/5")],
+				Arr.map(removal, (item) => removalItem(h, model, item)),
+			),
+			...(confirmable
+				? [
+						h.div(
+							[h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-2")],
+							[
+								h.p(
+									[h.Class(SMALL)],
+									["Maple can't see a removal. Tell it once it is done."],
+								),
+								button(
+									h,
+									{
+										size: "sm",
+										variant: "outline",
+										isLoading: configure.isConfirmingRemoval,
+										attributes: [h.OnClick(Message.ClickedGcpConfirmRemoval())],
+									},
+									["I've removed them"],
+								),
+							],
+						),
+					]
+				: []),
+		]),
 	]
 }
 
@@ -192,59 +185,47 @@ const codeBody = (
 	const config = state.setup === null ? null : isTerraform ? state.setup.terraform : state.setup.alchemy
 	const flavour = isTerraform ? "terraform" : "alchemy"
 	const removing = gcpRemovalList(connector).length > 0
-	return vstack(h, { gap: "3", as: "section" },
-		[
-			vstack(h, { gap: "0.5" },
-				[
-					heading(
-						h,
-						{ level: 3, variant: "subsection" },
-						[
-							isTerraform
-								? "Add this to your Terraform configuration"
-								: "Add this to your Alchemy app",
-						],
-					),
-					h.p(
-						[h.Class(SMALL)],
-						[
-							removing
-								? `Replace your earlier maple.${iac} with this version: applying it removes what that one created and this one no longer has.`
-								: `Same resources as the script. Nothing changes in Google Cloud until you ${isTerraform ? "apply" : "deploy"}.`,
-						],
-					),
-				],
-			),
-			fileCard(h, model, configure, {
-				name: `maple.${iac}`,
-				text: config,
-				failure: state.failure,
-				secret: false,
-				prompt:
-					state.plan === null || config === null
-						? null
-						: gcpAgentPrompt({ flavour, config, plan: state.plan, connector }),
-			}),
+	return vstack(h, { gap: "3", as: "section" }, [
+		vstack(h, { gap: "0.5" }, [
+			heading(h, { level: 3, variant: "subsection" }, [
+				isTerraform ? "Add this to your Terraform configuration" : "Add this to your Alchemy app",
+			]),
 			h.p(
 				[h.Class(SMALL)],
 				[
-					...(isTerraform
-						? ["Apply with ", mono(h, "terraform apply"), " ", ...runAs(h, connector)]
-						: [
-								"Deploy with the command in the file's header",
-								" ",
-								...runAs(h, connector),
-								...(connector.logs_enabled
-									? [" Fill in PROJECT_NUMBER at the top first."]
-									: []),
-							]),
-					" ",
-					externalLink(h, IAC_DOCS, "Details"),
+					removing
+						? `Replace your earlier maple.${iac} with this version: applying it removes what that one created and this one no longer has.`
+						: `Same resources as the script. Nothing changes in Google Cloud until you ${isTerraform ? "apply" : "deploy"}.`,
 				],
 			),
-			...removalSection(h, model, configure, connector, true),
-		],
-	)
+		]),
+		fileCard(h, model, configure, {
+			name: `maple.${iac}`,
+			text: config,
+			failure: state.failure,
+			secret: false,
+			prompt:
+				state.plan === null || config === null
+					? null
+					: gcpAgentPrompt({ flavour, config, plan: state.plan, connector }),
+		}),
+		h.p(
+			[h.Class(SMALL)],
+			[
+				...(isTerraform
+					? ["Apply with ", mono(h, "terraform apply"), " ", ...runAs(h, connector)]
+					: [
+							"Deploy with the command in the file's header",
+							" ",
+							...runAs(h, connector),
+							...(connector.logs_enabled ? [" Fill in PROJECT_NUMBER at the top first."] : []),
+						]),
+				" ",
+				externalLink(h, IAC_DOCS, "Details"),
+			],
+		),
+		...removalSection(h, model, configure, connector, true),
+	])
 }
 
 /** The console steps or the Terraform/Alchemy file, for a setup without the script. */

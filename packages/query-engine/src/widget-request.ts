@@ -21,6 +21,7 @@ import { interpolateWidgetParams, type VariableValues } from "./dashboard-variab
 import { interpolateTimeMacros } from "./dashboard-variables/time-macros"
 import { parseWarehouseDateTime, resolveTimeRangeWindow, type TimeRangeInput } from "./datetime"
 import { LIST_ENDPOINTS, MAX_LIST_RANGE_SECONDS } from "./limits"
+import { Array as Arr, String as Str } from "effect"
 
 export interface WidgetWindow {
 	readonly startTime: string
@@ -95,9 +96,9 @@ const QUERY_SET_ENDPOINTS = new Set([
 const CUSTOM_CHART_ENDPOINTS = new Set(["custom_timeseries", "custom_breakdown"])
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
-const isBlank = (value: unknown): boolean => typeof value !== "string" || value.trim() === ""
+const isBlank = (value: unknown): boolean => typeof value !== "string" || Str.trim(value) === ""
 
 /**
  * A metrics-source request that names no metric. Checked on the interpolated
@@ -107,8 +108,9 @@ const isBlank = (value: unknown): boolean => typeof value !== "string" || value.
 function isMetricNotSelected(endpoint: string, params: Record<string, unknown>): boolean {
 	if (QUERY_SET_ENDPOINTS.has(endpoint)) {
 		const queries = params.queries
-		if (!Array.isArray(queries)) return false
-		return queries.some(
+		if (!Arr.isArray(queries)) return false
+		return Arr.some(
+			queries,
 			(query) =>
 				isRecord(query) &&
 				query.dataSource === "metrics" &&

@@ -7,6 +7,7 @@
 
 import type { AiSessionGenAiValues, AiSessionSpan } from "@maple/domain/http"
 import { formatWarehouseDateTimeMs } from "@maple/query-engine"
+import { Array as Arr } from "effect"
 
 /** Session start, fixed so offsets in the tests read as seconds into the session. */
 export const T0 = Date.UTC(2026, 7, 19, 10, 0, 0)
@@ -110,7 +111,10 @@ interface OtelMessage {
 export function userMessages(...texts: readonly string[]): readonly OtelMessage[] {
 	return [
 		{ role: "system", parts: [{ type: "text", content: "you are a helpful agent" }] },
-		...texts.map((text): OtelMessage => ({ role: "user", parts: [{ type: "text", content: text }] })),
+		...Arr.map(texts, (text): OtelMessage => ({
+			role: "user",
+			parts: [{ type: "text", content: text }],
+		})),
 	]
 }
 
@@ -128,10 +132,10 @@ export function langGraphThreadSpans(prompts: readonly string[]): readonly AiSes
 		role: "assistant",
 		parts: [{ type: "text", content: `answer ${turn + 1}` }],
 	})
-	return prompts.flatMap((prompt, turn) => {
+	return Arr.flatMap(prompts, (prompt, turn) => {
 		const traceId = `trace-${turn + 1}`
 		const startMs = turn * 10_000
-		const history = prompts.slice(0, turn).flatMap((earlier, i) => [user(earlier), reply(i)])
+		const history = Arr.flatMap(prompts.slice(0, turn), (earlier, i) => [user(earlier), reply(i)])
 		return [
 			agentSpan({
 				spanId: `agent-${turn + 1}`,

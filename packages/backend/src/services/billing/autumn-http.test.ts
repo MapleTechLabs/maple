@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { BillingCustomer, BillingCustomerId, BillingUsage } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -79,7 +79,7 @@ const withFetch = async (
 		const text =
 			init?.body === undefined || init.body === null ? "" : await new Response(init.body).text()
 		captured = {
-			url: String(input),
+			url: String(input instanceof Request ? input.url : input),
 			method: String(init?.method),
 			headers: new Headers(init?.headers),
 			body: text.length === 0 ? undefined : JSON.parse(text),
@@ -265,7 +265,7 @@ describe("AutumnClient request construction", () => {
 	it("strips trailing slashes from the configured API url", async () => {
 		let url: string | undefined
 		const fetch = (async (input) => {
-			url = String(input)
+			url = String(input instanceof Request ? input.url : input)
 			return new Response("{}", { status: 200 })
 		}) as typeof globalThis.fetch
 
@@ -617,7 +617,7 @@ describe("classifyAutumn", () => {
 	] as const
 
 	for (const [status, tag] of cases) {
-		it(`maps HTTP ${status} to ${tag.split("/").pop()}`, async () => {
+		it(`maps HTTP ${status} to ${Str.split("/")(tag).pop()}`, async () => {
 			const error = await Effect.runPromise(Effect.flip(classifyAutumn(rejection(status))))
 			assert.strictEqual(error._tag, tag)
 		})
@@ -639,7 +639,7 @@ describe("classifyAutumn", () => {
 	})
 
 	it("collapses every classified 4xx back to 502 under ensureOk, keeping the status in the message", async () => {
-		for (const [status] of cases.filter(([code]) => code < 500 && code !== 401 && code !== 403)) {
+		for (const [status] of Arr.filter(cases, ([code]) => code < 500 && code !== 401 && code !== 403)) {
 			const error = await Effect.runPromise(Effect.flip(ensureOk(rejection(status))))
 			assert.strictEqual(error._tag, "@maple/http/errors/BillingUpstreamError")
 			assert.include(error.message, String(status))

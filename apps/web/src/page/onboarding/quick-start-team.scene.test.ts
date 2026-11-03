@@ -5,6 +5,7 @@ import { init, Message, type Model, update as updateWith } from "./quick-start"
 import { DEFAULT_QUICK_START_STATE } from "./quick-start-state"
 import { ready } from "./quick-start-team"
 import { teamStep } from "./quick-start-team-view"
+import { Array as Arr } from "effect"
 
 const update = (model: Model, message: Message) => updateWith(model, message, true)
 
@@ -47,7 +48,9 @@ describe("team and tools step", () => {
 			expectView(role("button", { name: "Continue" })).not.toBeDisabled(),
 		)
 		const next = update(atTeam(), Message.ClickedContinue({ step: "team" }))
-		expect((next.commands ?? []).map((command) => command.name)).toContain("LoadOnboardingLiveFindings")
+		expect(Arr.map(next.commands ?? [], (command) => command.name)).toContain(
+			"LoadOnboardingLiveFindings",
+		)
 		expect(next.model.live._tag).toBe("Loading")
 	})
 })

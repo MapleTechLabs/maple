@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Record as Rec } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
@@ -100,7 +100,7 @@ export type DisconnectProvider = keyof typeof SPECS
 export const disconnectSpec = (provider: DisconnectProvider): DisconnectSpec => SPECS[provider]
 
 /** The specs a shared `Disconnect` runs, keyed by the integration it was confirmed for. */
-export const DISCONNECTS: ReadonlyMap<string, DisconnectSpec> = new Map(Object.entries(SPECS))
+export const DISCONNECTS: ReadonlyMap<string, DisconnectSpec> = new Map(Rec.toEntries(SPECS))
 
 const mutation = (integration: string) =>
 	Effect.gen(function* () {

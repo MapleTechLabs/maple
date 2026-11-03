@@ -15,6 +15,7 @@ import {
 	postgresErrorType,
 	postgresSqlState,
 } from "./postgres-errors"
+import { String as Str } from "effect"
 
 /** A pg error the way node-postgres raises it: the class hangs off `code`. */
 const pgError = (code: string, message: string): Error => Object.assign(new Error(message), { code })
@@ -148,7 +149,7 @@ describe("postgresErrorType", () => {
 	})
 
 	it("caps the statement in the message and keeps it out of the diagnostic", () => {
-		const longQuery = `insert into "error_events" values ${"($1),".repeat(400)}`
+		const longQuery = `insert into "error_events" values ${Str.repeat(400)("($1),")}`
 		const error = toDatabaseError(
 			queryFailure(
 				longQuery,

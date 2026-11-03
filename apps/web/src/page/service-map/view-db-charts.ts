@@ -9,6 +9,7 @@ import { LATENCY_SERIES } from "@maple/views/charts/fixed-metric-series"
 import { resolveColor } from "@maple/views/charts/theme-colors"
 import { Message } from "./message"
 import type { DbSummary, Model } from "./model"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `DbQueryActivityChart`'s two plots: query volume (`QueryBuilderBarChart`) over latency
 // (`LatencyLineChart`), joined by the linked cursor.
@@ -18,7 +19,7 @@ type H = HtmlBuilder<Message>
 
 /** The colour tokens the two plots and their chrome read off the theme. */
 export const DB_CHART_TOKENS = [
-	...LATENCY_SERIES.map((entry) => entry.token),
+	...Arr.map(LATENCY_SERIES, (entry) => entry.token),
 	"--border",
 	"--background",
 	...BarChart.BAR_CHART_TOKENS,
@@ -42,11 +43,11 @@ export const queryActivityCharts = (
 ): Html => {
 	const theme = model.chartRuntime._tag === "Ready" ? model.themeColors : null
 	// One series named for what the bars are, so the tooltip reads "Queries".
-	const volumeRows = response.timeseries.map((point) => ({
+	const volumeRows = Arr.map(response.timeseries, (point) => ({
 		bucket: point.bucket,
 		Queries: Math.round(point.estimatedQueryCount || point.queryCount),
 	}))
-	const latencyRows = response.timeseries.map((point) => ({
+	const latencyRows = Arr.map(response.timeseries, (point) => ({
 		bucket: point.bucket,
 		p50LatencyMs: point.p50DurationMs,
 		p95LatencyMs: point.p95DurationMs,
@@ -96,8 +97,8 @@ export const queryActivityCharts = (
 										chart: "Latency",
 										rows: latencyRows,
 										colors: {
-											...Object.fromEntries(
-												LATENCY_SERIES.map((entry) => [
+											...Rec.fromEntries(
+												Arr.map(LATENCY_SERIES, (entry) => [
 													entry.key,
 													resolveColor(theme, entry.token),
 												]),

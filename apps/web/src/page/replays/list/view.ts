@@ -39,6 +39,7 @@ import { filtersRail } from "./view-filters"
 import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -47,50 +48,48 @@ const AUTO_LOAD_MIN_ROWS = 25
 const headerActions = (h: H, model: Model): Html => {
 	const facets = facetsOf(model)
 	const { search } = model
-	return hstack(h, { gap: "2", wrap: true },
-		[
-			...(facets === undefined
-				? []
-				: [
-						h.div(
-							[h.Class("hidden items-center gap-3 sm:flex")],
-							[
-								toolbarStat(h, {
-									value: formatNumber(facets.totalSessions),
-									label: "sessions",
-								}),
-								...(facets.liveSessions > 0
-									? [
-											toolbarStat(h, {
-												value: formatNumber(facets.liveSessions),
-												label: "live",
-												dot: "ok",
-											}),
-										]
-									: []),
-							],
-						),
-					]),
-			linkButton(
-				h,
-				{
-					variant: "outline",
-					size: "sm",
-					href: hrefOf(
-						AppRoute.Analytics({
-							search: {
-								startTime: search.startTime,
-								endTime: search.endTime,
-								timePreset: search.timePreset,
-							},
-						}),
+	return hstack(h, { gap: "2", wrap: true }, [
+		...(facets === undefined
+			? []
+			: [
+					h.div(
+						[h.Class("hidden items-center gap-3 sm:flex")],
+						[
+							toolbarStat(h, {
+								value: formatNumber(facets.totalSessions),
+								label: "sessions",
+							}),
+							...(facets.liveSessions > 0
+								? [
+										toolbarStat(h, {
+											value: formatNumber(facets.liveSessions),
+											label: "live",
+											dot: "ok",
+										}),
+									]
+								: []),
+						],
 					),
-					attributes: [h.AriaLabel("View web analytics")],
-				},
-				[icon(h, "ChartBarHorizontalIcon"), h.span([h.Class("hidden sm:inline")], ["Analytics"])],
-			),
-		],
-	)
+				]),
+		linkButton(
+			h,
+			{
+				variant: "outline",
+				size: "sm",
+				href: hrefOf(
+					AppRoute.Analytics({
+						search: {
+							startTime: search.startTime,
+							endTime: search.endTime,
+							timePreset: search.timePreset,
+						},
+					}),
+				),
+				attributes: [h.AriaLabel("View web analytics")],
+			},
+			[icon(h, "ChartBarHorizontalIcon"), h.span([h.Class("hidden sm:inline")], ["Analytics"])],
+		),
+	])
 }
 
 /** `ActiveUserFilter`: the banner over the list while a user or visitor filter is set. */
@@ -112,20 +111,19 @@ const activeUserFilter = (
 			h.div(
 				[h.Class("min-w-0 flex-1")],
 				[
-					hstack(h, { gap: "2", align: "baseline" },
-						[
-							typography(h, { size: "xs", tone: "muted" }, [config.label]),
-							truncatedText(h, {
-								text: config.userId,
-								mono: true,
-								tooltip: "none",
-								className: typographyClass({ size: "sm", weight: "medium" }),
-							}),
-						],
-					),
-					typography(h, { size: "xs", tone: "muted", numeric: true },
-						[countLabel(config.count, "session"), " loaded"],
-					),
+					hstack(h, { gap: "2", align: "baseline" }, [
+						typography(h, { size: "xs", tone: "muted" }, [config.label]),
+						truncatedText(h, {
+							text: config.userId,
+							mono: true,
+							tooltip: "none",
+							className: typographyClass({ size: "sm", weight: "medium" }),
+						}),
+					]),
+					typography(h, { size: "xs", tone: "muted", numeric: true }, [
+						countLabel(config.count, "session"),
+						" loaded",
+					]),
 				],
 			),
 			iconButton(
@@ -148,7 +146,7 @@ const listFooterParts = (
 ): ReadonlyArray<Html> => {
 	const hasMore = nextCursor(model) !== null
 	const { isFetching } = model.pagination
-	const hidesSessions = items.some((item) => item.kind === "quiet" && !item.expanded)
+	const hidesSessions = Arr.some(items, (item) => item.kind === "quiet" && !item.expanded)
 	const last = items.at(-1)
 	const endsInFoldedRun = last?.kind === "quiet" && !last.expanded
 	const isManual = hidesSessions && (items.length < AUTO_LOAD_MIN_ROWS || endsInFoldedRun)
@@ -165,7 +163,11 @@ const listFooterParts = (
 		...(hasMore
 			? [
 					isManual
-						? listFooter(h, { hasMore: true, isLoading: isFetching, onLoadMore: Message.ClickedLoadMore() })
+						? listFooter(h, {
+								hasMore: true,
+								isLoading: isFetching,
+								onLoadMore: Message.ClickedLoadMore(),
+							})
 						: h.div(
 								[
 									h.Key(listEndKey(model)),
@@ -265,9 +267,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		{
 			title: "Replays",
 			filters: filtersRail(h, model),
-			actions: hstack(h, { gap: "2", wrap: true },
-				[headerActions(h, model), timeCluster],
-			),
+			actions: hstack(h, { gap: "2", wrap: true }, [headerActions(h, model), timeCluster]),
 			sticky: replaysToolbar(h, {
 				query: model.query,
 				onInput: (value) => Message.ChangedQuery({ value }),

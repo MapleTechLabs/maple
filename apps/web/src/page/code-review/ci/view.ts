@@ -1,6 +1,6 @@
 import type { CodeReviewCiAnalytics } from "@maple/domain/http"
 import { CI_RESULT_LABELS } from "../../../components/code-review/ci/ci-format"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
@@ -33,12 +33,15 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
-const THEME_TOKENS = [...seriesTokens([...Object.values(RESULT_SERIES), "p50", "p95"]), ...AREA_CHART_TOKENS]
+const THEME_TOKENS = [...seriesTokens([...Rec.values(RESULT_SERIES), "p50", "p95"]), ...AREA_CHART_TOKENS]
 
-const RESULT_ENTRIES: ReadonlyArray<SelectEntry> = Object.entries({
-	all: "All results",
-	...CI_RESULT_LABELS,
-}).map(([value, label]) => ({ _tag: "Item", item: { value, label } }))
+const RESULT_ENTRIES: ReadonlyArray<SelectEntry> = Arr.map(
+	Rec.toEntries({
+		all: "All results",
+		...CI_RESULT_LABELS,
+	}),
+	([value, label]) => ({ _tag: "Item", item: { value, label } }),
+)
 
 /** The on-ramp for an org without CI traces. */
 const noCiRuns = (h: H): Html =>
@@ -65,76 +68,64 @@ const noCiRuns = (h: H): Html =>
 	)
 
 const runsActions = (h: H, model: Model): Html =>
-	hstack(h, { gap: "2", wrap: true },
-		[
-			...(model.search.branch
-				? [
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "sm",
-								attributes: [
-									h.OnClick(Message.ClickedClearBranch()),
-									h.AriaLabel(`Clear branch ${model.search.branch}`),
-								],
-							},
-							[
-								h.span([h.Class("max-w-40 truncate font-mono")], [model.search.branch]),
-								icon(h, "XmarkIcon"),
+	hstack(h, { gap: "2", wrap: true }, [
+		...(model.search.branch
+			? [
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "sm",
+							attributes: [
+								h.OnClick(Message.ClickedClearBranch()),
+								h.AriaLabel(`Clear branch ${model.search.branch}`),
 							],
-						),
-					]
-				: []),
-			h.submodel({
-				slotId: model.resultSelect.id,
-				model: model.resultSelect,
-				view: selectView,
-				toParentMessage: (message: Select.Message) => Message.GotResultSelectMessage({ message }),
-				viewInputs: {
-					entries: RESULT_ENTRIES,
-					size: "sm",
-					ariaLabel: "Result",
-					className: "w-36",
-					toView: (parts) => h.div([h.Class("contents")], parts),
-				},
-			}),
-		],
-	)
+						},
+						[
+							h.span([h.Class("max-w-40 truncate font-mono")], [model.search.branch]),
+							icon(h, "XmarkIcon"),
+						],
+					),
+				]
+			: []),
+		h.submodel({
+			slotId: model.resultSelect.id,
+			model: model.resultSelect,
+			view: selectView,
+			toParentMessage: (message: Select.Message) => Message.GotResultSelectMessage({ message }),
+			viewInputs: {
+				entries: RESULT_ENTRIES,
+				size: "sm",
+				ariaLabel: "Result",
+				className: "w-36",
+				toView: (parts) => h.div([h.Class("contents")], parts),
+			},
+		}),
+	])
 
 const analyticsView = (h: H, model: Model, analytics: CodeReviewCiAnalytics, timeZone: string): Html => {
 	const windowLabel =
 		model.search.startTime !== undefined
-				? "period"
-				: presetSpanLabel(model.search.timePreset ?? DEFAULT_PRESET)
+			? "period"
+			: presetSpanLabel(model.search.timePreset ?? DEFAULT_PRESET)
 	const theme = model.themeColors
 	const time = { nowMs: model.frame.nowMs, timeZone }
 	if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return ciSkeleton(h)
-	return vstack(h, { gap: "6" },
-		[
-			vstack(h, { gap: "6" },
-				[
-					headlineStrip(h, analytics.current, analytics.previous, windowLabel),
-					chartsRow(h, model, analytics, { theme, ...time }),
-					workflowsTable(h, analytics.pipelines, model.search.pipeline, time),
-					jobsTable(h, analytics.jobs),
-				],
-			),
-			vstack(h, { gap: "3", as: "section" },
-				[
-					hstack(h, { justify: "between", wrap: true, className: "gap-x-3 gap-y-2" },
-						[sectionHeading(h, { title: "Runs" }), runsActions(h, model)],
-					),
-					runsList(
-						h,
-						model,
-						time,
-						model.search.branch !== undefined || model.search.result !== undefined,
-					),
-				],
-			),
-		],
-	)
+	return vstack(h, { gap: "6" }, [
+		vstack(h, { gap: "6" }, [
+			headlineStrip(h, analytics.current, analytics.previous, windowLabel),
+			chartsRow(h, model, analytics, { theme, ...time }),
+			workflowsTable(h, analytics.pipelines, model.search.pipeline, time),
+			jobsTable(h, analytics.jobs),
+		]),
+		vstack(h, { gap: "3", as: "section" }, [
+			hstack(h, { justify: "between", wrap: true, className: "gap-x-3 gap-y-2" }, [
+				sectionHeading(h, { title: "Runs" }),
+				runsActions(h, model),
+			]),
+			runsList(h, model, time, model.search.branch !== undefined || model.search.result !== undefined),
+		]),
+	])
 }
 
 const ciTracesOn = (model: Model) =>
@@ -169,7 +160,9 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 				[
 					emptyHeader(h, [
 						emptyTitle(h, ["No CI runs in this window"]),
-						emptyDescription(h, ["No GitHub Actions run finished in this window. Widen the window."]),
+						emptyDescription(h, [
+							"No GitHub Actions run finished in this window. Widen the window.",
+						]),
 					]),
 				],
 				emptyFrameClass("dashed"),
@@ -180,7 +173,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 const pipelinesOf = (model: Model): ReadonlyArray<string> =>
 	Option.match(AsyncData.getData(model.pipelines.data), {
 		onNone: () => [],
-		onSome: (analytics) => [...new Set(analytics.pipelines.map((row) => row.pipeline))].toSorted(),
+		onSome: (analytics) => [...new Set(Arr.map(analytics.pipelines, (row) => row.pipeline))].toSorted(),
 	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {

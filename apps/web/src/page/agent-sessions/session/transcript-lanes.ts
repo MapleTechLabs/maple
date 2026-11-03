@@ -17,6 +17,7 @@ import { REST_LOAD_FAILURE } from "./view-load"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { fillRule } from "@maple/views/ui/rule"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The transcript's structure: agent lanes, parallel markers, capture notes and dividers.
 
@@ -164,7 +165,10 @@ export const parallelMarker = (
 	row(h, { depth: marker.depth, className: "pt-4", isFlush: true }, [
 		parallelRule(
 			h,
-			`${marker.lanes.map((lane) => lane.agentName).join(" and ")} ran in parallel`,
+			`${Arr.join(
+				Arr.map(marker.lanes, (lane) => lane.agentName),
+				" and ",
+			)} ran in parallel`,
 			overlapWindow(marker, timeZone),
 		),
 	])

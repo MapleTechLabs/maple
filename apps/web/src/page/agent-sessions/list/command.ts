@@ -6,7 +6,7 @@ import {
 	listAiSessions,
 } from "@maple/web-data/warehouse/ai-sessions"
 import { getAiToolBreakdowns, getAiToolTotals } from "@maple/web-data/warehouse/ai-session-tools"
-import { Clock, Duration, Effect, Option, Queue, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
@@ -82,9 +82,9 @@ export const FetchDetails = Command.define("FetchAgentSessionDetails", {
 	execute: ({ detailsKey, search, window, rows }) =>
 		getAiSessionDetails({
 			data: {
-				startTime: rows.map((row) => row.startTime).reduce((a, b) => (a < b ? a : b)),
-				endTime: rows.map((row) => row.endTime).reduce((a, b) => (a < b ? b : a)),
-				sessionIds: rows.map((row) => row.sessionId),
+				startTime: Arr.map(rows, (row) => row.startTime).reduce((a, b) => (a < b ? a : b)),
+				endTime: Arr.map(rows, (row) => row.endTime).reduce((a, b) => (a < b ? b : a)),
+				sessionIds: Arr.map(rows, (row) => row.sessionId),
 				...countedFilters(filterInputs(search, window)),
 			},
 		}).pipe(
@@ -93,7 +93,7 @@ export const FetchDetails = Command.define("FetchAgentSessionDetails", {
 			Effect.map((result) =>
 				Message.CompletedFetchDetails({
 					detailsKey,
-					sessionIds: rows.map((row) => row.sessionId),
+					sessionIds: Arr.map(rows, (row) => row.sessionId),
 					result,
 				}),
 			),

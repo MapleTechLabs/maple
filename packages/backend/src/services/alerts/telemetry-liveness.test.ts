@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { OrgId } from "@maple/domain/http"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { compiledQueryOf } from "@maple/query-engine/execution"
@@ -200,9 +200,9 @@ describe("probeLiveness prior-day baseline", () => {
 				Effect.gen(function* () {
 					const query = compiledQueryOf(compiled)
 					// Peak at onset, a quiet night now, and the same quiet night yesterday.
-					const spanCount = query.sql.includes(formatWarehouseDateTime(baselineStartMs))
+					const spanCount = Str.includes(formatWarehouseDateTime(baselineStartMs))(query.sql)
 						? 172
-						: query.sql.includes(formatWarehouseDateTime(priorDayBaselineStartMs))
+						: Str.includes(formatWarehouseDateTime(priorDayBaselineStartMs))(query.sql)
 							? 22
 							: 19
 					return yield* query.decodeFirstRow([row(spanCount)]).pipe(Effect.orDie)
@@ -258,8 +258,8 @@ describe("probeLiveness environment scoping", () => {
 				Effect.gen(function* () {
 					const query = compiledQueryOf(compiled)
 					observedSql.push(query.sql)
-					const isBaseline = query.sql.includes(formatWarehouseDateTime(baselineStartMs))
-					const productionScoped = query.sql.includes("DeploymentEnv = 'production'")
+					const isBaseline = Str.includes(formatWarehouseDateTime(baselineStartMs))(query.sql)
+					const productionScoped = Str.includes("DeploymentEnv = 'production'")(query.sql)
 					// Production went dark in the verification window; staging keeps
 					// the UNSCOPED totals healthy in both windows.
 					const spanCount = productionScoped ? (isBaseline ? 1000 : 0) : isBaseline ? 2000 : 1800
@@ -280,7 +280,7 @@ describe("probeLiveness environment scoping", () => {
 			}),
 		)
 
-		expect(observedSql.some((sql) => sql.includes("DeploymentEnv = 'production'"))).toBe(true)
+		expect(Arr.some(observedSql, (sql) => Str.includes("DeploymentEnv = 'production'")(sql))).toBe(true)
 		expect(verdict.dataFlowing).toBe(false)
 		expect(verdict.reason).toBe("no_data")
 	})

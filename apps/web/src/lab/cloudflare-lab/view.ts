@@ -13,6 +13,7 @@ import type * as Shell from "../../shell"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { listFrame } from "./fixture"
 import { LAB_PAGES, Message, type Model, PAGE_LABEL } from "./model"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -95,7 +96,7 @@ export const toolbar = (model: Model, h: H): Html =>
 			segmentedSelect(h, {
 				size: "xs",
 				ariaLabel: "Lab page",
-				options: LAB_PAGES.map((value) => ({ value, label: PAGE_LABEL[value] })),
+				options: Arr.map(LAB_PAGES, (value) => ({ value, label: PAGE_LABEL[value] })),
 				value: model.page,
 				onChange: (page) => Message.ClickedLabPage({ page }),
 			}),

@@ -1,4 +1,4 @@
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { confirmedRecord, needsValidationRecord, plannedUnit } from "./__fixtures__/records"
 import { coverageId, safeCoverageId, validateFindings, validateLedger } from "./validators"
@@ -23,7 +23,7 @@ describe("coverageId", () => {
 			attack_class: "c",
 			lifecycle: "on delete",
 		})
-		expect(id.endsWith("::on%20delete")).toBe(true)
+		expect(Str.endsWith("::on%20delete")(id)).toBe(true)
 	})
 })
 
@@ -59,7 +59,7 @@ describe("validateFindings", () => {
 		const findings = await Effect.runPromise(
 			validateFindings([{ ...needsValidationRecord, fingerprint: "keys/other" }, confirmedRecord]),
 		)
-		expect(findings.map((f) => f.verdict)).toEqual(["needs_validation", "confirmed"])
+		expect(Arr.map(findings, (f) => f.verdict)).toEqual(["needs_validation", "confirmed"])
 	})
 
 	it("rejects findings out of fingerprint order", async () => {

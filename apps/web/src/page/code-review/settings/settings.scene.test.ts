@@ -1,5 +1,5 @@
 import { GithubPrReviewSettingsResponse, PrReviewRepositoryConfig, VcsRepositoryId } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -57,9 +57,10 @@ describe("code review settings", () => {
 		const settingsArgs = (result: {
 			readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }>
 		}) =>
-			(result.commands ?? [])
-				.filter((command) => command.name === "SaveCodeReviewSettings")
-				.map((command) => command.args)
+			Arr.map(
+				Arr.filter(result.commands ?? [], (command) => command.name === "SaveCodeReviewSettings"),
+				(command) => command.args,
+			)
 		const picked = pageUpdate(
 			loaded().model,
 			Message.GotModelSelectMessage({
@@ -147,9 +148,10 @@ describe("code review settings", () => {
 		const saves = (result: {
 			readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }>
 		}) =>
-			(result.commands ?? [])
-				.filter((command) => command.name === "SaveCodeReviewSettings")
-				.map((command) => command.args)
+			Arr.map(
+				Arr.filter(result.commands ?? [], (command) => command.name === "SaveCodeReviewSettings"),
+				(command) => command.args,
+			)
 		const form = (model: Model, message: RulesForm.Message) =>
 			pageUpdate(model, Message.GotDefaultsFormMessage({ message }))
 		const typed = (model: Model, value: string) =>

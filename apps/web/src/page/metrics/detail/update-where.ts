@@ -1,4 +1,4 @@
-import { Option, type Result } from "effect"
+import { Option, type Result, Array as Arr } from "effect"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -27,7 +27,7 @@ type Cmd = Command.Command<Message, never, Resources>
 export const scopedKeysOf = (model: Model): ReadonlyArray<string> =>
 	Option.match(AsyncData.getData(model.attributeKeys.data), {
 		onNone: () => [],
-		onSome: (rows) => rows.map((row) => row.attributeKey),
+		onSome: (rows) => Arr.map(rows, (row) => row.attributeKey),
 	})
 
 export const whereAutocompleteOf = (model: Model) =>
@@ -71,7 +71,10 @@ const synced = (
 	summary: CatalogSummary | null,
 ): Return =>
 	withActiveKey(
-		{ ...model, whereEditor: { ...model.whereEditor, cursor, anchor, isDismissed: false, activeIndex: 0 } },
+		{
+			...model,
+			whereEditor: { ...model.whereEditor, cursor, anchor, isDismissed: false, activeIndex: 0 },
+		},
 		activeKeyAt(model.whereInput, cursor),
 		context,
 		summary,

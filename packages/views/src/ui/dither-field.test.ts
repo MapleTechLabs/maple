@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { ditherLevel, fieldAt } from "./dither-field"
+import { Array as Arr } from "effect"
 
 const litShare = (reach: number, seconds = 0): number => {
 	const size = 64
@@ -8,7 +9,7 @@ const litShare = (reach: number, seconds = 0): number => {
 		const row = Math.floor(index / size)
 		return ditherLevel(column, row, fieldAt(column / size, row / size, seconds, reach))
 	})
-	return cells.filter((level) => level > 0).length / cells.length
+	return Arr.filter(cells, (level) => level > 0).length / cells.length
 }
 
 describe("dither field", () => {
@@ -19,14 +20,14 @@ describe("dither field", () => {
 				const row = top + Math.floor(index / 8)
 				return ditherLevel(column, row, fieldAt(column / 64, row / 64, 0, 0.55))
 			})
-			return levels.filter((level) => level > 0).length / levels.length
+			return Arr.filter(levels, (level) => level > 0).length / levels.length
 		}
 		expect(blockShare(0, 56)).toBeGreaterThan(0.8)
 		expect(blockShare(56, 0)).toBe(0)
 	})
 
 	test("a further reach lights more of the field, as each onboarding step does", () => {
-		const shares = [0.55, 0.75, 0.95, 1.2].map((reach) => litShare(reach))
+		const shares = Arr.map([0.55, 0.75, 0.95, 1.2], (reach) => litShare(reach))
 		expect(shares).toEqual([...shares].sort((a, b) => a - b))
 		expect(shares[0]).toBeLessThan(0.35)
 		expect(shares[3]).toBeGreaterThan(shares[0] + 0.2)

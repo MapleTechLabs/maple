@@ -5,6 +5,7 @@ import { formatExactCount } from "@maple/views/lib/locale"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { delta, relativeChange } from "@maple/views/ui/delta"
 import { statRail, statRailItem } from "../../kit/stat-rail"
+import { Array as Arr } from "effect"
 
 // `HeadlineStrip` and `SecondaryStats`.
 
@@ -130,7 +131,7 @@ export const secondaryStats = <M>(h: HtmlBuilder<M>, current: CodeReviewTotals):
 	statRail(
 		h,
 		{ columns: 4, className: "xl:grid-cols-7" },
-		secondaryStatList(current).map((stat) =>
+		Arr.map(secondaryStatList(current), (stat) =>
 			h.div(
 				[h.Key(stat.label), ...(stat.hint === undefined ? [] : [h.Title(stat.hint)])],
 				[

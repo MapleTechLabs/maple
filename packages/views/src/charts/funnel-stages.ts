@@ -1,10 +1,12 @@
 import {
 	asFiniteNumber,
 	type BreakdownRow,
+	cellText,
 	pickValueField,
 	toBreakdownRows,
 } from "@maple/ui/components/charts/_shared/breakdown-rows"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
+import { Array as Arr, String as Str } from "effect"
 
 // The stage derivation of `FunnelBarsChart` (packages/ui/src/components/charts/funnel/
 // query-builder-funnel-chart.tsx): rows folded into stages, grouped rows into one bar per group.
@@ -39,11 +41,11 @@ type GroupedStage = BreakdownRow & { readonly byGroup: ReadonlyMap<string, numbe
 const isGroupedRow = (row: Row): boolean => typeof row.group === "string"
 
 const toGroupedStages = (source: ReadonlyArray<Row>, valueField: string) => {
-	const groups = [...new Set(source.map((row) => String(row.group)))]
+	const groups = [...new Set(Arr.map(source, (row) => String(row.group)))]
 	const order: Array<string> = []
 	const byName = new Map<string, { unnamed: boolean; value: number; byGroup: Map<string, number> }>()
-	source.forEach((row) => {
-		const raw = row.name === null || row.name === undefined ? "" : String(row.name).trim()
+	Arr.forEach(source, (row) => {
+		const raw = Str.trim(cellText(row.name))
 		const name = raw === "" ? "(no value)" : raw
 		const existing = byName.get(name)
 		const stage = existing ?? { unnamed: raw === "", value: 0, byGroup: new Map<string, number>() }
@@ -56,7 +58,7 @@ const toGroupedStages = (source: ReadonlyArray<Row>, valueField: string) => {
 		stage.byGroup.set(group, (stage.byGroup.get(group) ?? 0) + value)
 		stage.value += value
 	})
-	const stages: ReadonlyArray<GroupedStage> = order.flatMap((name) => {
+	const stages: ReadonlyArray<GroupedStage> = Arr.flatMap(order, (name) => {
 		const stage = byName.get(name)
 		return stage === undefined ? [] : [{ name, ...stage }]
 	})
@@ -71,17 +73,16 @@ export type FunnelStages = Readonly<{
 const groupedFunnel = (source: ReadonlyArray<Row>, valueField: string): FunnelStages => {
 	const { stages: folded, groups } = toGroupedStages(source, valueField)
 	const rows = dropTrailingZeroRows(folded)
-	const max = rows.reduce((acc, r) => Math.max(acc, r.value), 0)
+	const max = Arr.reduce(rows, 0, (acc, r) => Math.max(acc, r.value))
 	const first = rows[0]
 	if (max <= 0 || first === undefined) return { stages: [], legend: [] }
-	const groupMax = rows.reduce(
-		(acc, r) => Math.max(acc, ...groups.map((group) => r.byGroup.get(group) ?? 0)),
-		0,
+	const groupMax = Arr.reduce(rows, 0, (acc, r) =>
+		Math.max(acc, ...Arr.map(groups, (group) => r.byGroup.get(group) ?? 0)),
 	)
 	const colors = resolveSeriesColors(groups)
 	return {
-		legend: groups.map((name) => ({ name, color: colors.get(name) ?? "" })),
-		stages: rows.map((row, idx): Stage => {
+		legend: Arr.map(groups, (name) => ({ name, color: colors.get(name) ?? "" })),
+		stages: Arr.map(rows, (row, idx): Stage => {
 			const prev = rows[idx - 1]?.value
 			return {
 				name: row.name,
@@ -91,7 +92,7 @@ const groupedFunnel = (source: ReadonlyArray<Row>, valueField: string): FunnelSt
 				widthPct: Math.max(BAR_MIN_PCT, row.value / max),
 				pctOfFirst: first.value > 0 ? row.value / first.value : 0,
 				pctOfPrev: idx === 0 || prev === undefined || prev <= 0 ? null : row.value / prev,
-				groups: groups.map((group): StageGroup => {
+				groups: Arr.map(groups, (group): StageGroup => {
 					const value = row.byGroup.get(group) ?? 0
 					const groupFirst = first.byGroup.get(group) ?? 0
 					return {
@@ -110,16 +111,16 @@ const groupedFunnel = (source: ReadonlyArray<Row>, valueField: string): FunnelSt
 /** The `stages` / `legend` memo. */
 export const funnelStages = (source: ReadonlyArray<Row>): FunnelStages => {
 	const valueField = pickValueField(source)
-	const grouped = source.filter(isGroupedRow)
+	const grouped = Arr.filter(source, isGroupedRow)
 	if (grouped.length > 0 && grouped.length === source.length) return groupedFunnel(grouped, valueField)
 	const rows = dropTrailingZeroRows(toBreakdownRows(source, valueField))
-	const max = rows.reduce((acc, r) => Math.max(acc, r.value), 0)
+	const max = Arr.reduce(rows, 0, (acc, r) => Math.max(acc, r.value))
 	const first = rows[0]?.value ?? 0
 	if (max <= 0) return { stages: [], legend: [] }
-	const colors = resolveSeriesColors(rows.map((row) => row.name))
+	const colors = resolveSeriesColors(Arr.map(rows, (row) => row.name))
 	return {
 		legend: [],
-		stages: rows.map((row, idx): Stage => {
+		stages: Arr.map(rows, (row, idx): Stage => {
 			const prev = rows[idx - 1]?.value
 			return {
 				...row,

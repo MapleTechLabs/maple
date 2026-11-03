@@ -5,7 +5,7 @@ import {
 	isDatasourceDefinition,
 } from "@maple-dev/effect-orm/tinybird"
 import * as Datasources from "@maple/domain/tinybird"
-import { Array as Arr, Order } from "effect"
+import { Array as Arr, Order, Record as Rec, String as Str } from "effect"
 
 // Live introspection of the `defineDatasource` exports in
 // packages/domain/src/tinybird/datasources.ts. This neutral catalog powers
@@ -203,9 +203,9 @@ const TABLE_NAME_ALIASES: ReadonlyMap<string, ReadonlyArray<string>> = new Map([
 
 /** Real tables an unknown table name most likely meant, best first; empty when nothing fits. */
 export function suggestWarehouseTables(name: string): ReadonlyArray<string> {
-	const known = new Set(listWarehouseTables().map((t) => t.name))
-	const bare = name.replace(/[`"]/g, "").split(".").at(-1)?.toLowerCase() ?? ""
-	for (const candidate of [bare, bare.replace(/^otel_/, "")]) {
+	const known = new Set(Arr.map(listWarehouseTables(), (t) => t.name))
+	const bare = Str.split(".")(Str.replace(/[`"]/g, "")(name)).at(-1)?.toLowerCase() ?? ""
+	for (const candidate of [bare, Str.replace(/^otel_/, "")(bare)]) {
 		if (known.has(candidate)) return [candidate]
 		const aliased = TABLE_NAME_ALIASES.get(candidate)?.filter((t) => known.has(t))
 		if (aliased !== undefined && aliased.length > 0) return aliased
@@ -234,23 +234,22 @@ function collectDatasources() {
 	// functions, and constant lookup tables. `isDatasourceDefinition` is the
 	// runtime filter; we cast to `unknown` first because the static union of all
 	// exports is too wide for TS to narrow with the predicate.
-	return (Object.values(Datasources) as ReadonlyArray<unknown>)
-		.filter(isDatasourceDefinition)
-		.filter((ds) => !RAW_SQL_HIDDEN_DATASOURCES.has(ds._name))
+	return Arr.filter(
+		Arr.filter(Rec.values(Datasources) as ReadonlyArray<unknown>, isDatasourceDefinition),
+		(ds) => !RAW_SQL_HIDDEN_DATASOURCES.has(ds._name),
+	)
 }
 
 export function listWarehouseTables(): ReadonlyArray<TableSummary> {
-	return collectDatasources()
-		.map((ds) => {
-			const timeColumn = timeColumnOf(Object.keys(ds._schema))
-			return {
-				name: ds._name,
-				description: ds.options.description,
-				columnCount: Object.keys(ds._schema).length,
-				...(timeColumn === undefined ? undefined : { timeColumn }),
-			}
-		})
-		.sort((a, b) => a.name.localeCompare(b.name))
+	return Arr.map(collectDatasources(), (ds) => {
+		const timeColumn = timeColumnOf(Rec.keys(ds._schema))
+		return {
+			name: ds._name,
+			description: ds.options.description,
+			columnCount: Rec.keys(ds._schema).length,
+			...(timeColumn === undefined ? undefined : { timeColumn }),
+		}
+	}).sort((a, b) => Str.localeCompare(b.name)(a.name))
 }
 
 /**
@@ -263,9 +262,10 @@ export function listWarehouseTables(): ReadonlyArray<TableSummary> {
 export function listOrgScopedDatasourceNames(): ReadonlyArray<string> {
 	// Code-unit order: `localeCompare` builds an ICU collator on first use, a cold-start cost.
 	return Arr.sort(
-		collectDatasources()
-			.filter((ds) => "OrgId" in ds._schema)
-			.map((ds) => ds._name),
+		Arr.map(
+			Arr.filter(collectDatasources(), (ds) => "OrgId" in ds._schema),
+			(ds) => ds._name,
+		),
 		Order.String,
 	)
 }
@@ -274,7 +274,7 @@ export function describeWarehouseTable(name: string): TableInfo | null {
 	const ds = collectDatasources().find((d) => d._name === name)
 	if (!ds) return null
 
-	const columns: ColumnInfo[] = Object.entries(ds._schema).map(([colName, colDef]) => {
+	const columns: ColumnInfo[] = Arr.map(Rec.toEntries(ds._schema), ([colName, colDef]) => {
 		const validator = getColumnType(colDef)
 		const type = getTinybirdType(validator)
 		const jsonPath = getColumnJsonPath(colDef)
@@ -283,7 +283,7 @@ export function describeWarehouseTable(name: string): TableInfo | null {
 
 	const engine = ds.options.engine
 	const keys = engine === undefined || engine.type === "Null" ? undefined : engine
-	const timeColumn = timeColumnOf(columns.map((c) => c.name))
+	const timeColumn = timeColumnOf(Arr.map(columns, (c) => c.name))
 	const engineNote = engine?.type === undefined ? undefined : ENGINE_NOTES.get(engine.type)
 	const notes = [
 		...(timeColumn === undefined

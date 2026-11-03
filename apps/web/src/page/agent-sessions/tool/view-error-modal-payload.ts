@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { formatBytes, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import {
@@ -185,7 +185,7 @@ const argumentsBlock = (
 								"flex flex-col overflow-x-auto rounded-md border border-border bg-sidebar py-3 font-mono text-xs leading-[18px]",
 							),
 						],
-						lines.map((line) => payloadLineView(h, line)),
+						Arr.map(lines, (line) => payloadLineView(h, line)),
 					),
 			h.div(
 				[h.Class("flex items-center gap-2.5 font-mono text-2xs leading-3.5 text-foreground-subtle")],
@@ -267,7 +267,9 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 								h.span(
 									[h.Class("text-xs leading-4 text-foreground-soft")],
 									[
-										typography(h, { tone: "foreground", weight: "medium" }, [hint.subject]),
+										typography(h, { tone: "foreground", weight: "medium" }, [
+											hint.subject,
+										]),
 										" ",
 										hint.text,
 									],
@@ -285,20 +287,18 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 							],
 							[
 								statusDot(h, { tone: "custom", className: "mt-[5px] bg-muted-foreground" }),
-								vstack(h, { gap: "1", as: "span" },
-									[
-										h.span(
-											[h.Class("text-xs leading-4 text-foreground")],
-											["The tool reported no error detail"],
-										),
-										h.span(
-											[h.Class("text-xs leading-[17px] text-muted-foreground")],
-											[
-												"This call recorded no arguments and no result, so the cause of the failure isn't in the telemetry. The message above is all the span carries.",
-											],
-										),
-									],
-								),
+								vstack(h, { gap: "1", as: "span" }, [
+									h.span(
+										[h.Class("text-xs leading-4 text-foreground")],
+										["The tool reported no error detail"],
+									),
+									h.span(
+										[h.Class("text-xs leading-[17px] text-muted-foreground")],
+										[
+											"This call recorded no arguments and no result, so the cause of the failure isn't in the telemetry. The message above is all the span carries.",
+										],
+									),
+								]),
 							],
 						),
 					]

@@ -1,6 +1,6 @@
 import { CH } from "@maple/query-engine"
 import { LogSource, type LogsRequest, type TraceSpans } from "@maple/views/logs/log-source"
-import { Clock, Effect, Layer, Option } from "effect"
+import { Clock, Effect, Layer, Option, Array as Arr } from "effect"
 import { HttpClient } from "effect/http"
 import { readCached, recordCached } from "./cached"
 import { LocalQueryCache } from "./query-cache"
@@ -24,9 +24,12 @@ const fetchLogs = (request: LogsRequest, apiBase: string) => {
 		order: request.order,
 		resourceAttributeFilters: request.resourceAttributeFilters,
 	})
-	const bounds = { startTime: request.startTime ?? widest.startTime, endTime: request.endTime ?? widest.endTime }
+	const bounds = {
+		startTime: request.startTime ?? widest.startTime,
+		endTime: request.endTime ?? widest.endTime,
+	}
 	return Effect.map(queryRows(CH.compile(query, localParams(bounds)), apiBase), (rows) =>
-		rows.map((row) => toLogRecord(normalizeLog(row))),
+		Arr.map(rows, (row) => toLogRecord(normalizeLog(row))),
 	)
 }
 
@@ -44,7 +47,7 @@ const fetchTraceSpans = (traceId: string, apiBase: string) =>
 			onNone: (): TraceSpans => ({ traceStartTime: null, spanNames: [] }),
 			onSome: (found): TraceSpans => ({
 				traceStartTime: found.traceStartTime ?? null,
-				spanNames: found.spans.map((span) => ({ spanId: span.spanId, spanName: span.spanName })),
+				spanNames: Arr.map(found.spans, (span) => ({ spanId: span.spanId, spanName: span.spanName })),
 			}),
 		})
 	})
@@ -56,7 +59,8 @@ export const LogSourceLocal = Layer.effect(
 		const cache = yield* LocalQueryCache
 		const { apiBase } = yield* readLocalEnv
 		return LogSource.of({
-			listLogs: (request) => fetchLogs(request, apiBase).pipe(Effect.provideService(HttpClient.HttpClient, http)),
+			listLogs: (request) =>
+				fetchLogs(request, apiBase).pipe(Effect.provideService(HttpClient.HttpClient, http)),
 			traceSpans: ({ traceId }) =>
 				fetchTraceSpans(traceId, apiBase).pipe(
 					Effect.provideService(HttpClient.HttpClient, http),

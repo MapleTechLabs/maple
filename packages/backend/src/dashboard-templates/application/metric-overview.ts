@@ -12,6 +12,7 @@ import {
 import type { TemplateDefinition, WidgetDef } from "@maple/backend/dashboard-templates/types"
 import { type QueryBuilderMetricType, toQueryBuilderMetricType } from "@maple/query-model"
 import { makeRouteDataSource } from "@maple/widgets/dashboard"
+import { String as Str } from "effect"
 
 function widgets(opts: {
 	metricName: string
@@ -106,7 +107,7 @@ function widgets(opts: {
 				title: "By Service",
 				columns: [
 					{ field: "name", header: "Service" },
-					{ field: "value", header: agg.charAt(0).toUpperCase() + agg.slice(1) },
+					{ field: "value", header: Str.toUpperCase(agg.charAt(0)) + Str.slice(1)(agg) },
 				],
 			},
 			layout: { x: 0, y: 8, w: 12, h: 4 },

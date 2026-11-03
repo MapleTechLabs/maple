@@ -12,6 +12,7 @@ import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clic
 import { SESSION_QUALITY_TAGS, SESSION_TAG_THRESHOLDS, type SessionTag } from "@maple/domain/query-engine"
 import { SessionReplays } from "../tables"
 import { isBotCond } from "../user-agent"
+import { Array as Arr } from "effect"
 
 type ReplaysAccessor = ColumnAccessor<typeof SessionReplays.columns>
 type ReplaysWhere = ($: ReplaysAccessor) => Array<CH.Condition | undefined>
@@ -92,10 +93,10 @@ function tagCondition($: TagFacts, tag: SessionTag): CH.Condition {
 export function taggedSessionIds(tags: ReadonlyArray<SessionTag>, where: ReplaysWhere) {
 	return fromQuery(sessionTagFactsQuery(where), "t")
 		.select(($) => ({ SessionId: $.sessionId }))
-		.where(($) => tags.map((tag) => tagCondition($, tag)))
+		.where(($) => Arr.map(tags, (tag) => tagCondition($, tag)))
 }
 
-const isQualityTag = (tag: SessionTag) => SESSION_QUALITY_TAGS.some((quality) => quality === tag)
+const isQualityTag = (tag: SessionTag) => Arr.some(SESSION_QUALITY_TAGS, (quality) => quality === tag)
 
 /**
  * Sessions per tag, as a facet branch: one row per tag, `name` being the tag.
@@ -106,9 +107,9 @@ const isQualityTag = (tag: SessionTag) => SESSION_QUALITY_TAGS.some((quality) =>
  */
 export function sessionTagFacet(where: ReplaysWhere, selected: ReadonlyArray<SessionTag> = []) {
 	const under = ($: TagFacts, own: CH.Condition, context: ReadonlyArray<SessionTag>) =>
-		context.reduce((cond, tag) => cond.and(tagCondition($, tag)), own)
-	const traitsOnly = selected.filter((tag) => !isQualityTag(tag))
-	const othersThan = (trait: SessionTag) => selected.filter((tag) => tag !== trait)
+		Arr.reduce(context, own, (cond, tag) => cond.and(tagCondition($, tag)))
+	const traitsOnly = Arr.filter(selected, (tag) => !isQualityTag(tag))
+	const othersThan = (trait: SessionTag) => Arr.filter(selected, (tag) => tag !== trait)
 	return fromQuery(sessionTagFactsQuery(where), "t")
 		.select(($) => ({
 			name: CH.arrayJoin<string>(

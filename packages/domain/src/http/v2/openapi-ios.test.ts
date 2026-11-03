@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "@effect/vitest"
 import { PublicHttpErrorBodySchema } from "../error-policy"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /**
  * Guards the pruned OpenAPI document that the native iOS app's Swift client is
@@ -105,44 +106,43 @@ const GENUINE_UNIONS = [
 const unionLocations = (): ReadonlyArray<string> => {
 	const found: Array<string> = []
 	const walk = (node: unknown, path: string): void => {
-		if (Array.isArray(node)) return node.forEach((entry, index) => walk(entry, `${path}/${index}`))
+		if (Arr.isArray(node)) return Arr.forEach(node, (entry, index) => walk(entry, `${path}/${index}`))
 		if (node === null || typeof node !== "object") return
 		const object = node as JsonObject
 		if (object.anyOf !== undefined) found.push(path)
-		for (const [key, value] of Object.entries(object)) walk(value, `${path}/${key}`)
+		for (const [key, value] of Rec.toEntries(object)) walk(value, `${path}/${key}`)
 	}
 	walk(spec, "")
 	return found
 }
 
 const operations = (): ReadonlyArray<JsonObject> =>
-	Object.values(spec.paths as JsonObject).flatMap((item) =>
-		Object.entries(item as JsonObject)
-			.filter(([method]) => method !== "parameters")
-			.map(([, operation]) => operation as JsonObject),
+	Arr.flatMap(Rec.values(spec.paths as JsonObject), (item) =>
+		Arr.map(
+			Arr.filter(Rec.toEntries(item as JsonObject), ([method]) => method !== "parameters"),
+			([, operation]) => operation as JsonObject,
+		),
 	)
 
 describe("iOS OpenAPI spec", () => {
 	it("exposes exactly the allowlisted operations", () => {
-		const ids = operations()
-			.map((operation) => operation.operationId as string)
-			.sort()
+		const ids = Arr.map(operations(), (operation) => operation.operationId as string).sort()
 		expect(ids).toEqual([...IOS_OPERATIONS].sort())
 	})
 
 	it("has no dangling $refs", () => {
 		const refs = new Set<string>()
 		const walk = (node: unknown): void => {
-			if (Array.isArray(node)) return node.forEach(walk)
+			if (Arr.isArray(node)) return Arr.forEach(node, walk)
 			if (node === null || typeof node !== "object") return
 			const object = node as JsonObject
 			if (typeof object.$ref === "string") refs.add(object.$ref)
-			Object.values(object).forEach(walk)
+			Arr.forEach(Rec.values(object), walk)
 		}
 		walk(spec)
 
-		const dangling = [...refs].filter((ref) => {
-			const name = ref.replace("#/components/schemas/", "")
+		const dangling = Arr.filter([...refs], (ref) => {
+			const name = Str.replace("#/components/schemas/", "")(ref)
 			return schemas[name] === undefined
 		})
 		expect(dangling).toEqual([])
@@ -151,21 +151,21 @@ describe("iOS OpenAPI spec", () => {
 	it("carries no unreachable schemas", () => {
 		const reachable = new Set<string>()
 		const walk = (node: unknown): void => {
-			if (Array.isArray(node)) return node.forEach(walk)
+			if (Arr.isArray(node)) return Arr.forEach(node, walk)
 			if (node === null || typeof node !== "object") return
 			const object = node as JsonObject
 			if (typeof object.$ref === "string") {
-				const name = object.$ref.replace("#/components/schemas/", "")
+				const name = Str.replace("#/components/schemas/", "")(object.$ref)
 				if (!reachable.has(name)) {
 					reachable.add(name)
 					walk(schemas[name])
 				}
 			}
-			Object.values(object).forEach(walk)
+			Arr.forEach(Rec.values(object), walk)
 		}
 		walk(spec.paths)
 
-		expect(Object.keys(schemas).filter((name) => !reachable.has(name))).toEqual([])
+		expect(Arr.filter(Rec.keys(schemas), (name) => !reachable.has(name))).toEqual([])
 	})
 
 	/**
@@ -176,13 +176,13 @@ describe("iOS OpenAPI spec", () => {
 		expect([...unionLocations()].sort()).toEqual([...GENUINE_UNIONS].sort())
 		expect(specText).not.toContain('"allOf"')
 		expect(specText).not.toContain('"type":"null"')
-		expect(Object.keys(schemas).filter((name) => name.startsWith("Union_"))).toEqual([])
+		expect(Arr.filter(Rec.keys(schemas), (name) => Str.startsWith("Union_")(name))).toEqual([])
 	})
 
 	it("emits one component per domain enum", () => {
 		// `_maple_AlertSignalType_2` next to `_maple_AlertSignalType` would give
 		// the app two unrelated Swift enums for the same wire values.
-		const numbered = Object.keys(schemas).filter((name) => /^_maple_.+_\d+$/.test(name))
+		const numbered = Arr.filter(Rec.keys(schemas), (name) => /^_maple_.+_\d+$/.test(name))
 		expect(numbered).toEqual([])
 	})
 
@@ -215,7 +215,7 @@ describe("iOS OpenAPI spec", () => {
 
 	it("routes every error response through the single envelope", () => {
 		for (const operation of operations()) {
-			for (const [status, response] of Object.entries(operation.responses as JsonObject)) {
+			for (const [status, response] of Rec.toEntries(operation.responses as JsonObject)) {
 				if (/^2\d\d$/.test(status)) continue
 				const schema = (response as JsonObject).content?.["application/json"]?.schema
 				if (schema === undefined) continue
@@ -231,8 +231,8 @@ describe("iOS OpenAPI spec", () => {
 	 * field on the real error body would otherwise never reach the iOS client.
 	 */
 	it("declares every field the runtime error envelope can emit", () => {
-		const runtimeFields = Object.keys(PublicHttpErrorBodySchema.fields)
-		const declared = Object.keys((schemas.MapleErrorEnvelope as JsonObject).properties.error.properties)
+		const runtimeFields = Rec.keys(PublicHttpErrorBodySchema.fields)
+		const declared = Rec.keys((schemas.MapleErrorEnvelope as JsonObject).properties.error.properties)
 		expect(declared.sort()).toEqual(runtimeFields.sort())
 	})
 
@@ -247,7 +247,7 @@ describe("iOS OpenAPI spec", () => {
 
 	it("declares production as the only server and bearer as the only scheme", () => {
 		expect(spec.servers).toEqual([{ url: "https://api.maple.dev", description: "Production" }])
-		expect(Object.keys(spec.components.securitySchemes)).toEqual(["bearer"])
+		expect(Rec.keys(spec.components.securitySchemes)).toEqual(["bearer"])
 		for (const operation of operations()) {
 			const id = operation.operationId as string
 			expect(operation.security, id).toEqual(UNAUTHENTICATED_OPERATIONS.has(id) ? [] : [{ bearer: [] }])

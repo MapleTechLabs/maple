@@ -1,7 +1,7 @@
 import { rawSqlDisplayTypeFor, widgetTypeByVisualization } from "@maple/domain/http"
 import { RAW_SQL_TEMPLATES } from "../../../lib/raw-sql/templates"
 import { dataSourceRawSql, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import type { EditorState } from "./editor-state"
 import type { Widget } from "./lowering"
 
@@ -33,7 +33,10 @@ export const draftOf = (widget: Widget): RawSqlDraft => {
 	const rawSql = dataSourceRawSql(widget.dataSource)
 	return rawSql !== null && rawSql.sql.length > 0
 		? { sql: rawSql.sql, granularitySeconds: rawSql.granularitySeconds ?? null }
-		: { sql: RAW_SQL_TEMPLATES[rawSqlDisplayTypeFor(widget.visualization, widget.display.chartId)], granularitySeconds: null }
+		: {
+				sql: RAW_SQL_TEMPLATES[rawSqlDisplayTypeFor(widget.visualization, widget.display.chartId)],
+				granularitySeconds: null,
+			}
 }
 
 export const initRawSql = (widget: Widget): RawSqlState => {
@@ -45,13 +48,18 @@ export const initRawSql = (widget: Widget): RawSqlState => {
 export const reseedForType = (rawSql: RawSqlState, before: TypePair, after: TypePair): RawSqlState => {
 	const previous = displayTypeOf(before)
 	const next = displayTypeOf(after)
-	if (previous === next || rawSql.draft.sql.trim() !== RAW_SQL_TEMPLATES[previous].trim()) return rawSql
+	if (previous === next || Str.trim(rawSql.draft.sql) !== Str.trim(RAW_SQL_TEMPLATES[previous]))
+		return rawSql
 	const reseeded = { ...rawSql.draft, sql: RAW_SQL_TEMPLATES[next] }
 	return { ...rawSql, draft: reseeded, staged: reseeded }
 }
 
 /** `buildRawSqlDataSource`: a stat or gauge without a reduction reads the first row's `value`. */
-export const rawSqlDataSourceOf = (widget: Widget, draft: RawSqlDraft, state: TypePair): Widget["dataSource"] => {
+export const rawSqlDataSourceOf = (
+	widget: Widget,
+	draft: RawSqlDraft,
+	state: TypePair,
+): Widget["dataSource"] => {
 	const existing = dataSourceTransform(widget.dataSource)
 	const needsScalar = widgetTypeByVisualization(state.visualization)?.isScalar === true
 	const transform =
@@ -68,6 +76,6 @@ export const rawSqlDataSourceOf = (widget: Widget, draft: RawSqlDraft, state: Ty
 
 /** Raw SQL must reference `$__orgFilter`: every query is tenant-scoped through that macro. */
 export const rawSqlErrorOf = (draft: RawSqlDraft): string | null =>
-	draft.sql.includes("$__orgFilter")
+	Str.includes("$__orgFilter")(draft.sql)
 		? null
 		: "SQL must include $__orgFilter so the query is scoped to your organization"

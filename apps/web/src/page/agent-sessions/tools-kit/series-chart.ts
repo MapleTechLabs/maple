@@ -3,7 +3,7 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { metricValue, toolChartTitle, toolMetricLabel } from "@maple/web-data/lib/tool-analytics"
 import { makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
@@ -36,9 +36,9 @@ export const TOOL_CHART_TOKENS = [
 
 const seriesFor = (metric: ToolMetric, percentile: ToolPercentile) =>
 	metric === "duration"
-		? (["p50", "p90", "p95"] as const).map((key) => ({
+		? Arr.map(["p50", "p90", "p95"] as const, (key) => ({
 				key,
-				label: key.toUpperCase(),
+				label: Str.toUpperCase(key),
 				token:
 					key === percentile
 						? "--primary"
@@ -67,15 +67,16 @@ export type SeriesChartInputs = Readonly<{
 }>
 
 const rowsOf = (inputs: SeriesChartInputs) =>
-	inputs.series
-		.toSorted((a, b) => a.bucket - b.bucket)
-		.map((point) => ({
+	Arr.map(
+		inputs.series.toSorted((a, b) => a.bucket - b.bucket),
+		(point) => ({
 			bucket: formatWarehouseDateTime(point.bucket),
 			[inputs.metric]: metricValue(point, inputs.metric, inputs.percentile),
 			p50: point.p50,
 			p90: point.p90,
 			p95: point.p95,
-		}))
+		}),
+	)
 
 type ToolSeriesSpec = Extract<ChartSpec, { readonly _tag: "ToolSeries" }>
 
@@ -104,7 +105,7 @@ export const toolPlotView = Submodel.defineView<Chart.Model, Chart.Message, Tool
 					ariaLabel: inputs.ariaLabel,
 					spec: ChartSpec.ToolSeries({
 						rows: inputs.rows,
-						series: inputs.series.map((entry) => ({
+						series: Arr.map(inputs.series, (entry) => ({
 							key: entry.key,
 							label: entry.label,
 							color: resolveColor(inputs.theme, entry.token),
@@ -138,10 +139,10 @@ export const seriesChart = <M>(
 ): Html => {
 	const rows = rowsOf(inputs)
 	const axis = makeBucketAxis(
-		rows.map((row) => row.bucket),
+		Arr.map(rows, (row) => row.bucket),
 		inputs.timeZone,
 	)
-	const scopeParts = [inputs.tool, inputs.model].filter((part): part is string => part !== undefined)
+	const scopeParts = Arr.filter([inputs.tool, inputs.model], (part): part is string => part !== undefined)
 	const plotted = seriesFor(inputs.metric, inputs.percentile)
 	const title = toolChartTitle({
 		metric: inputs.metric,
@@ -169,7 +170,7 @@ export const seriesChart = <M>(
 						? undefined
 						: h.span(
 								[h.Class("contents")],
-								scopeParts.map((part) =>
+								Arr.map(scopeParts, (part) =>
 									h.span(
 										[h.Key(part), h.Class("contents font-mono text-xs")],
 										[
@@ -193,7 +194,7 @@ export const seriesChart = <M>(
 						...(plotted.length > 1
 							? [
 									seriesLegend(h, {
-										items: plotted.map((entry) => ({
+										items: Arr.map(plotted, (entry) => ({
 											key: entry.key,
 											label: entry.label,
 											color: `var(${entry.token})`,

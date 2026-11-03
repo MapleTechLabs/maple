@@ -17,7 +17,7 @@
 
 import * as CH from "@maple-dev/effect-orm/clickhouse"
 import { compile, from, fromQuery, param, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
-import { Schema, Effect } from "effect"
+import { Schema, Effect, Array as Arr } from "effect"
 import {
 	AttributeKeysHourly,
 	AttributeValuesHourly,
@@ -45,7 +45,11 @@ import type { OrgId } from "@maple/domain"
 const VALID_SPAN_KINDS = ["Server", "Client", "Producer", "Consumer", "Internal", ""]
 const VALID_STATUS_CODES = ["Ok", "Error", "Unset", ""]
 
-const quoteList = (values: ReadonlyArray<string>) => values.map((value) => `'${value}'`).join(", ")
+const quoteList = (values: ReadonlyArray<string>) =>
+	Arr.join(
+		Arr.map(values, (value) => `'${value}'`),
+		", ",
+	)
 
 // A2 — attribute key inventory (all scopes, one scan)
 
@@ -605,10 +609,13 @@ export function auditRootlessTracesSQL(
 
 	const traces = from(Traces)
 		.select(($) => {
-			const kept = [
-				overrides?.keepErrorSpans === true ? $.StatusCode.eq("Error") : undefined,
-				overrides?.slowSpanNs != null ? $.Duration.gte(overrides.slowSpanNs) : undefined,
-			].filter((condition) => condition !== undefined)
+			const kept = Arr.filter(
+				[
+					overrides?.keepErrorSpans === true ? $.StatusCode.eq("Error") : undefined,
+					overrides?.slowSpanNs != null ? $.Duration.gte(overrides.slowSpanNs) : undefined,
+				],
+				(condition) => condition !== undefined,
+			)
 			const keptBySampler = kept.length === 0 ? undefined : kept.reduce((a, b) => a.or(b))
 			return {
 				TraceId: $.TraceId,

@@ -11,6 +11,7 @@ import {
 	Schema,
 	type Scope,
 	SynchronizedRef,
+	Array as Arr,
 } from "effect"
 import { orgOfKey, type RequestKey, requestKey } from "@maple/views/data/request-key"
 
@@ -48,7 +49,8 @@ const touched = (entries: Map<RequestKey, Entry>, key: RequestKey, entry: Entry)
 }
 
 /** A settled entry idle past its TTL; an in-flight one never is. */
-const isExpired = (entry: Entry, nowMs: number) => entry.isSettled && nowMs - entry.touchedAtMs > entry.idleTtlMs
+const isExpired = (entry: Entry, nowMs: number) =>
+	entry.isSettled && nowMs - entry.touchedAtMs > entry.idleTtlMs
 
 /**
  * Past the bound, only the excess goes: idle-expired entries first, then the least recently read,
@@ -60,17 +62,14 @@ const capped = (entries: Map<RequestKey, Entry>, nowMs: number): Map<RequestKey,
 	const rank = (entry: Entry) => (isExpired(entry, nowMs) ? 0 : entry.isSettled ? 1 : 2)
 	// `sort` is stable, so within a rank the least recently read comes first.
 	const evicted = new Set(
-		[...entries]
-			.sort(([, a], [, b]) => rank(a) - rank(b))
-			.slice(0, excess)
-			.map(([key]) => key),
+		Arr.map([...entries].sort(([, a], [, b]) => rank(a) - rank(b)).slice(0, excess), ([key]) => key),
 	)
-	return new Map([...entries].filter(([key]) => !evicted.has(key)))
+	return new Map(Arr.filter([...entries], ([key]) => !evicted.has(key)))
 }
 
 /** Another org's entries are dropped on the first read for a new org (an org switch). */
 const ofOrg = (entries: Entries, org: string): Map<RequestKey, Entry> =>
-	new Map([...entries].filter(([key]) => orgOfKey(key) === org))
+	new Map(Arr.filter([...entries], ([key]) => orgOfKey(key) === org))
 
 type EntriesRef = SynchronizedRef.SynchronizedRef<Entries>
 type Answer = Deferred.Deferred<unknown, unknown>
@@ -115,7 +114,12 @@ const makeRead =
 						Effect.onExit(load, (exit) => settle(entries, spec.key, result, exit)),
 						scope,
 					)
-					touched(next, spec.key, { result, idleTtlMs: spec.idleTtlMs, touchedAtMs: nowMs, isSettled: false })
+					touched(next, spec.key, {
+						result,
+						idleTtlMs: spec.idleTtlMs,
+						touchedAtMs: nowMs,
+						isSettled: false,
+					})
 					return step<S["Type"], E>({ _tag: "Owner", fiber }, capped(next, nowMs))
 				}),
 			),
@@ -123,8 +127,8 @@ const makeRead =
 			Effect.flatMap((outcome): Effect.Effect<S["Type"], unknown, R> =>
 				outcome._tag === "Owner"
 					? Fiber.join(outcome.fiber)
-					: Effect.flatMap(Deferred.await(outcome.result), (value) =>
-							Schema.is(spec.schema)(value) ? Effect.succeed(value) : load,
+					: Deferred.await(outcome.result).pipe(
+							Effect.filterOrElse(Schema.is(spec.schema), () => load),
 						),
 			),
 		)
@@ -133,7 +137,7 @@ const makeRelease = (entries: EntriesRef) => (keys: ReadonlyArray<RequestKey>) =
 	Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
 		SynchronizedRef.update(entries, (current) => {
 			const next = new Map(current)
-			keys.forEach((key) => {
+			Arr.forEach(keys, (key) => {
 				const entry = next.get(key)
 				if (entry !== undefined) touched(next, key, { ...entry, touchedAtMs: nowMs })
 			})

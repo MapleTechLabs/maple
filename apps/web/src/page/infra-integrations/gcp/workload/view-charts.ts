@@ -30,6 +30,7 @@ import { Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstackClass, vstack } from "@maple/views/ui/stack"
 import { gridClass } from "@maple/views/ui/grid"
+import { Array as Arr, String as Str } from "effect"
 
 // `CorrelationStrips` as the workload's signals, and `GcpWorkloadCharts`.
 
@@ -92,7 +93,7 @@ export const correlationStrips = (
 	return panel(
 		h,
 		{ className: "block", attributes: [h.Style(LINKED_CURSOR_STYLE), h.OnMount(MountLinkedCursor())] },
-		strips.map((strip, index) => {
+		Arr.map(strips, (strip, index) => {
 			const { spec, info } = InfraMetricChart.infraMetricModel({
 				rows: strip.rows,
 				unit: strip.unit,
@@ -126,7 +127,7 @@ export const correlationStrips = (
 										seriesLegend(h, {
 											swatch: "line",
 											className: "pt-1",
-											items: info.series.map((name) => ({
+											items: Arr.map(info.series, (name) => ({
 												key: name,
 												label: info.labelFor(name),
 												color: info.colors.get(name),
@@ -157,14 +158,14 @@ export const workloadCharts = (
 	ctx: ChartsContext,
 ): Html => {
 	const { charts, points, range } = options
-	const xDomain = gcpBuckets(points, range.bucketSeconds).map(({ bucket }) => bucket)
+	const xDomain = Arr.map(gcpBuckets(points, range.bucketSeconds), ({ bucket }) => bucket)
 	return h.div(
 		[
 			h.Class(gridClass({ cols: 1, lg: 2, gap: "4" })),
 			h.Style(LINKED_CURSOR_STYLE),
 			h.OnMount(MountLinkedCursor()),
 		],
-		charts.map((spec) => {
+		Arr.map(charts, (spec) => {
 			const rows =
 				spec.kind === "classes"
 					? gcpClassRows(spec.metric, points, range)
@@ -196,7 +197,7 @@ export const workloadCharts = (
 					chartCardMessage(h, spec.note ?? InfraMetricChart.CHART_EMPTY_MESSAGE),
 				])
 			}
-			const names = [...new Set(rows.map((row) => row.attributeValue))]
+			const names = [...new Set(Arr.map(rows, (row) => row.attributeValue))]
 			const colors = resolveSeriesColors(names)
 			return chartCard(
 				h,
@@ -207,7 +208,7 @@ export const workloadCharts = (
 						names.length > 1 || spec.kind === "classes"
 							? seriesLegend(h, {
 									swatch: "line",
-									items: names.map((name) => ({
+									items: Arr.map(names, (name) => ({
 										key: name,
 										label: name,
 										color: colors.get(name),
@@ -225,7 +226,7 @@ export const workloadCharts = (
 							gaps: true,
 							theme: ctx.theme,
 							timeZone: ctx.timeZone,
-							gradientPrefix: `${options.idPrefix}-${spec.title.replace(/\W+/g, "_")}`,
+							gradientPrefix: `${options.idPrefix}-${Str.replace(/\W+/g, "_")(spec.title)}`,
 						}),
 						linkedChartId: `gcp-${spec.title}`,
 						height: CHART_HEIGHT,

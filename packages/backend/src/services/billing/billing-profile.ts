@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import type { EdgeCacheServiceApi } from "@maple/cache"
 import {
 	BillingAddress,
@@ -152,7 +152,8 @@ export const readBillingProfile = (
 			linked: true,
 			name: customer.name ?? null,
 			address: customer.address ?? null,
-			taxIds: taxIds.data.map(
+			taxIds: Arr.map(
+				taxIds.data,
 				(row) =>
 					new BillingTaxId({
 						id: row.id,

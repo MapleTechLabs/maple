@@ -22,7 +22,7 @@ import { type EncodedBatch, encodeLogs, encodeMetrics, encodeTraces } from "@map
 import { LOCAL_SCHEMA_SQL } from "@maple/local-server/schema-identity"
 import { type Signal, exportBody } from "./payloads"
 import { environment, flag, list, numbers, summarize, type Summary, writeReport } from "./report"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { decodeJsonSync } from "@maple/local-server/json"
 
 const decodeViewLine = Schema.decodeUnknownSync(
@@ -69,8 +69,8 @@ const measure = (f: () => number): Summary => {
 
 /** Statements for one fresh export (new trace and span ids every call). */
 const statementsFor = (signal: Signal, records: number) =>
-	encoders[signal](decodeJsonSync(exportBody(signal, records))).flatMap((batch) =>
-		buildInsertStatements(batch.datasource, batch.ndjson).map((s) => ({
+	Arr.flatMap(encoders[signal](decodeJsonSync(exportBody(signal, records))), (batch) =>
+		Arr.map(buildInsertStatements(batch.datasource, batch.ndjson), (s) => ({
 			...s,
 			datasource: batch.datasource,
 		})),
@@ -78,16 +78,16 @@ const statementsFor = (signal: Signal, records: number) =>
 
 const execAll = (db: Chdb, signal: Signal, records: number) => {
 	const statements = statementsFor(signal, records)
-	return time(() => statements.forEach((s) => db.exec(s.sql)))
+	return time(() => Arr.forEach(statements, (s) => db.exec(s.sql)))
 }
 
 // Quoted: `system.settings` prints string values bare, and ClickHouse accepts quoted numbers.
 const setSetting = (db: Chdb, name: string | undefined, value: string | undefined) =>
-	db.exec(`SET ${name} = '${(value ?? "").replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`)
+	db.exec(`SET ${name} = '${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value ?? ""))}'`)
 
 const stages = (db: Chdb) =>
-	signals.flatMap((signal) =>
-		sizes.map((records) => {
+	Arr.flatMap(signals, (signal) =>
+		Arr.map(sizes, (records) => {
 			const parse: number[] = []
 			const encode: number[] = []
 			const build: number[] = []
@@ -103,12 +103,12 @@ const stages = (db: Chdb) =>
 				build.push(
 					time(
 						() =>
-							(sql = batches.flatMap((b) =>
-								buildInsertStatements(b.datasource, b.ndjson).map((s) => s.sql),
+							(sql = Arr.flatMap(batches, (b) =>
+								Arr.map(buildInsertStatements(b.datasource, b.ndjson), (s) => s.sql),
 							)),
 					),
 				)
-				exec.push(time(() => sql.forEach((s) => db.exec(s))))
+				exec.push(time(() => Arr.forEach(sql, (s) => db.exec(s))))
 				statementCounts.push(sql.length)
 				return 0
 			})
@@ -123,7 +123,7 @@ const stages = (db: Chdb) =>
 				execMs: summarize(tail(exec)),
 			}
 			console.log(
-				`${signal.padEnd(7)} ${String(records).padStart(4)} rec  ${row.statements} stmt  ` +
+				`${Str.padEnd(7)(signal)} ${Str.padStart(4)(String(records))} rec  ${row.statements} stmt  ` +
 					`parse ${row.parseMs.p50.toFixed(2)}  encode ${row.encodeMs.p50.toFixed(2)}  ` +
 					`sql ${row.buildSqlMs.p50.toFixed(2)}  exec ${row.execMs.p50.toFixed(1)} ms (p50)`,
 			)
@@ -133,15 +133,19 @@ const stages = (db: Chdb) =>
 
 const settings = (db: Chdb) => {
 	const run = (label: string) =>
-		signals.map((signal) => {
+		Arr.map(signals, (signal) => {
 			const execMs = measure(() => execAll(db, signal, 1))
-			console.log(`${label.padEnd(32)} ${signal.padEnd(7)} 1 rec  exec p50 ${execMs.p50.toFixed(1)} ms`)
+			console.log(
+				`${Str.padEnd(32)(label)} ${Str.padEnd(7)(signal)} 1 rec  exec p50 ${execMs.p50.toFixed(1)} ms`,
+			)
 			return { setting: label, signal, records: 1, execMs }
 		})
 	const baseline = run("default")
-	const variants = settingVariants.flatMap((assignment) => {
-		const [name, value] = assignment.split("=")
-		const current = db.query(`SELECT value FROM system.settings WHERE name = '${name}'`, "TSVRaw").trim()
+	const variants = Arr.flatMap(settingVariants, (assignment) => {
+		const [name, value] = Str.split("=")(assignment)
+		const current = Str.trim(
+			db.query(`SELECT value FROM system.settings WHERE name = '${name}'`, "TSVRaw"),
+		)
 		setSetting(db, name, value)
 		const rows = run(assignment)
 		setSetting(db, name, current)
@@ -157,35 +161,39 @@ interface ViewRow {
 }
 
 const viewsOf = (db: Chdb, source: string): ViewRow[] =>
-	db
-		.query(
-			`SELECT t.name AS name, t.create_table_query AS create
+	Arr.map(
+		Arr.filter(
+			Str.split("\n")(
+				db.query(
+					`SELECT t.name AS name, t.create_table_query AS create
 			 FROM system.tables AS t
 			 WHERE t.database = currentDatabase() AND t.engine = 'MaterializedView'
 			   AND has((SELECT any(dependencies_table) FROM system.tables
 			            WHERE database = currentDatabase() AND name = '${source}'), t.name)
 			 ORDER BY t.name`,
-		)
-		.split("\n")
-		.filter(Boolean)
-		.map((line) => ({ ...decodeViewLine(line), table: source }))
+				),
+			),
+			Boolean,
+		),
+		(line) => ({ ...decodeViewLine(line), table: source }),
+	)
 
 /** Drop every view on the source, then add each back alone and time the insert. */
 const views = (db: Chdb) => {
 	const source = rawDatasource[viewsSignal]
 	const all = viewsOf(db, source)
 	const insert = () => {
-		const statements = statementsFor(viewsSignal, viewsSize).filter((s) => s.datasource === source)
-		return time(() => statements.forEach((s) => db.exec(s.sql)))
+		const statements = Arr.filter(statementsFor(viewsSignal, viewsSize), (s) => s.datasource === source)
+		return time(() => Arr.forEach(statements, (s) => db.exec(s.sql)))
 	}
 	const withAll = measure(insert)
-	all.forEach((v) => db.exec(`DROP VIEW ${v.name}`))
+	Arr.forEach(all, (v) => db.exec(`DROP VIEW ${v.name}`))
 	const withNone = measure(insert)
 	console.log(
 		`${source}: ${all.length} views, insert p50 ${withAll.p50.toFixed(1)} ms with all, ` +
 			`${withNone.p50.toFixed(1)} ms with none`,
 	)
-	const perView = all.map((v) => {
+	const perView = Arr.map(all, (v) => {
 		db.exec(v.create)
 		const alone = measure(insert)
 		db.exec(`DROP VIEW ${v.name}`)
@@ -195,10 +203,10 @@ const views = (db: Chdb) => {
 			marginalMs: Math.round((alone.p50 - withNone.p50) * 100) / 100,
 		}
 	})
-	all.forEach((v) => db.exec(v.create))
+	Arr.forEach(all, (v) => db.exec(v.create))
 	perView.sort((a, b) => b.marginalMs - a.marginalMs)
-	perView.forEach((v) => console.log(`  ${v.view.padEnd(44)} +${v.marginalMs.toFixed(2)} ms`))
-	const sumMarginal = Math.round(perView.reduce((a, v) => a + v.marginalMs, 0) * 100) / 100
+	Arr.forEach(perView, (v) => console.log(`  ${Str.padEnd(44)(v.view)} +${v.marginalMs.toFixed(2)} ms`))
+	const sumMarginal = Math.round(Arr.reduce(perView, 0, (a, v) => a + v.marginalMs) * 100) / 100
 	console.log(
 		`  sum of marginals ${sumMarginal.toFixed(1)} ms vs all-minus-none ${(withAll.p50 - withNone.p50).toFixed(1)} ms`,
 	)
@@ -220,11 +228,11 @@ const sustained = (db: Chdb) => {
 	const started = performance.now()
 	const samples = repeat(sustainedExports, () => execAll(db, "traces", sustainedSize))
 	const elapsedSeconds = (performance.now() - started) / 1000
-	const slow = samples.flatMap((ms, i) =>
+	const slow = Arr.flatMap(samples, (ms, i) =>
 		ms > SLOW_INSERT_MS ? [{ export: i + 1, ms: Math.round(ms) }] : [],
 	)
 	const execMs = summarize(samples)
-	const slowTotalMs = slow.reduce((a, s) => a + s.ms, 0)
+	const slowTotalMs = Arr.reduce(slow, 0, (a, s) => a + s.ms)
 	console.log(
 		`${sustainedExports} traces exports x ${sustainedSize} spans in ${elapsedSeconds.toFixed(1)} s: ` +
 			`p50 ${execMs.p50.toFixed(1)}  p95 ${execMs.p95.toFixed(1)}  max ${execMs.max.toFixed(0)} ms, ` +
@@ -258,8 +266,8 @@ const main = () => {
 
 const writeChdbReport = (env: ReturnType<typeof environment>, db: Chdb, dataDir: string, openMs: number) => {
 	console.log(`store opened in ${openMs} ms at ${dataDir}`)
-	sessionSettings.forEach((assignment) => {
-		const [name, value] = assignment.split("=")
+	Arr.forEach(sessionSettings, (assignment) => {
+		const [name, value] = Str.split("=")(assignment)
 		setSetting(db, name, value)
 	})
 	const report = {
@@ -284,7 +292,7 @@ const writeChdbReport = (env: ReturnType<typeof environment>, db: Chdb, dataDir:
 		views: skip.has("views") ? null : (console.log("\n# views"), views(db)),
 		sustained: skip.has("sustained") ? null : (console.log("\n# sustained"), sustained(db)),
 	}
-	console.log(`\nwrote ${writeReport(`local-ingest-chdb-${env.date.slice(0, 10)}.json`, report)}`)
+	console.log(`\nwrote ${writeReport(`local-ingest-chdb-${Str.slice(0, 10)(env.date)}.json`, report)}`)
 }
 
 main()

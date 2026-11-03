@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import Ajv2020 from "ajv/dist/2020.js"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	MapleCloudEventSchema,
@@ -70,9 +70,10 @@ const timestampMismatches = (value: string, valid: boolean): ReadonlyArray<strin
 			Schema.decodeUnknownResult(SignalProjectionSpecSchema)(projection(leaf, value)),
 		),
 	}
-	return Object.entries(verdicts)
-		.filter(([, verdict]) => verdict !== valid)
-		.map(([name]) => name)
+	return Arr.map(
+		Arr.filter(Rec.toEntries(verdicts), ([, verdict]) => verdict !== valid),
+		([name]) => name,
+	)
 }
 
 describe("published scalar schema conformance", () => {
@@ -131,7 +132,7 @@ describe("published scalar schema conformance", () => {
 			for (const day of [0, 1, 28, 29, 30, 31, 32]) {
 				expect(
 					timestampMismatches(
-						`2026-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T00:00:00Z`,
+						`2026-${Str.padStart(2, "0")(String(month))}-${Str.padStart(2, "0")(String(day))}T00:00:00Z`,
 						day >= 1 && day <= monthLengths[month - 1]!,
 					),
 				).toEqual([])

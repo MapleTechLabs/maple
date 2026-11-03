@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Exit, Schema } from "effect"
+import { Exit, Schema, String as Str } from "effect"
 import {
 	AlertDestinationCreateRequest,
 	AlertNotificationTemplate,
@@ -32,7 +32,7 @@ describe("AlertNotificationTemplate", () => {
 	const decodeExit = Schema.decodeUnknownExit(AlertNotificationTemplate)
 
 	it("rejects a title longer than the 4000-char cap", () => {
-		const result = decodeExit({ title: "x".repeat(4001) })
+		const result = decodeExit({ title: Str.repeat(4001)("x") })
 		expect(Exit.isFailure(result)).toBe(true)
 	})
 })

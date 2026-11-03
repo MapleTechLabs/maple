@@ -1,5 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { mapRailwayMetrics, METRIC_CPU_USAGE, METRIC_MEMORY_USAGE, METRIC_NETWORK_IO } from "./mapping"
+import { Array as Arr } from "effect"
 
 const context = {
 	projectId: "prj_1",
@@ -87,7 +88,7 @@ describe("mapRailwayMetrics", () => {
 			{ startMs: t0, endMs: t0 + 60_000 },
 		)
 		assert.deepStrictEqual(
-			rows.map((row) => row.value),
+			Arr.map(rows, (row) => row.value),
 			[2],
 		)
 	})

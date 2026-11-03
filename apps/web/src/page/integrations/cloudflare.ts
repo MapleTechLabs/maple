@@ -3,7 +3,7 @@ import {
 	CloudflareZoneSettingsRequest,
 	CloudflareZoneWatchSetting,
 } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -108,7 +108,8 @@ export const SaveCloudflareZones = Command.define("SaveCloudflareZones", {
 						payload: new CloudflareZoneSettingsRequest({
 							accountId: account.accountId,
 							watchNewZones: account.watchNewZones,
-							zones: account.zones.map(
+							zones: Arr.map(
+								account.zones,
 								(zone) =>
 									new CloudflareZoneWatchSetting({
 										zoneId: zone.id,

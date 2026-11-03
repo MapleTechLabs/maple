@@ -1,5 +1,5 @@
 import { IntegrationsPersistenceError } from "@maple/domain/http"
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 
 /**
  * The text that is copied: the script as a here-document for a child bash. Pasted at a prompt,
@@ -19,7 +19,7 @@ export const forPaste = (
 	marker: string,
 	body: string,
 ): Effect.Effect<string, IntegrationsPersistenceError> =>
-	!PASTE_SAFE.test(body) || body.split("\n").includes(marker)
+	!PASTE_SAFE.test(body) || Str.split("\n")(body).includes(marker)
 		? Effect.fail(
 				new IntegrationsPersistenceError({
 					message: `A ${provider} script value would end the script's here-document early`,

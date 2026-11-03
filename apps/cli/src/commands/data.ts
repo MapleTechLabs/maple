@@ -1,7 +1,7 @@
 import * as Command from "effect/cli/Command"
 import * as Argument from "effect/cli/Argument"
 import * as Flag from "effect/cli/Flag"
-import { Effect, Option } from "effect"
+import { Effect, Option, Array as Arr } from "effect"
 import * as f from "../lib/flags"
 import { CliNotFoundError } from "../lib/errors"
 import { printResult } from "../lib/output"
@@ -55,7 +55,7 @@ const show = Command.make("show", {
 					message: `no metric named '${a.name}' in ${window}`,
 					hint:
 						similar.length > 0
-							? `similar names: ${similar.join(", ")}`
+							? `similar names: ${Arr.join(similar, ", ")}`
 							: "list the metrics that exist with `maple metrics`",
 				})
 			}

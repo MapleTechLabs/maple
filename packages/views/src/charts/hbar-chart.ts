@@ -2,7 +2,7 @@ import { pickValueField, toBreakdownRows } from "@maple/ui/components/charts/_sh
 import { formatNumber, formatPercent, formatValueByUnit } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import { truncatedText } from "../ui/truncated-text"
 import { Message, type Model } from "./chart"
@@ -34,14 +34,14 @@ const BAR_MIN_PCT = 0.02
 const MORE_ROW_H = 16
 
 export const hbarBars = (source: ReadonlyArray<Record<string, unknown>>) => {
-	const rows = toBreakdownRows(source, pickValueField(source))
-		.filter((row) => row.value > 0)
-		.sort((a, b) => b.value - a.value)
+	const rows = Arr.filter(toBreakdownRows(source, pickValueField(source)), (row) => row.value > 0).sort(
+		(a, b) => b.value - a.value,
+	)
 	const max = rows[0]?.value ?? 0
-	const total = rows.reduce((acc, row) => acc + row.value, 0)
+	const total = Arr.reduce(rows, 0, (acc, row) => acc + row.value)
 	if (max <= 0) return []
-	const colors = resolveSeriesColors(rows.map((row) => row.name))
-	return rows.map((row) => ({
+	const colors = resolveSeriesColors(Arr.map(rows, (row) => row.name))
+	return Arr.map(rows, (row) => ({
 		...row,
 		color: colors.get(row.name) ?? "",
 		widthPct: Math.max(BAR_MIN_PCT, row.value / max),
@@ -51,8 +51,7 @@ export const hbarBars = (source: ReadonlyArray<Record<string, unknown>>) => {
 
 export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model, inputs, h) => {
 	const bars = hbarBars(inputs.data)
-	if (bars.length === 0)
-		return chartNoData(h, { className: inputs.className })
+	if (bars.length === 0) return chartNoData(h, { className: inputs.className })
 	const height = model.containerHeight
 	const maxRows = height > 0 ? Math.max(1, Math.floor((height - MORE_ROW_H) / ROW_FULL_H)) : bars.length
 	const truncated = bars.length > maxRows
@@ -92,7 +91,7 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 					}),
 					h.DataAttribute("slot", "hbar-rows"),
 				],
-				bars.map((bar, i) => {
+				Arr.map(bars, (bar, i) => {
 					const key = String(i)
 					const fade = hover !== null && hover !== key ? 0.55 : 1
 					return h.div(
@@ -107,7 +106,9 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 						[
 							truncatedText(h, {
 								text: bar.name,
-								className: bar.unnamed ? typographyClass({ tone: "muted", className: "italic" }) : "text-foreground-soft",
+								className: bar.unnamed
+									? typographyClass({ tone: "muted", className: "italic" })
+									: "text-foreground-soft",
 							}),
 							h.div(
 								[
@@ -129,7 +130,10 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 							h.span(
 								[h.Class("shrink-0 text-right tabular-nums text-muted-foreground")],
 								[
-									h.span([h.Class("text-foreground-soft")], [fmtValue(bar.value, inputs.unit)]),
+									h.span(
+										[h.Class("text-foreground-soft")],
+										[fmtValue(bar.value, inputs.unit)],
+									),
 									h.span([h.Class("px-1 text-foreground-faint")], ["·"]),
 									h.span([], [formatPercent(bar.pctOfTotal, PCT_FLOOR)]),
 								],

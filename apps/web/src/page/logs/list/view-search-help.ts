@@ -7,6 +7,7 @@ import { highlightedText } from "@maple/views/ui/logs/highlight"
 import * as Popover from "@maple/views/ui/popover"
 import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // What the log search box
 // accepts, from the info affordance beside the SEARCH label (a hover popover, 200 ms).
@@ -77,7 +78,7 @@ const content = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 	),
 	h.dl(
 		[h.Class("mt-3 space-y-2.5")],
-		LOOKUPS.map((lookup) => lookupRow(h, lookup)),
+		Arr.map(LOOKUPS, (lookup) => lookupRow(h, lookup)),
 	),
 	h.div(
 		[

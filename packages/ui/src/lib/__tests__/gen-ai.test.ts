@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { GEN_AI_LABELS, splitGenAiAttributes } from "../gen-ai"
+import { Array as Arr, Record as Rec } from "effect"
 
 // Captured verbatim from a `chat openai/gpt-4o-mini` span in the local
 // warehouse (Mastra instrumentation through OpenRouter). Note
@@ -31,7 +32,7 @@ const CHAT_SPAN_ATTRS = {
 
 function fieldsOf(attrs: Record<string, string>, groupId: string) {
 	const group = splitGenAiAttributes(attrs).groups.find((candidate) => candidate.id === groupId)
-	return (group?.fields ?? []).map((field) => [field.label, field.value])
+	return Arr.map(group?.fields ?? [], (field) => [field.label, field.value])
 }
 
 describe("splitGenAiAttributes", () => {
@@ -53,9 +54,12 @@ describe("splitGenAiAttributes", () => {
 			"gen_ai.request.model": "",
 		})
 
-		expect(groups.flatMap((group) => group.fields).map((field) => field.key)).toEqual([
-			"gen_ai.operation.name",
-		])
+		expect(
+			Arr.map(
+				Arr.flatMap(groups, (group) => group.fields),
+				(field) => field.key,
+			),
+		).toEqual(["gen_ai.operation.name"])
 		expect(rest).toEqual({ "gen_ai.request.model": "" })
 	})
 
@@ -91,8 +95,11 @@ describe("splitGenAiAttributes", () => {
 			"gen_ai.usage.input_tokens": "1284391",
 			"gen_ai.response.time_to_first_chunk": "0.482",
 		})
-		const fields = Object.fromEntries(
-			groups.flatMap((group) => group.fields).map((field) => [field.label, field.value]),
+		const fields = Rec.fromEntries(
+			Arr.map(
+				Arr.flatMap(groups, (group) => group.fields),
+				(field) => [field.label, field.value],
+			),
 		)
 
 		expect(fields["Input"]).toBe((1284391).toLocaleString())
@@ -121,8 +128,11 @@ describe("splitGenAiAttributes", () => {
 			"gen_ai.request.openai.org_id": "1785982835123456789",
 			"gen_ai.request.stream": "true",
 		})
-		const fields = Object.fromEntries(
-			groups.flatMap((group) => group.fields).map((field) => [field.key, field.value]),
+		const fields = Rec.fromEntries(
+			Arr.map(
+				Arr.flatMap(groups, (group) => group.fields),
+				(field) => [field.key, field.value],
+			),
 		)
 
 		expect(fields).toEqual({
@@ -136,10 +146,10 @@ describe("splitGenAiAttributes", () => {
 	// Two rows for the same quantity is what the legacy aliases are, and a
 	// group where both say "Cache read" is a worse table than the raw one.
 	it("gives every field in a group a label of its own", () => {
-		const everyKey = Object.fromEntries(Object.keys(GEN_AI_LABELS).map((key) => [key, "x"]))
+		const everyKey = Rec.fromEntries(Arr.map(Rec.keys(GEN_AI_LABELS), (key) => [key, "x"]))
 
 		for (const group of splitGenAiAttributes(everyKey).groups) {
-			const labels = group.fields.map((field) => field.label)
+			const labels = Arr.map(group.fields, (field) => field.label)
 			expect(new Set(labels).size, `duplicate label in "${group.id}"`).toBe(labels.length)
 		}
 	})

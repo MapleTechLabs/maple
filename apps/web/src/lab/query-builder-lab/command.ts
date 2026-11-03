@@ -1,7 +1,8 @@
 import { createFormulaDraft, createQueryDraft } from "@maple/query-engine/query-builder"
 import { listMetrics } from "@maple/web-data/warehouse/metrics"
 import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
-import { Clock, Duration, Effect, Option, Queue, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { currentWindow, TimeWindow } from "../../data/time-range"
@@ -60,7 +61,10 @@ export const FetchMetrics = Command.define("FetchQueryBuilderLabMetrics", {
 		listMetrics({ data: { limit: 300 } }).pipe(
 			Effect.mapBoth({
 				onSuccess: (response) =>
-					response.data.map((row) => ({ metricName: row.metricName, metricType: row.metricType })),
+					Arr.map(response.data, (row) => ({
+						metricName: row.metricName,
+						metricType: row.metricType,
+					})),
 				onFailure: toLoadFailure,
 			}),
 			Effect.result,
@@ -77,8 +81,8 @@ export const FetchTimeseries = Command.define("FetchQueryBuilderLabTimeseries", 
 			data: {
 				startTime: input.startTime,
 				endTime: input.endTime,
-				queries: input.queries.map((query) => ({ ...query })),
-				formulas: input.formulas.map((formula) => ({ ...formula })),
+				queries: Arr.map(input.queries, (query) => ({ ...query })),
+				formulas: Arr.map(input.formulas, (formula) => ({ ...formula })),
 			},
 		}).pipe(
 			Effect.mapBoth({
@@ -115,11 +119,14 @@ export const CreateFormula = Command.define("CreateQueryBuilderLabFormula", {
 		Effect.sync(() => Message.CreatedFormula({ formula: createFormulaDraft(index, [...queryNames]) })),
 })
 
-/** `cloneQuery`'s `crypto.randomUUID()`. */
+/** `cloneQuery`'s fresh UUID. */
 export const CreateCloneId = Command.define("CreateQueryBuilderLabCloneId", {
 	args: { queryId: Schema.String },
 	messages: [Message.CreatedCloneId],
-	execute: ({ queryId }) => Effect.sync(() => Message.CreatedCloneId({ queryId, id: crypto.randomUUID() })),
+	execute: ({ queryId }) =>
+		Effect.flatMap(Effect.service(SecureRandom.SecureRandom), (random) =>
+			Effect.map(random.uuidV4(), (id) => Message.CreatedCloneId({ queryId, id })),
+		),
 })
 
 /** `setLastRunAt(new Date().toLocaleTimeString())`. */

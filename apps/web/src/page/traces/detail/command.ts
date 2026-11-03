@@ -4,7 +4,7 @@ import { getLogsCount } from "@maple/web-data/warehouse/logs"
 import { getProductEventsForTrace } from "@maple/web-data/warehouse/product-events"
 import { getReplaysForTrace } from "@maple/web-data/warehouse/replays"
 import { getSpanHierarchy, getTraceSpanEvents } from "@maple/web-data/warehouse/traces"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -18,7 +18,7 @@ import { SpanEvents, TraceData } from "@maple/views/traces/trace-data"
 
 /** `decodeTraceIdParam`: a pasted id may carry whitespace; anything still undecodable is not found. */
 export const decodeTraceId = (raw: string): Option.Option<TraceId> =>
-	Schema.decodeUnknownOption(TraceId)(raw.trim())
+	Schema.decodeUnknownOption(TraceId)(Str.trim(raw))
 
 /** Logs and product events correlate within the trace's span window plus 5 minutes either side. */
 const WINDOW_MARGIN_MS = 5 * 60 * 1000
@@ -86,7 +86,7 @@ export const FetchSpanEvents = Command.define("FetchTraceSpanEvents", {
 		readThrough(
 			{ key, idleTtlMs: IdleTtl.traceSpanEvents, schema: SpanEvents },
 			Effect.map(getTraceSpanEvents({ data: { traceId, traceStartTime, totalDurationMs } }), (events) =>
-				Object.fromEntries(events),
+				Rec.fromEntries(events),
 			),
 		).pipe(
 			Effect.mapError(toLoadFailure),
@@ -121,7 +121,7 @@ export const FetchProductEvents = Command.define("FetchTraceProductEvents", {
 		readThrough(
 			{ key, idleTtlMs: IdleTtl.productEventsForTrace, schema: Schema.Array(ProductEvent) },
 			Effect.map(getProductEventsForTrace({ data: { traceId, startTime, endTime } }), (response) =>
-				response.data.map((event) => ({
+				Arr.map(response.data, (event) => ({
 					eventName: event.eventName,
 					spanId: event.spanId,
 					serviceName: event.serviceName,

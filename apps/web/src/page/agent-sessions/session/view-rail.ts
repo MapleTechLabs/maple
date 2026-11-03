@@ -20,6 +20,7 @@ import {
 import { sectionHeading } from "../../kit/section-heading"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The overview rail and its time composition: where the time, cost and tokens went.
 
@@ -49,19 +50,20 @@ const timeComposition = (h: H, summary: SessionSummary): Html => {
 		...(summary.idleMs > 0 ? [{ kind: "idle" as const, ms: summary.idleMs }] : []),
 	]
 	const total = Math.max(
-		bands.reduce((sum, band) => sum + band.ms, 0),
+		Arr.reduce(bands, 0, (sum, band) => sum + band.ms),
 		1,
 	)
-	const legend = bands
-		.map((band) => ({ ...band, percent: sharePercent(band.ms, total) }))
-		.filter((band) => band.percent >= 0.5)
+	const legend = Arr.filter(
+		Arr.map(bands, (band) => ({ ...band, percent: sharePercent(band.ms, total) })),
+		(band) => band.percent >= 0.5,
+	)
 	return railSection(h, "Where the time went", undefined, [
 		hstack(h, { align: "baseline", wrap: true, className: "gap-x-4 gap-y-1" }, [
 			clock(h, "Agent time", formatSessionDuration(totalMs), "text-chart-ai-inference"),
 			clock(h, "Wall clock", formatSessionDuration(summary.wallClockMs)),
 		]),
 		segmentedBar(h, {
-			segments: bands.map((band) => ({
+			segments: Arr.map(bands, (band) => ({
 				key: band.kind,
 				value: band.ms,
 				className: AGENT_TIME_FILL[band.kind],
@@ -69,7 +71,7 @@ const timeComposition = (h: H, summary: SessionSummary): Html => {
 			total,
 			className: "h-2 w-full gap-px rounded-xs bg-muted",
 		}),
-		...legend.map((band) =>
+		...Arr.map(legend, (band) =>
 			hstack(h, { gap: "2.5", attributes: [h.Key(band.kind)] }, [
 				icon(h, AGENT_TIME_ICON[band.kind], {
 					size: 14,
@@ -88,7 +90,7 @@ const timeComposition = (h: H, summary: SessionSummary): Html => {
 }
 
 const costSection = (h: H, summary: SessionSummary, detect: (model: string) => DetectedModel): Html => {
-	const topModelCost = Math.max(...summary.models.map((model) => model.cost ?? 0), 0)
+	const topModelCost = Math.max(...Arr.map(summary.models, (model) => model.cost ?? 0), 0)
 	return railSection(
 		h,
 		"Cost by model",
@@ -98,7 +100,7 @@ const costSection = (h: H, summary: SessionSummary, detect: (model: string) => D
 		[
 			...(summary.models.length === 0
 				? [typography(h, { size: "xs", tone: "muted", as: "p" }, ["no model calls"])]
-				: summary.models.map((model) =>
+				: Arr.map(summary.models, (model) =>
 						h.div(
 							[h.Key(model.model), h.Class("space-y-1.5")],
 							[
@@ -147,7 +149,7 @@ const costSection = (h: H, summary: SessionSummary, detect: (model: string) => D
 }
 
 const tokensSection = (h: H, summary: SessionSummary): Html => {
-	const buckets = TOKEN_BUCKETS.filter((bucket) => summary.tokens[bucket.key] > 0)
+	const buckets = Arr.filter(TOKEN_BUCKETS, (bucket) => summary.tokens[bucket.key] > 0)
 	return railSection(
 		h,
 		"Tokens",
@@ -158,7 +160,7 @@ const tokensSection = (h: H, summary: SessionSummary): Html => {
 			? [typography(h, { size: "xs", tone: "muted", as: "p" }, ["no token usage reported"])]
 			: [
 					segmentedBar(h, {
-						segments: buckets.map((bucket) => ({
+						segments: Arr.map(buckets, (bucket) => ({
 							key: bucket.key,
 							value: summary.tokens[bucket.key],
 							className: bucket.fill,
@@ -166,7 +168,7 @@ const tokensSection = (h: H, summary: SessionSummary): Html => {
 						total: summary.tokens.total,
 						className: "h-2 w-full gap-px rounded-xs bg-muted",
 					}),
-					...buckets.map((bucket) =>
+					...Arr.map(buckets, (bucket) =>
 						hstack(h, { gap: "2.5", attributes: [h.Key(bucket.key)] }, [
 							icon(h, bucket.icon, {
 								size: 14,
@@ -195,7 +197,7 @@ const agentsSection = (h: H, summary: SessionSummary): Html =>
 		hstack(
 			h,
 			{ gap: "2", wrap: true },
-			summary.agentNames.map((name, index) =>
+			Arr.map(summary.agentNames, (name, index) =>
 				h.span(
 					[h.Key(name), h.Class("flex min-w-0 max-w-full items-center gap-2")],
 					[

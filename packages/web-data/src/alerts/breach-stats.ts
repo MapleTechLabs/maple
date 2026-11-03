@@ -1,5 +1,6 @@
 import type { AlertRulePreviewResponse } from "@maple/domain/http"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { Array as Arr } from "effect"
 
 /**
  * How the rule would have behaved over the chart's window. Drives the "would
@@ -29,7 +30,7 @@ const EMPTY: BreachStats = {
  */
 export function breachStatsFromPreview(preview: AlertRulePreviewResponse | null): BreachStats {
 	if (preview == null) return EMPTY
-	const bucketCount = preview.series.reduce((max, s) => Math.max(max, s.points.length), 0)
+	const bucketCount = Arr.reduce(preview.series, 0, (max, s) => Math.max(max, s.points.length))
 	if (preview.wouldFire.length === 0) return { ...EMPTY, bucketCount }
 	const windowMs = preview.windowMinutes * 60_000
 	let longestRunMs: number | null = null

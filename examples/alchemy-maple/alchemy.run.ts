@@ -9,7 +9,7 @@
 import * as Maple from "@maple-dev/alchemy"
 import * as Alchemy from "alchemy"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Layer } from "effect"
+import { Config, Effect, Layer } from "effect"
 import Api, { SERVICE_NAME } from "./src/Api.ts"
 
 export default Alchemy.Stack(
@@ -27,10 +27,11 @@ export default Alchemy.Stack(
 		const api = yield* Api
 
 		// Where alerts go. Channel secrets are write-only server-side.
+		const routingKey = yield* Config.String("PAGERDUTY_ROUTING_KEY").pipe(Config.withDefault("CHANGE_ME"))
 		const oncall = yield* Maple.AlertDestination("oncall-pagerduty", {
 			type: "pagerduty",
 			name: "On-call PagerDuty",
-			integration_key: process.env.PAGERDUTY_ROUTING_KEY ?? "CHANGE_ME",
+			integration_key: routingKey,
 		})
 
 		// Alerts on the service name the Worker reports as — `SERVICE_NAME` is the

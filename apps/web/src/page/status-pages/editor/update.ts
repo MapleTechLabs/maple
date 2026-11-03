@@ -1,6 +1,6 @@
 import type { StatusPagePreviewParams } from "@maple/domain/http/v2"
 import { STATUS_PAGE_PRESET_DEFAULTS } from "@maple/domain/status-page"
-import { Option, Result } from "effect"
+import { Option, Result, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { AppRoute } from "../../../route"
@@ -201,7 +201,7 @@ export const previewDraftOf = (model: Model): Option.Option<StatusPagePreviewPar
 	Option.map(pageOf(model), (page) => ({
 		name: page.name,
 		slug: page.slug,
-		components: componentsOf(model).map((component) => ({
+		components: Arr.map(componentsOf(model), (component) => ({
 			name: component.name,
 			group: component.group,
 			monitor_id: component.monitor_id,

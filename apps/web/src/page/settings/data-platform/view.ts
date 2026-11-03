@@ -19,7 +19,14 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { errorState } from "@maple/views/ui/error-state"
-import { field, fieldDescription, type FieldIds, fieldLabel, input, type FieldState } from "@maple/views/ui/field"
+import {
+	field,
+	fieldDescription,
+	type FieldIds,
+	fieldLabel,
+	input,
+	type FieldState,
+} from "@maple/views/ui/field"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
@@ -35,6 +42,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
+import { Array as Arr, String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string }>
@@ -51,7 +59,8 @@ const ids = (name: string, hasDescription = false): FieldIds => {
 	return hasDescription ? { ...base, description: `ch-${name}-description` } : base
 }
 
-const isHttpUrl = (value: string): boolean => URL.canParse(value.trim()) && /^https?:/i.test(value.trim())
+const isHttpUrl = (value: string): boolean =>
+	URL.canParse(Str.trim(value)) && /^https?:/i.test(Str.trim(value))
 
 // CONNECTION
 
@@ -137,7 +146,7 @@ const connectionPanel = (
 ): Html => {
 	const draft = draftOf(model)
 	const isBusy = model.isSaving || model.isDisconnecting
-	const isValid = isHttpUrl(draft.url) && draft.user.trim() !== "" && draft.database.trim() !== ""
+	const isValid = isHttpUrl(draft.url) && Str.trim(draft.user) !== "" && Str.trim(draft.database) !== ""
 	const onField = (fieldName: ConnectionField) => (value: string) =>
 		Message.ChangedConnection({ field: fieldName, value })
 	return panel(h, { className: "overflow-hidden" }, [
@@ -301,7 +310,7 @@ const diffRow = (h: H, model: Model, entry: ClickHouseTableDiffEntry): Html => {
 				? [
 						h.ul(
 							[h.Class("bg-background mx-3 mb-3 divide-y overflow-hidden rounded-md border")],
-							entry.columnDrifts.map((drift) => {
+							Arr.map(entry.columnDrifts, (drift) => {
 								const isResolved = columnDriftResolvedByApply(entry.kind, drift)
 								return h.li(
 									[
@@ -348,12 +357,12 @@ const diffRow = (h: H, model: Model, entry: ClickHouseTableDiffEntry): Html => {
 
 const schemaDiff = (h: H, model: Model, diff: OrgClickHouseSchemaDiffResponse): ReadonlyArray<Html> => {
 	const counts = schemaDiffCounts(diff.entries)
-	const needsWork = diff.entries.filter((entry) => entry.status !== "up_to_date")
-	const upToDate = diff.entries.filter((entry) => entry.status === "up_to_date")
+	const needsWork = Arr.filter(diff.entries, (entry) => entry.status !== "up_to_date")
+	const upToDate = Arr.filter(diff.entries, (entry) => entry.status === "up_to_date")
 	return [
 		h.dl(
 			[h.Class("grid grid-cols-2 border-b sm:grid-cols-4")],
-			STATUS_COUNTS.map(({ status, label, tone }, index) =>
+			Arr.map(STATUS_COUNTS, ({ status, label, tone }, index) =>
 				h.div(
 					[
 						h.Key(status),
@@ -393,7 +402,7 @@ const schemaDiff = (h: H, model: Model, diff: OrgClickHouseSchemaDiffResponse): 
 					),
 				]
 			: []),
-		...needsWork.map((entry) => diffRow(h, model, entry)),
+		...Arr.map(needsWork, (entry) => diffRow(h, model, entry)),
 		...(upToDate.length === 0
 			? []
 			: [
@@ -435,7 +444,7 @@ const schemaDiff = (h: H, model: Model, diff: OrgClickHouseSchemaDiffResponse): 
 						? [
 								h.ul(
 									[h.Class("divide-y border-b")],
-									upToDate.map((entry) =>
+									Arr.map(upToDate, (entry) =>
 										h.li(
 											[
 												h.Key(entry.name),
@@ -505,7 +514,7 @@ const applyRunStatus = (h: H, status: OrgClickHouseApplySchemaStatus | null): Re
 							vstack(
 								h,
 								{ gap: "1", as: "ul" },
-								status.skipped.map((item) =>
+								Arr.map(status.skipped, (item) =>
 									h.li(
 										[h.Key(item.id), h.Class("text-muted-foreground")],
 										[
@@ -524,24 +533,27 @@ const applyRunStatus = (h: H, status: OrgClickHouseApplySchemaStatus | null): Re
 }
 
 const planList = (h: H, plan: ReturnType<typeof schemaApplyPlan>): Html => {
-	const groups = [
-		{ label: "Create", items: plan.create },
-		{
-			label: "Add columns",
-			items: plan.addColumns.map((table) => `${table.name}: ${table.columns.join(", ")}`),
-		},
-		{
-			label: "Not resolved by apply (fix manually)",
-			items: plan.unresolved.map((entry) => `${entry.name}: ${entry.reason}`),
-		},
-	].filter((group) => group.items.length > 0)
+	const groups = Arr.filter(
+		[
+			{ label: "Create", items: plan.create },
+			{
+				label: "Add columns",
+				items: Arr.map(plan.addColumns, (table) => `${table.name}: ${Arr.join(table.columns, ", ")}`),
+			},
+			{
+				label: "Not resolved by apply (fix manually)",
+				items: Arr.map(plan.unresolved, (entry) => `${entry.name}: ${entry.reason}`),
+			},
+		],
+		(group) => group.items.length > 0,
+	)
 	if (groups.length === 0)
 		return typography(h, { size: "xs", tone: "muted", as: "p" }, [
 			"No tables or columns to add; only pending migrations run.",
 		])
 	return h.div(
 		[h.Class("max-h-56 space-y-3 overflow-y-auto text-xs")],
-		groups.map((group) =>
+		Arr.map(groups, (group) =>
 			h.div(
 				[h.Key(group.label), h.Class("space-y-1")],
 				[
@@ -551,7 +563,7 @@ const planList = (h: H, plan: ReturnType<typeof schemaApplyPlan>): Html => {
 					),
 					h.ul(
 						[h.Class("space-y-0.5 font-mono")],
-						group.items.map((item) => h.li([h.Key(item), h.Class("break-all")], [item])),
+						Arr.map(group.items, (item) => h.li([h.Key(item), h.Class("break-all")], [item])),
 					),
 				],
 			),
@@ -706,12 +718,12 @@ const usageSection = (h: H, model: Model): Html => {
 				h,
 				{},
 				AsyncData.matchData(model.usage, {
-					onEmpty: () => STATS.map((stat) => item(stat, skeleton(h, "h-[26px] w-24"))),
+					onEmpty: () => Arr.map(STATS, (stat) => item(stat, skeleton(h, "h-[26px] w-24"))),
 					onFailure: () =>
-						STATS.map((stat) =>
+						Arr.map(STATS, (stat) =>
 							item(stat, typography(h, { size: "sm", tone: "muted" }, [EMPTY_VALUE])),
 						),
-					onData: (totals) => STATS.map((stat) => item(stat, stat.format(totals[stat.key]))),
+					onData: (totals) => Arr.map(STATS, (stat) => item(stat, stat.format(totals[stat.key]))),
 				}),
 			),
 		],

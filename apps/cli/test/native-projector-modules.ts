@@ -16,7 +16,7 @@ import {
 import { createHash } from "node:crypto"
 import { serverPidPath, storeMarkerPath, storeOpenMarkerPath } from "@maple/local-server/store-version"
 import { tmpdir } from "node:os"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { join, resolve } from "node:path"
 
 const bundle = resolve(process.argv[2] ?? "dist")
@@ -42,9 +42,7 @@ const storeDigest = (path: string): string => {
 		return createHash("sha256")
 			.update(
 				JSON.stringify(
-					readdirSync(path)
-						.sort()
-						.map((name) => [name, storeDigest(join(path, name))]),
+					Arr.map(readdirSync(path).sort(), (name) => [name, storeDigest(join(path, name))]),
 				),
 			)
 			.digest("hex")
@@ -113,7 +111,7 @@ const request = async (path: string, body?: unknown) => {
 		method: body === undefined ? "GET" : "POST",
 		headers: {
 			"content-type": "application/json",
-			"x-maple-maintenance-token": readFileSync(`${data}.maintenance-token`, "utf8").trim(),
+			"x-maple-maintenance-token": Str.trim(readFileSync(`${data}.maintenance-token`, "utf8")),
 		},
 		body: body === undefined ? undefined : JSON.stringify(body),
 		signal: AbortSignal.timeout(10_000),
@@ -205,7 +203,7 @@ try {
 		}
 		writeFileSync(storeOpenMarkerPath(data), "simulated unclean shutdown\n")
 		const before = storeDigest(data)
-		const wipeArgs = args.map((value) => (value === "fail" ? "wipe" : value))
+		const wipeArgs = Arr.map(args, (value) => (value === "fail" ? "wipe" : value))
 		notStrictEqual(
 			await exit(
 				spawn(`invalid-wipe-${background}`, [
@@ -236,7 +234,7 @@ try {
 	detached = false
 
 	// Exactly one registration per serving process, always under its PID claim.
-	const owners = readFileSync(registrations, "utf8").trim().split("\n")
+	const owners = Str.split("\n")(Str.trim(readFileSync(registrations, "utf8")))
 	strictEqual(owners.length, 2)
 	strictEqual(new Set(owners).size, 2)
 

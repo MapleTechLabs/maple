@@ -3,7 +3,7 @@ import * as Chart from "@maple/views/charts/chart"
 import { ChartSpec } from "@maple/views/charts/chart-spec"
 import { plotFrame } from "@maple/views/charts/plot-frame"
 import { ResolveThemeColors, resolveColor, ThemeColors } from "@maple/views/charts/theme-colors"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Mount, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -24,11 +24,11 @@ const SEVERITY_TOKENS = {
 	WARN: "--severity-warn",
 	ERROR: "--severity-error",
 } as const satisfies Record<(typeof STACK_ORDER)[number], string>
-const THEME_TOKENS = [...Object.values(SEVERITY_TOKENS), "--border"]
+const THEME_TOKENS = [...Rec.values(SEVERITY_TOKENS), "--border"]
 
 const HEIGHT = 140
 
-const buckets = stubBuckets.map(({ bucket, ...counts }) => ({ bucket, counts }))
+const buckets = Arr.map(stubBuckets, ({ bucket, ...counts }) => ({ bucket, counts }))
 const total = totalCount(stubBuckets)
 
 // MODEL
@@ -57,7 +57,9 @@ type Message = typeof Message.Type
 const ReadViewerTimeZone = Mount.define("ReadViewerTimeZone", {
 	messages: [Message.ReadTimeZone],
 	execute: () =>
-		Effect.sync(() => Message.ReadTimeZone({ timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })),
+		Effect.sync(() =>
+			Message.ReadTimeZone({ timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+		),
 })
 
 // UPDATE
@@ -81,28 +83,36 @@ const spec = (colors: ThemeColors, timeZone: string): ChartSpec =>
 	ChartSpec.LogsVolume({
 		buckets,
 		seriesKeys: [...STACK_ORDER],
-		colors: Object.fromEntries(STACK_ORDER.map((key) => [key, resolveColor(colors, SEVERITY_TOKENS[key])])),
+		colors: Rec.fromEntries(
+			Arr.map(STACK_ORDER, (key) => [key, resolveColor(colors, SEVERITY_TOKENS[key])]),
+		),
 		border: resolveColor(colors, "--border"),
 		selection: null,
 		isSelecting: false,
 		timeZone,
 	})
 
-const plot = Submodel.defineView<Chart.Model, Chart.Message, Readonly<{ spec: ChartSpec }>>((model, inputs, h) =>
-	plotFrame(h, {
-		chartId: "landing-logs-volume",
-		host: "logs-volume",
-		spec: inputs.spec,
-		ariaLabel: "Log volume by severity",
-		className: "h-full",
-		tooltipBody: (portal) =>
-			Option.flatMap(model.tooltip, (tooltip) =>
-				tooltip._tag === "Bucket" ? Option.some(bucketTooltipBody(h, tooltip, portal)) : Option.none(),
-			),
-	}),
+const plot = Submodel.defineView<Chart.Model, Chart.Message, Readonly<{ spec: ChartSpec }>>(
+	(model, inputs, h) =>
+		plotFrame(h, {
+			chartId: "landing-logs-volume",
+			host: "logs-volume",
+			spec: inputs.spec,
+			ariaLabel: "Log volume by severity",
+			className: "h-full",
+			tooltipBody: (portal) =>
+				Option.flatMap(model.tooltip, (tooltip) =>
+					tooltip._tag === "Bucket"
+						? Option.some(bucketTooltipBody(h, tooltip, portal))
+						: Option.none(),
+				),
+		}),
 )
 
-const stackedMax = Math.max(1, ...stubBuckets.map((bucket) => STACK_ORDER.reduce((sum, key) => sum + bucket[key], 0)))
+const stackedMax = Math.max(
+	1,
+	...Arr.map(stubBuckets, (bucket) => Arr.reduce(STACK_ORDER, 0, (sum, key) => sum + bucket[key])),
+)
 
 /**
  * The stub buckets as plain stacked columns, inset like the chart's plot area: what the server
@@ -111,10 +121,10 @@ const stackedMax = Math.max(1, ...stubBuckets.map((bucket) => STACK_ORDER.reduce
 const preview = (h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[h.AriaHidden(true), h.Class("absolute inset-0 flex items-end gap-px pt-1 pb-[22px] pl-10")],
-		stubBuckets.map((bucket) =>
+		Arr.map(stubBuckets, (bucket) =>
 			h.div(
 				[h.Key(bucket.bucket), h.Class("flex h-full min-w-0 flex-1 flex-col-reverse")],
-				STACK_ORDER.map((key) =>
+				Arr.map(STACK_ORDER, (key) =>
 					h.div([
 						h.Style({
 							height: `${(bucket[key] / stackedMax) * 100}%`,
@@ -158,7 +168,10 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 				[h.Class("live-frame__head")],
 				[
 					h.span([], ["logs · volume · last 5h"]),
-					h.span([h.Class("live-frame__live")], [h.span([h.Class("live-frame__live-dot")], []), "LIVE"]),
+					h.span(
+						[h.Class("live-frame__live")],
+						[h.span([h.Class("live-frame__live-dot")], []), "LIVE"],
+					),
 				],
 			),
 			h.div(
@@ -167,7 +180,10 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 					h.div(
 						[h.Class("mb-2 flex items-baseline gap-2")],
 						[
-							h.span([h.Class("text-fg text-sm font-medium tabular-nums")], [`${formatNumber(total)} logs`]),
+							h.span(
+								[h.Class("text-fg text-sm font-medium tabular-nums")],
+								[`${formatNumber(total)} logs`],
+							),
 							h.span([h.Class("text-fg-muted text-xs")], ["in selected range"]),
 						],
 					),
@@ -193,7 +209,12 @@ export const LiveLogsVolumeChart = makeIsland({
 	Props: Schema.Struct({}),
 	Model,
 	init: () => ({
-		model: { chart: Chart.init(), themeColors: Option.none(), timeZone: Option.none(), isChartDrawn: false },
+		model: {
+			chart: Chart.init(),
+			themeColors: Option.none(),
+			timeZone: Option.none(),
+			isChartDrawn: false,
+		},
 	}),
 	update,
 	view,

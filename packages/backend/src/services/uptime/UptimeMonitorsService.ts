@@ -44,7 +44,18 @@ import {
 	type UptimeMonitorStateSnapshot,
 	type UptimeProbeConfig,
 } from "@maple/domain/uptime"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Order,
+	Schema,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	describeHttpClientError,
@@ -230,14 +241,14 @@ const validateUrl = (url: string) =>
 
 /** A TCP/DNS host: a public name or IP, judged like a URL host. */
 const validateHost = (host: string) => {
-	const bare = host.trim().replace(/^\[|\]$/gu, "")
+	const bare = Str.replace(/^\[|\]$/gu, "")(Str.trim(host))
 	if (!HOST_PATTERN.test(bare))
 		return Effect.fail(invalid(`'${host}' is not a valid hostname or IP address`))
-	const isIp = bare.includes(":") || IPV4_PATTERN.test(bare)
+	const isIp = Str.includes(":")(bare) || IPV4_PATTERN.test(bare)
 	if (isIp && isPrivateAddress(bare)) {
 		return Effect.fail(invalid(`Host '${host}' is not allowed (loopback, private, or metadata range)`))
 	}
-	return validateUrl(`http://${bare.includes(":") ? `[${bare}]` : bare}/`)
+	return validateUrl(`http://${Str.includes(":")(bare) ? `[${bare}]` : bare}/`)
 }
 
 const decodeConfig = Schema.decodeUnknownEffect(UptimeMonitorConfig)
@@ -278,7 +289,7 @@ const validateConfig = Effect.fnUntraced(function* (kind: UptimeMonitorKind, raw
 })
 
 const validateName = (name: string) => {
-	const trimmed = name.trim()
+	const trimmed = Str.trim(name)
 	return trimmed.length === 0 ? Effect.fail(invalid("Name is required")) : Effect.succeed(trimmed)
 }
 
@@ -293,7 +304,7 @@ const newHeartbeatToken = () => randomBytes(18).toString("base64url")
 const keepRedactedHeaders = (current: UptimeMonitorConfig, next: UptimeMonitorConfig) => {
 	if (next._tag !== "http") return Effect.succeed(next)
 	const stored = current._tag === "http" ? current.headers : {}
-	const entries = Object.entries(next.headers)
+	const entries = Rec.toEntries(next.headers)
 	const orphan = entries.find(
 		([name, value]) => value === UPTIME_REDACTED_HEADER_VALUE && stored[name] === undefined,
 	)
@@ -302,8 +313,8 @@ const keepRedactedHeaders = (current: UptimeMonitorConfig, next: UptimeMonitorCo
 	}
 	return Effect.succeed({
 		...next,
-		headers: Object.fromEntries(
-			entries.map(([name, value]) => [
+		headers: Rec.fromEntries(
+			Arr.map(entries, ([name, value]) => [
 				name,
 				value === UPTIME_REDACTED_HEADER_VALUE ? (stored[name] ?? value) : value,
 			]),
@@ -318,7 +329,7 @@ const refuseRedactedHeadersForNewOrigin = (current: UptimeMonitorConfig, next: U
 	current._tag === "http" &&
 	next._tag === "http" &&
 	originOf(next.url) !== originOf(current.url) &&
-	Object.values(next.headers).some((value) => value === UPTIME_REDACTED_HEADER_VALUE)
+	Arr.some(Rec.values(next.headers), (value) => value === UPTIME_REDACTED_HEADER_VALUE)
 		? Effect.fail(
 				invalid(
 					"The URL now points at a different origin; re-enter the header values instead of keeping the hidden ones",
@@ -1256,7 +1267,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 												readonly truncated: boolean
 											}>()
 										: yield* readTextPrefix(response, TEST_BODY_READ_BYTES).pipe(
-												Effect.map(Option.some),
+												Effect.asSome,
 											)
 								return {
 									_tag: "response" as const,

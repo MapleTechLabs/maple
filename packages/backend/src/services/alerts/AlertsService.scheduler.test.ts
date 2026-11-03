@@ -23,6 +23,7 @@ import {
 	Ref,
 	Schema,
 	Tracer,
+	String as Str,
 } from "effect"
 import { TestClock } from "effect/testing"
 import { AlertRuleUpsertRequest, OrgId } from "@maple/domain/http"
@@ -107,7 +108,7 @@ describe("AlertsService evaluation cadence", () => {
 
 			// Both 5-minute rules run every tick; the long rule adds one on its own minutes.
 			const longTicks = Arr.filter(Arr.range(0, counts.length - 1), (index) => counts[index] === 3)
-			assert.isTrue(counts.every((count) => count === 2 || count === 3))
+			assert.isTrue(Arr.every(counts, (count) => count === 2 || count === 3))
 			// The first tick runs it (never claimed), then it settles onto every third minute.
 			assert.strictEqual(longTicks[0], 0)
 			const settled = longTicks.slice(1)
@@ -328,7 +329,7 @@ describe("AlertsService check intervals", () => {
 			const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
 			assert.instanceOf(error, AlertValidationError)
 			assert.include(
-				error instanceof AlertValidationError ? error.details.join("\n") : "",
+				Schema.is(AlertValidationError)(error) ? Arr.join(error.details, "\n") : "",
 				"must be at least evaluationIntervalMinutes",
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
@@ -357,7 +358,7 @@ describe("AlertsService check intervals", () => {
 			ingest: (_tenant, datasource, rows) =>
 				Effect.sync(() => {
 					if (datasource === "alert_checks") {
-						state.checkDurations.push(...rows.map((row) => row.EvaluationDurationMs))
+						state.checkDurations.push(...Arr.map(rows, (row) => row.EvaluationDurationMs))
 					}
 				}),
 		} satisfies WarehouseQueryServiceApi
@@ -400,7 +401,7 @@ describe("AlertsService check intervals", () => {
 			// Three timeouts at each limit, then 5-minute checks at 15s, then 10-minute checks at 25s.
 			assert.deepStrictEqual(state.limits.slice(0, 9), [5, 5, 5, 15, 15, 15, 25, 25, 25])
 			// The window caps it: 15 minutes would leave data unread between checks.
-			assert.isTrue(state.limits.slice(6).every((limit) => limit === 25))
+			assert.isTrue(Arr.every(state.limits.slice(6), (limit) => limit === 25))
 			assert.isAtMost(state.limits.length, 3 + 3 + 6)
 			const [rule] = (yield* alerts.listRules(orgId)).rules
 			assert.strictEqual(rule?.slowedIntervalMinutes, 10)
@@ -408,7 +409,7 @@ describe("AlertsService check intervals", () => {
 			assert.strictEqual(rule?.lastEvaluationErrorKind, "query_too_slow")
 			// A failed check records how long its query ran, not 0.
 			assert.isNotEmpty(state.checkDurations)
-			assert.isTrue(state.checkDurations.every((ms) => ms === 6000))
+			assert.isTrue(Arr.every(state.checkDurations, (ms) => ms === 6000))
 		}).pipe(Effect.provide(makeLayer(testDb, timingOutWarehouse(state), { fetch: okFetch })))
 	})
 
@@ -517,7 +518,7 @@ describe("AlertsService scheduler pool", () => {
 		return { stub, queried: Ref.get(queried) }
 	}
 
-	const orgAt = (index: number) => asOrgId(`org_pool_${String(index).padStart(2, "0")}`)
+	const orgAt = (index: number) => asOrgId(`org_pool_${Str.padStart(2, "0")(String(index))}`)
 
 	// Created in index order with distinct updatedAt, which is the scheduler's order
 	// for rules it has never claimed.
@@ -647,7 +648,7 @@ describe("AlertsService scheduler pool", () => {
 			assert.strictEqual(tick.deferredCount, 0)
 			assert.isBelow(Math.max(...offsets) - Math.min(...offsets), roomMs + 500)
 			// The tick span reports the spread it actually used, not the configured 60 s.
-			const [reported] = spansNamed(spans, "AlertsService.evaluateScheduledRules").map((span) =>
+			const [reported] = Arr.map(spansNamed(spans, "AlertsService.evaluateScheduledRules"), (span) =>
 				span.attributes.get("maple.alerting.spread_ms"),
 			)
 			assert.isAbove(Number(reported), 0)
@@ -680,7 +681,7 @@ describe("AlertsService scheduler pool", () => {
 				),
 			)
 			const claimOffset = new Map(
-				claims.rows.map((row) => [row.orgId, row.claimedAt.getTime() - startedAt]),
+				Arr.map(claims.rows, (row) => [row.orgId, row.claimedAt.getTime() - startedAt]),
 			)
 
 			// A claim is never older than one chunk of slots when its rule starts, so the
@@ -827,7 +828,7 @@ describe("AlertsService scheduler pool", () => {
 					datasource === "alert_checks"
 						? Ref.update(checkWindows, (windows) => [
 								...windows,
-								...rows.map((row) => {
+								...Arr.map(rows, (row) => {
 									const { WindowStart, WindowEnd } = decodeCheckWindow(row)
 									return `${WindowStart} - ${WindowEnd}`
 								}),
@@ -901,7 +902,7 @@ describe("AlertsService scheduler pool", () => {
 			// The deferred rules are counted on the tick span, where tick dashboards look.
 			assert.isAbove(firstTick.deferredCount, 0)
 			assert.deepStrictEqual(
-				spansNamed(spans, "AlertsService.runSchedulerTick").map((span) =>
+				Arr.map(spansNamed(spans, "AlertsService.runSchedulerTick"), (span) =>
 					span.attributes.get("maple.alerting.rules_deferred"),
 				),
 				[firstTick.deferredCount],
@@ -1036,21 +1037,22 @@ describe("AlertsService claim fence", () => {
 
 				const incidents = (yield* alerts.listIncidents(orgId)).incidents
 				assert.deepStrictEqual(
-					incidents.map((incident) => incident.status),
+					Arr.map(incidents, (incident) => incident.status),
 					["resolved", "resolved"],
 				)
 				// Each group resolved once, by one tick each: the first tick stopped at
 				// the group the second tick had already resolved.
 				assert.sameMembers(
-					incidents.map((incident) => incident.resolvedAt),
+					Arr.map(incidents, (incident) => incident.resolvedAt),
 					[new Date(firstClaimAt).toISOString(), new Date(secondClaimAt).toISOString()],
 				)
-				const resolveEvents = (yield* alerts.listDeliveryEvents(orgId)).events.filter(
+				const resolveEvents = Arr.filter(
+					(yield* alerts.listDeliveryEvents(orgId)).events,
 					(event) => event.eventType === "resolve",
 				)
 				assert.sameMembers(
-					resolveEvents.map((event) => event.incidentId),
-					incidents.map((incident) => incident.id),
+					Arr.map(resolveEvents, (event) => event.incidentId),
+					Arr.map(incidents, (incident) => incident.id),
 				)
 
 				const lateGroup = incidents.find(
@@ -1151,9 +1153,9 @@ describe("AlertsService post-evaluation writes", () => {
 
 	it.live("writes a grouped rule's state rows in one batch, not one transaction per group", () => {
 		const testDb = createTestDb(trackedDbs)
-		const services = Arr.makeBy(GROUPS, (index) => `svc-${String(index).padStart(2, "0")}`)
+		const services = Arr.makeBy(GROUPS, (index) => `svc-${Str.padStart(2, "0")(String(index))}`)
 		const stub = makeWarehouseStub({
-			tracesAggregateRows: services.map((groupName) =>
+			tracesAggregateRows: Arr.map(services, (groupName) =>
 				tracesRow({ groupName, count: 200, errorRate: 0.5, estimatedSpanCount: 200 }),
 			),
 		})
@@ -1191,7 +1193,7 @@ describe("AlertsService post-evaluation writes", () => {
 			assert.isBelow(wallMs, GROUPS * EXECUTE_DELAY_MS)
 			const flushes = spansNamed(spans, "AlertsService.flushRuleStates")
 			assert.deepStrictEqual(
-				flushes.map((span) => span.attributes.get("maple.alerting.state_rows")),
+				Arr.map(flushes, (span) => span.attributes.get("maple.alerting.state_rows")),
 				[GROUPS],
 			)
 
@@ -1212,7 +1214,7 @@ describe("AlertsService post-evaluation writes", () => {
 		const testDb = createTestDb(trackedDbs)
 		const services = ["svc-a", "svc-b", "svc-c"]
 		const stub = makeWarehouseStub({
-			tracesAggregateRows: services.map((groupName) =>
+			tracesAggregateRows: Arr.map(services, (groupName) =>
 				tracesRow({ groupName, count: 200, errorRate: 0.5, estimatedSpanCount: 200 }),
 			),
 		})
@@ -1290,7 +1292,7 @@ describe("AlertsService post-evaluation writes", () => {
 		const testDb = createTestDb(trackedDbs)
 		const services = ["svc-a", "svc-b", "svc-c"]
 		const base = makeWarehouseStub({
-			tracesAggregateRows: services.map((groupName) =>
+			tracesAggregateRows: Arr.map(services, (groupName) =>
 				tracesRow({ groupName, count: 200, errorRate: 0.5, estimatedSpanCount: 200 }),
 			),
 		})
@@ -1364,7 +1366,7 @@ describe("AlertsService post-evaluation writes", () => {
 			)
 			assert.deepStrictEqual(stored, { healthy: 0 })
 			assert.deepStrictEqual(
-				ingested.filter((row) => row.RuleId === rule.id && row.Status === "healthy"),
+				Arr.filter(ingested, (row) => row.RuleId === rule.id && row.Status === "healthy"),
 				[],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
@@ -1383,7 +1385,7 @@ describe("AlertsService investigation starts", () => {
 		} = {},
 	) => {
 		const groups = Arr.makeBy(groupCount, (i) => `svc-${i}`)
-		const alertRows: ReadonlyArray<Record<string, unknown>> = groups.map((groupName) =>
+		const alertRows: ReadonlyArray<Record<string, unknown>> = Arr.map(groups, (groupName) =>
 			tracesRow({ groupName, count: 200, errorRate: 10, satisfiedCount: 180, estimatedSpanCount: 200 }),
 		)
 		const baseStub = makeWarehouseStub({ tracesAggregateRows: alertRows })
@@ -1567,7 +1569,8 @@ describe("AlertsService investigation starts", () => {
 				span(options) {
 					if (options.name === "AlertsService.startPendingTriages") {
 						releasedAtTriageStart.push(
-							spansNamed(spans, "AlertsService.releaseClaims").some(
+							Arr.some(
+								spansNamed(spans, "AlertsService.releaseClaims"),
 								(span) => span.status._tag === "Ended",
 							),
 						)

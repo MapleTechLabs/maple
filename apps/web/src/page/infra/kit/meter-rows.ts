@@ -5,6 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { meter } from "@maple/views/ui/meter"
 import { vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `MeterRows`.
 
@@ -60,5 +61,5 @@ export const meterRows = <M>(
 ): Html =>
 	h.div(
 		[h.Class(cn(vstackClass({ gap: "1" }), options.className))],
-		meters.map((row) => meterRow(h, row, options.hideLabels === true)),
+		Arr.map(meters, (row) => meterRow(h, row, options.hideLabels === true)),
 	)

@@ -31,6 +31,7 @@ import type { Model } from "./model"
 import { fleetOf, gcpTitles, inventoryOf, logTiles, metricsTiles } from "./view-gcp-band"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `Workloads`, `Resources` and `GcpUsageBand`.
 
@@ -44,25 +45,23 @@ const WINDOW = "24h"
 const workloads = (h: H, model: Model, className: string): Html => {
 	const fleet = fleetOf(model)
 	if (fleet === null) return skeleton(h, cn("h-40 rounded-md", className))
-	const services = fleet === "failed" ? [] : fleet.filter(({ workloads: list }) => list.length > 0)
-	const unread = fleet === "failed" ? [] : fleet.filter(({ failed }) => failed)
+	const services = fleet === "failed" ? [] : Arr.filter(fleet, ({ workloads: list }) => list.length > 0)
+	const unread = fleet === "failed" ? [] : Arr.filter(fleet, ({ failed }) => failed)
 	const chosen = model.gcpCard.workloadFilter.values[0] ?? "all"
-	const service = services.some((entry) => entry.service === chosen) ? chosen : "all"
-	const all = services.flatMap((entry) =>
-		entry.workloads.map((workload) => ({ service: entry.service, workload })),
+	const service = Arr.some(services, (entry) => entry.service === chosen) ? chosen : "all"
+	const all = Arr.flatMap(services, (entry) =>
+		Arr.map(entry.workloads, (workload) => ({ service: entry.service, workload })),
 	)
-	const rows = all
-		.filter((row) => service === "all" || row.service === service)
-		.toSorted(
-			(a, b) =>
-				TONE_ORDER.indexOf(gcpWorkloadTone(a.workload)) -
-					TONE_ORDER.indexOf(gcpWorkloadTone(b.workload)) ||
-				gcpWorkloadName(a.service, a.workload.keys).localeCompare(
-					gcpWorkloadName(b.service, b.workload.keys),
-				),
-		)
+	const rows = Arr.filter(all, (row) => service === "all" || row.service === service).toSorted(
+		(a, b) =>
+			TONE_ORDER.indexOf(gcpWorkloadTone(a.workload)) -
+				TONE_ORDER.indexOf(gcpWorkloadTone(b.workload)) ||
+			Str.localeCompare(gcpWorkloadName(b.service, b.workload.keys))(
+				gcpWorkloadName(a.service, a.workload.keys),
+			),
+	)
 	const manyProjects =
-		new Set(all.map((row) => gcpWorkloadProject(row.service, row.workload.keys))).size > 1
+		new Set(Arr.map(all, (row) => gcpWorkloadProject(row.service, row.workload.keys))).size > 1
 	return panel(h, { className: cn("@container border-border-subtle", className) }, [
 		panelHeader(h, {
 			className: "gap-2 border-border-subtle pr-2.5",
@@ -84,7 +83,7 @@ const workloads = (h: H, model: Model, className: string): Html => {
 								className: "gap-1.5",
 								items: [
 									countChipItem(h, { value: "all", label: "All", count: all.length }),
-									...services.map((entry) =>
+									...Arr.map(services, (entry) =>
 										countChipItem(h, {
 											value: entry.service,
 											label: GCP_INFRA_SERVICES[entry.service].title,
@@ -118,7 +117,7 @@ const workloads = (h: H, model: Model, className: string): Html => {
 			: [
 					h.div(
 						[h.Class("max-h-[22rem] overflow-y-auto overscroll-contain")],
-						rows.map(({ service: rowService, workload }) => {
+						Arr.map(rows, ({ service: rowService, workload }) => {
 							const tone = gcpWorkloadTone(workload)
 							return h.a(
 								[
@@ -159,9 +158,9 @@ const workloads = (h: H, model: Model, className: string): Html => {
 											className: typographyClass({ size: "2xs", tone: "muted" }),
 										}),
 									]),
-									...GCP_INFRA_COLUMNS[rowService]
-										.slice(0, VALUES_SHOWN)
-										.map((spec, index) =>
+									...Arr.map(
+										GCP_INFRA_COLUMNS[rowService].slice(0, VALUES_SHOWN),
+										(spec, index) =>
 											h.div(
 												[
 													h.Class(
@@ -188,7 +187,7 @@ const workloads = (h: H, model: Model, className: string): Html => {
 													]),
 												],
 											),
-										),
+									),
 								],
 							)
 						}),
@@ -216,7 +215,7 @@ const resources = (h: H, model: Model, className: string): Html => {
 				)
 			: h.ul(
 					[h.Class("flex flex-col px-2 py-1.5")],
-					types.slice(0, TYPES_SHOWN).map(({ assetType, count }) =>
+					Arr.map(types.slice(0, TYPES_SHOWN), ({ assetType, count }) =>
 						h.li(
 							[],
 							[
@@ -286,8 +285,8 @@ const resources = (h: H, model: Model, className: string): Html => {
 
 /** `GcpUsageBand`: shown once a connection has delivered logs or metrics. */
 export const usageBand = (h: H, model: Model, connectors: ReadonlyArray<V2GcpConnector>): Html | null => {
-	const logs = connectors.some((connector) => connector.last_log_received_at !== null)
-	const metrics = connectors.some((connector) => connector.last_metrics_received_at !== null)
+	const logs = Arr.some(connectors, (connector) => connector.last_log_received_at !== null)
+	const metrics = Arr.some(connectors, (connector) => connector.last_metrics_received_at !== null)
 	if (!logs && !metrics) return null
 	return vstack(h, { gap: "4" }, [
 		logs && metrics

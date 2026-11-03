@@ -4,6 +4,7 @@
  * attributes the metrics poller stores.
  */
 import { GCP_METRIC_GROUPS, type GcpMetric } from "./gcp-metrics"
+import { Array as Arr } from "effect"
 
 export const GCP_INFRA_SERVICE_IDS = [
 	"cloudRun",
@@ -108,7 +109,8 @@ export const gcpInfraServiceName = (source: GcpInfraSourceId, keys: ReadonlyArra
 
 /** The curated metrics behind a tab or a chart source, with those stored under its workloads. */
 export const gcpInfraMetrics = (source: GcpInfraSourceId): ReadonlyArray<GcpMetric> =>
-	GCP_METRIC_GROUPS.filter(
+	Arr.filter(
+		GCP_METRIC_GROUPS,
 		(group) => (group.workloadOf ?? group.resourceType) === GCP_INFRA_SOURCES[source].resourceType,
 	).flatMap((group) => group.metrics)
 

@@ -18,6 +18,7 @@ import {
 } from "../lib/pricing-offer"
 import * as m from "../paraglide/messages.js"
 import { pricingFaq } from "../lib/pricing-faq"
+import { Array as Arr } from "effect"
 
 /** "GB", "session", or "1,000 events": the block the rate is quoted per. */
 const unitLabel = (a: Allotment) =>
@@ -28,7 +29,7 @@ export const GET: APIRoute = async () => {
 
 	const meter = table(
 		["Signal", "Included every month", "Then"],
-		offer.allotments.map((a) => [
+		Arr.map(offer.allotments, (a) => [
 			a.label,
 			volume(a, a.included),
 			a.unlimited
@@ -94,14 +95,17 @@ export const GET: APIRoute = async () => {
 		blocks(
 			docHeader("Maple Pricing", m.pricing_hero_title()),
 			lede,
-			claims.map((c) => `- ${c}`).join("\n"),
+			Arr.join(
+				Arr.map(claims, (c) => `- ${c}`),
+				"\n",
+			),
 			m.pricing_rates_retention({ days: String(RETENTION_DAYS) }),
 
 			`## ${offer.name}: ${money(offer.price)}${offer.interval ?? ""}`,
 			m.pricing_everything_included(),
 			meter,
 			`No per-host, per-seat or per-query fees: $0 ${m.pricing_zero_host()}, $0 ${m.pricing_zero_seat()}, $0 ${m.pricing_zero_query()}.`,
-			`Included: ${platformFeatures().join(" · ")}.`,
+			`Included: ${Arr.join(platformFeatures(), " · ")}.`,
 			trial,
 			"Start at [app.maple.dev](https://app.maple.dev).",
 
@@ -130,7 +134,7 @@ export const GET: APIRoute = async () => {
 			"Formula for the Maple column: plan price + Σ per signal max(0, volume − included) × rate. Try it at [maple.dev/pricing#calculator](https://maple.dev/pricing#calculator).",
 
 			`## ${m.faq_heading()}`,
-			...faq.map(({ question, answer }) => `### ${question}\n\n${answer}`),
+			...Arr.map(faq, ({ question, answer }) => `### ${question}\n\n${answer}`),
 		),
 	)
 }

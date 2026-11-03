@@ -18,6 +18,7 @@ import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The issue occurrences table.
 
@@ -50,21 +51,16 @@ const occurrenceRow = <M>(
 				typographyClass({ tone: "muted", numeric: true }),
 			),
 			tableCell(h, [
-				hstack(h, { gap: "1.5", inline: true, as: "span" },
-					[
-						serviceDot(h, { serviceName: trace.serviceName, size: "sm" }),
-						h.span([], [trace.serviceName]),
-					],
-				),
+				hstack(h, { gap: "1.5", inline: true, as: "span" }, [
+					serviceDot(h, { serviceName: trace.serviceName, size: "sm" }),
+					h.span([], [trace.serviceName]),
+				]),
 			]),
-			truncatedTableCell(
-				h,
-				[
-					truncatedText(h, { text: trace.exceptionMessage }, [
-						trace.exceptionMessage.split("\n", 1)[0] ?? "",
-					]),
-				],
-			),
+			truncatedTableCell(h, [
+				truncatedText(h, { text: trace.exceptionMessage }, [
+					trace.exceptionMessage.split("\n", 1)[0] ?? "",
+				]),
+			]),
 			tableCell(h, [
 				h.a(
 					[
@@ -109,6 +105,6 @@ export const occurrencesTable = <M>(
 				]),
 				tableBody(
 					h,
-					traces.map((trace) => occurrenceRow(h, trace, inputs)),
+					Arr.map(traces, (trace) => occurrenceRow(h, trace, inputs)),
 				),
 			])

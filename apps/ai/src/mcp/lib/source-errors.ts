@@ -3,7 +3,7 @@
  * requests) and the repository sandbox share one mapping, so the same cause reads the same way
  * whichever tool hit it.
  */
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import {
 	IntegrationsNotConnectedError,
 	IntegrationsPersistenceError,
@@ -55,7 +55,7 @@ const GITHUB_APP_UNAVAILABLE = new McpUnavailableError({
  * only signal.
  */
 const isGithubAppMissing = (error: IntegrationsUpstreamError): boolean =>
-	error.message.startsWith("GitHub App is not configured")
+	Str.startsWith("GitHub App is not configured")(error.message)
 
 export const fromVcsLookupError =
 	(operation: string) =>

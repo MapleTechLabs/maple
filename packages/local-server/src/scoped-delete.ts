@@ -2,7 +2,7 @@
 // telemetry (optionally one deployment.environment and/or everything before an
 // hour) leaves the raw tables and every table derived from them. See docs/local-mode.md.
 
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { existsSync } from "node:fs"
 import type { Chdb } from "./chdb"
 import { decodeJsonEachRow, decodeRowCounts } from "./chdb-rows"
@@ -183,12 +183,13 @@ export const hasSubject = (request: ScopedDeleteRequest): boolean =>
 	request.service !== undefined || request.namespace !== undefined
 
 const requestedDimensions = (request: ScopedDeleteRequest): ReadonlyArray<Dimension> =>
-	DIMENSIONS.filter((dimension) => request[dimension] !== undefined)
+	Arr.filter(DIMENSIONS, (dimension) => request[dimension] !== undefined)
 
 /** Bucketed rollups cannot split an hour, so every table uses the same hour cutoff. */
 export const floorToHour = (ms: number): number => Math.floor(ms / HOUR_MS) * HOUR_MS
 
-const sqlString = (value: string): string => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+const sqlString = (value: string): string =>
+	`'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
 
 const sourceExpression = (source: DimensionSource, dimension: Dimension): string => {
 	if ("column" in source) return source.column
@@ -201,24 +202,27 @@ const sourceExpression = (source: DimensionSource, dimension: Dimension): string
 /** `dimension = value` on this table; the caller has checked the table declares it. */
 const dimensionPredicate = (entry: ScopedPlan, dimension: Dimension, value: string): string => {
 	if (dimension === "service")
-		return `(${(entry.service ?? []).map((column) => `${column} = ${sqlString(value)}`).join(" OR ")})`
+		return `(${Arr.join(
+			Arr.map(entry.service ?? [], (column) => `${column} = ${sqlString(value)}`),
+			" OR ",
+		)})`
 	const source = entry[dimension]
 	return source === null ? "0" : `${sourceExpression(source, dimension)} = ${sqlString(value)}`
 }
 
 const scopePredicates = (entry: ScopedPlan, request: ScopedDeleteRequest, dims: ReadonlyArray<Dimension>) =>
-	dims.map((dimension) => dimensionPredicate(entry, dimension, request[dimension] ?? ""))
+	Arr.map(dims, (dimension) => dimensionPredicate(entry, dimension, request[dimension] ?? ""))
 
 const hourOf = (column: string) => `toUnixTimestamp(toStartOfHour(toDateTime(${column})))`
 
 /** The rows a request names, or null when the table lacks a requested dimension. */
 const filterPredicate = (entry: ScopedPlan, request: ScopedDeleteRequest): string | null => {
 	const dims = requestedDimensions(request)
-	if (!dims.every((dimension) => declares(entry, dimension))) return null
+	if (!Arr.every(dims, (dimension) => declares(entry, dimension))) return null
 	const parts = scopePredicates(entry, request, dims)
 	if (request.beforeMs !== undefined)
 		parts.push(`${entry.time} < toDateTime(${Math.floor(request.beforeMs / 1000)})`)
-	return parts.join(" AND ")
+	return Arr.join(parts, " AND ")
 }
 
 const hourList = (hours: ReadonlyArray<number>) => hours.join(", ")
@@ -237,21 +241,28 @@ interface ViewEdge {
 const IDENTIFIER = /[A-Za-z_][A-Za-z0-9_]*/g
 
 const materializedViews = (manifest: LocalSchemaManifest): ReadonlyArray<ViewEdge> => {
-	const tables = new Set(manifest.objects.filter((o) => o.kind === "table").map((o) => o.name))
-	return manifest.objects
-		.filter((o) => o.kind === "materialized_view")
-		.map((o) => {
+	const tables = new Set(
+		Arr.map(
+			Arr.filter(manifest.objects, (o) => o.kind === "table"),
+			(o) => o.name,
+		),
+	)
+	return Arr.map(
+		Arr.filter(manifest.objects, (o) => o.kind === "materialized_view"),
+		(o) => {
 			const body = viewBody(o.definition) ?? ""
-			const sources = [...body.matchAll(/\bFROM\s+([A-Za-z_][A-Za-z0-9_]*)/gi)]
-				.map((match) => match[1]!)
-				.filter((name) => tables.has(name))
+			const sources = Arr.filter(
+				Arr.map([...body.matchAll(/\bFROM\s+([A-Za-z_][A-Za-z0-9_]*)/gi)], (match) => match[1]!),
+				(name) => tables.has(name),
+			)
 			return {
 				name: o.name,
 				target: o.definition.match(/\bTO\s+([A-Za-z_][A-Za-z0-9_]*)/i)?.[1] ?? "",
 				sources: [...new Set(sources)],
 				body,
 			}
-		})
+		},
+	)
 }
 
 const fromPattern = (source: string) => new RegExp(`\\bFROM\\s+${source}\\b`, "gi")
@@ -287,7 +298,7 @@ const resolvePlan = (
 	const pending: Rebuild[] = []
 	const excluded: Array<ResolvedPlan["excluded"][number]> = []
 	const unsupported: string[] = []
-	for (const [table, entry] of Object.entries(plans)) {
+	for (const [table, entry] of Rec.toEntries(plans)) {
 		if (entry.strategy === "excluded") {
 			excluded.push({ table, reason: entry.reason })
 			continue
@@ -308,26 +319,24 @@ const resolvePlan = (
 			// The rollup recomputes whole hours, so its clear is never narrowed.
 			scope:
 				entry.recompute === "views"
-					? requested.filter((dimension) => declares(entry, dimension))
+					? Arr.filter(requested, (dimension) => declares(entry, dimension))
 					: [],
-			views: views
-				.filter((view) => view.target === table)
-				.flatMap((view) => {
-					const source = view.sources[0]
-					return source !== undefined &&
-						plans[source] !== undefined &&
-						plans[source]!.strategy !== "excluded"
-						? [{ ...view, source }]
-						: []
-				}),
+			views: Arr.filter(views, (view) => view.target === table).flatMap((view) => {
+				const source = view.sources[0]
+				return source !== undefined &&
+					plans[source] !== undefined &&
+					plans[source]!.strategy !== "excluded"
+					? [{ ...view, source }]
+					: []
+			}),
 		})
 	}
 	const rebuilds: Rebuild[] = []
 	while (pending.length > 0) {
 		const ready = pending.findIndex(
 			(rebuild) =>
-				!rebuild.views.some((view) =>
-					pending.some((other) => other !== rebuild && other.table === view.source),
+				!Arr.some(rebuild.views, (view) =>
+					Arr.some(pending, (other) => other !== rebuild && other.table === view.source),
 				),
 		)
 		rebuilds.push(...pending.splice(ready === -1 ? 0 : ready, 1))
@@ -346,9 +355,10 @@ const DELETE_SCOPES: ReadonlyArray<ScopedDeleteRequest> = [
 ]
 
 const scopeFlags = (request: ScopedDeleteRequest) =>
-	requestedDimensions(request)
-		.map((dimension) => `--${dimension}`)
-		.join(" ")
+	Arr.join(
+		Arr.map(requestedDimensions(request), (dimension) => `--${dimension}`),
+		" ",
+	)
 
 /**
  * Everything that must hold for the plan to delete exactly the requested rows
@@ -359,14 +369,19 @@ export const validateDeletePlan = (
 	plans: TableDeletePlans = TABLE_DELETE_PLAN,
 ): ReadonlyArray<string> => {
 	const problems: string[] = []
-	const tables = new Map(manifest.objects.filter((o) => o.kind === "table").map((o) => [o.name, o]))
+	const tables = new Map(
+		Arr.map(
+			Arr.filter(manifest.objects, (o) => o.kind === "table"),
+			(o) => [o.name, o],
+		),
+	)
 	const views = materializedViews(manifest)
 	for (const name of tables.keys())
 		if (plans[name] === undefined) problems.push(`${name}: no delete plan for this table`)
-	for (const name of Object.keys(plans))
+	for (const name of Rec.keys(plans))
 		if (!tables.has(name)) problems.push(`${name}: planned but not in the schema`)
 
-	for (const [name, entry] of Object.entries(plans)) {
+	for (const [name, entry] of Rec.toEntries(plans)) {
 		const table = tables.get(name)
 		if (table !== undefined && entry.strategy === "scoped")
 			problems.push(...columnProblems(name, table, entry))
@@ -377,7 +392,7 @@ export const validateDeletePlan = (
 		const plan = resolvePlan(manifest, request, plans)
 		for (const table of plan.unsupported)
 			problems.push(`${table}: cannot delete ${label} and has no recompute`)
-		const rebuilt = new Map(plan.rebuilds.map((rebuild) => [rebuild.table, rebuild]))
+		const rebuilt = new Map(Arr.map(plan.rebuilds, (rebuild) => [rebuild.table, rebuild]))
 		for (const rebuild of plan.rebuilds) {
 			if (rebuild.method === "service-map-rollup") continue
 			if (rebuild.views.length === 0)
@@ -402,13 +417,13 @@ export const validateDeletePlan = (
 						)
 			}
 			// Re-inserting fires the views this table feeds; their own recompute must wipe that.
-			for (const view of views.filter((candidate) => candidate.sources.includes(rebuild.table))) {
+			for (const view of Arr.filter(views, (candidate) => candidate.sources.includes(rebuild.table))) {
 				const downstream = rebuilt.get(view.target)
 				if (downstream === undefined)
 					problems.push(
 						`${view.name}: recomputing ${rebuild.table} for ${label} leaks into ${view.target}`,
 					)
-				else if (!downstream.scope.every((dimension) => rebuild.scope.includes(dimension)))
+				else if (!Arr.every(downstream.scope, (dimension) => rebuild.scope.includes(dimension)))
 					problems.push(
 						`${view.target}: recompute scope for ${label} is wider than ${rebuild.table}'s`,
 					)
@@ -428,7 +443,7 @@ export const validateDeletePlan = (
 
 const columnProblems = (name: string, table: LocalSchemaObject, entry: ScopedPlan): ReadonlyArray<string> => {
 	const problems: string[] = []
-	const columns = new Set(table.columns.map((c) => c.name))
+	const columns = new Set(Arr.map(table.columns, (c) => c.name))
 	const keyColumns = new Set(table.orderBy?.match(IDENTIFIER) ?? [])
 	// Only a plain MergeTree row is one event; any other engine merges rows by key.
 	const merges = table.engine !== "MergeTree"
@@ -498,9 +513,14 @@ const decodeNames = decodeJsonEachRow(Schema.Struct({ name: Schema.String }))
 
 const distinctHours = (db: Db, table: string, time: string, predicate: string) =>
 	run(`hours of ${table}`, () =>
-		decodeHours(
-			db.query(`SELECT DISTINCT toString(${hourOf(time)}) AS hour FROM ${table} WHERE ${predicate}`),
-		).map((row) => Number(row.hour)),
+		Arr.map(
+			decodeHours(
+				db.query(
+					`SELECT DISTINCT toString(${hourOf(time)}) AS hour FROM ${table} WHERE ${predicate}`,
+				),
+			),
+			(row) => Number(row.hour),
+		),
 	)
 
 const scopedPlan = (table: string): Effect.Effect<ScopedPlan, ScopedDeleteError> => {
@@ -522,7 +542,7 @@ const affectedHours = (
 		const sources =
 			rebuild.method === "service-map-rollup"
 				? [ROLLUP_SOURCE]
-				: rebuild.views.map((view) => view.source)
+				: Arr.map(rebuild.views, (view) => view.source)
 		const hours = new Set<number>()
 		for (const source of new Set(sources)) {
 			const filter = plan.filters.find((candidate) => candidate.table === source)
@@ -558,14 +578,19 @@ const recomputable = (
 	nowMs: number,
 ) => {
 	const sources =
-		rebuild.method === "service-map-rollup" ? [ROLLUP_SOURCE] : rebuild.views.map((view) => view.source)
-	const ttls = sources.map((source) =>
+		rebuild.method === "service-map-rollup"
+			? [ROLLUP_SOURCE]
+			: Arr.map(rebuild.views, (view) => view.source)
+	const ttls = Arr.map(sources, (source) =>
 		ttlDaysFromDefinition(manifest.objects.find((o) => o.name === source)?.definition ?? ""),
 	)
 	const kept: number[] = []
 	const skipped: number[] = []
 	for (const hour of hours) {
-		const covered = ttls.every((days) => days === null || hour * 1000 + days * DAY_MS > nowMs + DAY_MS)
+		const covered = Arr.every(
+			ttls,
+			(days) => days === null || hour * 1000 + days * DAY_MS > nowMs + DAY_MS,
+		)
 		;(covered ? kept : skipped).push(hour)
 	}
 	return { kept, skipped }
@@ -577,10 +602,13 @@ const rebuildTargetPredicate = (
 	request: ScopedDeleteRequest,
 	hours: ReadonlyArray<number>,
 ) =>
-	[
-		...scopePredicates(entry, request, rebuild.scope),
-		`${hourOf(rebuild.time)} IN (${hourList(hours)})`,
-	].join(" AND ")
+	Arr.join(
+		[
+			...scopePredicates(entry, request, rebuild.scope),
+			`${hourOf(rebuild.time)} IN (${hourList(hours)})`,
+		],
+		" AND ",
+	)
 
 const clearHours = (db: Db, rebuild: Rebuild, request: ScopedDeleteRequest, hours: ReadonlyArray<number>) =>
 	Effect.gen(function* () {
@@ -620,24 +648,30 @@ const recomputeViaViews = (
 				})
 			// The view's own output columns, so the INSERT matches by name, not position.
 			const columns = yield* run(`columns of ${view.name}`, () =>
-				decodeNames(
-					db.query(
-						`SELECT name FROM system.columns WHERE database = currentDatabase() AND table = ${sqlString(view.name)} ORDER BY position`,
+				Arr.map(
+					decodeNames(
+						db.query(
+							`SELECT name FROM system.columns WHERE database = currentDatabase() AND table = ${sqlString(view.name)} ORDER BY position`,
+						),
 					),
-				).map((row) => row.name),
+					(row) => row.name,
+				),
 			)
 			if (columns.length === 0)
 				return yield* new ScopedDeleteError({ message: `${view.name}: no columns in system.columns` })
 			for (const dayHours of days.values()) {
-				const scope = [
-					...scopePredicates(source, request, rebuild.scope),
-					`${hourOf(source.time)} IN (${hourList(dayHours)})`,
-				].join(" AND ")
-				const body = view.body.replace(
+				const scope = Arr.join(
+					[
+						...scopePredicates(source, request, rebuild.scope),
+						`${hourOf(source.time)} IN (${hourList(dayHours)})`,
+					],
+					" AND ",
+				)
+				const body = Str.replace(
 					fromPattern(view.source),
 					`FROM (SELECT ${sourceColumns} FROM ${view.source} WHERE ${scope}) AS ${view.source}`,
-				)
-				const list = columns.join(", ")
+				)(view.body)
+				const list = Arr.join(columns, ", ")
 				yield* run(`recompute ${rebuild.table} via ${view.name}`, () =>
 					db.exec(`INSERT INTO ${rebuild.table} (${list}) SELECT ${list} FROM (${body})`),
 				)
@@ -653,9 +687,9 @@ const recomputeServiceMap = (
 	hoursByTable: Readonly<Record<string, ReadonlyArray<number>>>,
 ) =>
 	Effect.gen(function* () {
-		const hours = [...new Set(rebuilds.flatMap((rebuild) => hoursByTable[rebuild.table] ?? []))].sort(
-			(a, b) => a - b,
-		)
+		const hours = [
+			...new Set(Arr.flatMap(rebuilds, (rebuild) => hoursByTable[rebuild.table] ?? [])),
+		].sort((a, b) => a - b)
 		if (hours.length === 0) return
 		for (const rebuild of rebuilds) yield* clearHours(db, rebuild, request, hours)
 		for (const hour of hours) {
@@ -726,7 +760,7 @@ const assertPlanSound = (manifest: LocalSchemaManifest) => {
 		? Effect.void
 		: Effect.fail(
 				new ScopedDeleteError({
-					message: `scoped delete plan does not match the schema: ${problems.join("; ")}`,
+					message: `scoped delete plan does not match the schema: ${Arr.join(problems, "; ")}`,
 				}),
 			)
 }
@@ -775,7 +809,7 @@ const applyPending = (db: Db, manifest: LocalSchemaManifest, dataDir: string, pe
 				)
 		yield* recomputeServiceMap(
 			db,
-			plan.rebuilds.filter((rebuild) => rebuild.method === "service-map-rollup"),
+			Arr.filter(plan.rebuilds, (rebuild) => rebuild.method === "service-map-rollup"),
 			pending.request,
 			pending.rebuildHours,
 		)
@@ -799,10 +833,7 @@ export const resumePendingDelete = (db: Db, manifest: LocalSchemaManifest, dataD
 			nowMs,
 		)
 		const rebuildHours: Record<string, number[]> = {}
-		for (const table of new Set([
-			...Object.keys(pending.value.rebuildHours),
-			...Object.keys(current.kept),
-		]))
+		for (const table of new Set([...Rec.keys(pending.value.rebuildHours), ...Rec.keys(current.kept)]))
 			rebuildHours[table] = [
 				...new Set([...(pending.value.rebuildHours[table] ?? []), ...(current.kept[table] ?? [])]),
 			].sort((a, b) => a - b)
@@ -832,7 +863,7 @@ export const runScopedDelete = (
 		const plan = resolvePlan(manifest, request)
 		if (plan.unsupported.length > 0)
 			return yield* new ScopedDeleteError({
-				message: `cannot delete from ${plan.unsupported.join(", ")} for this request`,
+				message: `cannot delete from ${Arr.join(plan.unsupported, ", ")} for this request`,
 			})
 		const tables: ScopedDeleteTableReport[] = []
 		for (const { table, predicate } of plan.filters)
@@ -858,11 +889,11 @@ export const runScopedDelete = (
 		}
 		for (const { table, reason } of plan.excluded)
 			tables.push({ table, strategy: "excluded", rows: 0, reason })
-		tables.sort((a, b) => a.table.localeCompare(b.table))
+		tables.sort((a, b) => Str.localeCompare(b.table)(a.table))
 		const report: ScopedDeleteReport = {
 			request,
 			dryRun: options.dryRun,
-			deletedRows: tables.reduce((sum, t) => sum + (t.strategy === "filter" ? t.rows : 0), 0),
+			deletedRows: Arr.reduce(tables, 0, (sum, t) => sum + (t.strategy === "filter" ? t.rows : 0)),
 			tables,
 		}
 		if (options.dryRun) return report

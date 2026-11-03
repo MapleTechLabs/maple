@@ -12,6 +12,7 @@ import type { MeasuredNode } from "../xyflow/geometry"
 import { flowNode } from "../xyflow/view"
 import type { EffectiveGraph } from "./graph"
 import type { Positions } from "./service-map"
+import { Array as Arr, String as Str } from "effect"
 
 // The dotted namespace boxes `ServiceMapFlowCanvas` derives from node extents, and
 // `NamespaceGroupNode` (packages/ui `service-map/service-map-namespace-group.tsx`).
@@ -79,7 +80,7 @@ export const namespaceBoxRects = (
 	const extents = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>()
 	for (const node of graph.nodes) {
 		const ns = node.data.namespace
-		if (node.id.startsWith(DB_NODE_PREFIX) || !ns) continue
+		if (Str.startsWith(DB_NODE_PREFIX)(node.id) || !ns) continue
 		const w = measured[node.id]?.width ?? FALLBACK_NODE_WIDTH
 		const hgt = measured[node.id]?.height ?? FALLBACK_NODE_HEIGHT
 		const { x, y } = positions[node.id] ?? node.position
@@ -91,7 +92,7 @@ export const namespaceBoxRects = (
 			ext.maxY = Math.max(ext.maxY, y + hgt)
 		} else extents.set(ns, { minX: x, minY: y, maxX: x + w, maxY: y + hgt })
 	}
-	return [...extents].map(([ns, ext]) => ({
+	return Arr.map([...extents], ([ns, ext]) => ({
 		id: nsGroupId(ns),
 		namespace: ns,
 		position: { x: ext.minX - NS_PADDING_X, y: ext.minY - (NS_LABEL_HEIGHT + NS_PADDING_Y) },
@@ -108,7 +109,7 @@ export const namespaceBoxes = <M>(
 	measured: Readonly<Record<string, MeasuredNode>>,
 	onCollapse: (namespace: string) => M,
 ): ReadonlyArray<Html> =>
-	namespaceBoxRects(graph, positions, measured).map((rect) =>
+	Arr.map(namespaceBoxRects(graph, positions, measured), (rect) =>
 		flowNode(h, {
 			id: rect.id,
 			type: "namespaceGroup",

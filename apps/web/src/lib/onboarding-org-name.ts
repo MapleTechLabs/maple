@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 // The name `/org-required` fills in: the company in a work email's domain, else the person's own team.
 
 /** Mail providers by company label, so `yahoo.co.uk` and `outlook.de` count as personal too. */
@@ -36,15 +37,17 @@ const PERSONAL_EMAIL_PROVIDERS = new Set([
 const SECOND_LEVEL_LABELS = new Set(["co", "com", "org", "net", "ac", "gov", "edu", "ne", "or"])
 
 const titleCase = (label: string): string =>
-	label
-		.split(/[-_]+/)
-		.filter((word) => word.length > 0)
-		.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-		.join(" ")
+	Arr.join(
+		Arr.map(
+			Arr.filter(Str.split(/[-_]+/)(label), (word) => word.length > 0),
+			(word) => Str.toUpperCase(word.charAt(0)) + Str.slice(1)(word),
+		),
+		" ",
+	)
 
 /** The company label of a domain: `mail.acme.co.uk` and `acme.dev` are both `acme`. */
 const companyLabel = (domain: string): string | null => {
-	const labels = domain.split(".").filter((label) => label.length > 0)
+	const labels = Arr.filter(Str.split(".")(domain), (label) => label.length > 0)
 	if (labels.length < 2) return null
 	const topLevel = labels.at(-1) ?? ""
 	const underCountryCode =
@@ -66,7 +69,7 @@ export const suggestOrganizationName = (
 	const company = companyLabel(domain)
 	// Punycode labels (`xn--…`) would read as noise, so they fall back to the person's name.
 	const label =
-		company === null || PERSONAL_EMAIL_PROVIDERS.has(company) || company.startsWith("xn--")
+		company === null || PERSONAL_EMAIL_PROVIDERS.has(company) || Str.startsWith("xn--")(company)
 			? null
 			: company
 	if (label !== null && titleCase(label) !== "") return { name: titleCase(label), domain }

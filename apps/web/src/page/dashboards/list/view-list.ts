@@ -4,7 +4,14 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "@maple/views/ui/button"
 import { cardButton } from "@maple/views/ui/card-button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import {
+	empty,
+	emptyContent,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
@@ -26,6 +33,7 @@ import { deleteDialog } from "./view-dialogs"
 import { tagFilterView } from "./view-tag-filter"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `DashboardList`: the dashboards as rows.
 
@@ -76,7 +84,7 @@ const sortEntries = (sort: DashboardSortOption): ReadonlyArray<MenuView.MenuEntr
 	{
 		_tag: "RadioGroup",
 		label: "Sort by",
-		items: DASHBOARD_SORT_OPTIONS.map((option) => ({
+		items: Arr.map(DASHBOARD_SORT_OPTIONS, (option) => ({
 			value: option,
 			label: SORT_LABELS[option],
 			isChecked: option === sort,
@@ -110,7 +118,7 @@ const sortMenu = (h: H, model: Model): Html => {
 }
 
 const toolbar = (h: H, model: Model, dashboards: ReadonlyArray<ListDashboard>, scoped: number): Html => {
-	const isFiltering = queryOf(model.search).trim().length > 0 || tagsOf(model.search).length > 0
+	const isFiltering = Str.trim(queryOf(model.search)).length > 0 || tagsOf(model.search).length > 0
 	return listToolbar(h, {
 		leading: segmentedSelect<Scope, Message>(h, {
 			options: SCOPE_OPTIONS,
@@ -241,7 +249,7 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 									h.Class(
 										cn(
 											typographyClass({ size: "sm", weight: "medium", truncate: true }),
-											dashboard.name.trim() !== ""
+											Str.trim(dashboard.name) !== ""
 												? "text-foreground"
 												: "text-muted-foreground",
 										),
@@ -253,9 +261,13 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 							h.span(
 								[h.Class("text-muted-foreground truncate font-mono text-2xs sm:hidden")],
 								[
-									[isEmpty ? "no widgets" : widgets, dashboard.readsShort]
-										.filter(Boolean)
-										.join(" · "),
+									Arr.join(
+										Arr.filter(
+											[isEmpty ? "no widgets" : widgets, dashboard.readsShort],
+											Boolean,
+										),
+										" · ",
+									),
 								],
 							),
 							...(dashboard.description === null || dashboard.description === ""
@@ -392,7 +404,7 @@ const firstRunEmpty = (h: H, isReadOnly: boolean): Html =>
 
 /** `FilteredEmpty` for a search or tag filter that hid every dashboard. */
 const nothingMatched = (h: H, model: Model): Html => {
-	const query = queryOf(model.search).trim()
+	const query = Str.trim(queryOf(model.search))
 	const isSearching = query.length > 0
 	return empty(
 		h,
@@ -477,7 +489,7 @@ export const listBody = (
 	timeZone: string,
 ): Html => {
 	const sections = sectionsOf(model, dashboards)
-	const isFiltering = queryOf(model.search).trim().length > 0 || tagsOf(model.search).length > 0
+	const isFiltering = Str.trim(queryOf(model.search)).length > 0 || tagsOf(model.search).length > 0
 	const isNothingAtAll = dashboards.length === 0
 	const isWriteDisabled = isReadOnly(model)
 	const context: RowContext = { model, nowMs, timeZone }
@@ -496,7 +508,7 @@ export const listBody = (
 										count: sections.favorited.length,
 										note: "on this device only",
 									}),
-									...sections.favorited.map((dashboard) =>
+									...Arr.map(sections.favorited, (dashboard) =>
 										dashboardRow(h, context, dashboard, true),
 									),
 								]),
@@ -508,7 +520,7 @@ export const listBody = (
 										count: sections.others.length,
 										className: cn(sections.favorited.length > 0 && "mt-6 pt-2"),
 									}),
-									...sections.others.map((dashboard) =>
+									...Arr.map(sections.others, (dashboard) =>
 										dashboardRow(h, context, dashboard, false),
 									),
 								]),
@@ -574,7 +586,7 @@ export const listSkeleton = (h: H): Html =>
 						],
 					),
 					h.div([h.Class("flex items-center gap-2 pb-2")], [skeleton(h, "h-2.5 w-24")]),
-					...GHOST_ROWS.map((row, index) =>
+					...Arr.map(GHOST_ROWS, (row, index) =>
 						h.div(
 							[
 								h.Class(

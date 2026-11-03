@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * Shared plumbing for the `.md` twins.
  *
@@ -18,21 +19,24 @@ const TEXT_TYPE = "text/plain; charset=utf-8"
 
 /** A `.md` twin. One trailing newline, like a file on disk. */
 export const markdown = (body: string): Response =>
-	new Response(`${body.trimEnd()}\n`, { headers: { "Content-Type": MARKDOWN_TYPE } })
+	new Response(`${Str.trimEnd(body)}\n`, { headers: { "Content-Type": MARKDOWN_TYPE } })
 
 /** `llms.txt` and friends — markdown-shaped, but `text/plain` by convention. */
 export const plainText = (body: string): Response =>
-	new Response(`${body.trimEnd()}\n`, { headers: { "Content-Type": TEXT_TYPE } })
+	new Response(`${Str.trimEnd(body)}\n`, { headers: { "Content-Type": TEXT_TYPE } })
 
 /**
  * Joins blocks with exactly one blank line between them, dropping empties so a
  * conditional section can just evaluate to `""` at the call site.
  */
 export const blocks = (...parts: (string | false | null | undefined)[]): string =>
-	parts
-		.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
-		.map((p) => p.trim())
-		.join("\n\n")
+	Arr.join(
+		Arr.map(
+			Arr.filter(parts, (p): p is string => typeof p === "string" && Str.trim(p).length > 0),
+			(p) => Str.trim(p),
+		),
+		"\n\n",
+	)
 
 /**
  * The header every twin opens with, so a standalone `.md` reads on its own.
@@ -42,11 +46,17 @@ export const docHeader = (title: string, description?: string): string => blocks
 
 /** A GitHub-flavoured table. Cells are emitted verbatim; escape pipes yourself. */
 export const table = (headers: string[], rows: string[][]): string =>
-	[
-		`| ${headers.join(" | ")} |`,
-		`| ${headers.map(() => "---").join(" | ")} |`,
-		...rows.map((row) => `| ${row.join(" | ")} |`),
-	].join("\n")
+	Arr.join(
+		[
+			`| ${Arr.join(headers, " | ")} |`,
+			`| ${Arr.join(
+				Arr.map(headers, () => "---"),
+				" | ",
+			)} |`,
+			...Arr.map(rows, (row) => `| ${Arr.join(row, " | ")} |`),
+		],
+		"\n",
+	)
 
 /** Absolute URL against the configured `site` — feeds `llms.txt`, same as rss.xml.ts. */
 export const absolute = (site: URL | undefined, path: string): string =>

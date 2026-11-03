@@ -7,7 +7,7 @@ import {
 	type ReleaseServiceImpact,
 } from "../../../components/releases/release-model"
 import { errorIssueFromV2 } from "../../../lib/services/error-issues"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
@@ -190,9 +190,9 @@ const splitIssues = (issues: ReadonlyArray<ErrorIssueDocument>, releaseFirstSeen
 	const isRegressed = (issue: ErrorIssueDocument) =>
 		!isFresh(issue) && issue.lastRegressedAt !== null && toEpochMs(issue.lastRegressedAt) >= cutoff
 	return {
-		fresh: issues.filter(isFresh),
-		regressed: issues.filter(isRegressed),
-		ongoing: issues.filter((issue) => !isFresh(issue) && !isRegressed(issue)),
+		fresh: Arr.filter(issues, isFresh),
+		regressed: Arr.filter(issues, isRegressed),
+		ongoing: Arr.filter(issues, (issue) => !isFresh(issue) && !isRegressed(issue)),
 	}
 }
 
@@ -261,12 +261,12 @@ const issuesPanel = (
 			clock,
 		)
 	const counts = new Map(
-		errorFingerprints.slice(0, FINGERPRINT_LIMIT).map((row) => [row.fingerprintHash, row.count]),
+		Arr.map(errorFingerprints.slice(0, FINGERPRINT_LIMIT), (row) => [row.fingerprintHash, row.count]),
 	)
 	const loaded = (wire: ReadonlyArray<Parameters<typeof errorIssueFromV2>[0]>) =>
 		issueLists(
 			h,
-			splitIssues(wire.map(errorIssueFromV2), impact.firstSeen),
+			splitIssues(Arr.map(wire, errorIssueFromV2), impact.firstSeen),
 			counts,
 			[
 				"No issue first appeared with this version.",
@@ -278,7 +278,7 @@ const issuesPanel = (
 	const loading = () =>
 		h.div(
 			[h.Class("grid gap-3 lg:grid-cols-3")],
-			PANEL_TITLES.map((title) =>
+			Arr.map(PANEL_TITLES, (title) =>
 				sectionCard(h, { title }, [skeletonList(h, { rows: 3, className: "p-2" })]),
 			),
 		)
@@ -352,7 +352,7 @@ const loadedBody = (h: H, model: Model, derived: ServiceDerived, serviceName: st
 			h,
 			{
 				charts: model.charts,
-				rows: seriesPoints(model, derived).map((point) => ({ ...point })),
+				rows: Arr.map(seriesPoints(model, derived), (point) => ({ ...point })),
 				markers: markersOf(model, derived),
 				toChartMessage: (chartId, message) => Message.GotChartMessage({ chartId, message }),
 				linkedCursorMount: MountLinkedCursor(),

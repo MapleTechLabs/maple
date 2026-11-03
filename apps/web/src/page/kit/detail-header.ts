@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { pageTitle } from "@maple/views/ui/page-layout"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { Array as Arr } from "effect"
 
 // `DetailHeader`'s title side and `DetailHeaderSkeleton`.
 // The page passes the result as `dashboardPage`'s `titleContent`, its actions as `actions`.
@@ -15,13 +16,16 @@ export const detailEyebrow = <M>(
 	segments: ReadonlyArray<Html | string | null>,
 	className?: string,
 ): Html | null => {
-	const shown = segments.filter((segment): segment is Html | string => segment !== null && segment !== "")
+	const shown = Arr.filter(
+		segments,
+		(segment): segment is Html | string => segment !== null && segment !== "",
+	)
 	return shown.length === 0
 		? null
 		: eyebrow(
 				h,
 				{ as: "div", className: cn("flex flex-wrap items-center gap-x-2 gap-y-1", className) },
-				shown.flatMap((segment, index) => [
+				Arr.flatMap(shown, (segment, index) => [
 					...(index > 0
 						? [h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])]
 						: []),

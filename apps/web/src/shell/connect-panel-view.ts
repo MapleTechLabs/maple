@@ -27,6 +27,7 @@ import { toneBoxClass } from "@maple/views/ui/tone-box"
 import { type CopyField, Message, type Model, POPOVER_ID, realServices } from "./connect-panel"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -251,7 +252,7 @@ const mcpCard = (h: H, model: Model): Html =>
 /** The command split before its first flag: each half stays on one line, so a wrap breaks only there. */
 const commandParts = (command: string): ReadonlyArray<string> => {
 	const flag = command.indexOf(" --")
-	return flag === -1 ? [command] : [command.slice(0, flag), command.slice(flag + 1)]
+	return flag === -1 ? [command] : [Str.slice(0, flag)(command), Str.slice(flag + 1)(command)]
 }
 
 /** The onboarding command, wrapping before `--skill` so no part hides under the copy button. */
@@ -268,7 +269,7 @@ const commandBlock = (h: H, model: Model): Html =>
 					h.Id("connect-skill-command"),
 					h.Class("min-w-0 flex-1 select-all py-0.5 font-mono text-xs leading-5 break-words"),
 				],
-				commandParts(ONBOARD_SKILL_COMMAND).flatMap((part, index) => [
+				Arr.flatMap(commandParts(ONBOARD_SKILL_COMMAND), (part, index) => [
 					...(index > 0 ? [" "] : []),
 					h.span([h.Class("inline-block whitespace-nowrap")], [part]),
 				]),

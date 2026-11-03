@@ -4,7 +4,7 @@ import {
 	ExecutorArtifact,
 	ExecutorRunExited,
 } from "@maple/domain/executor"
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { AuditExecutionError, type AuditExecutionApi, executionToolHandlers } from "./execution"
 import type { SourceReaderApi } from "./source"
@@ -50,13 +50,13 @@ describe("run_in_sandbox", () => {
 					exitCode: 1,
 					stdout: "tenant-b row",
 					stdoutBytes: 12,
-					stderr: "x".repeat(10),
+					stderr: Str.repeat(10)("x"),
 					stderrBytes: 90_000,
 					promoted: [
 						new ExecutorArtifact({
 							path: "poc/out.txt",
 							bytes: 13,
-							sha256: "ab".repeat(32),
+							sha256: Str.repeat(32)("ab"),
 							preview: "tenant-b row\n",
 						}),
 					],
@@ -93,7 +93,7 @@ describe("run_in_sandbox", () => {
 		expect(text).toContain("tenant-b row")
 		expect(text).toContain("--- stderr (90000 bytes, first 32 KiB shown) ---")
 		expect(text).toContain(
-			`poc/out.txt: 13 bytes, sha256 ${"ab".repeat(32)}; cite it in a local check as agents/hunter-2/artifacts/poc/out.txt`,
+			`poc/out.txt: 13 bytes, sha256 ${Str.repeat(32)("ab")}; cite it in a local check as agents/hunter-2/artifacts/poc/out.txt`,
 		)
 	})
 

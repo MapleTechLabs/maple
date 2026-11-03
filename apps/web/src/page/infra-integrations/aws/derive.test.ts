@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import type { FleetRead } from "./data"
 import { filterViews, keysOf, resourceSearch, resourceViews, summaryOf } from "./derive"
+import { Array as Arr } from "effect"
 
 const point = (
 	keys: ReadonlyArray<string>,
@@ -45,7 +46,7 @@ describe("resourceViews", () => {
 				point(["c-idle", "prod", "us-east-1", "1"], "aws.ecs.cpu_utilization", 1, 1),
 			]),
 		)
-		expect(views.map((view) => [view.name, view.health, view.scope])).toEqual([
+		expect(Arr.map(views, (view) => [view.name, view.health, view.scope])).toEqual([
 			["b-hot", "warn", "hot"],
 			["c-idle", "idle", "idle"],
 			["a-healthy", "ok", null],
@@ -93,9 +94,11 @@ describe("filterViews", () => {
 	)
 
 	test("matches the name or cluster, the region, and the band scope", () => {
-		expect(filterViews(views, { q: "JOBS" }).map((view) => view.name)).toEqual(["billing-worker"])
-		expect(filterViews(views, { region: "us-east-1" }).map((view) => view.name)).toEqual(["payments-api"])
-		expect(filterViews(views, { scope: "hot" }).map((view) => view.name)).toEqual(["billing-worker"])
+		expect(Arr.map(filterViews(views, { q: "JOBS" }), (view) => view.name)).toEqual(["billing-worker"])
+		expect(Arr.map(filterViews(views, { region: "us-east-1" }), (view) => view.name)).toEqual([
+			"payments-api",
+		])
+		expect(Arr.map(filterViews(views, { scope: "hot" }), (view) => view.name)).toEqual(["billing-worker"])
 	})
 })
 

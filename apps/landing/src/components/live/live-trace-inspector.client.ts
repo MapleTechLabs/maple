@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec } from "effect"
 /**
  * Wires waterfall row hover to the side-panel attribute inspector.
  * Touch users get the same behaviour via `pointerenter` (rAF debounced).
@@ -40,11 +41,13 @@ function renderAttrs(attrs: Record<string, string>): string {
 			/[&<>"']/g,
 			(c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string,
 		)
-	const rows = Object.entries(attrs)
-		.map(
+	const rows = Arr.join(
+		Arr.map(
+			Rec.toEntries(attrs),
 			([k, v]) =>
 				`<dt class="text-fg-muted">${escape(k)}</dt><dd class="text-fg break-all">${escape(v)}</dd>`,
-		)
-		.join("")
+		),
+		"",
+	)
 	return `<div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">${rows}</div>`
 }

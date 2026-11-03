@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2GcpConnector, V2GcpIntegration } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, test } from "vitest"
 import * as Field from "@maple/views/ui/field"
@@ -20,9 +20,10 @@ const context: PageContext = {
 const pageUpdate = (model: PageModel, message: PageMessage) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const send = (model: PageModel, messages: ReadonlyArray<Message>) =>
-	messages.reduce(
-		(current, message) => pageUpdate(current, PageMessage.GotIntegrationsMessage({ message })).model,
+	Arr.reduce(
+		messages,
 		model,
+		(current, message) => pageUpdate(current, PageMessage.GotIntegrationsMessage({ message })).model,
 	)
 
 const NOW = Date.parse("2026-10-24T12:00:00.000Z")
@@ -57,7 +58,7 @@ const statusOf = (model: PageModel, connectors: ReadonlyArray<V2GcpConnector>): 
 			Schema.decodeUnknownSync(V2GcpIntegration)({
 				object: "gcp_integration",
 				metrics_available: true,
-				connectors: connectors.map((entry) => Schema.encodeSync(V2GcpConnector)(entry)),
+				connectors: Arr.map(connectors, (entry) => Schema.encodeSync(V2GcpConnector)(entry)),
 			}),
 		),
 	})

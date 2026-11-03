@@ -10,6 +10,7 @@ import type { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The Overview's Uptime card: this service's monitors, checked from outside.
 
@@ -17,7 +18,8 @@ type H = HtmlBuilder<Message>
 
 /** Nothing until the monitors answer, and nothing when none watches this service. */
 export const uptimePanel = (h: H, model: Model): Html => {
-	const monitors = AsyncData.getOrElse(model.uptimeMonitors.data, () => []).filter(
+	const monitors = Arr.filter(
+		AsyncData.getOrElse(model.uptimeMonitors.data, () => []),
 		(monitor) => monitor.service_name === model.serviceName,
 	)
 	if (monitors.length === 0) return null
@@ -32,7 +34,7 @@ export const uptimePanel = (h: H, model: Model): Html => {
 			vstack(
 				h,
 				{ gap: "3", as: "ul" },
-				monitors.map((monitor) => {
+				Arr.map(monitors, (monitor) => {
 					const isPaused = displayStatus(monitor) === "paused"
 					return vstack(h, { gap: "1.5", as: "li", attributes: [h.Key(monitor.id)] }, [
 						hstack(h, { gap: "3", justify: "between" }, [

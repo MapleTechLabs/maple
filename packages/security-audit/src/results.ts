@@ -10,7 +10,7 @@
  * `coverage_id` and assignment block map without judgment of its own. A needs_validation
  * proposal or verdict may carry `estimated_severity` beside its record, never inside it.
  */
-import { Effect, Option, Schema, SchemaIssue } from "effect"
+import { Effect, Option, Schema, SchemaIssue, Array as Arr, String as Str } from "effect"
 import { findingsErrors } from "./validators"
 import {
 	CanonicalRefs,
@@ -37,11 +37,11 @@ export class SecurityAuditResultError extends Schema.TaggedError<SecurityAuditRe
 
 /** The object inside a lone markdown fence, by plain string operations (no backtracking regex). */
 const unfence = (text: string): string => {
-	if (!text.startsWith("```") || !text.endsWith("```") || text.length < 6) return text
+	if (!Str.startsWith("```")(text) || !Str.endsWith("```")(text) || text.length < 6) return text
 	const firstNewline = text.indexOf("\n")
 	if (firstNewline < 0) return text
-	const opener = text.slice(3, firstNewline).trim()
-	return opener === "" || opener === "json" ? text.slice(firstNewline + 1, -3).trim() : text
+	const opener = Str.trim(Str.slice(3, firstNewline)(text))
+	return opener === "" || opener === "json" ? Str.trim(Str.slice(firstNewline + 1, -3)(text)) : text
 }
 
 const formatIssues = SchemaIssue.makeFormatterStandardSchemaV1()
@@ -49,14 +49,15 @@ const formatIssues = SchemaIssue.makeFormatterStandardSchemaV1()
 /** Each failing path, keys only (each capped), so no decoded value reaches a log. */
 const issuePaths = (issue: SchemaIssue.Issue): ReadonlyArray<string> => [
 	...new Set(
-		formatIssues(issue).issues.map(({ path = [] }) =>
+		Arr.map(formatIssues(issue).issues, ({ path = [] }) =>
 			path.length === 0
 				? "$"
-				: path
-						.map((segment) =>
-							String(typeof segment === "object" ? segment.key : segment).slice(0, 40),
-						)
-						.join("."),
+				: Arr.join(
+						Arr.map(path, (segment) =>
+							Str.slice(0, 40)(String(typeof segment === "object" ? segment.key : segment)),
+						),
+						".",
+					),
 		),
 	),
 ]
@@ -64,11 +65,16 @@ const issuePaths = (issue: SchemaIssue.Issue): ReadonlyArray<string> => [
 /** Exactly one JSON object, or a typed failure the parent answers by discarding the result. */
 export const decodeAgentJson = <S extends Schema.Top>(role: string, schema: S, text: string) =>
 	Effect.gen(function* () {
-		const trimmed = text.trim()
+		const trimmed = Str.trim(text)
 		const body = unfence(trimmed)
 		const fail = (message: string, issuePaths: ReadonlyArray<string>) =>
-			new SecurityAuditResultError({ message, role, rawExcerpt: trimmed.slice(0, 400), issuePaths })
-		if (!body.startsWith("{") || !body.endsWith("}")) {
+			new SecurityAuditResultError({
+				message,
+				role,
+				rawExcerpt: Str.slice(0, 400)(trimmed),
+				issuePaths,
+			})
+		if (!Str.startsWith("{")(body) || !Str.endsWith("}")(body)) {
 			return yield* fail(`${role} answered prose, not exactly one JSON object`, [])
 		}
 		return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(body).pipe(

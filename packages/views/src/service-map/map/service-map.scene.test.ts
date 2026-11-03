@@ -8,7 +8,7 @@ import {
 	DURATION_SECONDS,
 	generateBenchGraph,
 } from "../../fixtures/service-map-bench-fixture"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
 import {
 	click,
@@ -47,7 +47,7 @@ const source = buildSourceGraph({
 })
 const initial = ServiceMap.init(source, { minTrafficPct: 0, focus: Option.none() })
 const signature = initial.model.graph.signature
-const elkPositions = Object.fromEntries(
+const elkPositions = Rec.fromEntries(
 	computeNodePositions([...initial.model.graph.nodes], [...initial.model.graph.edges], {
 		...DEFAULT_LAYOUT_CONFIG,
 	}),
@@ -70,7 +70,7 @@ const measured = Mount.resolve(
 	{ name: AttachFlowCanvas.name },
 	ServiceMap.Message.GotCanvasMessage({
 		message: Canvas.Message.MeasuredNodes({
-			nodes: initial.model.graph.nodes.map((node) => ({
+			nodes: Arr.map(initial.model.graph.nodes, (node) => ({
 				id: node.id,
 				width: 220,
 				height: 61,
@@ -172,7 +172,7 @@ describe("service map layout", () => {
 			start,
 			ServiceMap.Message.SucceededElkLayout({
 				signature: start.graph.signature,
-				positions: Object.fromEntries(
+				positions: Rec.fromEntries(
 					computeNodePositions([...start.graph.nodes], [...start.graph.edges], {
 						...DEFAULT_LAYOUT_CONFIG,
 					}),
@@ -276,7 +276,7 @@ describe("service map declutter controls", () => {
 		)
 		expectValue(collapsed.model.collapsedNamespaces).toEqual(["payments"])
 		expectValue(collapsed.model.graph.signature).not.toBe(start.graph.signature)
-		expectValue((collapsed.commands ?? []).map((command) => command.name)).toContain("RunElkLayout")
+		expectValue(Arr.map(collapsed.commands ?? [], (command) => command.name)).toContain("RunElkLayout")
 		const expanded = update(collapsed.model, ServiceMap.Message.ClickedNode({ nodeId: "nsagg:payments" }))
 		expectValue(expanded.model.collapsedNamespaces).toEqual([])
 		expectValue(expanded.model.graph.signature).toBe(start.graph.signature)

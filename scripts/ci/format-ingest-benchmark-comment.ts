@@ -122,7 +122,10 @@ const out = process.env.COMMENT_OUTPUT
 if (!out) throw new Error("COMMENT_OUTPUT is required")
 const headRuns = await loadRuns(process.env.HEAD_LOAD_JSON)
 const baseRuns = await loadRuns(process.env.BASE_LOAD_JSON)
-const modeOf = (runs: ReadonlyArray<Run>): string => String(runs[0]?.ingest_mode ?? "tinybird")
+const modeOf = (runs: ReadonlyArray<Run>): string => {
+	const mode = runs[0]?.ingest_mode
+	return typeof mode === "string" ? mode : "tinybird"
+}
 const headMode = modeOf(headRuns)
 const baseMode = modeOf(baseRuns)
 const sameMode = baseRuns.length > 0 && baseMode === headMode

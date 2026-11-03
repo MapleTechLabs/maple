@@ -2,7 +2,7 @@ import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/s
 import { shortId } from "@maple/ui/lib/ids"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
@@ -115,13 +115,14 @@ const tableArea = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs
 
 /** The applied filters; URL namespace chips hide while the org-global pin is on. */
 const filterChips = (model: Model, pinnedNamespace: string | null) =>
-	logFilterChips(model.search)
-		.filter(
+	Arr.map(
+		Arr.filter(
+			logFilterChips(model.search),
 			(chip) =>
 				pinnedNamespace === null ||
 				(chip.param !== "namespaces" && chip.param !== "excludedNamespaces"),
-		)
-		.map((chip) => ({
+		),
+		(chip) => ({
 			id: chipId(chip),
 			label: chip.label,
 			values: chip.values,
@@ -129,7 +130,8 @@ const filterChips = (model: Model, pinnedNamespace: string | null) =>
 			onRemove: Message.RemovedFilterChip({ chipId: chipId(chip) }),
 			// The chip's tooltip keeps the full id; the trace page abbreviates to the same 8 characters.
 			valueLabel: chip.param === "traceId" ? (value: string) => shortId(value, "trace") : undefined,
-		}))
+		}),
+	)
 
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 

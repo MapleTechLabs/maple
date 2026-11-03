@@ -5,7 +5,7 @@ import { formatMetricValue } from "../lib/format-query-result"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { GetServiceTopOperationsOutput } from "@maple/domain/mcp-outputs"
 import { topOperations } from "@maple/query-engine/observability"
 import { TracesMetric } from "@maple/query-engine"
@@ -18,7 +18,8 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 		name: "get_service_top_operations",
 		title: "Service Top Operations",
 		description:
-			"Top operations (endpoints/spans) of one service, ranked by the chosen metric. Use after diagnose_service to find which endpoints need attention.",
+			"Every span name (operation) of ONE service from raw spans, ranked by the chosen metric. Use after diagnose_service to find which operations need attention. " +
+			"For HTTP routes over up to 90 days use route_usage; for arbitrary filters or time series, query_data group_by=span_name.",
 		parameters: Schema.Struct({
 			service: P.text("The service (exact `service.name`)"),
 			metric: P.optionalOneOf(TracesMetric.literals, "What to rank by (default count)"),
@@ -55,7 +56,7 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 				serviceName: params.service,
 				metric,
 				total: operations.length,
-				operations: operations.map((op) => ({ name: op.name, value: op.value })),
+				operations: Arr.map(operations, (op) => ({ name: op.name, value: op.value })),
 			}
 		}),
 		render: (output) => ({
@@ -73,7 +74,7 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 					: [
 							doc.table(
 								["Operation", output.metric],
-								output.operations.map((op) => [
+								Arr.map(output.operations, (op) => [
 									op.name,
 									formatMetricValue(output.metric, op.value),
 								]),
@@ -90,15 +91,13 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 							doc.next("list_services", {}, "verify the service name"),
 						]
 					: [
-							...output.operations
-								.slice(0, 3)
-								.map((op) =>
-									doc.next(
-										"search_traces",
-										{ service: output.serviceName, span_name: op.name },
-										`find traces for ${op.name}`,
-									),
+							...Arr.map(output.operations.slice(0, 3), (op) =>
+								doc.next(
+									"search_traces",
+									{ service: output.serviceName, span_name: op.name },
+									`find traces for ${op.name}`,
 								),
+							),
 							doc.next(
 								"query_data",
 								{

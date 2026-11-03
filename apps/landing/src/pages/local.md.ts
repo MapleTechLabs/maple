@@ -8,6 +8,7 @@
  */
 import type { APIRoute } from "astro"
 import { blocks, docHeader, markdown, table } from "../lib/page-markdown"
+import { Array as Arr } from "effect"
 
 const GITHUB_URL = "https://github.com/MapleTechLabs/maple"
 
@@ -50,13 +51,16 @@ export const GET: APIRoute = async ({ site }) => {
 			),
 
 			"## Install and run",
-			[
-				"```bash",
-				"brew install Makisuo/tap/maple      # or: curl -fsSL https://maple.dev/cli/install | sh",
-				"maple start                         # OTLP ingest + embedded store + dashboard on :4318",
-				'export OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:4318"',
-				"```",
-			].join("\n"),
+			Arr.join(
+				[
+					"```bash",
+					"brew install Makisuo/tap/maple      # or: curl -fsSL https://maple.dev/cli/install | sh",
+					"maple start                         # OTLP ingest + embedded store + dashboard on :4318",
+					'export OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:4318"',
+					"```",
+				],
+				"\n",
+			),
 			"Any OpenTelemetry SDK works unmodified: the server speaks OTLP/HTTP on `POST /v1/{traces,logs,metrics}` with no auth header. Data persists in `~/.maple/data` between runs. Platforms: macOS (Apple Silicon and Intel) and Linux (x86_64 and arm64).",
 
 			"## Instead of a compose file",
@@ -64,27 +68,33 @@ export const GET: APIRoute = async ({ site }) => {
 			"The running footprint is light: one process, one port, nothing to orchestrate. The download is not small; the embedded database engine is a few hundred megabytes on disk.",
 
 			"## Standalone by design",
-			[
-				"- **No account, ever.** No sign-up, login, license key, or trial. `maple start` is the whole onboarding.",
-				"- **Telemetry stays on loopback.** Ingest, storage, and every query run on 127.0.0.1. The dashboard page loads from local.maple.dev by default so UI fixes ship without a new binary; it only talks back to your local server. `maple start --offline` serves the UI from the binary too.",
-				"- **Works with no internet.** With `--offline` everything comes out of the binary. The CLI reports its own usage and errors unless you set `MAPLE_TELEMETRY=off`, and checks for a newer release once a day. Homebrew installs skip the check, and `MAPLE_NO_UPDATE_CHECK=1` disables it.",
-				"- **You own the files.** Everything lives under `~/.maple`. `maple archive` seals a day into Parquet queryable with DuckDB; uninstalling leaves the data directory in place.",
-				"- **Source-available.** The whole platform is on GitHub under the Functional Source License, converting to Apache 2.0.",
-			].join("\n"),
+			Arr.join(
+				[
+					"- **No account, ever.** No sign-up, login, license key, or trial. `maple start` is the whole onboarding.",
+					"- **Telemetry stays on loopback.** Ingest, storage, and every query run on 127.0.0.1. The dashboard page loads from local.maple.dev by default so UI fixes ship without a new binary; it only talks back to your local server. `maple start --offline` serves the UI from the binary too.",
+					"- **Works with no internet.** With `--offline` everything comes out of the binary. The CLI reports its own usage and errors unless you set `MAPLE_TELEMETRY=off`, and checks for a newer release once a day. Homebrew installs skip the check, and `MAPLE_NO_UPDATE_CHECK=1` disables it.",
+					"- **You own the files.** Everything lives under `~/.maple`. `maple archive` seals a day into Parquet queryable with DuckDB; uninstalling leaves the data directory in place.",
+					"- **Source-available.** The whole platform is on GitHub under the Functional Source License, converting to Apache 2.0.",
+				],
+				"\n",
+			),
 
 			"## The dashboard",
 			views,
 
 			"## The CLI",
 			"The same binary is a query CLI. Every command runs against the local server and prints JSON by default (`--format table` for an aligned table, `--debug` to print the query). Examples:",
-			[
-				"```bash",
-				"maple traces --service api --errors --since 5m    # the failing request's trace",
-				'maple compare --around "2026-09-06 14:00:00"      # before vs. after a change',
-				"maple diagnose api --since 15m                    # health, top errors, recent traces",
-				'maple query "SELECT count() FROM traces"          # raw SQL against the local store',
-				"```",
-			].join("\n"),
+			Arr.join(
+				[
+					"```bash",
+					"maple traces --service api --errors --since 5m    # the failing request's trace",
+					'maple compare --around "2026-09-06 14:00:00"      # before vs. after a change',
+					"maple diagnose api --since 15m                    # health, top errors, recent traces",
+					'maple query "SELECT count() FROM traces"          # raw SQL against the local store',
+					"```",
+				],
+				"\n",
+			),
 			`Full command list: [CLI reference](${url("/docs/reference/cli.md")}).`,
 
 			"## FAQ",
@@ -100,12 +110,15 @@ export const GET: APIRoute = async ({ site }) => {
 			"Nothing. There is no paid tier of Maple Local and no usage limit.",
 
 			"## Links",
-			[
-				`- [Documentation](${url("/docs/local-mode.md")})`,
-				`- [CLI reference](${url("/docs/reference/cli.md")})`,
-				`- [Releases](${GITHUB_URL}/releases)`,
-				`- [Source](${GITHUB_URL})`,
-			].join("\n"),
+			Arr.join(
+				[
+					`- [Documentation](${url("/docs/local-mode.md")})`,
+					`- [CLI reference](${url("/docs/reference/cli.md")})`,
+					`- [Releases](${GITHUB_URL}/releases)`,
+					`- [Source](${GITHUB_URL})`,
+				],
+				"\n",
+			),
 		),
 	)
 }

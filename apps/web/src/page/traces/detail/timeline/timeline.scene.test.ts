@@ -1,5 +1,5 @@
 import { SpanId, TraceId } from "@maple/domain"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import {
 	click,
 	expect as expectView,
@@ -179,14 +179,16 @@ describe("trace timeline", () => {
 	test("a page-driven selection scrolls the new span into view, an unchanged one does nothing", () => {
 		const selected = setSelectedSpanId(entered(), "00000000000000c1")
 		expect(selected.model.selectedSpanId).toBe("00000000000000c1")
-		expect((selected.commands ?? []).map((command) => command.name)).toEqual(["ScrollTraceTimelineToRow"])
+		expect(Arr.map(selected.commands ?? [], (command) => command.name)).toEqual([
+			"ScrollTraceTimelineToRow",
+		])
 		expect(setSelectedSpanId(selected.model, "00000000000000c1").commands).toBeUndefined()
 	})
 
 	test("bars are laid out depth-first once per tree, expansion and colour change", () => {
 		const model = entered()
 		const bars = barsOf(model)
-		expect(bars.map((bar) => bar.span.spanName)).toEqual([
+		expect(Arr.map(bars, (bar) => bar.span.spanName)).toEqual([
 			"GET /order",
 			"GET /session",
 			"GET /charges",
@@ -194,7 +196,7 @@ describe("trace timeline", () => {
 		])
 		expect(barsOf({ ...model, viewport: { startMs: 0, endMs: 1 } })).toBe(bars)
 		const folded = update(model, Message.ClickedCollapseAll()).model
-		expect(barsOf(folded).map((bar) => bar.span.spanName)).toEqual(["GET /order"])
+		expect(Arr.map(barsOf(folded), (bar) => bar.span.spanName)).toEqual(["GET /order"])
 	})
 
 	test("a render with an unchanged model reuses the minimap silhouette", () => {

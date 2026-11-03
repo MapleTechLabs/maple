@@ -6,7 +6,7 @@ import {
 	type SpatialView,
 } from "../../components/service-map/three/spatial-layout"
 import type { Edge3D, Node3DKind, Topology3D } from "../../components/service-map/three/types"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 // The three-free half of the 3D layout (`ServiceMap3DViewport`'s memos), shared by the labels
 // in the view and the scene chunk, so both place the same districts and belts.
@@ -28,12 +28,12 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 /** Metrics can refresh without replacing the layout: it is keyed on ids, namespaces and kinds. */
 export const topologyKeyOf = (topology: Topology3D): string =>
 	encodeJson({
-		nodes: topology.nodes
-			.map(({ id, namespace, kind }) => ({ id, namespace, kind }))
-			.sort((a, b) => a.id.localeCompare(b.id)),
-		edges: topology.edges
-			.map(({ source, target }) => ({ source, target }))
-			.sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target)),
+		nodes: Arr.map(topology.nodes, ({ id, namespace, kind }) => ({ id, namespace, kind })).sort((a, b) =>
+			Str.localeCompare(b.id)(a.id),
+		),
+		edges: Arr.map(topology.edges, ({ source, target }) => ({ source, target })).sort(
+			(a, b) => Str.localeCompare(b.source)(a.source) || Str.localeCompare(b.target)(a.target),
+		),
 	})
 
 /** `JSON.parse(topologyKey)`: the sorted topology the layout and routes are computed from. */
@@ -53,11 +53,13 @@ export interface LinkLabel {
 export const linkLabels = (topology: Topology3D, layout: SpatialLayout): ReadonlyArray<LinkLabel> => {
 	const layoutTopology = layoutTopologyOf(topologyKeyOf(topology))
 	const kinds = new Map<string, Node3DKind>(layoutTopology.nodes.map((node) => [node.id, node.kind]))
-	const byId = new Map(topology.edges.map((edge) => [encodeJson([edge.source, edge.target]), edge]))
-	const peak = Math.max(1, ...topology.edges.map((edge) => edge.callsPerSecond))
-	return layoutTopology.edges
-		.toSorted((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target))
-		.flatMap((route) => {
+	const byId = new Map(Arr.map(topology.edges, (edge) => [encodeJson([edge.source, edge.target]), edge]))
+	const peak = Math.max(1, ...Arr.map(topology.edges, (edge) => edge.callsPerSecond))
+	return Arr.flatMap(
+		layoutTopology.edges.toSorted(
+			(a, b) => Str.localeCompare(b.source)(a.source) || Str.localeCompare(b.target)(a.target),
+		),
+		(route) => {
 			if (!layout.positions.get(route.source) || !layout.positions.get(route.target)) return []
 			const edge = byId.get(encodeJson([route.source, route.target]))
 			if (!edge) return []
@@ -73,5 +75,6 @@ export const linkLabels = (topology: Topology3D, layout: SpatialLayout): Readonl
 							errorRateLevel(edge.errorRate) !== "neutral"),
 				},
 			]
-		})
+		},
+	)
 }

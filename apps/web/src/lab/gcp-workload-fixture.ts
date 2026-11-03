@@ -1,7 +1,7 @@
 // The Google Cloud workload lab's fixtures, shared with apps/web's `/lab/gcp-workload`.
 // Imports stay relative: the Foldkit typecheck resolves `@/` to its own source.
 
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { GcpProjectId } from "@maple/domain/primitives"
@@ -247,9 +247,9 @@ export const labStatementSpans = (
 	p95Ms: number,
 	services: ReadonlyArray<string>,
 ): ReadonlyArray<StatementSpan> =>
-	[4.4, 3.1, 2.3, 1.7, 1.4].map((factor, index) => ({
-		traceId: `${queryHash}${String(index).padStart(30, "0")}`,
-		spanId: `${queryHash}${String(index).padStart(14, "0")}`,
+	Arr.map([4.4, 3.1, 2.3, 1.7, 1.4], (factor, index) => ({
+		traceId: `${queryHash}${Str.padStart(30, "0")(String(index))}`,
+		spanId: `${queryHash}${Str.padStart(14, "0")(String(index))}`,
 		serviceName: (services.length === 0 ? SPAN_SERVICES : services)[index % 2] ?? services[0] ?? "",
 		timestamp: new Date(
 			START_MS + (BUCKETS * BUCKET_SECONDS - (index * 37 + 11) * 60) * 1000,

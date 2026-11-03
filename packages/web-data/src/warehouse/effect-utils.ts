@@ -7,7 +7,7 @@ import {
 	type DurationStats,
 	type AttributeValueItem,
 } from "@maple/query-engine"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, String as Str } from "effect"
 import { HttpClientError } from "effect/http"
 import { PublicHttpErrorBodySchema, type AnyPublicHttpErrorBody } from "@maple/domain/http"
 import { makeClientErrorBody, NetworkErrorBody } from "../lib/error-messages"
@@ -30,6 +30,14 @@ export const resolveInfraWindow = (input: { startTime?: string; endTime?: string
 
 /** A wire-row number; a missing column reads as 0. */
 export const wireNumber = (value: unknown): number => Number(value ?? 0)
+
+/** A wire-row string; a missing or non-scalar column reads as `fallback`. */
+export const wireString = (value: unknown, fallback = ""): string => {
+	if (typeof value === "string") return value
+	if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint")
+		return `${value}`
+	return fallback
+}
 
 /** A wire-row number that may be null on purpose (a gap); missing reads as null too. */
 export const wireNumberOrNull = (value: unknown): number | null =>
@@ -162,7 +170,7 @@ export const isWarehouseApiError = (cause: unknown): cause is WarehouseApiError 
 	cause !== null &&
 	"_tag" in cause &&
 	typeof cause._tag === "string" &&
-	cause._tag.startsWith("@maple/web/errors/Warehouse")
+	Str.startsWith("@maple/web/errors/Warehouse")(cause._tag)
 
 /**
  * True when `cause` is a request that never got a response — the browser could

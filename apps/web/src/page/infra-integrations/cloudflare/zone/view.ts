@@ -49,6 +49,7 @@ import {
 } from "./view-sections"
 import { zoneSignals } from "./view-strips"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `ZoneDetailPage`.
 
@@ -100,7 +101,7 @@ const header = (h: H, model: Model, hasFilters: boolean): HeaderParts => {
 						size: "xs",
 						ariaLabel: "Zone view",
 						options: tabs,
-						value: tabs.some((t) => t.value === tab) ? tab : "traffic",
+						value: Arr.some(tabs, (t) => t.value === tab) ? tab : "traffic",
 						onChange: (next) => Message.ClickedTab({ tab: next }),
 					}),
 				]
@@ -238,7 +239,7 @@ export const zonePage = (h: H, model: Model, timeZone: string, options: ZonePage
 				view: Tooltip.view,
 				toParentMessage: (message: Tooltip.Message) => Message.GotTooltipMessage({ message }),
 				viewInputs: {
-					triggerIds: Object.values(SCOPE_IDS),
+					triggerIds: Rec.values(SCOPE_IDS),
 					toContent: (id) => tooltipContent(model, id),
 					// `ScopeChip`'s `TooltipContent className="max-w-[32ch]"`.
 					className: "max-w-[32ch]",

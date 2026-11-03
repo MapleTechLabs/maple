@@ -1,6 +1,6 @@
 import type { AiSessionDistribution } from "@maple/domain/http"
 import { getServiceColor } from "@maple/ui/lib/colors"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Checkbox from "@maple/views/ui/checkbox"
@@ -45,7 +45,7 @@ const distributionControls = (
 		? { presets: intents }
 		: {
 				histogram: toLogBuckets(
-					distribution.buckets.map((bucket) => ({
+					Arr.map(distribution.buckets, (bucket) => ({
 						floor: bucket.floor * scale,
 						count: bucket.count,
 					})),
@@ -183,7 +183,10 @@ const singleCheckbox = (
 					attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId))],
 				},
 				// The title on the text only, so the info mark's tooltip is the one it shows.
-				[h.span([h.Class("truncate"), h.Title(title)], [title]), filterDescriptionMark(h, title, description)],
+				[
+					h.span([h.Class("truncate"), h.Title(title)], [title]),
+					filterDescriptionMark(h, title, description),
+				],
 			),
 		],
 	)
@@ -264,7 +267,7 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 				facets.environments,
 			),
 			filterSidebarDivider(h),
-			...RANGES.map((spec) => rangeSection(h, model, distributions, spec)),
+			...Arr.map(RANGES, (spec) => rangeSection(h, model, distributions, spec)),
 			filterSidebarDivider(h),
 			singleCheckbox(
 				h,
@@ -285,7 +288,12 @@ export const filtersRail = (h: H, model: Model): Html =>
 			AsyncData.matchData(model.facets.data, {
 				onEmpty: () => filterSidebarLoading(h, 4),
 				onFailure: (failure) =>
-					filterSidebarError(h, failure, undefined, Option.getOrUndefined(AsyncData.getError(model.firstPage.data))),
+					filterSidebarError(
+						h,
+						failure,
+						undefined,
+						Option.getOrUndefined(AsyncData.getError(model.firstPage.data)),
+					),
 				onData: (facets) => loadedRail(h, model, facets),
 			}),
 		],

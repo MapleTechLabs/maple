@@ -4,7 +4,7 @@
 // resource, and headers are NOT baked in here — the caller (the Cloudflare,
 // server, or client flushable preset) resolves them and POSTs the drained
 // buffer on `flush`, so the layer itself can be constructed without I/O.
-import { Cause, Context, Exit, Layer, Option, Predicate, Tracer } from "effect"
+import { Cause, Context, Exit, Layer, Option, Predicate, Tracer, Array as Arr, Record as Rec } from "effect"
 import * as ErrorReporter from "effect/ErrorReporter"
 import * as OtlpResource from "effect/observability/OtlpResource"
 import type { ExtractTag } from "effect/Types"
@@ -75,9 +75,9 @@ const isIgnoredExit = (
 	anticipated: SpanFilter["isAnticipated"],
 ): boolean => {
 	if (exit._tag !== "Failure") return false
-	if (exit.cause.reasons.some(Cause.isDieReason)) return false
-	const failures = exit.cause.reasons.filter(Cause.isFailReason)
-	return failures.length > 0 && failures.every((reason) => isIgnoredFailure(reason.error, anticipated))
+	if (Arr.some(exit.cause.reasons, Cause.isDieReason)) return false
+	const failures = Arr.filter(exit.cause.reasons, Cause.isFailReason)
+	return failures.length > 0 && Arr.every(failures, (reason) => isIgnoredFailure(reason.error, anticipated))
 }
 
 /**
@@ -168,7 +168,7 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 			parent: Option.none(),
 			annotations: Context.empty(),
 			status: { _tag: "Started", startTime: now },
-			attributes: new Map(Object.entries(captureOptions.attributes ?? {})),
+			attributes: new Map(Rec.toEntries(captureOptions.attributes ?? {})),
 			links: [],
 			sampled: true,
 			kind: "internal",
@@ -265,9 +265,9 @@ const isFullyAnticipated = (
 	isAnticipated: ((error: unknown) => boolean) | undefined,
 ): boolean => {
 	if (isAnticipated === undefined) return false
-	if (cause.reasons.some(Cause.isDieReason)) return false
-	const failErrors = cause.reasons.filter(Cause.isFailReason).map((reason) => reason.error)
-	return failErrors.length > 0 && failErrors.every(isAnticipated)
+	if (Arr.some(cause.reasons, Cause.isDieReason)) return false
+	const failErrors = Arr.map(Arr.filter(cause.reasons, Cause.isFailReason), (reason) => reason.error)
+	return failErrors.length > 0 && Arr.every(failErrors, isAnticipated)
 }
 
 // OTEL HTTP semconv for SERVER spans: a 5xx response is an error even when the
@@ -355,10 +355,10 @@ const makeOtlpSpan = (
 ): OtlpSpan => {
 	const status = self.status as ExtractTag<Tracer.SpanStatus, "Ended">
 	const attributes = OtlpResource.entriesToAttributes(self.attributes.entries())
-	const events = self.events.map(([name, startTime, attrs]) => ({
+	const events = Arr.map(self.events, ([name, startTime, attrs]) => ({
 		name,
 		timeUnixNano: String(startTime),
-		attributes: attrs ? OtlpResource.entriesToAttributes(Object.entries(attrs)) : [],
+		attributes: attrs ? OtlpResource.entriesToAttributes(Rec.toEntries(attrs)) : [],
 		droppedAttributesCount: 0,
 	}))
 
@@ -378,7 +378,7 @@ const makeOtlpSpan = (
 		otelStatus = { code: StatusCode.Error, message }
 		// Only when nothing named the failure itself — relabelling a recorded exception would
 		// collapse every such 5xx into one anonymous bucket in error tracking.
-		if (!events.some((event) => event.name === "exception")) {
+		if (!Arr.some(events, (event) => event.name === "exception")) {
 			events.push({
 				name: "exception",
 				timeUnixNano: String(status.endTime),
@@ -456,10 +456,10 @@ const makeOtlpSpan = (
 		events,
 		droppedEventsCount: 0,
 		status: otelStatus,
-		links: self.links.map((link) => ({
+		links: Arr.map(self.links, (link) => ({
 			traceId: link.span.traceId,
 			spanId: link.span.spanId,
-			attributes: OtlpResource.entriesToAttributes(Object.entries(link.attributes)),
+			attributes: OtlpResource.entriesToAttributes(Rec.toEntries(link.attributes)),
 			droppedAttributesCount: 0,
 		})),
 		droppedLinksCount: 0,

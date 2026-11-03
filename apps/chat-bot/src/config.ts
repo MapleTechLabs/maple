@@ -8,7 +8,7 @@
  * so the deploy graph stays out of the bundle.
  */
 import type { ChatConnector, ConnectorConfig } from "@maple/chat-platform"
-import { Config, Effect, Option, Redacted } from "effect"
+import { Config, Effect, Option, Redacted, Array as Arr, String as Str } from "effect"
 
 /**
  * The half of a connector this Worker touches.
@@ -26,7 +26,7 @@ export type ConnectorConfigResult =
 	| { readonly _tag: "missing"; readonly names: ReadonlyArray<string> }
 
 const trimmedNonBlank = (value: string): Option.Option<string> => {
-	const trimmed = value.trim()
+	const trimmed = Str.trim(value)
 	return trimmed === "" ? Option.none() : Option.some(trimmed)
 }
 
@@ -71,4 +71,4 @@ export const resolveConnectorConfig = (connector: IngressConnector): Effect.Effe
 /** The connectors whose events arrive over a long-lived socket rather than an HTTP request. */
 export const socketConnectors = (
 	registry: ReadonlyArray<IngressConnector>,
-): ReadonlyArray<IngressConnector> => registry.filter((connector) => connector.ingress.kind === "socket")
+): ReadonlyArray<IngressConnector> => Arr.filter(registry, (connector) => connector.ingress.kind === "socket")

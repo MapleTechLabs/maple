@@ -1,5 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { searchInput } from "@maple/views/ui/search-input"
+import { String as Str } from "effect"
 
 // The Pull requests and Issues search box: typing is debounced into the URL's `q`.
 
@@ -8,7 +9,8 @@ export const SEARCH_DEBOUNCE_MS = 300
 const MAX_TERM = 200
 
 /** What the draft commits to the URL: trimmed, and nothing when blank. */
-export const draftQuery = (draft: string): string | undefined => draft.trim().slice(0, MAX_TERM) || undefined
+export const draftQuery = (draft: string): string | undefined =>
+	Str.slice(0, MAX_TERM)(Str.trim(draft)) || undefined
 
 /** The draft after a route change: kept while it still means the URL's `q`, else the URL's. */
 export const syncedDraft = (draft: string, q: string | undefined): string =>

@@ -7,6 +7,7 @@ import { CONFIGURE_DIALOG_ID } from "./gcp-configure"
 import type { Message } from "./message"
 import { GCP_LINK } from "./view-gcp-parts"
 import { hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `GcpExternalLink`, `Mono`, `Chip`, `FooterNote`, `Stepper` and `ConfigureHeader`.
 
@@ -58,7 +59,7 @@ export type StepIndex = 0 | 1 | 2 | 3
 const stepper = (h: H, current: StepIndex): Html =>
 	h.ol(
 		[h.AriaLabel("Setup progress"), h.Class("flex flex-wrap items-center gap-2 font-prose text-xs")],
-		STEPS.flatMap((label, index) => {
+		Arr.flatMap(STEPS, (label, index) => {
 			const done = index < current
 			const active = index === current
 			const step = h.li(

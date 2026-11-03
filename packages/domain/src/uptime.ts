@@ -1,4 +1,4 @@
-import { Cron, Option, Result, Schema } from "effect"
+import { Cron, Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	OrgId,
 	UptimeIntervalSeconds,
@@ -145,7 +145,7 @@ export interface UptimeHttpObservation {
 }
 
 const statusMatches = (matcher: string, code: number): boolean =>
-	matcher.endsWith("xx") ? Math.floor(code / 100) === Number(matcher[0]) : code === Number(matcher)
+	Str.endsWith("xx")(matcher) ? Math.floor(code / 100) === Number(matcher[0]) : code === Number(matcher)
 
 const PATH_TOKEN = /[^.[\]]+|\[(\d+)\]/gu
 const asJsonArray = Schema.decodeUnknownOption(Schema.Array(Schema.Unknown))
@@ -156,7 +156,7 @@ const asJsonObject = Schema.decodeUnknownOption(Schema.Record(Schema.String, Sch
  * missing, `Some(null)` for a JSON null.
  */
 export const readJsonPath = (root: unknown, path: string): Option.Option<unknown> =>
-	Array.from(path.replace(/^\$\.?/u, "").matchAll(PATH_TOKEN)).reduce<Option.Option<unknown>>(
+	Array.from(Str.replace(/^\$\.?/u, "")(path).matchAll(PATH_TOKEN)).reduce<Option.Option<unknown>>(
 		(current, match) =>
 			Option.flatMap(current, (value) => {
 				const key = match[1] ?? match[0]
@@ -169,7 +169,7 @@ export const readJsonPath = (root: unknown, path: string): Option.Option<unknown
 					),
 					() =>
 						Option.flatMap(asJsonObject(value), (record) =>
-							Object.hasOwn(record, key) ? Option.some(record[key]) : Option.none(),
+							Rec.has(record, key) ? Option.some(record[key]) : Option.none(),
 						),
 				)
 			}),
@@ -188,7 +188,7 @@ export const firstFailedAssertion = (
 	assertions: ReadonlyArray<UptimeAssertion>,
 	observed: UptimeHttpObservation,
 ): string | null => {
-	const failures = assertions.flatMap((assertion): ReadonlyArray<string> => {
+	const failures = Arr.flatMap(assertions, (assertion): ReadonlyArray<string> => {
 		switch (assertion._tag) {
 			case "status": {
 				const matches = statusMatches(assertion.value, observed.statusCode)
@@ -206,7 +206,7 @@ export const firstFailedAssertion = (
 							`Responded in ${Math.round(observed.durationMs)} ms, expected under ${assertion.underMs} ms`,
 						]
 			case "body": {
-				const found = observed.body !== null && observed.body.includes(assertion.value)
+				const found = observed.body !== null && Str.includes(assertion.value)(observed.body)
 				if (assertion.op === "contains")
 					return found ? [] : [`Body does not contain "${assertion.value}"`]
 				return found ? [`Body contains "${assertion.value}"`] : []
@@ -223,11 +223,11 @@ export const firstFailedAssertion = (
 					: [`JSON path ${assertion.path} is ${actual}, expected ${assertion.value}`]
 			}
 			case "header": {
-				const actual = observed.headers[assertion.name.toLowerCase()]
+				const actual = observed.headers[Str.toLowerCase(assertion.name)]
 				if (actual === undefined) return [`Header ${assertion.name} missing`]
 				if (assertion.op === "exists") return []
 				const expected = assertion.value
-				const ok = assertion.op === "equals" ? actual === expected : actual.includes(expected)
+				const ok = assertion.op === "equals" ? actual === expected : Str.includes(expected)(actual)
 				return ok
 					? []
 					: [`Header ${assertion.name} is "${actual}", expected ${assertion.op} "${expected}"`]
@@ -270,7 +270,7 @@ const IMPLICIT_STATUS: UptimeAssertion = { _tag: "status", op: "is", value: "2xx
 export const effectiveAssertions = (
 	assertions: ReadonlyArray<UptimeAssertion>,
 ): ReadonlyArray<UptimeAssertion> =>
-	assertions.some((assertion) => assertion._tag === "status")
+	Arr.some(assertions, (assertion) => assertion._tag === "status")
 		? assertions
 		: [IMPLICIT_STATUS, ...assertions]
 
@@ -288,8 +288,8 @@ export const uptimeHttpRequest = (
 	config: Schema.Schema.Type<typeof UptimeHttpConfig>,
 	extraHeaders: Readonly<Record<string, string>> = {},
 ): UptimeCheckRequest => {
-	const contentType = Object.entries(config.headers).find(
-		([name]) => name.toLowerCase() === "content-type",
+	const contentType = Rec.toEntries(config.headers).find(
+		([name]) => Str.toLowerCase(name) === "content-type",
 	)?.[1]
 	return {
 		method: config.method,
@@ -373,6 +373,6 @@ const relativeAge = (ms: number): string => {
 /** The error an overdue heartbeat records, e.g. `No ping since 2026-10-26 14:03 UTC (3 h ago)`. */
 export const describeMissedHeartbeat = (lastPingAt: number | null, nowMs: number): string => {
 	if (lastPingAt === null) return "No ping received yet"
-	const at = new Date(lastPingAt).toISOString().slice(0, 16).replace("T", " ")
+	const at = Str.replace("T", " ")(Str.slice(0, 16)(new Date(lastPingAt).toISOString()))
 	return `No ping since ${at} UTC (${relativeAge(nowMs - lastPingAt)})`
 }

@@ -17,7 +17,7 @@ import {
 	VcsSourceRefNotFoundError,
 	VcsSourceRepositoryNotFoundError,
 } from "@maple/backend/services/integrations/vcs/VcsSourceService"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { renderToolDoc } from "../lib/tool-doc"
 import {
@@ -184,7 +184,7 @@ describe("the sandbox tools", () => {
 			const result = yield* call(
 				"sandbox_grep",
 				{ repository: "octo/shop", pattern: "x" },
-				{ grep: () => Effect.succeed(ok(lines.join("\n"))) },
+				{ grep: () => Effect.succeed(ok(Arr.join(lines, "\n"))) },
 			)
 			assert.include(result.text, "Showing 200 of 250 lines.")
 			assert.notInclude(result.text, "src/a.ts:201:x")

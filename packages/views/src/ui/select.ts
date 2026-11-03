@@ -110,7 +110,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			if (isRovingKey(key)) {
 				return Option.match(
 					nextIndex(
-						values.map(() => true),
+						Array.map(values, () => true),
 						model.highlighted,
 						key,
 					),

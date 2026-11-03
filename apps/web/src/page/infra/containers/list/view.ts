@@ -23,6 +23,7 @@ import type { ContainerCounts, ContainersPage, Model } from "./model"
 import { DEFAULT_PRESET, filtersOf, pageIndexOf, sortOf } from "./update"
 import { filtersRail } from "./view-filters"
 import { containerTable, containerTableLoading } from "./view-table"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // `ContainersPage`.
 
@@ -99,11 +100,12 @@ const tableArea = (h: H, model: Model, page: ContainersPage, inputs: PageViewInp
 	const searchText = model.search.q ?? ""
 	const scope = model.search.scope
 	const offset = pageIndexOf(model) * PAGE_SIZE
-	const hasStructuredFilter = Object.values(filtersOf(model.search)).some(
+	const hasStructuredFilter = Arr.some(
+		Rec.values(filtersOf(model.search)),
 		(values) => (values?.length ?? 0) > 0,
 	)
 	const hasAnyNarrowing =
-		hasStructuredFilter || searchText.trim() !== "" || scope !== undefined || offset > 0
+		hasStructuredFilter || Str.trim(searchText) !== "" || scope !== undefined || offset > 0
 	const containers = page.data
 	if (containers.length === 0 && !hasAnyNarrowing)
 		return setupEmpty(h, {
@@ -190,7 +192,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					title: "Containers",
-					description: "Sorted worst-first by peak utilization against each container's own limits.",
+					description:
+						"Sorted worst-first by peak utilization against each container's own limits.",
 					actions: Frame.controls(
 						h,
 						model.frame,
@@ -204,13 +207,16 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				},
 				[
 					activeFilterChips(h, {
-						chips: facetChips(FACETS, (param) => model.search[param]).map((chip) => ({
-							id: chip.param,
-							label: chip.label,
-							values: chip.values,
-							isNegated: chip.isNegated,
-							onRemove: Message.RemovedFilterChip({ param: chip.param }),
-						})),
+						chips: Arr.map(
+							facetChips(FACETS, (param) => model.search[param]),
+							(chip) => ({
+								id: chip.param,
+								label: chip.label,
+								values: chip.values,
+								isNegated: chip.isNegated,
+								onRemove: Message.RemovedFilterChip({ param: chip.param }),
+							}),
+						),
 					}),
 					summaryBand(h, model),
 					containersArea(h, model, inputs),

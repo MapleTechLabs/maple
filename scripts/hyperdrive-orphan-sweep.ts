@@ -31,7 +31,7 @@
  * GITHUB_TOKEN/GH_TOKEN for the PR-state gate.
  */
 
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { fetchPreviewState, hasPrStateCredentials } from "./lib/pr-state.ts"
 
 const FAILURE = 1
@@ -61,14 +61,13 @@ interface HyperdriveConfig {
 const cfRequest = async (
 	token: string,
 	path: string,
-	init?: RequestInit,
+	init?: Omit<RequestInit, "headers">,
 ): Promise<{ ok: boolean; status: number; result: unknown; errors: unknown }> => {
 	const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
 		...init,
 		headers: {
 			Authorization: `Bearer ${token}`,
 			"Content-Type": "application/json",
-			...init?.headers,
 		},
 	})
 	const body = (await response.json().catch(() => ({}))) as {
@@ -99,22 +98,26 @@ const main = async (): Promise<void> => {
 	}
 	// A success response whose `result` isn't an array means the API shape
 	// changed under us — fail loudly rather than green-no-op'ing the safety net.
-	if (!Array.isArray(listed.result)) {
+	if (!Arr.isArray(listed.result)) {
 		fail(`Unexpected Hyperdrive list response shape (result is ${typeof listed.result}, expected array)`)
 	}
 	const configs = listed.result as ReadonlyArray<HyperdriveConfig>
-	const candidates = configs
-		.map((config) => ({
+	const candidates = Arr.filter(
+		Arr.map(configs, (config) => ({
 			id: config.id ?? "",
 			name: config.name ?? "",
 			match: /^maple-db-pr-(\d+)$/.exec(config.name ?? ""),
-		}))
-		.filter(
-			(entry): entry is { id: string; name: string; match: RegExpExecArray } =>
-				entry.match !== null && entry.id.length > 0,
-		)
+		})),
+		(entry): entry is { id: string; name: string; match: RegExpExecArray } =>
+			entry.match !== null && entry.id.length > 0,
+	)
 	console.log(
-		`Found ${configs.length} Hyperdrive config(s), ${candidates.length} maple-db-pr-*: ${candidates.map((c) => c.name).join(", ") || "—"}`,
+		`Found ${configs.length} Hyperdrive config(s), ${candidates.length} maple-db-pr-*: ${
+			Arr.join(
+				Arr.map(candidates, (c) => c.name),
+				", ",
+			) || "—"
+		}`,
 	)
 
 	const failures: string[] = []
@@ -138,7 +141,7 @@ const main = async (): Promise<void> => {
 		}
 	}
 	if (failures.length > 0) {
-		fail(`Failed to delete orphan Hyperdrive config(s): ${failures.join(", ")}`)
+		fail(`Failed to delete orphan Hyperdrive config(s): ${Arr.join(failures, ", ")}`)
 	}
 	console.log("✓ Sweep complete")
 }

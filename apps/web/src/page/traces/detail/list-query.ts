@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 // The list filters riding on the trace page's URL, for the way back to /traces:
 // everything but the page's own `spanId`, `t` and `view`, kept verbatim.
 
@@ -6,7 +7,7 @@ const OWN_PARAMS = ["spanId", "t", "view"]
 /** `buildBackToTracesHref`'s params: the URL's query without the page's own. */
 export const listQueryOf = (search: string): string => {
 	const params = new URLSearchParams(search)
-	OWN_PARAMS.forEach((name) => params.delete(name))
+	Arr.forEach(OWN_PARAMS, (name) => params.delete(name))
 	return params.toString()
 }
 
@@ -17,6 +18,6 @@ export const backToTracesHref = (listQuery: string): string =>
 /** A trace page href that keeps the list's params (`search: (prev) => ({ ...prev, ... })`). */
 export const withListQuery = (href: string, listQuery: string): string => {
 	if (listQuery === "") return href
-	const [path = href, own = ""] = href.split("?")
+	const [path, own = ""] = Str.split("?")(href)
 	return own === "" ? `${path}?${listQuery}` : `${path}?${listQuery}&${own}`
 }

@@ -67,7 +67,7 @@ const facts = new PrReviewTelemetry({
 })
 
 const telemetryFake = (options: { readonly failOperations: boolean }): PrReviewTelemetryServiceApi => ({
-	analyze: () => Effect.succeed(undefined),
+	analyze: () => Effect.undefined,
 	commitTimes: () => Effect.succeed(new Map()),
 	deploymentsSince: () =>
 		Effect.succeed([

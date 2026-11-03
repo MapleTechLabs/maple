@@ -1,4 +1,4 @@
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import {
 	DeploymentEnvironment,
 	ServiceCloudflareStatsRequest,
@@ -10,7 +10,7 @@ import {
 } from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
 import { summarizeSampling } from "@maple/query-engine"
-import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
+import { WarehouseDateTimeString, decodeInput, runWarehouseQuery, wireString } from "./effect-utils"
 import { transformExternalEdge } from "./service-external-edges"
 import { coerceOverviewRows } from "./services"
 
@@ -135,8 +135,8 @@ function transformEdge(row: Record<string, unknown>, durationSeconds: number): S
 	const sampling = summarizeSampling(estimatedSpanCount, callCount, durationSeconds)
 	const estimatedCallCount = sampling.hasSampling ? Math.round(estimatedSpanCount) : callCount
 	return {
-		sourceService: String(row.sourceService ?? ""),
-		targetService: String(row.targetService ?? ""),
+		sourceService: wireString(row.sourceService),
+		targetService: wireString(row.targetService),
 		callCount,
 		estimatedCallCount,
 		errorCount,
@@ -189,9 +189,9 @@ export const getServiceDependenciesBundle = Effect.fn("QueryEngine.getServiceDep
 	const durationSeconds = startMs > 0 && endMs > 0 ? Math.max((endMs - startMs) / 1000, 1) : 3600
 
 	return {
-		serviceEdges: result.dependencies.map((row) => transformEdge(row, durationSeconds)),
-		dbEdges: result.dbEdges.map((row) => transformDbEdge(row, durationSeconds)),
-		externalEdges: result.externalEdges.map((row) => transformExternalEdge(row, durationSeconds)),
+		serviceEdges: Arr.map(result.dependencies, (row) => transformEdge(row, durationSeconds)),
+		dbEdges: Arr.map(result.dbEdges, (row) => transformDbEdge(row, durationSeconds)),
+		externalEdges: Arr.map(result.externalEdges, (row) => transformExternalEdge(row, durationSeconds)),
 	}
 })
 
@@ -202,9 +202,9 @@ function transformDbEdge(row: Record<string, unknown>, durationSeconds: number):
 	const sampling = summarizeSampling(estimatedSpanCount, callCount, durationSeconds)
 	const estimatedCallCount = sampling.hasSampling ? Math.round(estimatedSpanCount) : callCount
 	return {
-		sourceService: String(row.sourceService ?? ""),
-		dbSystem: String(row.dbSystem ?? ""),
-		dbNamespace: String(row.dbNamespace ?? ""),
+		sourceService: wireString(row.sourceService),
+		dbSystem: wireString(row.dbSystem),
+		dbNamespace: wireString(row.dbNamespace),
 		callCount,
 		estimatedCallCount,
 		errorCount,
@@ -241,9 +241,9 @@ function transformCloudflareService(
 	row: Record<string, unknown>,
 	durationSeconds: number,
 ): CloudflareService {
-	const serviceName = String(row.serviceName ?? "")
-	const displayName = serviceName.startsWith(WORKER_SERVICE_PREFIX)
-		? serviceName.slice(WORKER_SERVICE_PREFIX.length)
+	const serviceName = wireString(row.serviceName)
+	const displayName = Str.startsWith(WORKER_SERVICE_PREFIX)(serviceName)
+		? Str.slice(WORKER_SERVICE_PREFIX.length)(serviceName)
 		: serviceName
 	const requests = Number(row.requests ?? 0)
 	const errorCount = Number(row.errorCount ?? 0)
@@ -286,7 +286,7 @@ export const getServiceMapCloudflare = Effect.fn("QueryEngine.getServiceMapCloud
 	const durationSeconds = startMs > 0 && endMs > 0 ? Math.max((endMs - startMs) / 1000, 1) : 3600
 
 	return {
-		services: result.data.map((row) => transformCloudflareService(row, durationSeconds)),
+		services: Arr.map(result.data, (row) => transformCloudflareService(row, durationSeconds)),
 	}
 })
 
@@ -319,7 +319,7 @@ function transformPlanetScaleStat(row: Record<string, unknown>): PlanetScaleData
 	// can't masquerade as a healthy 0% — see planetscaleStorageSQL.
 	const storageSamples = Number(row.storageSamples ?? 0)
 	return {
-		database: String(row.database ?? ""),
+		database: wireString(row.database),
 		connectionsAvg: Number(row.connectionsAvg ?? 0),
 		connectionsMax: Number(row.connectionsMax ?? 0),
 		cpuMaxPercent: Number(row.cpuMaxPercent ?? 0),
@@ -351,7 +351,7 @@ export const getServiceMapPlanetScale = Effect.fn("QueryEngine.getServiceMapPlan
 	)
 
 	return {
-		databases: result.data.map(transformPlanetScaleStat),
+		databases: Arr.map(result.data, transformPlanetScaleStat),
 	}
 })
 
@@ -386,9 +386,9 @@ export const getPlanetScaleBranchStats = Effect.fn("QueryEngine.getPlanetScaleBr
 	)
 
 	return {
-		branches: result.data.map((row): PlanetScaleBranchStat => ({
+		branches: Arr.map(result.data, (row): PlanetScaleBranchStat => ({
 			...transformPlanetScaleStat(row),
-			branch: String(row.branch ?? ""),
+			branch: wireString(row.branch),
 		})),
 	}
 })
@@ -457,11 +457,11 @@ export const getServiceMapBundle = Effect.fn("QueryEngine.getServiceMapBundle")(
 	const durationSeconds = startMs > 0 && endMs > 0 ? Math.max((endMs - startMs) / 1000, 1) : 3600
 
 	return {
-		edges: result.dependencies.map((row) => transformEdge(row, durationSeconds)),
-		dbEdges: result.dbEdges.map((row) => transformDbEdge(row, durationSeconds)),
+		edges: Arr.map(result.dependencies, (row) => transformEdge(row, durationSeconds)),
+		dbEdges: Arr.map(result.dbEdges, (row) => transformDbEdge(row, durationSeconds)),
 		dbEdgesTimedOut: result.dbEdgesTimedOut === true,
 		overview: coerceOverviewRows(result.overview, durationSeconds),
-		platforms: result.platforms.map((row) => ({
+		platforms: Arr.map(result.platforms, (row) => ({
 			serviceName: row.serviceName,
 			platform: row.platform,
 			k8sCluster: row.k8sCluster,
@@ -471,7 +471,7 @@ export const getServiceMapBundle = Effect.fn("QueryEngine.getServiceMapBundle")(
 			mapleSdkType: row.mapleSdkType,
 			runtime: row.processRuntimeName,
 		})),
-		workloads: result.workloads.map((row) => ({
+		workloads: Arr.map(result.workloads, (row) => ({
 			serviceName: row.serviceName,
 			workloadKind: row.workloadKind,
 			workloadName: row.workloadName,

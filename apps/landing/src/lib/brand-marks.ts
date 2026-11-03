@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * Brand marks, mostly simple-icons paths (CC0); WarpStream is the chevron from
  * warpstream.com's own header lockup. The observability vendors at the
@@ -425,7 +426,7 @@ export const brandMark = (id: BrandMarkId): BrandMark => BRAND_MARKS[id]
  * inherit the foreground.
  */
 export const markColor = (mark: BrandMark): string => {
-	const [r, g, b] = [1, 3, 5].map((i) => parseInt(mark.hex.slice(i, i + 2), 16))
+	const [r, g, b] = Arr.map([1, 3, 5], (i) => parseInt(Str.slice(i, i + 2)(mark.hex), 16))
 	const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
 	return luminance < 0.18 ? "currentColor" : mark.hex
 }

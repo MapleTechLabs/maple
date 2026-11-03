@@ -8,6 +8,7 @@ import {
 	type MetricGaugeRow,
 } from "@maple/backend/services/warehouse/metric-rows"
 import type { RailwayMeasurement, RailwayMetricsResult } from "./api"
+import { Record as Rec } from "effect"
 
 export const RAILWAY_SCOPE_NAME = "maple.railway"
 
@@ -88,7 +89,7 @@ const MEASUREMENTS = {
 	},
 } satisfies Record<RailwayMeasurement, MeasurementDef>
 
-const MEASUREMENT_BY_NAME = new Map<string, MeasurementDef>(Object.entries(MEASUREMENTS))
+const MEASUREMENT_BY_NAME = new Map<string, MeasurementDef>(Rec.toEntries(MEASUREMENTS))
 
 export interface RailwayEnvironmentContext {
 	readonly projectId: string

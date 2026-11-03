@@ -36,7 +36,18 @@ import {
 	type ErrorIssueRow,
 	type ErrorIssueVerificationRow,
 } from "@maple/db/tables"
-import { Array as Arr, Cause, Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import {
+	DateTime,
+	Array as Arr,
+	Cause,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Schema,
+	String as Str,
+} from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
@@ -95,9 +106,9 @@ export const hasPostMergeVersion = (
 	baselineVersions: ReadonlyArray<string>,
 	observedVersions: ReadonlyArray<string>,
 ): boolean => {
-	const fresh = observedVersions.filter((version) => version !== "")
+	const fresh = Arr.filter(observedVersions, (version) => version !== "")
 	if (fresh.length === 0) return false
-	return fresh.some((version) => !baselineVersions.includes(version))
+	return Arr.some(fresh, (version) => !baselineVersions.includes(version))
 }
 
 export interface PullRequestEventInput {
@@ -276,11 +287,11 @@ const make: Effect.Effect<
 		suggestedRepository: string | null = null,
 	) {
 		const actorIds = Array.from(
-			new Set(rows.flatMap((row) => (row.linkedByActorId == null ? [] : [row.linkedByActorId]))),
+			new Set(Arr.flatMap(rows, (row) => (row.linkedByActorId == null ? [] : [row.linkedByActorId]))),
 		)
 		const actorMap = yield* actors.collectActorDocs(orgId, actorIds)
 		return new ErrorIssuePullRequestsResponse({
-			pullRequests: rows.map((row) => rowToDocument(row, actorMap)),
+			pullRequests: Arr.map(rows, (row) => rowToDocument(row, actorMap)),
 			suggestedRepository,
 		})
 	})
@@ -314,13 +325,13 @@ const make: Effect.Effect<
 		if (connected.length === 1) return connected[0] ?? null
 
 		// 3. The service name against the repository name.
-		const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "")
+		const normalize = (value: string) => Str.replace(/[^a-z0-9]/g, "")(Str.toLowerCase(value))
 		const service = normalize(serviceName)
 		if (service.length > 0) {
-			const matches = connected.filter((fullName) => {
-				const name = normalize(fullName.split("/")[1] ?? fullName)
+			const matches = Arr.filter(connected, (fullName) => {
+				const name = normalize(Str.split("/")(fullName)[1] ?? fullName)
 				if (name.length === 0) return false
-				return name === service || name.includes(service) || service.includes(name)
+				return name === service || Str.includes(service)(name) || Str.includes(name)(service)
 			})
 			if (matches.length === 1) return matches[0] ?? null
 		}
@@ -365,7 +376,7 @@ const make: Effect.Effect<
 			),
 		)
 		return new ErrorIssueVerificationsResponse({
-			verifications: rows.map(verificationToDocument),
+			verifications: Arr.map(rows, verificationToDocument),
 		})
 	})
 
@@ -477,12 +488,10 @@ const make: Effect.Effect<
 		yield* workflow.requireIssue(orgId, issueId)
 		const parsed = parsePullRequestUrl(url)
 		if (parsed === null) {
-			return yield* Effect.fail(
-				new ErrorIssuePullRequestInvalidError({
-					message: "Not a recognizable GitHub pull request URL",
-					rawUrl: url,
-				}),
-			)
+			return yield* new ErrorIssuePullRequestInvalidError({
+				message: "Not a recognizable GitHub pull request URL",
+				rawUrl: url,
+			})
 		}
 		const nowMs = yield* Clock.currentTimeMillis
 
@@ -525,12 +534,10 @@ const make: Effect.Effect<
 			// the caller their well-formed URL was unrecognizable, and because the
 			// invalid-URL tag is an anticipated error its span exception is suppressed,
 			// so the anomaly would vanish from error dashboards entirely.
-			return yield* Effect.fail(
-				new ErrorPersistenceError({
-					message: "Pull request link could not be stored",
-					cause: `upsert returned no row for ${parsed.url}`,
-				}),
-			)
+			return yield* new ErrorPersistenceError({
+				message: "Pull request link could not be stored",
+				cause: `upsert returned no row for ${parsed.url}`,
+			})
 		}
 		yield* workflow.recordEvent(orgId, issueId, actorId, "pr_linked", {
 			payload: {
@@ -559,12 +566,10 @@ const make: Effect.Effect<
 		const document = response.pullRequests[0]
 		if (document === undefined) {
 			// Same reasoning as the store path above: the link exists, hydration lost it.
-			return yield* Effect.fail(
-				new ErrorPersistenceError({
-					message: "Pull request link could not be rendered",
-					cause: `hydrate returned no document for pull request ${row.id}`,
-				}),
-			)
+			return yield* new ErrorPersistenceError({
+				message: "Pull request link could not be rendered",
+				cause: `hydrate returned no document for pull request ${row.id}`,
+			})
 		}
 		return document
 	})
@@ -583,12 +588,10 @@ const make: Effect.Effect<
 		)
 		const row = existing[0]
 		if (row === undefined) {
-			return yield* Effect.fail(
-				new ErrorIssuePullRequestNotFoundError({
-					message: "Pull request link not found on this issue",
-					pullRequestId,
-				}),
-			)
+			return yield* new ErrorIssuePullRequestNotFoundError({
+				message: "Pull request link not found on this issue",
+				pullRequestId,
+			})
 		}
 		const nowMs = yield* Clock.currentTimeMillis
 		// Abandon any verification riding on this link: without the PR there is
@@ -683,7 +686,7 @@ const make: Effect.Effect<
 				repoFullName: link.repoFullName,
 				number: link.number,
 				windowMs,
-				verifyAfter: new Date(verifyAfterMs).toISOString(),
+				verifyAfter: DateTime.formatIso(DateTime.makeUnsafe(verifyAfterMs)),
 				ratePerHour,
 				baselineVersions: issue.seenVersionsJson,
 			},
@@ -784,7 +787,7 @@ const make: Effect.Effect<
 						repoFullName: link.repoFullName,
 						number: link.number,
 						mergeCommitSha,
-						mergedAt: new Date(mergedAtMs).toISOString(),
+						mergedAt: DateTime.formatIso(DateTime.makeUnsafe(mergedAtMs)),
 					},
 					timestamp: nowMs,
 				})
@@ -817,7 +820,7 @@ const make: Effect.Effect<
 					),
 				),
 			)
-			return opened.filter(Boolean).length
+			return Arr.filter(opened, Boolean).length
 		},
 	)
 
@@ -829,7 +832,7 @@ const make: Effect.Effect<
 		// Auto-link: a PR whose title or body names a Maple issue links itself.
 		// Runs on every action, not just `opened` — a description edited after the
 		// fact is the common case, and `upsertLink` makes repeats free.
-		const referenceText = [input.title ?? "", input.body ?? ""].join("\n")
+		const referenceText = Arr.join([input.title ?? "", input.body ?? ""], "\n")
 		const referencedIds = extractIssueIdsFromText(referenceText, env.MAPLE_APP_BASE_URL)
 		const autoLinked = yield* Effect.forEach(referencedIds, (rawId) =>
 			Effect.gen(function* () {
@@ -876,7 +879,7 @@ const make: Effect.Effect<
 				return true
 			}),
 		)
-		const linksAutoCreated = autoLinked.filter(Boolean).length
+		const linksAutoCreated = Arr.filter(autoLinked, Boolean).length
 
 		// Every link pointing at this PR, however it was created.
 		const links = yield* dbExecute((db) =>
@@ -915,7 +918,7 @@ const make: Effect.Effect<
 						updatedAt: nowMs,
 					})
 					.where(($) => [
-						$.id.in_(firstLink.id, ...restLinks.map((link) => link.id)),
+						$.id.in_(firstLink.id, ...Arr.map(restLinks, (link) => link.id)),
 						// A GitHub merge is irreversible, so a non-merged event reaching a
 						// link already marked merged can only be a stale or out-of-order
 						// queue delivery — never let it regress the state or null the merge
@@ -991,7 +994,7 @@ const make: Effect.Effect<
 					.limit(limit),
 			),
 		)
-		return rows.map(({ investigationStatus, reportJson, ...verification }) => ({
+		return Arr.map(rows, ({ investigationStatus, reportJson, ...verification }) => ({
 			verification,
 			investigationStatus,
 			summary: Option.getOrNull(
@@ -1078,7 +1081,7 @@ const make: Effect.Effect<
 						verdict: "inconclusive",
 						note,
 						retrying: true,
-						verifyAfter: new Date(nowMs + extendedMs).toISOString(),
+						verifyAfter: DateTime.formatIso(DateTime.makeUnsafe(nowMs + extendedMs)),
 					},
 				},
 			)

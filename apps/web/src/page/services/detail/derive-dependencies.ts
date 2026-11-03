@@ -1,6 +1,7 @@
 import { dependencyDrillWhereClause } from "../../../components/services/dependency-drill"
 import type { DependencyKind } from "./derive-panels"
 import type { DependencyBundle } from "./model-tabs"
+import { Array as Arr, String as Str } from "effect"
 
 // The rows, host folding and summary of the Dependencies tab.
 
@@ -60,7 +61,7 @@ const rowOf = (
 
 /** One row per downstream target: services, databases (per identity), then external targets. */
 export const dependencyRows = (bundle: DependencyBundle, seconds: number): ReadonlyArray<DependencyRow> => [
-	...bundle.serviceEdges.flatMap((edge) =>
+	...Arr.flatMap(bundle.serviceEdges, (edge) =>
 		edge.targetService === ""
 			? []
 			: [
@@ -73,7 +74,7 @@ export const dependencyRows = (bundle: DependencyBundle, seconds: number): Reado
 					}),
 				],
 	),
-	...bundle.dbEdges.flatMap((edge) =>
+	...Arr.flatMap(bundle.dbEdges, (edge) =>
 		edge.dbSystem === ""
 			? []
 			: [
@@ -86,7 +87,7 @@ export const dependencyRows = (bundle: DependencyBundle, seconds: number): Reado
 					}),
 				],
 	),
-	...bundle.externalEdges.flatMap((edge) =>
+	...Arr.flatMap(bundle.externalEdges, (edge) =>
 		edge.targetName === ""
 			? []
 			: [
@@ -109,7 +110,7 @@ export const dependencyRows = (bundle: DependencyBundle, seconds: number): Reado
 /** `mergeDependencyRows`: traffic sums, error rate and avg weighted, p95 the worst part. */
 const mergeRows = (first: DependencyRow, rest: ReadonlyArray<DependencyRow>): DependencyRow => {
 	const all = [first, ...rest]
-	const sum = (pick: (row: DependencyRow) => number) => all.reduce((acc, row) => acc + pick(row), 0)
+	const sum = (pick: (row: DependencyRow) => number) => Arr.reduce(all, 0, (acc, row) => acc + pick(row))
 	const estimatedCalls = sum((row) => row.estimatedCalls)
 	const totalCalls = sum((row) => row.totalCalls)
 	return {
@@ -126,24 +127,25 @@ const mergeRows = (first: DependencyRow, rest: ReadonlyArray<DependencyRow>): De
 			totalCalls > 0
 				? sum((row) => row.avgDurationMs * row.totalCalls) / totalCalls
 				: first.avgDurationMs,
-		p95DurationMs: Math.max(...all.map((row) => row.p95DurationMs)),
-		hasSampling: all.some((row) => row.hasSampling),
-		samplingWeight: Math.max(...all.map((row) => row.samplingWeight)),
+		p95DurationMs: Math.max(...Arr.map(all, (row) => row.p95DurationMs)),
+		hasSampling: Arr.some(all, (row) => row.hasSampling),
+		samplingWeight: Math.max(...Arr.map(all, (row) => row.samplingWeight)),
 	}
 }
 
 /** `dedupedRows`: an HTTP host naming a known service (5+ chars) folds into that service's row. */
 export const foldHostRows = (rows: ReadonlyArray<DependencyRow>): ReadonlyArray<DependencyRow> => {
-	const services = rows
-		.filter((row) => row.kind === "service" && row.name.length >= 5)
-		.map((row) => ({ canonical: row.name, lower: row.name.toLowerCase() }))
+	const services = Arr.map(
+		Arr.filter(rows, (row) => row.kind === "service" && row.name.length >= 5),
+		(row) => ({ canonical: row.name, lower: Str.toLowerCase(row.name) }),
+	)
 	const matchOf = (row: DependencyRow) =>
 		row.kind !== "http"
 			? undefined
-			: services.find((service) => row.name.toLowerCase().includes(service.lower))
-	const hostsFor = (name: string) => rows.filter((row) => matchOf(row)?.canonical === name)
-	if (!rows.some((row) => matchOf(row) !== undefined)) return rows
-	return rows.flatMap((row) => {
+			: services.find((service) => Str.includes(service.lower)(Str.toLowerCase(row.name)))
+	const hostsFor = (name: string) => Arr.filter(rows, (row) => matchOf(row)?.canonical === name)
+	if (!Arr.some(rows, (row) => matchOf(row) !== undefined)) return rows
+	return Arr.flatMap(rows, (row) => {
 		if (matchOf(row) !== undefined) return []
 		if (row.kind !== "service") return [row]
 		const hosts = hostsFor(row.name)
@@ -176,15 +178,20 @@ export const dependencySummary = (rows: ReadonlyArray<DependencyRow>): Dependenc
 	const topByCalls = rows.toSorted((a, b) => b.callsPerSec - a.callsPerSec)[0]
 	const topByLatency = rows.toSorted((a, b) => b.p95DurationMs - a.p95DurationMs)[0]
 	if (topByCalls === undefined || topByLatency === undefined) return undefined
-	const breakdown = KIND_ORDER.flatMap((kind) => {
-		const count = rows.filter((row) => row.kind === kind).length
-		const [singular, plural] = KIND_LABELS.get(kind) ?? [kind, kind]
-		return count === 0 ? [] : [`${count} ${count === 1 ? singular : plural}`]
-	}).join(" · ")
+	const breakdown = Arr.join(
+		Arr.flatMap(KIND_ORDER, (kind) => {
+			const count = Arr.filter(rows, (row) => row.kind === kind).length
+			const [singular, plural] = KIND_LABELS.get(kind) ?? [kind, kind]
+			return count === 0 ? [] : [`${count} ${count === 1 ? singular : plural}`]
+		}),
+		" · ",
+	)
 	return {
 		breakdown,
 		topByCalls,
-		topByErrors: rows.filter((row) => row.errorRate > 0).toSorted((a, b) => b.errorRate - a.errorRate)[0],
+		topByErrors: Arr.filter(rows, (row) => row.errorRate > 0).toSorted(
+			(a, b) => b.errorRate - a.errorRate,
+		)[0],
 		topByLatency,
 	}
 }

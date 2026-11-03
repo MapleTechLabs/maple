@@ -9,6 +9,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { msIso } from "../shared/time"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // `IncidentTimeline`: the incident's events in order.
 
@@ -33,15 +34,15 @@ export const incidentTimeline = <M>(
 			h.ol(
 				[h.Class("divide-y divide-border-subtle border-t border-border-subtle")],
 				[
-					...options.entries.map((entry) => entryRow(h, entry, firstAt, timeZone)),
+					...Arr.map(options.entries, (entry) => entryRow(h, entry, firstAt, timeZone)),
 					...(options.isLoading ? [h.li([h.Class("py-3")], [skeleton(h, "h-4 w-2/3")])] : []),
 				],
 			),
 			...(options.isFailed
 				? [
-						typography(h, { size: "xs", tone: "muted", as: "p" },
-							["Couldn't load delivery history, so notifications are missing."],
-						),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Couldn't load delivery history, so notifications are missing.",
+						]),
 					]
 				: []),
 		],
@@ -110,7 +111,13 @@ const entryRow = <M>(
 														}),
 													),
 												),
-												h.Class(typographyClass({ size: "xs", tone: "primary", className: "hover:underline active:underline" })),
+												h.Class(
+													typographyClass({
+														size: "xs",
+														tone: "primary",
+														className: "hover:underline active:underline",
+													}),
+												),
 											],
 											["Open investigation"],
 										),

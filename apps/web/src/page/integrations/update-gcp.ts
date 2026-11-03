@@ -2,7 +2,7 @@ import type { V2GcpConnector } from "@maple/domain/http/v2"
 import type { GcpConnectorId } from "@maple/domain/primitives"
 import { gcpNothingSeen, gcpScopeLabel } from "../../components/integrations/gcp-connector-state"
 import { encodeLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -74,8 +74,8 @@ export const enterGcp = (model: Model, context: PageContext): Return => ({
  */
 export const requestBand = (model: Model, context: PageContext): Return => {
 	const connectors = gcpConnectors(model)
-	const logs = connectors.some((connector) => connector.last_log_received_at !== null)
-	const metrics = connectors.some((connector) => connector.last_metrics_received_at !== null)
+	const logs = Arr.some(connectors, (connector) => connector.last_log_received_at !== null)
+	const metrics = Arr.some(connectors, (connector) => connector.last_metrics_received_at !== null)
 	if ((!logs && !metrics) || model.nowMs === 0) return { model }
 	const window =
 		model.gcpCard.window ??
@@ -305,7 +305,7 @@ export const gotDismissDialog = (model: Model, message: Dialog.Message): Return 
 	dismissStep(model, Dialog.update(model.gcpCard.dismissDialog, message))
 
 export const confirmedDismiss = (model: Model, context: PageContext): Return => {
-	const removed = model.gcpCard.removed.filter((entry) => entry.id !== model.gcpCard.dismissingId)
+	const removed = Arr.filter(model.gcpCard.removed, (entry) => entry.id !== model.gcpCard.dismissingId)
 	return chain(withCard(model, { removed, dismissingId: null }), [
 		(next) => dismissStep(next, Dialog.close(next.gcpCard.dismissDialog)),
 		(next) => ({ model: next, commands: [WriteRemoved({ orgId: context.orgId, removed })] }),

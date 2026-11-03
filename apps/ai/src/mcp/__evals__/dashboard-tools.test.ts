@@ -3,7 +3,7 @@
  * text, and input problems reported against the parameter that caused them.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import {
 	CreateDashboardOutput,
 	DescribeDashboardSchemaOutput,
@@ -15,6 +15,7 @@ import {
 import { makeEvalRuntime, runToolDirect, markdown, type EvalRuntime } from "./eval-runtime"
 import { installFakeWarehouse, restoreWarehouse } from "./fake-warehouse"
 import type { McpToolResult } from "../tools/types"
+import { DASHBOARD_TEMPLATES } from "@maple/backend/dashboard-templates"
 
 let rt: EvalRuntime
 
@@ -68,7 +69,7 @@ describe("dashboard tools", () => {
 	it("lists it with a next call that opens it", async () => {
 		const result = await call("list_dashboards", { search: "eval" })
 		const output = Schema.decodeUnknownSync(ListDashboardsOutput)(result.structuredContent)
-		expect(output.dashboards.map((d) => d.id)).toContain(dashboardId)
+		expect(Arr.map(output.dashboards, (d) => d.id)).toContain(dashboardId)
 		expect(markdown(result)).toContain(`\`get_dashboard dashboard_id="${dashboardId}"\``)
 	})
 
@@ -80,7 +81,7 @@ describe("dashboard tools", () => {
 	it("returns the document as a JSON block that round-trips", async () => {
 		const result = await call("get_dashboard", { dashboard_id: dashboardId })
 		const output = Schema.decodeUnknownSync(GetDashboardOutput)(result.structuredContent)
-		expect(output.dashboard.widgets.map((w) => w.id)).toEqual(["w1", "w2"])
+		expect(Arr.map(output.dashboard.widgets, (w) => w.id)).toEqual(["w1", "w2"])
 		expect(output.dashboard.tags).toEqual([])
 
 		const text = markdown(result)
@@ -187,6 +188,14 @@ describe("dashboard tools", () => {
 		const output = Schema.decodeUnknownSync(DescribeDashboardSchemaOutput)(result.structuredContent)
 		expect(output.section).toBe("units")
 		expect(markdown(result)).toMatch(/^## Units/)
+	})
+
+	it("lists every create_dashboard template in the templates section", async () => {
+		const result = await call("describe_dashboard_schema", { section: "templates" })
+		const output = Schema.decodeUnknownSync(DescribeDashboardSchemaOutput)(result.structuredContent)
+		expect(output.section).toBe("templates")
+		const missing = Arr.filter(DASHBOARD_TEMPLATES, (t) => !Str.includes(`\`${t.id}\``)(output.markdown))
+		expect(Arr.map(missing, (t) => t.id)).toEqual([])
 	})
 
 	it("inspects an unsupported widget by showing its stored data source", async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { SpanId } from "@maple/domain"
 import type { SpanNode } from "@maple/query-engine/observability"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { selectOverviewSpans } from "./span-tree"
 
 const decodeSpanId = Schema.decodeSync(SpanId)
@@ -31,9 +31,9 @@ function ids(roots: ReadonlyArray<SpanNode>): Set<string> {
 	const out = new Set<string>()
 	const walk = (n: SpanNode) => {
 		out.add(n.spanId)
-		n.children.forEach(walk)
+		Arr.forEach(n.children, walk)
 	}
-	roots.forEach(walk)
+	Arr.forEach(roots, walk)
 	return out
 }
 
@@ -117,7 +117,7 @@ describe("selectOverviewSpans", () => {
 				checkConnected(child)
 			}
 		}
-		result.roots.forEach(checkConnected)
+		Arr.forEach(result.roots, checkConnected)
 	})
 })
 

@@ -7,7 +7,7 @@ import {
 	toggleGroupStyles,
 	toggleGroupTrackStyles,
 } from "@maple/ui/styles/ui/toggle-group"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, Dom, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -66,7 +66,7 @@ export const FocusItem = Command.define("FocusToggleGroupItem", {
 const toggled = (model: Model, value: string): ReadonlyArray<string> => {
 	const isPressed = model.values.includes(value)
 	if (model.isMultiple)
-		return isPressed ? model.values.filter((v) => v !== value) : [...model.values, value]
+		return isPressed ? Arr.filter(model.values, (v) => v !== value) : [...model.values, value]
 	return isPressed ? [] : [value]
 }
 
@@ -144,7 +144,7 @@ export const view = <ParentMessage>(
 			h.DataAttribute("slot", "toggle-group"),
 			h.DataAttribute("variant", variant),
 		],
-		items.map((item, index) =>
+		Arr.map(items, (item, index) =>
 			togglePrimitive(
 				h,
 				{
@@ -202,14 +202,19 @@ export const controlledView = <M>(
 			h.Role("group"),
 			h.AriaLabel(config.label),
 			h.Class(
-				cn(toggleGroupStyles, toggleGroupHorizontalStyles, toggleGroupConnectedStyles, config.className),
+				cn(
+					toggleGroupStyles,
+					toggleGroupHorizontalStyles,
+					toggleGroupConnectedStyles,
+					config.className,
+				),
 			),
 			h.DataAttribute("orientation", "horizontal"),
 			h.DataAttribute("size", size),
 			h.DataAttribute("slot", "toggle-group"),
 			h.DataAttribute("variant", "default"),
 		],
-		config.items.map((item) =>
+		Arr.map(config.items, (item) =>
 			togglePrimitive(
 				h,
 				{

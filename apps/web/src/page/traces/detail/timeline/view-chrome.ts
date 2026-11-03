@@ -2,7 +2,7 @@ import { colorByFromId, colorByLabel, DEFAULT_COLOR_BY } from "@maple/ui/compone
 import { viewportBounds } from "@maple/ui/components/traces/clamp-viewport"
 import { MINIMAP_HEIGHT, TIME_AXIS_HEIGHT } from "@maple/ui/components/traces/trace-timeline-types"
 import { countLabel, formatDurationAtStep } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { bareInput } from "@maple/views/ui/bare-input"
 import { button } from "@maple/views/ui/button"
@@ -45,7 +45,9 @@ export const searchBar = (h: H, model: Model, matchCount: number, totalCount: nu
 			...(model.searchQuery === ""
 				? []
 				: [
-						typography(h, { size: "3xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" },
+						typography(
+							h,
+							{ size: "3xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" },
 							[
 								model.matchCursor > 0
 									? `${model.matchCursor}/${matchCount}`
@@ -58,7 +60,11 @@ export const searchBar = (h: H, model: Model, matchCount: number, totalCount: nu
 								label: "Clear search",
 								size: "icon-2xs",
 								hasTooltip: false,
-								className: typographyClass({ tone: "muted", hoverTone: "foreground", className: "shrink-0" }),
+								className: typographyClass({
+									tone: "muted",
+									hoverTone: "foreground",
+									className: "shrink-0",
+								}),
 								attributes: [h.OnClick(Message.ClickedClearSearch())],
 							},
 							[icon(h, "XmarkIcon", { size: 12 })],
@@ -78,29 +84,35 @@ const countKeys = (
 	const counts = new Map<string, number>()
 	// The trace query projects fixed keys as "" when a span lacks them; only real values count.
 	const visit = (span: SpanNodeData): void => {
-		Object.entries(read(span)).forEach(([key, value]) => {
+		Arr.forEach(Rec.toEntries(read(span)), ([key, value]) => {
 			if (value !== "") counts.set(key, (counts.get(key) ?? 0) + 1)
 		})
-		span.children.forEach(visit)
+		Arr.forEach(span.children, visit)
 	}
-	spans.forEach(visit)
+	Arr.forEach(spans, visit)
 	return [...counts.entries()]
-		.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+		.sort((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0]))
 		.slice(0, MAX_KEYS_PER_SOURCE)
 }
 
 /** `useTraceAttributeKeys`: the trace's commonest span and resource attribute keys, 20 of each. */
 export const attributeKeys = (rootSpans: ReadonlyArray<SpanNodeData>): ReadonlyArray<AttributeKey> => [
-	...countKeys(rootSpans, (span) => span.spanAttributes).map(([key, count]) => ({
-		kind: "spanAttribute" as const,
-		key,
-		count,
-	})),
-	...countKeys(rootSpans, (span) => span.resourceAttributes).map(([key, count]) => ({
-		kind: "resourceAttribute" as const,
-		key,
-		count,
-	})),
+	...Arr.map(
+		countKeys(rootSpans, (span) => span.spanAttributes),
+		([key, count]) => ({
+			kind: "spanAttribute" as const,
+			key,
+			count,
+		}),
+	),
+	...Arr.map(
+		countKeys(rootSpans, (span) => span.resourceAttributes),
+		([key, count]) => ({
+			kind: "resourceAttribute" as const,
+			key,
+			count,
+		}),
+	),
 ]
 
 const PRESETS = ["preset:service", "preset:spanKind", "preset:statusCode"] as const
@@ -109,7 +121,7 @@ const PRESETS = ["preset:service", "preset:spanKind", "preset:statusCode"] as co
 const colorByEntries = (rootSpans: ReadonlyArray<SpanNodeData>): ReadonlyArray<SelectView.SelectEntry> => {
 	const keys = attributeKeys(rootSpans)
 	const group = (label: string, kind: AttributeKey["kind"]): ReadonlyArray<SelectView.SelectEntry> => {
-		const items = keys.filter((key) => key.kind === kind)
+		const items = Arr.filter(keys, (key) => key.kind === kind)
 		return items.length === 0
 			? []
 			: [
@@ -118,7 +130,7 @@ const colorByEntries = (rootSpans: ReadonlyArray<SpanNodeData>): ReadonlyArray<S
 						_tag: "Group",
 						label,
 						isSelectLabel: true,
-						items: items.map((key) => ({
+						items: Arr.map(items, (key) => ({
 							value: `${kind === "spanAttribute" ? "span" : "resource"}:${key.key}`,
 							label: key.key,
 							title: countLabel(key.count, "span"),
@@ -131,7 +143,7 @@ const colorByEntries = (rootSpans: ReadonlyArray<SpanNodeData>): ReadonlyArray<S
 			_tag: "Group",
 			label: "Presets",
 			isSelectLabel: true,
-			items: PRESETS.map((id) => ({
+			items: Arr.map(PRESETS, (id) => ({
 				value: id,
 				label: colorByLabel(colorByFromId(id) ?? DEFAULT_COLOR_BY),
 			})),
@@ -155,9 +167,9 @@ const colorByPicker = (h: H, model: Model): Html =>
 			leading: [h.span([h.Class("text-muted-foreground")], ["Color:"])],
 			renderValue: (value) => [colorByLabel(colorByFromId(value) ?? DEFAULT_COLOR_BY)],
 			renderItem: (option) =>
-				option.value.startsWith("span:")
+				Str.startsWith("span:")(option.value)
 					? [h.span([h.Class("font-mono")], [option.label])]
-					: option.value.startsWith("resource:")
+					: Str.startsWith("resource:")(option.value)
 						? [
 								h.span([h.Class("text-muted-foreground mr-1")], ["R:"]),
 								h.span([h.Class("font-mono")], [option.label]),
@@ -265,7 +277,7 @@ const silhouette = (
 	return layer(
 		h,
 		{ attributes: [h.Style({ "padding-top": "2px", "padding-bottom": "2px" })] },
-		spans.map((span) =>
+		Arr.map(spans, (span) =>
 			h.div(
 				[
 					h.Attribute("class", "absolute"),
@@ -373,7 +385,7 @@ export const tickLeft = (offset: number, model: Model): string => {
 export const timeAxis = (h: H, model: Model, ticks: ReadonlyArray<number>, intervalMs: number): Html =>
 	h.div(
 		[h.AriaHidden(true), h.Class("relative h-full w-full"), h.Style({ height: `${TIME_AXIS_HEIGHT}px` })],
-		ticks.map((offset) =>
+		Arr.map(ticks, (offset) =>
 			h.span(
 				[
 					h.Attribute(

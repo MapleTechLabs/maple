@@ -7,7 +7,7 @@
  * is a value in, a value out, which is what makes the Discord/Telegram
  * output assertable without any HTTP stub.
  */
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { AlertDestinationType, AlertEventType } from "@maple/domain/http"
 import type { DispatchContext } from "./delivery/context"
 import {
@@ -145,7 +145,7 @@ export const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string) =>
  * produces `> 5%`, which is a parse failure unescaped.
  */
 const escapeTelegramHtml = (value: string): string =>
-	value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+	Str.replace(/>/g, "&gt;")(Str.replace(/</g, "&lt;")(Str.replace(/&/g, "&amp;")(value)))
 
 /** Telegram's hard cap on `sendMessage.text`. */
 const TELEGRAM_TEXT_LIMIT = 4096
@@ -155,7 +155,7 @@ const telegramFooter = (context: Pick<DispatchContext, "sentAtMs" | "incidentId"
 	if (context.sparkline) parts.push(`<code>${escapeTelegramHtml(context.sparkline)}</code>`)
 	if (context.incidentId) parts.push(`Incident <code>${escapeTelegramHtml(context.incidentId)}</code>`)
 	if (context.sentAtMs != null) parts.push(new Date(context.sentAtMs).toISOString())
-	return parts.join("  \u{00B7}  ")
+	return Arr.join(parts, "  \u{00B7}  ")
 }
 
 const telegramDetailLine = (
@@ -167,11 +167,11 @@ const telegramDetailLine = (
 		`<b>Window</b> ${escapeTelegramHtml(formatWindow(context.windowMinutes))}`,
 	]
 	if (group != null) parts.push(`<b>Group</b> <code>${escapeTelegramHtml(group)}</code>`)
-	return parts.join("  \u{00B7}  ")
+	return Arr.join(parts, "  \u{00B7}  ")
 }
 
 const telegramBody = (title: string, lines: ReadonlyArray<string>): string =>
-	truncate([title, "", ...lines].join("\n"), TELEGRAM_TEXT_LIMIT)
+	truncate(Arr.join([title, "", ...lines], "\n"), TELEGRAM_TEXT_LIMIT)
 
 /** No link arguments: Telegram carries both links in the inline keyboard. */
 export const buildTelegramText = (context: DispatchContext): string => {
@@ -197,11 +197,14 @@ export const buildTelegramText = (context: DispatchContext): string => {
  * let a template author aim a button at an arbitrary in-app action.
  */
 const markdownToTelegramHtml = (markdown: string): string =>
-	escapeTelegramHtml(markdown)
-		.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
-		.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, text: string, url: string) =>
-			/^https?:\/\//i.test(url) ? `<a href="${url.replaceAll('"', "%22")}">${text}</a>` : match,
-		)
+	Str.replace(
+		/\*\*([^*]+)\*\*/g,
+		"<b>$1</b>",
+	)(escapeTelegramHtml(markdown)).replace(
+		/\[([^\]]+)\]\(([^)\s]+)\)/g,
+		(match, text: string, url: string) =>
+			/^https?:\/\//i.test(url) ? `<a href="${Str.replaceAll('"', "%22")(url)}">${text}</a>` : match,
+	)
 
 export const buildTelegramTextFromTemplate = (
 	title: string,
@@ -275,7 +278,7 @@ const renderResolved = Option.liftThrowable(
 	): { title: string; body: string } => {
 		const templateCtx = buildTemplateContext(context, linkUrl, chatUrl)
 		const title =
-			renderTemplate(resolved.title ?? DEFAULT_TITLE_TEMPLATE, templateCtx).text.trim() ||
+			Str.trim(renderTemplate(resolved.title ?? DEFAULT_TITLE_TEMPLATE, templateCtx).text) ||
 			context.ruleName
 		const body = renderTemplate(resolved.body ?? DEFAULT_BODY_TEMPLATE, templateCtx).text
 		return { title, body }

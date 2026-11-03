@@ -1,4 +1,4 @@
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Effect, Schema, Array as Arr } from "effect"
 import { SearchSessionsOutput } from "@maple/domain/mcp-outputs"
 import { searchSessions } from "@maple/query-engine/observability"
 import { SESSION_TAGS, sessionTagsOf } from "@maple/domain/query-engine"
@@ -158,7 +158,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 				timeRange: { start: st, end: et },
 				// ClickHouse serializes 64-bit integer aggregates as JSON strings while Tinybird returns
 				// numbers; coerce every numeric at the edge.
-				sessions: sessions.map((s) => ({
+				sessions: Arr.map(sessions, (s) => ({
 					sessionId: s.sessionId,
 					userId: s.userId,
 					userName: s.userName,
@@ -261,8 +261,11 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 						: [
 								doc.table(
 									eventFiltered ? [...headers, "Matches"] : headers,
-									sessions.map((s) => {
-										const device = [s.osName, s.deviceType].filter(Boolean).join(" / ")
+									Arr.map(sessions, (s) => {
+										const device = Arr.join(
+											Arr.filter([s.osName, s.deviceType], Boolean),
+											" / ",
+										)
 										const row = [
 											// The id every follow-up call takes; the Next list only names the first rows.
 											s.sessionId,
@@ -274,7 +277,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 											device || "—",
 											s.country || "—",
 											s.errorCount > 0 ? String(s.errorCount) : "",
-											s.tags.join(" "),
+											Arr.join(s.tags, " "),
 											truncate(s.urlInitial, 60),
 										]
 										return eventFiltered ? [...row, String(s.matchCount ?? 0)] : row
@@ -299,15 +302,13 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 								),
 							},
 						}),
-				next: sessions
-					.slice(0, 3)
-					.map((s) =>
-						doc.next(
-							"get_session_transcript",
-							{ session_id: s.sessionId },
-							`read ${s.userId ? `${s.userId}'s` : "the"} session`,
-						),
+				next: Arr.map(sessions.slice(0, 3), (s) =>
+					doc.next(
+						"get_session_transcript",
+						{ session_id: s.sessionId },
+						`read ${s.userId ? `${s.userId}'s` : "the"} session`,
 					),
+				),
 			}
 		},
 	})

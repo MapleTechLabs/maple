@@ -4,7 +4,7 @@ import type {
 	V2UptimeMonitor,
 } from "@maple/domain/http/v2"
 import { STATUS_PAGE_PRESET_DEFAULTS } from "@maple/domain/status-page"
-import { Option, Result } from "effect"
+import { Option, Result, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -64,7 +64,7 @@ export const monitorsOf = (model: Model) => AsyncData.getOrElse(model.monitors.d
 // ISSUES
 
 export const nameIssue = (model: Model): string | null =>
-	model.isNameTouched && model.name.trim() === "" ? "Add a name." : null
+	model.isNameTouched && Str.trim(model.name) === "" ? "Add a name." : null
 
 /** The address's problem: the server's "taken", or what the API would refuse. */
 export const slugError = (model: Model): string | null =>
@@ -79,7 +79,7 @@ export const canSubmit = (model: Model): boolean =>
 	model.isAdmin &&
 	model.submitting === null &&
 	!model.picker.isCreatingMonitor &&
-	model.name.trim() !== "" &&
+	Str.trim(model.name) !== "" &&
 	slugIssue(model.slug) === null &&
 	model.takenSlug !== model.slug &&
 	!hasRowIssues(model.picker)
@@ -95,14 +95,14 @@ const themeOf = (model: Model) => ({
 
 /** What the preview reads; `draftComponents` leaves out rows not named yet, which the API refuses. */
 export const previewDraft = (model: Model): StatusPagePreviewParams => ({
-	name: model.name.trim(),
+	name: Str.trim(model.name),
 	slug: model.slug,
 	theme: themeOf(model),
 	components: draftComponents(model.picker),
 })
 
 export const createPayload = (model: Model, mode: SubmitMode): V2StatusPageCreateParams => ({
-	name: model.name.trim(),
+	name: Str.trim(model.name),
 	slug: model.slug,
 	theme: themeOf(model),
 	components: draftComponents(model.picker),
@@ -206,7 +206,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			edited({ ...model, name: value, slug: model.isSlugEdited ? model.slug : slugFromName(value) }),
 		BlurredName: () => ({ model: { ...model, isNameTouched: true } }),
 		ChangedSlug: ({ value }) => {
-			const slug = value.trim().toLowerCase()
+			const slug = Str.toLowerCase(Str.trim(value))
 			// Clearing the address hands it back to the name.
 			return edited({
 				...model,

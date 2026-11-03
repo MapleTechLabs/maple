@@ -1,6 +1,6 @@
-import { DashboardDocument } from "@maple/domain/http"
+import { DashboardDocument, withWidgets } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
-import { Effect, Option, Queue, Schema, Stream } from "effect"
+import { Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount, Submodel, Subscription } from "foldkit"
 import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -48,7 +48,7 @@ const buildBoard = (count: number): ReadonlyArray<{ id: string; title: string; l
 			w: number,
 			h: number,
 		) =>
-			xs.slice(0, count - widgets.length).map((x, index) => ({
+			Arr.map(xs.slice(0, count - widgets.length), (x, index) => ({
 				id: `${kind}-${widgets.length + index}`,
 				title: `${label} ${widgets.length + index}`,
 				layout: { x, y, w, h },
@@ -76,7 +76,7 @@ const boardOf = (count: number) =>
 		name: "Dashboard grid bench",
 		timeRange: { type: "relative", value: "6h" },
 		// Notes: static tiles, so nothing is fetched; the bench draws its own tile in each cell.
-		widgets: buildBoard(count).map((widget) => ({
+		widgets: Arr.map(buildBoard(count), (widget) => ({
 			id: widget.id,
 			visualization: "markdown",
 			dataSource: { kind: "static" },
@@ -124,12 +124,12 @@ const isMoved = (layout: Layout, box: Box) =>
 const withLayouts = (model: BenchModel, layouts: ReadonlyArray<Box>): BenchModel => {
 	const document = model.board.document
 	if (document === null) return model
-	const byId = new Map(layouts.map((layout) => [layout.i, layout]))
-	const moved = document.widgets.filter((widget) => {
+	const byId = new Map(Arr.map(layouts, (layout) => [layout.i, layout]))
+	const moved = Arr.filter(document.widgets, (widget) => {
 		const box = byId.get(widget.id)
 		return box !== undefined && isMoved(widget.layout, box)
 	})
-	const widgets = document.widgets.map((widget) => {
+	const widgets = Arr.map(document.widgets, (widget) => {
 		const box = byId.get(widget.id)
 		return box === undefined || !isMoved(widget.layout, box)
 			? widget
@@ -137,7 +137,7 @@ const withLayouts = (model: BenchModel, layouts: ReadonlyArray<Box>): BenchModel
 	})
 	return {
 		...model,
-		board: { ...model.board, document: { ...document, widgets } },
+		board: { ...model.board, document: withWidgets(document, widgets, document.updatedAt) },
 		layoutCommits: model.layoutCommits + 1,
 		lastCommitSize: moved.length,
 	}
@@ -150,16 +150,21 @@ const toBoard = (message: Message): BenchMessage => BenchMessage.GotBoardMessage
 const boardStep = (model: BenchModel, message: Message) => {
 	const next = pageUpdate(model.board, message, CONTEXT)
 	const commands = next.commands ?? []
-	const written = commands
-		.filter((command) => command.name === "UpdateDashboardWidgetLayouts")
-		.flatMap((command) => Option.toArray(decodeLayoutWrite(command.args)))
+	const written = Arr.filter(
+		commands,
+		(command) => command.name === "UpdateDashboardWidgetLayouts",
+	).flatMap((command) => Option.toArray(decodeLayoutWrite(command.args)))
 	return {
-		model: written.reduce((acc, write) => withLayouts(acc, write.layouts), {
-			...model,
-			board: next.model,
-		}),
+		model: Arr.reduce(
+			written,
+			{
+				...model,
+				board: next.model,
+			},
+			(acc, write) => withLayouts(acc, write.layouts),
+		),
 		commands: Command.mapMessages(
-			commands.filter((command) => !LOCAL_ONLY.has(command.name)),
+			Arr.filter(commands, (command) => !LOCAL_ONLY.has(command.name)),
 			toBoard,
 		),
 	}
@@ -222,7 +227,7 @@ const benchTile = (h: HtmlBuilder<Message>, widget: Widget): Html => {
 			),
 			h.div(
 				[h.Class("flex min-h-0 flex-1 items-end gap-px px-3 pb-2")],
-				BARS.map((bar) =>
+				Arr.map(BARS, (bar) =>
 					h.span([
 						h.Class("flex-1 bg-primary-a4"),
 						h.Style({ height: `${20 + ((bar * 37 + widget.id.length * 11) % 80)}%` }),

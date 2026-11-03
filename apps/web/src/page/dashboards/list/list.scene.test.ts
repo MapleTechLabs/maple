@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -19,7 +19,7 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const dashboard = (overrides: Partial<ListDashboard> = {}): ListDashboard => ({
 	id: "dash_platform",
@@ -49,11 +49,15 @@ const BOARDS = [
 
 /** Entered with its clock, preferences and rows. */
 const loaded = (search = {}, dashboards: ReadonlyArray<ListDashboard> = BOARDS): Model =>
-	[
-		Message.CompletedReadClock({ nowMs: NOW, locale: "en-US" }),
-		Message.CompletedLoadPreferences({ favorites: [], sort: "updated" }),
-		Message.UpdatedDashboards({ orgId, dashboards }),
-	].reduce((model, message) => pageUpdate(model, message).model, init({ search }, context).model)
+	Arr.reduce(
+		[
+			Message.CompletedReadClock({ nowMs: NOW, locale: "en-US" }),
+			Message.CompletedLoadPreferences({ favorites: [], sort: "updated" }),
+			Message.UpdatedDashboards({ orgId, dashboards }),
+		],
+		init({ search }, context).model,
+		(model, message) => pageUpdate(model, message).model,
+	)
 
 describe("dashboards list", () => {
 	test("entry reads the clock and the stored preferences, then renders rows as links", () => {
@@ -75,11 +79,15 @@ describe("dashboards list", () => {
 		const many = Array.from({ length: 1200 }, (_, index) =>
 			dashboard({ id: `dash_${index}`, widgetCount: 1, updatedAt: "2026-09-01T12:00:00.000Z" }),
 		)
-		const model = [
-			Message.CompletedReadClock({ nowMs: NOW, locale: "de-DE" }),
-			Message.CompletedLoadPreferences({ favorites: [], sort: "updated" }),
-			Message.UpdatedDashboards({ orgId, dashboards: many }),
-		].reduce((next, message) => pageUpdate(next, message).model, init({ search: {} }, context).model)
+		const model = Arr.reduce(
+			[
+				Message.CompletedReadClock({ nowMs: NOW, locale: "de-DE" }),
+				Message.CompletedLoadPreferences({ favorites: [], sort: "updated" }),
+				Message.UpdatedDashboards({ orgId, dashboards: many }),
+			],
+			init({ search: {} }, context).model,
+			(next, message) => pageUpdate(next, message).model,
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(model),

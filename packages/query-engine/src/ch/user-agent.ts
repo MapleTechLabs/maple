@@ -19,6 +19,7 @@
 // Server spans, which is a different source and a different feature.
 
 import * as CH from "@maple-dev/effect-orm/expr"
+import { Array as Arr } from "effect"
 
 /**
  * What a bot is *for*, which is the axis a site owner acts on: an AI training
@@ -127,7 +128,7 @@ const GENERIC_BOT_TOKENS: ReadonlyArray<string> = ["bot/", "bot;", "bot)", "craw
 
 /** Every needle, in one array: signatures, headless, and the generic tail. */
 const ALL_BOT_TOKENS: ReadonlyArray<string> = [
-	...BOT_SIGNATURES.map((signature) => signature.token),
+	...Arr.map(BOT_SIGNATURES, (signature) => signature.token),
 	HEADLESS_TOKEN,
 	...GENERIC_BOT_TOKENS,
 ]

@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
-import { Array as Arr, Record as Rec, Schema } from "effect"
+import { Array as Arr, Record as Rec, Schema, String as Str } from "effect"
 import { assert, describe, it } from "vitest"
 import { detectMergeSteps } from "./merge-checklist"
 import {
@@ -19,7 +19,7 @@ const labels = Schema.decodeUnknownSync(Schema.fromJsonString(MergeChecklistLabe
 )
 const decodeCase = Schema.decodeUnknownSync(Schema.fromJsonString(MergeChecklistCase))
 const cases = Arr.map(
-	Arr.filter(readdirSync(DIR), (name) => name.endsWith(".json") && name !== "labels.json"),
+	Arr.filter(readdirSync(DIR), (name) => Str.endsWith(".json")(name) && name !== "labels.json"),
 	(name) => decodeCase(readFileSync(join(DIR, name), "utf8")),
 )
 

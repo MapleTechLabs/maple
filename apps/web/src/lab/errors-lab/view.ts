@@ -12,6 +12,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { isMounted } from "@maple/views/ui/overlay/transition"
 import { labSignals } from "./hub-step"
 import { LAB_STATES, LAB_WIDTHS, type LabState, Message, type Model } from "./model"
+import { Array as Arr } from "effect"
 
 // `LabControls`, `LabStatStrip` and `ErrorsHubView` over the fixture.
 // Shell-free (the entry wraps it), so scene tests can render it.
@@ -32,7 +33,7 @@ const toggleGroup = <M, T>(
 			eyebrow(h, {}, [label]),
 			h.div(
 				[h.Class("flex items-center gap-0.5 rounded-md border border-border-subtle p-0.5")],
-				options.map((option) =>
+				Arr.map(options, (option) =>
 					h.button(
 						[
 							h.Type("button"),
@@ -58,17 +59,19 @@ const labStatStrip = <M>(h: HtmlBuilder<M>, summary: { totalErrors: number; erro
 	h.div(
 		[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-xs")],
 		[
-			...[
-				{ value: formatNumber(summary.totalErrors), label: "error events" },
-				{ value: formatErrorRate(summary.errorRate), label: "of all spans" },
-			].map((stat) =>
-				h.span(
-					[h.Class("flex items-baseline gap-1.5")],
-					[
-						h.span([h.Class("font-medium tabular-nums text-foreground")], [stat.value]),
-						h.span([h.Class("text-muted-foreground")], [stat.label]),
-					],
-				),
+			...Arr.map(
+				[
+					{ value: formatNumber(summary.totalErrors), label: "error events" },
+					{ value: formatErrorRate(summary.errorRate), label: "of all spans" },
+				],
+				(stat) =>
+					h.span(
+						[h.Class("flex items-baseline gap-1.5")],
+						[
+							h.span([h.Class("font-medium tabular-nums text-foreground")], [stat.value]),
+							h.span([h.Class("text-muted-foreground")], [stat.label]),
+						],
+					),
 			),
 			h.span([h.Class("text-foreground-subtle")], ["in the last 24 hours"]),
 		],
@@ -99,7 +102,8 @@ const hubView = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, input
 					sparkWindow: fixture.sparkWindow,
 					picker: hub.picker !== null && hub.picker.issueId === signal.id ? hub.picker : null,
 					rowMenu:
-						hub.rowMenuTarget === signal.id && isMounted(hub.rowMenu.isOpen, hub.rowMenu.animation)
+						hub.rowMenuTarget === signal.id &&
+						isMounted(hub.rowMenu.isOpen, hub.rowMenu.animation)
 							? hub.rowMenu
 							: null,
 				}),
@@ -139,7 +143,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 					toggleGroup(
 						h,
 						"State",
-						LAB_STATES.map((value) => ({ value, label: value })),
+						Arr.map(LAB_STATES, (value) => ({ value, label: value })),
 						model.state,
 						(state) => Message.ClickedState({ state }),
 					),

@@ -3,7 +3,7 @@
 // seed each one's series against the real schema and read back the resources a service runs as.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Array as Arr, Record as Rec, String as Str } from "effect"
 import { OrgId } from "@maple/domain"
 import * as CH from "@maple/query-engine/ch"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
@@ -21,13 +21,15 @@ const MINUTE_MS = 60_000
 // Anchored to now so the table TTL never drops the seed.
 const END_MS = Math.floor(Date.now() / MINUTE_MS) * MINUTE_MS - 10 * MINUTE_MS
 const START_MS = END_MS - 60 * MINUTE_MS
-const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 19)
+const chDateTime = (epochMs: number): string =>
+	Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 
-const quote = (value: string): string => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
 const mapLiteral = (attrs: Readonly<Record<string, string>>): string =>
-	`map(${Object.entries(attrs)
-		.flatMap(([key, value]) => [quote(key), quote(value)])
-		.join(", ")})`
+	`map(${Arr.join(
+		Arr.flatMap(Rec.toEntries(attrs), ([key, value]) => [quote(key), quote(value)]),
+		", ",
+	)})`
 
 interface Sample {
 	readonly org?: string
@@ -104,10 +106,14 @@ describe.skipIf(!clickhouseE2eEnabled)("serviceRuntimesSQL against ClickHouse", 
 		await clickhouseExec(`CREATE DATABASE ${database}`)
 		await applyRealMigrations(database)
 		const at = quote(chDateTime(END_MS - 5 * MINUTE_MS))
-		const rows = SAMPLES.map(
-			(sample) =>
-				`(${quote(sample.org ?? ORG)}, ${quote(sample.service)}, ${quote(sample.metric)}, ${at}, ${at}, 1, ${mapLiteral(sample.resource)}, ${mapLiteral(sample.point ?? {})})`,
-		).join(",\n")
+		const rows = Arr.join(
+			Arr.map(
+				SAMPLES,
+				(sample) =>
+					`(${quote(sample.org ?? ORG)}, ${quote(sample.service)}, ${quote(sample.metric)}, ${at}, ${at}, 1, ${mapLiteral(sample.resource)}, ${mapLiteral(sample.point ?? {})})`,
+			),
+			",\n",
+		)
 		await clickhouseExec(
 			`INSERT INTO metrics_gauge (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value, ResourceAttributes, Attributes) VALUES\n${rows}`,
 			database,
@@ -121,7 +127,13 @@ describe.skipIf(!clickhouseE2eEnabled)("serviceRuntimesSQL against ClickHouse", 
 	it("finds each platform's resource under the service's names, with the keys its page needs", async () => {
 		const rows = await runtimes(["fleet-api", "edge-router", "fleet-worker", "checkout"])
 		assert.deepStrictEqual(
-			rows.map((row) => [row.metricServiceName, row.metricName, row.account, row.region, row.cluster]),
+			Arr.map(rows, (row) => [
+				row.metricServiceName,
+				row.metricName,
+				row.account,
+				row.region,
+				row.cluster,
+			]),
 			[
 				["checkout", "aws.ecs.cpu_utilization", "123456789012", "us-east-1", "prod-cluster"],
 				["cloudflare-worker/edge-router", "cloudflare.worker.cpu_time", "cf-acct", "", ""],
@@ -131,10 +143,10 @@ describe.skipIf(!clickhouseE2eEnabled)("serviceRuntimesSQL against ClickHouse", 
 			],
 		)
 		assert.deepStrictEqual(
-			rows
-				.filter((row) => row.metricServiceName === "fleet-worker")
-				.map((row) => [row.railwayServiceId, row.railwayEnvironmentId, row.railwayEnvironmentName])
-				.sort(),
+			Arr.map(
+				Arr.filter(rows, (row) => row.metricServiceName === "fleet-worker"),
+				(row) => [row.railwayServiceId, row.railwayEnvironmentId, row.railwayEnvironmentName],
+			).sort(),
 			[
 				["svc_worker", "env_prod", "production"],
 				["svc_worker", "env_stg", "staging"],

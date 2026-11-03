@@ -1,6 +1,6 @@
 /// <reference path="./assets.d.ts" />
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Config, Duration, Effect, Exit, Option, Schedule, Schema, Scope } from "effect"
+import { Config, DateTime, Duration, Effect, Exit, Option, Schedule, Schema, Scope } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { resolve } from "node:path"
 import { DEFAULT_REMOTE_UI_URL, hostedDashboardUrl, hostedUiOrigin, serverUrl } from "./local-address"
@@ -261,12 +261,13 @@ const acquireLocal = (options: LocalOptions, portChoice: PortChoice) =>
 		const endpoint = serverUrl(HOSTNAME, boundPort)
 		// How a second `alchemy dev` of the same stack finds this server (and `maple status` too).
 		const discoveryPath = serverDiscoveryPath(dataDir)
+		const startedAt = yield* Effect.map(DateTime.now, DateTime.formatIso)
 		yield* Effect.acquireRelease(
 			writeDiscovery(discoveryPath, {
 				pid: process.pid,
 				url: endpoint,
 				dataDir,
-				startedAt: new Date().toISOString(),
+				startedAt,
 			}),
 			() => removeDiscoveryFor(discoveryPath, process.pid),
 		)

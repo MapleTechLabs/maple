@@ -1,5 +1,5 @@
 import { snapTimestamp } from "@maple/web-data/lib/time-range"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -98,9 +98,9 @@ const enterTab = (model: Model, trace: LoadedTrace, view: TraceView): Return => 
 		return { model: { ...cleared, waterfall: next.model }, commands: liftWaterfall(next.commands) }
 	}
 	const graph = TraceFlow.buildFlowGraph({
-		rootSpans: trace.data.rootSpans.map(toSpanNode),
+		rootSpans: Arr.map(trace.data.rootSpans, toSpanNode),
 		totalDurationMs: trace.data.totalDurationMs,
-		services: [...new Set(trace.data.spans.map((span) => span.serviceName))],
+		services: [...new Set(Arr.map(trace.data.spans, (span) => span.serviceName))],
 	})
 	const flowModel = { ...TraceFlow.init(), selectedSpanId: Option.fromNullishOr(selectedSpanId) }
 	return { model: { ...cleared, flow: { graph, model: flowModel } } }
@@ -226,7 +226,7 @@ const followTrace = (model: Model, context: PageContext, trace: LoadedTrace): Re
 
 const applySteps = (model: Model, steps: ReadonlyArray<Step>): Return => ({
 	model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
-	commands: steps.map((step) => step.command),
+	commands: Arr.map(steps, (step) => step.command),
 })
 
 /** Replays need only the trace id, so they load beside the hierarchy instead of after it. */
@@ -498,7 +498,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = InfraCorrelation.update(model.spanInfra, inner)
 			return {
 				model: { ...model, spanInfra: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotSpanInfraMessage({ message })),
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotSpanInfraMessage({ message }),
+				),
 			}
 		},
 	})

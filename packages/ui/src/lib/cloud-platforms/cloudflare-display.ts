@@ -1,4 +1,5 @@
 import type { CloudflareWorkerSummary } from "@maple/domain/cloud-platform"
+import { Array as Arr, String as Str } from "effect"
 
 // The trace views' rendering of a Workers summary. Kept free of React imports so the Foldkit
 // dashboard and the React adapter show the same rows from the same detector.
@@ -19,7 +20,10 @@ export interface CloudflareDisplay {
 }
 
 const join = (separator: string, ...parts: ReadonlyArray<string | undefined>): string | null =>
-	parts.filter((part) => part !== undefined).join(separator) || null
+	Arr.join(
+		Arr.filter(parts, (part) => part !== undefined),
+		separator,
+	) || null
 
 export const cloudflareDisplay = (worker: CloudflareWorkerSummary): CloudflareDisplay => {
 	const { scriptName, scriptVersion, executionModel, handler, cpuTimeMs, wallTimeMs, ttfbMs, rayId } =
@@ -28,7 +32,12 @@ export const cloudflareDisplay = (worker: CloudflareWorkerSummary): CloudflareDi
 		scriptName === undefined ? null : { label: "Script", value: scriptName },
 		scriptVersion === undefined
 			? null
-			: { label: "Version", value: scriptVersion, display: scriptVersion.slice(0, 8), copyable: true },
+			: {
+					label: "Version",
+					value: scriptVersion,
+					display: Str.slice(0, 8)(scriptVersion),
+					copyable: true,
+				},
 		executionModel === undefined ? null : { label: "Model", value: executionModel },
 		handler === undefined ? null : { label: "Handler", value: handler },
 		cpuTimeMs === undefined
@@ -46,7 +55,7 @@ export const cloudflareDisplay = (worker: CloudflareWorkerSummary): CloudflareDi
 		outcome:
 			worker.outcome === undefined
 				? null
-				: { value: worker.outcome, bad: worker.outcome.toLowerCase() !== "ok" },
-		fields: fields.filter((field): field is CloudflareDisplayField => field !== null),
+				: { value: worker.outcome, bad: Str.toLowerCase(worker.outcome) !== "ok" },
+		fields: Arr.filter(fields, (field): field is CloudflareDisplayField => field !== null),
 	}
 }

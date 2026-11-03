@@ -4,10 +4,11 @@ import type {
 	CloudflareZoneStatusBucket,
 } from "@maple/web-data/warehouse/cloudflare-infra"
 import { EDGE_SERVED_STATUSES } from "@maple/views/lib/cloudflare-constants"
+import { Array as Arr } from "effect"
 
 type StripRow = { bucket: string; attributeValue: string; value: number }
 
-const EDGE_SERVED = new Set(EDGE_SERVED_STATUSES.map((s) => s.status))
+const EDGE_SERVED = new Set(Arr.map(EDGE_SERVED_STATUSES, (s) => s.status))
 // Traffic Cloudflare was never going to cache. A hit rate over it measures the
 // app's routing, not the cache, which is how an API zone read "0.1% cache hit".
 const UNCACHEABLE = new Set(["none", "dynamic", "bypass", "unknown"])
@@ -41,7 +42,7 @@ export function zoneSignalTotals(
 		(b) => b.statusClass,
 		(b) => b.requests,
 	)
-	const requests = [...byClass.values()].reduce((a, b) => a + b, 0)
+	const requests = Arr.reduce([...byClass.values()], 0, (a, b) => a + b)
 	const clientErrors = byClass.get("4xx") ?? 0
 	const serverErrors = byClass.get("5xx") ?? 0
 
@@ -76,7 +77,11 @@ export function zoneSignalTotals(
  * class sits last, so a zone that is 94% 4xx read as a green 2xx curve.
  */
 export function requestRows(statusBuckets: ReadonlyArray<CloudflareZoneStatusBucket>): StripRow[] {
-	return statusBuckets.map((b) => ({ bucket: b.bucket, attributeValue: b.statusClass, value: b.requests }))
+	return Arr.map(statusBuckets, (b) => ({
+		bucket: b.bucket,
+		attributeValue: b.statusClass,
+		value: b.requests,
+	}))
 }
 
 /** 4xx and 5xx share of each bucket's requests, 0-1. Empty buckets are skipped, not zeroed. */
@@ -89,7 +94,7 @@ export function errorShareRows(statusBuckets: ReadonlyArray<CloudflareZoneStatus
 		if (b.statusClass === "5xx") entry.server += b.requests
 		buckets.set(b.bucket, entry)
 	}
-	return [...buckets].flatMap(([bucket, { total, client, server }]) =>
+	return Arr.flatMap([...buckets], ([bucket, { total, client, server }]) =>
 		total === 0
 			? []
 			: [
@@ -109,14 +114,14 @@ export function cacheHitRows(cacheBuckets: ReadonlyArray<CloudflareZoneCacheBuck
 		if (EDGE_SERVED.has(b.cacheStatus)) entry.served += b.requests
 		buckets.set(b.bucket, entry)
 	}
-	return [...buckets].flatMap(([bucket, { cacheable, served }]) =>
+	return Arr.flatMap([...buckets], ([bucket, { cacheable, served }]) =>
 		cacheable === 0 ? [] : [{ bucket, attributeValue: "", value: served / cacheable }],
 	)
 }
 
 /** TTFB and origin p99 per bucket. Empty when the zone's plan exposes no latency quantiles. */
 export function latencyRows(latencyBuckets: ReadonlyArray<CloudflareZoneLatencyBucket>): StripRow[] {
-	return latencyBuckets.flatMap((b) =>
+	return Arr.flatMap(latencyBuckets, (b) =>
 		b.ttfbP99Ms > 0 || b.originP99Ms > 0
 			? [
 					{ bucket: b.bucket, attributeValue: "TTFB p99", value: b.ttfbP99Ms },

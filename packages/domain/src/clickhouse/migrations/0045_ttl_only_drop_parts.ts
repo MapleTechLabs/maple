@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /**
  * Migration 0045: expire whole parts instead of rewriting them.
  *
@@ -72,7 +73,10 @@ export const migration_0045_ttl_only_drop_parts = {
 	description: "Drop wholly expired parts on TTL, and align raw-timestamp TTLs to their daily partitions",
 	requiredForIngest: false,
 	statements: [
-		...partitionedTables.map((table) => `ALTER TABLE ${table} MODIFY SETTING ttl_only_drop_parts = 1`),
-		...alignedTtls.map(([table, ttl]) => `ALTER TABLE ${table} MODIFY TTL ${ttl}`),
+		...Arr.map(
+			partitionedTables,
+			(table) => `ALTER TABLE ${table} MODIFY SETTING ttl_only_drop_parts = 1`,
+		),
+		...Arr.map(alignedTtls, ([table, ttl]) => `ALTER TABLE ${table} MODIFY TTL ${ttl}`),
 	],
 } as const

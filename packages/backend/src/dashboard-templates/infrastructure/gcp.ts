@@ -12,6 +12,7 @@ import {
 	templateId,
 } from "@maple/backend/dashboard-templates/helpers"
 import type { TemplateDefinition, WidgetDef } from "@maple/backend/dashboard-templates/types"
+import { Array as Arr } from "effect"
 
 // The Cloud Monitoring poller (GcpMetricsService) stores the metrics in `GCP_METRIC_GROUPS` at
 // one-minute resolution, so a widget takes its metric type and unit from that table (types sharing
@@ -21,10 +22,14 @@ import type { TemplateDefinition, WidgetDef } from "@maple/backend/dashboard-tem
 // keeps one service's value per group, so those are used only where `service.name` is the
 // constant `gcp/<resource type>` (see `gcpResourceAttributes`).
 const GROUP_BY_METRIC = new Map(
-	GCP_METRIC_GROUPS.flatMap((group) => group.metrics.map((metric) => [metric.name, group] as const)),
+	Arr.flatMap(GCP_METRIC_GROUPS, (group) =>
+		Arr.map(group.metrics, (metric) => [metric.name, group] as const),
+	),
 )
 const STORED = new Map(
-	GCP_METRIC_GROUPS.flatMap((group) => group.metrics.map((metric) => [metric.name, metric] as const)),
+	Arr.flatMap(GCP_METRIC_GROUPS, (group) =>
+		Arr.map(group.metrics, (metric) => [metric.name, metric] as const),
+	),
 )
 
 const DISPLAY_UNITS = new Map([
@@ -43,7 +48,7 @@ const P95 = `attr.quantile = "0.95"`
 
 // `cloud.region` is set only for resources Cloud Monitoring labels with a location.
 const isRegional = (group: GcpMetricGroup) =>
-	group.resourceLabels.some((name) => name === "location" || name === "region" || name === "zone")
+	Arr.some(group.resourceLabels, (name) => name === "location" || name === "region" || name === "zone")
 
 // Resource types whose `service.name` is a workload rather than `gcp/<resource type>`.
 const WORKLOAD_RESOURCES = new Set(["cloud_run_revision", "cloud_function", "k8s_container", "gce_instance"])
@@ -475,13 +480,15 @@ export const gcpTemplate: TemplateDefinition = {
 					name: "region",
 					label: "Region",
 					attributeKey: "cloud.region",
-					groups: GCP_METRIC_GROUPS.filter(isRegional),
+					groups: Arr.filter(GCP_METRIC_GROUPS, isRegional),
 				}),
 				resourceVariable({
 					name: "workload",
 					label: "Workload",
 					attributeKey: "service.name",
-					groups: GCP_METRIC_GROUPS.filter((group) => WORKLOAD_RESOURCES.has(group.resourceType)),
+					groups: Arr.filter(GCP_METRIC_GROUPS, (group) =>
+						WORKLOAD_RESOURCES.has(group.resourceType),
+					),
 				}),
 			],
 			sections: [
@@ -489,10 +496,12 @@ export const gcpTemplate: TemplateDefinition = {
 					id: SECTION_ID,
 					title: "Services",
 					collapsible: false,
-					tabs: TABS.map((tab) => ({ id: tab.id, title: tab.title })),
+					tabs: Arr.map(TABS, (tab) => ({ id: tab.id, title: tab.title })),
 				},
 			],
-			widgets: TABS.flatMap((tab) => tab.charts.map((chart, index) => widget(tab, chart, index))),
+			widgets: Arr.flatMap(TABS, (tab) =>
+				Arr.map(tab.charts, (chart, index) => widget(tab, chart, index)),
+			),
 		})
 	},
 }

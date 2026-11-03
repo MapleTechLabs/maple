@@ -11,6 +11,7 @@ import {
 import { decodeJsonSync } from "./json"
 import type { LocalSchemaIdentity } from "./schema-identity"
 import { adoptLegacySidecars, dataDirSidecarPath } from "./store-version"
+import { Array as Arr, String as Str } from "effect"
 
 const NONTERMINAL_PHASES = new Set<MigrationPhase>([
 	"planned",
@@ -41,7 +42,7 @@ export const safeMigrationPath = (path: string, root: string, label: string): st
 	if (
 		relativePath === "" ||
 		relativePath === ".." ||
-		relativePath.startsWith("../") ||
+		Str.startsWith("../")(relativePath) ||
 		resolve(root) === absolute
 	) {
 		throw new Error(`${label} escapes migration root`)
@@ -110,7 +111,7 @@ const assertJournalChainInvariants = (journal: MigrationJournal): void => {
 			throw new Error(`migration journal step ${index} follows currentStepIndex but is not pending`)
 	}
 	if (current === chain.length) {
-		if (chain.some((step) => step.status !== "completed"))
+		if (Arr.some(chain, (step) => step.status !== "completed"))
 			throw new Error(
 				"migration journal currentStepIndex reaches the end before all steps are completed",
 			)
@@ -125,7 +126,7 @@ const assertJournalChainInvariants = (journal: MigrationJournal): void => {
 		}
 	}
 	if (journal.phase === "promotion-started" || journal.phase === "promoted") {
-		if (current !== chain.length || chain.some((step) => step.status !== "completed"))
+		if (current !== chain.length || Arr.some(chain, (step) => step.status !== "completed"))
 			throw new Error(`${journal.phase} migration journal must contain an entirely completed chain`)
 	}
 	if (
@@ -140,7 +141,7 @@ const assertJournalChainInvariants = (journal: MigrationJournal): void => {
 	if (
 		journal.phase === "failed" &&
 		current === chain.length &&
-		chain.some((step) => step.status !== "completed")
+		Arr.some(chain, (step) => step.status !== "completed")
 	)
 		throw new Error("failed migration journal cannot end before all steps are completed")
 }

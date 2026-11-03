@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { apiProxyPath } from "./api-proxy"
 import { forwardToApi } from "./api-proxy-forward"
 import { OG_IMAGE_PREFIX, ogIdFromPath, shareTokenFromPath } from "./og/share-links"
@@ -28,14 +28,14 @@ import { apiTarget, type ApiTarget, type WebWorkerEnv } from "./worker-env"
 const SHARE_PATH_PREFIX = "/share/"
 
 const isShareDocument = (pathname: string): boolean =>
-	pathname === "/share" || pathname.startsWith(SHARE_PATH_PREFIX)
+	pathname === "/share" || Str.startsWith(SHARE_PATH_PREFIX)(pathname)
 
 /** Every document: no plugins, no `<base>` retargeting relative URLs. Keep in step with nginx.conf. */
 const BASE_CSP = "object-src 'none'; base-uri 'self'"
 
 /** HTML only. A script or stylesheet is not framed, and `frame-ancestors` on one means nothing. */
 const isHtmlResponse = (response: Response): boolean =>
-	(response.headers.get("content-type") ?? "").includes("text/html")
+	Str.includes("text/html")(response.headers.get("content-type") ?? "")
 
 const applyDocumentSecurityHeaders = (response: Response, pathname: string): Response => {
 	if (!isHtmlResponse(response)) return response
@@ -84,10 +84,10 @@ const applyShareOgMeta = async (
 	return meta === undefined ? response : shareOgMetaRewriter(meta, url.origin).transform(response)
 }
 
-const IMAGE_PREFIXES = [OG_IMAGE_PREFIX, ...CHART_KINDS.map((kind) => kind.pathPrefix)]
+const IMAGE_PREFIXES = [OG_IMAGE_PREFIX, ...Arr.map(CHART_KINDS, (kind) => kind.pathPrefix)]
 
 const isImagePath = (pathname: string): boolean =>
-	pathname.endsWith(".png") && IMAGE_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+	Str.endsWith(".png")(pathname) && Arr.some(IMAGE_PREFIXES, (prefix) => Str.startsWith(prefix)(pathname))
 
 /** One request against the built SPA: OG images, the share preview, security headers, the shell fallback. */
 export const handleRequest = async (

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Effect, Exit, Option } from "effect"
+import { Effect, Exit, Option, Array as Arr } from "effect"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -42,7 +42,7 @@ describe("decideStartFailure", () => {
 			reports.push(decision.report)
 			record = decision.record
 		}
-		expect(reports.every((report) => !report)).toBe(true)
+		expect(Arr.every(reports, (report) => !report)).toBe(true)
 		expect(backoffs.slice(0, 4)).toEqual([0, 1_000, 2_000, 4_000])
 		expect(Math.max(...backoffs)).toBe(MAX_BACKOFF_MS)
 	})

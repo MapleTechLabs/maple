@@ -8,7 +8,7 @@ import {
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import type { AuditResourceLink } from "../../../components/settings/audit-log-resource"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -61,19 +61,23 @@ const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown,
 /** Structured or long metadata renders as a block (`metadataBlock`). */
 const metadataBlock = (value: unknown): string | null => {
 	if (typeof value === "string") {
-		const trimmed = value.trim()
+		const trimmed = Str.trim(value)
 		const parsed =
-			trimmed.startsWith("{") || trimmed.startsWith("[") ? Option.getOrNull(parseJson(trimmed)) : null
+			Str.startsWith("{")(trimmed) || Str.startsWith("[")(trimmed)
+				? Option.getOrNull(parseJson(trimmed))
+				: null
 		if (parsed !== null && typeof parsed === "object") return encodePrettyJson(parsed)
-		return value.length > 72 || value.includes("\n") ? value : null
+		return value.length > 72 || Str.includes("\n")(value) ? value : null
 	}
 	if (value !== null && typeof value === "object") return encodePrettyJson(value)
 	return null
 }
 
 const changeValue = (h: H, value: unknown): Html => {
-	if (isPlaceholder(value)) return typography(h, { tone: "subtle", className: "italic" }, [value.slice(1, -1)])
-	if (value === undefined || value === null || value === "") return h.span([h.Class("text-foreground-subtle")], [EMPTY_VALUE])
+	if (isPlaceholder(value))
+		return typography(h, { tone: "subtle", className: "italic" }, [Str.slice(1, -1)(value)])
+	if (value === undefined || value === null || value === "")
+		return h.span([h.Class("text-foreground-subtle")], [EMPTY_VALUE])
 	return h.span([h.Class("break-all")], [formatScalar(value)])
 }
 
@@ -106,7 +110,7 @@ const changesTable = (h: H, changes: V2AuditChanges): Html =>
 		]),
 		tableBody(
 			h,
-			changes.fields.map((field) =>
+			Arr.map(changes.fields, (field) =>
 				tableRow(
 					h,
 					[
@@ -122,13 +126,13 @@ const changesTable = (h: H, changes: V2AuditChanges): Html =>
 	])
 
 const metadataList = (h: H, metadata: Readonly<Record<string, unknown>>): ReadonlyArray<Html> => {
-	const keys = Object.keys(metadata)
+	const keys = Rec.keys(metadata)
 	if (keys.length === 0) return []
 	return [
 		keyValueList(
 			h,
 			{ layout: "grid" },
-			keys.map((key) => {
+			Arr.map(keys, (key) => {
 				const block = metadataBlock(metadata[key])
 				return keyValue(h, { wrap: true, label: key }, [
 					block !== null
@@ -200,17 +204,15 @@ export const auditDetail = (h: H, model: Model, entry: V2AuditLogEntry, timeZone
 								]),
 					]),
 					keyValue(h, { wrap: true, label: "Action" }, [
-						hstack(h, { gap: "1.5", wrap: true, as: "span" },
-							[
-								...(actionText === null ? [] : [h.span([], [actionText])]),
-								inlineCode(h, { variant: "plain", className: "text-2xs text-foreground" }, [
-									entry.action,
-								]),
-								entry.outcome === "denied"
-									? badge(h, { variant: "crit", size: "sm" }, ["Denied"])
-									: badge(h, { variant: "ok", size: "sm" }, ["Allowed"]),
-							],
-						),
+						hstack(h, { gap: "1.5", wrap: true, as: "span" }, [
+							...(actionText === null ? [] : [h.span([], [actionText])]),
+							inlineCode(h, { variant: "plain", className: "text-2xs text-foreground" }, [
+								entry.action,
+							]),
+							entry.outcome === "denied"
+								? badge(h, { variant: "crit", size: "sm" }, ["Denied"])
+								: badge(h, { variant: "ok", size: "sm" }, ["Allowed"]),
+						]),
 						...(entry.denial_reason === null
 							? []
 							: [h.p([h.Class("text-muted-foreground mt-0.5")], [entry.denial_reason])]),
@@ -273,7 +275,7 @@ export const auditDetail = (h: H, model: Model, entry: V2AuditLogEntry, timeZone
 						),
 					]
 				: []),
-			...(metadata !== null && Object.keys(metadata).length > 0
+			...(metadata !== null && Rec.keys(metadata).length > 0
 				? [
 						h.section(
 							[h.Class("space-y-1.5")],

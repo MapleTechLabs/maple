@@ -14,7 +14,7 @@ import {
 } from "@maple/domain/runtime-posture"
 import { PROBE_CATEGORIES, type ProbeCategoryInfo, probeCategoryOf } from "@maple/domain/security-telemetry"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import type { Exposure, Runtimes } from "./model"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -22,7 +22,7 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 // Pure readings of the two responses: the Exposure tab's totals and categories, the Runtimes
 // tab's postures in the order the table shows them.
 
-const sum = (values: ReadonlyArray<number>): number => values.reduce((total, value) => total + value, 0)
+const sum = (values: ReadonlyArray<number>): number => Arr.reduce(values, 0, (total, value) => total + value)
 const distinct = (values: ReadonlyArray<string>): number => new Set(values).size
 
 type SignatureRow = Exposure["signatures"][number]
@@ -52,15 +52,15 @@ export interface ExposureTotals {
 }
 
 export const exposureTotals = (exposure: Exposure): ExposureTotals => {
-	const probes = exposure.signatures.filter((row) => row.signature !== "")
-	const scanners = exposure.signatures.filter((row) => row.signature === "")
+	const probes = Arr.filter(exposure.signatures, (row) => row.signature !== "")
+	const scanners = Arr.filter(exposure.signatures, (row) => row.signature === "")
 	return {
-		probeRequests: sum(probes.map((row) => row.requests)),
-		scannerRequests: sum(scanners.map((row) => row.requests)),
+		probeRequests: sum(Arr.map(probes, (row) => row.requests)),
+		scannerRequests: sum(Arr.map(scanners, (row) => row.requests)),
 		sources: exposure.sources.length,
 		isSourcesCapped: exposure.sources.length >= SOURCES_SHOWN,
 		isSignaturesCapped: exposure.signatures.length >= SIGNATURES_SHOWN,
-		servicesProbed: distinct(probes.map((row) => row.service)),
+		servicesProbed: distinct(Arr.map(probes, (row) => row.service)),
 	}
 }
 
@@ -69,7 +69,7 @@ export const isExposureEmpty = (exposure: Exposure): boolean =>
 
 const isCriticalSignature = (signature: string): boolean => {
 	const category = probeCategoryOf(signature)
-	return PROBE_CATEGORIES.some((info) => info.id === category && info.critical)
+	return Arr.some(PROBE_CATEGORIES, (info) => info.id === category && info.critical)
 }
 
 /** A service answering this share of distinct probes, and at least this many, serves every path. */
@@ -90,11 +90,16 @@ export interface CatchAllService {
  */
 export const catchAllServices = (exposure: Exposure): ReadonlyArray<CatchAllService> => {
 	// Critical paths only: a WordPress site answers its own WordPress paths for real.
-	const probes = exposure.signatures.filter((row) => isCriticalSignature(row.signature))
-	return [...new Set(probes.map((row) => row.service))].flatMap((service) => {
-		const own = probes.filter((row) => row.service === service)
-		const probed = distinct(own.map((row) => row.signature))
-		const answered = distinct(own.filter((row) => row.answered > 0).map((row) => row.signature))
+	const probes = Arr.filter(exposure.signatures, (row) => isCriticalSignature(row.signature))
+	return Arr.flatMap([...new Set(Arr.map(probes, (row) => row.service))], (service) => {
+		const own = Arr.filter(probes, (row) => row.service === service)
+		const probed = distinct(Arr.map(own, (row) => row.signature))
+		const answered = distinct(
+			Arr.map(
+				Arr.filter(own, (row) => row.answered > 0),
+				(row) => row.signature,
+			),
+		)
 		return answered >= CATCH_ALL_MIN_ANSWERED && answered / probed >= CATCH_ALL_SHARE
 			? [
 					{
@@ -113,8 +118,8 @@ export const catchAllServices = (exposure: Exposure): ReadonlyArray<CatchAllServ
 
 /** Answered critical probes on services that do not answer every path. */
 export const exposedRows = (exposure: Exposure): Exposure["exposed"] => {
-	const catchAll = new Set(catchAllServices(exposure).map((entry) => entry.service))
-	return exposure.exposed.filter((row) => !catchAll.has(row.service))
+	const catchAll = new Set(Arr.map(catchAllServices(exposure), (entry) => entry.service))
+	return Arr.filter(exposure.exposed, (row) => !catchAll.has(row.service))
 }
 
 export interface SignatureCount {
@@ -139,9 +144,8 @@ const topSignaturesOf = (rows: ReadonlyArray<SignatureRow>, limit: number): Read
 		(acc, row) => new Map(acc).set(row.signature, (acc.get(row.signature) ?? 0) + row.requests),
 		new Map(),
 	)
-	return [...totals]
-		.map(([signature, requests]) => ({ signature, requests }))
-		.sort((a, b) => b.requests - a.requests || a.signature.localeCompare(b.signature))
+	return Arr.map([...totals], ([signature, requests]) => ({ signature, requests }))
+		.sort((a, b) => b.requests - a.requests || Str.localeCompare(b.signature)(a.signature))
 		.slice(0, limit)
 }
 
@@ -155,21 +159,26 @@ const rowOf = (
 	key,
 	label,
 	category,
-	requests: sum(rows.map((row) => row.requests)),
+	requests: sum(Arr.map(rows, (row) => row.requests)),
 	// Like the callout, a catch-all route's answers are not counted as served.
-	answered: sum(rows.filter((row) => !catchAll.has(row.service)).map((row) => row.answered)),
-	services: distinct(rows.map((row) => row.service)),
+	answered: sum(
+		Arr.map(
+			Arr.filter(rows, (row) => !catchAll.has(row.service)),
+			(row) => row.answered,
+		),
+	),
+	services: distinct(Arr.map(rows, (row) => row.service)),
 	topSignatures: category === null ? [] : topSignaturesOf(rows, 3),
 })
 
 /** One row per category with traffic, in catalog order, then named scanners on ordinary paths. */
 export const categoryRows = (exposure: Exposure): ReadonlyArray<CategoryRow> => {
-	const catchAll = new Set(catchAllServices(exposure).map((entry) => entry.service))
-	const byCategory = PROBE_CATEGORIES.flatMap((category) => {
-		const rows = exposure.signatures.filter((row) => probeCategoryOf(row.signature) === category.id)
+	const catchAll = new Set(Arr.map(catchAllServices(exposure), (entry) => entry.service))
+	const byCategory = Arr.flatMap(PROBE_CATEGORIES, (category) => {
+		const rows = Arr.filter(exposure.signatures, (row) => probeCategoryOf(row.signature) === category.id)
 		return rows.length === 0 ? [] : [rowOf(category.id, category.label, category, rows, catchAll)]
 	})
-	const scanners = exposure.signatures.filter((row) => row.signature === "")
+	const scanners = Arr.filter(exposure.signatures, (row) => row.signature === "")
 	return scanners.length === 0
 		? byCategory
 		: [...byCategory, rowOf("scanners", "Named scanners on ordinary paths", null, scanners, catchAll)]
@@ -194,7 +203,7 @@ export const timelineValues = (
 	const bucketMs = bucketSeconds * 1000
 	const last = Math.floor(nowMs / bucketMs) * bucketMs
 	const byBucket = new Map(
-		exposure.timeline.map((point) => [
+		Arr.map(exposure.timeline, (point) => [
 			Math.floor(toEpochMs(point.bucket) / bucketMs) * bucketMs,
 			point.requests,
 		]),
@@ -271,36 +280,33 @@ const deploymentKey = (row: RuntimeRow): string => encodeJson([row.service, row.
 
 /** The hour each service and environment was last seen in, on any version. */
 const newestSeenOf = (rows: ReadonlyArray<RuntimeRow>): ReadonlyMap<string, number> =>
-	rows.reduce((newest, row) => {
+	Arr.reduce(rows, new Map<string, number>(), (newest, row) => {
 		const seen = toEpochMs(row.lastSeen)
 		const key = deploymentKey(row)
 		return seen > (newest.get(key) ?? Number.NEGATIVE_INFINITY) ? newest.set(key, seen) : newest
-	}, new Map<string, number>())
+	})
 
 /** Current versions first, worst first; a replaced version only shows as history below them. */
 export const runtimeEntries = (runtimes: Runtimes): ReadonlyArray<RuntimeEntry> => {
 	const newestSeen = newestSeenOf(runtimes.runtimes)
-	return runtimes.runtimes
-		.map((row) => ({
-			row,
-			posture: runtimePosture(row, releasesFor(runtimes)),
-			vulnerabilities: vulnerabilitiesOf(runtimes, row),
-			replaced:
-				toEpochMs(row.lastSeen) < (newestSeen.get(deploymentKey(row)) ?? Number.NEGATIVE_INFINITY),
-		}))
-		.sort(
-			(a, b) =>
-				Number(a.replaced) - Number(b.replaced) ||
-				urgencyRank(a.vulnerabilities) - urgencyRank(b.vulnerabilities) ||
-				STATUS_RANK[a.posture.status] - STATUS_RANK[b.posture.status] ||
-				a.row.service.localeCompare(b.row.service) ||
-				a.row.environment.localeCompare(b.row.environment),
-		)
+	return Arr.map(runtimes.runtimes, (row) => ({
+		row,
+		posture: runtimePosture(row, releasesFor(runtimes)),
+		vulnerabilities: vulnerabilitiesOf(runtimes, row),
+		replaced: toEpochMs(row.lastSeen) < (newestSeen.get(deploymentKey(row)) ?? Number.NEGATIVE_INFINITY),
+	})).sort(
+		(a, b) =>
+			Number(a.replaced) - Number(b.replaced) ||
+			urgencyRank(a.vulnerabilities) - urgencyRank(b.vulnerabilities) ||
+			STATUS_RANK[a.posture.status] - STATUS_RANK[b.posture.status] ||
+			Str.localeCompare(b.row.service)(a.row.service) ||
+			Str.localeCompare(b.row.environment)(a.row.environment),
+	)
 }
 
 /** The versions services run now: what the totals and the upgrade list judge. */
 export const currentEntries = (entries: ReadonlyArray<RuntimeEntry>): ReadonlyArray<RuntimeEntry> =>
-	entries.filter((entry) => !entry.replaced)
+	Arr.filter(entries, (entry) => !entry.replaced)
 
 export interface RuntimeTotals {
 	readonly services: number
@@ -314,10 +320,15 @@ export interface RuntimeTotals {
 export const runtimeTotals = (all: ReadonlyArray<RuntimeEntry>): RuntimeTotals => {
 	const entries = currentEntries(all)
 	const servicesWith = (status: RuntimeStatus) =>
-		distinct(entries.filter((entry) => entry.posture.status === status).map((entry) => entry.row.service))
+		distinct(
+			Arr.map(
+				Arr.filter(entries, (entry) => entry.posture.status === status),
+				(entry) => entry.row.service,
+			),
+		)
 	return {
-		services: distinct(entries.map((entry) => entry.row.service)),
-		urgent: distinct(entries.filter(isUrgent).map((entry) => entry.row.service)),
+		services: distinct(Arr.map(entries, (entry) => entry.row.service)),
+		urgent: distinct(Arr.map(Arr.filter(entries, isUrgent), (entry) => entry.row.service)),
 		endOfLife: servicesWith("end_of_life"),
 		behind: servicesWith("behind"),
 		noVersion: servicesWith("no_version"),
@@ -335,11 +346,14 @@ export const runtimeLabelOf = (entry: RuntimeEntry): string => {
 	if ("product" in entry.posture) return RUNTIME_PRODUCTS[entry.posture.product].label
 	const product = runtimeProductOf(entry.row.runtimeName, entry.row.sdkLanguage)
 	if (product !== undefined) return RUNTIME_PRODUCTS[product].label
-	return entry.row.runtimeName.trim() === "" ? "Unknown" : entry.row.runtimeName
+	return Str.trim(entry.row.runtimeName) === "" ? "Unknown" : entry.row.runtimeName
 }
 
 export const sdkLabelOf = (row: RuntimeRow): string => {
-	const named = [row.sdkName, row.sdkVersion].filter((part) => part.trim() !== "").join(" ")
+	const named = Arr.join(
+		Arr.filter([row.sdkName, row.sdkVersion], (part) => Str.trim(part) !== ""),
+		" ",
+	)
 	return named !== "" ? named : row.sdkLanguage
 }
 
@@ -362,31 +376,31 @@ export interface CriticalUpgrade {
 
 /** Versions to upgrade now: most critical CVEs first, then most high, then most services. */
 export const criticalUpgrades = (entries: ReadonlyArray<RuntimeEntry>): ReadonlyArray<CriticalUpgrade> => {
-	const byKey = currentEntries(entries)
-		.filter(isUrgent)
-		.reduce((groups, entry) => {
+	const byKey = Arr.reduce(
+		Arr.filter(currentEntries(entries), isUrgent),
+		new Map<string, ReadonlyArray<CheckedEntry>>(),
+		(groups, entry) => {
 			const key = entry.vulnerabilities.key
 			return groups.set(key, [...(groups.get(key) ?? []), entry])
-		}, new Map<string, ReadonlyArray<CheckedEntry>>())
-	return [...byKey.entries()]
-		.flatMap(([key, group]): ReadonlyArray<CriticalUpgrade> => {
-			const entry = group[0]
-			if (entry === undefined) return []
-			return [
-				{
-					key,
-					entry,
-					advisories: entry.vulnerabilities.advisories,
-					summary: entry.vulnerabilities.summary,
-					services: [...new Set(group.map((member) => member.row.service))],
-				},
-			]
-		})
-		.sort(
-			(a, b) =>
-				b.summary.counts.critical - a.summary.counts.critical ||
-				b.summary.counts.high - a.summary.counts.high ||
-				b.services.length - a.services.length ||
-				a.key.localeCompare(b.key),
-		)
+		},
+	)
+	return Arr.flatMap([...byKey.entries()], ([key, group]): ReadonlyArray<CriticalUpgrade> => {
+		const entry = group[0]
+		if (entry === undefined) return []
+		return [
+			{
+				key,
+				entry,
+				advisories: entry.vulnerabilities.advisories,
+				summary: entry.vulnerabilities.summary,
+				services: [...new Set(Arr.map(group, (member) => member.row.service))],
+			},
+		]
+	}).sort(
+		(a, b) =>
+			b.summary.counts.critical - a.summary.counts.critical ||
+			b.summary.counts.high - a.summary.counts.high ||
+			b.services.length - a.services.length ||
+			Str.localeCompare(b.key)(a.key),
+	)
 }

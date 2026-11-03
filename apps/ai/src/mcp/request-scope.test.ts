@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, PortableDashboardDocument, UserId } from "@maple/domain/http"
 import { makeMaplePgliteDb } from "@maple/db/pglite"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { MapleDbConnection } from "@maple/backend/platform/bindings"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
@@ -214,7 +214,7 @@ describe("MCP tools from the generated descriptors", () => {
 		// Decoding, typed failures and rendering still run through the registry on a call.
 		const invalid = await callTool("invalid", "get_dashboard", {})
 		const missing = await callTool("missing", "get_dashboard", { dashboard_id: "dsh_missing" })
-		expect([invalid, missing].map((result) => result.isError)).toEqual([true, true])
+		expect(Arr.map([invalid, missing], (result) => result.isError)).toEqual([true, true])
 		expect(invalid.content[0]?.text).toContain("Invalid parameters")
 		expect(missing.content[0]?.text).toContain("dsh_missing")
 	})

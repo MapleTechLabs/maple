@@ -16,7 +16,7 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { Actors, ErrorIssueEvents, ErrorIssues, IssueEscalations } from "@maple/db/tables"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { TRIAGE_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
 
 export { TRIAGE_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
@@ -60,13 +60,16 @@ export const escalationDedupeKey = (orgId: string, issueId: string, severity: Is
  */
 const deterministicUuid = (seed: string): string => {
 	const hex = createHash("sha256").update(seed).digest("hex")
-	return [
-		hex.slice(0, 8),
-		hex.slice(8, 12),
-		`5${hex.slice(13, 16)}`,
-		`${((Number.parseInt(hex.slice(16, 17), 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}`,
-		hex.slice(20, 32),
-	].join("-")
+	return Arr.join(
+		[
+			Str.slice(0, 8)(hex),
+			Str.slice(8, 12)(hex),
+			`5${Str.slice(13, 16)(hex)}`,
+			`${((Number.parseInt(Str.slice(16, 17)(hex), 16) & 0x3) | 0x8).toString(16)}${Str.slice(17, 20)(hex)}`,
+			Str.slice(20, 32)(hex),
+		],
+		"-",
+	)
 }
 
 /**
@@ -117,12 +120,10 @@ const ensureTriageAgentActor = (
 		const after = yield* select()
 		const row = after[0]
 		if (!row) {
-			return yield* Effect.fail(
-				new TriageActorMissingError({
-					message: "Failed to ensure maple-triage-agent actor row",
-					orgId,
-				}),
-			)
+			return yield* new TriageActorMissingError({
+				message: "Failed to ensure maple-triage-agent actor row",
+				orgId,
+			})
 		}
 		return row.id
 	})

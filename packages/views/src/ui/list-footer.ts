@@ -9,6 +9,7 @@ import {
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import { spinner } from "./spinner"
+import { String as Str } from "effect"
 
 // Port of `ListFooter`, `LoadMoreButton` and `LoadingMoreRow` (packages/ui/src/components/ui/list-footer.tsx).
 // The count reads `toLocaleString()` there; the app is en-US, so it is formatted en-US here.
@@ -34,7 +35,9 @@ const count = (value: number) => value.toLocaleString("en-US")
 const countText = <M>(options: ListFooterOptions<M>): string | null => {
 	const { shown, total, noun } = options
 	if (shown === undefined || noun === undefined || noun === "") return null
-	const one = options.singular ?? (/[^s]s$/.test(noun) && !noun.endsWith("ies") ? noun.slice(0, -1) : noun)
+	const one =
+		options.singular ??
+		(/[^s]s$/.test(noun) && !Str.endsWith("ies")(noun) ? Str.slice(0, -1)(noun) : noun)
 	const nounFor = (n: number) => (n === 1 ? one : noun)
 	// An unbounded total (Infinity) says "more", never "∞".
 	if (total !== undefined && total > shown && !Number.isFinite(total))

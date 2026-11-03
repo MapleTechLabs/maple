@@ -1,5 +1,5 @@
 import { V2IngestRule, V2IngestRuleStats } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -31,7 +31,7 @@ const sectionView = Submodel.defineView<Model, Message, Readonly<{ readonly none
 )
 const view = withViewInputs(sectionView, {})()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const decodeRule = Schema.decodeUnknownSync(V2IngestRule)
 const dropDebug = decodeRule({

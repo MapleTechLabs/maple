@@ -7,6 +7,7 @@ import {
 } from "@maple/domain/http"
 
 import { accountHealth, cloudflareAccounts, zoneAccountIds } from "./accounts"
+import { Record as Rec, String as Str } from "effect"
 
 const NOW = 1_800_000_000_000
 const MINUTE = 60_000
@@ -27,7 +28,7 @@ const account = (
 	name = "Acme Production",
 ) =>
 	new CloudflareConnectedAccountStatus({
-		accountId: name.toLowerCase().replace(" ", "-"),
+		accountId: Str.replace(" ", "-")(Str.toLowerCase(name)),
 		accountName: name,
 		connectedByUserId: null,
 		scope: "analytics",
@@ -88,7 +89,7 @@ describe("zoneAccountIds", () => {
 			[account([zone("acme.com", NOW)]), account([zone("acme.blog", NOW)], null, "Acme Marketing")],
 			NOW,
 		)
-		expect(Object.fromEntries(zoneAccountIds(accounts))).toEqual({
+		expect(Rec.fromEntries(zoneAccountIds(accounts))).toEqual({
 			"cloudflare/acme.com": "acme-production",
 			"cloudflare/acme.blog": "acme-marketing",
 		})

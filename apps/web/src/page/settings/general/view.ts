@@ -17,6 +17,7 @@ import { settingsSection, settingsSections } from "../kit/section"
 import { Message, type Model, type OrgInfo } from "./model"
 import { isNameDirty, LOGO_INPUT_ID, leaveEligibilityOf, nameDraftOf } from "./update"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr, String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -40,7 +41,7 @@ const DELETION_FACTS = [
 const deletionFacts = (h: H): Html =>
 	h.dl(
 		[h.Class("flex flex-col gap-1 text-xs")],
-		DELETION_FACTS.map((fact) =>
+		Arr.map(DELETION_FACTS, (fact) =>
 			h.div(
 				[h.Key(fact.key), h.Class("flex gap-2")],
 				[
@@ -132,7 +133,16 @@ const organizationSection = (h: H, model: Model, org: OrgInfo): Html =>
 										h.Placeholder("Organization name"),
 									],
 								})
-							: typography(h, { size: "sm", tone: "foreground", as: "p", attributes: [h.Id("org-name")] }, [org.name]),
+							: typography(
+									h,
+									{
+										size: "sm",
+										tone: "foreground",
+										as: "p",
+										attributes: [h.Id("org-name")],
+									},
+									[org.name],
+								),
 					]),
 				],
 			),
@@ -198,7 +208,11 @@ const dangerZoneSection = (h: H, model: Model, org: OrgInfo): Html => {
 						details: deletionFacts(h),
 						action: button(
 							h,
-							{ variant: "destructive", size: "sm", attributes: [h.OnClick(Message.ClickedDelete())] },
+							{
+								variant: "destructive",
+								size: "sm",
+								attributes: [h.OnClick(Message.ClickedDelete())],
+							},
 							["Delete organization"],
 						),
 					}),
@@ -227,7 +241,7 @@ const dialogs = (h: H, model: Model, org: OrgInfo): ReadonlyArray<Html> => [
 		description: `Permanently deletes "${org.name}" and removes every member's access. This cannot be undone.`,
 		confirmLabel: "Delete organization",
 		isPending: model.isDeleting,
-		isConfirmDisabled: model.confirmText.trim() !== org.name,
+		isConfirmDisabled: Str.trim(model.confirmText) !== org.name,
 		onConfirm: Message.ClickedConfirmDelete(),
 		children: [
 			h.div(
@@ -262,7 +276,7 @@ const loaded = (h: H, model: Model, org: OrgInfo, isKnownMember: boolean): Html 
 		...saveBar(h, {
 			isDirty: isNameDirty(model),
 			isPending: model.isSavingName,
-			isSaveDisabled: nameDraftOf(model).trim().length === 0,
+			isSaveDisabled: Str.trim(nameDraftOf(model)).length === 0,
 			onDiscard: Message.ClickedDiscardName(),
 			onSave: Message.ClickedSaveName(),
 		}),

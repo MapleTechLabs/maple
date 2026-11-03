@@ -1,5 +1,5 @@
 import * as Animation from "@foldkit/ui/animation"
-import { Array, Effect, Option, Schema, Stream } from "effect"
+import { Array, Effect, Option, Schema, Stream, String as Str } from "effect"
 import { Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { anchoredPopup } from "./overlay/anchored"
@@ -49,9 +49,11 @@ export const init = (
 
 /** Base UI's default filter: a case-insensitive "contains" on the option's label. */
 export const filterItems = (items: ReadonlyArray<string>, query: string): ReadonlyArray<string> =>
-	query.trim() === ""
+	Str.trim(query) === ""
 		? items
-		: Array.filter(items, (item) => item.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+		: Array.filter(items, (item) =>
+				Str.includes(Str.trim(query).toLocaleLowerCase())(item.toLocaleLowerCase()),
+			)
 
 /** The query the list filters by: a single combobox still reading its value shows every item. */
 export const queryOf = (model: Model): string =>
@@ -160,7 +162,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			if (key === "Escape") return closed(model)
 			if (isRovingKey(key)) {
 				const next = nextIndex(
-					values.map(() => true),
+					Array.map(values, () => true),
 					model.highlighted,
 					key,
 				)

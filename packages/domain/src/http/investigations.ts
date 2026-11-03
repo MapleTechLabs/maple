@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import {
 	ErrorIssueId,
 	ErrorIssueVerificationId,
@@ -150,7 +150,7 @@ export type InvestigationSubject = Schema.Schema.Type<typeof InvestigationSubjec
  * plainly a verification, which is the dangerous direction.
  */
 export const InvestigationSubjectType = Schema.Literals(
-	InvestigationSubject.members.map((member) => member.fields.type.literal),
+	Arr.map(InvestigationSubject.members, (member) => member.fields.type.literal),
 ).annotate({ identifier: "@maple/InvestigationSubjectType", title: "Investigation Subject Type" })
 export type InvestigationSubjectType = Schema.Schema.Type<typeof InvestigationSubjectType>
 

@@ -19,7 +19,7 @@
  * minutes/hours: other spans in the edge buckets lose their aggregates too.
  */
 import { setTimeout as sleep } from "node:timers/promises"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import * as Materializations from "../packages/domain/src/tinybird/materializations"
 
 type Grain = "raw" | "minute" | "hour"
@@ -113,7 +113,7 @@ const decodeMvLineage = Schema.decodeUnknownOption(
 
 /** Every datasource that MVs populate, directly or transitively, from `traces`. */
 const traceLineage = (): Set<string> => {
-	const mvs = Object.values(Materializations).flatMap((value) =>
+	const mvs = Arr.flatMap(Rec.values(Materializations), (value) =>
 		Option.match(decodeMvLineage(value), { onNone: () => [], onSome: ({ ddl }) => [ddl] }),
 	)
 	const reached = new Set(["traces", ...JOB_FED])
@@ -121,7 +121,7 @@ const traceLineage = (): Set<string> => {
 	while (grew) {
 		grew = false
 		for (const mv of mvs) {
-			if (!reached.has(mv.to) && mv.sources.some((source) => reached.has(source))) {
+			if (!reached.has(mv.to) && Arr.some(mv.sources, (source) => reached.has(source))) {
 				reached.add(mv.to)
 				grew = true
 			}
@@ -131,11 +131,11 @@ const traceLineage = (): Set<string> => {
 }
 
 const checkCoverage = () => {
-	const covered = new Set(TARGETS.map((target) => target.name))
-	const missing = [...traceLineage()].filter((name) => !covered.has(name) && !KEPT.has(name))
+	const covered = new Set(Arr.map(TARGETS, (target) => target.name))
+	const missing = Arr.filter([...traceLineage()], (name) => !covered.has(name) && !KEPT.has(name))
 	if (missing.length > 0) {
 		fail(
-			`Trace-derived datasources with no purge rule: ${missing.join(", ")}. Add them to TARGETS or KEPT.`,
+			`Trace-derived datasources with no purge rule: ${Arr.join(missing, ", ")}. Add them to TARGETS or KEPT.`,
 		)
 	}
 }
@@ -146,19 +146,22 @@ const ceilTo = (date: Date, ms: number) => new Date(Math.ceil(date.getTime() / m
 const GRAIN_MS = { raw: 1, minute: 60_000, hour: 3_600_000 } satisfies Record<Grain, number>
 
 const chTime = (date: Date) =>
-	`toDateTime64('${date.toISOString().replace("T", " ").replace("Z", "")}', 3, 'UTC')`
+	`toDateTime64('${Str.replace("Z", "")(Str.replace("T", " ")(date.toISOString()))}', 3, 'UTC')`
 
 const conditionFor = (target: Target, orgId: string, from: Date, to: Date) => {
 	const grain = GRAIN_MS[target.grain]
-	return [
-		`OrgId = '${orgId}'`,
-		`${target.timeColumn} >= ${chTime(floorTo(from, grain))}`,
-		`${target.timeColumn} < ${chTime(ceilTo(to, grain))}`,
-		...(target.extra === undefined ? [] : [target.extra]),
-	].join(" AND ")
+	return Arr.join(
+		[
+			`OrgId = '${orgId}'`,
+			`${target.timeColumn} >= ${chTime(floorTo(from, grain))}`,
+			`${target.timeColumn} < ${chTime(ceilTo(to, grain))}`,
+			...(target.extra === undefined ? [] : [target.extra]),
+		],
+		" AND ",
+	)
 }
 
-const host = (process.env.TINYBIRD_HOST?.trim() || fail("Missing env TINYBIRD_HOST")).replace(/\/$/, "")
+const host = Str.replace(/\/$/, "")(process.env.TINYBIRD_HOST?.trim() || fail("Missing env TINYBIRD_HOST"))
 const token = process.env.TINYBIRD_TOKEN?.trim() || fail("Missing env TINYBIRD_TOKEN")
 
 const SqlCount = Schema.Struct({
@@ -170,14 +173,15 @@ const JobStatus = Schema.Struct({ status: Schema.String, error: Schema.optionalK
 const tinybird = async <S extends Schema.Decoder<unknown>>(
 	schema: S,
 	path: string,
-	init?: RequestInit,
+	init?: Omit<RequestInit, "headers">,
 ): Promise<S["Type"]> => {
-	const response = await fetch(path.startsWith("http") ? path : `${host}${path}`, {
+	const response = await fetch(Str.startsWith("http")(path) ? path : `${host}${path}`, {
 		...init,
-		headers: { Authorization: `Bearer ${token}`, ...init?.headers },
+		headers: { Authorization: `Bearer ${token}` },
 	})
 	const body = await response.text()
-	if (!response.ok) fail(`${init?.method ?? "GET"} ${path} → ${response.status}: ${body.slice(0, 500)}`)
+	if (!response.ok)
+		fail(`${init?.method ?? "GET"} ${path} → ${response.status}: ${Str.slice(0, 500)(body)}`)
 	return Schema.decodeUnknownSync(Schema.fromJsonString(schema))(body)
 }
 
@@ -230,10 +234,10 @@ for (const target of TARGETS) {
 	total += rows
 	plan.push({ target, condition, rows })
 	console.log(
-		`${target.name.padEnd(36)} ${String(rows).padStart(12)}  ${target.grain === "raw" ? "" : `(whole ${target.grain}s)`}`,
+		`${Str.padEnd(36)(target.name)} ${Str.padStart(12)(String(rows))}  ${target.grain === "raw" ? "" : `(whole ${target.grain}s)`}`,
 	)
 }
-console.log(`${"total".padEnd(36)} ${String(total).padStart(12)}\n`)
+console.log(`${Str.padEnd(36)("total")} ${Str.padStart(12)(String(total))}\n`)
 
 if (!execute) {
 	console.log("Dry run, nothing deleted. Re-run with --execute to delete.")

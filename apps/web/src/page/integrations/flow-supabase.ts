@@ -5,6 +5,7 @@ import { fold } from "./derive"
 import type { SupabaseProjectRow } from "../infra-integrations/supabase/model"
 import type { FlowSpec, LiveHealth } from "./flow"
 import type { Model } from "./model"
+import { Array as Arr } from "effect"
 
 // Supabase's place in the connect flow: authorize an organization, pick projects and signals, go live.
 
@@ -33,8 +34,9 @@ export const isCollecting = (project: Project): boolean =>
 /** Whether the switched-on signals have all reported, from the status and the last hour's metrics rows. */
 export const supabaseLive = (model: Model, status: SupabaseIntegrationStatus | null): LiveHealth => {
 	if (status === null || !status.connected) return "pending"
-	const collecting = status.projects.filter(isCollecting)
-	const broken = collecting.some(
+	const collecting = Arr.filter(status.projects, isCollecting)
+	const broken = Arr.some(
+		collecting,
 		(project) =>
 			(project.logDrainEnabled && project.logDrainError !== null) ||
 			(project.logsEnabled && project.logsError !== null),
@@ -46,10 +48,14 @@ export const supabaseLive = (model: Model, status: SupabaseIntegrationStatus | n
 	)
 	const metricsIn =
 		rows !== null &&
-		collecting
-			.filter((project) => project.metricsEnabled)
-			.every((project) => rows.some((row) => row.projectRef === project.ref && row.lastSeen !== ""))
-	const logsIn = collecting.every((project) => !project.logsEnabled || project.logsLastPolledAt !== null)
+		Arr.every(
+			Arr.filter(collecting, (project) => project.metricsEnabled),
+			(project) => Arr.some(rows, (row) => row.projectRef === project.ref && row.lastSeen !== ""),
+		)
+	const logsIn = Arr.every(
+		collecting,
+		(project) => !project.logsEnabled || project.logsLastPolledAt !== null,
+	)
 	return collecting.length > 0 && metricsIn && logsIn ? "healthy" : "pending"
 }
 

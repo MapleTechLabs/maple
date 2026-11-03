@@ -1,7 +1,7 @@
 import { DashboardWidgetSchema } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
-import { Array, Option, Schema, Stream } from "effect"
+import { Array, Option, Schema, Stream, Record as Rec } from "effect"
 import { Command, Submodel, Subscription, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import type { IntegrationFlags } from "../data/infra-surfaces"
@@ -130,7 +130,7 @@ export const pickCommands = <Model, Message>(
 	result: PageReturn<Model, Message>,
 	names: ReadonlyArray<string>,
 ): ReadonlyArray<Command.Command<Message, never, Resources>> =>
-	(result.commands ?? []).filter((command) => names.includes(command.name))
+	Array.filter(result.commands ?? [], (command) => names.includes(command.name))
 
 type RouteOf<Tags extends RouteTag> = Extract<AppRoute, { readonly _tag: Tags }>
 
@@ -318,8 +318,8 @@ export const definePage = <
 	 * org, so a Message queued by an older instance's stream is dropped like a late Command result.
 	 */
 	const stamped = Subscription.make<PageHost, WrappedType, Resources>()((entry) =>
-		Object.fromEntries(
-			Object.entries(spec.subscriptions ?? {}).map(([name, inner]) => [
+		Rec.fromEntries(
+			Array.map(Rec.toEntries(spec.subscriptions ?? {}), ([name, inner]) => [
 				name,
 				entry(
 					{
@@ -500,8 +500,8 @@ export const definePage = <
 			},
 		),
 		/** Keys are prefixed with the page id: Subscription keys share one namespace. */
-		subscriptions: Object.fromEntries(
-			Object.entries(stamped).map(([key, entry]) => [`${id}.${key}`, entry]),
+		subscriptions: Rec.fromEntries(
+			Array.map(Rec.toEntries(stamped), ([key, entry]) => [`${id}.${key}`, entry]),
 		),
 	}
 }

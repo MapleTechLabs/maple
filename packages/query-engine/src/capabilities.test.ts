@@ -6,6 +6,7 @@ import {
 	hasWarehouseTable,
 	logBodySearchMode,
 } from "./capabilities"
+import { Array as Arr } from "effect"
 
 const logsTextIndexes = [
 	{ table: "logs", name: "idx_lower_body_text", type: "text", expression: "lower(Body)" },
@@ -82,14 +83,17 @@ describe("warehouse capabilities", () => {
 		const capabilities = deriveWarehouseCapabilities({
 			indexes: [
 				{ table: "logs", name: "idx_lower_body", type: "tokenbf_v1(32768, 3, 0)" },
-				...[
-					"idx_resource_attr_keys",
-					"idx_resource_attr_vals",
-					"idx_scope_attr_keys",
-					"idx_scope_attr_vals",
-					"idx_log_attr_keys",
-					"idx_log_attr_vals",
-				].map((name) => ({ table: "logs", name, type: "bloom_filter(0.01)" })),
+				...Arr.map(
+					[
+						"idx_resource_attr_keys",
+						"idx_resource_attr_vals",
+						"idx_scope_attr_keys",
+						"idx_scope_attr_vals",
+						"idx_log_attr_keys",
+						"idx_log_attr_vals",
+					],
+					(name) => ({ table: "logs", name, type: "bloom_filter(0.01)" }),
+				),
 			],
 			columns: [],
 		})

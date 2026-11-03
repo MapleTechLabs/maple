@@ -8,6 +8,7 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import type { LogsSearch } from "../../../route/search"
 import type { TimeWindow } from "../../../data/time-range"
 import type { LogRowSchema, LogsPage, Model, Pagination, VolumeBucket } from "./model"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 export type Search = typeof LogsSearch.Type
 
@@ -76,7 +77,10 @@ export const allLogs = (
 	firstPage: LogsPage | undefined,
 	pagination: Pagination,
 ): ReadonlyArray<LogRowSchema> =>
-	[...(firstPage?.logs ?? []), ...pagination.pages.flatMap((page) => page.logs)].slice(0, MAX_RETAINED_LOGS)
+	[...(firstPage?.logs ?? []), ...Arr.flatMap(pagination.pages, (page) => page.logs)].slice(
+		0,
+		MAX_RETAINED_LOGS,
+	)
 
 /** The cursor the next page starts after, `null` when the last page came back short. */
 export const lastCursor = (firstPage: LogsPage | undefined, pagination: Pagination): string | null =>
@@ -129,12 +133,12 @@ export interface LogFilterChip {
 
 /** The applied facet filters, exclusions first; the trace scope leads them all. */
 export const logFilterChips = (search: Search): ReadonlyArray<LogFilterChip> => {
-	const attrs = (search.attrs ?? []).flatMap((entry) => {
+	const attrs = Arr.flatMap(search.attrs ?? [], (entry) => {
 		const filter = decodeLogAttributeFilter(entry)
 		return filter ? [{ entry, filter }] : []
 	})
 	const facetChips = (isNegated: boolean): ReadonlyArray<LogFilterChip> =>
-		FACETS.flatMap((facet) => {
+		Arr.flatMap(FACETS, (facet) => {
 			const param = isNegated ? facet.exclude : facet.include
 			const values = search[param]
 			return values !== undefined && values.length > 0
@@ -142,15 +146,16 @@ export const logFilterChips = (search: Search): ReadonlyArray<LogFilterChip> => 
 				: []
 		})
 	const attrChips = (isNegated: boolean): ReadonlyArray<LogFilterChip> =>
-		attrs
-			.filter((a) => a.filter.negated === isNegated)
-			.map(({ entry, filter }) => ({
+		Arr.map(
+			Arr.filter(attrs, (a) => a.filter.negated === isNegated),
+			({ entry, filter }) => ({
 				param: "attrs" as const,
 				label: filter.key,
 				values: [filter.value],
 				negated: isNegated,
 				attr: entry,
-			}))
+			}),
+		)
 	return [
 		...(search.traceId
 			? [{ param: "traceId" as const, label: "Trace", values: [search.traceId], negated: false }]
@@ -164,11 +169,14 @@ export const logFilterChips = (search: Search): ReadonlyArray<LogFilterChip> => 
 
 /** The search with these chips' filters removed: a facet chip clears its param, an attribute chip its entry. */
 export const withoutChips = (search: Search, chips: ReadonlyArray<LogFilterChip>): Search => {
-	const cleared = Object.fromEntries(
-		chips.filter((chip) => chip.attr === undefined).map((chip) => [chip.param, undefined]),
+	const cleared = Rec.fromEntries(
+		Arr.map(
+			Arr.filter(chips, (chip) => chip.attr === undefined),
+			(chip) => [chip.param, undefined],
+		),
 	)
-	const dropped = new Set(chips.flatMap((chip) => (chip.attr === undefined ? [] : [chip.attr])))
-	const attrs = (search.attrs ?? []).filter((entry) => !dropped.has(entry))
+	const dropped = new Set(Arr.flatMap(chips, (chip) => (chip.attr === undefined ? [] : [chip.attr])))
+	const attrs = Arr.filter(search.attrs ?? [], (entry) => !dropped.has(entry))
 	return { ...search, ...cleared, attrs: attrs.length > 0 ? attrs : undefined }
 }
 
@@ -207,25 +215,25 @@ export const volumeInput = (
 export const toVolumeBuckets = (
 	points: ReadonlyArray<{ readonly bucket: string; readonly series: Readonly<Record<string, number>> }>,
 ): ReadonlyArray<VolumeBucket> =>
-	points.map((point) => {
+	Arr.map(points, (point) => {
 		const counts = new Map<string, number>()
-		Object.entries(point.series).forEach(([key, value]) => {
+		Arr.forEach(Rec.toEntries(point.series), ([key, value]) => {
 			if (typeof value !== "number") return
-			const canonical = key.toUpperCase()
+			const canonical = Str.toUpperCase(key)
 			counts.set(canonical, (counts.get(canonical) ?? 0) + value)
 		})
-		return { bucket: point.bucket, counts: Object.fromEntries(counts) }
+		return { bucket: point.bucket, counts: Rec.fromEntries(counts) }
 	})
 
 /** Known severities in `SEVERITY_ORDER`, then any others in arrival order. */
 export const volumeSeriesKeys = (buckets: ReadonlyArray<VolumeBucket>): ReadonlyArray<string> => {
-	const seen = new Set(buckets.flatMap((bucket) => Object.keys(bucket.counts)))
-	const known = SEVERITY_ORDER.filter((severity) => seen.has(severity))
-	return [...known, ...[...seen].filter((key) => !known.includes(key))]
+	const seen = new Set(Arr.flatMap(buckets, (bucket) => Rec.keys(bucket.counts)))
+	const known = Arr.filter(SEVERITY_ORDER, (severity) => seen.has(severity))
+	return [...known, ...Arr.filter([...seen], (key) => !known.includes(key))]
 }
 
 export const volumeTotal = (buckets: ReadonlyArray<VolumeBucket>): number =>
-	buckets.reduce((sum, bucket) => sum + Object.values(bucket.counts).reduce((s, v) => s + v, 0), 0)
+	Arr.reduce(buckets, 0, (sum, bucket) => sum + Arr.reduce(Rec.values(bucket.counts), 0, (s, v) => s + v))
 
 /** The chip's id in `ActiveFilterChips`: its param, or `attrs:<entry>`. */
 export const chipId = (chip: LogFilterChip): string =>

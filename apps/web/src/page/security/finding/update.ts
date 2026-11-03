@@ -1,4 +1,4 @@
-import { Result } from "effect"
+import { Result, String as Str } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -122,7 +122,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const finding = findingOf(model)
 			if (finding === null || model.isSaving) return { model }
 			const status = pickedTriageOf(model, finding)
-			const reason = model.reason.value.trim()
+			const reason = Str.trim(model.reason.value)
 			if (status === currentTriageOf(finding) && finding.status !== "fixed") return { model }
 			if (reasonErrorOf(reason) !== null) return { model: { ...model, isTriageSubmitted: true } }
 			return {
@@ -155,7 +155,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						...refreshed,
 						outMessage: toast(
 							"success",
-							`Marked ${FINDING_STATUS_LABEL[triage.status].toLowerCase()}`,
+							`Marked ${Str.toLowerCase(FINDING_STATUS_LABEL[triage.status])}`,
 						),
 					}
 				},

@@ -2,6 +2,7 @@ import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import type { MetricRow, SparklineMetricType } from "../shared"
 import type { SparklinePoint } from "./model"
+import { Array as Arr } from "effect"
 
 // Pure parts of the metric preview grid and its cards.
 
@@ -25,7 +26,7 @@ export const entryKey = (metricName: string, metricType: string): string => `${m
 /** `toEntries`: per-(metric, service) catalog rows collapsed into one grid entry per metric. */
 export const toEntries = (rows: ReadonlyArray<MetricRow>): ReadonlyArray<PreviewEntry> => {
 	const byMetric = new Map<string, PreviewEntry>()
-	rows.forEach((row) => {
+	Arr.forEach(rows, (row) => {
 		const key = entryKey(row.metricName, row.metricType)
 		const existing = byMetric.get(key)
 		if (existing !== undefined) {
@@ -59,14 +60,17 @@ export const namesOfType = (
 	entries: ReadonlyArray<PreviewEntry>,
 	metricType: string,
 ): ReadonlyArray<string> =>
-	entries.filter((entry) => entry.metricType === metricType).map((entry) => entry.metricName)
+	Arr.map(
+		Arr.filter(entries, (entry) => entry.metricType === metricType),
+		(entry) => entry.metricName,
+	)
 
 /** `sparklineRows`: counters plot datapoints per interval, everything else the average. */
 export const sparklineValues = (
 	metricType: string,
 	points: ReadonlyArray<SparklinePoint>,
 ): ReadonlyArray<number> =>
-	points.map((point) => (metricType === "sum" ? point.dataPointCount : point.avgValue))
+	Arr.map(points, (point) => (metricType === "sum" ? point.dataPointCount : point.avgValue))
 
 /**
  * One page's `getMetricSparklines` query for a metric type. Slots are stored by this key, so a

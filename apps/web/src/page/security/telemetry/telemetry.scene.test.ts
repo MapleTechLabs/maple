@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -27,28 +27,36 @@ const NOW = Date.UTC(2026, 9, 31, 14, 32)
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const exposureRoute = AppRoute.SecurityExposure()
 const runtimesRoute = AppRoute.SecurityRuntimes()
 
 const withExposure = (data = exposureOf(NOW)): Model => {
 	const entered = init(exposureRoute, context).model
-	return [
-		Message.ReadClock({ nowMs: NOW }),
-		Message.CompletedFetchExposure({ key: entered.exposure.key ?? "", result: Result.succeed(data) }),
-	].reduce((model, message) => pageUpdate(model, message).model, entered)
+	return Arr.reduce(
+		[
+			Message.ReadClock({ nowMs: NOW }),
+			Message.CompletedFetchExposure({ key: entered.exposure.key ?? "", result: Result.succeed(data) }),
+		],
+		entered,
+		(model, message) => pageUpdate(model, message).model,
+	)
 }
 
 const withRuntimes = (): Model => {
 	const entered = init(runtimesRoute, context).model
-	return [
-		Message.ReadClock({ nowMs: NOW }),
-		Message.CompletedFetchRuntimes({
-			key: entered.runtimes.key ?? "",
-			result: Result.succeed(runtimesOf(NOW)),
-		}),
-	].reduce((model, message) => pageUpdate(model, message).model, entered)
+	return Arr.reduce(
+		[
+			Message.ReadClock({ nowMs: NOW }),
+			Message.CompletedFetchRuntimes({
+				key: entered.runtimes.key ?? "",
+				result: Result.succeed(runtimesOf(NOW)),
+			}),
+		],
+		entered,
+		(model, message) => pageUpdate(model, message).model,
+	)
 }
 
 describe("security telemetry tabs", () => {
@@ -102,7 +110,7 @@ describe("security telemetry tabs", () => {
 			[...codeCrumbs({ label: "Runs", href: "/security/code/runs" }), { label: "Run 7c1e04b2" }],
 		]
 		for (const trail of trails) {
-			expect(trail.slice(0, -1).every((entry) => entry.href !== undefined)).toBe(true)
+			expect(Arr.every(trail.slice(0, -1), (entry) => entry.href !== undefined)).toBe(true)
 			expect(trail.at(-1)?.href).toBeUndefined()
 		}
 	})
@@ -149,7 +157,10 @@ describe("security telemetry tabs", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(
-				withExposure({ ...data, exposed: data.exposed.filter((row) => row.service === "web-app") }),
+				withExposure({
+					...data,
+					exposed: Arr.filter(data.exposed, (row) => row.service === "web-app"),
+				}),
 			),
 			expectView(text(/answered with a success/)).toBeAbsent(),
 			expectView(text("1 likely catch-all route")).toExist(),
@@ -202,7 +213,7 @@ describe("security telemetry tabs", () => {
 		expect(runtimes._tag).toBe("Success")
 		if (runtimes._tag !== "Success") return
 		// A critical CVE outranks an end-of-life date.
-		expect(runtimeEntries(runtimes.data).map((entry) => entry.row.service)).toEqual([
+		expect(Arr.map(runtimeEntries(runtimes.data), (entry) => entry.row.service)).toEqual([
 			"payments",
 			"checkout-api",
 			"scraper",

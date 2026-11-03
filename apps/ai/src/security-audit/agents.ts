@@ -16,7 +16,7 @@ import * as AgentRuntime from "@yielded/agent/agent-runtime"
 import * as InMemory from "@yielded/agent/in-memory"
 import * as Output from "@yielded/agent/output"
 import type { RunCostEstimator } from "@yielded/agent/run-options"
-import { Cause, type Duration, Effect, Layer, Ref, Schema } from "effect"
+import { Cause, type Duration, Effect, Layer, Ref, Schema, String as Str } from "effect"
 import { liveContextLimit, MODEL_RETRIES, REPEATED_TOOL_CALLS, TOOL_CONCURRENCY } from "../chat/budgets"
 import { reportedCostOf } from "../platform/genai-spans"
 import type { LlmClients, ResolvedModel } from "../platform/Llm"
@@ -126,7 +126,7 @@ export const makeAuditAgents = (
 				// What the parent promoted during this invocation: the only artifacts a `local` check may cite.
 				const promoted = yield* Ref.make<ReadonlyArray<string>>([])
 				// A retried attempt gets its own uid and scratch: it never sees the failed attempt's files.
-				const attempt = crypto.randomUUID().slice(0, 8)
+				const attempt = Str.slice(0, 8)(crypto.randomUUID())
 				const sandbox: AuditExecutionApi | undefined =
 					execution !== undefined && EXECUTING_ROLES.has(invocation.role)
 						? { run: (agentId, command) => execution.run(`${agentId}-${attempt}`, command) }
@@ -176,9 +176,9 @@ export const makeAuditAgents = (
 				}
 			}).pipe(
 				// One agent's failure, typed or a defect, is that invocation's failure, never the run's.
-				Effect.mapError((error) => fail(Cause.pretty(Cause.fail(error)).slice(0, 600))),
+				Effect.mapError((error) => fail(Str.slice(0, 600)(Cause.pretty(Cause.fail(error))))),
 				Effect.catchDefect((defect) =>
-					Effect.fail(fail(Cause.pretty(Cause.die(defect)).slice(0, 600))),
+					Effect.fail(fail(Str.slice(0, 600)(Cause.pretty(Cause.die(defect))))),
 				),
 				Effect.provide(clients),
 				Effect.withSpan("SecurityAudit.agent", {

@@ -15,7 +15,7 @@ import {
 	type SpineNodeData,
 } from "@maple/web-data/investigations/provenance-graph"
 import { getSmoothStepPath, Position } from "@xyflow/system"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { DEFAULT_GESTURES } from "@maple/views/service-map/xyflow/attach"
 import * as Canvas from "@maple/views/service-map/xyflow/canvas"
@@ -109,40 +109,38 @@ const nodeLink = (h: H) => h.Attribute(NODE_LINK_ATTRIBUTE, "")
 const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): ReadonlyArray<Html> => {
 	const isCurrent = data.current === true
 	const body = [
-		hstack(h, { gap: "1.5" },
-			[
-				h.span(
-					[
-						h.Class(
-							cn(
-								"relative flex size-5.5 shrink-0 items-center justify-center rounded-sm",
-								isCurrent ? "bg-primary text-primary-foreground" : "bg-muted",
-								data.lifted === true && !isCurrent ? "bg-background" : null,
-							),
+		hstack(h, { gap: "1.5" }, [
+			h.span(
+				[
+					h.Class(
+						cn(
+							"relative flex size-5.5 shrink-0 items-center justify-center rounded-sm",
+							isCurrent ? "bg-primary text-primary-foreground" : "bg-muted",
+							data.lifted === true && !isCurrent ? "bg-background" : null,
 						),
-					],
-					[
-						icon(h, GLYPH[data.glyph], {
-							size: 14,
-							className: cn(
-								"relative",
-								isCurrent ? null : data.glyph === "verdict" ? TONE_TEXT.info : TONE_TEXT.crit,
-							),
-						}),
-					],
-				),
-				eyebrow(
-					h,
-					{
+					),
+				],
+				[
+					icon(h, GLYPH[data.glyph], {
+						size: 14,
 						className: cn(
-							"min-w-0 flex-1 truncate tracking-wider",
-							isCurrent ? "text-primary" : "text-muted-foreground",
+							"relative",
+							isCurrent ? null : data.glyph === "verdict" ? TONE_TEXT.info : TONE_TEXT.crit,
 						),
-					},
-					[data.eyebrow],
-				),
-			],
-		),
+					}),
+				],
+			),
+			eyebrow(
+				h,
+				{
+					className: cn(
+						"min-w-0 flex-1 truncate tracking-wider",
+						isCurrent ? "text-primary" : "text-muted-foreground",
+					),
+				},
+				[data.eyebrow],
+			),
+		]),
 		h.p(
 			[
 				// One unbroken token (an error class, an id) ends in an ellipsis rather than breaking mid-word.
@@ -256,21 +254,17 @@ const pendingVerdictNode = (h: H, id: string, data: PendingVerdictNodeData): Rea
 			),
 		],
 		[
-			hstack(h, { gap: "1.5", align: "start" },
-				[
-					h.span(
-						[
-							h.Class(
-								"flex size-5.5 shrink-0 items-center justify-center rounded-sm border border-dashed",
-							),
-						],
-						[icon(h, "ClockIcon", { size: 14, className: "text-muted-foreground" })],
-					),
-					eyebrow(h, { className: "min-w-0 flex-1 leading-[1.3] text-muted-foreground" }, [
-						data.word,
-					]),
-				],
-			),
+			hstack(h, { gap: "1.5", align: "start" }, [
+				h.span(
+					[
+						h.Class(
+							"flex size-5.5 shrink-0 items-center justify-center rounded-sm border border-dashed",
+						),
+					],
+					[icon(h, "ClockIcon", { size: 14, className: "text-muted-foreground" })],
+				),
+				eyebrow(h, { className: "min-w-0 flex-1 leading-[1.3] text-muted-foreground" }, [data.word]),
+			]),
 			...(data.note
 				? [h.p([h.Class("text-3xs leading-[1.4] text-muted-foreground")], [data.note])]
 				: []),
@@ -507,11 +501,12 @@ export const edgeLabel = (h: H, edge: ProvenanceEdge, anchors: Anchors): Html | 
 				}),
 			],
 		},
-		[edge.label.replace(" ", "\n")],
+		[Str.replace(" ", "\n")(edge.label)],
 	)
 }
 
-const CONTROL = "flex size-6.5 items-center justify-center text-muted-foreground hover:text-foreground active:text-foreground"
+const CONTROL =
+	"flex size-6.5 items-center justify-center text-muted-foreground hover:text-foreground active:text-foreground"
 
 /** The four zoom buttons: the wheel scrolls the page here. */
 const controls = (h: H): Html =>
@@ -542,7 +537,11 @@ const controls = (h: H): Html =>
 			),
 			pressable(
 				h,
-				{ onClick: Message.ClickedPlaceGraph(), label: "Fit the graph to the view", className: CONTROL },
+				{
+					onClick: Message.ClickedPlaceGraph(),
+					label: "Fit the graph to the view",
+					className: CONTROL,
+				},
 				[icon(h, "MaximizeIcon", { size: 12 })],
 			),
 		],
@@ -565,23 +564,21 @@ const outlineText = (node: ProvenanceNode): string | null => {
 const outline = (h: H, graph: ProvenanceGraph): Html =>
 	h.ol(
 		[h.Class("sr-only")],
-		graph.nodes
-			.filter((node) => node.type !== "heading")
-			.map((node) =>
+		Arr.map(
+			Arr.filter(graph.nodes, (node) => node.type !== "heading"),
+			(node) =>
 				h.keyed("li")(
 					node.id,
 					[],
 					node.type === "action"
 						? [
-								pressable(
-									h,
-									{ onClick: Message.ClickedAction({ index: node.data.index }) },
-									[`Proposed action ${node.data.ordinal}: ${node.data.text}`],
-								),
+								pressable(h, { onClick: Message.ClickedAction({ index: node.data.index }) }, [
+									`Proposed action ${node.data.ordinal}: ${node.data.text}`,
+								]),
 							]
 						: Option.toArray(Option.fromNullishOr(outlineText(node))),
 				),
-			),
+		),
 	)
 
 const PROVENANCE_HINT = "what produced this investigation, and what it produced"
@@ -590,35 +587,35 @@ const PROVENANCE_HINT = "what produced this investigation, and what it produced"
 const caption = (h: H, graph: ProvenanceGraph, nowMs: number): Html => {
 	const running =
 		graph.runningSince === null ? null : splitDuration(Math.max(0, nowMs - graph.runningSince))
-	return hstack(h, { gap: "2.5" },
-		[
-			eyebrow(h, {}, ["Provenance"]),
-			typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" }, [PROVENANCE_HINT]),
-			...(graph.caption
-				? [
-						h.span(
-							[
-								h.Class(
-									"flex shrink-0 items-center gap-1.5 font-mono text-xs text-muted-foreground tabular-nums",
-								),
-							],
-							[
-								...(running === null ? [] : [statusDot(h, { tone: "live" })]),
-								graph.caption,
-								...(running === null
-									? []
-									: [
-											h.span(
-												[h.Class("text-foreground")],
-												[` · ${running.value}${running.unit}`],
-											),
-										]),
-							],
-						),
-					]
-				: []),
-		],
-	)
+	return hstack(h, { gap: "2.5" }, [
+		eyebrow(h, {}, ["Provenance"]),
+		typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" }, [
+			PROVENANCE_HINT,
+		]),
+		...(graph.caption
+			? [
+					h.span(
+						[
+							h.Class(
+								"flex shrink-0 items-center gap-1.5 font-mono text-xs text-muted-foreground tabular-nums",
+							),
+						],
+						[
+							...(running === null ? [] : [statusDot(h, { tone: "live" })]),
+							graph.caption,
+							...(running === null
+								? []
+								: [
+										h.span(
+											[h.Class("text-foreground")],
+											[` · ${running.value}${running.unit}`],
+										),
+									]),
+						],
+					),
+				]
+			: []),
+	])
 }
 
 const PANEL = "shrink-0 gap-3.5 bg-surface-faint px-6 pb-5.5 pt-4.5"
@@ -631,9 +628,9 @@ export const provenanceCanvas = (
 	timeZone: string,
 ): Html | null => {
 	const graph = graphOf(investigation, timeZone)
-	if (graph.nodes.filter((node) => node.type !== "heading").length < 2)
+	if (Arr.filter(graph.nodes, (node) => node.type !== "heading").length < 2)
 		return investigation.status === "investigating" ? provenanceLoading(h) : null
-	const anchors: Anchors = new Map(graph.nodes.map((node) => [node.id, node]))
+	const anchors: Anchors = new Map(Arr.map(graph.nodes, (node) => [node.id, node]))
 	const clock = { nowMs: model.nowMs, timeZone }
 	const scale = fitScale(model.canvas.pane.width, graph)
 	return panel(h, { className: PANEL }, [
@@ -657,16 +654,16 @@ export const provenanceCanvas = (
 					},
 					edges: edgesLayer(
 						h,
-						graph.edges.flatMap((edge) =>
+						Arr.flatMap(graph.edges, (edge) =>
 							Option.toArray(Option.fromNullishOr(edgeView(h, edge, anchors))),
 						),
 					),
-					edgeLabels: graph.edges.flatMap((edge) =>
+					edgeLabels: Arr.flatMap(graph.edges, (edge) =>
 						Option.toArray(Option.fromNullishOr(edgeLabel(h, edge, anchors))),
 					),
 					nodes: nodesLayer(
 						h,
-						graph.nodes.map((node) =>
+						Arr.map(graph.nodes, (node) =>
 							flowNode(h, {
 								id: node.id,
 								type: node.type,
@@ -693,7 +690,7 @@ const SPINE_H_LIVE = 148
 const ACTION_H = 76
 const ACTION_GAP = 8
 const HEADING_OFFSET = 20
-const COLUMN_X = [0, 1, 2, 3, 4].map((index) => index * (SPINE_WIDTH + GUTTER))
+const COLUMN_X = Arr.map([0, 1, 2, 3, 4], (index) => index * (SPINE_WIDTH + GUTTER))
 const GRAPH_W = 4 * (SPINE_WIDTH + GUTTER) + ACTION_WIDTH
 const GRAPH_H = Math.max(SPINE_H_LIVE, ACTION_H * 2 + ACTION_GAP)
 
@@ -711,7 +708,7 @@ const SPINE_B = spineCard(1, SPINE_H)
 const SPINE_C = spineCard(2, SPINE_H_LIVE)
 const GHOST_SPINE = [SPINE_A, SPINE_B, SPINE_C]
 const GHOST_VERDICT = spineCard(3, SPINE_H)
-const GHOST_ACTIONS: ReadonlyArray<Card> = [0, 1].map((index) => ({
+const GHOST_ACTIONS: ReadonlyArray<Card> = Arr.map([0, 1], (index) => ({
 	x: COLUMN_X[4] ?? 0,
 	y: topOf(ACTION_H * 2 + ACTION_GAP) + index * (ACTION_H + ACTION_GAP),
 	w: ACTION_WIDTH,
@@ -724,21 +721,27 @@ const stepPath = (a: { x: number; y: number }, b: { x: number; y: number }): str
 	if (Math.abs(a.y - b.y) < 0.5) return `M${a.x},${a.y} H${b.x}`
 	const mid = (a.x + b.x) / 2
 	const down = b.y > a.y ? 1 : -1
-	return [
-		`M${a.x},${a.y}`,
-		`H${mid - 8}`,
-		`Q${mid},${a.y} ${mid},${a.y + down * 8}`,
-		`V${b.y - down * 8}`,
-		`Q${mid},${b.y} ${mid + 8},${b.y}`,
-		`H${b.x}`,
-	].join(" ")
+	return Arr.join(
+		[
+			`M${a.x},${a.y}`,
+			`H${mid - 8}`,
+			`Q${mid},${a.y} ${mid},${a.y + down * 8}`,
+			`V${b.y - down * 8}`,
+			`Q${mid},${b.y} ${mid + 8},${b.y}`,
+			`H${b.x}`,
+		],
+		" ",
+	)
 }
 
 const STRANDS = [
 	{ d: stepPath(rightOf(SPINE_A), leftOf(SPINE_B)), dash: "3 3" },
 	{ d: stepPath(rightOf(SPINE_B), leftOf(SPINE_C)), dash: "3 3" },
 	{ d: stepPath(rightOf(SPINE_C), leftOf(GHOST_VERDICT)), dash: "3 3" },
-	...GHOST_ACTIONS.map((action) => ({ d: stepPath(rightOf(GHOST_VERDICT), leftOf(action)), dash: "4 4" })),
+	...Arr.map(GHOST_ACTIONS, (action) => ({
+		d: stepPath(rightOf(GHOST_VERDICT), leftOf(action)),
+		dash: "4 4",
+	})),
 ]
 const PORTS = [
 	rightOf(SPINE_A),
@@ -748,7 +751,7 @@ const PORTS = [
 	rightOf(SPINE_C),
 	leftOf(GHOST_VERDICT),
 	rightOf(GHOST_VERDICT),
-	...GHOST_ACTIONS.map(leftOf),
+	...Arr.map(GHOST_ACTIONS, leftOf),
 ]
 
 const BAR = "var(--muted-foreground)"
@@ -827,66 +830,60 @@ const actionGhost = (h: H, card: Card, delay: number): Html =>
 
 /** `ProvenanceCanvasLoading`: the chain it is about to be replaced by, drawn as a ghost. */
 export const provenanceLoading = (h: H): Html =>
-	panel(
-		h,
-		{ className: PANEL, attributes: [h.AriaBusy(true)] },
-		[
-			hstack(h, { gap: "2.5" },
-				[
-					eyebrow(h, {}, ["Provenance"]),
-					typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" },
-						[PROVENANCE_HINT],
+	panel(h, { className: PANEL, attributes: [h.AriaBusy(true)] }, [
+		hstack(h, { gap: "2.5" }, [
+			eyebrow(h, {}, ["Provenance"]),
+			typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" }, [
+				PROVENANCE_HINT,
+			]),
+			eyebrow(h, { variant: "mono", className: hstackClass({ gap: "1.5", className: "shrink-0" }) }, [
+				h.span([], ["Mapping the chain"]),
+				h.span(
+					[h.Class("inline-flex"), h.AriaHidden(true)],
+					Arr.map([0, 1, 2], (index) =>
+						h.span([h.Key(String(index)), h.Class("pulse-dot")], ["."]),
 					),
-					eyebrow(h, { variant: "mono", className: hstackClass({ gap: "1.5", className: "shrink-0" }) }, [
-						h.span([], ["Mapping the chain"]),
-						h.span(
-							[h.Class("inline-flex"), h.AriaHidden(true)],
-							[0, 1, 2].map((index) =>
-								h.span([h.Key(String(index)), h.Class("pulse-dot")], ["."]),
-							),
-						),
+				),
+			]),
+		]),
+		h.svg(
+			[
+				h.Attribute(
+					"viewBox",
+					`0 ${-HEADING_OFFSET - 12} ${GRAPH_W} ${GRAPH_H + HEADING_OFFSET + 24}`,
+				),
+				h.Class("h-auto w-full"),
+				h.Role("img"),
+				h.AriaLabel("Loading the provenance graph"),
+				h.Attribute("fill", "none"),
+			],
+			[
+				bar(h, { x: COLUMN_X[4] ?? 0, y: -HEADING_OFFSET - 5, w: 128, opacity: 0.16 }),
+				...Arr.map(STRANDS, (strand, index) =>
+					h.path([
+						h.Class("provenance-load-strand"),
+						h.Style({ "animation-delay": `${0.12 + index * 0.05}s` }),
+						h.Attribute("d", strand.d),
+						h.Attribute("stroke", "var(--muted-foreground)"),
+						h.Attribute("stroke-opacity", "0.45"),
+						h.Attribute("stroke-width", "1"),
+						h.Attribute("stroke-dasharray", strand.dash),
 					]),
-				],
-			),
-			h.svg(
-				[
-					h.Attribute(
-						"viewBox",
-						`0 ${-HEADING_OFFSET - 12} ${GRAPH_W} ${GRAPH_H + HEADING_OFFSET + 24}`,
-					),
-					h.Class("h-auto w-full"),
-					h.Role("img"),
-					h.AriaLabel("Loading the provenance graph"),
-					h.Attribute("fill", "none"),
-				],
-				[
-					bar(h, { x: COLUMN_X[4] ?? 0, y: -HEADING_OFFSET - 5, w: 128, opacity: 0.16 }),
-					...STRANDS.map((strand, index) =>
-						h.path([
-							h.Class("provenance-load-strand"),
-							h.Style({ "animation-delay": `${0.12 + index * 0.05}s` }),
-							h.Attribute("d", strand.d),
-							h.Attribute("stroke", "var(--muted-foreground)"),
-							h.Attribute("stroke-opacity", "0.45"),
-							h.Attribute("stroke-width", "1"),
-							h.Attribute("stroke-dasharray", strand.dash),
-						]),
-					),
-					...PORTS.map((port, index) =>
-						h.circle([
-							h.Class("provenance-load-strand"),
-							h.Style({ "animation-delay": `${0.12 + index * 0.03}s` }),
-							h.Attribute("cx", String(port.x)),
-							h.Attribute("cy", String(port.y)),
-							h.Attribute("r", "2.5"),
-							h.Attribute("fill", BAR),
-							h.Attribute("opacity", "0.5"),
-						]),
-					),
-					...GHOST_SPINE.map((card, index) => spineGhost(h, card, index * 0.08)),
-					spineGhost(h, GHOST_VERDICT, 0.3),
-					...GHOST_ACTIONS.map((card, index) => actionGhost(h, card, 0.4 + index * 0.07)),
-				],
-			),
-		],
-	)
+				),
+				...Arr.map(PORTS, (port, index) =>
+					h.circle([
+						h.Class("provenance-load-strand"),
+						h.Style({ "animation-delay": `${0.12 + index * 0.03}s` }),
+						h.Attribute("cx", String(port.x)),
+						h.Attribute("cy", String(port.y)),
+						h.Attribute("r", "2.5"),
+						h.Attribute("fill", BAR),
+						h.Attribute("opacity", "0.5"),
+					]),
+				),
+				...Arr.map(GHOST_SPINE, (card, index) => spineGhost(h, card, index * 0.08)),
+				spineGhost(h, GHOST_VERDICT, 0.3),
+				...Arr.map(GHOST_ACTIONS, (card, index) => actionGhost(h, card, 0.4 + index * 0.07)),
+			],
+		),
+	])

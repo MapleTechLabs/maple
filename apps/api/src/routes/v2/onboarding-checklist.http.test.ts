@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema, Array as Arr } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -189,7 +189,7 @@ describe("GET /v2/onboarding/checklist", () => {
 			expect(checklist.reward_amount_usd).toBe(30)
 			expect(checklist.deadline_at).toBe("2026-07-28T12:00:00.000Z")
 			expect(checklist.completed_count).toBe(2)
-			expect(checklist.steps.map((step) => step.id)).toEqual([
+			expect(Arr.map(checklist.steps, (step) => step.id)).toEqual([
 				"send_telemetry",
 				"connect_github",
 				"create_alert_rule",

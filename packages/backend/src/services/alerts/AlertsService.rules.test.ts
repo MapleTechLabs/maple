@@ -1,9 +1,15 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
-import { AlertValidationError } from "@maple/domain/http"
+import {
+	AlertValidationError,
+	ChatAlertDestinationConfig,
+	EmailAlertDestinationConfig,
+	PagerDutyAlertDestinationConfig,
+	WebhookAlertDestinationConfig,
+} from "@maple/domain/http"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Exit, Layer, Schema } from "effect"
+import { Duration, Effect, Exit, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	AlertDestinationInUseError,
@@ -41,6 +47,10 @@ import {
 	createErrorRateRule,
 	okFetch,
 } from "./alerts-service-test-support"
+
+/** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
+const requestBodyText = (body: RequestInit["body"]): string =>
+	body instanceof Uint8Array ? new TextDecoder().decode(body) : typeof body === "string" ? body : ""
 
 const trackedDbs: TestDb[] = []
 
@@ -90,10 +100,10 @@ describe("AlertsService", () => {
 						makeWarehouseStub({
 							logsAggregateRows: [
 								{
-									bucket: new Date(DEFAULT_CLOCK_EPOCH_MS)
-										.toISOString()
-										.replace("T", " ")
-										.slice(0, 19),
+									bucket: Str.slice(
+										0,
+										19,
+									)(Str.replace("T", " ")(new Date(DEFAULT_CLOCK_EPOCH_MS).toISOString())),
 									groupName: "all",
 									count: 42,
 								},
@@ -171,10 +181,10 @@ describe("AlertsService", () => {
 					makeWarehouseStub({
 						logsAggregateRows: [
 							{
-								bucket: new Date(DEFAULT_CLOCK_EPOCH_MS)
-									.toISOString()
-									.replace("T", " ")
-									.slice(0, 19),
+								bucket: Str.slice(
+									0,
+									19,
+								)(Str.replace("T", " ")(new Date(DEFAULT_CLOCK_EPOCH_MS).toISOString())),
 								groupName: "all",
 								count: 42,
 							},
@@ -295,7 +305,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 		const requests: string[] = []
 		const fetchImpl = (async (input: RequestInfo | URL) => {
-			requests.push(String(input))
+			requests.push(String(input instanceof Request ? input.url : input))
 			return new Response("", { status: 202 })
 		}) as typeof fetch
 
@@ -306,7 +316,12 @@ describe("AlertsService", () => {
 					asOrgId("org_pd_shape"),
 					asUserId("user_pd_shape"),
 					adminRoles,
-					{ type: "pagerduty", name: "Paging", enabled: true, integrationKey: REST_API_TOKEN },
+					new PagerDutyAlertDestinationConfig({
+						type: "pagerduty",
+						name: "Paging",
+						enabled: true,
+						integrationKey: REST_API_TOKEN,
+					}),
 				)
 			}).pipe(
 				Effect.provide(
@@ -330,7 +345,10 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 		const requests: Array<{ url: string; body: string }> = []
 		const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-			requests.push({ url: String(input), body: String(init?.body ?? "") })
+			requests.push({
+				url: String(input instanceof Request ? input.url : input),
+				body: requestBodyText(init?.body),
+			})
 			return new Response(
 				JSON.stringify({
 					status: "invalid event",
@@ -348,7 +366,12 @@ describe("AlertsService", () => {
 					asOrgId("org_pd_invalid"),
 					asUserId("user_pd_invalid"),
 					adminRoles,
-					{ type: "pagerduty", name: "Paging", enabled: true, integrationKey: VALID_PD_KEY },
+					new PagerDutyAlertDestinationConfig({
+						type: "pagerduty",
+						name: "Paging",
+						enabled: true,
+						integrationKey: VALID_PD_KEY,
+					}),
 				)
 			}).pipe(
 				Effect.provide(
@@ -379,7 +402,12 @@ describe("AlertsService", () => {
 				asOrgId("org_pd_ok"),
 				asUserId("user_pd_ok"),
 				adminRoles,
-				{ type: "pagerduty", name: "Paging", enabled: true, integrationKey: VALID_PD_KEY },
+				new PagerDutyAlertDestinationConfig({
+					type: "pagerduty",
+					name: "Paging",
+					enabled: true,
+					integrationKey: VALID_PD_KEY,
+				}),
 			)
 			assert.strictEqual(destination.type, "pagerduty")
 		}).pipe(
@@ -402,7 +430,12 @@ describe("AlertsService", () => {
 				asOrgId("org_pd_open"),
 				asUserId("user_pd_open"),
 				adminRoles,
-				{ type: "pagerduty", name: "Paging", enabled: true, integrationKey: VALID_PD_KEY },
+				new PagerDutyAlertDestinationConfig({
+					type: "pagerduty",
+					name: "Paging",
+					enabled: true,
+					integrationKey: VALID_PD_KEY,
+				}),
 			)
 			assert.strictEqual(destination.type, "pagerduty")
 		}).pipe(
@@ -445,7 +478,12 @@ describe("AlertsService", () => {
 		return Effect.gen(function* () {
 			const alerts = yield* AlertsService
 			const foreign = yield* alerts
-				.createDestination(orgId, userId, adminRoles, { ...request, channelId: "their-channel" })
+				.createDestination(
+					orgId,
+					userId,
+					adminRoles,
+					new ChatAlertDestinationConfig({ ...request, channelId: "their-channel" }),
+				)
 				.pipe(Effect.flip)
 			assert.instanceOf(foreign, AlertValidationError)
 
@@ -502,12 +540,17 @@ describe("AlertsService", () => {
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_pd_update")
 			const userId = asUserId("user_pd_update")
-			const created = yield* alerts.createDestination(orgId, userId, adminRoles, {
-				type: "pagerduty",
-				name: "Paging",
-				enabled: true,
-				integrationKey: VALID_PD_KEY,
-			})
+			const created = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new PagerDutyAlertDestinationConfig({
+					type: "pagerduty",
+					name: "Paging",
+					enabled: true,
+					integrationKey: VALID_PD_KEY,
+				}),
+			)
 			assert.strictEqual(calls, 1) // create validated once
 
 			const updated = yield* alerts.updateDestination(orgId, userId, adminRoles, created.id, {
@@ -532,12 +575,17 @@ describe("AlertsService", () => {
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_email_dest")
 			const userId = asUserId("user_email_dest")
-			const destination = yield* alerts.createDestination(orgId, userId, adminRoles, {
-				type: "email",
-				name: "On-call inbox",
-				enabled: true,
-				memberUserIds: ["user_ops", "user_oncall"],
-			})
+			const destination = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new EmailAlertDestinationConfig({
+					type: "email",
+					name: "On-call inbox",
+					enabled: true,
+					memberUserIds: ["user_ops", "user_oncall"],
+				}),
+			)
 			assert.strictEqual(destination.type, "email")
 			// Summary uses the member's display name; channelLabel the email.
 			assert.strictEqual(destination.summary, "Ops Team +1 more")
@@ -547,7 +595,7 @@ describe("AlertsService", () => {
 			const response = yield* alerts.testDestination(orgId, userId, adminRoles, destination.id)
 			assert.isTrue(response.success)
 			assert.deepStrictEqual(
-				sent.map((s) => s.to),
+				Arr.map(sent, (s) => s.to),
 				["ops@acme.test", "oncall@acme.test"],
 			)
 			// The synthetic test notification renders under the rule name "Test alert".
@@ -575,7 +623,12 @@ describe("AlertsService", () => {
 					asOrgId("org_email_invalid"),
 					asUserId("user_email_invalid"),
 					adminRoles,
-					{ type: "email", name: "Bad", enabled: true, memberUserIds: ["user_stranger"] },
+					new EmailAlertDestinationConfig({
+						type: "email",
+						name: "Bad",
+						enabled: true,
+						memberUserIds: ["user_stranger"],
+					}),
 				)
 			}).pipe(
 				Effect.provide(
@@ -599,12 +652,17 @@ describe("AlertsService", () => {
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_email_update")
 			const userId = asUserId("user_email_update")
-			const created = yield* alerts.createDestination(orgId, userId, adminRoles, {
-				type: "email",
-				name: "On-call inbox",
-				enabled: true,
-				memberUserIds: ["user_ops"],
-			})
+			const created = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new EmailAlertDestinationConfig({
+					type: "email",
+					name: "On-call inbox",
+					enabled: true,
+					memberUserIds: ["user_ops"],
+				}),
+			)
 
 			// Omitted member ids → recipients unchanged.
 			const renamed = yield* alerts.updateDestination(orgId, userId, adminRoles, created.id, {
@@ -625,7 +683,7 @@ describe("AlertsService", () => {
 
 			yield* alerts.testDestination(orgId, userId, adminRoles, created.id)
 			assert.deepStrictEqual(
-				sent.map((s) => s.to),
+				Arr.map(sent, (s) => s.to),
 				["oncall@acme.test", "lead@acme.test"],
 			)
 		}).pipe(
@@ -1049,12 +1107,12 @@ describe("AlertsService", () => {
 					asOrgId("org_forbidden"),
 					asUserId("user_forbidden"),
 					memberRoles,
-					{
+					new WebhookAlertDestinationConfig({
 						type: "webhook",
 						name: "Member webhook",
 						enabled: true,
 						url: "https://example.com/member",
-					},
+					}),
 				)
 			}).pipe(
 				Effect.provide(
@@ -1079,13 +1137,18 @@ describe("AlertsService", () => {
 			const userId = asUserId("user_dedupe_destinations")
 
 			const primary = yield* createWebhookDestination(alerts, orgId, userId)
-			const secondary = yield* alerts.createDestination(orgId, userId, adminRoles, {
-				type: "webhook",
-				name: "Secondary webhook",
-				enabled: true,
-				url: "https://example.com/secondary",
-				signingSecret: "webhook-secret-2",
-			})
+			const secondary = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new WebhookAlertDestinationConfig({
+					type: "webhook",
+					name: "Secondary webhook",
+					enabled: true,
+					url: "https://example.com/secondary",
+					signingSecret: "webhook-secret-2",
+				}),
+			)
 
 			const baseRule = {
 				name: "Duplicate destination rule",
@@ -1245,9 +1308,12 @@ describe("AlertsService", () => {
 
 			const incidents = yield* alerts.listIncidents(orgId)
 			assert.lengthOf(incidents.incidents, 2)
-			const groupKeys = incidents.incidents.map((i: { groupKey: string | null }) => i.groupKey).sort()
+			const groupKeys = Arr.map(
+				incidents.incidents,
+				(i: { groupKey: string | null }) => i.groupKey,
+			).sort()
 			assert.deepStrictEqual(groupKeys, ["svc-a", "svc-b"])
-			assert.isTrue(incidents.incidents.every((i: { status: string }) => i.status === "open"))
+			assert.isTrue(Arr.every(incidents.incidents, (i: { status: string }) => i.status === "open"))
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 

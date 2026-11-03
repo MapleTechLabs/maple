@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Array as Arr } from "effect"
 import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	serviceOverviewQuery,
@@ -436,7 +436,7 @@ describe("servicesFacetsQuery", () => {
 	it("emits a non-empty-filtered branch per facet type the UI keys on", () => {
 		const q = servicesFacetsQuery()
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		const facetTypes = [...sql.matchAll(/'(\w+)' AS facetType/g)].map((m) => m[1])
+		const facetTypes = Arr.map([...sql.matchAll(/'(\w+)' AS facetType/g)], (m) => m[1])
 		expect(facetTypes).toEqual(
 			expect.arrayContaining(["environment", "namespace", "commit_sha", "service"]),
 		)

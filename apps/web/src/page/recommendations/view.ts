@@ -1,7 +1,7 @@
 import type { V2Recommendation } from "@maple/domain/http/v2"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
@@ -100,67 +100,59 @@ const RESOLVES = [
 
 const actionGroup = (h: H, model: Model, issue: V2Recommendation): Html => {
 	if (isLive(issue))
-		return vstack(h, { gap: "3" },
-			[
-				h.p(
-					[h.Class("flex items-center gap-2 text-sm text-severity-info")],
-					[
-						icon(h, "CircleCheckIcon", { size: 14 }),
-						issue.status === "resolved" ? "Resolved" : "Mapping is active",
-					],
-				),
-				linkButton(h, { variant: "outline", size: "sm", className: "w-full", href: INGESTION_HREF }, [
-					"Manage mappings",
-				]),
-			],
-		)
+		return vstack(h, { gap: "3" }, [
+			h.p(
+				[h.Class("flex items-center gap-2 text-sm text-severity-info")],
+				[
+					icon(h, "CircleCheckIcon", { size: 14 }),
+					issue.status === "resolved" ? "Resolved" : "Mapping is active",
+				],
+			),
+			linkButton(h, { variant: "outline", size: "sm", className: "w-full", href: INGESTION_HREF }, [
+				"Manage mappings",
+			]),
+		])
 	if (issue.status === "dismissed")
-		return vstack(h, { gap: "2" },
-			[
-				button(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						className: "w-full",
-						isLoading: model.busy === "reopen",
-						attributes: [h.OnClick(Message.ClickedReopen())],
-					},
-					[icon(h, "ArrowRotateAnticlockwiseIcon"), "Reopen recommendation"],
-				),
-				typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" },
-					["Dismissed recommendations come back if the key is still emitted."],
-				),
-			],
-		)
-	return vstack(h, { gap: "2" },
-		[
-			isApplyable(issue)
-				? button(
-						h,
-						{
-							className: "w-full",
-							isLoading: model.busy === "apply",
-							attributes: [h.OnClick(Message.ClickedApply())],
-						},
-						[icon(h, "BoltIcon"), "Apply mapping"],
-					)
-				: typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" },
-						[
-							"This one is a manual fix: rename the attribute at your SDK. Maple can't apply it for you.",
-						],
-					),
+		return vstack(h, { gap: "2" }, [
 			button(
 				h,
 				{
+					variant: "outline",
+					size: "sm",
 					className: "w-full",
-					isLoading: model.busy === "dismiss",
-					attributes: [h.OnClick(Message.ClickedDismiss())],
+					isLoading: model.busy === "reopen",
+					attributes: [h.OnClick(Message.ClickedReopen())],
 				},
-				[icon(h, "XmarkIcon"), "Dismiss recommendation"],
+				[icon(h, "ArrowRotateAnticlockwiseIcon"), "Reopen recommendation"],
 			),
-		],
-	)
+			typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
+				"Dismissed recommendations come back if the key is still emitted.",
+			]),
+		])
+	return vstack(h, { gap: "2" }, [
+		isApplyable(issue)
+			? button(
+					h,
+					{
+						className: "w-full",
+						isLoading: model.busy === "apply",
+						attributes: [h.OnClick(Message.ClickedApply())],
+					},
+					[icon(h, "BoltIcon"), "Apply mapping"],
+				)
+			: typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
+					"This one is a manual fix: rename the attribute at your SDK. Maple can't apply it for you.",
+				]),
+		button(
+			h,
+			{
+				className: "w-full",
+				isLoading: model.busy === "dismiss",
+				attributes: [h.OnClick(Message.ClickedDismiss())],
+			},
+			[icon(h, "XmarkIcon"), "Dismiss recommendation"],
+		),
+	])
 }
 
 const sidebar = (h: H, model: Model, issue: V2Recommendation, timeZone: string): Html => {
@@ -201,7 +193,16 @@ const sidebar = (h: H, model: Model, issue: V2Recommendation, timeZone: string):
 					"Key",
 					[
 						h.code(
-							[h.Class(typographyClass({ size: "xs", tone: "muted", mono: true, truncate: true }))],
+							[
+								h.Class(
+									typographyClass({
+										size: "xs",
+										tone: "muted",
+										mono: true,
+										truncate: true,
+									}),
+								),
+							],
 							[issue.source_key],
 						),
 					],
@@ -211,7 +212,7 @@ const sidebar = (h: H, model: Model, issue: V2Recommendation, timeZone: string):
 			detailRailGroup(h, "How this resolves", [
 				h.ul(
 					[h.Class("flex flex-col gap-1.5 text-xs leading-relaxed text-muted-foreground")],
-					RESOLVES.map((line) =>
+					Arr.map(RESOLVES, (line) =>
 						h.li(
 							[h.Class("flex gap-2")],
 							[
@@ -235,7 +236,8 @@ const column = { width: "narrow", gap: "lg" } as const
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	AsyncData.match(model.list.data, {
 		onIdle: () => dashboardPage(h, { ...column, titleContent: detailTitleSkeleton(h) }, loadingBody(h)),
-		onLoading: () => dashboardPage(h, { ...column, titleContent: detailTitleSkeleton(h) }, loadingBody(h)),
+		onLoading: () =>
+			dashboardPage(h, { ...column, titleContent: detailTitleSkeleton(h) }, loadingBody(h)),
 		onFailure: (failure) =>
 			dashboardPage(h, column, [
 				errorState(h, {

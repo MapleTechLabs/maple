@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import type { PhaseTimings } from "./UptimePhases"
 
 /**
@@ -79,9 +79,9 @@ export const isRefusedCode = (code: string | null): boolean => code !== null && 
 /** Certificate and handshake failures from Node, undici and Bun all name themselves one of these ways. */
 export const isTlsCode = (code: string | null): boolean =>
 	code !== null &&
-	(code.includes("CERT") ||
-		code.includes("TLS") ||
-		code.includes("SSL") ||
+	(Str.includes("CERT")(code) ||
+		Str.includes("TLS")(code) ||
+		Str.includes("SSL")(code) ||
 		code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" ||
 		code === "UNABLE_TO_GET_ISSUER_CERT_LOCALLY")
 

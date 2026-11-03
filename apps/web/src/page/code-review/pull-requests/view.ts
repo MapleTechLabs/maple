@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
@@ -24,10 +24,13 @@ import { vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
-const STATUS_ENTRIES: ReadonlyArray<SelectEntry> = Object.entries(STATUS_LABELS).map(([value, label]) => ({
-	_tag: "Item",
-	item: { value, label },
-}))
+const STATUS_ENTRIES: ReadonlyArray<SelectEntry> = Arr.map(
+	Rec.toEntries(STATUS_LABELS),
+	([value, label]) => ({
+		_tag: "Item",
+		item: { value, label },
+	}),
+)
 
 const isFiltered = (model: Model) =>
 	model.search.repo !== undefined ||
@@ -58,7 +61,9 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 					[
 						emptyHeader(h, [
 							emptyTitle(h, ["No reviews in this window"]),
-							emptyDescription(h, ["Reviews appear here once a pull request is opened on a reviewed repository."]),
+							emptyDescription(h, [
+								"Reviews appear here once a pull request is opened on a reviewed repository.",
+							]),
 						]),
 					],
 					emptyFrameClass("dashed"),
@@ -75,16 +80,14 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 							isLoading: AsyncData.isRefreshing(model.reviews.data),
 							onLoadMore: Message.ClickedLoadMore(),
 						})
-			return vstack(h, { gap: "3" },
-				[
-					reviewTable(h, response.reviews, sortOf(model.search), {
-						selected: model.search.review,
-						nowMs: model.frame.nowMs,
-						timeZone,
-					}),
-					...(footer === null ? [] : [footer]),
-				],
-			)
+			return vstack(h, { gap: "3" }, [
+				reviewTable(h, response.reviews, sortOf(model.search), {
+					selected: model.search.review,
+					nowMs: model.frame.nowMs,
+					timeZone,
+				}),
+				...(footer === null ? [] : [footer]),
+			])
 		},
 	})
 
@@ -106,7 +109,7 @@ const statusSelect = (h: H, model: Model): Html =>
 const authorsOf = (model: Model): ReadonlyArray<string> =>
 	Option.match(AsyncData.getData(model.authors.data), {
 		onNone: () => [],
-		onSome: (analytics) => analytics.authors.map((row) => row.author),
+		onSome: (analytics) => Arr.map(analytics.authors, (row) => row.author),
 	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {

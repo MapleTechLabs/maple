@@ -1,5 +1,5 @@
 import { elementScroll, observeElementOffset, observeElementRect, Virtualizer } from "@tanstack/virtual-core"
-import { Effect, Queue, Schema, Stream } from "effect"
+import { Effect, Queue, Schema, Stream, Array as Arr, String as Str } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
 
 // `useVirtualizer` over the page scroller (`usePageScrollMargin`) on @tanstack/virtual-core, for the
@@ -23,7 +23,12 @@ export type VirtualWindow = typeof VirtualWindow.Type
 export const emptyWindow: VirtualWindow = { items: [], totalSize: 0, scrollMargin: 0 }
 
 /** A scroll the view asks for; `seq` makes a repeat of the same index a new request. */
-export type ScrollRequest = Readonly<{ seq: number; index: number; align: "auto" | "center"; reveal: boolean }>
+export type ScrollRequest = Readonly<{
+	seq: number
+	index: number
+	align: "auto" | "center"
+	reveal: boolean
+}>
 
 export type VirtualConfig = Readonly<{
 	overscan: number
@@ -43,40 +48,53 @@ export const virtualAttributes = <M>(
 	estimates: ReadonlyArray<number>,
 	scroll?: ScrollRequest,
 ): ReadonlyArray<ReturnType<HtmlBuilder<M>["DataAttribute"]>> => [
-	h.DataAttribute(KEYS, keys.join("\n")),
+	h.DataAttribute(KEYS, Arr.join(keys, "\n")),
 	h.DataAttribute(ESTIMATES, estimates.join(",")),
 	...(scroll === undefined
 		? []
-		: [h.DataAttribute(SCROLL, `${scroll.seq}:${scroll.index}:${scroll.align}:${scroll.reveal ? 1 : 0}`)]),
+		: [
+				h.DataAttribute(
+					SCROLL,
+					`${scroll.seq}:${scroll.index}:${scroll.align}:${scroll.reveal ? 1 : 0}`,
+				),
+			]),
 ]
 
 const keysOf = (list: HTMLElement): ReadonlyArray<string> => {
 	const raw = list.getAttribute(`data-${KEYS}`) ?? ""
-	return raw === "" ? [] : raw.split("\n")
+	return raw === "" ? [] : Str.split("\n")(raw)
 }
 
 const estimatesOf = (list: HTMLElement): ReadonlyArray<number> => {
 	const raw = list.getAttribute(`data-${ESTIMATES}`) ?? ""
-	return raw === "" ? [] : raw.split(",").map(Number)
+	return raw === "" ? [] : Arr.map(Str.split(",")(raw), Number)
 }
 
 const marginBetween = (list: HTMLElement, scroller: HTMLElement): number =>
 	Math.max(
 		0,
-		Math.round(list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop),
+		Math.round(
+			list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop,
+		),
 	)
 
-const sameItems = (a: ReadonlyArray<VirtualItem>, b: ReadonlyArray<VirtualItem>, isIndexOnly: boolean): boolean =>
+const sameItems = (
+	a: ReadonlyArray<VirtualItem>,
+	b: ReadonlyArray<VirtualItem>,
+	isIndexOnly: boolean,
+): boolean =>
 	a.length === b.length &&
-	a.every(
+	Arr.every(
+		a,
 		(item, i) =>
-			item.index === b[i]?.index && (isIndexOnly || (item.start === b[i]?.start && item.end === b[i]?.end)),
+			item.index === b[i]?.index &&
+			(isIndexOnly || (item.start === b[i]?.start && item.end === b[i]?.end)),
 	)
 
 const scrollOf = (list: HTMLElement): (ScrollRequest & { raw: string }) | undefined => {
 	const raw = list.getAttribute(`data-${SCROLL}`)
 	if (raw === null) return undefined
-	const [seq, index, align, reveal] = raw.split(":")
+	const [seq, index, align, reveal] = Str.split(":")(raw)
 	return {
 		raw,
 		seq: Number(seq),
@@ -108,7 +126,7 @@ const applyDirect = (instance: Instance, state: State, container: HTMLElement | 
 		state.lastSize = totalSize
 		container.style.height = `${totalSize}px`
 	}
-	instance.getVirtualItems().forEach((item) => {
+	Arr.forEach(instance.getVirtualItems(), (item) => {
 		const element = instance.elementsCache.get(item.key)
 		const next = item.start - state.scrollMargin
 		if (element === undefined || state.positions.get(element) === next) return
@@ -118,7 +136,11 @@ const applyDirect = (instance: Instance, state: State, container: HTMLElement | 
 }
 
 const windowOf = (instance: Instance, state: State, isDirect: boolean): VirtualWindow => ({
-	items: instance.getVirtualItems().map((item) => ({ index: item.index, start: item.start, end: item.end })),
+	items: Arr.map(instance.getVirtualItems(), (item) => ({
+		index: item.index,
+		start: item.start,
+		end: item.end,
+	})),
 	totalSize: isDirect ? 0 : instance.getTotalSize(),
 	scrollMargin: state.scrollMargin,
 })
@@ -126,9 +148,14 @@ const windowOf = (instance: Instance, state: State, isDirect: boolean): VirtualW
 const isSameWindow = (a: VirtualWindow, b: VirtualWindow, isDirect: boolean): boolean =>
 	a.totalSize === b.totalSize && a.scrollMargin === b.scrollMargin && sameItems(a.items, b.items, isDirect)
 
-const setUp = (list: HTMLElement, config: VirtualConfig, offer: (window: VirtualWindow) => void): (() => void) => {
+const setUp = (
+	list: HTMLElement,
+	config: VirtualConfig,
+	offer: (window: VirtualWindow) => void,
+): (() => void) => {
 	const scroller = list.closest<HTMLElement>('[data-slot="page-scroll-area"]') ?? list
-	const container = config.container === undefined ? null : list.querySelector<HTMLElement>(config.container)
+	const container =
+		config.container === undefined ? null : list.querySelector<HTMLElement>(config.container)
 	const isDirect = container !== null
 	const state: State = {
 		keys: keysOf(list),
@@ -183,7 +210,8 @@ const setUp = (list: HTMLElement, config: VirtualConfig, offer: (window: Virtual
 			state.isMeasuring = true
 			list.querySelectorAll<HTMLElement>(config.rows).forEach((node) => {
 				const key = state.keys[Number(node.getAttribute("data-index"))]
-				if (key === undefined || virtualizer.elementsCache.get(key) !== node) virtualizer.measureElement(node)
+				if (key === undefined || virtualizer.elementsCache.get(key) !== node)
+					virtualizer.measureElement(node)
 			})
 			state.isMeasuring = false
 		}
@@ -206,13 +234,15 @@ const setUp = (list: HTMLElement, config: VirtualConfig, offer: (window: Virtual
 	// measures, or the new rows are measured under the old keys.
 	const observer = new MutationObserver((records) => {
 		const isInput = (record: MutationRecord) =>
-			record.target === list && record.type === "attributes" && record.attributeName !== `data-${SCROLL}`
-		if (records.some(isInput)) {
+			record.target === list &&
+			record.type === "attributes" &&
+			record.attributeName !== `data-${SCROLL}`
+		if (Arr.some(records, isInput)) {
 			state.keys = keysOf(list)
 			state.estimates = estimatesOf(list)
 			update()
 		}
-		if (records.some((record) => record.type === "childList")) measureRows()
+		if (Arr.some(records, (record) => record.type === "childList")) measureRows()
 		requestScroll()
 	})
 	observer.observe(list, {

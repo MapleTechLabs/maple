@@ -7,6 +7,7 @@ import { icon } from "@maple/views/ui/icon"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { swatch } from "@maple/views/ui/swatch"
+import { Array as Arr } from "effect"
 
 // A read-only widget shell in view
 // mode with no widget actions: title, hoisted legend chips, headline value, content and footer.
@@ -26,7 +27,7 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<FixedMetricSeri
 				),
 			],
 			[
-				...visible.map((item) =>
+				...Arr.map(visible, (item) =>
 					h.span(
 						[
 							h.Key(item.key),
@@ -46,7 +47,14 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<FixedMetricSeri
 									size: "xs",
 									tone: "muted",
 									className: "shrink-0",
-									attributes: [h.Title(items.map((item) => item.label).join(", "))],
+									attributes: [
+										h.Title(
+											Arr.join(
+												Arr.map(items, (item) => item.label),
+												", ",
+											),
+										),
+									],
 								},
 								[`+${overflow}`],
 							),

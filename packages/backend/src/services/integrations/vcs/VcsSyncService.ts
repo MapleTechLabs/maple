@@ -1071,7 +1071,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {
 				const jobOpt = yield* decodeJob(raw).pipe(
-					Effect.map(Option.some),
+					Effect.asSome,
 					Effect.catch((cause) =>
 						Effect.annotateCurrentSpan({
 							"vcs.process.outcome": "dropped",
@@ -1216,7 +1216,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			const recordExhaustedFailure = (raw: unknown) =>
 				Effect.gen(function* () {
 					const jobOpt = yield* decodeJob(raw).pipe(
-						Effect.map(Option.some),
+						Effect.asSome,
 						Effect.orElseSucceed(() => Option.none<VcsSyncJob>()),
 					)
 					if (

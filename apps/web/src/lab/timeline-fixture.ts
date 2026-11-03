@@ -1,6 +1,7 @@
 import { buildTraceDetail, type SpanHierarchyRow } from "@maple/ui/lib/span-tree"
 import { formatWarehouseDateTimeMs, type SpanEvent } from "@maple/query-engine"
 import type { SpanEventsBySpanId } from "@maple/ui/lib/span-event-markers"
+import { Array as Arr } from "effect"
 
 const T0_MS = new Date("2026-07-21T10:00:00.000Z").getTime()
 
@@ -106,8 +107,8 @@ export const TIMELINE_LAB_EVENTS: ReadonlyMap<string, ReadonlyArray<SpanEvent>> 
 
 /** The timeline only needs names and offsets. */
 export const TIMELINE_LAB_MARKERS: SpanEventsBySpanId = new Map(
-	[...TIMELINE_LAB_EVENTS].map(([spanId, events]) => [
+	Arr.map([...TIMELINE_LAB_EVENTS], ([spanId, events]) => [
 		spanId,
-		events.map(({ name, offsetMs }) => ({ name, offsetMs })),
+		Arr.map(events, ({ name, offsetMs }) => ({ name, offsetMs })),
 	]),
 )

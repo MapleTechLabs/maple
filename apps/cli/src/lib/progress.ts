@@ -1,7 +1,7 @@
 // Live step list for long-running commands on stderr. On a TTY the running step
 // is a spinner line (with an optional byte progress bar) redrawn in place and
 // replaced by ✓/✗ when it settles; elsewhere only the settled lines print.
-import { Cause, Clock, Effect, Exit, Fiber, Option, Ref, Schedule } from "effect"
+import { Cause, Clock, Effect, Exit, Fiber, Option, Ref, Schedule, String as Str } from "effect"
 import { amber, bold, dim, green, red } from "./style"
 
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const
@@ -29,7 +29,7 @@ export const progressBar = (fraction: number, width = BAR_WIDTH): string => {
 	const partial = eighths % 8
 	const partialChar = partial === 0 ? "" : (["▏", "▎", "▍", "▌", "▋", "▊", "▉"][partial - 1] ?? "")
 	const rest = width - full - (partialChar ? 1 : 0)
-	return amber("█".repeat(full) + partialChar) + dim("░".repeat(rest))
+	return amber(Str.repeat(full)("█") + partialChar) + dim(Str.repeat(rest)("░"))
 }
 
 interface Transfer {
@@ -50,7 +50,7 @@ const transferSuffixes = (t: Transfer, elapsedMs: number): ReadonlyArray<string>
 		return [`  ${dim(`${formatBytes(t.received)}  ${rate}`)}`, `  ${dim(formatBytes(t.received))}`, ""]
 	}
 	const fraction = t.received / t.total
-	const pct = bold(`${Math.floor(fraction * 100)}%`.padStart(4))
+	const pct = bold(Str.padStart(4)(`${Math.floor(fraction * 100)}%`))
 	return [
 		`  ${progressBar(fraction)} ${pct}  ${dim(`${formatBytes(t.received)} / ${formatBytes(t.total)}  ${rate}`)}`,
 		`  ${progressBar(fraction)} ${pct}`,
@@ -71,7 +71,7 @@ export const fitLine = (
 	const fit = suffixes.find((suffix) => Bun.stringWidth(base + suffix) < columns)
 	if (fit !== undefined) return base + fit
 	const room = Math.max(1, columns - 1 - Bun.stringWidth(head))
-	return label.length > room ? `${head}${label.slice(0, Math.max(0, room - 1))}…` : base
+	return label.length > room ? `${head}${Str.slice(0, Math.max(0, room - 1))(label)}…` : base
 }
 
 export interface StepLabels {
@@ -113,7 +113,7 @@ export const step = <A, E, R>(
 			? yield* write(HIDE_CURSOR).pipe(
 					Effect.andThen(Effect.repeat(draw, Schedule.spaced(FRAME_MS))),
 					Effect.forkChild,
-					Effect.map(Option.some),
+					Effect.asSome,
 				)
 			: Option.none()
 

@@ -16,6 +16,7 @@ import { advisorySeverityBadge } from "../kit/parts"
 import { advisoryLink } from "./view-findings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The finding's sheet: what the advisory says, where the package is locked, and its triage.
 
@@ -60,7 +61,7 @@ const production = (h: H, finding: DependencyFindingView): ReadonlyArray<Html> =
 					h,
 					"Running in production",
 					// The environment labels the row, so a long service name keeps the value's width.
-					finding.production.map((service) =>
+					Arr.map(finding.production, (service) =>
 						detailRailRow(h, { label: service.environment }, [
 							h.span(
 								[h.Class("flex min-w-0 items-center justify-end gap-1.5 text-xs")],
@@ -94,7 +95,7 @@ const production = (h: H, finding: DependencyFindingView): ReadonlyArray<Html> =
 /** The ids besides the one the advisory link already shows. */
 const aliasesBesides = (finding: DependencyFindingView): ReadonlyArray<string> => {
 	const shown = displayAdvisoryId({ id: finding.advisoryId, aliases: finding.aliases })
-	return [finding.advisoryId, ...finding.aliases].filter((name) => name !== shown)
+	return Arr.filter([finding.advisoryId, ...finding.aliases], (name) => name !== shown)
 }
 
 const details = (h: H, finding: DependencyFindingView, clock: Clock): Html =>
@@ -102,8 +103,12 @@ const details = (h: H, finding: DependencyFindingView, clock: Clock): Html =>
 		detailRailRow(h, { label: "Advisory" }, [advisoryLink(h, finding)]),
 		...(aliasesBesides(finding).length === 0
 			? []
-			: [detailRailRow(h, { label: "Aliases" }, [value(h, aliasesBesides(finding).join(", "), true)])]),
-		detailRailRow(h, { label: "Versions" }, [value(h, finding.versions.join(", "), true)]),
+			: [
+					detailRailRow(h, { label: "Aliases" }, [
+						value(h, Arr.join(aliasesBesides(finding), ", "), true),
+					]),
+				]),
+		detailRailRow(h, { label: "Versions" }, [value(h, Arr.join(finding.versions, ", "), true)]),
 		detailRailRow(h, { label: "Fixed in" }, [
 			finding.fixedIn === null ? value(h, "No fix yet") : value(h, finding.fixedIn, true),
 		]),
@@ -130,7 +135,7 @@ const REASON_IDS: Field.FieldIds = {
 
 const reasonField = (h: H, model: Model): Html => {
 	// Trimmed as triage sends it, so the field never errors on a reason that was written.
-	const error = model.isReasonSubmitted ? reasonErrorOf(model.reason.value.trim()) : null
+	const error = model.isReasonSubmitted ? reasonErrorOf(Str.trim(model.reason.value)) : null
 	const state = Field.stateOf(model.reason, error !== null)
 	return Field.field(h, { state }, [
 		Field.fieldLabel(h, { ids: REASON_IDS, state }, "Reason"),

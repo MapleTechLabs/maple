@@ -2,6 +2,7 @@ import type { DependencyScanMatchRow, DependencyScanRow } from "@maple/db/tables
 import type { DependencyRelation } from "@maple/domain/dependency-scan"
 import type { GitCommitSha, VcsRepositoryId } from "@maple/domain/http"
 import type { AdvisorySeverity } from "@maple/domain/package-advisories"
+import { Array as Arr } from "effect"
 
 // Which findings the code running in production carries, and how the findings rank by it. Pure:
 // the service reads the running commits, their scans and matches, and hands them in.
@@ -24,13 +25,16 @@ export interface FindingKeyFields {
 }
 
 export const findingKey = (finding: FindingKeyFields): string =>
-	[
-		finding.repositoryId,
-		finding.lockfilePath,
-		finding.ecosystem,
-		finding.packageName,
-		finding.advisoryId,
-	].join("\u0000")
+	Arr.join(
+		[
+			finding.repositoryId,
+			finding.lockfilePath,
+			finding.ecosystem,
+			finding.packageName,
+			finding.advisoryId,
+		],
+		"\u0000",
+	)
 
 const commitKey = (repositoryId: string, commitSha: string) => `${repositoryId}@${commitSha}`
 
@@ -38,17 +42,17 @@ const commitKey = (repositoryId: string, commitSha: string) => `${repositoryId}@
 export const latestScanPerCommit = (
 	scans: ReadonlyArray<DependencyScanRow>,
 ): ReadonlyMap<string, DependencyScanRow> =>
-	scans.reduce((latest, scan) => {
+	Arr.reduce(scans, new Map<string, DependencyScanRow>(), (latest, scan) => {
 		const key = commitKey(scan.repositoryId, scan.commitSha)
 		if (!latest.has(key)) latest.set(key, scan)
 		return latest
-	}, new Map<string, DependencyScanRow>())
+	})
 
 /** The latest completed scan per (repository, commit): what the matches come from. */
 export const latestCompletedPerCommit = (
 	scans: ReadonlyArray<DependencyScanRow>,
 ): ReadonlyMap<string, DependencyScanRow> =>
-	latestScanPerCommit(scans.filter((scan) => scan.status === "completed"))
+	latestScanPerCommit(Arr.filter(scans, (scan) => scan.status === "completed"))
 
 /** A failed or stuck scan is retried once it is this old, so one bad read does not stick. */
 export const RESCAN_AFTER_MS = 60 * 60 * 1000
@@ -78,21 +82,27 @@ export function productionByFinding(
 	completed: ReadonlyMap<string, DependencyScanRow>,
 	matches: ReadonlyArray<DependencyScanMatchRow>,
 ): ReadonlyMap<string, ReadonlyArray<RunningService>> {
-	const scanById = new Map([...completed.values()].map((scan) => [scan.id, scan]))
-	const servicesByCommit = running.reduce((byCommit, service) => {
-		const key = commitKey(service.repositoryId, service.commitSha)
-		byCommit.set(key, [...(byCommit.get(key) ?? []), service])
-		return byCommit
-	}, new Map<string, ReadonlyArray<RunningService>>())
-	const byFinding = matches.reduce((acc, match) => {
+	const scanById = new Map(Arr.map([...completed.values()], (scan) => [scan.id, scan]))
+	const servicesByCommit = Arr.reduce(
+		running,
+		new Map<string, ReadonlyArray<RunningService>>(),
+		(byCommit, service) => {
+			const key = commitKey(service.repositoryId, service.commitSha)
+			byCommit.set(key, [...(byCommit.get(key) ?? []), service])
+			return byCommit
+		},
+	)
+	const byFinding = Arr.reduce(matches, new Map<string, ReadonlyArray<RunningService>>(), (acc, match) => {
 		const scan = scanById.get(match.scanId)
 		if (scan === undefined) return acc
 		const key = findingKey({ ...match, repositoryId: scan.repositoryId })
 		const services = servicesByCommit.get(commitKey(scan.repositoryId, scan.commitSha)) ?? []
 		const known = acc.get(key) ?? []
-		const added = services.filter(
+		const added = Arr.filter(
+			services,
 			(service) =>
-				!known.some(
+				!Arr.some(
+					known,
 					(other) =>
 						other.serviceName === service.serviceName &&
 						other.environment === service.environment &&
@@ -101,9 +111,9 @@ export function productionByFinding(
 		)
 		acc.set(key, [...known, ...added])
 		return acc
-	}, new Map<string, ReadonlyArray<RunningService>>())
+	})
 	return new Map(
-		[...byFinding].map(([key, services]) => [
+		Arr.map([...byFinding], ([key, services]) => [
 			key,
 			[...services].sort((a, b) => b.spanCount - a.spanCount),
 		]),

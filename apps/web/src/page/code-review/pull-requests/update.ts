@@ -24,6 +24,7 @@ import { draftQuery, syncedDraft } from "../kit/search"
 import { FetchReviewAuthors, FetchReviews, WaitSearchDebounce } from "./command"
 import { Message, type Model } from "./model"
 import type { PresetValue } from "../../kit/time-controls"
+import { Array as Arr } from "effect"
 
 export type Search = typeof CodeReviewPullRequestsSearch.Type
 type Return = PageReturn<Model, Message>
@@ -72,7 +73,7 @@ const searchHref = (search: Search) => hrefOf(AppRoute.CodeReviewPullRequests({ 
 
 /** `onChange`: a filter change starts the list over at one page; opening a review keeps it. */
 const navigate = (model: Model, patch: Partial<Search>): Return => {
-	const isFilter = Object.keys(patch).some((key) => key !== "review")
+	const isFilter = Arr.some(Object.keys(patch), (key) => key !== "review")
 	return {
 		model: isFilter ? { ...model, limit: PAGE } : model,
 		outMessage: PageOutMessage.RequestedNavigation({

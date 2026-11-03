@@ -1,5 +1,5 @@
 import { GithubRepoSummary, VcsRepositoryId } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import {
@@ -44,7 +44,7 @@ const REPOS = Array.from({ length: 246 }, (_, i) => {
 	const base = NAMES[i % NAMES.length] ?? "repo"
 	const name = i < NAMES.length ? base : `${base}-${Math.floor(i / NAMES.length)}`
 	return new GithubRepoSummary({
-		id: decodeId(`00000000-0000-4000-8000-${String(i).padStart(12, "0")}`),
+		id: decodeId(`00000000-0000-4000-8000-${Str.padStart(12, "0")(String(i))}`),
 		fullName: `acme/${name}`,
 		htmlUrl: `https://github.com/acme/${name}`,
 		isPrivate: i % 7 !== 0,
@@ -81,7 +81,7 @@ const update = (model: Model, message: Message): Model =>
 		ToggledRepo: ({ id }) => ({
 			...model,
 			toggled: model.toggled.includes(id)
-				? model.toggled.filter((other) => other !== id)
+				? Arr.filter(model.toggled, (other) => other !== id)
 				: [...model.toggled, id],
 		}),
 		ClickedConfigure: () => model,

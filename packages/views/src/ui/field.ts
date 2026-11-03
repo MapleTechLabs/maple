@@ -6,7 +6,7 @@ import {
 	fieldStyles,
 } from "@maple/ui/styles/ui/field"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import type { Update } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -82,7 +82,11 @@ export const controlAttributes = <P>(
 /** Base UI `Field.Root`. */
 export const field = <Message>(
 	h: HtmlBuilder<Message>,
-	options: Readonly<{ className?: string; state: FieldState; attributes?: ReadonlyArray<Attribute<Message>> }>,
+	options: Readonly<{
+		className?: string
+		state: FieldState
+		attributes?: ReadonlyArray<Attribute<Message>>
+	}>,
 	children: ReadonlyArray<Html>,
 ): Html =>
 	h.div(
@@ -121,7 +125,11 @@ export const fieldLabel = <Message>(
 /** A field label with no control of its own: it names what follows (a chip list, a list of rows). */
 export const fieldGroupLabel = <Message>(
 	h: HtmlBuilder<Message>,
-	options: Readonly<{ className?: string; isEyebrow?: boolean; attributes?: ReadonlyArray<Attribute<Message>> }>,
+	options: Readonly<{
+		className?: string
+		isEyebrow?: boolean
+		attributes?: ReadonlyArray<Attribute<Message>>
+	}>,
 	text: string | ReadonlyArray<Html | string>,
 ): Html =>
 	h.label(
@@ -159,7 +167,7 @@ export const input = <Message>(
 			...options.attributes,
 			h.AriaLabelledBy(options.ids.label),
 			...(options.state.isInvalid ? [h.AriaInvalid(true)] : []),
-			...(described.length === 0 ? [] : [h.AriaDescribedBy(described.join(" "))]),
+			...(described.length === 0 ? [] : [h.AriaDescribedBy(Arr.join(described, " "))]),
 		],
 	})
 }

@@ -1,6 +1,7 @@
 import { generateKeyPairSync, verify } from "node:crypto"
 import { describe, expect, it } from "vitest"
 import { pemToPkcs8 } from "../GithubAppClient"
+import { String as Str } from "effect"
 
 const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 })
 const pkcs1 = privateKey.export({ type: "pkcs1", format: "pem" }).toString()
@@ -25,7 +26,7 @@ describe("pemToPkcs8", () => {
 	})
 
 	it("imports a PKCS#1 key whose newlines were flattened to spaces", async () => {
-		expect(await signsVerifiably(pkcs1.replace(/\n/g, " "))).toBe(true)
+		expect(await signsVerifiably(Str.replace(/\n/g, " ")(pkcs1))).toBe(true)
 	})
 
 	it("imports a PKCS#8 key unchanged", async () => {

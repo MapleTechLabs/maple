@@ -6,7 +6,7 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { kbdStyles } from "@maple/ui/styles/ui/kbd"
 import { isDialogOpen, isEditableTarget, pressedKey } from "@maple/ui/lib/keyboard"
-import { Clock, Effect, Option, Schema, type Stream } from "effect"
+import { Clock, Effect, Option, Schema, type Stream, Array as Arr, String as Str } from "effect"
 import { Command, Dom, Mount, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -265,7 +265,7 @@ export const update = (model: Model, message: Message): Return =>
 			isValidShorthand(model.shorthand)
 				? pickedPreset(
 						{ ...model, shorthand: "", isShorthandInvalid: false },
-						model.shorthand.toLowerCase(),
+						Str.toLowerCase(model.shorthand),
 						maxRangeSeconds,
 					)
 				: { model: { ...model, isShorthandInvalid: true } },
@@ -278,7 +278,7 @@ export const update = (model: Model, message: Message): Return =>
 			const value = model.utcOffset?.isSystem === false ? model.utcOffset.timeZone : SYSTEM_VALUE
 			return zonesStep(
 				{ ...model, zoneRows: rows, zones: { ...model.zones, selected: [value], inputValue: "" } },
-				Combobox.Message.ClickedTriggerOf({ items: rows.map((row) => row.value) }),
+				Combobox.Message.ClickedTriggerOf({ items: Arr.map(rows, (row) => row.value) }),
 			)
 		},
 		GotTimeZoneComboboxMessage: ({ message: inner }) => zonesStep(model, inner),
@@ -296,7 +296,7 @@ export { LONG_RANGE_PRESET_VALUES, PRESET_VALUES }
 /** The window a shorthand resolves to: minutes and hours roll, days and weeks count calendar days,
  * months count calendar months (`resolveRelativeRange`). Null for "today" and non-shorthand. */
 const windowIdentity = (shorthand: string): string | null => {
-	const match = shorthand.trim().toLowerCase().match(/^(\d+)(mo|m|h|d|w)$/)
+	const match = Str.toLowerCase(Str.trim(shorthand)).match(/^(\d+)(mo|m|h|d|w)$/)
 	if (match === null) return null
 	const amount = Number.parseInt(match[1] ?? "0", 10)
 	const unit = match[2]
@@ -345,7 +345,7 @@ const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 			eyebrow(h, { as: "div", className: "px-3 pb-2" }, ["Presets"]),
 			h.div(
 				[h.Class("flex flex-col")],
-				inputs.presets.map((value) => {
+				Arr.map(inputs.presets, (value) => {
 					const isActive = isActivePreset(inputs.selectedPreset, value)
 					return h.button(
 						[
@@ -395,7 +395,7 @@ const quickSelect = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 			eyebrow(h, { as: "div" }, ["Quick select"]),
 			h.div(
 				[h.Class("grid grid-cols-4 gap-1.5")],
-				QUICK_SELECT.map((value) =>
+				Arr.map(QUICK_SELECT, (value) =>
 					h.button(
 						[
 							h.Key(value),
@@ -536,7 +536,7 @@ type KeyPress = Readonly<{
 
 /** The `time.open` combo: a bare "D" (either case), no modifier held. */
 export const isOpenKey = (event: KeyPress): boolean =>
-	pressedKey(event).toLowerCase() === "d" &&
+	Str.toLowerCase(pressedKey(event)) === "d" &&
 	!event.metaKey &&
 	!event.ctrlKey &&
 	!event.altKey &&

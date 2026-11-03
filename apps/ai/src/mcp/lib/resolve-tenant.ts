@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto"
-import { Effect, Option, Redacted, Schema } from "effect"
+import { Effect, Option, Redacted, Schema, String as Str } from "effect"
 import type { TenantContext as McpTenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
@@ -85,8 +85,8 @@ const toHeaderRecord = (headers: Headers): Record<string, string> => {
 const getBearerToken = (headers: Headers): string | undefined => {
 	const header = headers.get("authorization")
 	if (!header) return undefined
-	const [scheme, token] = header.split(" ")
-	if (!scheme || !token || scheme.toLowerCase() !== "bearer") return undefined
+	const [scheme, token] = Str.split(" ")(header)
+	if (!scheme || !token || Str.toLowerCase(scheme) !== "bearer") return undefined
 	return token
 }
 
@@ -98,11 +98,11 @@ const PLACEHOLDER = /\$\{[^}]*\}|^\$[A-Za-z_][A-Za-z0-9_]*$|^<[^>]+>$/
  * a JWT parse error. Undefined when the token may be valid and should be looked up.
  */
 export const describeMalformedBearer = (token: string | undefined): string | undefined => {
-	if (token === undefined || token.startsWith(MAPLE_API_KEY_PREFIX)) return undefined
+	if (token === undefined || Str.startsWith(MAPLE_API_KEY_PREFIX)(token)) return undefined
 	if (PLACEHOLDER.test(token)) {
 		return `The bearer token \`${token}\` is an unexpanded placeholder: your MCP client sent the variable name, not its value. Set the variable or paste the key; Maple API keys start with \`${MAPLE_API_KEY_PREFIX}\`.`
 	}
-	if (token.split(".").length === 3) return undefined
+	if (Str.split(".")(token).length === 3) return undefined
 	return `The bearer token is not a Maple API key. Maple API keys start with \`${MAPLE_API_KEY_PREFIX}\`; create one in Maple's settings, or connect with OAuth.`
 }
 
@@ -110,14 +110,14 @@ export const describeMalformedBearer = (token: string | undefined): string | und
  * The MCP resource identifier (RFC 8707) this deployment serves, from its configured API origin.
  * The same value apps/api binds OAuth grants to, never a forwarded host header.
  */
-export const mcpResourceUrl = (apiBaseUrl: string) => `${apiBaseUrl.replace(/\/+$/, "")}/mcp`
+export const mcpResourceUrl = (apiBaseUrl: string) => `${Str.replace(/\/+$/, "")(apiBaseUrl)}/mcp`
 
 /** Maple's own service token: the org comes from `x-org-id`, the user is `internal-service`. */
 const resolveInternalServiceTenant = Effect.fn("McpTenant.resolveInternalServiceTenant")(function* (
 	request: Request,
 	token: string,
 ) {
-	const provided = token.slice(INTERNAL_SERVICE_PREFIX.length)
+	const provided = Str.slice(INTERNAL_SERVICE_PREFIX.length)(token)
 	const env = yield* Env
 	const expected = Option.match(env.INTERNAL_SERVICE_TOKEN, {
 		onNone: () => undefined,
@@ -206,7 +206,7 @@ const resolveSessionTenant = Effect.fn("McpTenant.resolveSessionTenant")(functio
 export const resolveChatSessionTenantContext = Effect.fn("McpTenant.resolveChatSessionTenantContext")(
 	function* (request: Request) {
 		const token = getBearerToken(request.headers)
-		if (token !== undefined && token.startsWith(INTERNAL_SERVICE_PREFIX)) {
+		if (token !== undefined && Str.startsWith(INTERNAL_SERVICE_PREFIX)(token)) {
 			return yield* resolveInternalServiceTenant(request, token)
 		}
 		return yield* resolveSessionTenant(request)
@@ -220,7 +220,7 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 		const token = getBearerToken(request.headers)
 
 		// Internal service auth (e.g. chat agent)
-		if (token && token.startsWith(INTERNAL_SERVICE_PREFIX)) {
+		if (token && Str.startsWith(INTERNAL_SERVICE_PREFIX)(token)) {
 			return yield* resolveInternalServiceTenant(request, token)
 		}
 

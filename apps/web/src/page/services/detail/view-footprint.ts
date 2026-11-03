@@ -29,13 +29,13 @@ import type { Model, UsageTotals } from "./model"
 import { sectionCard, viewAllButton } from "./view-panels"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `ServiceUsagePanel`, `ServiceWorkloadsPanel` and `ServiceDependencyStrip` (components/services/).
 
 type H = HtmlBuilder<Message>
 
-const allEnvironments = (h: H): Html =>
-	typography(h, { size: "3xs", tone: "subtle" }, ["all environments"])
+const allEnvironments = (h: H): Html => typography(h, { size: "3xs", tone: "subtle" }, ["all environments"])
 
 const USAGE_STATS: ReadonlyArray<{
 	readonly key: keyof UsageTotals
@@ -64,7 +64,7 @@ export const usagePanel = (h: H, model: Model, envFilterActive: boolean): Html =
 		[
 			h.div(
 				[h.Class("grid grid-cols-2 gap-px sm:grid-cols-4")],
-				USAGE_STATS.map((stat) =>
+				Arr.map(USAGE_STATS, (stat) =>
 					h.div(
 						[h.Key(stat.key), h.Class("flex flex-col gap-0.5 px-4 py-3")],
 						[
@@ -150,7 +150,7 @@ const runsOnRow = (
 						),
 						itemDescription(
 							h,
-							[[link.label, ...link.location].join(" · ")],
+							[Arr.join([link.label, ...link.location], " · ")],
 							typographyClass({ size: "3xs", tone: "subtle", truncate: true }),
 						),
 					],
@@ -164,21 +164,36 @@ const runsOnRow = (
 					itemActions(
 						h,
 						[extra.count],
-						typographyClass({ size: "2xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" }),
+						typographyClass({
+							size: "2xs",
+							tone: "muted",
+							mono: true,
+							numeric: true,
+							className: "shrink-0",
+						}),
 					),
 				]),
 		...(extra.meters.length === 0
 			? []
-			: [h.div([h.Class(cn(vstackClass({ gap: "1" }), "max-w-[280px] basis-full pl-6"))], extra.meters)]),
+			: [
+					h.div(
+						[h.Class(cn(vstackClass({ gap: "1" }), "max-w-[280px] basis-full pl-6"))],
+						extra.meters,
+					),
+				]),
 	])
 
 /** Every place the service runs, platform resources first: the header links the first. */
 export const runsOnLinks = (model: Model): ReadonlyArray<RuntimeLink> => {
 	const time = pickTimeSearch(model.search)
 	return [
-		...AsyncData.getOrElse(model.runtimes.data, () => []).map((runtime) => runtimeLink(runtime, time)),
-		...AsyncData.getOrElse(model.workloads.data, () => []).map((workload) =>
-			workloadLink(workload, time),
+		...Arr.map(
+			AsyncData.getOrElse(model.runtimes.data, () => []),
+			(runtime) => runtimeLink(runtime, time),
+		),
+		...Arr.map(
+			AsyncData.getOrElse(model.workloads.data, () => []),
+			(workload) => workloadLink(workload, time),
 		),
 	]
 }
@@ -202,11 +217,11 @@ export const runsOnPanel = (h: H, model: Model, envFilterActive: boolean): Html 
 			h.ul(
 				[h.Class("divide-y")],
 				[
-					...runtimes.map((runtime) => {
+					...Arr.map(runtimes, (runtime) => {
 						const link = runtimeLink(runtime, time)
 						return h.keyed("li")(link.key, [], [runsOnRow(h, link, { meters: [] })])
 					}),
-					...workloads.map((workload) => {
+					...Arr.map(workloads, (workload) => {
 						const link = workloadLink(workload, time)
 						const meters = [
 							...(workload.avgCpuLimitUtilization === null
@@ -273,7 +288,7 @@ export const dependencyStrip = (h: H, model: Model): Html => {
 		],
 		[
 			eyebrow(h, {}, ["Talks to"]),
-			...visible.map((target) => stripChip(h, target, onViewAll)),
+			...Arr.map(visible, (target) => stripChip(h, target, onViewAll)),
 			...(hiddenCount > 0
 				? [
 						button(
@@ -285,9 +300,8 @@ export const dependencyStrip = (h: H, model: Model): Html => {
 								className: "h-auto py-0.5 text-xs font-normal sm:h-auto",
 								attributes: [h.OnClick(onViewAll)],
 							},
-							[
-							`+${hiddenCount} more`,
-						]),
+							[`+${hiddenCount} more`],
+						),
 					]
 				: []),
 			viewAllButton(h, onViewAll),

@@ -11,6 +11,7 @@ import {
 	sortAdvisories,
 	summarizeAdvisories,
 } from "./runtime-advisories"
+import { Array as Arr } from "effect"
 
 const advisory = (overrides: Partial<RuntimeAdvisory>): RuntimeAdvisory => ({
 	id: "CVE-2026-0001",
@@ -130,7 +131,7 @@ describe("sortAdvisories", () => {
 			advisory({ id: "critical", severity: "critical", published: "2024-01-01" }),
 			advisory({ id: "new-high", severity: "high", published: "2026-09-01" }),
 		])
-		expect(sorted.map((entry) => entry.id)).toEqual(["critical", "new-high", "old-high", "low"])
+		expect(Arr.map(sorted, (entry) => entry.id)).toEqual(["critical", "new-high", "old-high", "low"])
 	})
 })
 

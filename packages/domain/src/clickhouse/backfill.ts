@@ -1,4 +1,5 @@
 import { qualifyStatementForDatabase } from "./qualify"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * Structured backfill statements.
@@ -59,12 +60,13 @@ export const SOURCE_TIME_COLUMNS: Readonly<Record<string, string>> = {
 const ident = (db: string, name: string): string => `\`${db}\`.\`${name}\``
 
 const buildInsert = (spec: BackfillSpec, db: string, timePredicate?: string): string => {
-	const cols = spec.columns.join(", ")
+	const cols = Arr.join(spec.columns, ", ")
 	const whereParts: string[] = []
-	if (spec.where && spec.where.trim().length > 0) whereParts.push(`(${spec.where})`)
+	if (spec.where && Str.trim(spec.where).length > 0) whereParts.push(`(${spec.where})`)
 	if (timePredicate) whereParts.push(timePredicate)
-	const whereClause = whereParts.length > 0 ? `\nWHERE ${whereParts.join(" AND ")}` : ""
-	const groupByClause = spec.groupBy && spec.groupBy.trim().length > 0 ? `\nGROUP BY ${spec.groupBy}` : ""
+	const whereClause = whereParts.length > 0 ? `\nWHERE ${Arr.join(whereParts, " AND ")}` : ""
+	const groupByClause =
+		spec.groupBy && Str.trim(spec.groupBy).length > 0 ? `\nGROUP BY ${spec.groupBy}` : ""
 	// `prefer_column_name_to_alias = 1` only when we add the time predicate: the
 	// projection aliases a column to its own name (e.g. `toDateTime(Timestamp) AS
 	// Timestamp` on traces), so an unqualified `Timestamp` in WHERE would

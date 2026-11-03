@@ -18,7 +18,7 @@ import {
 	getCloudflareZoneTimeseries,
 } from "@maple/web-data/warehouse/cloudflare-infra"
 import { getReleases } from "@maple/web-data/warehouse/releases"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
@@ -224,7 +224,7 @@ export const loadReleases = (input: ReleasesInput) =>
 	getReleases({ data: { ...input, services: [...input.services] } }).pipe(
 		Effect.mapBoth({
 			onSuccess: (result): ReadonlyArray<Release> =>
-				result.releases.map((release) => ({
+				Arr.map(result.releases, (release) => ({
 					serviceName: release.serviceName,
 					commitSha: release.commitSha,
 					firstSeen: release.firstSeen,

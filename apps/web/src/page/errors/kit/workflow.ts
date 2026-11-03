@@ -1,6 +1,7 @@
 import type { WorkflowState } from "@maple/domain/http"
 import { TONE_COLOR } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr } from "effect"
 
 export const WORKFLOW_LABEL = {
 	triage: "Triage",
@@ -53,7 +54,7 @@ const CLOSED_MARK = new Map<WorkflowState, readonly [string, boolean]>([
 ])
 
 const circle = <M>(h: HtmlBuilder<M>, attributes: ReadonlyArray<readonly [string, string]>): Html =>
-	h.circle(attributes.map(([name, value]) => h.Attribute(name, value)))
+	h.circle(Arr.map(attributes, ([name, value]) => h.Attribute(name, value)))
 
 /** `WorkflowRingIcon`: the state as a ring that fills as the work progresses. */
 export const workflowRingIcon = <M>(

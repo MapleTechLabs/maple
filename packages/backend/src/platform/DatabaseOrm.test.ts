@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ApiKeys } from "@maple/db/tables"
 import { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
-import { Effect, Schema, Tracer } from "effect"
+import { Effect, Schema, Tracer, Array as Arr } from "effect"
 import { Database, DatabaseError } from "./DatabaseLive"
 import { postgresErrorType, postgresSqlState } from "./postgres-errors"
 import { cleanupTestDbs, createTestDb, type TestDb } from "./test-pglite"
@@ -85,7 +85,7 @@ describe("effect-orm through Database.execute", () => {
 			)
 			const left = yield* database.execute((db) => db.run(PG.from(ApiKeys).select("id")))
 			assert.deepStrictEqual(
-				left.map((row) => row.id),
+				Arr.map(left, (row) => row.id),
 				[keyId(1)],
 			)
 		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),

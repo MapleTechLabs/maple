@@ -15,11 +15,12 @@
  */
 import { describe, expect, it } from "vitest"
 import { renderChartSvg, unitColor, type ChartPoint } from "./static-chart"
+import { Array as Arr } from "effect"
 
 const at = (minutesAgo: number): number => Date.UTC(2026, 7, 18, 14, 32) - minutesAgo * 60_000
 
 const points = (values: ReadonlyArray<number>): ReadonlyArray<ChartPoint> =>
-	values.map((v, i) => [at(values.length - 1 - i), v] as ChartPoint)
+	Arr.map(values, (v, i) => [at(values.length - 1 - i), v] as ChartPoint)
 
 describe("the alert chart, which is already in delivered notifications", () => {
 	const spec = {

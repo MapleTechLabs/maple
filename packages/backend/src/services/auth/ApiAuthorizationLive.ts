@@ -1,6 +1,6 @@
 import { HttpServerRequest } from "effect/http"
 import { CurrentTenant, RoleName, UnauthorizedError } from "@maple/domain/http"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Effect, Layer, Option, Schema, String as Str } from "effect"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { makeResolveTenant } from "./AuthService"
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
@@ -17,8 +17,8 @@ const apiKeyDefaultRoles = [decodeRoleNameSync("root")] as const
 const getBearerToken = (headers: Record<string, string | undefined>): string | undefined => {
 	const header = headers["authorization"] ?? headers["Authorization"]
 	if (!header) return undefined
-	const [scheme, token] = header.split(" ")
-	if (!scheme || !token || scheme.toLowerCase() !== "bearer") return undefined
+	const [scheme, token] = Str.split(" ")(header)
+	if (!scheme || !token || Str.toLowerCase(scheme) !== "bearer") return undefined
 	return token
 }
 

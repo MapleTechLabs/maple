@@ -1,5 +1,5 @@
 import { elementScroll, observeElementOffset, observeElementRect, Virtualizer } from "@tanstack/virtual-core"
-import { Effect, Queue, Stream } from "effect"
+import { Effect, Queue, Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import { Message } from "./message"
 import type { VirtualRow } from "./model"
@@ -11,7 +11,7 @@ const OVERSCAN = 10
 
 const sameRows = (a: ReadonlyArray<VirtualRow>, b: ReadonlyArray<VirtualRow>): boolean =>
 	a.length === b.length &&
-	a.every((row, i) => row.index === b[i]?.index && row.start === b[i]?.start && row.end === b[i]?.end)
+	Arr.every(a, (row, i) => row.index === b[i]?.index && row.start === b[i]?.start && row.end === b[i]?.end)
 
 const rowsOf = (scroller: HTMLElement): ReadonlyArray<HTMLElement> =>
 	Array.from(scroller.querySelectorAll<HTMLElement>("tbody > tr[data-index]"))
@@ -47,9 +47,11 @@ const virtualize = (scroller: HTMLElement): Stream.Stream<WindowMessage> =>
 					isEmitScheduled: false,
 				}
 				const emitWindow = (instance: Virtualizer<HTMLElement, HTMLElement>) => {
-					const rows = instance
-						.getVirtualItems()
-						.map((item) => ({ index: item.index, start: item.start, end: item.end }))
+					const rows = Arr.map(instance.getVirtualItems(), (item) => ({
+						index: item.index,
+						start: item.start,
+						end: item.end,
+					}))
 					const totalSize = instance.getTotalSize()
 					if (totalSize === state.totalSize && sameRows(rows, state.rows)) return
 					state.rows = rows
@@ -81,9 +83,9 @@ const virtualize = (scroller: HTMLElement): Stream.Stream<WindowMessage> =>
 					state.isMeasuring = false
 				}
 				const rowObserver = new MutationObserver((records) => {
-					if (records.some((record) => record.removedNodes.length > 0))
+					if (Arr.some(records, (record) => record.removedNodes.length > 0))
 						virtualizer.measureElement(null)
-					records.forEach((record) =>
+					Arr.forEach(records, (record) =>
 						record.addedNodes.forEach((node) => {
 							if (node instanceof HTMLElement && node.hasAttribute("data-index")) measure(node)
 						}),
@@ -107,7 +109,7 @@ const virtualize = (scroller: HTMLElement): Stream.Stream<WindowMessage> =>
 				})
 
 				observeBody()
-				rowsOf(scroller).forEach(measure)
+				Arr.forEach(rowsOf(scroller), measure)
 				const unmount = virtualizer._didMount()
 				virtualizer._willUpdate()
 				emitWindow(virtualizer)

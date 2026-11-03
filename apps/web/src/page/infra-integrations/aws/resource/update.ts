@@ -16,6 +16,7 @@ import { chartIds } from "./charts"
 import { CompleteReloadSpin, FetchTimeseries, FetchTraced, ResolveWindow } from "./command"
 import { Message, type RequestMode } from "./message"
 import type { Model } from "./model"
+import { Array as Arr, Record as Rec } from "effect"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -23,7 +24,7 @@ type Route = { readonly kind: string; readonly name: string; readonly search: Se
 
 export const DEFAULT_PRESET = "6h"
 
-const isKind = (kind: string): kind is AwsInfraKindId => AWS_INFRA_KIND_IDS.some((id) => id === kind)
+const isKind = (kind: string): kind is AwsInfraKindId => Arr.some(AWS_INFRA_KIND_IDS, (id) => id === kind)
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>
 	ResolveWindow({
@@ -76,7 +77,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		nowMs: 0,
 		timeseries: Keyed.idle(),
 		traced: Keyed.idle(),
-		charts: Object.fromEntries((kind === null ? [] : chartIds(kind)).map((id) => [id, Chart.init()])),
+		charts: Rec.fromEntries(Arr.map(kind === null ? [] : chartIds(kind), (id) => [id, Chart.init()])),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		timePicker: TimeRangePicker.init("aws-resource-time-range"),

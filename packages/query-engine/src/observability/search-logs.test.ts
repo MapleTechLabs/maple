@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Schema } from "effect"
 import { OrgId } from "@maple/domain/http"
+import { WarehouseQuotaExceededError } from "@maple/domain/http/warehouse-errors"
 import { searchLogs } from "./search-logs"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { WarehouseExecutorApi } from "./WarehouseExecutor"
@@ -104,6 +105,46 @@ describe("searchLogs", () => {
 				const compiled = compilePipeQuery(call.pipe, { ...call.params, org_id: asOrgId("org_test") })
 				assert.notInclude(compiled!.sql, "Body ILIKE")
 			}
+		}),
+	)
+
+	it.effect("keeps the page when the exact count runs out of time, with the total as a lower bound", () =>
+		Effect.gen(function* () {
+			const row = {
+				timestamp: "2026-04-01 10:00:00",
+				exactTimestamp: "2026-04-01 10:00:00.000000000",
+				severityText: "ERROR",
+				severityNumber: 17,
+				serviceName: "api",
+				body: "request failed",
+				traceId: "t1",
+				spanId: "s1",
+				recordIdentity: "r1",
+				logAttributes: "{}",
+				resourceAttributes: "{}",
+			}
+			const page: ReadonlyArray<unknown> = [row]
+			const countTimesOut: WarehouseExecutorApi = {
+				...makeMockExecutor({ pipeCalls: [] }),
+				query: (pipe: string) =>
+					pipe === "logs_count"
+						? Effect.fail(
+								new WarehouseQuotaExceededError({
+									message: "Warehouse query logs_count exceeded 10000ms client timeout",
+									pipeName: "logs_count",
+									setting: "max_execution_time",
+								}),
+							)
+						: Effect.succeed({ data: page as ReadonlyArray<never> }),
+			}
+
+			const result = yield* searchLogs({ timeRange, search: "failed", offset: 10 }).pipe(
+				Effect.provide(makeLayer(countTimesOut)),
+			)
+
+			assert.lengthOf(result.logs, 1)
+			assert.strictEqual(result.total, 11)
+			assert.isTrue(result.totalIsLowerBound)
 		}),
 	)
 

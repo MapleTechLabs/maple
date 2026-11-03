@@ -1,5 +1,5 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
-import { Schema } from "effect"
+import { Schema, Record as Rec } from "effect"
 
 /**
  * The server-pinned shape whitelist and the predicates over it.
@@ -155,7 +155,7 @@ const SUBSCRIPTION_DEFS: Record<SubscriptionName, SubscriptionDefinition> = SUBS
 >
 
 /** Every whitelisted shape, so tests can assert invariants across the whole set. */
-export const SUBSCRIPTION_NAMES = Object.keys(SUBSCRIPTIONS) as ReadonlyArray<SubscriptionName>
+export const SUBSCRIPTION_NAMES = Rec.keys(SUBSCRIPTIONS) as ReadonlyArray<SubscriptionName>
 
 /**
  * The shape selector as a schema, so the whitelist is a literal union rather than

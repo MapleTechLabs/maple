@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 export { LOCAL_ORG_ID } from "@maple/query-engine/local"
 
 // Default OTLP/HTTP + query port for `maple start`.
@@ -44,7 +45,7 @@ export const localServerPortForLocation = (location: LocalUiLocation): string =>
 	if (isHostedLocation(location)) return localPort(location.search)
 	const explicit = location.origin.match(/:(\d+)$/)?.[1]
 	if (explicit) return explicit
-	return location.origin.startsWith("https:") ? "443" : "80"
+	return Str.startsWith("https:")(location.origin) ? "443" : "80"
 }
 
 /** OTLP/HTTP endpoint shown in the UI's connection hints. */

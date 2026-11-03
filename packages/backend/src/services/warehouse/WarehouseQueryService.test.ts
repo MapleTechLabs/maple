@@ -1,7 +1,20 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Deferred, Effect, Exit, Fiber, Layer, Option, Schema, Tracer } from "effect"
+import {
+	Cause,
+	ConfigProvider,
+	Deferred,
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Option,
+	Schema,
+	Tracer,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import {
 	MAX_RAW_SQL_RESULT_BYTES,
 	OrgClickHouseSettingsEncryptionError,
@@ -117,7 +130,7 @@ const scopedSql = (sql: string) =>
 const transient503 = () => new Error("HTTP status 503 service temporarily unavailable")
 
 const decodeJwtPayload = (token: string): Record<string, unknown> =>
-	JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8")) as Record<
+	JSON.parse(Buffer.from(Str.split(".")(token)[1] ?? "", "base64url").toString("utf8")) as Record<
 		string,
 		unknown
 	>
@@ -253,15 +266,13 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 		// throw an auth error.
 		const orgSettingsLive = Layer.succeed(OrgClickHouseSettingsService, {
 			resolveRuntimeConfig: () =>
-				Effect.succeed(
-					Option.some({
-						backend: "clickhouse" as const,
-						url: "https://byo.example",
-						user: "byo-user",
-						password: "byo-password",
-						database: "maple",
-					}),
-				),
+				Effect.succeedSome({
+					backend: "clickhouse" as const,
+					url: "https://byo.example",
+					user: "byo-user",
+					password: "byo-password",
+					database: "maple",
+				}),
 			invalidateRuntimeConfig: () => Effect.succeed(false),
 		} as OrgClickHouseSettingsServiceApi)
 		const layer = Layer.effect(WarehouseQueryService, WarehouseQueryService.make).pipe(
@@ -417,7 +428,7 @@ describe("bounded Tinybird response body", () => {
 	const bodyOf = (bytes: number) => {
 		// A valid result set padded to exactly `bytes` with trailing whitespace.
 		const prefix = '{"data":[]}'
-		return prefix + " ".repeat(bytes - prefix.length)
+		return prefix + Str.repeat(bytes - prefix.length)(" ")
 	}
 
 	it.effect("accepts an exact-boundary response and refuses one byte over", () =>
@@ -751,7 +762,7 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 						try: () => {
 							calls.push({ datasource, rows })
 						},
-						catch: WarehouseDriverError.fromUnknown,
+						catch: (cause) => WarehouseDriverError.fromUnknown(cause),
 					}),
 			}),
 		)
@@ -782,7 +793,7 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 						try: () => {
 							inserts++
 						},
-						catch: WarehouseDriverError.fromUnknown,
+						catch: (cause) => WarehouseDriverError.fromUnknown(cause),
 					}),
 			}),
 		)
@@ -808,7 +819,7 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 						try: () => {
 							throw new Error("HTTP 400 Bad Request: DB::Exception: Syntax error")
 						},
-						catch: WarehouseDriverError.fromUnknown,
+						catch: (cause) => WarehouseDriverError.fromUnknown(cause),
 					}),
 			}),
 		)
@@ -886,7 +897,7 @@ describe("createTinybirdSqlClient.insert wire framing (the production insert pat
 		const requestFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 			const headers = new Headers(init?.headers)
 			captured.push({
-				url: String(input),
+				url: String(input instanceof Request ? input.url : input),
 				method: init?.method,
 				contentType: headers.get("content-type") ?? undefined,
 				auth: headers.get("authorization") ?? undefined,
@@ -901,12 +912,12 @@ describe("createTinybirdSqlClient.insert wire framing (the production insert pat
 		assert.strictEqual(captured.length, 1)
 		const req = captured[0]!
 		assert.strictEqual(req.method, "POST")
-		assert.isTrue(req.url.startsWith("https://api.tinybird.co/v0/events?name=traces"))
+		assert.isTrue(Str.startsWith("https://api.tinybird.co/v0/events?name=traces")(req.url))
 		assert.strictEqual(req.contentType, "application/x-ndjson")
 		assert.strictEqual(req.auth, "Bearer tok_123")
 		assert.strictEqual(req.body, '{"trace_id":"a"}\n{"trace_id":"b"}')
 		// Tinybird ingests raw rows — never an `INSERT … FORMAT` statement (CH only).
-		assert.isFalse(req.body.includes("INSERT INTO"))
+		assert.isFalse(Str.includes("INSERT INTO")(req.body))
 	})
 
 	it("no-ops on an empty row set (no request issued)", async () => {
@@ -938,8 +949,8 @@ describe("createTinybirdSqlClient.sql wire format", () => {
 	const captureSql = async (statement: ClickHouseStatement): Promise<string> => {
 		const sent: string[] = []
 		const requestFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-			const url = new URL(String(input))
-			if (url.pathname.endsWith("/v0/sql")) {
+			const url = new URL(String(input instanceof Request ? input.url : input))
+			if (Str.endsWith("/v0/sql")(url.pathname)) {
 				const fromParam = url.searchParams.get("q")
 				sent.push(fromParam ?? requestBodyText(init?.body))
 			}
@@ -1016,7 +1027,7 @@ describe("ingest routes writes to the managed pipeline, not a per-org read overr
 							try: () => {
 								used.push({ op: "insert", kind: config.kind })
 							},
-							catch: WarehouseDriverError.fromUnknown,
+							catch: (cause) => WarehouseDriverError.fromUnknown(cause),
 						}),
 				}),
 			resolveRoute: (_tenant, purpose) => {
@@ -1066,7 +1077,7 @@ describe("ingest pins writes to Tinybird even when CLICKHOUSE_URL makes managed 
 						try: () => {
 							used.push({ op: "insert", kind: config.kind })
 						},
-						catch: WarehouseDriverError.fromUnknown,
+						catch: (cause) => WarehouseDriverError.fromUnknown(cause),
 					}),
 			}),
 		)
@@ -1156,7 +1167,7 @@ describe("Tinybird response decoding", () => {
 		Effect.gen(function* () {
 			const client = makeTinybirdTestClient(
 				tbConfig,
-				async () => new Response(`access denied ${"x".repeat(32 * 1024)}`, { status: 403 }),
+				async () => new Response(`access denied ${Str.repeat(32 * 1024)("x")}`, { status: 403 }),
 			)
 			const error = yield* Effect.flip(client.sql(statement))
 			assert.instanceOf(error, WarehouseDriverError)
@@ -1340,7 +1351,7 @@ describe("warehouse driver Effect boundaries", () => {
 		Effect.gen(function* () {
 			// No response limits: the native client's 16 MiB per-row default applies.
 			const request: typeof fetch = async () =>
-				new Response(`{"value":"${"x".repeat(16 * 1024 * 1024)}"}\n`)
+				new Response(`{"value":"${Str.repeat(16 * 1024 * 1024)("x")}"}\n`)
 			const error = yield* Effect.flip(
 				makeClickHouseTestClient(chConfig, request).sql(parseStatement("SELECT 1 FORMAT JSON")),
 			)
@@ -1437,10 +1448,10 @@ describe("warehouse spans follow the database conventions", () => {
 				}),
 			).pipe(Effect.withTracer(tracer))
 			assert.include(
-				spans.map((span) => span.name),
+				Arr.map(spans, (span) => span.name),
 				"WarehouseQueryService.executeSql",
 			)
-			assert.isFalse(spans.some(isHttpClientSpan))
+			assert.isFalse(Arr.some(spans, isHttpClientSpan))
 		}).pipe(Effect.provide(layer), Effect.provideService(FetchHttpClient.Fetch, okFetch))
 	})
 
@@ -1454,7 +1465,7 @@ describe("warehouse spans follow the database conventions", () => {
 				okFetch,
 			)
 			yield* client.sql(parseStatement("SELECT 1 FORMAT JSON")).pipe(Effect.withTracer(tracer))
-			assert.isTrue(spans.some(isHttpClientSpan))
+			assert.isTrue(Arr.some(spans, isHttpClientSpan))
 		}),
 	)
 })

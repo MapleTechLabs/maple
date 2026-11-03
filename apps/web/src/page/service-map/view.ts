@@ -1,5 +1,5 @@
 import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/ui/components/service-map/service-map-utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { serviceMapLoading } from "@maple/views/service-map/map/loading"
@@ -84,7 +84,10 @@ const headerActions = (h: H, model: Model): Html => {
 		view: SelectView.view,
 		toParentMessage: toSelect,
 		viewInputs: {
-			entries: environmentItems(model).map((item): SelectView.SelectEntry => ({ _tag: "Item", item })),
+			entries: Arr.map(environmentItems(model), (item): SelectView.SelectEntry => ({
+				_tag: "Item",
+				item,
+			})),
 			size: "sm",
 			// Sized to its value like the Overview select; full width only on its own narrow row.
 			className: "w-full min-w-0 @2xl/page:w-auto",
@@ -108,8 +111,8 @@ const serviceDetail = (
 	map: ServiceMap.Model,
 	serviceId: string,
 ): Html => {
-	const workloads = rows.workloads.filter((workload) => workload.serviceName === serviceId)
-	const runtimes = rows.runtimes.filter((runtime) => runtime.serviceName === serviceId)
+	const workloads = Arr.filter(rows.workloads, (workload) => workload.serviceName === serviceId)
+	const runtimes = Arr.filter(rows.runtimes, (runtime) => runtime.serviceName === serviceId)
 	return servicePanel(h, {
 		serviceId,
 		map,
@@ -142,7 +145,8 @@ const detailPanel =
 		timeZone: string,
 	) =>
 	(selectedId: string): Html => {
-		if (!selectedId.startsWith(DB_NODE_PREFIX)) return serviceDetail(h, model, rows, durationSeconds, map, selectedId)
+		if (!Str.startsWith(DB_NODE_PREFIX)(selectedId))
+			return serviceDetail(h, model, rows, durationSeconds, map, selectedId)
 		const node = map.source.rawNodes.find((candidate) => candidate.id === selectedId)
 		return databasePanel(h, model, {
 			nodeId: selectedId,

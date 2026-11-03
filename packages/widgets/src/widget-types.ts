@@ -1,4 +1,5 @@
 import type { RawSqlDisplayType } from "./raw-sql-display"
+import { Array as Arr, String as Str } from "effect"
 
 // The widget type table.
 //
@@ -368,16 +369,21 @@ export const DEFAULT_LIST_LIMIT = 50
 
 /** Narrows an arbitrary stored/user-supplied string to the closed set. */
 export const isWidgetVisualization = (value: unknown): value is WidgetVisualization =>
-	WIDGET_VISUALIZATIONS.some((candidate) => candidate === value)
+	Arr.some(WIDGET_VISUALIZATIONS, (candidate) => candidate === value)
 
 /** Distinct `visualization` values the MCP dashboard tools accept. */
 export const MCP_VISUALIZATIONS: ReadonlyArray<WidgetVisualization> = [
-	...new Set(PANEL_TYPES.filter((meta) => meta.mcpExposed).map((meta) => meta.visualization)),
+	...new Set(
+		Arr.map(
+			Arr.filter(PANEL_TYPES, (meta) => meta.mcpExposed),
+			(meta) => meta.visualization,
+		),
+	),
 ]
 
 /** Narrows to the MCP-exposed subset — what `add_dashboard_widget` accepts. */
 export const isMcpVisualization = (value: unknown): value is WidgetVisualization =>
-	MCP_VISUALIZATIONS.some((candidate) => candidate === value)
+	Arr.some(MCP_VISUALIZATIONS, (candidate) => candidate === value)
 
 /**
  * Panel types the MCP dashboard tools accept for `panel_type`.
@@ -387,7 +393,8 @@ export const isMcpVisualization = (value: unknown): value is WidgetVisualization
  * third spelling for the raw-SQL path — three fields for one decision, which is
  * why agents picked the wrong chart type. A panel type is the whole decision.
  */
-export const MCP_PANEL_TYPES: ReadonlyArray<PanelType> = PANEL_TYPES.filter((meta) => meta.mcpExposed).map(
+export const MCP_PANEL_TYPES: ReadonlyArray<PanelType> = Arr.map(
+	Arr.filter(PANEL_TYPES, (meta) => meta.mcpExposed),
 	(meta) => meta.panelType,
 )
 
@@ -423,10 +430,10 @@ export const chartFamilyForChartId = (chartId: string | undefined): "line" | "ba
 	if (chartId === WIDGET_TYPES.bar.chartId) return "bar"
 	if (chartId === WIDGET_TYPES.area.chartId) return "area"
 	if (chartId === WIDGET_TYPES.line.chartId) return "line"
-	if (chartId.endsWith("-bar")) return "bar"
-	if (chartId.endsWith("-area")) return "area"
-	if (chartId.includes("bar")) return "bar"
-	if (chartId.includes("area")) return "area"
+	if (Str.endsWith("-bar")(chartId)) return "bar"
+	if (Str.endsWith("-area")(chartId)) return "area"
+	if (Str.includes("bar")(chartId)) return "bar"
+	if (Str.includes("area")(chartId)) return "area"
 	return "line"
 }
 

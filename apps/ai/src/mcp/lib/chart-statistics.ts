@@ -1,5 +1,6 @@
 import type { BreakdownItem, TimeseriesPoint } from "@maple/domain"
 import type { QueryBuilderDataSource, QueryResultContract } from "@maple/query-model"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 export type ChartFlag =
 	| "EMPTY"
@@ -80,7 +81,7 @@ export function computeTimeseriesStats(points: ReadonlyArray<TimeseriesPoint>): 
 
 	const seriesNames = new Set<string>()
 	for (const point of points) {
-		for (const name of Object.keys(point.series)) {
+		for (const name of Rec.keys(point.series)) {
 			seriesNames.add(name)
 		}
 	}
@@ -96,7 +97,7 @@ export function computeTimeseriesStats(points: ReadonlyArray<TimeseriesPoint>): 
 		let negativeCount = 0
 		const samples: SeriesSample[] = []
 
-		points.forEach((point, idx) => {
+		Arr.forEach(points, (point, idx) => {
 			const includeAsSample = idx < SAMPLE_HEAD || idx >= points.length - SAMPLE_TAIL
 			const value = point.series[name]
 			if (value === undefined || value === null || Number.isNaN(value)) {
@@ -236,7 +237,7 @@ function classifyMetric(metric?: string): MetricClass {
 
 function classifyUnit(unit?: string): UnitClass {
 	if (!unit) return "unknown"
-	const trimmed = unit.trim()
+	const trimmed = Str.trim(unit)
 	if (!trimmed) return "unknown"
 	if (DURATION_UNIT_PATTERN.test(trimmed)) return "duration"
 	if (PERCENT_UNIT_PATTERN.test(trimmed)) return "percent"
@@ -327,7 +328,8 @@ export function computeFlags(stats: QueryStats, ctx: FlagContext = {}): ChartFla
 	}
 
 	if (!allZeros && stats.rowCount > 1 && stats.seriesStats.length > 0) {
-		const allFlat = stats.seriesStats.every(
+		const allFlat = Arr.every(
+			stats.seriesStats,
 			(s) => s.min !== null && s.max !== null && s.min === s.max && s.validCount > 1,
 		)
 		if (allFlat && !flags.includes("FLAT_LINE")) flags.push("FLAT_LINE")
@@ -369,7 +371,7 @@ export function computeFlags(stats: QueryStats, ctx: FlagContext = {}): ChartFla
 	}
 
 	if (seriesTotals.length >= 2) {
-		const grandTotal = seriesTotals.reduce((acc, s) => acc + Math.abs(s.total), 0)
+		const grandTotal = Arr.reduce(seriesTotals, 0, (acc, s) => acc + Math.abs(s.total))
 		if (grandTotal > 0) {
 			const top = seriesTotals.reduce((max, s) => (Math.abs(s.total) > Math.abs(max.total) ? s : max))
 			if (Math.abs(top.total) / grandTotal > 0.99 && !flags.includes("SINGLE_SERIES_DOMINATES")) {
@@ -407,5 +409,5 @@ export function verdictFromFlags(flags: readonly ChartFlag[]): ChartVerdict {
 	// sole flag is informational (e.g. SUSPICIOUS_GAP on a bursty/idle instance,
 	// where the UI auto-extends the window anyway) stays healthy and is surfaced
 	// as a note instead — so "suspicious" keeps meaning something.
-	return flags.some((f) => !INFORMATIONAL_FLAGS.has(f)) ? "suspicious" : "looks_healthy"
+	return Arr.some(flags, (f) => !INFORMATIONAL_FLAGS.has(f)) ? "suspicious" : "looks_healthy"
 }

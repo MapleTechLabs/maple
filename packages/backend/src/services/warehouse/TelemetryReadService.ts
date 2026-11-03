@@ -4,7 +4,7 @@
 // and shape the wire model; this owns the queries, their profiles and contexts.
 // Aggregations that go through the query engine stay on `QueryEngineService`.
 
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import {
 	ServiceHealthBaselineRequest,
 	ServiceHealthSnapshotRequest,
@@ -45,14 +45,14 @@ export type ServiceBaselines = ReadonlyMap<string, { p95LatencyMs: number; spanC
 const collapseBaselines = (
 	rows: ReadonlyArray<{ serviceName: string; baselineP95LatencyMs: number; baselineSpanCount: number }>,
 ): ServiceBaselines =>
-	rows.reduce((map, row) => {
+	Arr.reduce(rows, new Map<string, { p95LatencyMs: number; spanCount: number }>(), (map, row) => {
 		const current = map.get(row.serviceName)
 		if (current !== undefined && current.spanCount >= row.baselineSpanCount) return map
 		return map.set(row.serviceName, {
 			p95LatencyMs: row.baselineP95LatencyMs,
 			spanCount: row.baselineSpanCount,
 		})
-	}, new Map<string, { p95LatencyMs: number; spanCount: number }>())
+	})
 
 const make = Effect.gen(function* () {
 	const warehouse = yield* WarehouseQueryService

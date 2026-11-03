@@ -1,5 +1,5 @@
 import { CodeReviewTeam } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Result, Schema, String as Str } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { FrameMessage } from "../kit/frame"
@@ -126,7 +126,7 @@ describe("code review team", () => {
 	})
 
 	test("the activity calendar has a cell per day, named by what happened on it", () => {
-		const day = new Date(NOW - 2 * 86_400_000).toISOString().slice(0, 10)
+		const day = Str.slice(0, 10)(new Date(NOW - 2 * 86_400_000).toISOString())
 		scene(
 			{ update: pageUpdate, view },
 			given(

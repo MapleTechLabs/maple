@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { describe, expect, test } from "vitest"
@@ -19,7 +19,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const breakdowns: Breakdowns = {
 	referrerHosts: [
@@ -40,8 +40,10 @@ const breakdowns: Breakdowns = {
 }
 
 const windowed = (search = {}): Model =>
-	pageUpdate(init({ search }, context).model, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }))
-		.model
+	pageUpdate(
+		init({ search }, context).model,
+		Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+	).model
 
 const resolveTheme = Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
 
@@ -59,7 +61,10 @@ const summary: Summary = {
 }
 
 const settled = (model: Model, slot: "breakdowns" | "pages" | "events" | "summary", value: unknown): Model =>
-	pageUpdate(model, Message.CompletedFetch({ slot, key: model[slot].key ?? "", result: Result.succeed(value) })).model
+	pageUpdate(
+		model,
+		Message.CompletedFetch({ slot, key: model[slot].key ?? "", result: Result.succeed(value) }),
+	).model
 
 describe("web analytics", () => {
 	test("the resolved window asks for the page's reads, the overview's and the live count", () => {
@@ -126,20 +131,24 @@ describe("web analytics", () => {
 		])
 
 		// Referrals failed but the previous window answered: Try again asks for the failed one only.
-		const referralsFailed = [
-			Message.CompletedFetch({
-				slot: "aiReferrals",
-				key: failed.aiReferrals.key ?? "",
-				result: Result.fail(toLoadFailure("referrals store down")),
-			}),
-			Message.CompletedFetch({
-				slot: "previousAiReferrals",
-				key: failed.previousAiReferrals.key ?? "",
-				result: Result.succeed([]),
-			}),
-		].reduce((model, message) => pageUpdate(model, message).model, failed)
+		const referralsFailed = Arr.reduce(
+			[
+				Message.CompletedFetch({
+					slot: "aiReferrals",
+					key: failed.aiReferrals.key ?? "",
+					result: Result.fail(toLoadFailure("referrals store down")),
+				}),
+				Message.CompletedFetch({
+					slot: "previousAiReferrals",
+					key: failed.previousAiReferrals.key ?? "",
+					result: Result.succeed([]),
+				}),
+			],
+			failed,
+			(model, message) => pageUpdate(model, message).model,
+		)
 		const retried = pageUpdate(referralsFailed, Message.ClickedRetryAiReferrals()).commands ?? []
-		expect(retried.map(({ name, args }) => [name, args?.["slot"]])).toEqual([
+		expect(Arr.map(retried, ({ name, args }) => [name, args?.["slot"]])).toEqual([
 			["FetchWebAnalyticsAiReferrals", "aiReferrals"],
 		])
 	})
@@ -150,9 +159,9 @@ describe("web analytics", () => {
 			PageOutMessage.RequestedNavigation({ url: "/analytics?country=US", isReplace: false }),
 		)
 		const filtered = routeChanged(model, { search: { country: "US" } }, context).model
-		expect(pageUpdate(filtered, Message.ToggledFilter({ key: "country", value: "US" })).outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/analytics", isReplace: false }),
-		)
+		expect(
+			pageUpdate(filtered, Message.ToggledFilter({ key: "country", value: "US" })).outMessage,
+		).toEqual(PageOutMessage.RequestedNavigation({ url: "/analytics", isReplace: false }))
 	})
 
 	test("clearing filters keeps the window and the tab", () => {
@@ -166,15 +175,21 @@ describe("web analytics", () => {
 		const reloaded = pageUpdate(windowed(), Message.ClickedReload()).model
 		const filtered = routeChanged(reloaded, { search: { country: "US" } }, context)
 		expect(names(filtered.commands)).not.toContain("ResolveAnalyticsWindow")
-		expect(filtered.commands?.[0]?.args).toMatchObject({ input: { startTime: window.startTime, country: "US" } })
+		expect(filtered.commands?.[0]?.args).toMatchObject({
+			input: { startTime: window.startTime, country: "US" },
+		})
 		const moved = routeChanged(filtered.model, { search: { country: "US", timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveAnalyticsWindow", "Refresh"]])
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveAnalyticsWindow", "Refresh"],
+		])
 	})
 
 	test("a card sorts by sessions when its page views had not arrived as it mounted", () => {
 		const early = settled(windowed(), "breakdowns", breakdowns)
 		expect(panelOf(early, "content").sortKey).toBe("count")
-		const late = settled(early, "pages", [{ host: "shop.acme.test", pagePath: "/", pageViews: 210, sessions: 127 }])
+		const late = settled(early, "pages", [
+			{ host: "shop.acme.test", pagePath: "/", pageViews: 210, sessions: 127 },
+		])
 		expect(panelOf(late, "content").sortKey).toBe("count")
 	})
 

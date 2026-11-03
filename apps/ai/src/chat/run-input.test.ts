@@ -8,7 +8,7 @@
  * investigation's opening prompt came to render as an escaped blob.
  */
 import { OrgId, UserId } from "@maple/domain"
-import { Effect, Layer, Schema, Stream } from "effect"
+import { Effect, Layer, Schema, Stream, Array as Arr } from "effect"
 import { LanguageModel } from "effect/ai"
 import type { Prompt, Response } from "effect/ai"
 import * as AiModel from "effect/ai/Model"
@@ -73,10 +73,12 @@ const noTools: McpToolExecutorApi = {
 }
 
 const userText = (prompt: Prompt.Prompt): string =>
-	prompt.content
-		.filter((message) => message.role === "user")
-		.flatMap((message) => message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])))
-		.join("")
+	Arr.join(
+		Arr.filter(prompt.content, (message) => message.role === "user").flatMap((message) =>
+			message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])),
+		),
+		"",
+	)
 
 describe("runChatTurn input", () => {
 	it("sends the turn's message verbatim, not as a JSON string literal", async () => {

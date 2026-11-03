@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Effect, Option } from "effect"
+import { Effect, Option, String as Str } from "effect"
 import { File } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -20,7 +20,7 @@ const DEFAULT_HINT = "Drop an image or click to upload. PNG, JPG, WEBP or GIF, u
 
 /** The toast a rejected file gets, or none when it is an image within the size cap. */
 export const checkImage = (file: File.File): Option.Option<string> =>
-	!File.mimeType(file).startsWith("image/")
+	!Str.startsWith("image/")(File.mimeType(file))
 		? Option.some("Please choose an image file")
 		: File.size(file) > MAX_BYTES
 			? Option.some(`Image must be ${Math.round(MAX_BYTES / (1024 * 1024))} MB or smaller`)

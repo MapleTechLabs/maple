@@ -18,7 +18,7 @@ function* walk(dir: string): Generator<string> {
 	for (const entry of readdirSync(dir).sort()) {
 		const path = join(dir, entry)
 		if (statSync(path).isDirectory()) yield* walk(path)
-		else if (/\.ts$/.test(entry) && !/\.(test|generated)\.ts$/.test(entry)) yield path
+		else if (entry.endsWith(".ts") && !/\.(test|generated)\.ts$/.test(entry)) yield path
 	}
 }
 

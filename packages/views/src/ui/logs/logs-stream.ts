@@ -62,8 +62,8 @@ export const init = (id: string, rows: ReadonlyArray<LogRowView>): Model => ({
 
 /** The panels follow the expanded rows: a newly expanded row gets a fresh one, a collapsed one drops it. */
 const syncPanels = (model: Model): Model => {
-	const panels = Object.fromEntries(
-		model.expandedRows.map((index) => [
+	const panels = Record.fromEntries(
+		Array.map(model.expandedRows, (index) => [
 			String(index),
 			Option.getOrElse(Record.get(model.panels, String(index)), () =>
 				AttributesPanel.init(`${model.id}-row-${index}-attributes`),
@@ -71,8 +71,8 @@ const syncPanels = (model: Model): Model => {
 		]),
 	)
 	const isSame =
-		Object.keys(panels).length === Object.keys(model.panels).length &&
-		Object.entries(panels).every(([key, panel]) => model.panels[key] === panel)
+		Record.keys(panels).length === Record.keys(model.panels).length &&
+		Array.every(Record.toEntries(panels), ([key, panel]) => model.panels[key] === panel)
 	return isSame ? model : modifyFields(model, { panels: () => panels })
 }
 
@@ -189,7 +189,7 @@ const toggled = (rows: ReadonlyArray<number>, index: number, expand: boolean | "
 	const isOn = rows.includes(index)
 	const on = expand === "toggle" ? !isOn : expand
 	if (on === isOn) return rows
-	return on ? [...rows, index] : rows.filter((row) => row !== index)
+	return on ? [...rows, index] : Array.filter(rows, (row) => row !== index)
 }
 
 const navigate = (model: Model, key: NavigationKey, count: number): UpdateReturn => {
@@ -256,7 +256,7 @@ const handle = (model: Model, rows: ReadonlyArray<LogRowView>, message: Message)
 	Message.match<UpdateReturn>(message, {
 		ChangedVirtualWindow: ({ rows: rendered, totalSize }) => {
 			// A chip that scrolled out of the window unmounts, taking its card along.
-			const isRendered = (chip: ChipRef) => rendered.some((row) => row.index === chip.index)
+			const isRendered = (chip: ChipRef) => Array.some(rendered, (row) => row.index === chip.index)
 			return {
 				model: modifyFields(model, {
 					window: () => rendered,

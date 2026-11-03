@@ -1,7 +1,7 @@
 import { view as traceFlowView } from "@maple/views/service-map/trace-flow/view"
 import { view as flamegraphView } from "@maple/views/traces/flamegraph-view"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { BASE_TIME, SERVICES, TOTAL_DURATION_MS, TRACE_ID, WATERFALL_ROWS } from "./fixture"
 import { FLOW_GRAPH, Message, type Model, type Tab, TRACE_INPUT } from "./model"
 
@@ -29,7 +29,7 @@ const summary = (h: H): Html =>
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-2")],
 				[
-					...SERVICES.map((service, index) =>
+					...Arr.map(SERVICES, (service, index) =>
 						h.span(
 							[
 								h.Class(
@@ -52,7 +52,7 @@ const summary = (h: H): Html =>
 const tabBar = (h: H, current: Tab): Html =>
 	h.div(
 		[h.Class("flex items-center gap-0 border-b border-border bg-background px-4"), h.Role("tablist")],
-		TABS.map(([tab, label]) =>
+		Arr.map(TABS, ([tab, label]) =>
 			h.button(
 				[
 					h.Type("button"),
@@ -169,7 +169,7 @@ const waterfall = (h: H, selected: Option.Option<string>): Html =>
 			),
 			h.div(
 				[h.Class("divide-y divide-border")],
-				WATERFALL_ROWS.map((row) => waterfallRow(h, row, selected)),
+				Arr.map(WATERFALL_ROWS, (row) => waterfallRow(h, row, selected)),
 			),
 			h.div(
 				[
@@ -177,7 +177,7 @@ const waterfall = (h: H, selected: Option.Option<string>): Html =>
 						"hidden sm:flex items-center justify-between px-4 py-2 border-t border-border bg-background",
 					),
 				],
-				AXIS.map((tick) => h.span([h.Class("text-[8px] text-muted-foreground")], [tick])),
+				Arr.map(AXIS, (tick) => h.span([h.Class("text-[8px] text-muted-foreground")], [tick])),
 			),
 		],
 	)

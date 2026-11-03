@@ -17,6 +17,7 @@ import { analyticsRowIcon, dimensionHasIcons } from "./view-icons"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr, String as Str } from "effect"
 
 // `AnalyticsBreakdownPanel`: one breakdown card.
 
@@ -57,7 +58,7 @@ const shareBarStyle = (share: number): Readonly<Record<string, string>> => {
 	}
 }
 
-const columnLabel = (noun: string): string => noun.charAt(0).toUpperCase() + noun.slice(1)
+const columnLabel = (noun: string): string => Str.toUpperCase(noun.charAt(0)) + Str.slice(1)(noun)
 
 /** The panel's resolved view: tab, rows filtered and shared, the sort in effect. */
 export const panelView = (state: PanelState, dimensions: ReadonlyArray<BreakdownDimension>) => {
@@ -69,17 +70,18 @@ export const panelView = (state: PanelState, dimensions: ReadonlyArray<Breakdown
 	const dimension = dimensions[activeTab] ?? dimensions[0]
 	if (dimension === undefined) return null
 	const label = dimension.formatValue ?? ((name: string) => name)
-	const hasViews = dimension.rows.some((row) => row.views !== undefined)
-	const total = dimension.rows.reduce((sum, row) => sum + (hasViews ? (row.views ?? 0) : row.count), 0)
-	const needle = state.query.trim().toLowerCase()
-	const rows: ReadonlyArray<ShareRow> = dimension.rows
-		.filter((row) =>
+	const hasViews = Arr.some(dimension.rows, (row) => row.views !== undefined)
+	const total = Arr.reduce(dimension.rows, 0, (sum, row) => sum + (hasViews ? (row.views ?? 0) : row.count))
+	const needle = Str.toLowerCase(Str.trim(state.query))
+	const rows: ReadonlyArray<ShareRow> = Arr.map(
+		Arr.filter(dimension.rows, (row) =>
 			needle
-				? label(row.name).toLowerCase().includes(needle) ||
+				? Str.includes(needle)(Str.toLowerCase(label(row.name))) ||
 					(row.secondary?.toLowerCase().includes(needle) ?? false)
 				: true,
-		)
-		.map((row) => ({ ...row, share: total > 0 ? (hasViews ? (row.views ?? 0) : row.count) / total : 0 }))
+		),
+		(row) => ({ ...row, share: total > 0 ? (hasViews ? (row.views ?? 0) : row.count) / total : 0 }),
+	)
 	const sort = { key: state.sortKey ?? (hasViews ? "views" : "count"), dir: state.sortDir } as const
 	return { activeTab, dimension, label, hasViews, sort, rows: sortRowsByField(rows, sort) }
 }
@@ -99,7 +101,7 @@ export const dimensionTabs = (
 		className: "flex-wrap gap-1",
 		itemClassName:
 			"h-auto min-w-0 rounded-sm px-2 py-0.5 text-2xs font-normal text-muted-foreground hover:bg-transparent active:bg-transparent hover:text-foreground active:text-foreground data-pressed:bg-muted data-pressed:font-medium data-pressed:text-foreground sm:h-auto sm:min-w-0 sm:text-2xs",
-		items: dimensions.map((dimension, index) => ({
+		items: Arr.map(dimensions, (dimension, index) => ({
 			isPressed: index === activeTab,
 			onClick: Message.PickedPanelTab({ panel: cardId, index }),
 			children: [dimension.tab],
@@ -195,7 +197,7 @@ export const breakdownTable = (
 	const rows =
 		view.rows.length === 0
 			? [dataTableEmpty(h, [`No ${dimension.noun} matches that filter`])]
-			: view.rows.map((row, index) => {
+			: Arr.map(view.rows, (row, index) => {
 					const isSelected = options.selected === row.name
 					const rowIcon =
 						dimension.renderIcon !== undefined

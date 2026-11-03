@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import { HttpClientRequest, HttpClientResponse } from "effect/http"
 import { readTextPrefix, readTextWithin, ResponseTooLargeError } from "./index"
 
@@ -32,7 +32,7 @@ const endless = () => {
 	const body = new ReadableStream<Uint8Array>({
 		pull(controller) {
 			pulled.count++
-			controller.enqueue(encoder.encode("x".repeat(1024)))
+			controller.enqueue(encoder.encode(Str.repeat(1024)("x")))
 		},
 	})
 	const response = HttpClientResponse.fromWeb(

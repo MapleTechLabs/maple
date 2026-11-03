@@ -1,5 +1,5 @@
 import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { InspectChartDataOutput } from "@maple/domain/mcp-outputs"
 import { dataSourceEndpoint } from "@maple/widgets/dashboard"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -37,12 +37,12 @@ function formatNumber(value: number | null): string {
 function queryBlocks(query: QueryResult): ReadonlyArray<DocBlock> {
 	const lines: string[] = [`Status: ${query.status}`]
 	if (query.builderWarnings && query.builderWarnings.length > 0) {
-		lines.push(`Warnings: ${query.builderWarnings.join("; ")}`)
+		lines.push(`Warnings: ${Arr.join(query.builderWarnings, "; ")}`)
 	}
 	const heading = doc.heading(`Query ${query.queryName} (${query.queryId})`)
 	if (query.status === "error" && query.error) {
 		lines.push(`Error: ${query.error}`)
-		return [heading, doc.text(lines.join("\n"))]
+		return [heading, doc.text(Arr.join(lines, "\n"))]
 	}
 	lines.push(`Rows: ${query.stats.rowCount}, Series: ${query.stats.seriesCount}`)
 	if (query.stats.firstBucket && query.stats.lastBucket) {
@@ -51,13 +51,14 @@ function queryBlocks(query: QueryResult): ReadonlyArray<DocBlock> {
 	if (query.reducedValue !== undefined) {
 		lines.push(`Reduced value: ${formatNumber(query.reducedValue)}`)
 	}
-	const blocks: Array<DocBlock> = [heading, doc.text(lines.join("\n"))]
+	const blocks: Array<DocBlock> = [heading, doc.text(Arr.join(lines, "\n"))]
 	if (query.stats.seriesStats.length > 0) {
 		const shown = query.stats.seriesStats.slice(0, 10)
 		blocks.push(
 			doc.text("Series stats:"),
 			doc.list([
-				...shown.map(
+				...Arr.map(
+					shown,
 					(series) =>
 						`${series.name}: min=${formatNumber(series.min)} max=${formatNumber(series.max)} avg=${formatNumber(series.avg)} (valid=${series.validCount}, null=${series.nullCount}, zero=${series.zeroCount})`,
 				),
@@ -67,7 +68,7 @@ function queryBlocks(query: QueryResult): ReadonlyArray<DocBlock> {
 			]),
 		)
 	}
-	if (query.flags.length > 0) blocks.push(doc.text(`Flags: ${query.flags.join(", ")}`))
+	if (query.flags.length > 0) blocks.push(doc.text(`Flags: ${Arr.join(query.flags, ", ")}`))
 	return blocks
 }
 
@@ -183,7 +184,7 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 						outcome: outcomeKind,
 						widget: data.widget,
 						timeRange: data.timeRange,
-						queries: data.queries.map(({ spec, ...query }) => {
+						queries: Arr.map(data.queries, ({ spec, ...query }) => {
 							const json = spec === undefined ? Option.none() : asJson(spec)
 							return Option.isSome(json) ? { ...query, spec: json.value } : query
 						}),
@@ -323,7 +324,9 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 							: [
 									doc.table(
 										raw.columns,
-										raw.rows.map((row) => raw.columns.map((col) => rawSqlCell(row[col]))),
+										Arr.map(raw.rows, (row) =>
+											Arr.map(raw.columns, (col) => rawSqlCell(row[col])),
+										),
 									),
 								]),
 					],
@@ -342,11 +345,13 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 						? [doc.text(`Display unit: ${output.widget.displayUnit}`)]
 						: []),
 					doc.text(window),
-					doc.heading(`Verdict: ${output.verdict.toUpperCase()}`),
+					doc.heading(`Verdict: ${Str.toUpperCase(output.verdict)}`),
 					doc.text(
-						output.flags.length > 0 ? `Flags: ${output.flags.join(", ")}` : "No issues detected.",
+						output.flags.length > 0
+							? `Flags: ${Arr.join(output.flags, ", ")}`
+							: "No issues detected.",
 					),
-					...output.queries.flatMap(queryBlocks),
+					...Arr.flatMap(output.queries, queryBlocks),
 					...(output.notes.length > 0 ? [doc.heading("Notes"), doc.list(output.notes)] : []),
 					...(output.verdict !== "looks_healthy"
 						? [

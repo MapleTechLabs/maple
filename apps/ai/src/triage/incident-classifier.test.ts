@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { IncidentTriagePriorDiagnosis, IncidentTriageRequest } from "@maple/domain/http"
 import { InvestigationId } from "@maple/domain/primitives"
-import { Effect, Redacted, Schema } from "effect"
+import { Effect, Redacted, Schema, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { layerDecisionModel } from "../platform/Llm"
 import { classifyIncident } from "./incident-classifier"
@@ -116,9 +116,14 @@ describe("classifyIncident", () => {
 			// Two questions go out; the body says which one each is.
 			const bodies: Array<string> = []
 			const fetch: typeof globalThis.fetch = async (input, init) => {
-				const body = String(init?.body ?? (input instanceof Request ? await input.text() : ""))
+				const body =
+					init?.body != null
+						? await new Response(init.body).text()
+						: input instanceof Request
+							? await input.text()
+							: ""
 				bodies.push(body)
-				const isPriorQuestion = body.includes("prior_2")
+				const isPriorQuestion = Str.includes("prior_2")(body)
 				return new Response(
 					JSON.stringify(
 						isPriorQuestion
@@ -177,10 +182,15 @@ describe("classifyIncident", () => {
 				],
 			})
 			const fetch: typeof globalThis.fetch = async (input, init) => {
-				const body = String(init?.body ?? (input instanceof Request ? await input.text() : ""))
+				const body =
+					init?.body != null
+						? await new Response(init.body).text()
+						: input instanceof Request
+							? await input.text()
+							: ""
 				return new Response(
 					JSON.stringify(
-						body.includes("prior_1")
+						Str.includes("prior_1")(body)
 							? {
 									model: "@cf/cloudflare/clef",
 									answers: {

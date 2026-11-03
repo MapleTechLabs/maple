@@ -8,14 +8,15 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { toolbar } from "./view-toolbar"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // The logs table's empty state.
 
 const exclusionsHint = (h: HtmlBuilder<Message>, model: Model): Html | null =>
 	excludedEmptyHint(h, {
-		excluded: logFilterChips(model.search)
-			.filter((chip) => chip.negated)
-			.flatMap((chip) => chip.values),
+		excluded: Arr.filter(logFilterChips(model.search), (chip) => chip.negated).flatMap(
+			(chip) => chip.values,
+		),
 		onClear: Message.ClickedClearExclusions(),
 		className: "max-w-lg",
 	})

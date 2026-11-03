@@ -12,7 +12,7 @@ import {
 } from "@tanstack/charts/polar"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { tooltip } from "@tanstack/charts/tooltip"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { ChartTooltip, type ChartSpec, type PieSliceRow } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, MUTED_COLOR_AMOUNT } from "./plot-constants"
@@ -105,8 +105,8 @@ const sliceTooltip = (
 export const buildPie = (spec: PieSpec): BuiltChart<PieSlice, number, number> => {
 	const { activeName, highlighted, donut, innerRadius, showLabels, showPercent, unit } = spec
 	const slices = pie(spec.rows, { value: (row: PieSliceRow) => row.value })
-	const active = activeName === null ? [] : slices.filter((slice) => slice.name === activeName)
-	const rest = activeName === null ? slices : slices.filter((slice) => slice.name !== activeName)
+	const active = activeName === null ? [] : Arr.filter(slices, (slice) => slice.name === activeName)
+	const rest = activeName === null ? slices : Arr.filter(slices, (slice) => slice.name !== activeName)
 
 	const fillFor = (slice: PieSlice) =>
 		highlighted === null || slice.name === highlighted
@@ -182,8 +182,8 @@ export const buildPieSpike = (spec: PieSpikeSpec): BuiltChart<PieSlice, number, 
 	const slices = pie(spec.rows, { value: (row: PieSliceRow) => row.value, gapAngle: 0.012 })
 	// NOTE: `activeName` is undefined when no legend wires it, so `=== null` is false and
 	// every slice takes REST_OPACITY.
-	const active = activeName === null ? [] : slices.filter((slice) => slice.name === activeName)
-	const rest = activeName === null ? slices : slices.filter((slice) => slice.name !== activeName)
+	const active = activeName === null ? [] : Arr.filter(slices, (slice) => slice.name === activeName)
+	const rest = activeName === null ? slices : Arr.filter(slices, (slice) => slice.name !== activeName)
 
 	const arcOptions = {
 		startAngle: (slice: PieSlice) => slice.startAngle,

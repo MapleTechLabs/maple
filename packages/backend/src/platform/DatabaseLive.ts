@@ -1,7 +1,7 @@
 import { isMapleDbError, type MapleDb, type MapleDbError, MapleStatementCollector } from "@maple/db/client"
 import { fingerprintSql, SQL_TRACE_MAX, summarizeSql, truncateSql } from "@maple/query-engine/execution"
 import * as Orm from "@maple-dev/effect-orm/database"
-import { Cause, Clock, Context, Effect, Result, Schema } from "effect"
+import { Cause, Clock, Context, Effect, Result, Schema, Array as Arr, String as Str } from "effect"
 import { SqlError } from "effect/sql/SqlError"
 import {
 	driverRootError,
@@ -64,7 +64,7 @@ const MAX_QUERY_MESSAGE_CHARS = 600
 const capQueryMessage = (message: string): string =>
 	message.length <= MAX_QUERY_MESSAGE_CHARS
 		? message
-		: `${message.slice(0, MAX_QUERY_MESSAGE_CHARS)}…[truncated ${message.length - MAX_QUERY_MESSAGE_CHARS} chars]`
+		: `${Str.slice(0, MAX_QUERY_MESSAGE_CHARS)(message)}…[truncated ${message.length - MAX_QUERY_MESSAGE_CHARS} chars]`
 
 /**
  * Root cause first: the Postgres diagnostic (`invalid byte sequence for
@@ -74,13 +74,13 @@ const capQueryMessage = (message: string): string =>
  * on the span as `db.query.text`.
  */
 export const toDatabaseError = (cause: unknown): DatabaseError => {
-	if (cause instanceof SqlError) {
+	if (Schema.is(SqlError)(cause)) {
 		return new DatabaseError({ message: driverRootError(cause)?.message ?? cause.message, cause })
 	}
 	// effect-orm keeps the driver's `SqlError` as `cause`, which classification reads.
-	if (cause instanceof Orm.DatabaseError || cause instanceof Orm.TransactionCommitFailed) {
+	if (Schema.is(Orm.DatabaseError)(cause) || Schema.is(Orm.TransactionCommitFailed)(cause)) {
 		const root = driverRootError(cause.cause)?.message ?? cause.message
-		const statement = cause instanceof Orm.DatabaseError ? capQueryMessage(cause.sql) : undefined
+		const statement = Schema.is(Orm.DatabaseError)(cause) ? capQueryMessage(cause.sql) : undefined
 		return new DatabaseError({
 			message: statement === undefined || statement === "" ? root : `${root} [while: ${statement}]`,
 			cause: driverSqlError(cause.cause) ?? cause.message,
@@ -150,7 +150,7 @@ export const failExecuteWithSpan = Effect.fn(
 	if (extraAttributes) {
 		yield* Effect.annotateCurrentSpan(extraAttributes)
 	}
-	return yield* Effect.fail(error)
+	return yield* error
 })
 
 /**
@@ -198,7 +198,7 @@ export const executeWithSpan = Effect.fn(
 	// Shared by the success and error paths — tapError runs inside the span,
 	// so a failing statement still carries its SQL and timing.
 	const annotate = Effect.gen(function* () {
-		const sqlText = statements.join(";\n")
+		const sqlText = Arr.join(statements, ";\n")
 		// Summarize the joined text, not the first statement alone: that is
 		// exactly the input the warehouse would derive a shape label from, so the
 		// emitted summary can never disagree with the fallback derivation.
@@ -248,10 +248,10 @@ export const executeWithSpan = Effect.fn(
 		}),
 		Effect.withTracerEnabled(false),
 		absorbDriverErrors,
-		Effect.tapError((error) => (error instanceof DatabaseError ? annotateFailure(error) : annotate)),
+		Effect.tapError((error) => (Schema.is(DatabaseError)(error) ? annotateFailure(error) : annotate)),
 	)
 	yield* annotate
-	if (Array.isArray(result)) {
+	if (Arr.isArray(result)) {
 		// `db.response.returned_rows` is what the span-detail database panel reads
 		// (packages/ui/src/lib/cloud-platforms/database.ts); `result.rowCount` is
 		// Maple's own key, also emitted by the warehouse executor. Keep both.

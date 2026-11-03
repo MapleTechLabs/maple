@@ -8,7 +8,7 @@
  * Durable Object that starts the container lives in `executor.ts`.
  */
 import { shellQuote } from "@maple/domain/sandbox"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 const encodeJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.String))
 
@@ -88,7 +88,7 @@ export interface RawHttpTarget {
 
 /** A plain HTTP/1.0 request over a raw socket, so an accepted-then-dropped connection shows as such. */
 export const rawHttpLeak = ({ host, port, path, marker, timeoutMs = 8000 }: RawHttpTarget): string => {
-	const hostHeader = host.includes(":") ? `[${host}]` : host
+	const hostHeader = Str.includes(":")(host) ? `[${host}]` : host
 	return node(
 		`${REPORT} let connected = false; let got = "";
 const s = require("node:net").connect({ host: ${encodeJsonString(host)}, port: ${port} });
@@ -133,7 +133,7 @@ export const udpDnsLeak = ({ host, port, name, timeoutMs = 8000 }: UdpDnsTarget)
 const id = 0x4d50;
 const labels = ${encodeJsonString(name)}.split(".").map((l) => Buffer.concat([Buffer.from([l.length]), Buffer.from(l)]));
 const query = Buffer.concat([Buffer.from([id >> 8, id & 255, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0]), ...labels, Buffer.from([0, 0, 1, 0, 1])]);
-const s = require("node:dgram").createSocket(${encodeJsonString(host.includes(":") ? "udp6" : "udp4")});
+const s = require("node:dgram").createSocket(${encodeJsonString(Str.includes(":")(host) ? "udp6" : "udp4")});
 setTimeout(() => report(false, "no answer before timeout"), ${timeoutMs});
 s.on("message", (m) => { if (m.readUInt16BE(0) !== id || (m[2] & 128) === 0) return; const answers = m.readUInt16BE(6); report(answers > 0, answers > 0 ? "dns answer with " + answers + " records" : "dns reply without records, rcode " + (m[3] & 15)) });
 s.on("error", (e) => report(false, e.code ?? e.message));
@@ -152,7 +152,7 @@ const httpLeakTo = (host: string) =>
 		host,
 		port: 80,
 		path: LEAK_PATH,
-		marker: `https://${host.includes(":") ? `[${host}]` : host}${LEAK_PATH}`,
+		marker: `https://${Str.includes(":")(host) ? `[${host}]` : host}${LEAK_PATH}`,
 	})
 
 /** Every egress detector, run in the container's own namespace and again inside {@link isolated}. */
@@ -184,7 +184,7 @@ const EGRESS_DETECTORS: ReadonlyArray<{
 ]
 
 /** The ids of every egress detector check, in the container's namespace and in the isolated one. */
-export const EGRESS_CHECK_IDS: ReadonlyArray<string> = EGRESS_DETECTORS.flatMap((d) => [
+export const EGRESS_CHECK_IDS: ReadonlyArray<string> = Arr.flatMap(EGRESS_DETECTORS, (d) => [
 	`egress-${d.id}`,
 	`isolated-egress-${d.id}`,
 ])
@@ -198,12 +198,15 @@ const CGROUP = "/sys/fs/cgroup"
 const CGROUP_SETUP = `mkdir -p ${CGROUP}/maple-init || exit 3; for _ in 1 2 3; do for p in $(cat ${CGROUP}/cgroup.procs); do echo "$p" > ${CGROUP}/maple-init/cgroup.procs 2>/dev/null; done; done; echo "+memory +pids" > ${CGROUP}/cgroup.subtree_control || exit 3`
 /** Creates the cgroup `name` with `limits` (file, value) and runs `command` in it; each check gets its own. */
 const inCgroup = (name: string, limits: ReadonlyArray<readonly [string, string]>, command: string) =>
-	[
-		CGROUP_SETUP,
-		`mkdir -p ${CGROUP}/${name} || exit 3`,
-		...limits.map(([file, value]) => `echo ${value} > ${CGROUP}/${name}/${file} || exit 3`),
-		`sh -c ${shellQuote(`echo $$ > ${CGROUP}/${name}/cgroup.procs && exec ${command}`)}`,
-	].join("; ")
+	Arr.join(
+		[
+			CGROUP_SETUP,
+			`mkdir -p ${CGROUP}/${name} || exit 3`,
+			...Arr.map(limits, ([file, value]) => `echo ${value} > ${CGROUP}/${name}/${file} || exit 3`),
+			`sh -c ${shellQuote(`echo $$ > ${CGROUP}/${name}/cgroup.procs && exec ${command}`)}`,
+		],
+		"; ",
+	)
 
 export const PROBE_CHECKS: ReadonlyArray<ProbeCheck> = [
 	{ id: "kernel", question: "What kernel runs the container?", expect: "observe", command: "uname -srm" },
@@ -242,9 +245,9 @@ export const PROBE_CHECKS: ReadonlyArray<ProbeCheck> = [
 		command:
 			"timeout 8 bash -c 'exec 3<>/dev/tcp/1.1.1.1/443'; rc=$?; [ $rc -eq 0 ] && echo 'connect accepted'; [ $rc -eq 124 ] && echo 'connect timed out'; exit $rc",
 	},
-	...EGRESS_DETECTORS.map((detector): ProbeCheck => ({
+	...Arr.map(EGRESS_DETECTORS, (detector): ProbeCheck => ({
 		id: `egress-${detector.id}`,
-		question: `With internet off, is ${detector.question.replace(/\?$/, "")} refused?`,
+		question: `With internet off, is ${Str.replace(/\?$/, "")(detector.question)} refused?`,
 		expect: "fails",
 		contains: [BLOCKED],
 		command: detector.command,
@@ -315,9 +318,9 @@ export const PROBE_CHECKS: ReadonlyArray<ProbeCheck> = [
 		contains: ["unreachable"],
 		command: isolated("timeout 8 bash -c 'exec 3<>/dev/tcp/1.1.1.1/443'"),
 	},
-	...EGRESS_DETECTORS.map((detector): ProbeCheck => ({
+	...Arr.map(EGRESS_DETECTORS, (detector): ProbeCheck => ({
 		id: `isolated-egress-${detector.id}`,
-		question: `Inside Execute's isolation, is ${detector.question.replace(/\?$/, "")} refused?`,
+		question: `Inside Execute's isolation, is ${Str.replace(/\?$/, "")(detector.question)} refused?`,
 		expect: "fails",
 		contains: [BLOCKED],
 		command: isolated(detector.command),
@@ -436,12 +439,14 @@ const CHECK_SECONDS = 20
 
 /** One shell program that runs every check in turn, each in its own bounded `bash -c`. */
 export const probeScript = (checks: ReadonlyArray<ProbeCheck> = PROBE_CHECKS): string =>
-	checks
-		.map(
+	Arr.join(
+		Arr.map(
+			checks,
 			(check) =>
 				`out=$(timeout --kill-after=2 ${CHECK_SECONDS} bash -c ${shellQuote(check.command)} 2>&1); rc=$?; printf '${PROBE_SENTINEL} %s %s %s\\n' ${shellQuote(check.id)} "$rc" "$(printf %s "$out" | head -c ${PROBE_OUTPUT_BYTES} | base64 | tr -d "\\n")"`,
-		)
-		.join("\n")
+		),
+		"\n",
+	)
 
 export interface ProbeResult {
 	readonly id: string
@@ -452,8 +457,8 @@ export interface ProbeResult {
 /** Every well-formed result line in `stdout`; the last line for an id wins. */
 export const parseProbe = (stdout: string): ReadonlyArray<ProbeResult> => {
 	const results = new Map<string, ProbeResult>()
-	for (const line of stdout.split("\n")) {
-		const [sentinel, id, exit, encoded = ""] = line.trim().split(" ")
+	for (const line of Str.split("\n")(stdout)) {
+		const [sentinel, id, exit, encoded = ""] = Str.split(" ")(Str.trim(line))
 		if (sentinel !== PROBE_SENTINEL || id === undefined || exit === undefined) continue
 		const exitCode = Number(exit)
 		if (!Number.isInteger(exitCode)) continue
@@ -478,7 +483,7 @@ const verdictOf = (check: ProbeCheck, result: ProbeResult): ProbeVerdict => {
 	if (check.expect === "observe") return "observed"
 	const exitAsExpected = (result.exitCode === 0) === (check.expect === "succeeds")
 	const outputAsExpected =
-		check.contains === undefined || check.contains.some((text) => result.output.includes(text))
+		check.contains === undefined || Arr.some(check.contains, (text) => Str.includes(text)(result.output))
 	return exitAsExpected && outputAsExpected ? "pass" : "fail"
 }
 
@@ -487,7 +492,7 @@ export const assessProbe = (
 	results: ReadonlyArray<ProbeResult>,
 	checks: ReadonlyArray<ProbeCheck> = PROBE_CHECKS,
 ): ReadonlyArray<AssessedCheck> =>
-	checks.map((check) => {
+	Arr.map(checks, (check) => {
 		const result = results.find((r) => r.id === check.id)
 		const base = { id: check.id, question: check.question, expect: check.expect }
 		return result === undefined
@@ -514,7 +519,7 @@ export const unexpectedChecks = (
 	checks: ReadonlyArray<AssessedCheck>,
 	{ unanswerable = new Set(), leaks = new Set() }: RunExpectation = {},
 ): ReadonlyArray<AssessedCheck> =>
-	checks.filter((check) => {
+	Arr.filter(checks, (check) => {
 		if (unanswerable.has(check.id)) return false
 		if (leaks.has(check.id)) return !(check.verdict === "fail" && check.exitCode === 0)
 		return check.verdict === "fail" || check.verdict === "missing"

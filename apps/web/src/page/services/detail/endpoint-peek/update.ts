@@ -2,7 +2,7 @@ import {
 	getServiceEndpointDetail,
 	getServiceEndpointsTimeseries,
 } from "@maple/web-data/warehouse/service-endpoints"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import * as Keyed from "@maple/views/data/keyed"
@@ -31,7 +31,10 @@ export const resolvePeek = (rows: ReadonlyArray<Endpoint>, spanName: string | un
 	const index = spanName === undefined ? -1 : rows.findIndex((row) => row.spanName === spanName)
 	const endpoint = rows[index]
 	if (endpoint === undefined) return null
-	const neighbors = [rows[index - 1], rows[index + 1]].filter((row): row is Endpoint => row !== undefined)
+	const neighbors = Arr.filter(
+		[rows[index - 1], rows[index + 1]],
+		(row): row is Endpoint => row !== undefined,
+	)
 	return { endpoint, index, count: rows.length, neighbors }
 }
 

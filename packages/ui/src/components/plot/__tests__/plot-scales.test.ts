@@ -12,6 +12,7 @@ import {
 	zonedTimeScale,
 } from "../plot-scales"
 import { formatBucketLabel } from "../../../lib/format"
+import { Array as Arr } from "effect"
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
@@ -175,12 +176,12 @@ describe("integerTickValues", () => {
 	it("emits only whole numbers — there is no allowDecimals option", () => {
 		const ticks = integerTickValues([0, 4])
 		expect(ticks).toEqual([0, 1, 2, 3, 4])
-		expect(ticks.every(Number.isInteger)).toBe(true)
+		expect(Arr.every(ticks, Number.isInteger)).toBe(true)
 	})
 
 	it("widens the step rather than emitting fractions on a large range", () => {
 		const ticks = integerTickValues([0, 100], 5)
-		expect(ticks.every(Number.isInteger)).toBe(true)
+		expect(Arr.every(ticks, Number.isInteger)).toBe(true)
 		expect(ticks[0]).toBe(0)
 		expect(ticks.at(-1)).toBeGreaterThanOrEqual(100)
 	})
@@ -241,7 +242,7 @@ describe("zonedTimeScale", () => {
 		const start = new Date("2026-03-01T00:00:00Z")
 		const end = new Date("2026-03-04T00:00:00Z")
 		const scale = bucketTimeScale([start, end], "Asia/Tokyo")
-		const ticks = scale.ticks(3).map((tick) => tick.toISOString())
+		const ticks = Arr.map(scale.ticks(3), (tick) => tick.toISOString())
 		expect(ticks).toEqual([
 			"2026-03-01T15:00:00.000Z",
 			"2026-03-02T15:00:00.000Z",
@@ -253,7 +254,7 @@ describe("zonedTimeScale", () => {
 		const scale = zonedTimeScale("America/New_York")()
 			.domain([new Date("2026-07-01T00:00:00Z"), new Date("2026-07-03T00:00:00Z")])
 			.copy()
-		const ticks = scale.ticks(2).map((tick) => tick.toISOString())
+		const ticks = Arr.map(scale.ticks(2), (tick) => tick.toISOString())
 		// EDT midnight is 04:00Z.
 		expect(ticks).toEqual(["2026-07-01T04:00:00.000Z", "2026-07-02T04:00:00.000Z"])
 	})
@@ -268,7 +269,7 @@ describe("zonedTimeScale", () => {
 			expect(tick.getTime()).toBeLessThanOrEqual(end.getTime())
 		}
 		// One tick per instant: the skipped 02:00 must not double up on 03:00.
-		expect(new Set(ticks.map((tick) => tick.getTime())).size).toBe(ticks.length)
+		expect(new Set(Arr.map(ticks, (tick) => tick.getTime())).size).toBe(ticks.length)
 		// Every tick is a round hour on the New York clock.
 		const clock = new Intl.DateTimeFormat("en-GB", { timeZone: "America/New_York", minute: "2-digit" })
 		for (const tick of ticks) expect(Number(clock.format(tick))).toBe(0)

@@ -17,6 +17,7 @@ Every request is a `SERVER` span carrying `mcp.method.name`.
 | `mcp.method.name`           | Marks the span as an MCP request: `tools/call`, `initialize`, `tools/list`...         |
 | `gen_ai.tool.name`          | The tool a `tools/call` called.                                                       |
 | `error.type`                | Set when a call failed: `tool_error` for an `isError` result, else the JSON-RPC code. |
+| `error.message`             | Why it failed, to group failures by cause. The span's status message also works.      |
 | `user_agent.original`       | The client: Claude Code, Cursor, Codex, curl...                                       |
 | `user.id` (or `enduser.id`) | The end user: a column, a filter, user counts, and sessions.                          |
 | `user.name`, `user.email`   | How the user is shown; the id when neither is set.                                    |

@@ -2,7 +2,7 @@ import { formatWarehouseDateTime, formatWarehouseDateTimeMs } from "@maple/query
 import { snapTimestamp } from "@maple/web-data/lib/time-range"
 import { computeTraceTimeWindow } from "@maple/web-data/lib/trace-time-window"
 import { TraceId } from "@maple/domain"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -38,7 +38,7 @@ export const contextKey = (log: LogRecord): string =>
 	log.recordIdentity ?? `${log.exactTimestamp}|${log.spanId ?? ""}|${log.body}`
 
 export const timestampMs = (timestamp: string): number =>
-	new Date(timestamp.includes("T") ? timestamp : `${timestamp.replace(" ", "T")}Z`).getTime()
+	new Date(Str.includes("T")(timestamp) ? timestamp : `${Str.replace(" ", "T")(timestamp)}Z`).getTime()
 
 /** The scope in effect: the instance when the log names one and it is chosen. */
 export const scopedInstance = (model: Model, log: LogRecord): InstanceAttribute | undefined => {
@@ -62,11 +62,18 @@ export const contextInput = (
 	const at = WAREHOUSE_DATETIME.test(log.exactTimestamp)
 		? log.exactTimestamp
 		: formatWarehouseDateTimeMs(ms)
-	const service: LogsRequest = { services: [log.serviceName], limit: CONTEXT_SIZE + 1, ...pinned(pinnedNamespace) }
+	const service: LogsRequest = {
+		services: [log.serviceName],
+		limit: CONTEXT_SIZE + 1,
+		...pinned(pinnedNamespace),
+	}
 	const shared: LogsRequest =
 		instance === undefined
 			? service
-			: { ...service, resourceAttributeFilters: [{ key: instance.key, value: instance.value, mode: "equals" }] }
+			: {
+					...service,
+					resourceAttributeFilters: [{ key: instance.key, value: instance.value, mode: "equals" }],
+				}
 	return side === "before"
 		? {
 				...shared,
@@ -89,7 +96,7 @@ export const mergeLogContext = (
 ): ReadonlyArray<LogRecord> => {
 	const seen = new Set([contextKey(selected)])
 	const unique = (rows: ReadonlyArray<LogRecord>) =>
-		rows.filter((row) => {
+		Arr.filter(rows, (row) => {
 			const key = contextKey(row)
 			if (seen.has(key)) return false
 			seen.add(key)
@@ -146,7 +153,11 @@ export const traceWindow = (timestamp: string) => {
 		: { startTime: snapTimestamp(window.startTime), endTime: snapTimestamp(window.endTime) }
 }
 
-export const traceLogsInput = (traceId: TraceId, timestamp: string, pinnedNamespace: string | null): LogsRequest => ({
+export const traceLogsInput = (
+	traceId: TraceId,
+	timestamp: string,
+	pinnedNamespace: string | null,
+): LogsRequest => ({
 	traceId,
 	limit: TRACE_LOG_LIMIT,
 	...traceWindow(timestamp),
@@ -179,15 +190,27 @@ export const contextKeyOf = (model: Model, log: LogRecord, side: Side): string |
 const requestContext = (step: Step, log: LogRecord): Step => {
 	if (!isShowing(step.model, "context")) return step
 	const instance = scopedInstance(step.model, log)
-	return (["before", "after"] as const).reduce((acc, side) => {
+	return Arr.reduce(["before", "after"] as const, step, (acc, side) => {
 		const request = contextInput(log, instance, side, acc.model.pinnedNamespace)
 		if (request === undefined) return acc
 		const key = requestKey(acc.model.orgId, "listLogs", { data: request })
 		const fetch = FetchContext({ key, side, request })
 		return side === "before"
-			? slotStep(acc, (m) => m.contextBefore, key, (m, contextBefore) => ({ ...m, contextBefore }), fetch)
-			: slotStep(acc, (m) => m.contextAfter, key, (m, contextAfter) => ({ ...m, contextAfter }), fetch)
-	}, step)
+			? slotStep(
+					acc,
+					(m) => m.contextBefore,
+					key,
+					(m, contextBefore) => ({ ...m, contextBefore }),
+					fetch,
+				)
+			: slotStep(
+					acc,
+					(m) => m.contextAfter,
+					key,
+					(m, contextAfter) => ({ ...m, contextAfter }),
+					fetch,
+				)
+	})
 }
 
 const requestTrace = (step: Step, log: LogRecord): Step => {

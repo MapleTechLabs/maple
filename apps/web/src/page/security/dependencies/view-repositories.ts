@@ -43,6 +43,7 @@ import { SEVERITY_FILL } from "../../errors/kit/severity"
 import { Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The Repositories tab: each connected repository as a row, riskiest first: its latest scan, open
 // findings by severity, the upgrades that clear them and what production runs. A row scopes the page.
@@ -174,7 +175,7 @@ export const severityTally = (h: H, findings: ReadonlyArray<DependencyFindingVie
 			),
 		],
 		[
-			...RANKED.map((severity) =>
+			...Arr.map(RANKED, (severity) =>
 				h.span(
 					[
 						h.Key(severity),
@@ -185,7 +186,7 @@ export const severityTally = (h: H, findings: ReadonlyArray<DependencyFindingVie
 								ROW_LINK_LIFT,
 							),
 						),
-						h.Title(`${counts[severity]} ${SEVERITY_LABEL[severity].toLowerCase()}`),
+						h.Title(`${counts[severity]} ${Str.toLowerCase(SEVERITY_LABEL[severity])}`),
 					],
 					[advisoryDot(h, severity), String(counts[severity])],
 				),
@@ -233,7 +234,10 @@ const productionCell = (h: H, repository: DependencyScanRepository): Html => {
 	return first === undefined
 		? muted(h, "Not seen running")
 		: h.span(
-				[h.Class(cn("flex min-w-0 max-w-40 flex-col", ROW_LINK_LIFT)), h.Title(services.join(", "))],
+				[
+					h.Class(cn("flex min-w-0 max-w-40 flex-col", ROW_LINK_LIFT)),
+					h.Title(Arr.join(services, ", ")),
+				],
 				[
 					typography(h, { size: "sm", truncate: true }, [first]),
 					...(services.length > 1
@@ -251,7 +255,7 @@ const repositoryRow = (
 	clock: Clock,
 ): Html => {
 	const scan = repository.latestScan
-	const issues = (scan?.lockfiles ?? []).filter((lockfile) => lockfile.status !== "parsed")
+	const issues = Arr.filter(scan?.lockfiles ?? [], (lockfile) => lockfile.status !== "parsed")
 	const open = openFindingsOf(findings, repository.id)
 	// Findings from an earlier scan still count; with none, say why the cells are empty.
 	const emptyNote =
@@ -323,7 +327,7 @@ const repositoryRow = (
 								: [
 										h.ul(
 											[h.Class(cn(vstackClass({ gap: "1" }), ROW_LINK_LIFT))],
-											issues.map((lockfile) => lockfileIssue(h, lockfile)),
+											Arr.map(issues, (lockfile) => lockfileIssue(h, lockfile)),
 										),
 									]),
 							// Phones drop the scan column, so its state and button ride here.
@@ -383,7 +387,7 @@ export const repositoriesPanel = (h: H, model: Model, digest: Digest, clock: Clo
 			]),
 			tableBody(
 				h,
-				shown.map((repository) =>
+				Arr.map(shown, (repository) =>
 					repositoryRow(h, model, repository, digest.statsOf(repository.id).findings, clock),
 				),
 			),

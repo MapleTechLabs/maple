@@ -14,7 +14,7 @@ import {
 	getGcpInfraTimeseries,
 } from "@maple/web-data/warehouse/gcp-infra"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
@@ -169,7 +169,7 @@ export const loadTraceSide = (input: CloudSqlInput) =>
 		Effect.mapBoth({
 			onSuccess: (response): TraceSide => ({
 				databases: response.databases,
-				tracedQueries: response.tracedQueries.map((query) => ({
+				tracedQueries: Arr.map(response.tracedQueries, (query) => ({
 					queryKey: query.queryKey,
 					sampleStatement: query.sampleStatement,
 					sampleService: query.sampleService,
@@ -239,7 +239,7 @@ export const loadOverview = (input: OverviewInput) =>
 	}).pipe(
 		Effect.mapBoth({
 			onSuccess: (response): ReadonlyArray<OverviewRow> =>
-				response.data.map((row) => ({
+				Arr.map(response.data, (row) => ({
 					serviceName: row.serviceName,
 					errorRate: row.errorRate,
 					throughput: row.throughput,

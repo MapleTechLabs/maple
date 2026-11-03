@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
 import { Lazy } from "foldkit/test"
 import { fromString } from "foldkit/url"
@@ -138,14 +138,19 @@ const entered = (path: string): Model =>
 
 const body = (model: Model, h: HtmlBuilder<Message>) => view(model, h).body
 
-const ENTERED = SAMPLE_PATHS.map((path) => ({ path, model: entered(path) }))
+const ENTERED = Arr.map(SAMPLE_PATHS, (path) => ({ path, model: entered(path) }))
 
 describe("root view lazy page slot", () => {
 	test("every registered page has a sample URL", () => {
 		const reached = new Set(
-			ENTERED.flatMap(({ model }) => (model.page === null ? [] : [model.page._tag])),
+			Arr.flatMap(ENTERED, ({ model }) => (model.page === null ? [] : [model.page._tag])),
 		)
-		expect(pages.map((page) => page.id).filter((id) => !reached.has(id))).toEqual([])
+		expect(
+			Arr.filter(
+				Arr.map(pages, (page) => page.id),
+				(id) => !reached.has(id),
+			),
+		).toEqual([])
 	})
 
 	test.each(ENTERED)("$path re-renders the root without rebuilding the page", ({ model }) => {

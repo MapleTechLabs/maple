@@ -20,6 +20,7 @@ import {
 } from "@maple/domain/gen-ai"
 import type { AiSessionSpan } from "@maple/domain/http"
 import { parseWarehouseDateTime } from "@maple/query-engine"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * How a span reads on the page. Deliberately coarse — these four are the
@@ -84,10 +85,11 @@ const RELEASE_DATE = /-(?:\d{4}-\d{2}-\d{2}|\d{8})$/
  *  release, without the release date the response resolved it to. A pinned
  *  request answered by another release is a different model. */
 function sameModel(request: string, response: string): boolean {
-	const base = (model: string) => (model.split("/").at(-1) ?? model).replaceAll(".", "-").toLowerCase()
+	const base = (model: string) =>
+		Str.toLowerCase(Str.replaceAll(".", "-")(Str.split("/")(model).at(-1) ?? model))
 	const [asked, answered] = [base(request), base(response)]
 	if (asked === answered) return true
-	return !RELEASE_DATE.test(asked) && answered.replace(RELEASE_DATE, "") === asked
+	return !RELEASE_DATE.test(asked) && Str.replace(RELEASE_DATE, "")(answered) === asked
 }
 
 export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {
@@ -117,12 +119,12 @@ export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {
 	// span naming an operation the convention does not know (LangSmith's
 	// `chain`, a Mastra `scorer_step`) has said what it is, and the LangGraph
 	// `tools` node or a `code-tool-call-accuracy-scorer` is not a tool call.
-	const name = span.spanName.toLowerCase()
-	if (span.genAi.toolName !== undefined || (operation === undefined && name.includes("tool"))) {
+	const name = Str.toLowerCase(span.spanName)
+	if (span.genAi.toolName !== undefined || (operation === undefined && Str.includes("tool")(name))) {
 		return "tool"
 	}
-	if (name.includes("agent") || name.includes("workflow")) return "agent"
-	if (spanModel(span) !== undefined || name.includes("chat") || name.includes("completion")) {
+	if (Str.includes("agent")(name) || Str.includes("workflow")(name)) return "agent"
+	if (spanModel(span) !== undefined || Str.includes("chat")(name) || Str.includes("completion")(name)) {
 		return "inference"
 	}
 	// An AI span we can't place is still the agent's own work, not the app's.
@@ -184,7 +186,7 @@ export function spanFailed(span: AiSessionSpan): boolean {
 	const errorType = span.genAi.errorType
 	if (errorType !== undefined && errorType !== "") return true
 	const status = span.genAi.responseStatus
-	return status !== undefined && FAILED_RESPONSE_STATUSES.has(status.toLowerCase())
+	return status !== undefined && FAILED_RESPONSE_STATUSES.has(Str.toLowerCase(status))
 }
 
 /** `gen_ai.response.time_to_first_chunk` is in SECONDS (see ai-vendors.ts). */
@@ -267,12 +269,12 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 
 	// Decorate/sort/undecorate: one timestamp parse per span rather than one per
 	// comparison.
-	const ordered = spans
-		.map((span) => ({ span, startMs: spanStartMs(span) }))
-		.sort((a, b) => a.startMs - b.startMs)
-	const anchors = findAnchors(ordered.map((entry) => entry.span))
-	const anchorStarts = anchors.map((anchor) => spanStartMs(anchor.span))
-	const buckets: AiSessionSpan[][] = anchors.map(() => [])
+	const ordered = Arr.map(spans, (span) => ({ span, startMs: spanStartMs(span) })).sort(
+		(a, b) => a.startMs - b.startMs,
+	)
+	const anchors = findAnchors(Arr.map(ordered, (entry) => entry.span))
+	const anchorStarts = Arr.map(anchors, (anchor) => spanStartMs(anchor.span))
+	const buckets: AiSessionSpan[][] = Arr.map(anchors, () => [])
 	const turnOf =
 		anchors[0]?.kind === "agent-root"
 			? agentRootTurnResolver(spans, anchors)
@@ -295,20 +297,20 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 	// order, so they stay in it. One followed by a pause is left alone, and a
 	// session with no work anywhere keeps its anchors.
 	const opened = (bucket: readonly AiSessionSpan[]) =>
-		bucket.some(
+		Arr.some(
+			bucket,
 			(span) =>
 				WORK_CATEGORIES.has(classifyAiSpan(span)) ||
 				spanFailed(span) ||
 				lastUserMessageText(span.genAi.inputMessages) !== undefined,
 		)
-	if (anchors[0]?.kind !== "conversation" && buckets.some(opened)) {
+	if (anchors[0]?.kind !== "conversation" && Arr.some(buckets, opened)) {
 		for (let i = 0; i < buckets.length - 1; i++) {
 			const bucket = buckets[i]
 			const next = buckets[i + 1]
 			if (opened(bucket)) continue
-			const endMs = bucket.reduce(
-				(max, span) => Math.max(max, spanEndMs(span)),
-				Number.NEGATIVE_INFINITY,
+			const endMs = Arr.reduce(bucket, Number.NEGATIVE_INFINITY, (max, span) =>
+				Math.max(max, spanEndMs(span)),
 			)
 			if (next[0] !== undefined && spanStartMs(next[0]) - endMs > SETUP_LEAD_MAX_MS) continue
 			for (const span of next) bucket.push(span)
@@ -321,13 +323,15 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 	// cannot produce one, since an anchor resolves to its own bucket even when
 	// another shares its millisecond; two trace anchors in one millisecond still
 	// leave the earlier bucket empty.
-	return anchors
-		.map((anchor, index) => ({ anchor, turnSpans: buckets[index] }))
-		.filter((entry) => entry.turnSpans.length > 0)
-		.map(({ anchor, turnSpans }, index) => {
-			const spanIds = new Set(turnSpans.map((span) => span.spanId))
-			const startMs = Math.min(...turnSpans.map(spanStartMs))
-			const endMs = Math.max(...turnSpans.map(spanEndMs))
+	return Arr.map(
+		Arr.filter(
+			Arr.map(anchors, (anchor, index) => ({ anchor, turnSpans: buckets[index] })),
+			(entry) => entry.turnSpans.length > 0,
+		),
+		({ anchor, turnSpans }, index) => {
+			const spanIds = new Set(Arr.map(turnSpans, (span) => span.spanId))
+			const startMs = Math.min(...Arr.map(turnSpans, spanStartMs))
+			const endMs = Math.max(...Arr.map(turnSpans, spanEndMs))
 			const traceIds: string[] = []
 			for (const span of turnSpans) if (!traceIds.includes(span.traceId)) traceIds.push(span.traceId)
 
@@ -351,7 +355,8 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 				// An agent root failing is the run failing, wherever its own parent landed.
 				failed:
 					(anchor.kind === "agent-root" && spanFailed(anchor.span)) ||
-					turnSpans.some(
+					Arr.some(
+						turnSpans,
 						(span) =>
 							span.isAiSpan &&
 							spanFailed(span) &&
@@ -360,7 +365,8 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 					),
 				traceIds,
 			}
-		})
+		},
+	)
 }
 
 /**
@@ -369,10 +375,8 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
  * outlives them, and its outcome is the session's.
  */
 export function finalTurnIndex(turns: readonly SessionTurn[]): number {
-	return turns.reduce(
-		(final, turn, index) =>
-			turn.endMs >= (turns[final]?.endMs ?? Number.NEGATIVE_INFINITY) ? index : final,
-		turns.length - 1,
+	return Arr.reduce(turns, turns.length - 1, (final, turn, index) =>
+		turn.endMs >= (turns[final]?.endMs ?? Number.NEGATIVE_INFINITY) ? index : final,
 	)
 }
 
@@ -380,7 +384,7 @@ export function finalTurnIndex(turns: readonly SessionTurn[]): number {
  *  started once it had ended, and succeeded. */
 function recoveredFrom(failed: AiSessionSpan, turnSpans: readonly AiSessionSpan[]): boolean {
 	const endMs = spanEndMs(failed)
-	return turnSpans.some((span) => span.isAiSpan && spanStartMs(span) >= endMs && !spanFailed(span))
+	return Arr.some(turnSpans, (span) => span.isAiSpan && spanStartMs(span) >= endMs && !spanFailed(span))
 }
 
 /**
@@ -404,12 +408,12 @@ function conversationTurnResolver(
 ): (span: AiSessionSpan) => number | undefined {
 	const sessionIds = sessionIdsOf(spans)
 	const turnByConversation = new Map<string, number>()
-	anchors.forEach((anchor, turn) => {
+	Arr.forEach(anchors, (anchor, turn) => {
 		if (anchor.conversationId !== undefined) turnByConversation.set(anchor.conversationId, turn)
 	})
 	if (turnByConversation.size === 0) return () => undefined
 
-	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const byId = new Map(Arr.map(spans, (span) => [span.spanId, span]))
 	const memo = new Map<string, number | undefined>()
 
 	const resolve = (span: AiSessionSpan): number | undefined => {
@@ -445,8 +449,8 @@ function agentRootTurnResolver(
 	spans: readonly AiSessionSpan[],
 	anchors: readonly TurnAnchor[],
 ): (span: AiSessionSpan) => number | undefined {
-	const turnByAnchor = new Map(anchors.map((anchor, turn) => [anchor.span.spanId, turn]))
-	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const turnByAnchor = new Map(Arr.map(anchors, (anchor, turn) => [anchor.span.spanId, turn]))
+	const byId = new Map(Arr.map(spans, (span) => [span.spanId, span]))
 	const memo = new Map<string, number | undefined>()
 
 	const byParentage = (span: AiSessionSpan): number | undefined => {
@@ -465,7 +469,7 @@ function agentRootTurnResolver(
 	// A span no anchor is above (the runtime's spawn of a sub-agent, an orchestrator's
 	// own rejected delegation) belongs to the outermost run open in its trace when it
 	// started: by time alone it lands in whichever sub-agent anchored last.
-	const runs = anchors.map((anchor, turn) => ({
+	const runs = Arr.map(anchors, (anchor, turn) => ({
 		turn,
 		traceId: anchor.span.traceId,
 		startMs: spanStartMs(anchor.span),
@@ -473,7 +477,8 @@ function agentRootTurnResolver(
 	}))
 	const enclosingRun = (span: AiSessionSpan): number | undefined => {
 		const startMs = spanStartMs(span)
-		const open = runs.filter(
+		const open = Arr.filter(
+			runs,
 			(run) => run.traceId === span.traceId && run.startMs <= startMs && startMs <= run.endMs,
 		)
 		return open.reduce<(typeof runs)[number] | undefined>(
@@ -519,7 +524,7 @@ function findAnchors(ordered: readonly AiSessionSpan[]): readonly TurnAnchor[] {
 		if (!byConversation.has(conversationId)) byConversation.set(conversationId, span)
 	}
 	if (byConversation.size > 1) {
-		return [...byConversation].map(([conversationId, span]) => ({
+		return Arr.map([...byConversation], ([conversationId, span]) => ({
 			span,
 			kind: "conversation" as const,
 			id: `conversation:${conversationId}`,
@@ -527,7 +532,7 @@ function findAnchors(ordered: readonly AiSessionSpan[]): readonly TurnAnchor[] {
 		}))
 	}
 
-	const byId = new Map(ordered.map((span) => [span.spanId, span]))
+	const byId = new Map(Arr.map(ordered, (span) => [span.spanId, span]))
 	// Not "no parent in the session": the query returns the app's own spans too,
 	// so the trace root is an HTTP or workflow span and every agent span has an
 	// in-session parent. A turn opens where agent work starts, which is an agent
@@ -548,7 +553,8 @@ function findAnchors(ordered: readonly AiSessionSpan[]): readonly TurnAnchor[] {
 	// A memory operation is agent work, but bookkeeping around a turn rather than
 	// the start of one: as an anchor, a lookup ahead of the agent run would open a
 	// turn of its own.
-	const agentRoots = ordered.filter(
+	const agentRoots = Arr.filter(
+		ordered,
 		(span) =>
 			span.isAiSpan &&
 			classifyAiSpan(span) === "agent" &&
@@ -556,7 +562,7 @@ function findAnchors(ordered: readonly AiSessionSpan[]): readonly TurnAnchor[] {
 			!underAiSpan(span),
 	)
 	if (agentRoots.length > 0) {
-		return agentRoots.map((span) => ({
+		return Arr.map(agentRoots, (span) => ({
 			span,
 			kind: "agent-root" as const,
 			id: `span:${span.spanId}`,
@@ -566,7 +572,7 @@ function findAnchors(ordered: readonly AiSessionSpan[]): readonly TurnAnchor[] {
 
 	const byTrace = new Map<string, AiSessionSpan>()
 	for (const span of ordered) if (!byTrace.has(span.traceId)) byTrace.set(span.traceId, span)
-	return [...byTrace].map(([traceId, span]) => ({
+	return Arr.map([...byTrace], ([traceId, span]) => ({
 		span,
 		kind: "trace" as const,
 		id: `trace:${traceId}`,
@@ -612,7 +618,7 @@ function turnLabel(anchor: AiSessionSpan, turnSpans: readonly AiSessionSpan[]): 
 
 /** Every user message with readable text in a captured history, oldest first. */
 function userMessageTexts(value: unknown): readonly string[] {
-	return Array.isArray(value) ? value.flatMap((entry) => lastUserMessageText([entry]) ?? []) : []
+	return Arr.isArray(value) ? value.flatMap((entry) => lastUserMessageText([entry]) ?? []) : []
 }
 
 /** Longest turn label the page will render before eliding — a captured prompt
@@ -633,12 +639,12 @@ const MAX_LABEL_LENGTH = 80
 /** The newest user message with readable text in a captured history — exported
  *  so a loader that trims histories keeps exactly the message this reads. */
 export function lastUserMessageText(value: unknown): string | undefined {
-	if (!Array.isArray(value)) return undefined
+	if (!Arr.isArray(value)) return undefined
 	for (let i = value.length - 1; i >= 0; i--) {
 		const entry: unknown = value[i]
 		// Case-insensitively: vendors write "User" as readily as "user", and the
 		// transcript's own row builders already read the role that way.
-		if (!isRecord(entry) || String(entry.role).toLowerCase() !== "user") continue
+		if (!isRecord(entry) || Str.toLowerCase(String(entry.role)) !== "user") continue
 		const text = messageText(entry.parts) ?? messageText(entry.content)
 		if (text !== undefined) return text
 	}
@@ -651,12 +657,12 @@ const INJECTED_BLOCKS = /^(?:\s*<([a-z][\w]*-[\w-]+)\b[^>]*>[\s\S]*?<\/\1>)+\s*/
 
 /** The text without the framework blocks it opens with; empty when that was all of it. */
 export function withoutInjectedBlocks(text: string): string {
-	return text.replace(INJECTED_BLOCKS, "")
+	return Str.replace(INJECTED_BLOCKS, "")(text)
 }
 
 function messageText(value: unknown): string | undefined {
 	if (typeof value === "string") return proseLine(withoutInjectedBlocks(value))
-	if (!Array.isArray(value)) return undefined
+	if (!Arr.isArray(value)) return undefined
 	for (const part of value) {
 		if (typeof part === "string") {
 			const text = proseLine(withoutInjectedBlocks(part))
@@ -681,16 +687,16 @@ const LEAD_IN = /^new task:$/i
  *  or the line after it, when the first is a lead-in. */
 function proseLine(value: string): string | undefined {
 	const lines: string[] = []
-	for (const rawLine of value.split("\n")) {
-		const line = rawLine.trim().replace(/\s+/g, " ")
+	for (const rawLine of Str.split("\n")(value)) {
+		const line = Str.replace(/\s+/g, " ")(Str.trim(rawLine))
 		if (line.length > 0 && lines.push(line) === 2) break
 	}
 	const [first, second] = lines
 	if (first === undefined) return undefined
 	const line = second !== undefined && LEAD_IN.test(first) ? second : first
-	return line.length > MAX_LABEL_LENGTH ? `${line.slice(0, MAX_LABEL_LENGTH - 1)}…` : line
+	return line.length > MAX_LABEL_LENGTH ? `${Str.slice(0, MAX_LABEL_LENGTH - 1)(line)}…` : line
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value)
+	return typeof value === "object" && value !== null && !Arr.isArray(value)
 }

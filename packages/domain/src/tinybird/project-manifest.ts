@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import type { SchemaDefinitionError } from "@maple-dev/effect-orm/schema"
 import { buildProject, type Datafile } from "@maple-dev/effect-orm/tinybird"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import * as Datasources from "./datasources"
 import * as Materializations from "./materializations"
 
@@ -19,11 +19,11 @@ export const createTinybirdProjectRevision = (
 ): string => {
 	const digest = createHash("sha256")
 
-	for (const resource of [...datasources].sort((left, right) => left.name.localeCompare(right.name))) {
+	for (const resource of [...datasources].sort((left, right) => Str.localeCompare(right.name)(left.name))) {
 		digest.update(`datasource:${resource.name}\n${resource.content}\n`)
 	}
 
-	for (const resource of [...pipes].sort((left, right) => left.name.localeCompare(right.name))) {
+	for (const resource of [...pipes].sort((left, right) => Str.localeCompare(right.name)(left.name))) {
 		digest.update(`pipe:${resource.name}\n${resource.content}\n`)
 	}
 
@@ -46,7 +46,7 @@ const withBackfillSkip = (datasource: GeneratedResource): GeneratedResource =>
 
 export const buildTinybirdProjectManifest: Effect.Effect<TinybirdProjectManifest, SchemaDefinitionError> =
 	Effect.map(buildProject(Datasources, Materializations), ({ datasources: built, pipes }) => {
-		const datasources = built.map(withBackfillSkip)
+		const datasources = Arr.map(built, withBackfillSkip)
 		return { datasources, pipes, projectRevision: createTinybirdProjectRevision(datasources, pipes) }
 	})
 

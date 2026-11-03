@@ -19,6 +19,7 @@ import { Message, type Model } from "./model"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // What the run reported, first on the page: severity tabs over severity groups, each finding
 // opening in a side sheet.
@@ -49,24 +50,24 @@ const reportLinks = (h: H, run: SecurityAuditRunDetail): ReadonlyArray<Html> =>
 					[h.Class("flex flex-wrap items-center gap-3 px-4 py-2.5 text-xs")],
 					[
 						h.span([h.Class("text-muted-foreground")], ["Reports:"]),
-						...(
+						...Arr.map(
 							[
 								["report", "REPORT.md"],
 								["findingsDetail", "FINDINGS-DETAIL.md"],
 								["needsValidation", "NEEDS-VALIDATION.md"],
-							] as const
-						).map(([report, label]) =>
-							textLink(
-								h,
-								{
-									tone: "muted",
-									isMono: true,
-									className: "underline",
-									onClick: Message.ClickedReport({ report }),
-									attributes: [h.Key(report)],
-								},
-								[label],
-							),
+							] as const,
+							([report, label]) =>
+								textLink(
+									h,
+									{
+										tone: "muted",
+										isMono: true,
+										className: "underline",
+										onClick: Message.ClickedReport({ report }),
+										attributes: [h.Key(report)],
+									},
+									[label],
+								),
 						),
 					],
 				),
@@ -88,7 +89,8 @@ const findingsList = (h: H, model: Model, findings: ReadonlyArray<SecurityAuditF
 	const shown =
 		model.severity === null
 			? findings
-			: findings.filter(
+			: Arr.filter(
+					findings,
 					(finding) => finding.verdict === "rejected" || bucketOf(finding) === model.severity,
 				)
 	return findingGroups(h, {

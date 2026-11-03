@@ -5,7 +5,7 @@
 // string; this turns them into one record per event with its offset from the
 // span start. Driver-free so the API, MCP and web can share it.
 
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { parseWarehouseDateTime, warehouseDateTimeToIso } from "./datetime"
 
 export interface SpanEvent {
@@ -37,12 +37,12 @@ const DATETIME64_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.(\d{
  * `Date.parse` alone would drop everything below a millisecond.
  */
 const parseNanos = (value: string): Option.Option<{ readonly ms: number; readonly subMsNanos: number }> => {
-	const match = DATETIME64_PATTERN.exec(value.trim())
+	const match = DATETIME64_PATTERN.exec(Str.trim(value))
 	if (!match) return Option.none()
 	const [, date, time, fraction = ""] = match
 	const seconds = parseWarehouseDateTime(`${date} ${time}`)
 	if (Number.isNaN(seconds)) return Option.none()
-	const nanos = Number(fraction.padEnd(9, "0"))
+	const nanos = Number(Str.padEnd(9, "0")(fraction))
 	return Option.some({ ms: seconds + Math.floor(nanos / 1e6), subMsNanos: nanos % 1e6 })
 }
 
@@ -56,22 +56,20 @@ export const parseSpanEvents = (raw: RawSpanEvents): ReadonlyArray<SpanEvent> =>
 	const attributes = Option.getOrElse(decodeAttributes(raw.eventsAttributes), () => [])
 	const start = parseNanos(raw.spanStart)
 
-	return timestamps
-		.flatMap((value, index) =>
-			Option.match(parseNanos(value), {
-				onNone: () => [],
-				onSome: (at) => [
-					{
-						name: names[index] ?? "",
-						timestamp: warehouseDateTimeToIso(value),
-						offsetMs: Option.match(start, {
-							onNone: () => 0,
-							onSome: (s) => at.ms - s.ms + (at.subMsNanos - s.subMsNanos) / 1e6,
-						}),
-						attributes: attributes[index] ?? {},
-					},
-				],
-			}),
-		)
-		.sort((a, b) => a.offsetMs - b.offsetMs)
+	return Arr.flatMap(timestamps, (value, index) =>
+		Option.match(parseNanos(value), {
+			onNone: () => [],
+			onSome: (at) => [
+				{
+					name: names[index] ?? "",
+					timestamp: warehouseDateTimeToIso(value),
+					offsetMs: Option.match(start, {
+						onNone: () => 0,
+						onSome: (s) => at.ms - s.ms + (at.subMsNanos - s.subMsNanos) / 1e6,
+					}),
+					attributes: attributes[index] ?? {},
+				},
+			],
+		}),
+	).sort((a, b) => a.offsetMs - b.offsetMs)
 }

@@ -15,6 +15,7 @@ import { Message, type Model } from "./chart"
 import { bucketSecondsOf, normaliseRows, scaleRates, type SeriesDefinition } from "./timeseries"
 import { hstack } from "../ui/stack"
 import { swatch } from "../ui/swatch"
+import { Array as Arr } from "effect"
 
 // `TimeseriesLegend` (packages/ui/src/components/plot/timeseries.tsx): the compact legend or the
 // Min/Max/Mean/Last table, below or beside the plot; shared by the line, area and bar charts.
@@ -38,7 +39,7 @@ const compactLegend = (
 	hidden: ReadonlyArray<string>,
 	layout: LegendLayout,
 ): Html => {
-	const keys = series.map((entry) => entry.key)
+	const keys = Arr.map(series, (entry) => entry.key)
 	return h.div(
 		[
 			...maxHeightStyle(h, layout),
@@ -49,7 +50,7 @@ const compactLegend = (
 				),
 			),
 		],
-		series.map((entry) =>
+		Arr.map(series, (entry) =>
 			pressable(
 				h,
 				{
@@ -60,10 +61,7 @@ const compactLegend = (
 					),
 					attributes: [h.Key(entry.key), h.Title(entry.label)],
 				},
-				[
-					swatch(h, { color: entry.color }),
-					h.span([h.Class("truncate")], [entry.label]),
-				],
+				[swatch(h, { color: entry.color }), h.span([h.Class("truncate")], [entry.label])],
 			),
 		),
 	)
@@ -85,7 +83,7 @@ const statsTable = (
 	unit: string | undefined,
 	layout: LegendLayout,
 ): Html => {
-	const keys = series.map((entry) => entry.key)
+	const keys = Arr.map(series, (entry) => entry.key)
 	return h.div(
 		[
 			...maxHeightStyle(h, layout),
@@ -104,7 +102,7 @@ const statsTable = (
 								[h.Class("text-muted-foreground")],
 								[
 									h.th([h.Class("py-0.5 pr-3 text-left font-normal")], ["Series"]),
-									...STAT_COLUMNS.map((column) =>
+									...Arr.map(STAT_COLUMNS, (column) =>
 										h.th(
 											[
 												h.Class(
@@ -123,7 +121,7 @@ const statsTable = (
 					),
 					h.tbody(
 						[],
-						series.map((entry) => {
+						Arr.map(series, (entry) => {
 							const entryStats = stats[entry.key] ?? null
 							const allZero = isAllZeroStats(entryStats)
 							return h.keyed("tr")(
@@ -158,7 +156,7 @@ const statsTable = (
 											]),
 										],
 									),
-									...STAT_COLUMNS.map((column) =>
+									...Arr.map(STAT_COLUMNS, (column) =>
 										entryStats === null || allZero
 											? h.td(
 													[
@@ -214,7 +212,7 @@ export const timeseriesLegend = (
 	const { series } = inputs
 	if ((inputs.legend !== "visible" && inputs.legend !== "right") || series.length === 0) return h.empty
 	// Stats over the closed buckets only, so all-zero series sink to the bottom (`TimeseriesLegend`).
-	const keys = series.map((entry) => entry.key)
+	const keys = Arr.map(series, (entry) => entry.key)
 	const normalised = normaliseRows(inputs.data, inputs.definitions)
 	const rows = scaleRates(normalised, keys, inputs.unit, bucketSecondsOf(normalised))
 	const first = findFirstPartialIndex(rows, { now: inputs.nowMs })

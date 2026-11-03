@@ -1,4 +1,5 @@
 import type { SessionRow } from "../page/agent-sessions/list/model"
+import { String as Str } from "effect"
 
 // Agent session rows chosen for the shapes that break
 // the list's columns (an unnamed session, an unidentified vendor, ms beside hours, no usage at all).
@@ -40,7 +41,7 @@ const NO_TOKENS = {
 	cost: 0,
 }
 
-const iso = (ms: number) => new Date(ms).toISOString().replace("T", " ").replace("Z", "")
+const iso = (ms: number) => Str.replace("Z", "")(Str.replace("T", " ")(new Date(ms).toISOString()))
 
 export const buildRows = (nowMs: number): ReadonlyArray<SessionRow> => {
 	const at = (minutesAgo: number, durationMs: number) => {

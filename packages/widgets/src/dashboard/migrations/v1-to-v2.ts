@@ -2,9 +2,10 @@
 import { WIDGET_TYPES, WIDGET_VISUALIZATIONS } from "../../widget-types"
 import { SORT_DIRECTIONS, STAT_AGGREGATES } from "../shared/transform"
 import type { DashboardMigration } from "./types"
+import { Array as Arr } from "effect"
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 /**
  * Coerce rather than reject.
@@ -123,7 +124,7 @@ export const v1ToV2: DashboardMigration = {
 	to: 2,
 	description: "Close visualization, reduceToValue.aggregate and sortBy.direction to their known sets",
 	migrate: (document) => {
-		if (!Array.isArray(document.widgets)) return document
-		return { ...document, widgets: document.widgets.map(migrateWidget) }
+		if (!Arr.isArray(document.widgets)) return document
+		return { ...document, widgets: Arr.map(document.widgets, migrateWidget) }
 	},
 }

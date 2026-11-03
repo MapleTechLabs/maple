@@ -5,7 +5,7 @@
 // and step / runner-wait spans under each job. Migration 0047's views keep the runs in `ci_runs`
 // and the jobs in `ci_jobs` with those attributes as columns; every read here goes to them.
 
-import { DateTime } from "effect"
+import { DateTime, Array as Arr } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { CiJobs, CiRuns, orgIdParam, utcSecondsParam } from "../tables"
@@ -125,7 +125,10 @@ export interface CiRedStreak<R> {
 export const ciRedStreak = <R extends { readonly result: string }>(
 	runsNewestFirst: ReadonlyArray<R>,
 ): CiRedStreak<R> | undefined => {
-	const judged = runsNewestFirst.filter((run) => run.result === "success" || isCiFailedResult(run.result))
+	const judged = Arr.filter(
+		runsNewestFirst,
+		(run) => run.result === "success" || isCiFailedResult(run.result),
+	)
 	const greenAt = judged.findIndex((run) => run.result === "success")
 	const streak = greenAt === -1 ? judged : judged.slice(0, greenAt)
 	const firstFailed = streak[streak.length - 1]
@@ -144,11 +147,12 @@ export const ciRunsSpanMs = (
 	runs.length === 0
 		? undefined
 		: {
-				startMs: Math.min(...runs.map((run) => DateTime.toEpochMillis(run.startedAt))),
+				startMs: Math.min(...Arr.map(runs, (run) => DateTime.toEpochMillis(run.startedAt))),
 				// A second past the end: span timestamps keep the milliseconds the run's own end rounds off.
 				endMs:
-					Math.max(...runs.map((run) => DateTime.toEpochMillis(run.startedAt) + run.durationMs)) +
-					1000,
+					Math.max(
+						...Arr.map(runs, (run) => DateTime.toEpochMillis(run.startedAt) + run.durationMs),
+					) + 1000,
 			}
 
 /** What the CI analytics read: one repository and workflow, or every one. */
@@ -300,7 +304,7 @@ export function ciActorStatsQuery(opts: CiActorStatsOpts) {
 				// One flat OR: chaining `.or()` nests a paren per repository and an org with a few
 				// hundred repositories passes ClickHouse's max_parser_depth (1000).
 				const isDefaultBranch = CH.or(
-					...opts.defaultBranches.map((repo) =>
+					...Arr.map(opts.defaultBranches, (repo) =>
 						CH.and(
 							$.Owner.eq(repo.owner),
 							$.Repository.eq(repo.repository),

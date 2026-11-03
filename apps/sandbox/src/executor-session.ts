@@ -21,7 +21,7 @@ import {
 	ExecutorUnavailable,
 } from "@maple/domain/executor"
 import { boundMessage, redactSecret } from "@maple/domain/sandbox"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import type { GatewayProps } from "./executor-gateway"
 import {
 	parsePrepareStatus,
@@ -87,7 +87,8 @@ export const prepare = (
 						message: `this executor was prepared for ${status.sha}, not ${checkout.sha}`,
 					})
 				return new ExecutorPrepared({
-					installs: status.installs.map(
+					installs: Arr.map(
+						status.installs,
 						(install) => new ExecutorInstall({ ...install, detail: redact(install.detail) }),
 					),
 				})
@@ -155,7 +156,7 @@ export const run = (
 		if (parsed === undefined)
 			return new ExecutorUnavailable({
 				message: boundMessage(
-					`the executor did not run the command: ${result.stderr.trim().slice(0, 500) || "no output"}`,
+					`the executor did not run the command: ${Str.slice(0, 500)(Str.trim(result.stderr)) || "no output"}`,
 				),
 			})
 		const { body, trailer } = parsed
@@ -166,7 +167,7 @@ export const run = (
 		if (trailer.state === "setup-failed")
 			return new ExecutorUnavailable({
 				message: boundMessage(
-					`the executor could not isolate the command: ${result.stderr.trim().slice(0, 500)}`,
+					`the executor could not isolate the command: ${Str.slice(0, 500)(Str.trim(result.stderr))}`,
 				),
 			})
 		const promotion =
@@ -175,7 +176,7 @@ export const run = (
 				: trailer.state === "unreaped"
 					? {
 							promoted: [],
-							rejected: request.promote.map(({ path }) => ({
+							rejected: Arr.map(request.promote, ({ path }) => ({
 								path,
 								reason: "a process of the command could not be stopped, so scratch was not promoted",
 							})),
@@ -187,7 +188,7 @@ export const run = (
 									decodePromotion(answer.stdout).pipe(
 										Effect.mapError(
 											() =>
-												`promotion answered unreadably: ${answer.stderr.slice(0, 300)}`,
+												`promotion answered unreadably: ${Str.slice(0, 300)(answer.stderr)}`,
 										),
 									),
 								),
@@ -195,7 +196,7 @@ export const run = (
 								Effect.catch((error) =>
 									Effect.succeed({
 										promoted: [],
-										rejected: request.promote.map(({ path }) => ({
+										rejected: Arr.map(request.promote, ({ path }) => ({
 											path,
 											reason: error,
 										})),
@@ -223,8 +224,9 @@ export const run = (
 			stdoutBytes: Math.max(trailer.stdoutBytes, utf8.encode(body).length),
 			stderrBytes: Math.max(trailer.stderrBytes, utf8.encode(stderr).length),
 			wallTimeMs: result.durationMs,
-			promoted: promotion.promoted.map((artifact) => new ExecutorArtifact(artifact)),
-			rejected: promotion.rejected.map(
+			promoted: Arr.map(promotion.promoted, (artifact) => new ExecutorArtifact(artifact)),
+			rejected: Arr.map(
+				promotion.rejected,
 				(rejected) =>
 					new ExecutorRejectedArtifact({
 						path: rejected.path,

@@ -39,11 +39,10 @@ const injectClerkJs = Effect.callback<void, ClerkLoadError>((resume) => {
 })
 
 const currentClerk = Effect.suspend(() =>
-	Option.match(Option.fromNullishOr(window.Clerk), {
-		onNone: () =>
-			Effect.fail(new ClerkLoadError({ message: "window.Clerk is missing", cause: undefined })),
-		onSome: Effect.succeed,
-	}),
+	Effect.fromOption(
+		Option.fromNullishOr(window.Clerk),
+		() => new ClerkLoadError({ message: "window.Clerk is missing", cause: undefined }),
+	),
 )
 
 const CLERK_LOAD_TIMEOUT = Duration.seconds(20)

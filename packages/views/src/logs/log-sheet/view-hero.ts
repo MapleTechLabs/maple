@@ -14,12 +14,13 @@ import { serviceDot } from "@maple/views/ui/values"
 import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
 import { hstack } from "@maple/views/ui/stack"
+import { String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
 
 /** A faint wash of the severity colour; unknown levels keep the plain border. */
 const heroToneStyle = (severity: string): Readonly<Record<string, string>> | undefined => {
-	const color = SEVERITY_COLORS[severity.toUpperCase()]
+	const color = SEVERITY_COLORS[Str.toUpperCase(severity)]
 	return color === undefined
 		? undefined
 		: {
@@ -60,8 +61,7 @@ export const logTextButton = (
 	className: string | undefined,
 	onClick: Message,
 	children: ReadonlyArray<Html | string>,
-): Html =>
-	textLink(h, { tone: "muted", onClick, className: cn("flex gap-1 text-3xs", className) }, children)
+): Html => textLink(h, { tone: "muted", onClick, className: cn("flex gap-1 text-3xs", className) }, children)
 
 const severityTrigger = (h: H, log: LogRecord): Html =>
 	h.span(
@@ -86,30 +86,28 @@ export const heroHeader = (
 	return h.div(
 		[h.Class("border-b px-4 py-3 shrink-0"), ...(tone === undefined ? [] : [h.Style(tone)])],
 		[
-			hstack(h, { gap: "2" },
-				[
-					severityTrigger(h, log),
-					badge(h, { variant: "outline", size: "xs", mono: true }, [
-						serviceDot(h, { serviceName: log.serviceName, size: "sm" }),
-						copyable(h, model, "hero-service", log.serviceName, [log.serviceName]),
-					]),
-					...(close === null
-						? []
-						: [
-								button(
-									h,
-									{
-										variant: "ghost",
-										size: "icon",
-										className: "ml-auto shrink-0",
-										slot: "sheet-close",
-										attributes: [h.AriaLabel("Close"), h.Tabindex(0), ...close],
-									},
-									[icon(h, "XmarkIcon", { size: 16 })],
-								),
-							]),
-				],
-			),
+			hstack(h, { gap: "2" }, [
+				severityTrigger(h, log),
+				badge(h, { variant: "outline", size: "xs", mono: true }, [
+					serviceDot(h, { serviceName: log.serviceName, size: "sm" }),
+					copyable(h, model, "hero-service", log.serviceName, [log.serviceName]),
+				]),
+				...(close === null
+					? []
+					: [
+							button(
+								h,
+								{
+									variant: "ghost",
+									size: "icon",
+									className: "ml-auto shrink-0",
+									slot: "sheet-close",
+									attributes: [h.AriaLabel("Close"), h.Tabindex(0), ...close],
+								},
+								[icon(h, "XmarkIcon", { size: 16 })],
+							),
+						]),
+			]),
 			h.div(
 				[h.Class("mt-3")],
 				[

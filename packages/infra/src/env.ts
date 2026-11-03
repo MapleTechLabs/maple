@@ -6,6 +6,7 @@ import { optionalString } from "./config-helpers.ts"
 import type { MapleDomains, MapleStage } from "./cloudflare/stage.ts"
 import { resolveDeploymentEnvironment } from "./cloudflare/stage.ts"
 import { DEFAULT_MAPLE_REGION, type MapleRegion } from "./region.ts"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * Deploy-time Worker env, as effect `Config`s: never read `process.env`, which misses alchemy's
@@ -21,7 +22,7 @@ export type WorkerEnv = Record<string, string | Redacted.Redacted<string>>
 /** Present-and-non-blank, trimmed (`optionalString` returns the raw value). */
 const trimmedOption = (key: string): Config.Config<Option.Option<string>> =>
 	optionalString(key).pipe(
-		Config.map((value: Option.Option<string>) => Option.map(value, (raw) => raw.trim())),
+		Config.map((value: Option.Option<string>) => Option.map(value, (raw) => Str.trim(raw))),
 	)
 
 const entry = <A>(key: string, value: Option.Option<A>): Record<string, A> =>
@@ -66,7 +67,7 @@ export const optionalSecret = (key: string): Config.Config<SecretEnv> =>
 
 /** The first present-and-non-blank of `keys`, else `fallback`. For build vars with a `VITE_` twin. */
 export const plainFrom = (keys: ReadonlyArray<string>, fallback: string): Config.Config<string> =>
-	Config.all(keys.map(trimmedOption)).pipe(
+	Config.all(Arr.map(keys, trimmedOption)).pipe(
 		Config.map((values: ReadonlyArray<Option.Option<string>>) =>
 			Option.getOrElse(Option.firstSomeOf(values), () => fallback),
 		),

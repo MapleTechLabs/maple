@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { clusterLogPatterns } from "@maple/query-engine/observability"
 import { patternSearchTerm, rankCounts, severityBreakdown, splitTemplate } from "./log-patterns"
+import { Array as Arr } from "effect"
 
 describe("splitTemplate", () => {
 	it("separates literal runs from wildcard and named variables", () => {
@@ -59,13 +60,17 @@ describe("patternSearchTerm", () => {
 
 describe("rankCounts", () => {
 	it("orders by count, then name", () => {
-		expect(rankCounts({ web: 2, api: 5, auth: 2 }).map((e) => e.name)).toEqual(["api", "auth", "web"])
+		expect(Arr.map(rankCounts({ web: 2, api: 5, auth: 2 }), (e) => e.name)).toEqual([
+			"api",
+			"auth",
+			"web",
+		])
 	})
 })
 
 describe("severityBreakdown", () => {
 	it("orders by level, most severe first", () => {
-		expect(severityBreakdown({ INFO: 10, ERROR: 1, WARN: 3 }).map((e) => e.name)).toEqual([
+		expect(Arr.map(severityBreakdown({ INFO: 10, ERROR: 1, WARN: 3 }), (e) => e.name)).toEqual([
 			"ERROR",
 			"WARN",
 			"INFO",

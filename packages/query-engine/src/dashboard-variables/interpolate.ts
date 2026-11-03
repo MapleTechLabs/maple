@@ -18,7 +18,7 @@
 
 import { escapeClickHouseString } from "@maple-dev/effect-orm/sql"
 import { splitWhereClause } from "@maple/domain/where-clause"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -44,7 +44,10 @@ const WHERE_CLAUSE_KEY = /whereclause$/i
 function sqlLiteral(variable: ResolvedVariable): string {
 	if (variable.isAll) {
 		if (variable.options.length === 0) return "''"
-		return variable.options.map((option) => `'${escapeClickHouseString(option)}'`).join(",")
+		return Arr.join(
+			Arr.map(variable.options, (option) => `'${escapeClickHouseString(option)}'`),
+			",",
+		)
 	}
 	return `'${escapeClickHouseString(variable.value)}'`
 }
@@ -77,7 +80,7 @@ function interpolateWhereClause(input: string, values: VariableValues): string {
 	const kept: string[] = []
 	for (const clause of splitWhereClause(input)) {
 		const refs = collectVariableRefs(clause)
-		const dropped = refs.some((name) => values[name]?.isAll === true)
+		const dropped = Arr.some(refs, (name) => values[name]?.isAll === true)
 		if (dropped) continue
 		kept.push(
 			replaceRefs(clause, (name) => {
@@ -86,11 +89,11 @@ function interpolateWhereClause(input: string, values: VariableValues): string {
 			}),
 		)
 	}
-	return kept.join(" AND ")
+	return Arr.join(kept, " AND ")
 }
 
 function interpolateString(input: string, key: string | undefined, values: VariableValues): string {
-	if (!input.includes("$")) return input
+	if (!Str.includes("$")(input)) return input
 	if (key === "sql") {
 		return replaceRefs(input, (name) => {
 			const variable = values[name]
@@ -103,16 +106,16 @@ function interpolateString(input: string, key: string | undefined, values: Varia
 	return replaceRefs(input, (name) => {
 		const variable = values[name]
 		if (variable === undefined) return null
-		return variable.isAll ? variable.options.join(",") : variable.value
+		return variable.isAll ? Arr.join(variable.options, ",") : variable.value
 	})
 }
 
 function walk(value: unknown, key: string | undefined, values: VariableValues): unknown {
 	if (typeof value === "string") return interpolateString(value, key, values)
-	if (Array.isArray(value)) return value.map((item) => walk(item, key, values))
+	if (Arr.isArray(value)) return Arr.map(value, (item) => walk(item, key, values))
 	if (value !== null && typeof value === "object") {
 		const out: Record<string, unknown> = {}
-		for (const [childKey, childValue] of Object.entries(value)) {
+		for (const [childKey, childValue] of Rec.toEntries(value)) {
 			out[childKey] = walk(childValue, childKey, values)
 		}
 		return out
@@ -130,7 +133,7 @@ export function interpolateWidgetParams(
 	values: VariableValues,
 ): Record<string, unknown> {
 	const result: Record<string, unknown> = {}
-	for (const [key, value] of Object.entries(params)) {
+	for (const [key, value] of Rec.toEntries(params)) {
 		result[key] = walk(value, key, values)
 	}
 	return result
@@ -142,7 +145,7 @@ export function interpolateWidgetParams(
  * the word "All" — not the expanded value list.
  */
 export function interpolateDisplayText(text: string, values: VariableValues): string {
-	if (!text.includes("$")) return text
+	if (!Str.includes("$")(text)) return text
 	return replaceRefs(text, (name) => {
 		const variable = values[name]
 		if (variable === undefined) return null
@@ -162,5 +165,5 @@ export function hasUnresolvedVariableRefs(
 ): boolean {
 	if (!params || definedNames.length === 0) return false
 	const refs = collectVariableRefs(encodeJson(params))
-	return refs.some((name) => definedNames.includes(name) && values[name] === undefined)
+	return Arr.some(refs, (name) => definedNames.includes(name) && values[name] === undefined)
 }

@@ -17,7 +17,7 @@
  * it cannot name a verdict.
  */
 import { CHAT_PROPOSAL_DECISIONS, type ChatProposalDecision } from "@maple/domain/chat-session"
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 
 export const ChatActionToken = Schema.String.pipe(Schema.brand("@maple/ChatActionToken"))
 export type ChatActionToken = typeof ChatActionToken.Type
@@ -63,7 +63,7 @@ export interface ChatActionRequest extends ChatAction {
 export const decodeChatActionControlId = (raw: string): Option.Option<ChatActionRequest> =>
 	Option.flatMap(chatActionDecision(raw), (decision) =>
 		Option.map(
-			decodeChatActionToken(raw.slice(decision.length + DECISION_SEPARATOR.length)),
+			decodeChatActionToken(Str.slice(decision.length + DECISION_SEPARATOR.length)(raw)),
 			(action) => ({ ...action, decision }),
 		),
 	)
@@ -77,5 +77,5 @@ export const decodeChatActionControlId = (raw: string): Option.Option<ChatAction
  */
 export const chatActionDecision = (raw: string): Option.Option<ChatProposalDecision> =>
 	Option.fromUndefinedOr(
-		CHAT_PROPOSAL_DECISIONS.find((candidate) => raw.startsWith(`${candidate}${DECISION_SEPARATOR}`)),
+		CHAT_PROPOSAL_DECISIONS.find((candidate) => Str.startsWith(`${candidate}${DECISION_SEPARATOR}`)(raw)),
 	)

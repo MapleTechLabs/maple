@@ -31,6 +31,7 @@ import {
 	orgIdParam,
 	utcSecondsParam,
 } from "@maple/query-engine/ch/tables"
+import { Array as Arr } from "effect"
 
 /** Both metrics tables declare the columns read here alike. */
 type MetricsAccessor = ColumnAccessor<typeof MetricsSum.columns> | ColumnAccessor<typeof MetricsGauge.columns>
@@ -53,12 +54,12 @@ const reading = (source: GcpInfraSourceId, metrics = gcpInfraMetrics(source)) =>
 	// A point carries at most one of these, so joining the candidates yields the one that is set.
 	const labels = [
 		"quantile",
-		...new Set(metrics.flatMap(gcpMetricPointAttributes).filter((label) => label !== DATABASE)),
+		...new Set(Arr.filter(Arr.flatMap(metrics, gcpMetricPointAttributes), (label) => label !== DATABASE)),
 	]
 	return {
 		label: ($: MetricsAccessor) =>
 			CH.arrayStringConcat(
-				labels.map((label) => $.Attributes.get(label)),
+				Arr.map(labels, (label) => $.Attributes.get(label)),
 				"",
 			),
 		// A tuple, so the params of each condition stay in the query's type.
@@ -67,9 +68,10 @@ const reading = (source: GcpInfraSourceId, metrics = gcpInfraMetrics(source)) =>
 				$.OrgId.eq(orgIdParam),
 				CH.inList($.MetricName, [
 					...new Set(
-						metrics
-							.filter((metric) => (metric.kind === "sum") === sums)
-							.map((metric) => metric.name),
+						Arr.map(
+							Arr.filter(metrics, (metric) => (metric.kind === "sum") === sums),
+							(metric) => metric.name,
+						),
 					),
 				]),
 				$.TimeUnix.gte(param.dateTime("startTime")),
@@ -83,7 +85,7 @@ const workloadIs = ($: MetricsAccessor, source: GcpInfraSourceId, keys: Readonly
 	[
 		// The table's second sort key column: narrows the read to the workload's service.
 		$.ServiceName.eq(gcpInfraServiceName(source, keys)),
-		...GCP_INFRA_SOURCES[source].identity.map(([, attribute], index) =>
+		...Arr.map(GCP_INFRA_SOURCES[source].identity, ([, attribute], index) =>
 			$.ResourceAttributes.get(attribute).eq(keys[index] ?? ""),
 		),
 	] as const
@@ -101,7 +103,7 @@ export function gcpInfraMetricsSQL(service: GcpInfraServiceId) {
 	const { label, inWindow } = reading(service)
 	const point = ($: MetricsAccessor) => ({
 		keys: CH.arrayOf(
-			...GCP_INFRA_SOURCES[service].identity.map(([, attribute]) =>
+			...Arr.map(GCP_INFRA_SOURCES[service].identity, ([, attribute]) =>
 				$.ResourceAttributes.get(attribute),
 			),
 		),
@@ -196,11 +198,11 @@ export function gcpInfraSparklinesSQL(service: GcpInfraServiceId) {
 	const names = GCP_INFRA_SPARKLINE_METRICS[service] ?? []
 	const { inWindow } = reading(
 		service,
-		gcpInfraMetrics(service).filter((metric) => names.includes(metric.name)),
+		Arr.filter(gcpInfraMetrics(service), (metric) => names.includes(metric.name)),
 	)
 	const point = ($: MetricsAccessor) => ({
 		keys: CH.arrayOf(
-			...GCP_INFRA_SOURCES[service].identity.map(([, attribute]) =>
+			...Arr.map(GCP_INFRA_SOURCES[service].identity, ([, attribute]) =>
 				$.ResourceAttributes.get(attribute),
 			),
 		),
@@ -240,8 +242,8 @@ export function gcpInfraPresenceSQL() {
 			$.OrgId.eq(orgIdParam),
 			CH.inList($.MetricName, [
 				...new Set(
-					GCP_INFRA_SERVICE_IDS.flatMap((service) =>
-						gcpInfraMetrics(service).map((metric) => metric.name),
+					Arr.flatMap(GCP_INFRA_SERVICE_IDS, (service) =>
+						Arr.map(gcpInfraMetrics(service), (metric) => metric.name),
 					),
 				),
 			]),

@@ -2,7 +2,7 @@ import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"
@@ -94,7 +94,10 @@ const spanCard = (h: H, model: Model, timeZone: string, color: string): Html => 
 					keyValueList(h, { className: "gap-1" }, [
 						keyValue(h, { label: "Start time", mono: true }, [
 							copyableValue(h, model, { id: "start-time", value: span.startTime }, [
-								formatTimestampInTimezone(span.startTime, { timeZone, withMilliseconds: true }),
+								formatTimestampInTimezone(span.startTime, {
+									timeZone,
+									withMilliseconds: true,
+								}),
 							]),
 						]),
 						keyValue(h, { label: "Span ID", mono: true }, [
@@ -118,7 +121,9 @@ const spanCard = (h: H, model: Model, timeZone: string, color: string): Html => 
 													{
 														tone: "muted",
 														isMono: true,
-														onClick: Message.ClickedParentSpan({ spanId: span.parentSpanId }),
+														onClick: Message.ClickedParentSpan({
+															spanId: span.parentSpanId,
+														}),
 														className:
 															"text-foreground underline decoration-dotted hover:text-primary active:text-primary",
 														attributes: [h.Title("Select the parent span")],
@@ -139,8 +144,11 @@ const spanCard = (h: H, model: Model, timeZone: string, color: string): Html => 
 /** The span and resource attributes: full maps once loaded, the trimmed ones if that fails. */
 const attributesBody = (h: H, model: Model, isFilterable: boolean): ReadonlyArray<Html | null> => {
 	const { span } = model
-	const section = (scope: "span" | "resource", attributes: Readonly<Record<string, string>>, title: string) =>
-		attributesSection(h, model, scope, attributes, title, { isFilterable })
+	const section = (
+		scope: "span" | "resource",
+		attributes: Readonly<Record<string, string>>,
+		title: string,
+	) => attributesSection(h, model, scope, attributes, title, { isFilterable })
 	if (span.isMissing === true) return [section("span", span.spanAttributes, "Span attributes")]
 	return AsyncData.matchData(model.detail.data, {
 		onEmpty: (): ReadonlyArray<Html | null> => [
@@ -170,8 +178,11 @@ const attributesBody = (h: H, model: Model, isFilterable: boolean): ReadonlyArra
 	})
 }
 
-const loadedOr = (model: Model, pick: (detail: SpanDetail) => Readonly<Record<string, string>>, fallback: Readonly<Record<string, string>>) =>
-	Option.match(AsyncData.getData(model.detail.data), { onNone: () => fallback, onSome: pick })
+const loadedOr = (
+	model: Model,
+	pick: (detail: SpanDetail) => Readonly<Record<string, string>>,
+	fallback: Readonly<Record<string, string>>,
+) => Option.match(AsyncData.getData(model.detail.data), { onNone: () => fallback, onSome: pick })
 
 /** The span's resource attributes: the full map once loaded, else the trimmed one. */
 export const resourceAttributesOf = (model: Model): Readonly<Record<string, string>> =>
@@ -184,43 +195,43 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	const spanAttrs = loadedOr(model, (detail) => detail.spanAttributes, span.spanAttributes)
 	const platform = getCloudPlatform(spanAttrs)
 	const { infraTab } = inputs
-	const values = infraTab === undefined
-		? (["details", "logs"] as const)
-		: (["details", "logs", "infrastructure"] as const)
+	const values =
+		infraTab === undefined
+			? (["details", "logs"] as const)
+			: (["details", "logs", "infrastructure"] as const)
 	return sidePanelFrame(h, [
-			panelHeader(h, model),
-			scrollArea(h, { className: "min-h-0 flex-1", idPrefix: "span-panel-scroll" }, [
-				summaryStats(h, model),
-				...[cacheSummary(h, model)].filter((node) => node !== null),
-				...(platform === null ? [] : [platformSummary(h, model, platform)]),
-				...(span.statusCode === "Error" && span.statusMessage !== ""
+		panelHeader(h, model),
+		scrollArea(h, { className: "min-h-0 flex-1", idPrefix: "span-panel-scroll" }, [
+			summaryStats(h, model),
+			...Arr.filter([cacheSummary(h, model)], (node) => node !== null),
+			...(platform === null ? [] : [platformSummary(h, model, platform)]),
+			...(span.statusCode === "Error" && span.statusMessage !== ""
+				? [
+						errorSection(h, model, {
+							message: span.statusMessage,
+							prompt: {
+								serviceName: span.serviceName,
+								operation: span.spanName,
+								attributes: spanAttrs,
+							},
+						}),
+					]
+				: []),
+			tabsView(h, model, values, (value) =>
+				value === "details"
 					? [
-							errorSection(h, model, {
-								message: span.statusMessage,
-								prompt: {
-									serviceName: span.serviceName,
-									operation: span.spanName,
-									attributes: spanAttrs,
-								},
-							}),
+							h.div(
+								[h.Class("p-3 space-y-3")],
+								[
+									spanCard(h, model, inputs.timeZone, serviceColor),
+									...attributesBody(h, model, inputs.canFilterAttributes),
+								],
+							),
 						]
-					: []),
-				tabsView(h, model, values, (value) =>
-					value === "details"
-						? [
-								h.div(
-									[h.Class("p-3 space-y-3")],
-									[
-										spanCard(h, model, inputs.timeZone, serviceColor),
-										...attributesBody(h, model, inputs.canFilterAttributes),
-									],
-								),
-							]
-						: value === "logs" || infraTab === undefined
-							? [spanLogs(h, model, inputs.timeZone, inputs.logsDocsHref)]
-							: [h.div([h.Class("p-3")], [infraTab()])],
-				),
-			]),
-		],
-	)
+					: value === "logs" || infraTab === undefined
+						? [spanLogs(h, model, inputs.timeZone, inputs.logsDocsHref)]
+						: [h.div([h.Class("p-3")], [infraTab()])],
+			),
+		]),
+	])
 })

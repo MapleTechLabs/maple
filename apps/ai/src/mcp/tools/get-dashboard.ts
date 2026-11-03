@@ -1,5 +1,5 @@
 import type { McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { GetDashboardOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -46,7 +46,7 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 					// `update_dashboard`'s `dashboard_json` and the incremental widget tools.
 					tags: dashboard.tags ? [...dashboard.tags] : [],
 					timeRange: dashboard.timeRange,
-					widgets: dashboard.widgets.map((w) => ({
+					widgets: Arr.map(dashboard.widgets, (w) => ({
 						id: w.id,
 						visualization: w.visualization,
 						dataSource: w.dataSource,
@@ -69,15 +69,15 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 					doc.fields([
 						["ID", dashboard.id],
 						["Widgets", widgets.length],
-						["Created", dashboard.createdAt.slice(0, 19)],
-						["Updated", dashboard.updatedAt.slice(0, 19)],
+						["Created", Str.slice(0, 19)(dashboard.createdAt)],
+						["Updated", Str.slice(0, 19)(dashboard.updatedAt)],
 					]),
 					...(widgets.length === 0
 						? []
 						: [
 								doc.table(
 									["Widget", "Visualization", "Title"],
-									widgets.map((w) => [w.id, w.visualization, w.display.title ?? ""]),
+									Arr.map(widgets, (w) => [w.id, w.visualization, w.display.title ?? ""]),
 								),
 							]),
 					// Compact, one widget per line: a long dashboard is cut on whole widgets, never mid-object.
@@ -89,18 +89,16 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 					),
 					doc.code(
 						"json",
-						[stringifyJson(header), ...widgets.map((w) => stringifyJson(w))].join("\n"),
+						[stringifyJson(header), ...Arr.map(widgets, (w) => stringifyJson(w))].join("\n"),
 					),
 				],
-				next: dashboard.widgets
-					.slice(0, 1)
-					.map((w) =>
-						doc.next(
-							"inspect_chart_data",
-							{ dashboard_id: dashboard.id, widget_id: w.id },
-							"check the data a widget renders",
-						),
+				next: Arr.map(dashboard.widgets.slice(0, 1), (w) =>
+					doc.next(
+						"inspect_chart_data",
+						{ dashboard_id: dashboard.id, widget_id: w.id },
+						"check the data a widget renders",
 					),
+				),
 			}
 		},
 	})

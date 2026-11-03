@@ -7,7 +7,7 @@
  *   bun run measure-tokens -- -o token-stats.json   # also write JSON
  */
 import { writeFileSync } from "node:fs"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import { encode } from "gpt-tokenizer"
 import { mapleToolCatalog, toInputSchema } from "@/mcp/tools/registry"
 
@@ -49,9 +49,9 @@ if (outFile) {
 	writeFileSync(outFile, `${encodePrettyJson({ total, toolCount: tools.length, tools })}\n`)
 }
 
-const pad = (value: string, width: number): string => value.padEnd(width)
+const pad = (value: string, width: number): string => Str.padEnd(width)(value)
 console.log(pad("tool", 32) + pad("total", 8) + pad("desc", 8) + "schema")
-console.log("-".repeat(56))
+console.log(Str.repeat(56)("-"))
 for (const tool of tools) {
 	console.log(
 		pad(tool.name, 32) +
@@ -60,5 +60,5 @@ for (const tool of tools) {
 			String(tool.schemaTokens),
 	)
 }
-console.log("-".repeat(56))
+console.log(Str.repeat(56)("-"))
 console.log(`${pad("TOTAL", 32)}${total}  (${tools.length} tools)`)

@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
@@ -12,6 +12,10 @@ import { OrganizationService } from "@maple/backend/services/org/OrganizationSer
 import { ownBillingCustomer } from "./billing-customer"
 import { BillingCustomerResolver } from "./BillingCustomerResolver"
 import { BillingOrgService } from "./BillingOrgService"
+
+/** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
+const requestBodyText = (body: RequestInit["body"]): string =>
+	body instanceof Uint8Array ? new TextDecoder().decode(body) : typeof body === "string" ? body : ""
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -80,12 +84,12 @@ const layerFor = (testDb: TestDb, world: World) =>
 						Effect.sync((): AutumnResult => {
 							world.cancelCalls += 1
 							if (world.cancelFails) return { statusCode: 503, response: { message: "down" } }
-							world.cancelled.push(...cancels.map((cancel) => ({ customerId, ...cancel })))
+							world.cancelled.push(...Arr.map(cancels, (cancel) => ({ customerId, ...cancel })))
 							// Autumn stamps the cancellation, so the next read skips it.
 							world.subscriptions.set(
 								customerId,
-								(world.subscriptions.get(customerId) ?? []).map((sub) =>
-									cancels.some((cancel) => cancel.planId === sub.planId)
+								Arr.map(world.subscriptions.get(customerId) ?? [], (sub) =>
+									Arr.some(cancels, (cancel) => cancel.planId === sub.planId)
 										? { ...sub, canceledAt: 1 }
 										: sub,
 								),
@@ -135,7 +139,7 @@ const layerFor = (testDb: TestDb, world: World) =>
 		// Autumn's track route, recorded: the uptime monitor transfer goes through it.
 		Layer.provideMerge(
 			Layer.succeed(FetchHttpClient.Fetch, async (_input, init) => {
-				const body = JSON.parse(String(init?.body ?? "{}"))
+				const body = JSON.parse(requestBodyText(init?.body) || "{}")
 				world.tracked.push({
 					customer: body.customer_id,
 					feature: body.feature_id,
@@ -199,7 +203,7 @@ describe("BillingOrgService", () => {
 				const payer = yield* service.account(PAYER)
 				assert.strictEqual(payer.role, "billing_org")
 				assert.deepStrictEqual(
-					payer.members.map((member) => member.orgId),
+					Arr.map(payer.members, (member) => member.orgId),
 					[MEMBER],
 				)
 				assert.isNumber(payer.members[0]?.linkedAt)
@@ -286,7 +290,7 @@ describe("BillingOrgService", () => {
 			Effect.gen(function* () {
 				const results = yield* Effect.all([linkMember(), linkMember()], { concurrency: 2 })
 				assert.deepStrictEqual(
-					results.map((account) => account.role),
+					Arr.map(results, (account) => account.role),
 					["member", "member"],
 				)
 				assert.strictEqual(world.cancelCalls, 1)
@@ -296,7 +300,7 @@ describe("BillingOrgService", () => {
 					[MEMBER],
 				)
 				assert.deepStrictEqual(
-					world.tracked.filter((track) => track.feature === "uptime_monitors"),
+					Arr.filter(world.tracked, (track) => track.feature === "uptime_monitors"),
 					[
 						{ customer: MEMBER, feature: "uptime_monitors", value: -1 },
 						{ customer: PAYER, feature: "uptime_monitors", value: 1 },
@@ -316,7 +320,7 @@ describe("BillingOrgService", () => {
 				yield* linkMember()
 				yield* linkMember()
 				yield* service.unlink({ orgId: MEMBER, roles: ADMIN, memberOrgId: MEMBER })
-				const monitorMoves = world.tracked.filter((track) => track.feature === "uptime_monitors")
+				const monitorMoves = Arr.filter(world.tracked, (track) => track.feature === "uptime_monitors")
 				assert.deepStrictEqual(monitorMoves, [
 					{ customer: MEMBER, feature: "uptime_monitors", value: -2 },
 					{ customer: PAYER, feature: "uptime_monitors", value: 2 },

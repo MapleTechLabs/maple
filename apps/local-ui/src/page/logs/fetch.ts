@@ -5,7 +5,7 @@ import type { LogsListOutput } from "@maple/query-engine/ch"
 import { clusterLogPatterns } from "@maple/query-engine/observability"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { logAttributeQueryFilters } from "@maple/views/lib/log-attribute-filters"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { localParams, queryRows } from "../../data/local-query"
 import type { LogFilters } from "./filters"
 import type { FacetOption, LocalLog, LogPatterns } from "./model"
@@ -37,7 +37,12 @@ const normalizeLog = (row: LogsListOutput): LocalLog => ({
 })
 
 /** One page, newest first, keyset-paged on the full row identity. */
-export const fetchLogsPage = (filters: LogFilters, bounds: TimeBounds, cursor: LogCursor | undefined, apiBase: string) =>
+export const fetchLogsPage = (
+	filters: LogFilters,
+	bounds: TimeBounds,
+	cursor: LogCursor | undefined,
+	apiBase: string,
+) =>
 	Effect.map(
 		queryRows(
 			CH.compile(
@@ -53,11 +58,16 @@ export const fetchLogsPage = (filters: LogFilters, bounds: TimeBounds, cursor: L
 			),
 			apiBase,
 		),
-		(rows) => rows.map(normalizeLog),
+		(rows) => Arr.map(rows, normalizeLog),
 	)
 
-const toOptions = (rows: ReadonlyArray<{ readonly name: string; readonly count: number }>): Array<FacetOption> =>
-	rows.filter((row) => row.name).map((row) => ({ name: row.name, count: row.count }))
+const toOptions = (
+	rows: ReadonlyArray<{ readonly name: string; readonly count: number }>,
+): Array<FacetOption> =>
+	Arr.map(
+		rows.filter((row) => row.name),
+		(row) => ({ name: row.name, count: row.count }),
+	)
 
 /** Severity facet: every filter except severity itself, ordered by level, not count. */
 export const fetchSeverities = (filters: LogFilters, bounds: TimeBounds, apiBase: string) =>
@@ -117,7 +127,7 @@ export const fetchPatterns = (filters: LogFilters, bounds: TimeBounds, apiBase: 
 		(rows): LogPatterns => ({
 			patterns: clusterLogPatterns(rows, PATTERN_LIMIT).patterns,
 			// clusterLogPatterns skips empty bodies, so they stay out of the share denominator.
-			totalSampled: rows.filter((row) => String(row.body ?? "") !== "").length,
+			totalSampled: Arr.filter(rows, (row) => String(row.body ?? "") !== "").length,
 			isTruncated: rows.length >= PATTERN_SAMPLE_SIZE,
 		}),
 	)

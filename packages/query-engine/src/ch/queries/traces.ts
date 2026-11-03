@@ -55,6 +55,7 @@ import {
 	timeseriesBucket,
 	wholeRangeEnd,
 } from "./query-helpers"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * The two t-digest state types the timeseries branches must agree on.
@@ -197,7 +198,7 @@ function buildGroupNameExpr(
 				if (groupByResourceAttributeKey) {
 					parts.push(CH.toString_($.ResourceAttributes.get(groupByResourceAttributeKey)))
 				} else if (groupByAttributeKeys?.length) {
-					const keys: CH.Expr<string>[] = groupByAttributeKeys.map((k) =>
+					const keys: CH.Expr<string>[] = Arr.map(groupByAttributeKeys, (k) =>
 						CH.toString_($.SpanAttributes.get(k)),
 					)
 					// When multiple attribute keys, join them into a single part
@@ -489,7 +490,7 @@ export function canUseAnnualServiceOverview(opts: TracesTimeseriesOpts): boolean
 		opts.rootOnly === true &&
 		bucketSeconds >= 60 &&
 		tierIsAvailable &&
-		(opts.groupBy ?? []).every((key) => OVERVIEW_ROLLUP_GROUP_KEYS.has(key)) &&
+		Arr.every(opts.groupBy ?? [], (key) => OVERVIEW_ROLLUP_GROUP_KEYS.has(key)) &&
 		opts.spanName == null &&
 		opts.statusCode == null &&
 		!opts.errorsOnly &&
@@ -1042,10 +1043,10 @@ export function tracesListQuery(opts: TracesListOpts) {
 
 	if (opts.columns) {
 		for (const col of opts.columns) {
-			if (col.startsWith("spanAttributes.")) {
-				requestedSpanAttrKeys.push(col.slice("spanAttributes.".length))
-			} else if (col.startsWith("resourceAttributes.")) {
-				requestedResourceAttrKeys.push(col.slice("resourceAttributes.".length))
+			if (Str.startsWith("spanAttributes.")(col)) {
+				requestedSpanAttrKeys.push(Str.slice("spanAttributes.".length)(col))
+			} else if (Str.startsWith("resourceAttributes.")(col)) {
+				requestedResourceAttrKeys.push(Str.slice("resourceAttributes.".length)(col))
 			}
 		}
 	}
@@ -1366,7 +1367,7 @@ const REWRITTEN_HTTP_SPAN_NAMES = new Set(["GET", "POST", "PUT", "PATCH", "DELET
 
 /** Raw names `normalizedSpanNameExpr` rewrites, so they never appear as-is in `trace_list_mv`. */
 const isRewrittenHttpSpanName = (name: string) =>
-	name.startsWith("http.server ") || REWRITTEN_HTTP_SPAN_NAMES.has(name)
+	Str.startsWith("http.server ")(name) || REWRITTEN_HTTP_SPAN_NAMES.has(name)
 
 /**
  * Public trace catalog read over the root-span MV, ordered deterministically.
@@ -1406,8 +1407,8 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 		matchModes: opts.matchModes,
 	}
 	// Match modes only shape the filters, so they never count as one.
-	const hasSpanFilters = Object.entries(spanFilters).some(([key, value]) =>
-		key === "matchModes" ? false : Array.isArray(value) ? value.length > 0 : value !== undefined,
+	const hasSpanFilters = Arr.some(Object.entries(spanFilters), ([key, value]) =>
+		key === "matchModes" ? false : Arr.isArray(value) ? value.length > 0 : value !== undefined,
 	)
 	// Keyset over (second, TraceId): the MV stores whole seconds, and the cursor is a page's last `startTime`.
 	const afterCursor = (ts: CH.Expr<DateTime.Utc>, traceId: CH.Expr<string>) =>

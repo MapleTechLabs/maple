@@ -3,7 +3,7 @@ import { CurrentTenant } from "@maple/domain/http"
 import { MapleApiV2, PublicIdPrefixes, encodePublicId } from "@maple/domain/http/v2"
 import type { PublicIdPrefix, V2SetupAudit, V2SetupAuditAffectedEntity } from "@maple/domain/http/v2"
 import type { AuditAffectedEntity, AuditCheckResult, SetupAuditReport } from "@maple/domain/setup-audit"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 
 /**
@@ -36,7 +36,7 @@ const toV2Check = (check: AuditCheckResult): V2SetupAudit["checks"][number] => (
 	severity: check.severity,
 	status: check.status,
 	detail: check.detail,
-	affected: check.affected.map(toV2Affected),
+	affected: Arr.map(check.affected, toV2Affected),
 	affected_count: check.affectedCount,
 	fix_hint: check.fixHint,
 })
@@ -47,7 +47,7 @@ const toV2SetupAudit = (report: SetupAuditReport): V2SetupAudit => ({
 	data_status: report.dataStatus,
 	telemetry_checks_available: report.warehouseAvailable,
 	summary: report.summary,
-	checks: report.checks.map(toV2Check),
+	checks: Arr.map(report.checks, toV2Check),
 	open_recommendation_count: report.openRecommendationCount,
 })
 

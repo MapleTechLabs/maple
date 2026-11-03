@@ -28,6 +28,7 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 import { strip } from "@maple/views/ui/rule"
+import { Array as Arr } from "effect"
 
 // The run's coverage ledger, its gaps and the event log.
 
@@ -61,9 +62,13 @@ const unitRow = (h: H, unit: SecurityAuditUnit): Html =>
 							as: "span",
 							attributes: [
 								h.Title(
-									[unit.coverageId, unit.surface, unit.boundary, unit.agentId]
-										.filter((part) => part !== null)
-										.join("\n"),
+									Arr.join(
+										Arr.filter(
+											[unit.coverageId, unit.surface, unit.boundary, unit.agentId],
+											(part) => part !== null,
+										),
+										"\n",
+									),
 								),
 							],
 						},
@@ -145,7 +150,7 @@ const unitsBody = (
 						]),
 						tableBody(
 							h,
-							shown.map((unit) => unitRow(h, unit)),
+							Arr.map(shown, (unit) => unitRow(h, unit)),
 						),
 					])
 		},
@@ -174,8 +179,9 @@ export const ledgerPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Ht
 		}),
 		h.div(
 			[h.Class("flex flex-wrap gap-1.5 border-b px-4 py-3")],
-			UNIT_FILTERS.filter((filter) => filter === "all" || countOf(run, filter) > 0).map((filter) =>
-				unitChip(h, model, run, filter),
+			Arr.map(
+				Arr.filter(UNIT_FILTERS, (filter) => filter === "all" || countOf(run, filter) > 0),
+				(filter) => unitChip(h, model, run, filter),
 			),
 		),
 		unitsBody(h, model, (units) => filteredUnits(units, model.unitFilter)),
@@ -204,13 +210,21 @@ export const gapsPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html
 		}),
 		h.div(
 			[h.Class("grid grid-cols-3 divide-x border-b")],
-			GAP_SUMMARY.map((entry) =>
+			Arr.map(GAP_SUMMARY, (entry) =>
 				h.div(
 					[h.Key(entry.label), h.Class("flex flex-col gap-0.5 px-4 py-3")],
 					[
 						h.span(
 							[h.Class("font-mono text-lg tabular-nums")],
-							[String(entry.statuses.reduce((sum, status) => sum + countOf(run, status), 0))],
+							[
+								String(
+									Arr.reduce(
+										entry.statuses,
+										0,
+										(sum, status) => sum + countOf(run, status),
+									),
+								),
+							],
 						),
 						typography(h, { size: "xs", tone: "muted" }, [entry.label]),
 					],
@@ -261,7 +275,7 @@ const EVENT_FILTERS: ReadonlyArray<EventFilter> = ["all", "problems", "leads"]
 const eventChips = (h: H, model: Model, events: ReadonlyArray<SecurityAuditEvent>): Html =>
 	h.div(
 		[h.Class("flex flex-wrap gap-1.5 border-b px-4 py-3")],
-		EVENT_FILTERS.map((filter) =>
+		Arr.map(EVENT_FILTERS, (filter) =>
 			filterChip(
 				h,
 				{
@@ -321,7 +335,7 @@ export const eventsPanel = (
 								])
 							: h.ol(
 									[h.Class("divide-y")],
-									shown.map((event) => eventRow(h, event, timeZone)),
+									Arr.map(shown, (event) => eventRow(h, event, timeZone)),
 								),
 					],
 				)

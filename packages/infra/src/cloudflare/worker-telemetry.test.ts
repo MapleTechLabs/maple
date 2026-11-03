@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { WorkerEnvironment } from "@alchemy.run/cloudflare"
 import { afterEach } from "vitest"
-import { Effect, Exit, Fiber, Layer, Schedule, Scope, Tracer } from "effect"
+import { Effect, Exit, Fiber, Layer, Schedule, Scope, Tracer, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { eventTelemetry, flushOnCadence, MapleHttpTracingLive } from "./worker-telemetry.ts"
 
@@ -66,7 +66,7 @@ describe("eventTelemetry", () => {
 		Effect.gen(function* () {
 			const exported: Array<string> = []
 			globalThis.fetch = (async (input: RequestInfo | URL) => {
-				exported.push(String(input))
+				exported.push(new Request(input).url)
 				return new Response(null, { status: 200 })
 			}) as typeof fetch
 			const env = { MAPLE_ENDPOINT: "https://collector.test", MAPLE_INGEST_KEY: "secret" }
@@ -77,7 +77,7 @@ describe("eventTelemetry", () => {
 				),
 				scope,
 			)
-			const traceExports = () => exported.filter((url) => url.endsWith("/v1/traces")).length
+			const traceExports = () => Arr.filter(exported, (url) => Str.endsWith("/v1/traces")(url)).length
 			// Polls until `n` trace exports went out, giving up after two seconds.
 			const exportsReach = (n: number) =>
 				Effect.sync(traceExports).pipe(

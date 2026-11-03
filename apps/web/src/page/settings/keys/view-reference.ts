@@ -12,6 +12,7 @@ import { linkButton } from "@maple/views/ui/button"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
+import { Array as Arr } from "effect"
 
 // `ApiReference` and `OAuthPointer`.
 
@@ -121,7 +122,7 @@ const scopes = (h: H, isOpen: boolean): Html =>
 		[
 			h.div(
 				[h.Class("divide-y border-t")],
-				SCOPE_FAMILY_ROWS.map((family) => scopeRow(h, family)),
+				Arr.map(SCOPE_FAMILY_ROWS, (family) => scopeRow(h, family)),
 			),
 		],
 	)

@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, String as Str } from "effect"
 import { InvestigationFreeformSubject, InvestigationId, OrgId } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AiTriageSettings, Investigations } from "@maple/db/tables"
@@ -78,7 +78,7 @@ const seedStartedRuns = (count: number, idOffset = 0) =>
 					db.run(
 						PG.insertInto(Investigations).values({
 							id: asInvestigationId(
-								`00000000-0000-4000-8000-${String(idOffset + index).padStart(12, "0")}`,
+								`00000000-0000-4000-8000-${Str.padStart(12, "0")(String(idOffset + index))}`,
 							),
 							orgId: ORG,
 							status: "investigating",

@@ -1,5 +1,6 @@
 import { lineY } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
+import { Array as Arr } from "effect"
 
 /**
  * There is no `connectNulls`.
@@ -30,7 +31,7 @@ export function dropNullPoints<T>(rows: readonly T[], value: (row: T) => SeriesV
 	// a fresh array every render would rebuild the scene on every commit.
 	if (!hasNull) return rows
 
-	return rows.filter((row) => {
+	return Arr.filter(rows, (row) => {
 		const candidate = value(row)
 		return typeof candidate === "number" && Number.isFinite(candidate)
 	})
@@ -76,7 +77,7 @@ export function seriesRuns<T>(
 	value: (row: T) => SeriesValue,
 	at: (row: T) => Date,
 ): SeriesRuns<T> {
-	const step = smallestStep(rows.map((row) => at(row).getTime()))
+	const step = smallestStep(Arr.map(rows, (row) => at(row).getTime()))
 	const limit = Number.isFinite(step) ? Math.max(MAX_BRIDGED_GAP_MS, 2 * step) : MAX_BRIDGED_GAP_MS
 	const runs = dropNullPoints(rows, value).reduce<Array<Array<T>>>((acc, row) => {
 		const current = acc.at(-1)
@@ -88,12 +89,12 @@ export function seriesRuns<T>(
 		}
 		return acc
 	}, [])
-	const silences = runs.flatMap((run, index) => {
+	const silences = Arr.flatMap(runs, (run, index) => {
 		const from = run.at(-1)
 		const to = runs[index + 1]?.[0]
 		return from === undefined || to === undefined ? [] : [{ from, to }]
 	})
-	return { runs, lone: runs.flatMap((run) => (run.length === 1 ? run : [])), silences }
+	return { runs, lone: Arr.flatMap(runs, (run) => (run.length === 1 ? run : [])), silences }
 }
 
 /**
@@ -107,7 +108,7 @@ export function silenceBridges<T>(
 	value: (row: T) => SeriesValue,
 	color: string,
 ) {
-	const ends = silences.flatMap((silence, index) => [
+	const ends = Arr.flatMap(silences, (silence, index) => [
 		{ key: String(index), row: silence.from },
 		{ key: String(index), row: silence.to },
 	])

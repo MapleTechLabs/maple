@@ -14,6 +14,7 @@ import {
 	parseEventLines,
 	scoreRun,
 } from "../../scripts/security-audit-eval/scoring"
+import { Array as Arr, String as Str } from "effect"
 
 const step = (file: string) => ({ kind: "sink" as const, file, line: 1, scope: "f", description: "d" })
 
@@ -62,9 +63,12 @@ const result = (
 		scope: ["src"],
 		bugs: [
 			{ id: bugIds[0] ?? "b", reference: "#1", fixSha: "f", touchedFiles: ["src/a.ts"] },
-			...bugIds
-				.slice(1)
-				.map((id) => ({ id, reference: "#2", fixSha: "f", touchedFiles: ["src/b.ts"] })),
+			...Arr.map(bugIds.slice(1), (id) => ({
+				id,
+				reference: "#2",
+				fixSha: "f",
+				touchedFiles: ["src/b.ts"],
+			})),
 		],
 	},
 	profile: "quick",
@@ -141,12 +145,12 @@ describe("security eval scoring", () => {
 			grades([{ key: "b", bug: "g1", verdict: "hit-needs-validation" }]),
 		)
 		const rows = aggregate([a, b], (r) => r.language)
-		expect(rows.map((r) => [r.group, r.runs, r.bugs, r.hitRate, r.costUsd, r.spotFalsePositive])).toEqual(
-			[
-				["go", 1, 1, 1, 8, 0],
-				["typescript", 1, 2, 0.5, 12, 1],
-			],
-		)
+		expect(
+			Arr.map(rows, (r) => [r.group, r.runs, r.bugs, r.hitRate, r.costUsd, r.spotFalsePositive]),
+		).toEqual([
+			["go", 1, 1, 1, 8, 0],
+			["typescript", 1, 2, 0.5, 12, 1],
+		])
 	})
 
 	it("suggests only records that touch a non-test file the fix changed", () => {
@@ -155,7 +159,7 @@ describe("security eval scoring", () => {
 			[needsValidation("hit", "./src/a.ts", ["x"]), needsValidation("test", "src/a.test.ts", ["x"])],
 			[bug],
 		)
-		expect(matches.map((m) => m.fingerprint)).toEqual(["hit"])
+		expect(Arr.map(matches, (m) => m.fingerprint)).toEqual(["hit"])
 	})
 
 	it("treats a record as execution-bound only when every blocker is about running code", () => {
@@ -238,14 +242,14 @@ describe("security eval scoring", () => {
 					repo,
 					sha,
 					scope: [],
-					bugs: [{ id: "b", reference: "r", fixSha: "a".repeat(40), touchedFiles: [] }],
+					bugs: [{ id: "b", reference: "r", fixSha: Str.repeat(40)("a"), touchedFiles: [] }],
 				},
 			],
 		})
 		const ok = { name: "ws", url: "https://github.com/websockets/ws.git" }
-		expect(decodeCaseFile(file(ok, "a".repeat(40))).cases).toHaveLength(1)
+		expect(decodeCaseFile(file(ok, Str.repeat(40)("a"))).cases).toHaveLength(1)
 		expect(() => decodeCaseFile(file(ok, "--upload-pack=x"))).toThrow()
-		expect(() => decodeCaseFile(file({ ...ok, name: ".." }, "a".repeat(40)))).toThrow()
-		expect(() => decodeCaseFile(file({ ...ok, url: "ext::sh -c id" }, "a".repeat(40)))).toThrow()
+		expect(() => decodeCaseFile(file({ ...ok, name: ".." }, Str.repeat(40)("a")))).toThrow()
+		expect(() => decodeCaseFile(file({ ...ok, url: "ext::sh -c id" }, Str.repeat(40)("a")))).toThrow()
 	})
 })

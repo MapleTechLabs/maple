@@ -7,7 +7,7 @@ import {
 	DEFAULT_LAYOUT_CONFIG,
 	topologyKey,
 } from "@maple/ui/components/service-map/service-map-utils"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 /** The layout config in the graph signature: a config change re-lays every graph. */
 const LAYOUT_CONFIG_KEY = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))(DEFAULT_LAYOUT_CONFIG)
@@ -32,7 +32,12 @@ export const SourceGraphSchema = Schema.instanceOf(SourceGraph)
 export const buildSourceGraph = (input: BuildFlowElementsInput): SourceGraph => {
 	const { nodes, edges } = buildFlowElements(input)
 	const services = Array.from(
-		new Set(nodes.filter((n) => !n.id.startsWith(DB_NODE_PREFIX)).map((n) => n.id)),
+		new Set(
+			Arr.map(
+				Arr.filter(nodes, (n) => !Str.startsWith(DB_NODE_PREFIX)(n.id)),
+				(n) => n.id,
+			),
+		),
 	).toSorted()
 	return new SourceGraph(nodes, edges, services)
 }
@@ -59,10 +64,12 @@ export const declutterGraph = (
 	exemptIds: ReadonlySet<string>,
 ): EffectiveGraph => {
 	const declutter = applyDeclutter([...source.rawNodes], [...source.flowEdges], state, exemptIds)
-	const nsKey = declutter.nodes
-		.flatMap((node) => (node.data.namespace ? [`${node.id}=${node.data.namespace}`] : []))
-		.sort()
-		.join(",")
+	const nsKey = Arr.join(
+		Arr.flatMap(declutter.nodes, (node) =>
+			node.data.namespace ? [`${node.id}=${node.data.namespace}`] : [],
+		).sort(),
+		",",
+	)
 	const signature = `${topologyKey(declutter.nodes, declutter.edges)}|${nsKey}|${LAYOUT_CONFIG_KEY}|elk3`
 	return new EffectiveGraph(declutter, signature)
 }

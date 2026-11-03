@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
@@ -26,7 +26,7 @@ import { grid } from "@maple/views/ui/grid"
 
 type H = HtmlBuilder<Message>
 
-const THEME_TOKENS = seriesTokens(["PRs reviewed", "Reviews", ...Object.values(SEVERITY_SERIES)])
+const THEME_TOKENS = seriesTokens(["PRs reviewed", "Reviews", ...Rec.values(SEVERITY_SERIES)])
 
 const isFiltered = (model: Model) => model.search.repo !== undefined || model.search.author !== undefined
 
@@ -90,7 +90,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 const authorsOf = (model: Model): ReadonlyArray<string> =>
 	Option.match(AsyncData.getData(model.authors.data), {
 		onNone: () => [],
-		onSome: (analytics) => analytics.authors.map((row) => row.author),
+		onSome: (analytics) => Arr.map(analytics.authors, (row) => row.author),
 	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {

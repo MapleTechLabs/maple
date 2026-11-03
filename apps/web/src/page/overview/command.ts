@@ -6,7 +6,7 @@ import {
 } from "@maple/web-data/warehouse/custom-charts"
 import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
 import { getServiceHealthSnapshot } from "@maple/web-data/warehouse/services"
-import { Clock, Duration, Effect, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { loadAnomalyServiceCounts } from "../../data/anomaly-service-counts"
@@ -102,8 +102,8 @@ export const FetchFacets = Command.define("FetchOverviewFacets", {
 		loadServicesFacets(window, { refresh, key }).pipe(
 			Effect.mapBoth({
 				onSuccess: ({ data }) => ({
-					environments: data.environments.map((facet) => facet.name),
-					services: data.services.map((facet) => facet.name),
+					environments: Arr.map(data.environments, (facet) => facet.name),
+					services: Arr.map(data.services, (facet) => facet.name),
 				}),
 				onFailure: toLoadFailure,
 			}),
@@ -149,14 +149,11 @@ export const FetchUsage = Command.define("FetchOverviewServiceUsage", {
 		getServiceUsage({ data: input }).pipe(
 			Effect.mapBoth({
 				onSuccess: (response) => ({
-					totals: response.data.reduce(
-						(acc, service) => ({
-							logs: acc.logs + service.totalLogs,
-							traces: acc.traces + service.totalTraces,
-							metrics: acc.metrics + service.totalMetrics,
-						}),
-						{ logs: 0, traces: 0, metrics: 0 },
-					),
+					totals: Arr.reduce(response.data, { logs: 0, traces: 0, metrics: 0 }, (acc, service) => ({
+						logs: acc.logs + service.totalLogs,
+						traces: acc.traces + service.totalTraces,
+						metrics: acc.metrics + service.totalMetrics,
+					})),
 					previous: response.previousTotals ?? null,
 				}),
 				onFailure: toLoadFailure,
@@ -205,9 +202,9 @@ export const FetchLogSeries = Command.define("FetchOverviewLogVolume", {
 		}).pipe(
 			Effect.mapBoth({
 				onSuccess: (response) =>
-					response.data.map((point) => ({
+					Arr.map(response.data, (point) => ({
 						bucket: point.bucket,
-						throughput: Object.values(point.series).reduce<number>(
+						throughput: Rec.values(point.series).reduce<number>(
 							(sum, value) => sum + (typeof value === "number" ? value : 0),
 							0,
 						),

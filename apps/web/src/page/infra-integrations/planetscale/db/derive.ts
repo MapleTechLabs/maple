@@ -6,7 +6,7 @@ import {
 	resolveSelectedBranch,
 } from "../../../../components/infra/planetscale/branch-selection"
 import { metricsNeverCollected } from "../../../../components/integrations/planetscale-setup-steps"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import type { ChartEventMarker, EventTone } from "@maple/views/charts/event-marker-spec"
@@ -71,7 +71,7 @@ export const timeseriesInputOf = (model: Model, window: TimeWindow): TimeseriesI
 	)
 
 /** `warehouseTimeToMs`: Query Insights reads it as UTC. */
-const utcMs = (value: string) => new Date(`${value.replace(" ", "T")}Z`).getTime()
+const utcMs = (value: string) => new Date(`${Str.replace(" ", "T")(value)}Z`).getTime()
 
 /** The local epochs come from `ResolveWindow`, which reads the browser zone. */
 export const eventsInputOf = (model: Model, window: LocalWindow): EpochWindowInput =>
@@ -118,7 +118,7 @@ export const presentEvent = (eventType: string): Presentation =>
 	PRESENTATION.get(eventType) ?? DEFAULT_PRESENTATION
 
 export const eventsToChartMarkers = (events: ReadonlyArray<EventEntry>): ReadonlyArray<ChartEventMarker> =>
-	events.flatMap((event) => {
+	Arr.flatMap(events, (event) => {
 		const presentation = presentEvent(event.eventType)
 		return presentation.onChart
 			? [

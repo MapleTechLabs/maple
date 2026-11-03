@@ -17,6 +17,7 @@ import {
 	ORDINARY_BLOCK_REFS,
 	skillFile,
 } from "./skill"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 const context: AgentContext = {
 	agentId: "hunter-1",
@@ -39,9 +40,11 @@ const prompt = hunterPrompt(
 
 describe("skill blocks", () => {
 	it("gives each ordinary attack class exactly its own block", () => {
-		const texts = ORDINARY_BLOCK_REFS.map((ref) => findBlock(ref)?.text ?? "")
-		expect(texts.map((text) => text.match(/\(subagent_type/g)?.length)).toEqual(texts.map(() => 1))
-		expect(texts.map((text) => text.startsWith("**"))).toEqual(texts.map(() => true))
+		const texts = Arr.map(ORDINARY_BLOCK_REFS, (ref) => findBlock(ref)?.text ?? "")
+		expect(Arr.map(texts, (text) => text.match(/\(subagent_type/g)?.length)).toEqual(
+			Arr.map(texts, () => 1),
+		)
+		expect(Arr.map(texts, (text) => Str.startsWith("**")(text))).toEqual(Arr.map(texts, () => true))
 	})
 
 	it("keeps the closing caveat with the last ordinary block", () => {
@@ -67,12 +70,12 @@ describe("skill blocks", () => {
 			"SKILL.md",
 		] as const
 		const all = [
-			...Object.values(VERBATIM).filter((value): value is string => typeof value === "string"),
-			...Object.values(VERBATIM.recon),
+			...Arr.filter(Rec.values(VERBATIM), (value): value is string => typeof value === "string"),
+			...Rec.values(VERBATIM.recon),
 		]
 		for (const text of all) {
 			expect(text.length).toBeGreaterThan(100)
-			expect(sources.some((file) => skillFile(file).includes(text))).toBe(true)
+			expect(Arr.some(sources, (file) => Str.includes(text)(skillFile(file)))).toBe(true)
 		}
 	})
 })
@@ -100,7 +103,7 @@ describe("hunterPrompt", () => {
 			prompt.indexOf("peer-unit"),
 			prompt.indexOf(VERBATIM.structuredHunterResult),
 		]
-		expect(positions.every((p) => p >= 0)).toBe(true)
+		expect(Arr.every(positions, (p) => p >= 0)).toBe(true)
 		expect([...positions].sort((a, b) => a - b)).toEqual(positions)
 	})
 

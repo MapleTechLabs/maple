@@ -4,7 +4,17 @@ import { OrgId, UserId } from "@maple/domain/http"
 import type { OrgIngestKeyRow } from "@maple/db/tables"
 import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
 import { SharedIngestKeysMemo } from "@maple/backend/services/org/shared-ingest-keys-memo"
-import { ConfigProvider, Effect, Exit, Layer, Schema, Stream, Tracer } from "effect"
+import {
+	ConfigProvider,
+	Effect,
+	Exit,
+	Layer,
+	Schema,
+	Stream,
+	Tracer,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -128,7 +138,7 @@ const recordingFetch =
 	async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
 		const text = await new Response(init?.body ?? null).text()
-		if (url.endsWith("/v1/logs")) {
+		if (Str.endsWith("/v1/logs")(url)) {
 			logCalls.push(decodeLogsRequest(text))
 			return new Response("{}", { status: 200 })
 		}
@@ -218,14 +228,16 @@ const job: WorkflowJobJob = {
 }
 
 const recordsOf = (calls: ReadonlyArray<OtlpLogsRequest>) =>
-	calls.flatMap((call) => call.resourceLogs.flatMap((rl) => rl.scopeLogs.flatMap((sl) => sl.logRecords)))
+	Arr.flatMap(calls, (call) =>
+		Arr.flatMap(call.resourceLogs, (rl) => Arr.flatMap(rl.scopeLogs, (sl) => sl.logRecords)),
+	)
 
 /** Stamps a log line at `ms` after the job started, the way the runner does. */
 const stamped = (ms: number, text: string) =>
-	`${new Date(job.startedAtMs + ms).toISOString().replace("Z", "0000Z")} ${text}`
+	`${Str.replace("Z", "0000Z")(new Date(job.startedAtMs + ms).toISOString())} ${text}`
 
 const spansOf = (call: IngestCall) =>
-	call.body.resourceSpans.flatMap((rs) => rs.scopeSpans.flatMap((ss) => ss.spans))
+	Arr.flatMap(call.body.resourceSpans, (rs) => Arr.flatMap(rs.scopeSpans, (ss) => ss.spans))
 const attr = (attributes: OtlpRequest["resourceSpans"][number]["resource"]["attributes"], key: string) => {
 	const value = attributes.find((kv) => kv.key === key)?.value
 	return value?.stringValue ?? value?.intValue
@@ -402,7 +414,7 @@ describe("CiTraceService", () => {
 				"src/math.test.ts:12: adds: expected 2 to be 3",
 			)
 			assert.deepStrictEqual(
-				(jobSpan!.events ?? []).map((event) =>
+				Arr.map(jobSpan!.events ?? [], (event) =>
 					attr(event.attributes, "maple.cicd.annotation.message"),
 				),
 				// Failures first, then the rest.
@@ -487,7 +499,7 @@ describe("CiTraceService", () => {
 			assert.strictEqual(attr(runSpan!.attributes, "cicd.pipeline.action.name"), "RUN")
 			// `error.type` on a failed run or task, never on one that passed.
 			assert.deepStrictEqual(
-				[runSpan!, jobSpan!, installStep!, testStep!].map((span) =>
+				Arr.map([runSpan!, jobSpan!, installStep!, testStep!], (span) =>
 					attr(span.attributes, "error.type"),
 				),
 				["failure", "failure", undefined, "failure"],
@@ -561,11 +573,12 @@ describe("CiTraceService", () => {
 			yield* sink.onWorkflowRun(orgId, run).pipe(Effect.provideService(Tracer.Tracer, tracer))
 			assert.strictEqual(calls.length, 1)
 			// A refusal is the org's state, not a fault: no span on the path ends as Error.
-			const ended = spans.filter(
+			const ended = Arr.filter(
+				spans,
 				(span) => span.name === "CiTraceService.emit" || span.name === "IngestSender.send",
 			)
 			assert.deepStrictEqual(
-				ended.map((span) => [
+				Arr.map(ended, (span) => [
 					span.name,
 					span.status._tag === "Ended" && Exit.isSuccess(span.status.exit),
 				]),
@@ -615,7 +628,7 @@ describe("CiTraceService", () => {
 			).pipe(Effect.provide(keysLayer(testDb)))
 			yield* emitJob.pipe(Effect.provide(batch))
 			assert.deepStrictEqual(
-				calls.map((call) => call.authorization),
+				Arr.map(calls, (call) => call.authorization),
 				[calls[0]!.authorization, calls[0]!.authorization, `Bearer ${rotated.publicKey}`],
 			)
 			assert.notStrictEqual(rotated.publicKey, calls[0]!.authorization?.slice("Bearer ".length))
@@ -639,7 +652,7 @@ describe("CiTraceService", () => {
 			).pipe(Effect.provide(keysLayer(testDb)))
 			yield* emitJob.pipe(Effect.provide(batch))
 			assert.deepStrictEqual(
-				calls.map((call) => call.authorization),
+				Arr.map(calls, (call) => call.authorization),
 				[calls[0]!.authorization, `Bearer ${rotated.publicKey}`],
 			)
 		})
@@ -680,7 +693,7 @@ describe("CiTraceService", () => {
 			assert.strictEqual(beforeSteps!.spanId, jobSpan!.spanId)
 			assert.strictEqual(attr(beforeSteps!.attributes, "cicd.pipeline.task.run.id"), job.jobId)
 			assert.deepStrictEqual(
-				records.map((record) => [record.body.stringValue, record.severityText, record.spanId]),
+				Arr.map(records, (record) => [record.body.stringValue, record.severityText, record.spanId]),
 				[
 					["Run bun install", "INFO", installStep!.spanId],
 					["FAIL src/math.test.ts", "INFO", testStep!.spanId],
@@ -688,7 +701,7 @@ describe("CiTraceService", () => {
 					["Process completed with exit code 1.", "ERROR", testStep!.spanId],
 				],
 			)
-			assert.isTrue(records.every((record) => record.traceId === testStep!.traceId))
+			assert.isTrue(Arr.every(records, (record) => record.traceId === testStep!.traceId))
 			assert.strictEqual(records[0]!.timeUnixNano, `${job.startedAtMs + 123}000000`)
 			// A line without a stamp takes the one before it.
 			assert.strictEqual(records[2]!.timeUnixNano, records[1]!.timeUnixNano)
@@ -752,7 +765,7 @@ describe("CiTraceService", () => {
 			yield* sink.onWorkflowJobLog(orgId, tied, Stream.fromIterable(lines))
 
 			assert.deepStrictEqual(
-				recordsOf(logCalls).map((record) => [
+				Arr.map(recordsOf(logCalls), (record) => [
 					record.body.stringValue,
 					attr(record.attributes, "cicd.pipeline.task.name"),
 				]),
@@ -778,7 +791,7 @@ describe("CiTraceService", () => {
 	it.live("stops reading a long log at the cap and says where the rest is", () => {
 		const testDb = createTestDb(trackedDbs)
 		const logCalls: Array<OtlpLogsRequest> = []
-		const line = "x".repeat(1000)
+		const line = Str.repeat(1000)("x")
 		const kept = MAX_JOB_LOG_CHARS / line.length
 		let pulled = 0
 		const lines = Stream.fromIterable({
@@ -797,7 +810,7 @@ describe("CiTraceService", () => {
 			assert.lengthOf(records, kept + 1)
 			assert.match(records.at(-1)!.body.stringValue, /^Log truncated: .*actions\/runs\/9001\/job\/555$/)
 			assert.strictEqual(records.at(-1)!.severityText, "WARN")
-			assert.isTrue(logCalls.every((call) => recordsOf([call]).length <= 1000))
+			assert.isTrue(Arr.every(logCalls, (call) => recordsOf([call]).length <= 1000))
 			// Reading stops within a chunk of the cap, not at the end of an endless log.
 			assert.isBelow(pulled, kept * 2)
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch([], [200], logCalls))))

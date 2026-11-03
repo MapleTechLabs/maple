@@ -7,7 +7,7 @@ import {
 } from "../../components/integrations/gcp-connector-state"
 import { isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
@@ -328,7 +328,7 @@ export const runtimeToggled = (filter: LogFilterDraft, runtime: GcpLogRuntime): 
 	const runtimes = filter.runtimes ?? []
 	return {
 		runtimes: runtimes.includes(runtime)
-			? runtimes.filter((entry) => entry !== runtime)
+			? Arr.filter(runtimes, (entry) => entry !== runtime)
 			: [...runtimes, runtime],
 	}
 }
@@ -507,7 +507,7 @@ export const statusArrived = (model: Model): Return => {
 	const configure = model.gcpCard.configure
 	const target = configure?.target
 	const listed =
-		target?._tag === "Connection" && gcpConnectors(model).some((entry) => entry.id === target.id)
+		target?._tag === "Connection" && Arr.some(gcpConnectors(model), (entry) => entry.id === target.id)
 	if (listed) return { model: withConfigure(model, () => ({ asked: null })) }
 	// The flow starts with metrics on; a deployment without them turns the switch back off.
 	return target?._tag === "New" && configure?.newFlags.metrics_enabled === true && !metricsAvailable(model)

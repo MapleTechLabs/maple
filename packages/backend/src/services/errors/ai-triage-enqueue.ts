@@ -17,7 +17,7 @@ import { InvestigationId, IsoDateTimeString } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb } from "@maple/db/client"
 import { AiTriageSettings, ErrorIssues, Investigations } from "@maple/db/tables"
-import { Clock, Effect, Option, Schema, type Semaphore } from "effect"
+import { Clock, Effect, Option, Schema, type Semaphore, Array as Arr, String as Str } from "effect"
 
 import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -47,7 +47,7 @@ const decodeInvestigationId = Schema.decodeUnknownSync(InvestigationId)
 
 const contextString = (context: Record<string, unknown>, key: string): string | undefined => {
 	const value = context[key]
-	return typeof value === "string" && value.trim().length > 0 ? value : undefined
+	return typeof value === "string" && Str.trim(value).length > 0 ? value : undefined
 }
 
 const contextNumber = (context: Record<string, unknown>, key: string): number | null => {
@@ -82,7 +82,7 @@ const contextInstant = (
 				? value
 				: typeof value === "number" && Number.isFinite(value)
 					? new Date(value)
-					: typeof value === "string" && value.trim().length > 0
+					: typeof value === "string" && Str.trim(value).length > 0
 						? new Date(value)
 						: null
 		if (instant !== null && !Number.isNaN(instant.getTime())) {
@@ -94,7 +94,7 @@ const contextInstant = (
 
 const snapshotFor = (input: MaybeEnqueueTriageInput): InstanceType<typeof InvestigationSubjectSnapshot> => {
 	const serviceName = contextString(input.context, "serviceName")
-	const kindWord = `${input.incidentKind[0]?.toUpperCase() ?? ""}${input.incidentKind.slice(1)}`
+	const kindWord = `${input.incidentKind[0]?.toUpperCase() ?? ""}${Str.slice(1)(input.incidentKind)}`
 	// The last resort is what the investigations list renders as a title, so it
 	// names the service when there is one — "Alert incident" says nothing the
 	// list's kind marker doesn't already say. (`reason` is deliberately not in
@@ -147,7 +147,7 @@ const snapshotFor = (input: MaybeEnqueueTriageInput): InstanceType<typeof Invest
 		scope: serviceName ?? null,
 		status: "open",
 		severity,
-		facts: factKeys.flatMap(([label, value]) =>
+		facts: Arr.flatMap(factKeys, ([label, value]) =>
 			value ? [new InvestigationSnapshotFact({ label, value })] : [],
 		),
 		references: input.issueId
@@ -273,10 +273,10 @@ const selectPriorDiagnoses = (
 				.limit(PRIOR_DIAGNOSES_LIMIT),
 		),
 		(rows) =>
-			rows.flatMap((row) => {
+			Arr.flatMap(rows, (row) => {
 				const report = Option.getOrUndefined(decodePriorReport(row.reportJson))
 				const headline = report?.headline ?? report?.summary
-				if (headline === undefined || headline.trim().length === 0) return []
+				if (headline === undefined || Str.trim(headline).length === 0) return []
 				const snapshot = Option.getOrUndefined(decodePriorSnapshot(row.snapshotJson))
 				return [
 					new IncidentTriagePriorDiagnosis({

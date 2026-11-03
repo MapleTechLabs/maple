@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Duration, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Duration, Effect, Layer, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { ChatConnectorId, ChatWorkspaceId, OrgId, UserId } from "@maple/domain/http"
@@ -218,7 +218,7 @@ const makeConfig = (withConnectorConfig: boolean) =>
 			// Every config name the shipped registry declares, so `available` is true
 			// for the fake connector and the real ones alike.
 			...(withConnectorConfig
-				? Object.fromEntries(chatConnectorConfigNames.map((name) => [name, `${name}-value`]))
+				? Rec.fromEntries(Arr.map(chatConnectorConfigNames, (name) => [name, `${name}-value`]))
 				: undefined),
 		}),
 	)
@@ -293,7 +293,7 @@ describe("ChatWorkspaceService", () => {
 				const status = statuses[0]
 				assert.isTrue(status?.available)
 				assert.deepStrictEqual(
-					status?.workspaces.map((workspace) => workspace.id),
+					Arr.map(status?.workspaces, (workspace) => workspace.id),
 					[id],
 				)
 			}).pipe(Effect.provide(makeLayer(testDb)))
@@ -309,7 +309,7 @@ describe("ChatWorkspaceService", () => {
 				// The default registry is the real one, and every connector's declared
 				// config is set above — so the host reports each as installable.
 				assert.strictEqual(statuses.length, connectors.length)
-				assert.isTrue(statuses.every((status) => status.available))
+				assert.isTrue(Arr.every(statuses, (status) => status.available))
 			}).pipe(Effect.provide(makeLayer(testDb, { registry: connectors })))
 		}),
 	)
@@ -320,7 +320,7 @@ describe("ChatWorkspaceService", () => {
 			yield* Effect.gen(function* () {
 				const chat = yield* ChatWorkspaceService
 				const statuses = yield* chat.list(ORG)
-				assert.isTrue(statuses.every((status) => !status.available))
+				assert.isTrue(Arr.every(statuses, (status) => !status.available))
 			}).pipe(Effect.provide(makeLayer(testDb, { configured: false })))
 		}),
 	)
@@ -461,7 +461,7 @@ describe("ChatWorkspaceService", () => {
 				assert.strictEqual(linked.name, "Acme")
 				const statuses = yield* chat.list(ORG)
 				assert.deepStrictEqual(
-					statuses[0]?.workspaces.map((workspace) => workspace.externalWorkspaceId),
+					Arr.map(statuses[0]?.workspaces, (workspace) => workspace.externalWorkspaceId),
 					["workspace-7"],
 				)
 				// Single-use: the same callback replayed is not a second link.
@@ -629,7 +629,7 @@ describe("ChatWorkspaceService", () => {
 				assert.strictEqual(uninstallFailure._tag, "@maple/http/errors/IntegrationsNotFoundError")
 				yield* chat.uninstall(ORG, id)
 				const statuses = yield* chat.list(ORG)
-				assert.isTrue(statuses.every((status) => status.workspaces.length === 0))
+				assert.isTrue(Arr.every(statuses, (status) => status.workspaces.length === 0))
 				// Unlinked means the bot stops resolving it — that is what uninstall buys.
 				const resolved = yield* chat.resolve(TEST_CONNECTOR, "workspace-3")
 				assert.isTrue(Option.isNone(resolved))

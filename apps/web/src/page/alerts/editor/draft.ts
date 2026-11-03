@@ -3,7 +3,7 @@ import { defaultRuleForm, ruleToFormState } from "@maple/web-data/alerts/form-ut
 import { switchSignalKind } from "@maple/web-data/alerts/rule-modes"
 import { buildRuleStatesByRuleId, rowToAlertRuleDocument } from "@maple/web-data/collections/alerts"
 import { createWidgetAlertPrefill, resolveWidgetAlertPrefill } from "../../../lib/alerts/widget-prefill"
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import { ALERT_TEMPLATES } from "../shared/templates"
 import { fromFormState, type RuleForm } from "./form"
 import type { Model, Notice } from "./model"
@@ -54,8 +54,8 @@ const AlertChartContext = Schema.Struct({
 const decodeChart = Schema.decodeUnknownOption(Schema.fromJsonString(AlertChartContext))
 const fromBase64Url = (input: string): Option.Option<string> =>
 	Option.liftThrowable(() => {
-		const base64 = input.replace(/-/g, "+").replace(/_/g, "/")
-		const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4)
+		const base64 = Str.replace(/_/g, "/")(Str.replace(/-/g, "+")(input))
+		const padded = base64 + Str.repeat((4 - (base64.length % 4)) % 4)("=")
 		return decodeURIComponent(escape(atob(padded)))
 	})()
 export const decodeChartParam = (raw: string) => Option.flatMap(fromBase64Url(raw), decodeChart)
@@ -75,16 +75,28 @@ export const initialization = (model: Model, draftId: string): Initialization =>
 		const rule = editingRuleOf(model, search.ruleId)
 		if (rule !== null) {
 			const form = fromFormState(ruleToFormState(rule))
-			return ready(`rule:${rule.id}`, rule.queryBuilderDraft === null ? withDraftId(form, draftId) : form, [], rule)
+			return ready(
+				`rule:${rule.id}`,
+				rule.queryBuilderDraft === null ? withDraftId(form, draftId) : form,
+				[],
+				rule,
+			)
 		}
 		return ready(`missing-rule:${search.ruleId}`, base, [
-			{ severity: "warning", message: "The alert rule could not be found. Starting from a blank alert." },
+			{
+				severity: "warning",
+				message: "The alert rule could not be found. Starting from a blank alert.",
+			},
 		])
 	}
 	const chart = search.chart === undefined ? Option.none() : decodeChartParam(search.chart)
 	if (Option.isSome(chart)) {
 		const result = createWidgetAlertPrefill(chart.value.widget, base)
-		return ready(`chart:${chart.value.dashboardId}:${chart.value.widget.id}`, fromFormState(result.form), result.notices)
+		return ready(
+			`chart:${chart.value.dashboardId}:${chart.value.widget.id}`,
+			fromFormState(result.form),
+			result.notices,
+		)
 	}
 	if (search.dashboardId !== undefined || search.widgetId !== undefined) {
 		if (search.dashboardId === undefined || search.widgetId === undefined) {
@@ -108,7 +120,11 @@ export const initialization = (model: Model, draftId: string): Initialization =>
 				widgetId: search.widgetId,
 				base,
 			})
-			return ready(`dashboard:${search.dashboardId}:widget:${search.widgetId}`, fromFormState(result.form), result.notices)
+			return ready(
+				`dashboard:${search.dashboardId}:widget:${search.widgetId}`,
+				fromFormState(result.form),
+				result.notices,
+			)
 		}
 		if (!model.isDashboardsLoadFailed) return { _tag: "Loading" }
 		return ready(`dashboard-load-failed:${search.dashboardId}:${search.widgetId}`, base, [
@@ -116,6 +132,7 @@ export const initialization = (model: Model, draftId: string): Initialization =>
 		])
 	}
 	const template = ALERT_TEMPLATES.find((candidate) => candidate.id === search.template)
-	if (template !== undefined) return ready(`new:template:${template.id}`, fromFormState(template.apply(base)))
+	if (template !== undefined)
+		return ready(`new:template:${template.id}`, fromFormState(template.apply(base)))
 	return ready(`new:${search.serviceName ?? "blank"}`, base, [], null, search.serviceName === undefined)
 }

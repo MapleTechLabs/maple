@@ -11,7 +11,7 @@ import {
 	MobileDevices,
 } from "@maple/db/tables"
 import { RoleName, type OrgId, type UserId } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Redacted, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -166,7 +166,7 @@ const make = Effect.gen(function* () {
 					)
 					const secret = decodeSecretConfig(secretJson)
 					if (secret._tag === "None" || secret.value.type !== "email") return false
-					const remaining = secret.value.members.filter((member) => member.userId !== userId)
+					const remaining = Arr.filter(secret.value.members, (member) => member.userId !== userId)
 					if (remaining.length === secret.value.members.length) return false
 
 					const nextSecret = { type: "email" as const, members: remaining }
@@ -199,7 +199,7 @@ const make = Effect.gen(function* () {
 									? (first.name ?? first.email)
 									: `${first.name ?? first.email} +${remaining.length - 1} more`,
 						channelLabel: first?.email ?? null,
-						memberUserIds: remaining.map((member) => member.userId),
+						memberUserIds: Arr.map(remaining, (member) => member.userId),
 					}
 					const now = yield* Clock.currentTimeMillis
 					yield* dbExecute((db) =>
@@ -225,7 +225,7 @@ const make = Effect.gen(function* () {
 					return true
 				}),
 			)
-			return outcomes.filter(Boolean).length
+			return Arr.filter(outcomes, Boolean).length
 		},
 	)
 
@@ -388,9 +388,10 @@ const make = Effect.gen(function* () {
 							.select("id", "roles")
 							.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId), $.revokedAt.isNull()]),
 					)
-					const [firstDevice, ...restDevices] = liveDevices
-						.filter((row) => isAdmin(row.roles))
-						.map((row) => row.id)
+					const [firstDevice, ...restDevices] = Arr.map(
+						Arr.filter(liveDevices, (row) => isAdmin(row.roles)),
+						(row) => row.id,
+					)
 					const deviceCredentialsRevoked =
 						firstDevice === undefined
 							? 0
@@ -408,12 +409,13 @@ const make = Effect.gen(function* () {
 							.select("id", "metadataJson")
 							.where(($) => [$.orgId.eq(orgId), $.createdBy.eq(userId), $.revoked.eq(false)]),
 					)
-					const stale = live
-						.filter((row) => {
+					const stale = Arr.map(
+						Arr.filter(live, (row) => {
 							const pinned = decodePinnedRoles(row.metadataJson)
 							return pinned._tag === "Some" && isAdmin(pinned.value.roles)
-						})
-						.map((row) => row.id)
+						}),
+						(row) => row.id,
+					)
 					const [first, ...rest] = stale
 					if (first === undefined)
 						return { apiKeysRevoked: 0, mcpFamiliesRevoked: 0, deviceCredentialsRevoked }

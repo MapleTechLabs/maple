@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
 import type { IngestRuleSpec } from "@maple/domain/ingest-rules"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { IngestRuleService } from "./IngestRuleService"
 
@@ -41,7 +41,7 @@ describe("IngestRuleService", () => {
 			yield* service.create(OTHER_ORG, { name: "Other", spec: maskEmails })
 
 			const rules = yield* service.list(ORG)
-			expect(rules.map((rule) => [rule.name, rule.position])).toEqual([
+			expect(Arr.map(rules, (rule) => [rule.name, rule.position])).toEqual([
 				["Drop debug", 0],
 				["Mask emails", 1],
 			])
@@ -50,7 +50,7 @@ describe("IngestRuleService", () => {
 			yield* service.update(ORG, second.id, { position: 0 })
 			yield* service.update(ORG, first.id, { position: 5, enabled: false })
 			const reordered = yield* service.list(ORG)
-			expect(reordered.map((rule) => [rule.name, rule.enabled])).toEqual([
+			expect(Arr.map(reordered, (rule) => [rule.name, rule.enabled])).toEqual([
 				["Mask emails", true],
 				["Drop debug", false],
 			])
@@ -102,7 +102,7 @@ describe("IngestRuleService", () => {
 			const second = yield* service.create(ORG, { name: "Second", spec: maskEmails })
 			const other = yield* service.create(OTHER_ORG, { name: "Other", spec: maskEmails })
 			const reordered = yield* service.reorder(ORG, [second.id, first.id])
-			expect(reordered.map((rule) => [rule.name, rule.position])).toEqual([
+			expect(Arr.map(reordered, (rule) => [rule.name, rule.position])).toEqual([
 				["Second", 0],
 				["First", 1],
 			])
@@ -123,16 +123,16 @@ describe("IngestRuleService", () => {
 				Array.from({ length: 48 }, (_, index) => index),
 				(index) => service.create(ORG, { name: `Rule ${index}`, spec: maskEmails }),
 			)
-			const results = yield* Effect.all(
-				[1, 2, 3].map((index) =>
+			const results = yield* Effect.forEach(
+				[1, 2, 3],
+				(index) =>
 					service.create(ORG, { name: `Late ${index}`, spec: maskEmails }).pipe(Effect.result),
-				),
 				{ concurrency: "unbounded" },
 			)
-			expect(results.filter((result) => result._tag === "Success")).toHaveLength(2)
+			expect(Arr.filter(results, (result) => result._tag === "Success")).toHaveLength(2)
 			const rules = yield* service.list(ORG)
 			expect(rules).toHaveLength(50)
-			expect(new Set(rules.map((rule) => rule.position)).size).toBe(50)
+			expect(new Set(Arr.map(rules, (rule) => rule.position)).size).toBe(50)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 

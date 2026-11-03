@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { filterSection } from "@maple/views/ui/filters/filter-section"
@@ -22,29 +22,72 @@ type H = HtmlBuilder<Message>
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
 const SECTIONS: ReadonlyArray<
-	Readonly<{ title: string; facet: Facet; options: keyof PodFacets; isSearchable: boolean; defaultOpen: boolean }>
+	Readonly<{
+		title: string
+		facet: Facet
+		options: keyof PodFacets
+		isSearchable: boolean
+		defaultOpen: boolean
+	}>
 > = [
-	{ title: "Namespace", facet: "namespaces", options: "namespaces", isSearchable: false, defaultOpen: true },
+	{
+		title: "Namespace",
+		facet: "namespaces",
+		options: "namespaces",
+		isSearchable: false,
+		defaultOpen: true,
+	},
 	{ title: "Pod", facet: "podNames", options: "pods", isSearchable: true, defaultOpen: false },
 	{ title: "Node", facet: "nodeNames", options: "nodes", isSearchable: true, defaultOpen: false },
 	{ title: "Cluster", facet: "clusters", options: "clusters", isSearchable: false, defaultOpen: false },
-	{ title: "Deployment", facet: "deployments", options: "deployments", isSearchable: true, defaultOpen: false },
-	{ title: "StatefulSet", facet: "statefulsets", options: "statefulsets", isSearchable: true, defaultOpen: false },
-	{ title: "DaemonSet", facet: "daemonsets", options: "daemonsets", isSearchable: true, defaultOpen: false },
+	{
+		title: "Deployment",
+		facet: "deployments",
+		options: "deployments",
+		isSearchable: true,
+		defaultOpen: false,
+	},
+	{
+		title: "StatefulSet",
+		facet: "statefulsets",
+		options: "statefulsets",
+		isSearchable: true,
+		defaultOpen: false,
+	},
+	{
+		title: "DaemonSet",
+		facet: "daemonsets",
+		options: "daemonsets",
+		isSearchable: true,
+		defaultOpen: false,
+	},
 	{ title: "Job", facet: "jobs", options: "jobs", isSearchable: true, defaultOpen: false },
-	{ title: "Environment", facet: "environments", options: "environments", isSearchable: false, defaultOpen: false },
-	{ title: "Compute type", facet: "computeTypes", options: "computeTypes", isSearchable: false, defaultOpen: false },
+	{
+		title: "Environment",
+		facet: "environments",
+		options: "environments",
+		isSearchable: false,
+		defaultOpen: false,
+	},
+	{
+		title: "Compute type",
+		facet: "computeTypes",
+		options: "computeTypes",
+		isSearchable: false,
+		defaultOpen: false,
+	},
 ]
 
 const loadedRail = (h: H, model: Model, facets: PodFacets): Html => {
-	const hasFilters = Object.values(filtersOf(model.search)).some((values) => (values?.length ?? 0) > 0)
-	if (!hasFilters && Object.values(facets).every((options) => options.length === 0)) return filterSidebarEmpty(h)
+	const hasFilters = Arr.some(Rec.values(filtersOf(model.search)), (values) => (values?.length ?? 0) > 0)
+	if (!hasFilters && Arr.every(Rec.values(facets), (options) => options.length === 0))
+		return filterSidebarEmpty(h)
 	return filterSidebarFrame(h, { isWaiting: AsyncData.isRefreshing(model.facets.data) }, [
 		filterSidebarHeader(h, hasFilters ? { onClear: Message.ClickedClearFilters() } : {}),
 		...filterSidebarBody(
 			h,
 			"pods-filters",
-			SECTIONS.map((section) =>
+			Arr.map(SECTIONS, (section) =>
 				filterSection(h, {
 					title: section.title,
 					options: facets[section.options],
@@ -67,6 +110,11 @@ export const filtersRail = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.facets.data, {
 		onEmpty: () => filterSidebarLoading(h, 6),
 		onFailure: (failure) =>
-			filterSidebarError(h, failure, undefined, Option.getOrUndefined(AsyncData.getError(model.pods.data))),
+			filterSidebarError(
+				h,
+				failure,
+				undefined,
+				Option.getOrUndefined(AsyncData.getError(model.pods.data)),
+			),
 		onData: (facets) => loadedRail(h, model, facets),
 	})

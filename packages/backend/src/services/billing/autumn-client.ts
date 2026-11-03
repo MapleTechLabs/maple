@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import type { EdgeCacheServiceApi } from "@maple/cache"
 import {
 	isActivePlanSubscription,
@@ -54,7 +54,7 @@ export const CUSTOMER_CACHE_LAPSED_TTL_SECONDS = 60
  * (@maple/domain/billing) so the cache TTL can't drift from the web redirect gate.
  */
 export const responseHasActivePlan = (response: unknown): boolean =>
-	subscriptionsOf(response).some(isActivePlanSubscription)
+	Arr.some(subscriptionsOf(response), isActivePlanSubscription)
 
 /**
  * Has this org ever held a real plan, whatever its status? Mirrors the web
@@ -63,7 +63,7 @@ export const responseHasActivePlan = (response: unknown): boolean =>
  * (durably planless, so worth caching).
  */
 export const responseHasPlanHistory = (response: unknown): boolean =>
-	subscriptionsOf(response).some(isPlanSubscription)
+	Arr.some(subscriptionsOf(response), isPlanSubscription)
 
 // Every field of `PlanGatingSubscription` is optional, so "is an object" is the
 // whole shape check — the gating predicates answer for themselves what a missing
@@ -74,7 +74,7 @@ const isSubscriptionLike = (value: unknown): value is PlanGatingSubscription =>
 export const subscriptionsOf = (response: unknown): ReadonlyArray<PlanGatingSubscription> => {
 	if (typeof response !== "object" || response === null) return []
 	const subscriptions = (response as { subscriptions?: unknown }).subscriptions
-	return Array.isArray(subscriptions) ? subscriptions.filter(isSubscriptionLike) : []
+	return Arr.isArray(subscriptions) ? Arr.filter(subscriptions, isSubscriptionLike) : []
 }
 
 /**
@@ -90,16 +90,20 @@ export const summariseSubscriptions = (response: unknown): Record<string, string
 	const subscriptions = subscriptionsOf(response)
 	// A row is positional: a missing field reads as "-" so the lists stay aligned.
 	const describe = (pick: (sub: PlanGatingSubscription) => string | null | undefined) =>
-		subscriptions.map((sub) => pick(sub) ?? "-").join(",")
+		Arr.join(
+			Arr.map(subscriptions, (sub) => pick(sub) ?? "-"),
+			",",
+		)
 	return {
 		"maple.billing.subscription_count": subscriptions.length,
 		"maple.billing.subscription_statuses": describe((sub) => sub.status),
 		"maple.billing.subscription_plan_ids": describe((sub) => sub.planId),
 		// Which rows the gate discards, positionally aligned with the two lists
 		// above: "addon" / "auto" / "-" per subscription.
-		"maple.billing.subscription_excluded": subscriptions
-			.map((sub) => (sub.addOn ? "addon" : sub.autoEnable ? "auto" : "-"))
-			.join(","),
+		"maple.billing.subscription_excluded": Arr.join(
+			Arr.map(subscriptions, (sub) => (sub.addOn ? "addon" : sub.autoEnable ? "auto" : "-")),
+			",",
+		),
 		"maple.billing.has_active_plan": responseHasActivePlan(response),
 		"maple.billing.has_plan_history": responseHasPlanHistory(response),
 	}
@@ -145,15 +149,13 @@ export const readCustomerCached = (
 				ttlSeconds: (result: AutumnResult) => customerCacheTtl(result.response),
 			},
 			runAutumn.pipe(
-				Effect.flatMap((res) =>
-					res.statusCode === 200
-						? Effect.succeed(res)
-						: Effect.fail(
-								new UncacheableAutumnResult({
-									message: `Autumn returned HTTP ${res.statusCode}; response must not be cached`,
-									result: res,
-								}),
-							),
+				Effect.filterOrFail(
+					(res) => res.statusCode === 200,
+					(res) =>
+						new UncacheableAutumnResult({
+							message: `Autumn returned HTTP ${res.statusCode}; response must not be cached`,
+							result: res,
+						}),
 				),
 			),
 		)
@@ -280,7 +282,8 @@ export const resolveAttachConflict = (
 		const refreshed = yield* refreshCustomer
 		if (refreshed.statusCode < 200 || refreshed.statusCode >= 300) return yield* conflict
 		const customer = yield* decodeUpstream(BillingCustomer, refreshed.response)
-		const holdsPlan = customer.subscriptions.some(
+		const holdsPlan = Arr.some(
+			customer.subscriptions,
 			(sub) => sub.planId === planId && sub.status === "active",
 		)
 		yield* Effect.annotateCurrentSpan({ "maple.billing.attach_conflict_resolved": holdsPlan })

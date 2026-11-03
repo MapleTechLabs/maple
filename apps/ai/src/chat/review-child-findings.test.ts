@@ -1,19 +1,23 @@
 import { PrReviewFinding } from "@maple/domain/http"
 import { assert, describe, it } from "vitest"
 import { closeOutFindings, parseChildFindings, unaccountedChildFindings } from "./review-child-findings"
+import { Array as Arr } from "effect"
 
 const anchors = (answer: string) =>
-	parseChildFindings(answer).map((finding) => [finding.path, finding.line, finding.severity])
+	Arr.map(parseChildFindings(answer), (finding) => [finding.path, finding.line, finding.severity])
 
 describe("parseChildFindings", () => {
 	it("reads the anchor through a list bullet and backticks", () => {
 		assert.deepStrictEqual(
 			anchors(
-				[
-					"- src/capture.ts:213 | warn | correctness | Race | Acks early | Enqueue later | -",
-					"* `src/queue.ts:9` | warn | correctness | Race | Acks early | Enqueue later | -",
-					"`src/worker.ts`:40 | warn | correctness | Race | Acks early | Enqueue later | -",
-				].join("\n"),
+				Arr.join(
+					[
+						"- src/capture.ts:213 | warn | correctness | Race | Acks early | Enqueue later | -",
+						"* `src/queue.ts:9` | warn | correctness | Race | Acks early | Enqueue later | -",
+						"`src/worker.ts`:40 | warn | correctness | Race | Acks early | Enqueue later | -",
+					],
+					"\n",
+				),
 			),
 			[
 				["src/capture.ts", 213, "warn"],
@@ -32,7 +36,13 @@ describe("parseChildFindings", () => {
 	it("reads severities the way the review posts them", () => {
 		const line = (severity: string) => `src/a.ts:1 | ${severity} | correctness | Title | Why | Fix | -`
 		assert.deepStrictEqual(
-			anchors(["warning", "**warn**", "Critical", "info", "note", "high"].map(line).join("\n")).map(
+			Arr.map(
+				anchors(
+					Arr.join(
+						Arr.map(["warning", "**warn**", "Critical", "info", "note", "high"], line),
+						"\n",
+					),
+				),
 				([, , severity]) => severity,
 			),
 			["warn", "warn", "critical", "info", "info", "warn"],
@@ -57,14 +67,21 @@ describe("closeOutFindings", () => {
 
 	it("files the children's warnings the saved findings do not cover", () => {
 		const children = parseChildFindings(
-			[
-				"src/a.ts:11 | warn | correctness | Same issue | Why | Fix | -",
-				"src/b.ts:40 | critical | security | Token in a span | Leaks | Drop it | -",
-				"src/b.ts:90 | info | maintainability | Note | Why | Fix | -",
-			].join("\n"),
+			Arr.join(
+				[
+					"src/a.ts:11 | warn | correctness | Same issue | Why | Fix | -",
+					"src/b.ts:40 | critical | security | Token in a span | Leaks | Drop it | -",
+					"src/b.ts:90 | info | maintainability | Note | Why | Fix | -",
+				],
+				"\n",
+			),
 		)
 		assert.deepStrictEqual(
-			closeOutFindings([saved], children).map((finding) => [finding.path, finding.line, finding.title]),
+			Arr.map(closeOutFindings([saved], children), (finding) => [
+				finding.path,
+				finding.line,
+				finding.title,
+			]),
 			[
 				["src/a.ts", 10, "Saved"],
 				["src/b.ts", 40, "Token in a span"],
@@ -94,10 +111,13 @@ describe("unaccountedChildFindings", () => {
 
 	it("lets one filed finding account for one of two nearby warnings", () => {
 		const children = parseChildFindings(
-			[
-				"src/a.ts:10 | warn | correctness | A | Why | Fix | -",
-				"src/a.ts:12 | warn | security | B | Why | Fix | -",
-			].join("\n"),
+			Arr.join(
+				[
+					"src/a.ts:10 | warn | correctness | A | Why | Fix | -",
+					"src/a.ts:12 | warn | security | B | Why | Fix | -",
+				],
+				"\n",
+			),
 		)
 		const filed = new PrReviewFinding({
 			path: "src/a.ts",
@@ -112,13 +132,16 @@ describe("unaccountedChildFindings", () => {
 
 	it("gates every severity but a note", () => {
 		const children = parseChildFindings(
-			[
-				"src/a.ts:10 | warning | correctness | A | Why | Fix | -",
-				"src/a.ts:90 | info | maintainability | B | Why | Fix | -",
-			].join("\n"),
+			Arr.join(
+				[
+					"src/a.ts:10 | warning | correctness | A | Why | Fix | -",
+					"src/a.ts:90 | info | maintainability | B | Why | Fix | -",
+				],
+				"\n",
+			),
 		)
 		assert.deepStrictEqual(
-			unaccountedChildFindings(children, [], []).map((finding) => finding.line),
+			Arr.map(unaccountedChildFindings(children, [], []), (finding) => finding.line),
 			[10],
 		)
 	})

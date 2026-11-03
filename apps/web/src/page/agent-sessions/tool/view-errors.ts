@@ -38,6 +38,7 @@ import { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr, String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -64,23 +65,24 @@ export type Prepared = ToolErrorRow &
 
 /** `prepareToolErrors`: messages unwrapped, the shared prefix hoisted, trends filled over the window. */
 export const prepare = (rows: ReadonlyArray<ToolErrorRow>, range: Range) => {
-	const failures = rows.reduce((sum, row) => sum + row.calls, 0)
+	const failures = Arr.reduce(rows, 0, (sum, row) => sum + row.calls)
 	const bucket = errorTrendBucket(range.startMs, range.endMs)
-	const texts = rows.map((row) => unwrapToolErrorText(row.message).text)
+	const texts = Arr.map(rows, (row) => unwrapToolErrorText(row.message).text)
 	const prefix = commonErrorPrefix(
-		texts.filter((text, index) => text !== "" && rows[index]?.fingerprint !== UNGROUPED_FINGERPRINT),
+		Arr.filter(texts, (text, index) => text !== "" && rows[index]?.fingerprint !== UNGROUPED_FINGERPRINT),
 	)
 	const types = new Set(
-		rows.flatMap((row) => (row.fingerprint === UNGROUPED_FINGERPRINT ? [] : [row.errorType])),
+		Arr.flatMap(rows, (row) => (row.fingerprint === UNGROUPED_FINGERPRINT ? [] : [row.errorType])),
 	)
 	const [onlyType] = types
 	const errorType = rows.length > 1 && types.size === 1 && onlyType !== "" ? onlyType : undefined
 	return {
 		prefix,
 		errorType,
-		rows: rows.map((row, index): Prepared => {
+		rows: Arr.map(rows, (row, index): Prepared => {
 			const text = texts[index] ?? ""
-			const display = prefix !== "" && text.startsWith(prefix) ? text.slice(prefix.length) : text
+			const display =
+				prefix !== "" && Str.startsWith(prefix)(text) ? Str.slice(prefix.length)(text) : text
 			return {
 				...row,
 				display,
@@ -225,7 +227,7 @@ const errorRow = (
 const LOADING_WIDTHS = [340, 260, 400]
 
 const loadingRows = (h: H): ReadonlyArray<Html> =>
-	LOADING_WIDTHS.map((width, index) =>
+	Arr.map(LOADING_WIDTHS, (width, index) =>
 		h.div(
 			[
 				h.Key(String(width)),
@@ -304,7 +306,7 @@ const head = (h: H, inputs: ErrorsTableInputs, headHint: string): Html => {
 }
 
 const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): Html => {
-	const hiddenCalls = hidden.reduce((sum, row) => sum + row.calls, 0)
+	const hiddenCalls = Arr.reduce(hidden, 0, (sum, row) => sum + row.calls)
 	return pressable(
 		h,
 		{
@@ -348,25 +350,30 @@ const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): H
 }
 
 const maskLabels = (rows: ReadonlyArray<Prepared>): ReadonlyArray<string> =>
-	[
-		...new Set(
-			rows.flatMap((row) =>
-				row.tokens.flatMap((token) =>
-					token.kind === "mask"
-						? [token.label]
-						: token.kind === "path"
-							? token.parts.flatMap((part) => (part.kind === "mask" ? [part.label] : []))
-							: [],
+	Arr.filter(
+		[
+			...new Set(
+				Arr.flatMap(rows, (row) =>
+					Arr.flatMap(row.tokens, (token) =>
+						token.kind === "mask"
+							? [token.label]
+							: token.kind === "path"
+								? Arr.flatMap(token.parts, (part) =>
+										part.kind === "mask" ? [part.label] : [],
+									)
+								: [],
+					),
 				),
 			),
-		),
-	].filter((label) => MASK_MEANINGS.has(label))
+		],
+		(label) => MASK_MEANINGS.has(label),
+	)
 
 /** How one tool fails, one row per distinct error. */
 export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
-	const failures = inputs.rows.reduce((sum, row) => sum + row.calls, 0)
+	const failures = Arr.reduce(inputs.rows, 0, (sum, row) => sum + row.calls)
 	const prepared = prepare(inputs.rows, inputs.range)
-	const maxShare = prepared.rows.reduce((max, row) => Math.max(max, row.share), 0)
+	const maxShare = Arr.reduce(prepared.rows, 0, (max, row) => Math.max(max, row.share))
 	const sorted = sortRows(prepared.rows, inputs.sort, (row, key) => SORT_FIELDS.get(key)?.(row))
 	const visible = inputs.isExpanded ? sorted : sorted.slice(0, VISIBLE_GROUPS)
 	const hidden = sorted.slice(VISIBLE_GROUPS)
@@ -374,19 +381,23 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 		inputs.rows.length === 0
 			? undefined
 			: failureStatus({
-					lastSeen: Math.max(...inputs.rows.map((row) => row.lastSeen)),
-					callsSince: Math.min(...inputs.rows.map((row) => row.callsSince)),
+					lastSeen: Math.max(...Arr.map(inputs.rows, (row) => row.lastSeen)),
+					callsSince: Math.min(...Arr.map(inputs.rows, (row) => row.callsSince)),
 					failures,
 					calls: inputs.toolCalls,
 					nowMs: inputs.nowMs,
 				})
 	const masks = maskLabels(visible)
-	const headHint = [
-		prepared.prefix === "" ? undefined : `all start “${prepared.prefix.trim()}”`,
-		prepared.errorType === undefined ? undefined : `error.type ${prepared.errorType}`,
-	]
-		.filter((part) => part !== undefined)
-		.join(" · ")
+	const headHint = Arr.join(
+		Arr.filter(
+			[
+				prepared.prefix === "" ? undefined : `all start “${Str.trim(prepared.prefix)}”`,
+				prepared.errorType === undefined ? undefined : `error.type ${prepared.errorType}`,
+			],
+			(part) => part !== undefined,
+		),
+		" · ",
+	)
 	const isEmpty = !inputs.isLoading && inputs.failure === undefined && inputs.rows.length === 0
 	const { startMs, endMs } = inputs.range
 	return h.section(
@@ -476,7 +487,7 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 								: inputs.isLoading
 									? loadingRows(h)
 									: [
-											...visible.map((row) =>
+											...Arr.map(visible, (row) =>
 												errorRow(h, row, inputs, maxShare, prepared.errorType),
 											),
 											...(hidden.length > 0
@@ -500,7 +511,7 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 													"Calls with the same message are grouped; changing values are masked:",
 												],
 											),
-											...masks.map((label) =>
+											...Arr.map(masks, (label) =>
 												hstack(
 													h,
 													{ gap: "1.5", as: "span", attributes: [h.Key(label)] },

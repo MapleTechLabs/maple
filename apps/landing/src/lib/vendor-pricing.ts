@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * Vendor price models: the arithmetic behind the pricing calculator and the
  * server-rendered receipts on `/compare/*`.
@@ -312,7 +313,7 @@ export const defaultValues = (vendor: Vendor): Record<string, number> => {
 
 /** "15 hosts", "1.5 TB/mo", the same rendering the slider shows. */
 export const formatSliderValue = (config: SliderConfig, value: number): string =>
-	config.unit.includes("GB") && value >= 1000
+	Str.includes("GB")(config.unit) && value >= 1000
 		? `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)} TB/mo`
 		: `${value.toLocaleString()} ${config.unit}`
 
@@ -321,9 +322,13 @@ export const formatSliderValue = (config: SliderConfig, value: number): string =
  * sentence. Values alone read as "15 hosts · 10 hosts", which says nothing.
  */
 export const describeWorkload = (vendor: Vendor, values: Record<string, number>): string =>
-	vendorConfigs[vendor].sliders
-		.map((slider) => `${slider.label} ${formatSliderValue(slider, values[slider.key])}`)
-		.join(" · ")
+	Arr.join(
+		Arr.map(
+			vendorConfigs[vendor].sliders,
+			(slider) => `${slider.label} ${formatSliderValue(slider, values[slider.key])}`,
+		),
+		" · ",
+	)
 
 /** A receipt line: "$49", or "−$49" for a credit. Callers render 0 as "Free". */
 export const formatLineAmount = (amount: number): string =>
@@ -348,15 +353,18 @@ const datadog = (values: Record<string, number>): Estimate => {
 
 	return {
 		total: infraCost + apmCost + totalLog,
-		breakdown: [
-			{ label: "Infrastructure", value: infraCost, detail: `${values.hosts} hosts × $15` },
-			{ label: "APM", value: apmCost, detail: `${values.apmHosts} hosts × $31` },
-			{
-				label: "Log management",
-				value: totalLog,
-				detail: `${values.logVolume} GB ingested + indexing`,
-			},
-		].filter((item) => item.value > 0),
+		breakdown: Arr.filter(
+			[
+				{ label: "Infrastructure", value: infraCost, detail: `${values.hosts} hosts × $15` },
+				{ label: "APM", value: apmCost, detail: `${values.apmHosts} hosts × $31` },
+				{
+					label: "Log management",
+					value: totalLog,
+					detail: `${values.logVolume} GB ingested + indexing`,
+				},
+			],
+			(item) => item.value > 0,
+		),
 	}
 }
 
@@ -419,11 +427,14 @@ const dash0 = (values: Record<string, number>): Estimate => {
 
 	return {
 		total: spanCost + logCost + metricCost,
-		breakdown: [
-			{ label: "Spans", value: spanCost, detail: `${values.spans}M × $0.60/M` },
-			{ label: "Logs", value: logCost, detail: `${values.logs}M × $0.60/M` },
-			{ label: "Metrics", value: metricCost, detail: `${values.metricPoints}M × $0.20/M` },
-		].filter((item) => item.value > 0),
+		breakdown: Arr.filter(
+			[
+				{ label: "Spans", value: spanCost, detail: `${values.spans}M × $0.60/M` },
+				{ label: "Logs", value: logCost, detail: `${values.logs}M × $0.60/M` },
+				{ label: "Metrics", value: metricCost, detail: `${values.metricPoints}M × $0.20/M` },
+			],
+			(item) => item.value > 0,
+		),
 	}
 }
 
@@ -439,11 +450,14 @@ const openObserve = (values: Record<string, number>): Estimate => {
 
 	return {
 		total: logCost + traceCost + metricCost,
-		breakdown: [
-			{ label: "Logs", value: logCost, detail: `${values.logVolume} GB × $0.50` },
-			{ label: "Traces", value: traceCost, detail: `${values.traceVolume} GB × $0.50` },
-			{ label: "Metrics", value: metricCost, detail: `${values.metricVolume} GB × $0.50` },
-		].filter((item) => item.value > 0),
+		breakdown: Arr.filter(
+			[
+				{ label: "Logs", value: logCost, detail: `${values.logVolume} GB × $0.50` },
+				{ label: "Traces", value: traceCost, detail: `${values.traceVolume} GB × $0.50` },
+				{ label: "Metrics", value: metricCost, detail: `${values.metricVolume} GB × $0.50` },
+			],
+			(item) => item.value > 0,
+		),
 	}
 }
 
@@ -468,17 +482,20 @@ const signoz = (values: Record<string, number>): Estimate => {
 
 	return {
 		total: BASE_FEE + usage - includedUsage,
-		breakdown: [
-			{ label: "Base fee", value: BASE_FEE, detail: "$49/mo Teams plan base fee" },
-			{ label: "Logs", value: logCost, detail: `${values.logVolume} GB × $0.30` },
-			{ label: "Traces", value: traceCost, detail: `${values.traceVolume} GB × $0.30` },
-			{ label: "Metrics", value: metricCost, detail: `${values.metricSamples}M samples × $0.10/M` },
-			{
-				label: "Included usage",
-				value: -includedUsage,
-				detail: "$49 of usage included in the base fee",
-			},
-		].filter((item) => item.value !== 0),
+		breakdown: Arr.filter(
+			[
+				{ label: "Base fee", value: BASE_FEE, detail: "$49/mo Teams plan base fee" },
+				{ label: "Logs", value: logCost, detail: `${values.logVolume} GB × $0.30` },
+				{ label: "Traces", value: traceCost, detail: `${values.traceVolume} GB × $0.30` },
+				{ label: "Metrics", value: metricCost, detail: `${values.metricSamples}M samples × $0.10/M` },
+				{
+					label: "Included usage",
+					value: -includedUsage,
+					detail: "$49 of usage included in the base fee",
+				},
+			],
+			(item) => item.value !== 0,
+		),
 	}
 }
 

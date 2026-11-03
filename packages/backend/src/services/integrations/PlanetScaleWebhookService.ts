@@ -16,7 +16,18 @@ import {
 	type PlanetScaleDatabaseRow,
 } from "@maple/db/tables"
 import * as PlanetScale from "@distilled.cloud/planetscale"
-import { Cause, Clock, Context, Effect, Layer, Redacted, Schema, SchemaGetter } from "effect"
+import {
+	Cause,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Redacted,
+	Schema,
+	SchemaGetter,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -35,21 +46,22 @@ const WEBHOOK_PATH = "/api/integrations/planetscale/webhook/"
 /** Deploy requests and keyspaces are Vitess concepts; Postgres databases never send them. */
 const eventsFor = (kind: string): ReadonlyArray<string> =>
 	kind === "postgresql"
-		? PLANETSCALE_WEBHOOK_EVENTS.filter(
-				(event) => !event.startsWith("deploy_request.") && event !== "keyspace.storage",
+		? Arr.filter(
+				PLANETSCALE_WEBHOOK_EVENTS,
+				(event) => !Str.startsWith("deploy_request.")(event) && event !== "keyspace.storage",
 			)
 		: PLANETSCALE_WEBHOOK_EVENTS
 
 /** Whether a grant's scopes allow creating webhooks (organization `write_databases`). */
 export const grantsWebhookManagement = (scopes: ReadonlyArray<string>): boolean =>
-	scopes.some((scope) => scope === "write_databases" || scope.endsWith(":write_databases"))
+	Arr.some(scopes, (scope) => scope === "write_databases" || Str.endsWith(":write_databases")(scope))
 
 /** The card's webhook summary, from the grant's scopes and the org's live database rows. */
 export const planetScaleWebhookStatus = (
 	scopes: ReadonlyArray<string>,
 	databases: ReadonlyArray<Pick<PlanetScaleDatabaseRow, "webhookId" | "webhookError">>,
 ): PlanetScaleWebhookStatus => {
-	const registeredDatabases = databases.filter((row) => row.webhookId !== null).length
+	const registeredDatabases = Arr.filter(databases, (row) => row.webhookId !== null).length
 	const lastError = databases.find((row) => row.webhookError !== null)?.webhookError ?? null
 	return new PlanetScaleWebhookStatus({
 		state: !grantsWebhookManagement(scopes)
@@ -113,7 +125,7 @@ const toPersistenceError = (error: unknown) =>
 	})
 
 const sameEvents = (left: ReadonlyArray<string>, right: ReadonlyArray<string>) =>
-	left.length === right.length && left.every((event) => right.includes(event))
+	left.length === right.length && Arr.every(left, (event) => right.includes(event))
 
 export class PlanetScaleWebhookService extends Context.Service<
 	PlanetScaleWebhookService,

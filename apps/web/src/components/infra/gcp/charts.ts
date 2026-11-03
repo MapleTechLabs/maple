@@ -14,6 +14,7 @@ import {
 	type GcpMetricReader,
 	type GcpMetricValue,
 } from "./tabs"
+import { Array as Arr, String as Str } from "effect"
 
 /** A row of the timeseries query: see `gcpInfraTimeseriesSQL`. */
 export interface GcpBucketPoint extends GcpMetricValue {
@@ -269,9 +270,13 @@ export function gcpChartMetric(
 	chart: GcpChart,
 	points: ReadonlyArray<GcpBucketPoint>,
 ): { readonly name: string; readonly type: "sum" | "gauge"; readonly groupBy: string | undefined } {
-	const candidates = chart.kind === "classes" ? [chart.metric] : chart.series.map((series) => series.metric)
-	const name = candidates.find((metric) => points.some((point) => point.metric === metric)) ?? candidates[0]
-	const stored = GCP_METRIC_GROUPS.flatMap((group) => group.metrics).find((metric) => metric.name === name)
+	const candidates =
+		chart.kind === "classes" ? [chart.metric] : Arr.map(chart.series, (series) => series.metric)
+	const name =
+		candidates.find((metric) => Arr.some(points, (point) => point.metric === metric)) ?? candidates[0]
+	const stored = Arr.flatMap(GCP_METRIC_GROUPS, (group) => group.metrics).find(
+		(metric) => metric.name === name,
+	)
 	const label =
 		stored === undefined
 			? undefined
@@ -356,10 +361,10 @@ export function gcpLineRows(
 	points: ReadonlyArray<GcpBucketPoint>,
 	window: GcpChartWindow,
 ): ReadonlyArray<GcpChartRow> {
-	return gcpBuckets(points, window.bucketSeconds).flatMap(({ bucket, points: bucketPoints }) => {
+	return Arr.flatMap(gcpBuckets(points, window.bucketSeconds), ({ bucket, points: bucketPoints }) => {
 		const read = gcpMetricReader(bucketPoints)
 		const seconds = coveredSeconds(bucket, window)
-		return series.flatMap((entry) => {
+		return Arr.flatMap(series, (entry) => {
 			const value = entry.value(read, seconds)
 			return value === undefined ? [] : [{ bucket, attributeValue: entry.name, value }]
 		})
@@ -368,7 +373,7 @@ export function gcpLineRows(
 
 /** The load balancer writes a response class as "500", everything else as "5xx". */
 const className = (label: string) =>
-	label === "" || label === "0" ? "unknown" : label.replace(/^(\d)00$/, "$1xx")
+	label === "" || label === "0" ? "unknown" : Str.replace(/^(\d)00$/, "$1xx")(label)
 
 /**
  * A counter's rows by label value, per second. Every class the window saw has a row in every
@@ -379,16 +384,21 @@ export function gcpClassRows(
 	points: ReadonlyArray<GcpBucketPoint>,
 	window: GcpChartWindow,
 ): ReadonlyArray<GcpChartRow> {
-	const counted = points.filter((point) => point.metric === metric)
-	const names = [...new Set(counted.map((point) => className(point.label)))].sort()
-	return gcpBuckets(points, window.bucketSeconds).flatMap(({ bucket, points: bucketPoints }) =>
-		names.map((name) => ({
+	const counted = Arr.filter(points, (point) => point.metric === metric)
+	const names = [...new Set(Arr.map(counted, (point) => className(point.label)))].sort()
+	return Arr.flatMap(gcpBuckets(points, window.bucketSeconds), ({ bucket, points: bucketPoints }) =>
+		Arr.map(names, (name) => ({
 			bucket,
 			attributeValue: name,
 			value:
-				bucketPoints
-					.filter((point) => point.metric === metric && className(point.label) === name)
-					.reduce((sum, point) => sum + point.total, 0) / coveredSeconds(bucket, window),
+				Arr.reduce(
+					Arr.filter(
+						bucketPoints,
+						(point) => point.metric === metric && className(point.label) === name,
+					),
+					0,
+					(sum, point) => sum + point.total,
+				) / coveredSeconds(bucket, window),
 		})),
 	)
 }

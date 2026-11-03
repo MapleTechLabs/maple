@@ -56,6 +56,7 @@ import { Message, type Model } from "./model"
 import { DEFAULT_PRESET, viewHref } from "./update"
 import { accountHealthLine, accountMenu, accountsStrip } from "./view-accounts"
 import { type SparkContext, queueTable, workerTable, zoneTable, zoneTableLoading } from "./view-tables"
+import { Array as Arr, String as Str } from "effect"
 
 // `CloudflarePage` and `CloudflareListPage`.
 
@@ -70,7 +71,7 @@ export const THEME_TOKENS = ["--chart-2"]
 
 const bandLoading = (h: H): Html => fleetBandLoading(h, 3, FLEET_BAND_BOXED)
 
-const count = <T>(rows: ReadonlyArray<T>, keep: (row: T) => boolean) => rows.filter(keep).length
+const count = <T>(rows: ReadonlyArray<T>, keep: (row: T) => boolean) => Arr.filter(rows, keep).length
 
 const scopeMessage = (scope: ZoneScope | WorkerScope | undefined) => Message.ClickedScope({ scope })
 
@@ -165,7 +166,7 @@ const workerBand = (h: H, rows: ReadonlyArray<WorkerListRow>, activeScope: Worke
 }
 
 const matches = (query: string, ...fields: ReadonlyArray<string>) =>
-	query === "" || fields.some((field) => field.toLowerCase().includes(query))
+	query === "" || Arr.some(fields, (field) => Str.includes(query)(Str.toLowerCase(field)))
 
 const busy = (h: H, waiting: boolean) => [
 	h.Class(cn("space-y-4", refreshingClass(waiting))),
@@ -181,9 +182,10 @@ const zonesView = (
 	spark: SparkContext,
 ): Html => {
 	const query = model.search.q ?? ""
-	const q = query.trim().toLowerCase()
+	const q = Str.toLowerCase(Str.trim(query))
 	const zoneScope = ZONE_SCOPES.find((s) => s === model.search.scope)
-	const filtered = zones.filter(
+	const filtered = Arr.filter(
+		zones,
 		(zone) => (zoneScope === undefined || zoneInScope(zone, zoneScope)) && matches(q, zone.zoneName),
 	)
 	return h.div(busy(h, isWaiting(model.zones.data)), [
@@ -204,12 +206,14 @@ const zonesView = (
 			sparks: data.sparks,
 			accounts: scope.showAccountColumn
 				? new Map(
-						[...scope.zoneAccount].map(([zone, id]) => [zone, scope.accountNames.get(id) ?? id]),
+						Arr.map([...scope.zoneAccount], ([zone, id]) => [
+							zone,
+							scope.accountNames.get(id) ?? id,
+						]),
 					)
 				: undefined,
 			sort: model.zoneSort,
-			emptyMessage:
-				filtered.length === zones.length ? undefined : "No zones match these filters",
+			emptyMessage: filtered.length === zones.length ? undefined : "No zones match these filters",
 			spark,
 		}),
 	])
@@ -217,12 +221,13 @@ const zonesView = (
 
 const workersView = (h: H, model: Model, rows: ReadonlyArray<WorkerListRow>, scope: ListScope): Html => {
 	const query = model.search.q ?? ""
-	const q = query.trim().toLowerCase()
+	const q = Str.toLowerCase(Str.trim(query))
 	const workerScope = WORKER_SCOPES.find((s) => s === model.search.scope)
 	const showPreviews = model.search.previews ?? false
-	const previews = rows.filter((row) => row.isPreview).length
+	const previews = Arr.filter(rows, (row) => row.isPreview).length
 	const filtered = sortWorkersByAttention(
-		rows.filter(
+		Arr.filter(
+			rows,
 			(row) =>
 				(showPreviews || !row.isPreview) &&
 				(workerScope === undefined || workerInScope(row, workerScope)) &&
@@ -264,9 +269,7 @@ const workersView = (h: H, model: Model, rows: ReadonlyArray<WorkerListRow>, sco
 			rows: filtered,
 			accounts: scope.showAccountColumn ? scope.accountNames : undefined,
 			emptyMessage:
-				filtered.length === 0 && rows.length > 0
-					? "No Workers match these filters"
-					: undefined,
+				filtered.length === 0 && rows.length > 0 ? "No Workers match these filters" : undefined,
 		}),
 	])
 }
@@ -294,12 +297,12 @@ const header = (
 
 /** The view tabs for the header's `tabs` slot, each with its count; empty views stay hidden. */
 const viewTabs = (h: H, model: Model, scope: ListScope, inPlace: boolean): Html | undefined => {
-	const views = CLOUDFLARE_VIEWS.filter((v) => v === scope.view || scope.counts[v] !== 0)
+	const views = Arr.filter(CLOUDFLARE_VIEWS, (v) => v === scope.view || scope.counts[v] !== 0)
 	if (views.length < 2) return undefined
 	return viewTabStrip(
 		h,
 		"Cloudflare views",
-		views.map((v) => ({
+		Arr.map(views, (v) => ({
 			id: v,
 			title: scope.counts[v] === null ? VIEW_LABEL[v] : `${VIEW_LABEL[v]} ${scope.counts[v]}`,
 			href: viewHref(model.search, v),

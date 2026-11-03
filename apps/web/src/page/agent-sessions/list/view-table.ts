@@ -7,7 +7,18 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { loadingMoreRow } from "@maple/views/ui/list-footer"
-import { ariaSort, clickableRowClass, rowLink, sortButton, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import {
+	ariaSort,
+	clickableRowClass,
+	rowLink,
+	sortButton,
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "@maple/views/ui/table"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { emptyValue, measure, NIL_VALUE } from "@maple/views/ui/values"
@@ -26,6 +37,7 @@ import { errorChip as sharedErrorChip, TOOL_CHIP, TURN_CHIP } from "../kit/error
 import { moreChip } from "../kit/more-chip"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The agent sessions list, windowed.
 
@@ -128,7 +140,7 @@ export const listSkeleton = (h: H): Html =>
 		// Loaded rows carry a name and an id line (55px); matching them keeps the list from jumping.
 		rowClassName: "h-14",
 		tableClassName: "w-full table-fixed",
-		columns: COLUMNS.map((column) => ({
+		columns: Arr.map(COLUMNS, (column) => ({
 			header: column.header,
 			headClassName: column.responsive,
 			cellClassName: column.responsive,
@@ -182,7 +194,7 @@ const header = (h: H, sort: Sort): Html =>
 		[
 			tableRow(
 				h,
-				COLUMNS.map((column) =>
+				Arr.map(COLUMNS, (column) =>
 					tableHead(
 						h,
 						column.sort === undefined ? [column.header] : [sortableHeader(h, column, sort)],
@@ -245,7 +257,7 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 						...triggerAttributes(
 							h,
 							row.agentNames.length > 0
-								? `Agents: ${row.agentNames.join(", ")}`
+								? `Agents: ${Arr.join(row.agentNames, ", ")}`
 								: "No agent name was reported",
 						),
 						h.Href(href),
@@ -273,7 +285,12 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 						[h.Class("shrink-0 text-foreground-faint")],
 						[id.kind === "trace" ? "Trace" : "Session"],
 					),
-					middleTruncate(h, { text: id.short, tail: 6, mono: true, className: "text-foreground-subtle" }),
+					middleTruncate(h, {
+						text: id.short,
+						tail: 6,
+						mono: true,
+						className: "text-foreground-subtle",
+					}),
 					...inlineModel(h, row, context),
 				],
 			),
@@ -312,7 +329,10 @@ const modelCell = (h: H, row: DisplayRow, context: RowContext): Html | null => {
 				h,
 				"block min-w-0 text-xs text-muted-foreground",
 				// The raw ids gateways report, so two models that truncate alike are told apart.
-				row.models.map((model) => modelTitle(context.detect(model))).join("\n"),
+				Arr.join(
+					Arr.map(row.models, (model) => modelTitle(context.detect(model))),
+					"\n",
+				),
 				[
 					modelLabel(h, {
 						detected: context.detect(firstModel),
@@ -356,23 +376,32 @@ const rowBuckets = (row: DisplayRow): Readonly<Record<(typeof TOKEN_BUCKETS)[num
 /** The total, then each side carved back into the detail page's buckets. */
 const tokenTooltip = (row: DisplayRow, total: number): string => {
 	const buckets = rowBuckets(row)
-	const drawn = TOKEN_BUCKETS.filter((bucket) => buckets[bucket.key] > 0)
+	const drawn = Arr.filter(TOKEN_BUCKETS, (bucket) => buckets[bucket.key] > 0)
 	const sideLines = (title: string, isInput: boolean): ReadonlyArray<string> => {
-		const parts = drawn.filter((bucket) => INPUT_BUCKETS.has(bucket.key) === isInput)
-		const count = parts.reduce((sum, bucket) => sum + buckets[bucket.key], 0)
+		const parts = Arr.filter(drawn, (bucket) => INPUT_BUCKETS.has(bucket.key) === isInput)
+		const count = Arr.reduce(parts, 0, (sum, bucket) => sum + buckets[bucket.key])
 		return [
 			`${title}: ${count.toLocaleString("en-US")}`,
-			...parts.map((bucket) => `${subLabel(bucket)}: ${buckets[bucket.key].toLocaleString("en-US")}`),
+			...Arr.map(
+				parts,
+				(bucket) => `${subLabel(bucket)}: ${buckets[bucket.key].toLocaleString("en-US")}`,
+			),
 		]
 	}
-	return [countLabel(total, "token"), ...sideLines("Input", true), ...sideLines("Output", false)].join("\n")
+	return Arr.join(
+		[countLabel(total, "token"), ...sideLines("Input", true), ...sideLines("Output", false)],
+		"\n",
+	)
 }
 
 /** In then out on one line, each in its side's colour; a session that reported only a total shows the total. */
 const tokenBar = (h: H, row: DisplayRow): Html | null => {
-	const inputs = [row.inputTokens, row.cacheReadTokens, row.cacheWriteTokens].filter((value) => value > 0)
-	const outputs = [row.outputTokens, row.reasoningTokens].filter((value) => value > 0)
-	const drawnTotal = [...inputs, ...outputs].reduce((sum, value) => sum + value, 0)
+	const inputs = Arr.filter(
+		[row.inputTokens, row.cacheReadTokens, row.cacheWriteTokens],
+		(value) => value > 0,
+	)
+	const outputs = Arr.filter([row.outputTokens, row.reasoningTokens], (value) => value > 0)
+	const drawnTotal = Arr.reduce([...inputs, ...outputs], 0, (sum, value) => sum + value)
 	const hasBuckets = drawnTotal > 0 && drawnTotal >= row.totalTokens * BUCKET_COVERAGE_MIN
 	const total = hasBuckets ? drawnTotal : row.totalTokens
 	if (total === 0) return null
@@ -387,12 +416,12 @@ const tokenBar = (h: H, row: DisplayRow): Html | null => {
 	const input = {
 		label: "in",
 		tone: "text-chart-tok-input",
-		count: inputs.reduce((sum, value) => sum + value, 0),
+		count: Arr.reduce(inputs, 0, (sum, value) => sum + value),
 	}
 	const output = {
 		label: "out",
 		tone: "text-chart-tok-reasoning",
-		count: outputs.reduce((sum, value) => sum + value, 0),
+		count: Arr.reduce(outputs, 0, (sum, value) => sum + value),
 	}
 	// One line, in then out; the exact counts ride on the tooltip.
 	const side = (part: typeof input) =>
@@ -418,7 +447,10 @@ const errorChip = (
 const errorChips = (h: H, row: DisplayRow): Html => {
 	// A measured zero reads "0"; the dash is kept for a value that does not apply.
 	if (row.errorSpanCount === 0)
-		return h.span([h.Class(cn(typographyClass({ size: "xs", mono: true, numeric: true }), NIL_VALUE))], ["0"])
+		return h.span(
+			[h.Class(cn(typographyClass({ size: "xs", mono: true, numeric: true }), NIL_VALUE))],
+			["0"],
+		)
 	const classified = row.toolErrorCount + row.turnErrorCount
 	const other = row.errorSpanCount - classified
 	return h.div(
@@ -467,14 +499,12 @@ const servicesCell = (h: H, services: ReadonlyArray<string>): Html | null => {
 	const first = servicePills(h, services.slice(0, 1), services)
 	return first === null
 		? null
-		: hstack(h, { gap: "1.5", shrink: true, className: typographyClass({ size: "xs", tone: "muted" }) },
-				[
-					first,
-					...(services.length > 1
-						? [moreChip(h, { count: services.length - 1, names: services.slice(1) })]
-						: []),
-				],
-			)
+		: hstack(h, { gap: "1.5", shrink: true, className: typographyClass({ size: "xs", tone: "muted" }) }, [
+				first,
+				...(services.length > 1
+					? [moreChip(h, { count: services.length - 1, names: services.slice(1) })]
+					: []),
+			])
 }
 
 /** A cell with nothing to report reads as a muted dash, never blank. */
@@ -509,7 +539,7 @@ const cellsOf = (h: H, row: DisplayRow, context: RowContext): ReadonlyArray<Html
 const sessionRow = (h: H, row: DisplayRow, index: number, context: RowContext): Html => {
 	return tableRow(
 		h,
-		cellsOf(h, row, context).map((cell, column) =>
+		Arr.map(cellsOf(h, row, context), (cell, column) =>
 			tableCell(h, [cell ?? emptyCell(h)], cn(CELL_CLASS, COLUMNS[column]?.responsive)),
 		),
 		cn(clickableRowClass(), ROW_LIFT_TOOLTIPS),
@@ -535,7 +565,7 @@ const windowRows = (
 	if (window === undefined)
 		return [
 			spacer(h, "top", 0),
-			...rows.map((row, index) => sessionRow(h, row, index, context)),
+			...Arr.map(rows, (row, index) => sessionRow(h, row, index, context)),
 			spacer(h, "bottom", 0),
 		]
 	const { items, scrollMargin, totalSize } = window
@@ -545,12 +575,12 @@ const windowRows = (
 	if (first === undefined || last === undefined)
 		return [
 			spacer(h, "top", 0),
-			...rows.slice(0, FIRST_PAINT_ROWS).map((row, index) => sessionRow(h, row, index, context)),
+			...Arr.map(rows.slice(0, FIRST_PAINT_ROWS), (row, index) => sessionRow(h, row, index, context)),
 			spacer(h, "bottom", Math.max(0, rows.length - FIRST_PAINT_ROWS) * ROW_HEIGHT),
 		]
 	return [
 		spacer(h, "top", first.start - scrollMargin),
-		...items.flatMap((item) => {
+		...Arr.flatMap(items, (item) => {
 			const row = rows[item.index]
 			return row === undefined ? [] : [sessionRow(h, row, item.index, context)]
 		}),
@@ -609,7 +639,7 @@ export const sessionsTable = (
 							: [
 									...virtualAttributes(
 										h,
-										options.rows.map((_, index) => String(index)),
+										Arr.map(options.rows, (_, index) => String(index)),
 										[ROW_HEIGHT],
 									),
 									options.virtual.mount,

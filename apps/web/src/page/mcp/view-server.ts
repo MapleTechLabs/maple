@@ -2,7 +2,7 @@ import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
 import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { eyebrow } from "@maple/views/ui/eyebrow"
@@ -97,18 +97,20 @@ const subline = <M>(h: HtmlBuilder<M>, lead: string, rest: string): Html =>
 
 const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: ServerBodyOptions<M>): Html => {
 	const { totals } = data
-	const calls = data.series.map((point) => point.calls).slice(-SPARK_BUCKETS)
+	const calls = Arr.map(data.series, (point) => point.calls).slice(-SPARK_BUCKETS)
 	// Clients that only connected have no calls to rank or share.
-	const callers = data.clients.filter((client) => client.calls > 0)
+	const callers = Arr.filter(data.clients, (client) => client.calls > 0)
 	const topClient = callers[0]
 	// The share is of the listed clients' calls: a tool search can empty the totals.
-	const clientCalls = callers.reduce((sum, client) => sum + client.calls, 0)
-	const clientsPerBucket = data.series.map(
+	const clientCalls = Arr.reduce(callers, 0, (sum, client) => sum + client.calls)
+	const clientsPerBucket = Arr.map(
+		data.series,
 		(point) =>
 			new Set(
-				data.clientSeries
-					.filter((c) => c.bucket === point.bucket && c.calls > 0)
-					.map((c) => c.seriesKey),
+				Arr.map(
+					Arr.filter(data.clientSeries, (c) => c.bucket === point.bucket && c.calls > 0),
+					(c) => c.seriesKey,
+				),
 			).size,
 	)
 	return h.div(
@@ -138,7 +140,7 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 			selectableTile(h, {
 				eyebrow: "Failed calls",
 				value: formatErrorRate(errorRate(totals)),
-				spark: data.series.map((point) => point.errors).slice(-SPARK_BUCKETS),
+				spark: Arr.map(data.series, (point) => point.errors).slice(-SPARK_BUCKETS),
 				subline: subline(
 					h,
 					`${totals.errors} ${pluralize(totals.errors, "tool error")}`,
@@ -154,7 +156,9 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 					selectableTile(h, {
 						eyebrow: "Duration",
 						value: formatDurationNs(totals[options.percentile]),
-						spark: data.series.map((point) => point[options.percentile]).slice(-SPARK_BUCKETS),
+						spark: Arr.map(data.series, (point) => point[options.percentile]).slice(
+							-SPARK_BUCKETS,
+						),
 						subline: options.isFiltered
 							? subline(h, "all calls", `· p50 ${formatDurationNs(totals.p50)}`)
 							: subline(
@@ -164,7 +168,7 @@ const metricStrip = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 								),
 						isSelected: options.metric === "duration",
 						onSelect: options.onSelectMetric("duration"),
-						ariaLabel: `${options.percentile.toUpperCase()} duration`,
+						ariaLabel: `${Str.toUpperCase(options.percentile)} duration`,
 						className: "h-full",
 					}),
 					options.percentileToggle,
@@ -285,7 +289,7 @@ const toolRow = <M>(
 }
 
 const toolsSection = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: ServerBodyOptions<M>): Html => {
-	const maxRate = Math.max(...data.tools.map(errorRate), 0.0001)
+	const maxRate = Math.max(...Arr.map(data.tools, errorRate), 0.0001)
 	return h.section(
 		[h.AriaLabel("Tools"), h.Class("@container/panel min-w-0 px-6 pt-5 pb-6")],
 		[
@@ -339,7 +343,7 @@ const toolsSection = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Se
 										: "No tool calls in this window",
 								]),
 							]
-						: data.tools.map((row, index) => toolRow(h, row, index, maxRate, options)),
+						: Arr.map(data.tools, (row, index) => toolRow(h, row, index, maxRate, options)),
 				),
 			]),
 			toolTableFooter(
@@ -493,7 +497,7 @@ const failureRow = <M>(h: HtmlBuilder<M>, row: McpFailureKind, calls: number): H
 				[
 					hstack(h, { gap: "2", wrap: true, className: typographyClass({ size: "xs" }) }, [
 						row.label,
-						...row.codes.map((code) => attr(h, code)),
+						...Arr.map(row.codes, (code) => attr(h, code)),
 					]),
 					h.div([h.Class("mt-0.5 font-prose text-xs text-muted-foreground")], [row.detail]),
 				],
@@ -538,7 +542,7 @@ const coverageRow = <M>(h: HtmlBuilder<M>, row: McpCoverageRow): Html =>
 				[
 					h.div(
 						[h.Class("flex flex-wrap items-center gap-1.5 text-xs")],
-						[row.label, ...row.attributes.map((name) => attr(h, name))],
+						[row.label, ...Arr.map(row.attributes, (name) => attr(h, name))],
 					),
 					h.div(
 						[
@@ -607,9 +611,9 @@ const clientsHalf = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 	// Without any `clientInfo` there is nothing to switch to.
 	const toggle = data.clientInfo.length === 0 ? undefined : options.clientToggle
 	if (options.clientIdentity === "info" && toggle !== undefined) {
-		const max = Math.max(...data.clientInfo.map((entry) => entry.count), 1)
+		const max = Math.max(...Arr.map(data.clientInfo, (entry) => entry.count), 1)
 		return half(h, "Clients", toggle, [
-			...data.clientInfo.map((entry) => clientInfoRow(h, entry, max)),
+			...Arr.map(data.clientInfo, (entry) => clientInfoRow(h, entry, max)),
 			note(
 				h,
 				isPerConnect
@@ -621,25 +625,25 @@ const clientsHalf = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 			),
 		])
 	}
-	const callers = data.clients.filter((client) => client.calls > 0)
-	const quiet = data.clients.filter((client) => client.calls === 0)
-	const max = Math.max(...callers.map((client) => client.calls), 1)
+	const callers = Arr.filter(data.clients, (client) => client.calls > 0)
+	const quiet = Arr.filter(data.clients, (client) => client.calls === 0)
+	const max = Math.max(...Arr.map(callers, (client) => client.calls), 1)
 	const shown = callers.slice(0, CLIENT_ROWS)
 	const hidden = callers.slice(CLIENT_ROWS)
-	const named = data.clientInfo
-		.slice(0, 3)
-		.map((entry) => `${entry.name} ${entry.count}`)
-		.join(" · ")
+	const named = Arr.join(
+		Arr.map(data.clientInfo.slice(0, 3), (entry) => `${entry.name} ${entry.count}`),
+		" · ",
+	)
 	const rest = data.clientInfo.length - 3
 	return half(h, "Clients", toggle, [
 		clientsHead(h, hasConnects),
-		...shown.map((client) => clientRow(h, client, max, hasConnects)),
+		...Arr.map(shown, (client) => clientRow(h, client, max, hasConnects)),
 		...(hidden.length === 0
 			? []
 			: [
 					note(h, [
 						`${hidden.length} more ${pluralize(hidden.length, "client")} · ${formatNumber(
-							hidden.reduce((sum, client) => sum + client.calls, 0),
+							Arr.reduce(hidden, 0, (sum, client) => sum + client.calls),
 						)} calls`,
 					]),
 				]),
@@ -647,7 +651,7 @@ const clientsHalf = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Ser
 			? []
 			: [
 					clientGroupLabel(h, `Connected, no tool calls · ${quiet.length}`),
-					...quiet.map((client) => clientRow(h, client, max, hasConnects)),
+					...Arr.map(quiet, (client) => clientRow(h, client, max, hasConnects)),
 				]),
 		note(h, [
 			"Calls carry ",
@@ -675,7 +679,7 @@ const detailGrid = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Serv
 		[
 			clientsHalf(h, data, options),
 			half(h, "Why calls fail", headingNote(h, `${data.totals.errors} failed`), [
-				...data.failures.map((row) => failureRow(h, row, data.totals.calls)),
+				...Arr.map(data.failures, (row) => failureRow(h, row, data.totals.calls)),
 				...(status === undefined ? [] : [note(h, [status])]),
 			]),
 			half(
@@ -684,13 +688,13 @@ const detailGrid = <M>(h: HtmlBuilder<M>, data: McpServerOverview, options: Serv
 				toolCalls === 0 || handshakes === 0
 					? undefined
 					: headingNote(h, `${(handshakes / toolCalls).toFixed(2)} initialize per tool call`),
-				[methodsHead(h), ...data.methods.map((row) => methodRow(h, row))],
+				[methodsHead(h), ...Arr.map(data.methods, (row) => methodRow(h, row))],
 			),
 			half(
 				h,
 				"Instrumentation",
 				externalLink(h, "MCP conventions", SEMCONV_MCP_URL),
-				data.coverage.map((row) => coverageRow(h, row)),
+				Arr.map(data.coverage, (row) => coverageRow(h, row)),
 			),
 		],
 	)
@@ -702,7 +706,7 @@ export const serverBody = <M>(
 	data: McpServerOverview,
 	options: ServerBodyOptions<M>,
 ): Html => {
-	const callerCount = data.clients.filter((client) => client.calls > 0).length
+	const callerCount = Arr.filter(data.clients, (client) => client.calls > 0).length
 	return h.div(
 		[h.Class("flex flex-col")],
 		[

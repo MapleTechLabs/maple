@@ -12,6 +12,7 @@ import {
 	clickhouseExec,
 	uniqueDatabase,
 } from "./clickhouse-e2e-support"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 const database = uniqueDatabase("maple_security_telemetry_e2e")
 const ORG_ID = "org_security_telemetry_e2e"
@@ -19,7 +20,8 @@ const OTHER_ORG_ID = "org_security_telemetry_other"
 
 // Anchored to now: `traces` carries a 30-day TTL enforced at insert.
 const BASE_MS = Date.now() - 2 * 3_600_000
-const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 19)
+const chDateTime = (epochMs: number): string =>
+	Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 
 interface SeedSpan {
 	readonly traceId: string
@@ -119,33 +121,38 @@ const SPANS: ReadonlyArray<SeedSpan> = [
 ]
 
 const mapLiteral = (entries: Record<string, string>) =>
-	`map(${Object.entries(entries)
-		.map(([key, value]) => `'${key}', '${value}'`)
-		.join(", ")})`
+	`map(${Arr.join(
+		Arr.map(Rec.toEntries(entries), ([key, value]) => `'${key}', '${value}'`),
+		", ",
+	)})`
 
 const insert = (spans: ReadonlyArray<SeedSpan>, orgId: string) =>
 	clickhouseExec(
 		`INSERT INTO traces
 		 (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, StatusMessage, SampleRate, SpanAttributes, ResourceAttributes)
-		 VALUES\n${spans
-				.map((span, index) => {
+		 VALUES\n${Arr.join(
+				Arr.map(spans, (span, index) => {
 					const service = span.service ?? "api"
-					const attributes = Object.fromEntries(
-						[
-							["url.path", span.path],
-							["url.query", span.query],
-							["http.response.status_code", span.status],
-							["client.address", span.client],
-							["user_agent.original", span.userAgent],
-						].filter((entry): entry is [string, string] => entry[1] !== undefined),
+					const attributes = Rec.fromEntries(
+						Arr.filter(
+							[
+								["url.path", span.path],
+								["url.query", span.query],
+								["http.response.status_code", span.status],
+								["client.address", span.client],
+								["user_agent.original", span.userAgent],
+							],
+							(entry): entry is [string, string] => entry[1] !== undefined,
+						),
 					)
 					const resource = mapLiteral({
 						"service.name": service,
 						...(span.resource ?? NODE_RESOURCE),
 					})
 					return `('${orgId}', '${chDateTime(BASE_MS + index * 1000)}', '${span.traceId}', 'span-${span.traceId}', '', 'GET', '${span.kind ?? "Server"}', '${service}', 1000, 'Unset', '', 1, ${mapLiteral(attributes)}, ${resource})`
-				})
-				.join("\n,")}`,
+				}),
+				"\n,",
+			)}`,
 		database,
 	)
 
@@ -162,7 +169,7 @@ const window = {
 	endTime: chDateTime(BASE_MS + 60_000),
 }
 const read = (query: Parameters<typeof CH.compileUnsafe>[0]) =>
-	runJson(CH.compileUnsafe(query, window).sql.replace(/\s*FORMAT JSON\s*$/, ""))
+	runJson(Str.replace(/\s*FORMAT JSON\s*$/, "")(CH.compileUnsafe(query, window).sql))
 
 describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () => {
 	beforeAll(async () => {
@@ -182,7 +189,7 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 			 FROM scanner_requests WHERE OrgId = '${ORG_ID}' ORDER BY TraceId`,
 		)
 		assert.deepStrictEqual(
-			rows.map((row) => [
+			Arr.map(rows, (row) => [
 				row.TraceId,
 				row.Signature,
 				row.Scanner,
@@ -210,10 +217,14 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 		const probeDb = `${database}_catalog`
 		await clickhouseExec(`CREATE DATABASE ${probeDb}`)
 		await applyRealMigrations(probeDb)
-		const values = PROBE_SIGNATURES.map(
-			(signature, index) =>
-				`('${ORG_ID}', '${chDateTime(BASE_MS + index * 1000)}', 'c${index}', 's${index}', '', 'GET', 'Server', 'api', 1, 'Unset', '', 1, map('url.path', ${signature.anchored === true ? `'${signature.token}y'` : `'/x${signature.token}y'`}), map())`,
-		).join(",")
+		const values = Arr.join(
+			Arr.map(
+				PROBE_SIGNATURES,
+				(signature, index) =>
+					`('${ORG_ID}', '${chDateTime(BASE_MS + index * 1000)}', 'c${index}', 's${index}', '', 'GET', 'Server', 'api', 1, 'Unset', '', 1, map('url.path', ${signature.anchored === true ? `'${signature.token}y'` : `'/x${signature.token}y'`}), map())`,
+			),
+			",",
+		)
 		await clickhouseExec(
 			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, StatusMessage, SampleRate, SpanAttributes, ResourceAttributes) VALUES ${values}`,
 			probeDb,
@@ -223,16 +234,17 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 			probeDb,
 		)
 		await clickhouseExec(`DROP DATABASE IF EXISTS ${probeDb}`)
-		const stored = (JSON.parse(body) as { data: ReadonlyArray<{ Signature: string }> }).data.map(
+		const stored = Arr.map(
+			(JSON.parse(body) as { data: ReadonlyArray<{ Signature: string }> }).data,
 			(row) => row.Signature,
 		)
-		assert.deepStrictEqual(stored, PROBE_SIGNATURES.map((signature) => signature.token).toSorted())
+		assert.deepStrictEqual(stored, Arr.map(PROBE_SIGNATURES, (signature) => signature.token).toSorted())
 	}, 180_000)
 
 	it("lists only the critical probes the service answered", async () => {
 		const rows = await read(CH.scannerExposedQuery())
 		assert.deepStrictEqual(
-			rows.map((row) => [row.path, row.signature, row.httpStatus, row.sampleTraceId]),
+			Arr.map(rows, (row) => [row.path, row.signature, row.httpStatus, row.sampleTraceId]),
 			[["/api/.ENV.production", "/.env", 200, "p4"]],
 		)
 	})
@@ -252,7 +264,7 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 		})
 		const sources = await read(CH.scannerSourcesQuery())
 		assert.deepStrictEqual(
-			sources.map((row) => [
+			Arr.map(sources, (row) => [
 				row.clientAddress,
 				row.requests,
 				row.signatures,
@@ -270,7 +282,7 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 	it("rolls runtimes up per service and reads them back", async () => {
 		const rows = await read(CH.runtimeVersionsQuery())
 		assert.deepStrictEqual(
-			rows.map((row) => [
+			Arr.map(rows, (row) => [
 				row.service,
 				row.runtimeName,
 				row.runtimeVersion,

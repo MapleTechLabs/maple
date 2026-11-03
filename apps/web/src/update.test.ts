@@ -1,5 +1,5 @@
 import { OrgId, UserId } from "@maple/domain"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { UrlRequest } from "foldkit/navigation"
 import { fromString as urlFromString } from "foldkit/url"
 import { describe, expect, test, vi } from "vitest"
@@ -50,7 +50,7 @@ const base = (route: AppRoute): Model => ({
 const urlOf = (path: string) => Option.getOrThrow(urlFromString(`http://localhost${path}`))
 const commandsOf = (result: {
 	readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }>
-}) => (result.commands ?? []).map(({ name, args }) => ({ name, args }))
+}) => Arr.map(result.commands ?? [], ({ name, args }) => ({ name, args }))
 
 describe("root navigation", () => {
 	test("a link navigation lands with the remembered window; Back/Forward is left as it is", () => {
@@ -63,7 +63,7 @@ describe("root navigation", () => {
 			{ name: "NavigateInternal", args: { url: "/services?timePreset=7d" } },
 		])
 		const popped = update(model, Message.ChangedUrl({ url: urlOf("/services") }))
-		expect(commandsOf(popped).filter(({ name }) => name === "ReplaceUrl")).toEqual([])
+		expect(Arr.filter(commandsOf(popped), ({ name }) => name === "ReplaceUrl")).toEqual([])
 		expect(popped.model.route).toEqual(AppRoute.Services({ search: {} }))
 	})
 
@@ -71,7 +71,9 @@ describe("root navigation", () => {
 		const entered = settle(base(AppRoute.AgentSessionTools({ search: {} }))).model
 		const zoned = update(entered, Message.ChangedTimeZonePreference({ timeZone: "Asia/Tokyo" }))
 		expect(zoned.model.timeZone).toBe("Asia/Tokyo")
-		const resolve = commandsOf(zoned).filter(({ args }) => JSON.stringify(args).includes("Asia/Tokyo"))
+		const resolve = Arr.filter(commandsOf(zoned), ({ args }) =>
+			Str.includes("Asia/Tokyo")(JSON.stringify(args)),
+		)
 		expect(resolve).toHaveLength(1)
 		expect(
 			update(zoned.model, Message.ChangedTimeZonePreference({ timeZone: "Asia/Tokyo" })).commands ?? [],
@@ -142,7 +144,7 @@ describe("telemetry identity", () => {
 			},
 		})
 		const again = update(loaded.model, Message.ChangedClerkSession({ snapshot }))
-		expect(commandsOf(again).map(({ name }) => name)).not.toContain("IdentifySession")
+		expect(Arr.map(commandsOf(again), ({ name }) => name)).not.toContain("IdentifySession")
 	})
 })
 
@@ -230,7 +232,7 @@ describe("re-render on change only", () => {
 		const model = base(AppRoute.Logs({ search: {} }))
 		const visible = update(model, Message.GotShellMessage({ message: Shell.Message.BecameTabVisible() }))
 		expect(visible.model).toBe(model)
-		expect(commandsOf(visible).map(({ name }) => name)).toEqual(["CheckDeployedCommit"])
+		expect(Arr.map(commandsOf(visible), ({ name }) => name)).toEqual(["CheckDeployedCommit"])
 	})
 })
 

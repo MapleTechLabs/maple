@@ -7,6 +7,7 @@ import { inputAttributes, listPopup } from "@maple/views/ui/combobox-view"
 import { icon } from "@maple/views/ui/icon"
 import { SYSTEM_VALUE } from "../../platform/time-zone"
 import { matchesZoneQuery, type ZoneRow } from "./timezone-zones"
+import { Array as Arr } from "effect"
 
 // The timezone select's list: the search input, "No timezone matches that." and the grouped
 // zone list with clock and offset.
@@ -29,10 +30,16 @@ const itemText = (h: H, row: ZoneRow): ReadonlyArray<Html | string> => [
 			h.span(
 				[h.Class("min-w-0 flex-1 truncate")],
 				row.value === SYSTEM_VALUE
-					? [h.span([], ["System"]), h.span([h.Class("text-foreground-subtle")], [` · ${row.zone}`])]
+					? [
+							h.span([], ["System"]),
+							h.span([h.Class("text-foreground-subtle")], [` · ${row.zone}`]),
+						]
 					: row.isPinned
 						? [h.span([], [row.zone])]
-						: [h.span([], [row.city]), h.span([h.Class("text-foreground-faint")], [` · ${row.region}`])],
+						: [
+								h.span([], [row.city]),
+								h.span([h.Class("text-foreground-faint")], [` · ${row.region}`]),
+							],
 			),
 			h.span([h.Class("shrink-0 font-mono text-2xs tabular-nums text-foreground-soft")], [row.clock]),
 			h.span(
@@ -43,54 +50,69 @@ const itemText = (h: H, row: ZoneRow): ReadonlyArray<Html | string> => [
 	),
 ]
 
-export const zoneListView = Submodel.defineView<Combobox.Model, Combobox.Message, ZoneListInputs>((model, inputs, h) => {
-	const matches = inputs.rows.filter((row) => matchesZoneQuery(row, Combobox.queryOf(model)))
-	const byValue = new Map(matches.map((row) => [row.value, row]))
-	const items = matches.map((row) => row.value)
-	return listPopup(h, model, {
-		slot: "combobox",
-		items,
-		isPrefiltered: true,
-		emptyText: "No timezone matches that",
-		anchorSelector: `#${inputs.triggerId}`,
-		positionSelector: `#${inputs.anchorId}`,
-		className: "w-(--anchor-width)",
-		positionerClassName: "z-60",
-		nestedIn: inputs.popoverId,
-		listClassName: "max-h-80 overflow-y-auto p-1.5",
-		// The zones group follows the pinned one: `[[role=group]+&]` draws its top rule.
-		itemClassName: (value) =>
-			cn("min-h-7 text-xs", byValue.get(value)?.startsGroup === true && "mt-1 border-t border-border-subtle pt-1"),
-		renderItem: (value) => rowText(byValue, value, h),
-		trigger: {
-			returnFocusId: inputs.triggerId,
-			header: h.div(
-				[h.Class("flex items-center gap-2 border-b border-border-subtle px-3")],
-				[
-					icon(h, "GlobeIcon", { className: "size-3.5 shrink-0 text-foreground-subtle" }),
-					h.input([
-						h.Class(cn(C.comboboxChipsInputStyles, C.comboboxChipsInputSmStyles, "h-9 w-full ps-0 text-xs")),
-						h.DataAttribute("size", "sm"),
-						h.Attribute("autofocus", ""),
-						...inputAttributes(
-							h,
-							{ ...model, inputValue: Combobox.queryOf(model) },
-							{
-								slot: "combobox-chips-input",
-								placeholder: "City, offset, or the time there now…",
-								items,
-								isUnfiltered: true,
-							},
-							(message) => message,
-						),
-					]),
-				],
-			),
-		},
-	})
-})
+export const zoneListView = Submodel.defineView<Combobox.Model, Combobox.Message, ZoneListInputs>(
+	(model, inputs, h) => {
+		const matches = Arr.filter(inputs.rows, (row) => matchesZoneQuery(row, Combobox.queryOf(model)))
+		const byValue = new Map(Arr.map(matches, (row) => [row.value, row]))
+		const items = Arr.map(matches, (row) => row.value)
+		return listPopup(h, model, {
+			slot: "combobox",
+			items,
+			isPrefiltered: true,
+			emptyText: "No timezone matches that",
+			anchorSelector: `#${inputs.triggerId}`,
+			positionSelector: `#${inputs.anchorId}`,
+			className: "w-(--anchor-width)",
+			positionerClassName: "z-60",
+			nestedIn: inputs.popoverId,
+			listClassName: "max-h-80 overflow-y-auto p-1.5",
+			// The zones group follows the pinned one: `[[role=group]+&]` draws its top rule.
+			itemClassName: (value) =>
+				cn(
+					"min-h-7 text-xs",
+					byValue.get(value)?.startsGroup === true && "mt-1 border-t border-border-subtle pt-1",
+				),
+			renderItem: (value) => rowText(byValue, value, h),
+			trigger: {
+				returnFocusId: inputs.triggerId,
+				header: h.div(
+					[h.Class("flex items-center gap-2 border-b border-border-subtle px-3")],
+					[
+						icon(h, "GlobeIcon", { className: "size-3.5 shrink-0 text-foreground-subtle" }),
+						h.input([
+							h.Class(
+								cn(
+									C.comboboxChipsInputStyles,
+									C.comboboxChipsInputSmStyles,
+									"h-9 w-full ps-0 text-xs",
+								),
+							),
+							h.DataAttribute("size", "sm"),
+							h.Attribute("autofocus", ""),
+							...inputAttributes(
+								h,
+								{ ...model, inputValue: Combobox.queryOf(model) },
+								{
+									slot: "combobox-chips-input",
+									placeholder: "City, offset, or the time there now…",
+									items,
+									isUnfiltered: true,
+								},
+								(message) => message,
+							),
+						]),
+					],
+				),
+			},
+		})
+	},
+)
 
-const rowText = (byValue: ReadonlyMap<string, ZoneRow>, value: string, h: H): ReadonlyArray<Html | string> => {
+const rowText = (
+	byValue: ReadonlyMap<string, ZoneRow>,
+	value: string,
+	h: H,
+): ReadonlyArray<Html | string> => {
 	const row = byValue.get(value)
 	return row === undefined ? [value] : itemText(h, row)
 }

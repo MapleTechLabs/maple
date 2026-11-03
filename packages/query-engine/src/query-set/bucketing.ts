@@ -12,6 +12,7 @@ import {
 	formatWarehouseDateTime,
 	parseWarehouseDateTime,
 } from "../datetime"
+import { Array as Arr } from "effect"
 
 export interface ExecutionWindow {
 	readonly startTime: string
@@ -68,7 +69,8 @@ export function resolveFallbackStrategy(
 	base: EmptyRangeFallbackStrategy = LAB_EMPTY_RANGE_STRATEGY,
 ): EmptyRangeFallbackStrategy {
 	const uniqueWindows = new Set(
-		(input?.windowSeconds ?? base.windowSeconds).filter(
+		Arr.filter(
+			input?.windowSeconds ?? base.windowSeconds,
 			(seconds) => Number.isFinite(seconds) && seconds > 0,
 		),
 	)

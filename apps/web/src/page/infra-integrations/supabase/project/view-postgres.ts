@@ -1,6 +1,6 @@
 import type { SupabaseProjectInsights } from "@maple/domain/http"
 import { formatLatency, formatNumber, formatPercent } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
@@ -44,7 +44,7 @@ const metricPlot = (
 			spec: InfraMetricChart.infraMetricSpec({
 				rows: metricChartRows(chart, rows),
 				unit: chart.unit,
-				xDomain: rows.map((row) => row.bucket),
+				xDomain: Arr.map(rows, (row) => row.bucket),
 				seriesColors: { Limit: "--severity-warn" },
 				theme,
 				timeZone,
@@ -137,36 +137,34 @@ const queriesBody = (h: H, insights: SupabaseProjectInsights, clock: Clock): Htm
 			...checked,
 			h.ul(
 				[h.AriaLabel("Slowest queries")],
-				insights.topQueries
-					.slice(0, 5)
-					.map((query, index) =>
-						h.li(
-							[
-								h.Key(query.queryId),
-								h.Class(
-									"flex items-start gap-3 border-t border-border-subtle px-4 py-2.5 first:border-t-0",
+				Arr.map(insights.topQueries.slice(0, 5), (query, index) =>
+					h.li(
+						[
+							h.Key(query.queryId),
+							h.Class(
+								"flex items-start gap-3 border-t border-border-subtle px-4 py-2.5 first:border-t-0",
+							),
+						],
+						[
+							vstack(h, { gap: "1", shrink: true, grow: true }, [
+								h.code(
+									[
+										h.Class("line-clamp-1 font-mono text-2xs text-foreground"),
+										h.Title(query.query),
+									],
+									[query.query],
 								),
-							],
-							[
-								vstack(h, { gap: "1", shrink: true, grow: true }, [
-									h.code(
-										[
-											h.Class("line-clamp-1 font-mono text-2xs text-foreground"),
-											h.Title(query.query),
-										],
-										[query.query],
-									),
-									typography(h, { size: "2xs", tone: "muted", mono: true }, [
-										`${formatNumber(query.calls)} calls · ${formatLatency(query.meanExecMs)} mean`,
-									]),
+								typography(h, { size: "2xs", tone: "muted", mono: true }, [
+									`${formatNumber(query.calls)} calls · ${formatLatency(query.meanExecMs)} mean`,
 								]),
-								h.span(
-									[h.Class("shrink-0 font-mono text-2xs tabular-nums text-foreground")],
-									[formatPercent(shares[index] ?? 0)],
-								),
-							],
-						),
+							]),
+							h.span(
+								[h.Class("shrink-0 font-mono text-2xs tabular-nums text-foreground")],
+								[formatPercent(shares[index] ?? 0)],
+							),
+						],
 					),
+				),
 			),
 		],
 	)

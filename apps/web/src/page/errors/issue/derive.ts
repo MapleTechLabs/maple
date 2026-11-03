@@ -3,7 +3,7 @@ import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { errorIssueDetailFromV2 } from "../../../lib/services/error-issues"
 import { AlertIncidentId } from "@maple/domain/primitives"
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
-import { DateTime, Option, Schema } from "effect"
+import { DateTime, Option, Schema, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
 import type { ErrorIssueSearch } from "../../../route/search"
@@ -24,7 +24,7 @@ export type Tab = "overview" | "occurrences" | "activity"
 export const tabOf = (search: Search): Tab => search.tab ?? "overview"
 
 const warehouseMs = (value: string): number | null =>
-	Option.getOrNull(Option.map(DateTime.make(value.replace(" ", "T") + "Z"), DateTime.toEpochMillis))
+	Option.getOrNull(Option.map(DateTime.make(Str.replace(" ", "T")(value) + "Z"), DateTime.toEpochMillis))
 
 export type ChartWindow = Readonly<{
 	startMs: number

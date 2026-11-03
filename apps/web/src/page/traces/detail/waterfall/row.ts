@@ -7,7 +7,7 @@ import { getSpanKindLabel } from "@maple/ui/lib/span-kind"
 import { spanStartMs } from "@maple/ui/lib/span-tree"
 import { severityTone, TONE_COLOR, TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
@@ -62,13 +62,11 @@ const treeGuides = (h: HtmlBuilder<Message>, row: TreeRow, isExpanded: boolean):
 				h.Style({ width: `${shown * COLUMN_PX}px`, "margin-right": shown === 0 ? "-8px" : "0px" }),
 			],
 			[
-				...row.rails
-					.slice(0, shown)
-					.flatMap((continues, column) =>
-						continues
-							? [h.span([h.Class(`${RAIL} inset-y-0`), h.Style({ left: x(column) })], [])]
-							: [],
-					),
+				...Arr.flatMap(row.rails.slice(0, shown), (continues, column) =>
+					continues
+						? [h.span([h.Class(`${RAIL} inset-y-0`), h.Style({ left: x(column) })], [])]
+						: [],
+				),
 				...(isElbowShown
 					? [
 							h.span(
@@ -344,7 +342,7 @@ const codeLocation = (span: SpanNodeData): CodeLocation | null => {
 	const path = attrs["code.file.path"] ?? attrs["code.filepath"] ?? ""
 	if (path === "") return null
 	return {
-		file: path.slice(path.lastIndexOf("/") + 1),
+		file: Str.slice(path.lastIndexOf("/") + 1)(path),
 		path,
 		line: attrs["code.line.number"] ?? attrs["code.lineno"] ?? "",
 	}

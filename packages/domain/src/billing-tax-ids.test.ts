@@ -6,10 +6,11 @@ import {
 	taxIdExampleFor,
 	taxIdLabel,
 } from "./billing-tax-ids"
+import { Array as Arr } from "effect"
 
 describe("tax-id catalog", () => {
 	it("describes every accepted type exactly once", () => {
-		const described = TAX_ID_TYPES.map((info) => info.type)
+		const described = Arr.map(TAX_ID_TYPES, (info) => info.type)
 		expect(new Set(described).size).toBe(described.length)
 		expect([...described].sort()).toEqual([...TAX_ID_TYPE_VALUES].sort())
 	})

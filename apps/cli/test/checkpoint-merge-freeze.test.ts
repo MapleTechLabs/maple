@@ -7,9 +7,10 @@ import { Chdb } from "@maple/local-server/chdb"
 import { validateCheckpointDataDir } from "@maple/local-server/checkpoints"
 import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
 import { describeWithChdb } from "./libchdb-test-support"
+import { String as Str } from "effect"
 
 const countRows = (db: Chdb, table: string): number => {
-	const line = db.query(`SELECT count() AS n FROM ${table}`).trim()
+	const line = Str.trim(db.query(`SELECT count() AS n FROM ${table}`))
 	return Number(JSON.parse(line).n)
 }
 

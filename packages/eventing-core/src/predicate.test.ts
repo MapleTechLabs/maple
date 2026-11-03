@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	checkSignalProjectionInputBudget,
@@ -60,7 +60,7 @@ const signalFor = (fields: ConformanceFixture["predicateVectors"][number]["field
 	observedAt: "2026-08-07T19:42:01Z",
 	subject: null,
 	fields: defineSignalFields(
-		fields.map(({ namespace, key, value }) => ({
+		Arr.map(fields, ({ namespace, key, value }) => ({
 			field: {
 				namespace,
 				key,
@@ -86,7 +86,7 @@ describe("cross-language conformance vectors", () => {
 
 	for (const vector of fixture.stringLiteralByteVectors) {
 		it(`string literal bytes: ${vector.name}`, () => {
-			const candidate = { type: "string", value: vector.unit.repeat(vector.repeat) }
+			const candidate = { type: "string", value: Str.repeat(vector.repeat)(vector.unit) }
 			if (vector.valid)
 				expect(() => Schema.decodeUnknownSync(SignalLiteralSchema)(candidate)).not.toThrow()
 			else expect(() => Schema.decodeUnknownSync(SignalLiteralSchema)(candidate)).toThrow()
@@ -98,7 +98,7 @@ describe("cross-language conformance vectors", () => {
 			const predicate = Schema.decodeUnknownSync(SignalPredicateSchema)(vector.predicate)
 			const result = Result.getOrThrow(compileSignalPredicate(predicate))(signalFor(vector.fields))
 			expect(result.matches).toBe(vector.matches)
-			expect(result.typeMismatches.map(fieldKey)).toEqual(vector.typeMismatches ?? [])
+			expect(Arr.map(result.typeMismatches, fieldKey)).toEqual(vector.typeMismatches ?? [])
 		})
 	}
 })
@@ -171,7 +171,7 @@ describe("selector validation", () => {
 				selector: {
 					op: "eq",
 					field: { namespace: "attribute", key: "n", type: "int64" },
-					value: { type: "int64", value: "1".repeat(21) },
+					value: { type: "int64", value: Str.repeat(21)("1") },
 				},
 			}),
 		).toContain("int64 literal exceeds")
@@ -180,7 +180,7 @@ describe("selector validation", () => {
 
 describe("total runtime behavior", () => {
 	it("accepts valid large source strings for exists and small contains literals", () => {
-		const largeValue = `${"a".repeat(5 * 1024)}needle`
+		const largeValue = `${Str.repeat(5 * 1024)("a")}needle`
 		const signal = signalFor([
 			{
 				namespace: "attribute",

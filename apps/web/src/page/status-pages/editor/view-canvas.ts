@@ -3,7 +3,7 @@ import type { V2StatusPage, V2StatusPageComponent, V2StatusPageIncident } from "
 import { previewSnapshot } from "@maple/status-page"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
@@ -46,8 +46,8 @@ const asEdited = (model: Model, component: V2StatusPageComponent) => {
 	if (model.panel?._tag !== "Component" || form.editingId !== component.id) return component
 	return {
 		...component,
-		name: form.name.trim() === "" ? component.name : form.name.trim(),
-		group: form.group.trim() === "" ? null : form.group.trim(),
+		name: Str.trim(form.name) === "" ? component.name : Str.trim(form.name),
+		group: Str.trim(form.group) === "" ? null : Str.trim(form.group),
 		monitor_id: Option.getOrNull(decodeMonitorId(form.monitorId)),
 		manual_status: Option.getOrNull(decodeStatus(form.manualStatus)),
 		show_uptime: form.showUptime,
@@ -87,7 +87,7 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 			showPoweredBy: page.show_powered_by,
 			theme: previewTheme(page.theme, model.previewScheme),
 		},
-		components: componentsOf(model).map((saved) => {
+		components: Arr.map(componentsOf(model), (saved) => {
 			const component = asEdited(model, saved)
 			return {
 				id: component.id,
@@ -102,9 +102,10 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 				days: daysOf(model.previewHistory, component.monitor_id),
 			}
 		}),
-		incidents: incidentsOf(model)
-			.filter((incident) => isListedIncident(incident, nowMs))
-			.map(toSnapshotIncident),
+		incidents: Arr.map(
+			Arr.filter(incidentsOf(model), (incident) => isListedIncident(incident, nowMs)),
+			toSnapshotIncident,
+		),
 		nowMs,
 	})
 	return previewDocument({ snapshot, nowMs, isSelectable: true, selectedIds: selectedIds(model) })
@@ -243,10 +244,8 @@ const incidentItem = (h: H, model: Model, incident: V2StatusPageIncident): Html 
 
 const onThisPage = (h: H, model: Model): Html => {
 	const components = componentsOf(model)
-	const open = incidentsOf(model).filter(isOpenIncident)
-	const recent = incidentsOf(model)
-		.filter((incident) => !isOpenIncident(incident))
-		.slice(0, 5)
+	const open = Arr.filter(incidentsOf(model), isOpenIncident)
+	const recent = Arr.filter(incidentsOf(model), (incident) => !isOpenIncident(incident)).slice(0, 5)
 	return h.nav(
 		[
 			h.Id("status-page-on-this-page"),
@@ -269,7 +268,7 @@ const onThisPage = (h: H, model: Model): Html => {
 					: vstack(
 							h,
 							{ gap: "0.5", as: "ul", attributes: [h.AriaLabel("Components")] },
-							components.map((component, index) =>
+							Arr.map(components, (component, index) =>
 								componentItem(h, model, component, {
 									isFirst: index === 0,
 									isLast: index === components.length - 1,
@@ -303,7 +302,7 @@ const onThisPage = (h: H, model: Model): Html => {
 					: vstack(
 							h,
 							{ gap: "0.5", as: "ul", attributes: [h.AriaLabel("Incidents")] },
-							[...open, ...recent].map((incident) => incidentItem(h, model, incident)),
+							Arr.map([...open, ...recent], (incident) => incidentItem(h, model, incident)),
 						),
 			]),
 		],

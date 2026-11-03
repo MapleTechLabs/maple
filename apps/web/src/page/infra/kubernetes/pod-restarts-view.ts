@@ -10,6 +10,7 @@ import { sectionHeading } from "../../kit/section-heading"
 import { statRailItem, statRailItemSkeleton } from "../../kit/stat-rail"
 import type { RestartRow } from "./pod-data"
 import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // `PodRestartsStat` and `PodContainerRestarts`.
 
@@ -80,7 +81,7 @@ const containerRow = <M>(h: HtmlBuilder<M>, row: RestartRow): Html =>
 /** Per-container breakdown, shown once any container has restarted or terminated. */
 export const podContainerRestarts = <M>(h: HtmlBuilder<M>, restarts: Restarts): Html => {
 	const rows = AsyncData.getOrElse(restarts, () => [])
-	if (!rows.some((row) => row.totalRestarts > 0 || row.lastTerminatedReason !== "")) return null
+	if (!Arr.some(rows, (row) => row.totalRestarts > 0 || row.lastTerminatedReason !== "")) return null
 	return h.div(
 		[h.Class("space-y-3")],
 		[
@@ -94,7 +95,7 @@ export const podContainerRestarts = <M>(h: HtmlBuilder<M>, restarts: Restarts): 
 					columnHead(h, { label: "Total", align: "right", width: "w-24" }),
 					columnHead(h, { label: "Last terminated", align: "right", width: "w-40" }),
 				],
-				rows.map((row) => containerRow(h, row)),
+				Arr.map(rows, (row) => containerRow(h, row)),
 			),
 		],
 	)

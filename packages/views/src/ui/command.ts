@@ -50,7 +50,7 @@ const valueOf = (item: CommandItem): string => item.value ?? item.title
 
 /** The groups' values in list order: what the input filters and the highlight indexes. */
 export const commandTitles = (groups: ReadonlyArray<CommandGroup>): ReadonlyArray<string> =>
-	Array.flatMap(groups, (group) => group.items.map(valueOf))
+	Array.flatMap(groups, (group) => Array.map(group.items, valueOf))
 
 /** `CommandInput`: the large borderless autocomplete input, focused when the dialog opens. */
 export const commandInput = <M>(
@@ -202,7 +202,7 @@ export const commandList = <M>(
 			: filterItems(commandTitles(groups), model.inputValue),
 	)
 	const visible = Array.filter(
-		groups.map((group) => ({
+		Array.map(groups, (group) => ({
 			...group,
 			items: Array.filter(group.items, (item) => matches.has(valueOf(item))),
 		})),
@@ -210,7 +210,7 @@ export const commandList = <M>(
 	)
 	const rendered = Array.mapAccum(visible, 0, (start, group, groupIndex): [number, ReadonlyArray<Html>] => {
 		const labelId = `${model.id}-group-${groupIndex}`
-		const items = group.items.map((item, offset) =>
+		const items = Array.map(group.items, (item, offset) =>
 			commandItem(h, model, item, start + offset, toMessage, options),
 		)
 		if (group.label === undefined) return [start + group.items.length, items]

@@ -10,6 +10,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { Message } from "./model"
 import { ALL_ACCOUNTS, MANAGE_ACCOUNTS } from "./update"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // Multi-account Cloudflare: these only render with two or more accounts; a single-account org keeps
 // a plain chip.
@@ -47,7 +48,7 @@ export const accountMenu = (
 				{ _tag: "Separator" },
 				{
 					_tag: "RadioGroup",
-					items: accounts.map((account) => ({
+					items: Arr.map(accounts, (account) => ({
 						value: account.accountId,
 						label: `${account.name} · ${account.zones.length} zones · ${account.health.message}`,
 						isChecked: account.accountId === value,
@@ -89,7 +90,7 @@ export const accountsStrip = (
 ): Html =>
 	h.div(
 		[h.Class("flex flex-col overflow-hidden rounded-md border md:flex-row")],
-		accounts.map((account) => {
+		Arr.map(accounts, (account) => {
 			const fraction = share.get(account.accountId) ?? 0
 			const count = counts.get(account.accountId)
 			return pressable(

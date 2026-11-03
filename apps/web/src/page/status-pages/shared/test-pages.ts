@@ -12,7 +12,7 @@ import {
 	type V2StatusPageComponent,
 	type V2StatusPageIncident,
 } from "@maple/domain/http/v2"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { NOW } from "../../alerts/shared/test-rows"
 
 // Status pages as the v2 API decodes them, for the scene tests.
@@ -113,7 +113,7 @@ export const statusPageConfig = (
 		show_powered_by: page.show_powered_by,
 		auto_incidents: page.auto_incidents,
 		theme: page.theme,
-		components: components.map((row) => ({
+		components: Arr.map(components, (row) => ({
 			id: row.id,
 			name: row.name,
 			description: row.description,

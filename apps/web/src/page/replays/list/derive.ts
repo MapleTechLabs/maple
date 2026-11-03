@@ -1,6 +1,6 @@
 import type { SessionTag } from "@maple/domain/query-engine"
 import { isQualityTier, sessionTagsFromSearch } from "../../../components/replays/session-tags"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { formatCompact } from "@maple/views/ui/filters/range-format"
 import type { SessionRow } from "../kit/session-row"
@@ -9,20 +9,25 @@ import type { Model, ReplaysFacets, Search } from "./model"
 /** `MAX_RETAINED_REPLAYS`. */
 export const MAX_RETAINED_REPLAYS = 500
 
-export const selectedTags = (search: Search): ReadonlyArray<SessionTag> => sessionTagsFromSearch(search.tags) ?? []
+export const selectedTags = (search: Search): ReadonlyArray<SessionTag> =>
+	sessionTagsFromSearch(search.tags) ?? []
 
 /** `allData`: the first page then every later one, capped. */
 export const allRows = (model: Model): ReadonlyArray<SessionRow> =>
 	Option.match(AsyncData.getData(model.firstPage.data), {
 		onNone: () => [],
 		onSome: (first) =>
-			[...first.rows, ...model.pagination.pages.flatMap((page) => page.rows)].slice(0, MAX_RETAINED_REPLAYS),
+			[...first.rows, ...Arr.flatMap(model.pagination.pages, (page) => page.rows)].slice(
+				0,
+				MAX_RETAINED_REPLAYS,
+			),
 	})
 
 /** The cursor of the last page, while more remain and the cap has not been reached. */
 export const nextCursor = (model: Model): string | null => {
 	if (model.pagination.isStopped || allRows(model).length >= MAX_RETAINED_REPLAYS) return null
-	const last = model.pagination.pages.at(-1) ?? Option.getOrUndefined(AsyncData.getData(model.firstPage.data))
+	const last =
+		model.pagination.pages.at(-1) ?? Option.getOrUndefined(AsyncData.getData(model.firstPage.data))
 	return last?.hasMore === true ? last.nextCursor : null
 }
 
@@ -39,25 +44,28 @@ export const isCapped = (model: Model): boolean => allRows(model).length >= MAX_
 
 /** The list header's `hasActiveFilters`: any filter or search narrows the list. */
 export const hasActiveFilters = (search: Search): boolean =>
-	[
-		search.service,
-		search.browser,
-		search.country,
-		search.deviceType,
-		search.userId,
-		search.user,
-		search.group,
-		search.groupId,
-		search.visitorId,
-		search.hasErrors,
-		search.q,
-		search.page,
-		search.tags !== undefined && search.tags.length > 0 ? search.tags : undefined,
-		search.durationMin,
-		search.durationMax,
-		search.activeMin,
-		search.activeMax,
-	].some((value) => value !== undefined && value !== "" && value !== false)
+	Arr.some(
+		[
+			search.service,
+			search.browser,
+			search.country,
+			search.deviceType,
+			search.userId,
+			search.user,
+			search.group,
+			search.groupId,
+			search.visitorId,
+			search.hasErrors,
+			search.q,
+			search.page,
+			search.tags !== undefined && search.tags.length > 0 ? search.tags : undefined,
+			search.durationMin,
+			search.durationMax,
+			search.activeMin,
+			search.activeMax,
+		],
+		(value) => value !== undefined && value !== "" && value !== false,
+	)
 
 /** The sidebar's own `hasActiveFilters` (no `q`, no visitor). */
 export const hasSidebarFilters = (search: Search): boolean =>
@@ -89,7 +97,7 @@ export const engagedCount = (model: Model): number | undefined => {
 }
 
 /** A tier filter already decided what to show; folding its rows would hide the answer. */
-export const collapsesLowSignal = (search: Search): boolean => !selectedTags(search).some(isQualityTier)
+export const collapsesLowSignal = (search: Search): boolean => !Arr.some(selectedTags(search), isQualityTier)
 
 export const draftOf = (min: number | undefined, max: number | undefined) => ({
 	min: formatCompact(min, "s"),

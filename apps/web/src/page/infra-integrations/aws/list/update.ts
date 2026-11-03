@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import * as Keyed from "@maple/views/data/keyed"
@@ -42,7 +42,7 @@ const statusKey = (context: PageContext) => requestKey(context.orgId, "awsIntegr
 export const reportedKinds = (model: Model): ReadonlyArray<FleetRead["kind"]> =>
 	Option.match(AsyncData.getData(model.fleet.data), {
 		onNone: () => [],
-		onSome: (reads) => reads.map((read) => read.kind),
+		onSome: (reads) => Arr.map(reads, (read) => read.kind),
 	})
 
 /** The tab in the URL when it reported, else the first that did. */

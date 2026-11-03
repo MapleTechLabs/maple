@@ -1,8 +1,6 @@
-import {
-	transformRows as transformRowsWith,
-	type TransformedPoint,
-} from "../lib/infra-chart-units"
+import { transformRows as transformRowsWith, type TransformedPoint } from "../lib/infra-chart-units"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
+import { Array as Arr } from "effect"
 
 // What `InfraMetricChart`'s callers read besides `chart-units`: the long-form pivot, colours and
 // the tokens they resolve.
@@ -49,4 +47,4 @@ export const INFRA_CHART_TOKENS: ReadonlyArray<string> = [
 
 /** Buckets with no finite value for any series plot nothing, so they count as empty too. */
 export const hasPlottableValue = (rows: ReadonlyArray<LongRow>): boolean =>
-	rows.some((row) => Number.isFinite(row.value))
+	Arr.some(rows, (row) => Number.isFinite(row.value))

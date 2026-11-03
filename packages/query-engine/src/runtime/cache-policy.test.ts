@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { makeTimeRangeCachePolicy, timeRangeCache } from "./cache-policy"
 import { buildDirectRouteCacheKey } from "./query-engine"
+import { String as Str } from "effect"
 
 /**
  * `timeRangeCache` replaced a flat 15s TTL whose snap window was also 15s, so a
@@ -19,7 +20,7 @@ import { buildDirectRouteCacheKey } from "./query-engine"
 /** `YYYY-MM-DD HH:MM:SS`, the warehouse datetime format `snapToWindow` expects. */
 const at = (epochMs: number): string => {
 	const iso = new Date(epochMs).toISOString()
-	return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`
+	return `${Str.slice(0, 10)(iso)} ${Str.slice(11, 19)(iso)}`
 }
 
 const NOW_MS = Date.parse("2026-08-16T12:00:00Z")

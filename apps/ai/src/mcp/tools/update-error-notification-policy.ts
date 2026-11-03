@@ -1,5 +1,5 @@
 import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { UpdateErrorNotificationPolicyOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
@@ -91,14 +91,14 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 						"@maple/http/errors/ErrorNotificationUnknownDestinationError": (error) =>
 							Effect.fail(
 								new McpInvalidInputError({
-									message: `No alert destination ${error.destinationIds
-										.map(
+									message: `No alert destination ${Arr.join(
+										Arr.map(
+											error.destinationIds,
 											(id) =>
 												`${id} (${encodePublicId(PublicIdPrefixes.alertDestination, id)})`,
-										)
-										.join(
-											", ",
-										)} in this org. list_alert_destinations lists them. Nothing was changed.`,
+										),
+										", ",
+									)} in this org. list_alert_destinations lists them. Nothing was changed.`,
 									parameter: "destination_ids",
 								}),
 							),

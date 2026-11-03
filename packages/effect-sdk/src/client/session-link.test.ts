@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import { afterEach, expect } from "vitest"
 import { make } from "./flushable.js"
 import { clearIdentity, identify } from "./user.js"
@@ -38,7 +38,7 @@ const baseConfig = {
 }
 
 const firstSpanAttrs = (calls: Array<FetchCall>) => {
-	const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))!
+	const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))!
 	const span = (
 		traceCall.body as {
 			resourceSpans: Array<{
@@ -65,7 +65,7 @@ describe("withSessionLink — user.id span stamping", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("anon-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("anon-op"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 
@@ -80,7 +80,7 @@ describe("withSessionLink — user.id span stamping", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("known-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("known-op"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 
@@ -97,7 +97,7 @@ describe("withSessionLink — user.id span stamping", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("signed-out-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("signed-out-op"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 
@@ -113,10 +113,7 @@ describe("withSessionLink — user.id span stamping", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(
-				Effect.withSpan("null-cleared-op"),
-				Effect.provide(telemetry.layer),
-			),
+			Effect.undefined.pipe(Effect.withSpan("null-cleared-op"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 

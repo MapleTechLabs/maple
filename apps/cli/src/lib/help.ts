@@ -6,21 +6,22 @@
 
 import type * as Console from "effect/Console"
 import * as CliOutput from "effect/cli/CliOutput"
+import { Array as Arr, String as Str } from "effect"
 
 /** `error: <message>`, with the parser's "Did you mean this?" folded into a hint line. */
 export const formatParseError = (message: string): string => {
-	const [head = "", suggestions] = message.split(/\n\s*Did you mean this\?\s*/)
-	const alternatives = (suggestions ?? "")
-		.split("\n")
-		.map((s) => s.trim())
-		.filter((s) => s !== "")
+	const [head, suggestions] = Str.split(/\n\s*Did you mean this\?\s*/)(message)
+	const alternatives = Arr.filter(
+		Arr.map(Str.split("\n")(suggestions ?? ""), (s) => Str.trim(s)),
+		(s) => s !== "",
+	)
 	return alternatives.length === 0
-		? `error: ${head.trim()}`
-		: `error: ${head.trim()}\nhint: did you mean ${alternatives.join(" or ")}?`
+		? `error: ${Str.trim(head)}`
+		: `error: ${Str.trim(head)}\nhint: did you mean ${Arr.join(alternatives, " or ")}?`
 }
 
 export const usageHint = (commandPath: ReadonlyArray<string>): string =>
-	`Run '${commandPath.join(" ")} --help' for usage.\n`
+	`Run '${Arr.join(commandPath, " ")} --help' for usage.\n`
 
 export interface HelpCapture {
 	readonly formatter: CliOutput.Formatter
@@ -40,7 +41,11 @@ export const makeHelpCapture = (base: CliOutput.Formatter = CliOutput.defaultFor
 			rendered = base.formatHelpDoc(doc)
 			return rendered
 		},
-		formatErrors: (errors) => errors.map((e) => formatParseError(e.message)).join("\n"),
+		formatErrors: (errors) =>
+			Arr.join(
+				Arr.map(errors, (e) => formatParseError(e.message)),
+				"\n",
+			),
 	}
 	const console: Console.Console = {
 		...globalThis.console,

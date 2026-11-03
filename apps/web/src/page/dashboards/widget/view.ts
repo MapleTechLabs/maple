@@ -23,6 +23,7 @@ import { leaveDialog } from "./view-dialog"
 import { queryEditor } from "./view-query"
 import { settingsRail } from "./view-rail"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `WidgetConfigurePage` and `WidgetQueryBuilderPage`: the preview over the query editor, the
 // settings rail beside them.
@@ -47,7 +48,7 @@ const editorSkeleton = (h: H): Html =>
 				),
 				h.div(
 					[h.Class("flex max-w-md flex-col gap-4")],
-					[1, 2, 3, 4].map((index) =>
+					Arr.map([1, 2, 3, 4], (index) =>
 						h.div(
 							[
 								h.Class("flex flex-col gap-1.5 animate-tile-in motion-reduce:animate-none"),

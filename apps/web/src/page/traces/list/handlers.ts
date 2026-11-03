@@ -6,6 +6,7 @@ import { removeTraceFilterChips, type Search, traceFilterChips, WIDEN_TIME_PRESE
 import type { Facet, Message, SortKey } from "./message"
 import type { Model } from "./model"
 import { clearedWhereClause, excludedFacet, onlyFacet, toggledFacet, withDuration } from "./search-edits"
+import { Array as Arr } from "effect"
 
 // The sidebar's and table's Messages: each computes the next search and asks the root to navigate.
 
@@ -69,7 +70,7 @@ export const tableHandlers = (model: Model) => ({
 			model,
 			removeTraceFilterChips(
 				model.search,
-				traceFilterChips(model.search).filter((chip) => chip.id === id),
+				Arr.filter(traceFilterChips(model.search), (chip) => chip.id === id),
 			),
 		),
 	ClickedClearAllChips: (): Return =>
@@ -91,7 +92,7 @@ export const tableHandlers = (model: Model) => ({
 			model,
 			removeTraceFilterChips(
 				model.search,
-				traceFilterChips(model.search).filter((chip) => chip.negated),
+				Arr.filter(traceFilterChips(model.search), (chip) => chip.negated),
 			),
 		),
 	ClickedClearFilters: (): Return =>

@@ -1,5 +1,5 @@
 import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -99,7 +99,7 @@ const subList = (h: HtmlBuilder<Message>, subItems: ReadonlyArray<NavSubItem>, c
 	return sidebarMenuSub(
 		h,
 		"mx-0 ms-4 translate-x-0 gap-0 border-l-0 px-0 py-0",
-		subItems.map((sub) =>
+		Arr.map(subItems, (sub) =>
 			sidebarMenuSubItem(
 				h,
 				sub.href === activeSubHref
@@ -173,7 +173,7 @@ const navRow = (
 									),
 								],
 								[
-									...preview.glyphs.flatMap((sub) =>
+									...Arr.flatMap(preview.glyphs, (sub) =>
 										sub.icon === undefined
 											? []
 											: [
@@ -213,7 +213,7 @@ export const pinnedGroup = (
 		model.dashboards,
 		(): ReadonlyArray<PinnedDashboardRow> => [],
 	)
-	const pinned = dashboards.filter((dashboard) => model.dashboardFavorites.includes(dashboard.id))
+	const pinned = Arr.filter(dashboards, (dashboard) => model.dashboardFavorites.includes(dashboard.id))
 	const visible = pinned.slice(0, MAX_PINNED)
 	if (!AsyncData.isSuccess(model.dashboards) || visible.length === 0) return []
 	const overflow = pinned.length - visible.length
@@ -226,7 +226,7 @@ export const pinnedGroup = (
 			]),
 			sidebarGroupContent(h, [
 				sidebarMenu(h, undefined, [
-					...visible.map((dashboard) =>
+					...Arr.map(visible, (dashboard) =>
 						sidebarMenuItem(h, undefined, [
 							sidebarMenuButton(
 								h,
@@ -280,14 +280,14 @@ export const navGroupSections = (
 	tip: RailTip = NO_TIP,
 	clerk: ShellClerk | null = null,
 ): ReadonlyArray<Html> =>
-	shellNavGroups(clerk).map((group) =>
+	Arr.map(shellNavGroups(clerk), (group) =>
 		sidebarGroup(h, undefined, [
 			...(group.label === undefined ? [] : [sidebarGroupLabel(h, GROUP_LABEL, [group.label])]),
 			sidebarGroupContent(h, [
 				sidebarMenu(
 					h,
 					undefined,
-					group.items.map((item) => navRow(h, model, item, currentPath, tip)),
+					Arr.map(group.items, (item) => navRow(h, model, item, currentPath, tip)),
 				),
 			]),
 		]),

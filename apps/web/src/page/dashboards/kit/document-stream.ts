@@ -1,5 +1,5 @@
 import type { DashboardDocument } from "@maple/domain/http"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { rowToDocument } from "../../../data/collections/dashboards"
 import { liveQueryStream } from "../../../data/live-query"
 import { orgLive } from "../../../data/collections/org-collections"
@@ -32,7 +32,7 @@ export const orgTagsStream = <M>(orgId: string, toMessage: (tags: ReadonlyArray<
 				toMessage(
 					Array.from(
 						new Set(
-							rows.flatMap((row) =>
+							Arr.flatMap(rows, (row) =>
 								Option.match(rowToDocument(row), {
 									onNone: () => [],
 									onSome: (document) => document.tags ?? [],

@@ -10,7 +10,7 @@
  * The script refuses to run against anything but a development instance
  * (`sk_test_…`), so it cannot mint a session for a real user on a live one.
  */
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -24,7 +24,7 @@ if (!secretKey) {
 	console.error("CLERK_SECRET_KEY is not set. Run from the repo root so .env.local is loaded.")
 	process.exit(2)
 }
-if (!secretKey.startsWith("sk_test_")) {
+if (!Str.startsWith("sk_test_")(secretKey)) {
 	console.error(
 		"CLERK_SECRET_KEY is not a development key (sk_test_…). This script only signs in to dev instances.",
 	)
@@ -35,13 +35,12 @@ const email = process.argv[2] ?? process.env.MAPLE_DEV_SIGNIN_EMAIL ?? DEFAULT_E
 
 // The REST API directly rather than `@clerk/backend`: the SDK is a dependency of
 // `apps/api`, not of the repo root, and two calls do not earn one at the root.
-const clerkFetch = async (path: string, init?: RequestInit) => {
+const clerkFetch = async (path: string, init?: Omit<RequestInit, "headers">) => {
 	const response = await fetch(`${CLERK_API}${path}`, {
 		...init,
 		headers: {
 			authorization: `Bearer ${secretKey}`,
 			"content-type": "application/json",
-			...init?.headers,
 		},
 	})
 	if (!response.ok) {

@@ -3,6 +3,7 @@ import { pressable } from "../../ui/pressable"
 import { Message, type Model } from "./canvas"
 import type { PlacedNode } from "./geometry"
 import { measuredBounds } from "./viewport"
+import { Array as Arr } from "effect"
 
 // React Flow's stock `<Controls>`, `<MiniMap>` and `<Background variant="dots">`.
 
@@ -139,7 +140,7 @@ export const miniMap = <M>(
 				],
 				[
 					h.title([h.Id("react-flow__minimap-desc-1")], ["Mini Map"]),
-					...nodes.flatMap((node) =>
+					...Arr.flatMap(nodes, (node) =>
 						node.measured === undefined
 							? []
 							: [

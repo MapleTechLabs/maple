@@ -65,6 +65,7 @@ import * as HoverCard from "@maple/views/ui/hover-card"
 import { contributionCalendar, contributionLevel } from "@maple/views/ui/contribution-calendar"
 import { type ActivityCount, type ActivityDay, activityByDay, daysOf, totalOf } from "./activity"
 import { ACTIVITY_CARD_ID } from "./update"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // `CodeReviewTeamPage`: team KPIs, a few highlights, and the per-person scorecard against the team
 // median, ranked only on request.
@@ -241,7 +242,7 @@ const headlineStrip = (h: H, totals: CodeReviewTeamTotals): Html => {
 	return statRail(
 		h,
 		{ columns: 3, className: "xl:grid-cols-6" },
-		stats.map((stat) =>
+		Arr.map(stats, (stat) =>
 			h.div(
 				[h.Key(stat.label), h.Title(stat.hint)],
 				[
@@ -278,7 +279,7 @@ const highlights = (h: H, members: ReadonlyArray<CodeReviewTeamMember>): Html | 
 				h,
 				// One per row on a phone: a login and its line need the width.
 				{ columns: 3, className: "grid-cols-1" },
-				items.map((item) =>
+				Arr.map(items, (item) =>
 					h.div(
 						[h.Key(item.key)],
 						[
@@ -307,12 +308,16 @@ const dayLabelOf = (
 ) => new Date(`${day}T00:00:00Z`).toLocaleDateString("en-US", { ...options, timeZone: "UTC" })
 
 const countLine = (count: { readonly opened: number; readonly merged: number }) =>
-	[
-		count.opened > 0 ? `${formatNumber(count.opened)} opened` : null,
-		count.merged > 0 ? `${formatNumber(count.merged)} merged` : null,
-	]
-		.filter((part) => part !== null)
-		.join(", ")
+	Arr.join(
+		Arr.filter(
+			[
+				count.opened > 0 ? `${formatNumber(count.opened)} opened` : null,
+				count.merged > 0 ? `${formatNumber(count.merged)} merged` : null,
+			],
+			(part) => part !== null,
+		),
+		", ",
+	)
 
 const pullRequestCount = (count: number) => `${formatNumber(count)} pull request${count === 1 ? "" : "s"}`
 
@@ -353,34 +358,30 @@ const dayCard = (h: H, day: string, activity: ActivityDay | undefined): Readonly
 				cardSection(
 					h,
 					"People",
-					activity.people
-						.slice(0, CARD_PEOPLE)
-						.map((person) =>
-							hstack(h, { gap: "3", justify: "between", attributes: [h.Key(person.key)] }, [
-								authorLabel(h, person.key, "text-xs"),
-								countCell(h, person),
-							]),
-						),
+					Arr.map(activity.people.slice(0, CARD_PEOPLE), (person) =>
+						hstack(h, { gap: "3", justify: "between", attributes: [h.Key(person.key)] }, [
+							authorLabel(h, person.key, "text-xs"),
+							countCell(h, person),
+						]),
+					),
 					activity.people.length - CARD_PEOPLE,
 				),
 				cardSection(
 					h,
 					"Repositories",
-					activity.repositories
-						.slice(0, CARD_REPOSITORIES)
-						.map((repository) =>
-							hstack(h, { gap: "3", justify: "between", attributes: [h.Key(repository.key)] }, [
-								repositoryLabel(h, repository.key),
-								countCell(h, repository),
-							]),
-						),
+					Arr.map(activity.repositories.slice(0, CARD_REPOSITORIES), (repository) =>
+						hstack(h, { gap: "3", justify: "between", attributes: [h.Key(repository.key)] }, [
+							repositoryLabel(h, repository.key),
+							countCell(h, repository),
+						]),
+					),
 					activity.repositories.length - CARD_REPOSITORIES,
 				),
 			]),
 ]
 
 const dayTriggerId = (day: string) => `${ACTIVITY_CARD_ID}-day-${day}`
-const dayOfTrigger = (triggerId: string) => triggerId.slice(-10)
+const dayOfTrigger = (triggerId: string) => Str.slice(-10)(triggerId)
 
 /** The window's busiest people or repositories with a bar each, beside the calendar. */
 const topList = (
@@ -395,13 +396,13 @@ const topList = (
 		for (const count of countsOf(day))
 			totals.set(count.key, (totals.get(count.key) ?? 0) + totalOf(count))
 	const ranked = [...totals.entries()]
-		.toSorted((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+		.toSorted((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0]))
 		.slice(0, 5)
 	const max = ranked[0]?.[1] ?? 0
 	if (ranked.length === 0) return null
 	return vstack(h, { gap: "2.5", className: "min-w-0" }, [
 		typography(h, { size: "2xs", tone: "muted", weight: "medium" }, [title]),
-		...ranked.map(([key, total]) =>
+		...Arr.map(ranked, ([key, total]) =>
 			vstack(h, { gap: "1", attributes: [h.Key(key)] }, [
 				hstack(h, { gap: "3", justify: "between" }, [
 					label(key),
@@ -430,26 +431,29 @@ const topList = (
 const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: string): Html => {
 	const byDay = activityByDay(team.activity)
 	const days = daysOf(team.activityStartTime, team.endTime, timeZone)
-	const max = Math.max(0, ...[...byDay.values()].map(totalOf))
-	const opened = team.activity.reduce((sum, row) => sum + row.opened, 0)
-	const merged = team.activity.reduce((sum, row) => sum + row.merged, 0)
-	const ids = days.map(dayTriggerId)
-	const sides = [
-		topList(
-			h,
-			"Most active people",
-			byDay,
-			(day) => day.people,
-			(login) => authorLabel(h, login, "text-xs"),
-		),
-		topList(
-			h,
-			"Most active repositories",
-			byDay,
-			(day) => day.repositories,
-			(repository) => repositoryLabel(h, repository),
-		),
-	].filter((side): side is Html => side !== null)
+	const max = Math.max(0, ...Arr.map([...byDay.values()], totalOf))
+	const opened = Arr.reduce(team.activity, 0, (sum, row) => sum + row.opened)
+	const merged = Arr.reduce(team.activity, 0, (sum, row) => sum + row.merged)
+	const ids = Arr.map(days, dayTriggerId)
+	const sides = Arr.filter(
+		[
+			topList(
+				h,
+				"Most active people",
+				byDay,
+				(day) => day.people,
+				(login) => authorLabel(h, login, "text-xs"),
+			),
+			topList(
+				h,
+				"Most active repositories",
+				byDay,
+				(day) => day.repositories,
+				(repository) => repositoryLabel(h, repository),
+			),
+		],
+		(side): side is Html => side !== null,
+	)
 	return h.submodel({
 		slotId: ACTIVITY_CARD_ID,
 		model: model.activityCard,
@@ -476,7 +480,7 @@ const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: strin
 								opened + merged === 0
 									? "No pull requests in the last 12 months"
 									: `${formatNumber(opened)} opened and ${formatNumber(merged)} merged in the last 12 months`,
-							days: days.map((day) => {
+							days: Arr.map(days, (day) => {
 								const activity = byDay.get(day)
 								const total = activity === undefined ? 0 : totalOf(activity)
 								return {
@@ -550,7 +554,7 @@ const medianRow = (
 		[
 			...(ranked ? [tableCell(h, [], "w-10 px-3")] : []),
 			tableCell(h, ["Team median"], "px-4 py-2 text-xs font-medium text-muted-foreground"),
-			...COLUMNS.map((column) =>
+			...Arr.map(COLUMNS, (column) =>
 				tableCell(
 					h,
 					[column.format(teamMedian(members, column.metric, scores))],
@@ -582,7 +586,7 @@ const memberRow = (
 					]
 				: []),
 			tableCell(h, [authorLabel(h, member.login, "max-w-full")], "px-4 py-2.5"),
-			...COLUMNS.map((column) =>
+			...Arr.map(COLUMNS, (column) =>
 				tableCell(
 					h,
 					[column.format(metricOf(member, column.metric, scores))],
@@ -639,14 +643,14 @@ const scorecard = (h: H, model: Model, members: ReadonlyArray<CodeReviewTeamMemb
 							tableRow(h, [
 								...(ranked ? [tableHead(h, ["#"], "w-10 px-3 font-normal")] : []),
 								personHead(h, model),
-								...COLUMNS.map((column) => sortHead(h, column, model, ranked)),
+								...Arr.map(COLUMNS, (column) => sortHead(h, column, model, ranked)),
 							]),
 						],
 						{ className: "bg-surface-sunken" },
 					),
 					tableBody(h, [
 						medianRow(h, members, scores, ranked),
-						...rows.map((row) => memberRow(h, row.member, scores, row.rank, ranked)),
+						...Arr.map(rows, (row) => memberRow(h, row.member, scores, row.rank, ranked)),
 					]),
 				]),
 		scorecardFooter(h, ranked),
@@ -659,7 +663,7 @@ const teamSkeleton = (h: H, model: Model): Html => {
 	const columns: ReadonlyArray<SkeletonColumn> = [
 		...(ranked ? [{ label: "#", head: "w-10 px-3", cell: "px-3", bar: "h-3 w-4" }] : []),
 		{ label: "Person", head: "px-4", cell: "px-4 py-2.5", bar: "h-3 w-28" },
-		...COLUMNS.map((column): SkeletonColumn => ({
+		...Arr.map(COLUMNS, (column): SkeletonColumn => ({
 			label: column.label,
 			head: cn("px-3", column.className),
 			cell: cn("px-3", column.className),
@@ -671,14 +675,14 @@ const teamSkeleton = (h: H, model: Model): Html => {
 		[
 			...(ranked ? [tableCell(h, [], "w-10 px-3")] : []),
 			tableCell(h, ["Team median"], "px-4 py-2 text-xs font-medium text-muted-foreground"),
-			...COLUMNS.map((column) =>
+			...Arr.map(COLUMNS, (column) =>
 				tableCell(h, [line(h, "h-4 justify-end", "h-2.5 w-8")], cn("px-3", column.className)),
 			),
 		],
 		"bg-surface-sunken",
 	)
 	return busyPage(h, "Loading the team", [
-		headlineSkeleton(h, Object.values(HEADLINE_LABELS), { columns: 3, className: "xl:grid-cols-6" }),
+		headlineSkeleton(h, Rec.values(HEADLINE_LABELS), { columns: 3, className: "xl:grid-cols-6" }),
 		panel(h, {}, [
 			panelHeader(h, { title: scorecardTitle(model), action: panelControl(h) }),
 			tableSkeleton(h, columns, { first: median }),

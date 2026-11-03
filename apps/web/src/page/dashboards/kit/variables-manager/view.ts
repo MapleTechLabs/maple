@@ -11,6 +11,7 @@ import { draftError, sourceSummary, TYPE_LABELS } from "./derive"
 import { Message, type Model, type Variable } from "./model"
 import { hasErrors } from "./update"
 import { variableForm } from "./view-form"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -140,7 +141,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ slotId: strin
 		onSubmit: Message.SubmittedForm(),
 		fields: [
 			...(model.startedEmpty ? [intro(h)] : []),
-			...model.drafts.map((draft, index) => row(h, model, draft, index)),
+			...Arr.map(model.drafts, (draft, index) => row(h, model, draft, index)),
 			button(
 				h,
 				{

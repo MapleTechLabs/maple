@@ -6,7 +6,7 @@ import {
 	AlertDeliveryTargetMissingError,
 	type AlertDeliveryFailure,
 } from "@maple/domain/http"
-import { Duration, Effect, Result, Schema } from "effect"
+import { Duration, Effect, Result, Schema, String as Str } from "effect"
 import { constTrue } from "effect/Function"
 import { HttpClient } from "effect/http"
 import { buildTelegramText, buildTelegramTextFromTemplate } from "../../AlertDeliveryDispatch"
@@ -170,7 +170,7 @@ const telegramApiCall = (
 				Result.map(decoded, (payload) => payload.description ?? ""),
 				() => "",
 			)
-			return { ok, status, description: truncate(description.replace(/\s+/g, " ").trim(), 300) }
+			return { ok, status, description: truncate(Str.trim(Str.replace(/\s+/g, " ")(description)), 300) }
 		}),
 		Effect.orElseSucceed(() => ({ ok: false, status: 0, description: "" })),
 	)
@@ -321,7 +321,7 @@ export const fetchTelegramChats = (
 			const payload = decoded.success
 			if (!payload.ok) {
 				const description = payload.description ?? ""
-				if (payload.error_code === 409 || description.includes("webhook is active")) {
+				if (payload.error_code === 409 || Str.includes("webhook is active")(description)) {
 					return {
 						status: "invalid",
 						reason: "This bot has a webhook registered, so Maple cannot read its recent chats. Delete the webhook (or enter the chat ID by hand).",
@@ -333,7 +333,7 @@ export const fetchTelegramChats = (
 				return {
 					status: "invalid",
 					reason:
-						truncate(description.replace(/\s+/g, " ").trim(), 300) ||
+						truncate(Str.trim(Str.replace(/\s+/g, " ")(description)), 300) ||
 						"Telegram rejected the request",
 				}
 			}

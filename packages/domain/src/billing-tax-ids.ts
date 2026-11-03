@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * Customer tax-ID types Stripe accepts on `POST /v1/customers/{id}/tax_ids`.
  *
@@ -49,7 +50,7 @@ const EU_VAT_COUNTRIES: ReadonlyArray<readonly [country: string, example: string
 ]
 
 /** Countries whose business VAT number is the shared `eu_vat` type. */
-const EU_VAT_COUNTRY_CODES: ReadonlyArray<string> = EU_VAT_COUNTRIES.map(([country]) => country)
+const EU_VAT_COUNTRY_CODES: ReadonlyArray<string> = Arr.map(EU_VAT_COUNTRIES, ([country]) => country)
 
 /**
  * Every type Stripe accepts, as a tuple so `Schema.Literals` keeps the literal
@@ -375,7 +376,7 @@ export const TAX_ID_TYPES: ReadonlyArray<TaxIdTypeInfo> = [
 ]
 
 const TAX_ID_TYPE_BY_VALUE: ReadonlyMap<string, TaxIdTypeInfo> = new Map(
-	TAX_ID_TYPES.map((info) => [info.type, info]),
+	Arr.map(TAX_ID_TYPES, (info) => [info.type, info]),
 )
 
 export const isTaxIdType = (value: string): value is TaxIdType => TAX_ID_TYPE_BY_VALUE.has(value)
@@ -390,7 +391,7 @@ export const taxIdLabel = (type: string): string => TAX_ID_TYPE_BY_VALUE.get(typ
  */
 export const defaultTaxIdTypeFor = (country: string | null | undefined): TaxIdType | undefined => {
 	if (!country) return undefined
-	const code = country.toUpperCase()
+	const code = Str.toUpperCase(country)
 	if (EU_VAT_COUNTRY_CODES.includes(code)) return "eu_vat"
 	const match = TAX_ID_TYPES.find((info) => info.country === code)
 	return match === undefined || !isTaxIdType(match.type) ? undefined : match.type
@@ -399,7 +400,7 @@ export const defaultTaxIdTypeFor = (country: string | null | undefined): TaxIdTy
 /** Stripe's formatting example for a type, country-specific for `eu_vat`. */
 export const taxIdExampleFor = (type: string, country?: string | null): string => {
 	if (type === "eu_vat" && country) {
-		const eu = EU_VAT_COUNTRIES.find(([code]) => code === country.toUpperCase())
+		const eu = EU_VAT_COUNTRIES.find(([code]) => code === Str.toUpperCase(country))
 		if (eu) return eu[1]
 	}
 	return TAX_ID_TYPE_BY_VALUE.get(type)?.example ?? ""

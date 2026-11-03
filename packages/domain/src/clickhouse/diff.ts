@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * Pure schema-diff logic for self-managed ClickHouse drift detection.
  *
@@ -72,12 +73,12 @@ export type TableDiffEntry =
 const normalizeType = (type: string): string =>
 	// Collapse whitespace; CH's system.columns sometimes returns the type with
 	// or without spaces after commas in nested types, depending on version.
-	type.replace(/\s+/g, " ").replace(/ ?, ?/g, ", ").trim()
+	Str.trim(Str.replace(/ ?, ?/g, ", ")(Str.replace(/\s+/g, " ")(type)))
 
 const diffColumns = (desired: DesiredTable, actual: ActualTable): ReadonlyArray<ColumnDrift> => {
 	const drifts: ColumnDrift[] = []
-	const desiredByName = new Map(desired.columns.map((c) => [c.name, c]))
-	const actualByName = new Map(actual.columns.map((c) => [c.name, c]))
+	const desiredByName = new Map(Arr.map(desired.columns, (c) => [c.name, c]))
+	const actualByName = new Map(Arr.map(actual.columns, (c) => [c.name, c]))
 
 	for (const expected of desired.columns) {
 		const actualCol = actualByName.get(expected.name)
@@ -116,7 +117,7 @@ export const computeSchemaDiff = (
 	desired: DesiredSchema,
 	actual: ReadonlyMap<string, ActualTable>,
 ): ReadonlyArray<TableDiffEntry> =>
-	desired.tables.map((table): TableDiffEntry => {
+	Arr.map(desired.tables, (table): TableDiffEntry => {
 		const actualTable = actual.get(table.name)
 		if (!actualTable) {
 			return { status: "missing", name: table.name, kind: table.kind }

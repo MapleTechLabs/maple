@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 /**
  * Reserved agent-actor names.
  *
@@ -42,7 +43,7 @@ export const chatConnectorAgentName = (connectorId: string): string =>
 	`${CHAT_CONNECTOR_AGENT_PREFIX}${connectorId}`
 
 export const isReservedAgentName = (name: string): boolean =>
-	RESERVED_AGENT_NAMES.has(name) || name.startsWith(CHAT_CONNECTOR_AGENT_PREFIX)
+	RESERVED_AGENT_NAMES.has(name) || Str.startsWith(CHAT_CONNECTOR_AGENT_PREFIX)(name)
 
 const INTERNAL_AGENT_LABELS = new Map<string, string>([
 	[SYSTEM_ERRORS_AGENT_NAME, "Maple Errors"],

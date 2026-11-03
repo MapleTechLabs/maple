@@ -4,7 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { listFooter } from "@maple/views/ui/list-footer"
 import { vstack } from "@maple/views/ui/stack"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
@@ -14,7 +14,14 @@ import type { PageViewInputs } from "../kit/inputs"
 import { pageShell } from "../kit/page-shell"
 import { listSkeleton } from "../kit/placeholders"
 import { signalEmptyState } from "../kit/signal-empty-state"
-import { refreshButton, timeRangeSelect, toolbar, toolbarSearch, toolbarStat, toolbarStats } from "../kit/toolbar"
+import {
+	refreshButton,
+	timeRangeSelect,
+	toolbar,
+	toolbarSearch,
+	toolbarStat,
+	toolbarStats,
+} from "../kit/toolbar"
 import { filtersOf } from "./fetch"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -30,7 +37,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const query = queryOf(context.location)
 	const filters = filtersOf(query)
 	const range = rangeOf(context)
-	const activeFilterCount = [filters.service, filters.browser, filters.device, filters.errorsOnly].filter(Boolean).length
+	const activeFilterCount = Arr.filter(
+		[filters.service, filters.browser, filters.device, filters.errorsOnly],
+		Boolean,
+	).length
 	const hasActiveFilters = activeFilterCount > 0
 	const maybeData = AsyncData.getData(model.sessions.data)
 	const sessions = Option.match(maybeData, { onNone: () => [], onSome: (data) => data.pages.flat() })
@@ -40,7 +50,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		const failure = failureWithoutData(model.sessions)
 		if (Option.isSome(failure))
 			return errorState(h, {
-				failure: failure.value, title: "Couldn’t load sessions",
+				failure: failure.value,
+				title: "Couldn’t load sessions",
 				onRetry: Message.ClickedRefresh(),
 			})
 		if (sessions.length === 0)
@@ -52,7 +63,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onWidenRange: Message.ClickedWidenRange(),
 				presence: inputs.presenceOf("sessions"),
 				nowMs: inputs.presenceNowMs,
-				guide: { id: "sessions-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
+				guide: {
+					id: "sessions-empty",
+					endpoint: context.env.otlpEndpoint,
+					copies: model.copies,
+					toCopyMessage: toCopy,
+				},
 			})
 		const footer = listFooter(h, {
 			hasMore: hasNextPage,
@@ -66,8 +82,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				vstack(
 					h,
 					{ gap: "2" },
-					sessions.map((session) =>
-						sessionCard(h, session, hrefFor(`/sessions/${encodeURIComponent(session.sessionId)}`, query), model.nowMs, context.timeFormat),
+					Arr.map(sessions, (session) =>
+						sessionCard(
+							h,
+							session,
+							hrefFor(`/sessions/${encodeURIComponent(session.sessionId)}`, query),
+							model.nowMs,
+							context.timeFormat,
+						),
 					),
 				),
 				...(footer === null ? [] : [footer]),
@@ -88,7 +110,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			[
 				toolbarStat(h, { value: sessions.length, label: hasNextPage ? "sessions+" : "sessions" }),
 				toolbarStat(h, {
-					value: sessions.filter((session) => isLocalSessionLive(session, model.nowMs)).length,
+					value: Arr.filter(sessions, (session) => isLocalSessionLive(session, model.nowMs)).length,
 					label: "active",
 					hasDot: true,
 				}),
@@ -102,5 +124,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			"shrink-0",
 		),
 	])
-	return pageShell(h, { sidebar: sidebar(h, model, filters, hasActiveFilters), toolbar: bar, activeFilterCount, onOpenFilters: Message.ClickedOpenFilters() }, [content()])
+	return pageShell(
+		h,
+		{
+			sidebar: sidebar(h, model, filters, hasActiveFilters),
+			toolbar: bar,
+			activeFilterCount,
+			onOpenFilters: Message.ClickedOpenFilters(),
+		},
+		[content()],
+	)
 })

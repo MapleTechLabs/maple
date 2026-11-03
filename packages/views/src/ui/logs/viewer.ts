@@ -1,5 +1,5 @@
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, String as Str } from "effect"
 
 /** What a logs view reads from the browser before it renders: the display zone and number locale. */
 export const ViewerFlags = Schema.Struct({ timeZone: Schema.String, locale: Schema.String })
@@ -10,7 +10,7 @@ const TIMEZONE_STORAGE_KEY = "maple.preferences.timezone"
 const SYSTEM_VALUE = "__system__"
 
 const isValidIanaTimeZone = (zone: string): boolean =>
-	zone.trim().length > 0 && Intl.supportedValuesOf("timeZone").includes(zone)
+	Str.trim(zone).length > 0 && Intl.supportedValuesOf("timeZone").includes(zone)
 
 const browserTimeZone = (): string => {
 	const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -44,7 +44,8 @@ export const listFooterText = (
 	},
 ): string => {
 	const count = new Intl.NumberFormat(locale).format(options.shown)
-	const noun = options.shown === 1 && /[^s]s$/.test(options.noun) ? options.noun.slice(0, -1) : options.noun
+	const noun =
+		options.shown === 1 && /[^s]s$/.test(options.noun) ? Str.slice(0, -1)(options.noun) : options.noun
 	if (options.capped) return `Showing first ${count} ${noun}, narrow the filters to see more`
 	if (options.hasMore) return `Showing ${count} ${noun}, more available`
 	return `${count} ${noun}`
@@ -67,7 +68,10 @@ const encodeDensity = Schema.encodeSync(Schema.fromJsonString(Density))
 /** The `Atom.kvs` preferences (JSON in localStorage); unreadable ones fall back to the defaults. */
 export const readLogsViewPreferences: Effect.Effect<LogsViewPreferences> = Effect.sync(() => ({
 	wrap: Option.getOrElse(Option.flatMap(readLocalStorage(WRAP_KEY), decodeWrap), () => false),
-	density: Option.getOrElse(Option.flatMap(readLocalStorage(DENSITY_KEY), decodeDensity), (): Density => "compact"),
+	density: Option.getOrElse(
+		Option.flatMap(readLocalStorage(DENSITY_KEY), decodeDensity),
+		(): Density => "compact",
+	),
 }))
 
 export const saveLogsViewPreferences = (preferences: LogsViewPreferences): Effect.Effect<void> =>

@@ -1,6 +1,6 @@
 import { splitGenAiAttributes, type GenAiGroup } from "@maple/ui/lib/gen-ai"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { capForDisplay, prettyJson, tryParseJson } from "@maple/views/lib/display-text"
 import { attributeFilterAction } from "@maple/views/ui/attributes/attribute-row"
@@ -34,11 +34,9 @@ const commitShaValue = (h: H, id: string, value: string): Html => {
 	)
 	const onClick = Message.ClickedCopy({ id, text: value })
 	return FULL_SHA.test(value)
-		? pressable(
-				h,
-				{ onClick, className, attributes: [h.DataAttribute("slot", "hover-card-trigger")] },
-				[value],
-			)
+		? pressable(h, { onClick, className, attributes: [h.DataAttribute("slot", "hover-card-trigger")] }, [
+				value,
+			])
 		: pressable(h, { onClick, className }, [value])
 }
 
@@ -65,7 +63,7 @@ const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 					}),
 					isOpen
 						? h.span([h.Class("text-muted-foreground")], ["JSON"])
-						: h.span([], [value.length > 80 ? value.slice(0, 80) + "…" : value]),
+						: h.span([], [value.length > 80 ? Str.slice(0, 80)(value) + "…" : value]),
 				],
 			),
 			...(isOpen
@@ -201,8 +199,7 @@ const attributeRow = (h: H, model: Model, row: RowInput): Html => {
 
 const pick = (row: RowInput) => ({ scope: row.scope, key: row.attrKey, value: row.value })
 
-const tableTitle = (h: H, title: string): Html =>
-	heading(h, { level: 4, variant: "label" }, [title])
+const tableTitle = (h: H, title: string): Html => heading(h, { level: 4, variant: "label" }, [title])
 
 /** `AttributesTable` without search or namespace grouping (the span panel uses neither). */
 const attributesTable = (
@@ -214,14 +211,16 @@ const attributesTable = (
 	isFilterable: boolean,
 ): Html =>
 	entries.length === 0
-		? typography(h, { size: "xs", tone: "muted", as: "div", className: "py-2" }, [`No ${title.toLowerCase()} available`])
+		? typography(h, { size: "xs", tone: "muted", as: "div", className: "py-2" }, [
+				`No ${Str.toLowerCase(title)} available`,
+			])
 		: h.div(
 				[h.Class("space-y-1.5")],
 				[
 					tableTitle(h, title),
 					h.div(
 						[h.Class("divide-y divide-border-subtle overflow-hidden rounded-md border")],
-						entries.map(([attrKey, value]) =>
+						Arr.map(entries, ([attrKey, value]) =>
 							attributeRow(h, model, { scope, attrKey, value, isFilterable }),
 						),
 					),
@@ -244,7 +243,7 @@ const genAiSection = (
 					tableTitle(h, "AI attributes"),
 					h.div(
 						[h.Class("divide-y divide-border-subtle overflow-hidden rounded-md border")],
-						groups.map((group) =>
+						Arr.map(groups, (group) =>
 							h.div(
 								[],
 								[
@@ -262,7 +261,7 @@ const genAiSection = (
 												"divide-y divide-border-subtle border-t border-border-subtle bg-surface-faint",
 											),
 										],
-										group.fields.map((field) =>
+										Arr.map(group.fields, (field) =>
 											attributeRow(h, model, {
 												scope,
 												attrKey: field.key,
@@ -292,9 +291,9 @@ export const attributesSection = (
 ): Html => {
 	const isFilterable = options.isFilterable ?? true
 	const { groups, rest } = splitGenAiAttributes({ ...attributes })
-	const entries = Object.entries(rest)
-	const standard = entries.filter(([key]) => !key.startsWith("maple_"))
-	const internal = entries.filter(([key]) => key.startsWith("maple_"))
+	const entries = Rec.toEntries(rest)
+	const standard = Arr.filter(entries, ([key]) => !Str.startsWith("maple_")(key))
+	const internal = Arr.filter(entries, ([key]) => Str.startsWith("maple_")(key))
 	const internalId = `internal:${scope}`
 	const isInternalOpen = model.openIds.includes(internalId)
 	return h.div(

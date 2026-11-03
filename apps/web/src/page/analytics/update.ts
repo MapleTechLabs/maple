@@ -1,5 +1,5 @@
 import { toggleFilterValue, toggleTraffic } from "../../components/analytics/filters"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -56,7 +56,7 @@ const SLOT_SCHEMAS = {
 	traceSamples: Schema.Array(TraceSample),
 } satisfies Record<SlotName, Schema.Top>
 
-const SLOTS = Object.keys(SLOT_SCHEMAS).filter((name): name is SlotName => name in SLOT_SCHEMAS)
+const SLOTS = Arr.filter(Rec.keys(SLOT_SCHEMAS), (name): name is SlotName => name in SLOT_SCHEMAS)
 
 const decodeFailure: LoadFailure = toLoadFailure("The response could not be read.")
 

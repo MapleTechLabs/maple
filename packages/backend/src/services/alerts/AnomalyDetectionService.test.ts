@@ -1,7 +1,17 @@
 import { describe, expect, it } from "@effect/vitest"
 import { afterEach } from "vitest"
 import { AnomalyIncidentId, OrgId } from "@maple/domain/http"
-import { Clock, ConfigProvider, Effect, Layer, Ref, Schema, Semaphore } from "effect"
+import {
+	Clock,
+	ConfigProvider,
+	Effect,
+	Layer,
+	Ref,
+	Schema,
+	Semaphore,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { CacheBackend, EdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { Timestamp } from "@maple/domain/http/v2"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
@@ -93,7 +103,7 @@ const seedIncident = (
 		         '2026-07-15T09:12:00Z', $9, null, null, 'none', $1, '[]'::jsonb, 0, null,
 		         '2026-07-15T09:12:00Z', '2026-07-15T09:12:00Z')`,
 		[
-			asIncidentId(`00000000-0000-4000-8000-0000000000${String(incident.n).padStart(2, "0")}`),
+			asIncidentId(`00000000-0000-4000-8000-0000000000${Str.padStart(2, "0")(String(incident.n))}`),
 			incident.orgId,
 			// Suffixed with n: `anomaly_incidents_open_detector_idx` allows one OPEN
 			// incident per detector, so same-group rows model distinct detectors
@@ -104,7 +114,7 @@ const seedIncident = (
 			incident.deploymentEnv,
 			incident.status,
 			incident.severity,
-			`2026-07-15T09:${String(10 + incident.n).padStart(2, "0")}:00Z`,
+			`2026-07-15T09:${Str.padStart(2, "0")(String(10 + incident.n))}:00Z`,
 		],
 	)
 
@@ -202,9 +212,9 @@ describe("AnomalyDetectionService.runTick baseline cache", () => {
 		CacheBackend.of({
 			...makeMemoryBackend(),
 			get: (bucket) =>
-				bucket.startsWith("anomaly-") && bucket.endsWith("base")
+				Str.startsWith("anomaly-")(bucket) && Str.endsWith("base")(bucket)
 					? Effect.as(Effect.sleep("100 millis"), [])
-					: Effect.succeed(undefined),
+					: Effect.undefined,
 			put: () => Effect.void,
 		}),
 	)
@@ -266,7 +276,7 @@ describe("AnomalyDetectionService.runTick baseline cache", () => {
 			expect(contexts).toContain("anomalyTraceSignalsCurrent")
 			expect(contexts).toContain("anomalyErrorSpikeCurrent")
 			// ...and took all three 7-day baselines from the cache.
-			expect(contexts.filter((c) => c.endsWith("Baseline"))).toEqual([])
+			expect(Arr.filter(contexts, (c) => Str.endsWith("Baseline")(c))).toEqual([])
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -311,7 +321,7 @@ describe("AnomalyDetectionService.runTick baseline cache", () => {
 			),
 			Layer.provide(configLive),
 		)
-		const baselineContexts = () => contexts.filter((c) => c.endsWith("Baseline")).sort()
+		const baselineContexts = () => Arr.filter(contexts, (c) => Str.endsWith("Baseline")(c)).sort()
 
 		return Effect.gen(function* () {
 			yield* Effect.promise(() =>
@@ -349,13 +359,13 @@ describe("AnomalyDetectionService.runTick baseline cache", () => {
 describe("AnomalyDetectionService.runTick org config priming", () => {
 	it.effect("resolves every processed org's warehouse config in one batched read", () => {
 		const testDb = createTestDb(createdDbs)
-		const runId = Math.random().toString(36).slice(2, 10)
+		const runId = Str.slice(2, 10)(Math.random().toString(36))
 		// More orgs than the tick's per-org concurrency (4).
 		const orgs = Array.from({ length: 6 }, (_, i) => asOrgId(`org_anomaly_prime_${runId}_${i}`))
 		return Effect.gen(function* () {
 			yield* Effect.promise(() =>
 				Promise.all(
-					orgs.map((orgId) =>
+					Arr.map(orgs, (orgId) =>
 						executeSql(
 							testDb,
 							`INSERT INTO anomaly_detector_settings (org_id, enabled, sensitivity, muted_signals_json, created_at, updated_at)
@@ -373,7 +383,7 @@ describe("AnomalyDetectionService.runTick org config priming", () => {
 						Effect.andThen(
 							resolveConfig(tenant.orgId),
 							compiledQueryOf(compiled)
-								.decodeRows(orgs.map((orgId) => ({ orgId })))
+								.decodeRows(Arr.map(orgs, (orgId) => ({ orgId })))
 								.pipe(Effect.orDie),
 						),
 					warmRoute: (tenant) => resolveConfig(tenant.orgId),
@@ -456,7 +466,7 @@ describe("AnomalyDetectionService.runTick outbound budget", () => {
 			const model = yield* makeWorkerModel
 			yield* Effect.promise(() =>
 				Promise.all(
-					orgs.map((orgId) =>
+					Arr.map(orgs, (orgId) =>
 						executeSql(
 							testDb,
 							`INSERT INTO anomaly_detector_settings (org_id, enabled, sensitivity, muted_signals_json, created_at, updated_at)
@@ -469,7 +479,7 @@ describe("AnomalyDetectionService.runTick outbound budget", () => {
 			// Every baseline is cached for the hour, as on all but the first tick of an hour.
 			// Cold: every baseline read misses and the recomputed blob is written back.
 			const isBaselineBucket = (bucket: string) =>
-				bucket.startsWith("anomaly-") && bucket.endsWith("base")
+				Str.startsWith("anomaly-")(bucket) && Str.endsWith("base")(bucket)
 			const warmBaselineBackend = Layer.succeed(
 				CacheBackend,
 				CacheBackend.of({
@@ -480,7 +490,7 @@ describe("AnomalyDetectionService.runTick outbound budget", () => {
 									CACHE_READ_MS,
 									Effect.succeed(options.coldBaselines ? undefined : []),
 								)
-							: Effect.succeed(undefined),
+							: Effect.undefined,
 					put: (bucket) =>
 						isBaselineBucket(bucket) ? model.outbound(CACHE_READ_MS, Effect.void) : Effect.void,
 				}),
@@ -488,7 +498,7 @@ describe("AnomalyDetectionService.runTick outbound budget", () => {
 			const warehouse = makeWarehouseServiceStub({
 				crossOrgQuery: (_tenant, compiled) =>
 					compiledQueryOf(compiled)
-						.decodeRows(orgs.map((orgId) => ({ orgId })))
+						.decodeRows(Arr.map(orgs, (orgId) => ({ orgId })))
 						.pipe(Effect.orDie),
 				compiledQuery: (tenant, compiled, queryOptions) => {
 					const context = queryOptions?.context ?? ""

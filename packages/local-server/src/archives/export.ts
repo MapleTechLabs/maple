@@ -14,7 +14,7 @@ import {
 import { basename, join } from "node:path"
 import type { Chdb } from "../chdb"
 import { type ArchiveSignal } from "./signals"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 const decodeJsonRecord = Schema.decodeUnknownSync(
 	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
@@ -112,18 +112,28 @@ export interface WrittenShard {
 const HOURS_IN_DAY = Array.from({ length: 24 }, (_, hour) => hour)
 
 const shardName = (hour: number, seq: number): string =>
-	`${hour.toString().padStart(2, "0")}-${seq.toString().padStart(4, "0")}.parquet`
+	`${Str.padStart(2, "0")(hour.toString())}-${Str.padStart(4, "0")(seq.toString())}.parquet`
 
 /**
  * Parse a JSONEachRow result into rows (newline-delimited objects, not a JSON
  * array — matching the checkpoint module's readJsonRows idiom).
  */
 const readRows = (text: string): ReadonlyArray<Record<string, unknown>> =>
-	text
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0)
-		.map((line) => decodeJsonRecord(line))
+	Arr.map(
+		Arr.filter(
+			Arr.map(Str.split("\n")(text), (line) => Str.trim(line)),
+			(line) => line.length > 0,
+		),
+		(line) => decodeJsonRecord(line),
+	)
+
+/** A JSONEachRow scalar cell as text (64-bit ints arrive quoted); anything else is "". */
+const cellText = (value: unknown): string =>
+	typeof value === "string"
+		? value
+		: typeof value === "number" || typeof value === "bigint"
+			? String(value)
+			: ""
 
 const parseCount = (text: string): number => {
 	const row = readRows(text)[0]
@@ -145,7 +155,7 @@ const sha256File = (path: string): string => {
  * string literal. Escapes backslashes AND single quotes so neither can break
  * out of the literal or introduce escape sequences.
  */
-const sqlLiteral = (path: string): string => path.replace(/\\/g, "\\\\").replace(/'/g, "\\'")
+const sqlLiteral = (path: string): string => Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(path))
 
 /**
  * Refuse operator-controlled archive paths containing single quotes or
@@ -179,7 +189,7 @@ export const captureSourceSchema = (
 	signal: ArchiveSignal,
 ): ReadonlyArray<SourceColumn> => {
 	const rows = readRows(db.query(`DESCRIBE ${signal.name} FORMAT JSONEachRow`, "JSONEachRow"))
-	const cols = rows.map((r) => ({ name: String(r.name), type: String(r.type) }))
+	const cols = Arr.map(rows, (r) => ({ name: String(r.name), type: String(r.type) }))
 	if (cols.length === 0) throw new Error(`source table ${signal.name} has no columns`)
 	return cols
 }
@@ -192,9 +202,9 @@ export const captureSourceSchema = (
 const splitType = (type: string): { head: string; inner: string } | null => {
 	const open = type.indexOf("(")
 	if (open < 0) return null
-	const head = type.slice(0, open).trim()
-	if (!type.endsWith(")")) return null
-	const inner = type.slice(open + 1, -1)
+	const head = Str.trim(Str.slice(0, open)(type))
+	if (!Str.endsWith(")")(type)) return null
+	const inner = Str.slice(open + 1, -1)(type)
 	return { head, inner }
 }
 
@@ -211,11 +221,11 @@ const splitArgs = (inner: string): string[] => {
 		if (ch === "(") depth++
 		else if (ch === ")") depth--
 		else if (ch === "," && depth === 0) {
-			args.push(inner.slice(start, i).trim())
+			args.push(Str.trim(Str.slice(start, i)(inner)))
 			start = i + 1
 		}
 	}
-	const last = inner.slice(start).trim()
+	const last = Str.trim(Str.slice(start)(inner))
 	if (last.length > 0) args.push(last)
 	return args
 }
@@ -236,7 +246,7 @@ const splitArgs = (inner: string): string[] => {
  * Array(UInt64)) while the lossy round-3 collapse (head token only) is fixed.
  */
 export const normalizeType = (type: string): string => {
-	const t = type.trim()
+	const t = Str.trim(type)
 	const split = splitType(t)
 	if (!split) {
 		// Leaf types with no parameters. DateTime widens; DateTime64(N) gains UTC.
@@ -259,7 +269,7 @@ export const normalizeType = (type: string): string => {
 	}
 	if (/^Map$/i.test(head)) {
 		const args = splitArgs(inner)
-		return `Map(${args.map(normalizeType).join(", ")})`
+		return `Map(${Arr.join(Arr.map(args, normalizeType), ", ")})`
 	}
 	if (/^Array$/i.test(head)) {
 		return `Array(${normalizeType(inner)})`
@@ -305,9 +315,9 @@ export const normalizeType = (type: string): string => {
  * Returns e.g. `0, isNull(OrgId), if(isNull(OrgId), '', toString(OrgId)), 1, isNull(TimestampTime), if(isNull(TimestampTime), '', toString(toUnixTimestamp(TimestampTime, 'UTC'))), ...`.
  */
 const perRowHashArgs = (sourceSchema: ReadonlyArray<SourceColumn>): string =>
-	sourceSchema
-		.map((c, i) => {
-			const t = c.type.trim()
+	Arr.join(
+		Arr.map(sourceSchema, (c, i) => {
+			const t = Str.trim(c.type)
 			// Normalize TIME-bearing columns to a NUMERIC epoch so toString() of the
 			// value matches source↔Parquet (a raw time-type's toString renders in the
 			// session timezone on source but UTC on the Parquet side — measured). Bare
@@ -322,16 +332,17 @@ const perRowHashArgs = (sourceSchema: ReadonlyArray<SourceColumn>): string =>
 			// could collide with a real Nullable(String) value — verified). The
 			// value is '' when NULL (constant; the flag already distinguishes it).
 			return `${i}, isNull(${c.name}), if(isNull(${c.name}), '', toString(${norm}))`
-		})
-		.join(", ")
+		}),
+		", ",
+	)
 
 /** Normalize a column value to a timezone-stable form for the digest hash. */
 const normalizeValueForHash = (name: string, type: string): string => {
-	const t = type.trim()
+	const t = Str.trim(type)
 	if (t === "DateTime") return `toUnixTimestamp(${name}, 'UTC')`
-	if (t.startsWith("DateTime64(")) return `toUnixTimestamp64Nano(toDateTime64(${name}, 9))`
+	if (Str.startsWith("DateTime64(")(t)) return `toUnixTimestamp64Nano(toDateTime64(${name}, 9))`
 	if (t === "Array(DateTime)") return `arrayMap(x -> toUnixTimestamp(x, 'UTC'), ${name})`
-	if (t.startsWith("Array(DateTime64("))
+	if (Str.startsWith("Array(DateTime64(")(t))
 		return `arrayMap(x -> toUnixTimestamp64Nano(toDateTime64(x, 9)), ${name})`
 	return name
 }
@@ -381,7 +392,7 @@ export const compareSchema = (
 	parquetRows: ReadonlyArray<Record<string, unknown>>,
 	shardPath: string,
 ): ReadonlyArray<string> => {
-	const parquetCols = parquetRows.map((r) => ({ name: String(r.name), type: String(r.type) }))
+	const parquetCols = Arr.map(parquetRows, (r) => ({ name: String(r.name), type: String(r.type) }))
 	if (parquetCols.length === 0) {
 		throw new Error(
 			`archive shard validation failed: ${shardPath} reopened with no columns (schema lost)`,
@@ -412,7 +423,7 @@ export const compareSchema = (
 			)
 		}
 	}
-	return parquetCols.map((c) => c.name)
+	return Arr.map(parquetCols, (c) => c.name)
 }
 
 // Per-shard validation (H-1 reopen, H-A schema, H-B source count, H-D digest).
@@ -475,7 +486,7 @@ const validateShard = (
 			"JSONEachRow",
 		),
 	)[0]
-	if (String(dateRow?.dmn ?? "") !== rangeDate || String(dateRow?.dmx ?? "") !== rangeDate) {
+	if (cellText(dateRow?.dmn) !== rangeDate || cellText(dateRow?.dmx) !== rangeDate) {
 		throw new Error(
 			`archive shard validation failed: ${shardPath} contains rows outside date ${rangeDate}`,
 		)
@@ -500,13 +511,12 @@ const validateShard = (
 	// H-D: multiset complex-value digest. Source slice and reopened Parquet must
 	// produce the identical multiset digest. Detects column swaps, row-value
 	// reassociation, and dup/drop that preserve count and time extrema.
-	const srcDigest = String(
+	const srcDigest = cellText(
 		readRows(db.query(multisetDigestSql(sourceSchema, `${signal.name} WHERE ${pred}`), "JSONEachRow"))[0]
-			?.d ?? "",
+			?.d,
 	)
-	const parDigest = String(
-		readRows(db.query(multisetDigestSql(sourceSchema, `file('${lit}', Parquet)`), "JSONEachRow"))[0]?.d ??
-			"",
+	const parDigest = cellText(
+		readRows(db.query(multisetDigestSql(sourceSchema, `file('${lit}', Parquet)`), "JSONEachRow"))[0]?.d,
 	)
 	if (srcDigest.length === 0 || parDigest.length === 0) {
 		throw new Error(
@@ -534,10 +544,10 @@ const validateShard = (
 			"JSONEachRow",
 		),
 	)[0]
-	const srcMin = String(srcBounds?.mn ?? "")
-	const srcMax = String(srcBounds?.mx ?? "")
-	const parMin = String(parBounds?.mn ?? "")
-	const parMax = String(parBounds?.mx ?? "")
+	const srcMin = cellText(srcBounds?.mn)
+	const srcMax = cellText(srcBounds?.mx)
+	const parMin = cellText(parBounds?.mn)
+	const parMax = cellText(parBounds?.mx)
 	if (srcMin !== parMin || srcMax !== parMax) {
 		throw new Error(
 			`archive shard validation failed: ${shardPath} event-time bounds mismatch: source [${srcMin}, ${srcMax}] != Parquet [${parMin}, ${parMax}] (nanos)`,
@@ -641,7 +651,7 @@ export const enumeratePartsForHour = (
 			"JSONEachRow",
 		),
 	)
-	return rows.map((r) => ({
+	return Arr.map(rows, (r) => ({
 		part: String(r.part),
 		offsetMin: Number(r.lo),
 		offsetMax: Number(r.hi),
@@ -876,7 +886,7 @@ const exportShardPlans = (
 		// to the final HH-NNNN.parquet path; unpromoted candidates keep the
 		// `.candidate-N.parquet` name and must not survive a failure.
 		for (const c of candidates) {
-			if (existsSync(c) && basename(c).startsWith(".candidate-")) {
+			if (existsSync(c) && Str.startsWith(".candidate-")(basename(c))) {
 				try {
 					rmSync(c)
 				} catch {

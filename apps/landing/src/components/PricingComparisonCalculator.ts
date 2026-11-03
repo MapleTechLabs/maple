@@ -1,11 +1,18 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { makeIsland } from "../foldkit-island/island"
 import { brandMark, markColor, type BrandMarkId } from "../lib/brand-marks"
 import { vendorConfigs } from "../lib/vendor-pricing"
 import { calculatorView, type Competitor, initModel, Message, Model, update } from "./PricingCalculator"
 
-const COMPETITORS: ReadonlyArray<Competitor> = ["datadog", "grafana", "new-relic", "dash0", "openobserve", "signoz"]
+const COMPETITORS: ReadonlyArray<Competitor> = [
+	"datadog",
+	"grafana",
+	"new-relic",
+	"dash0",
+	"openobserve",
+	"signoz",
+]
 
 const MARKS = {
 	datadog: "datadog",
@@ -35,7 +42,7 @@ const vendorMark = (h: H, id: BrandMarkId, isActive: boolean): Html => {
 		],
 		[
 			...(layers !== undefined && !isActive
-				? layers.map((layer) => h.path([h.D(layer.path), h.Fill(layer.fill)], []))
+				? Arr.map(layers, (layer) => h.path([h.D(layer.path), h.Fill(layer.fill)], []))
 				: [h.path([h.D(mark.path)], [])]),
 			...(overlay === undefined
 				? []
@@ -80,10 +87,17 @@ const view = (model: Model, h: H): Html =>
 			h.div(
 				[h.Class("mb-3 flex flex-wrap items-center gap-x-4 gap-y-2")],
 				[
-					h.span([h.Class("text-[10px] uppercase tracking-wider text-fg-muted")], ["Compare against"]),
+					h.span(
+						[h.Class("text-[10px] uppercase tracking-wider text-fg-muted")],
+						["Compare against"],
+					),
 					h.div(
-						[h.Role("tablist"), h.AriaLabel("Compare against"), h.Class("inline-flex flex-wrap gap-1")],
-						COMPETITORS.map((c) => competitorTab(h, c, c === model.competitor)),
+						[
+							h.Role("tablist"),
+							h.AriaLabel("Compare against"),
+							h.Class("inline-flex flex-wrap gap-1"),
+						],
+						Arr.map(COMPETITORS, (c) => competitorTab(h, c, c === model.competitor)),
 					),
 				],
 			),

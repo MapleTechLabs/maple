@@ -21,6 +21,7 @@ import { baseValuesOf } from "./where-inputs"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The widget editor's query side: the source toggle, one `QueryPanel` per query,
 // `FormulaPanel`s, and the toolbar.
@@ -193,7 +194,7 @@ const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): 
 	return [
 		h.div(
 			[h.Class("space-y-3")],
-			state.queries.map((query, index) =>
+			Arr.map(state.queries, (query, index) =>
 				queryPanel(
 					h,
 					model,
@@ -209,7 +210,7 @@ const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): 
 			: [
 					h.div(
 						[h.Class("space-y-3")],
-						state.formulas.map((formula) => formulaPanel(h, formula)),
+						Arr.map(state.formulas, (formula) => formulaPanel(h, formula)),
 					),
 				]),
 		hstack(h, { gap: "3" }, [
@@ -242,10 +243,18 @@ const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): 
 			),
 			// Two text nodes once there are formulas.
 			typography(h, { size: "2xs", tone: "muted", className: "ml-auto" }, [
-				state.queries.map((query) => query.name).join(", "),
+				Arr.join(
+					Arr.map(state.queries, (query) => query.name),
+					", ",
+				),
 				...(state.formulas.length === 0
 					? []
-					: [`, ${state.formulas.map((formula) => formula.name).join(", ")}`]),
+					: [
+							`, ${Arr.join(
+								Arr.map(state.formulas, (formula) => formula.name),
+								", ",
+							)}`,
+						]),
 			]),
 		]),
 	]

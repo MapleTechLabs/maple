@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { prettyJson, tryParseJson } from "../../lib/display-text"
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyButton } from "../copy-button"
 import { icon } from "../icon"
@@ -70,7 +70,7 @@ const selectableValue = (
 /** `CollapsibleJsonValue`: an 80-char preview that expands into highlighted, copyable JSON. */
 const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 	const isExpanded = isOpen(model, `json:${id}`, false)
-	const preview = value.length > 80 ? value.slice(0, 80) + "…" : value
+	const preview = value.length > 80 ? Str.slice(0, 80)(value) + "…" : value
 	return h.div(
 		[h.Class("min-w-0")],
 		[
@@ -135,7 +135,8 @@ const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 
 const COMMIT_SHA_KEYS = new Set(["vcs.ref.head.revision"])
 const FULL_SHA = /^[0-9a-f]{40}$/i
-const COMMIT_SHA_CLASS = "-mx-0.5 cursor-pointer break-all rounded-sm px-0.5 hover:bg-surface-sunken active:bg-surface-sunken"
+const COMMIT_SHA_CLASS =
+	"-mx-0.5 cursor-pointer break-all rounded-sm px-0.5 hover:bg-surface-sunken active:bg-surface-sunken"
 
 /** A commit SHA value as a commit link. TODO(commit-card): the hover card itself. */
 const commitShaValue = (h: H, id: string, value: string): Html =>

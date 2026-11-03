@@ -7,7 +7,7 @@ import {
 	lowestVersion,
 	severityOf,
 } from "@maple/domain/runtime-advisories"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { cvss3BaseScore, severityOfScore } from "./cvss"
 
 // OSV vulnerability records, slimmed to what the scanner keeps, and how the records of one
@@ -73,9 +73,11 @@ export type OsvRecord = typeof OsvRecord.Type
 
 /** Many advisories carry no summary, only details: their first sentence stands in, capped. */
 const summaryOf = (vuln: OsvVulnResponse): string | null => {
-	const text = (vuln.summary ?? vuln.details?.split(/(?<=\.)\s/)[0] ?? "").trim()
+	const text = Str.trim(vuln.summary ?? vuln.details?.split(/(?<=\.)\s/)[0] ?? "")
 	if (text === "") return null
-	return text.length > SUMMARY_MAX_LENGTH ? `${text.slice(0, SUMMARY_MAX_LENGTH - 1).trimEnd()}…` : text
+	return text.length > SUMMARY_MAX_LENGTH
+		? `${Str.trimEnd(Str.slice(0, SUMMARY_MAX_LENGTH - 1)(text))}…`
+		: text
 }
 
 export const toOsvRecord = (vuln: OsvVulnResponse): OsvRecord => ({
@@ -86,13 +88,16 @@ export const toOsvRecord = (vuln: OsvVulnResponse): OsvRecord => ({
 	withdrawn: vuln.withdrawn !== undefined,
 	curatedSeverity: vuln.database_specific?.severity ?? null,
 	cvssV3: (vuln.severity ?? []).find((entry) => entry.type === "CVSS_V3")?.score ?? null,
-	affected: (vuln.affected ?? []).flatMap(({ package: pkg, ranges }) =>
+	affected: Arr.flatMap(vuln.affected ?? [], ({ package: pkg, ranges }) =>
 		pkg === undefined
 			? []
-			: (ranges ?? [])
-					// GIT ranges are commit hashes, not versions.
-					.filter((range) => range.type === "SEMVER" || range.type === "ECOSYSTEM")
-					.map((range) => ({ ecosystem: pkg.ecosystem, name: pkg.name, events: range.events })),
+			: Arr.map(
+					Arr.filter(
+						ranges ?? [],
+						(range) => range.type === "SEMVER" || range.type === "ECOSYSTEM",
+					),
+					(range) => ({ ecosystem: pkg.ecosystem, name: pkg.name, events: range.events }),
+				),
 	),
 })
 
@@ -109,52 +114,54 @@ const recordSeverity = (record: OsvRecord): AdvisorySeverity => {
 /** The lowest fix of the locked version across the record's ranges for that package. */
 const recordFix = (record: OsvRecord, ref: PackageRef): string | null => {
 	const compare = (a: string, b: string) => compareVersions(ref.ecosystem, a, b)
-	const fixes = record.affected
-		.filter((affected) => affected.ecosystem === ref.ecosystem && affected.name === ref.name)
-		.flatMap((affected) => {
-			const fixed = fixedVersionFor(affected.events, ref.version, compare)
-			return fixed === null ? [] : [fixed]
-		})
+	const fixes = Arr.filter(
+		record.affected,
+		(affected) => affected.ecosystem === ref.ecosystem && affected.name === ref.name,
+	).flatMap((affected) => {
+		const fixed = fixedVersionFor(affected.events, ref.version, compare)
+		return fixed === null ? [] : [fixed]
+	})
 	return lowestVersion(fixes, compare)
 }
 
 /** Records naming each other (directly or through a shared CVE) are one vulnerability. */
 export const groupByAlias = (records: ReadonlyArray<OsvRecord>): ReadonlyArray<ReadonlyArray<OsvRecord>> =>
-	records
-		.reduce<
+	Arr.map(
+		records.reduce<
 			ReadonlyArray<{ readonly names: ReadonlySet<string>; readonly records: ReadonlyArray<OsvRecord> }>
 		>((groups, record) => {
 			const names = [record.id, ...record.aliases]
-			const linked = groups.filter((group) => names.some((name) => group.names.has(name)))
-			const rest = groups.filter((group) => !linked.includes(group))
+			const linked = Arr.filter(groups, (group) => Arr.some(names, (name) => group.names.has(name)))
+			const rest = Arr.filter(groups, (group) => !linked.includes(group))
 			return [
 				...rest,
 				{
-					names: new Set([...names, ...linked.flatMap((group) => [...group.names])]),
-					records: [...linked.flatMap((group) => group.records), record],
+					names: new Set([...names, ...Arr.flatMap(linked, (group) => [...group.names])]),
+					records: [...Arr.flatMap(linked, (group) => group.records), record],
 				},
 			]
-		}, [])
-		.map((group) => group.records)
+		}, []),
+		(group) => group.records,
+	)
 
 /** Go fixes are listed without the `v` that go.mod versions carry. */
 const displayVersion = (ref: PackageRef, version: string): string =>
-	ref.ecosystem === "Go" && !version.startsWith("v") ? `v${version}` : version
+	ref.ecosystem === "Go" && !Str.startsWith("v")(version) ? `v${version}` : version
 
 /**
  * One advisory from the records of one vulnerability: the GHSA id (stable across scans) when there
  * is one, the worst rating any record gives, and the highest of their fixes, so every source agrees.
  */
 export const mergeAdvisory = (records: ReadonlyArray<OsvRecord>, ref: PackageRef): PackageAdvisory => {
-	const ids = [...new Set(records.map((record) => record.id))].sort()
-	const names = new Set(records.flatMap((record) => [record.id, ...record.aliases]))
+	const ids = [...new Set(Arr.map(records, (record) => record.id))].sort()
+	const names = new Set(Arr.flatMap(records, (record) => [record.id, ...record.aliases]))
 	// The GHSA id even when OSV only names it as an alias, so it holds once OSV returns that record too.
-	const id = [...names].sort().find((name) => name.startsWith("GHSA-")) ?? ids[0] ?? ""
+	const id = [...names].sort().find((name) => Str.startsWith("GHSA-")(name)) ?? ids[0] ?? ""
 	const ordered = [...records].sort((a, b) =>
-		a.id === id ? -1 : b.id === id ? 1 : a.id.localeCompare(b.id),
+		a.id === id ? -1 : b.id === id ? 1 : Str.localeCompare(b.id)(a.id),
 	)
 	const compare = (a: string, b: string) => compareVersions(ref.ecosystem, a, b)
-	const fixes = ordered.flatMap((record) => {
+	const fixes = Arr.flatMap(ordered, (record) => {
 		const fix = recordFix(record, ref)
 		return fix === null ? [] : [fix]
 	})
@@ -162,20 +169,19 @@ export const mergeAdvisory = (records: ReadonlyArray<OsvRecord>, ref: PackageRef
 		(highest, fix) => (highest === null || compare(fix, highest) > 0 ? fix : highest),
 		null,
 	)
-	const severity = ordered
-		.map(recordSeverity)
-		.filter((rated) => rated !== "unknown")
-		.reduce<AdvisorySeverity>(
-			(worst, rated) =>
-				worst === "unknown" || severityRank(rated) < severityRank(worst) ? rated : worst,
-			"unknown",
-		)
-	const published = ordered
-		.flatMap((record) => (record.published === null ? [] : [record.published]))
-		.sort()
+	const severity = Arr.filter(
+		Arr.map(ordered, recordSeverity),
+		(rated) => rated !== "unknown",
+	).reduce<AdvisorySeverity>(
+		(worst, rated) => (worst === "unknown" || severityRank(rated) < severityRank(worst) ? rated : worst),
+		"unknown",
+	)
+	const published = Arr.flatMap(ordered, (record) =>
+		record.published === null ? [] : [record.published],
+	).sort()
 	return {
 		id,
-		aliases: [...names].filter((name) => name !== id).sort(),
+		aliases: Arr.filter([...names], (name) => name !== id).sort(),
 		summary: ordered.find((record) => record.summary !== null)?.summary ?? null,
 		severity,
 		fixedIn: highestFix === null ? null : displayVersion(ref, highestFix),
@@ -188,4 +194,6 @@ export const advisoriesOf = (
 	records: ReadonlyArray<OsvRecord>,
 	ref: PackageRef,
 ): ReadonlyArray<PackageAdvisory> =>
-	groupByAlias(records.filter((record) => !record.withdrawn)).map((group) => mergeAdvisory(group, ref))
+	Arr.map(groupByAlias(Arr.filter(records, (record) => !record.withdrawn)), (group) =>
+		mergeAdvisory(group, ref),
+	)

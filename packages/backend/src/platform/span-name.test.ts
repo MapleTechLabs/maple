@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Tracer } from "effect"
+import { Effect, Tracer, Array as Arr } from "effect"
 import { updateCurrentSpanName } from "./span-name"
 
 const makeRecordingTracer = () => {
@@ -28,7 +28,7 @@ describe("updateCurrentSpanName", () => {
 			// what any exporter reads when the span ends. If this ever fails, Effect
 			// has started freezing or copying spans — see span-name.ts.
 			assert.deepStrictEqual(
-				spans.map((span) => span.name),
+				Arr.map(spans, (span) => span.name),
 				["SELECT alert_rules"],
 			)
 		}),
@@ -44,7 +44,7 @@ describe("updateCurrentSpanName", () => {
 				Effect.withTracer(tracer),
 			)
 
-			assert.deepStrictEqual(spans.map((span) => span.name).sort(), [
+			assert.deepStrictEqual(Arr.map(spans, (span) => span.name).sort(), [
 				"ErrorsService.listIssues",
 				"SELECT actors",
 			])

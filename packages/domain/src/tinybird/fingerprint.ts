@@ -11,7 +11,7 @@
  * grouping quality.
  */
 
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 export interface FingerprintInputs {
 	/** First normalized frame — stored on error_events and error_issues for display. */
@@ -334,7 +334,8 @@ export const ERROR_MSG_REDACTIONS: Redactions = [
  * Escape a pattern or replacement for embedding in a ClickHouse single-quoted
  * string literal.
  */
-export const chPattern = (value: string): string => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+export const chPattern = (value: string): string =>
+	`'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
 
 /**
  * Render a redaction list as the nested `replaceRegexpAll` chain ClickHouse
@@ -342,10 +343,11 @@ export const chPattern = (value: string): string => `'${value.replace(/\\/g, "\\
  * the same order `applyRedactions` does.
  */
 export const chRedactChain = (expr: string, redactions: Redactions): string =>
-	redactions.reduce(
-		(inner, [pattern, replacement]) =>
-			`replaceRegexpAll(${inner}, ${chPattern(pattern)}, ${chPattern(replacement.replace(/\$([1-9])/g, "\\$1"))})`,
+	Arr.reduce(
+		redactions,
 		expr,
+		(inner, [pattern, replacement]) =>
+			`replaceRegexpAll(${inner}, ${chPattern(pattern)}, ${chPattern(Str.replace(/\$([1-9])/g, "\\$1")(replacement))})`,
 	)
 
 /**
@@ -354,18 +356,17 @@ export const chRedactChain = (expr: string, redactions: Redactions): string =>
  * as RE2 does over UTF-8, instead of UTF-16 units.
  */
 export const applyRedactions = (value: string, redactions: Redactions): string =>
-	redactions.reduce(
-		(acc, [pattern, replacement]) => acc.replace(new RegExp(pattern, "gu"), replacement),
-		value,
+	Arr.reduce(redactions, value, (acc, [pattern, replacement]) =>
+		Str.replace(new RegExp(pattern, "gu"), replacement)(acc),
 	)
 
 /** The first `n` code points, as ClickHouse's `substringUTF8` / `leftUTF8` count them. */
-const leftCodePoints = (value: string, n: number): string => Array.from(value).slice(0, n).join("")
+const leftCodePoints = (value: string, n: number): string => Arr.join(Array.from(value).slice(0, n), "")
 
 /** 1-based code-point position of `needle`, 0 when absent, as `positionUTF8` returns. */
 const positionCodePoints = (value: string, needle: string): number => {
 	const index = value.indexOf(needle)
-	return index === -1 ? 0 : Array.from(value.slice(0, index)).length + 1
+	return index === -1 ? 0 : Array.from(Str.slice(0, index)(value)).length + 1
 }
 
 const FRAME_LINE_RE = new RegExp(FRAME_LINE_PATTERN, "u")
@@ -436,10 +437,12 @@ const readString = (s: string, at: number): Read<{ readonly text: string; readon
 	if (token === undefined || text === undefined || LONE_SURROGATE.test(text)) return undefined
 	// ClickHouse escapes the two line separators JSON.stringify leaves raw, and writes
 	// `\u000F` where JSON.stringify writes `\u000f`. An escaped backslash pairs first.
-	const raw = encodeJson(text)
-		.replace(/\u2028/g, "\\u2028")
-		.replace(/\u2029/g, "\\u2029")
-		.replace(/\\\\|\\u[0-9a-f]{4}/g, (escape) => escape.toUpperCase().replace("\\U", "\\u"))
+	const raw = Str.replace(
+		/\u2029/g,
+		"\\u2029",
+	)(Str.replace(/\u2028/g, "\\u2028")(encodeJson(text))).replace(/\\\\|\\u[0-9a-f]{4}/g, (escape) =>
+		Str.replace("\\U", "\\u")(Str.toUpperCase(escape)),
+	)
 	return { value: { text, raw }, end: at + token.length }
 }
 
@@ -454,7 +457,7 @@ const readNumber = (s: string, at: number): Read<string> => {
 	}
 	const n = Number(token)
 	if (!Number.isFinite(n)) return undefined
-	const value = Object.is(n, -0) ? "-0" : encodeJson(n).replace("e+", "e")
+	const value = Object.is(n, -0) ? "-0" : Str.replace("e+", "e")(encodeJson(n))
 	return { value, end: at + token.length }
 }
 
@@ -494,14 +497,23 @@ function readValue(s: string, at: number): Read<{ readonly raw: string; readonly
 	if (head === "{") {
 		const entries = readSequence(s, at, "}", readEntry)
 		if (entries === undefined) return undefined
-		const raw = `{${entries.value.map((e) => `${e.keyRaw}:${e.raw}`).join(",")}}`
+		const raw = `{${Arr.join(
+			Arr.map(entries.value, (e) => `${e.keyRaw}:${e.raw}`),
+			",",
+		)}}`
 		return { value: { raw, text: undefined }, end: entries.end }
 	}
 	if (head === "[") {
 		const items = readSequence(s, at, "]", readValue)
 		if (items === undefined) return undefined
 		return {
-			value: { raw: `[${items.value.map((v) => v.raw).join(",")}]`, text: undefined },
+			value: {
+				raw: `[${Arr.join(
+					Arr.map(items.value, (v) => v.raw),
+					",",
+				)}]`,
+				text: undefined,
+			},
 			end: items.end,
 		}
 	}
@@ -528,13 +540,14 @@ function jsonObjectEntries(s: string): ReadonlyArray<JsonEntry> | undefined {
  * is canonicalized.
  */
 function jsonSignature(entries: ReadonlyArray<JsonEntry>): string {
-	return entries
-		.map(
+	return Arr.join(
+		Arr.map(
+			entries,
 			({ key, raw }) =>
 				`${key}=${applyRedactions(raw, key === JSON_TYPE_KEY ? JSON_TYPE_VALUE_REDACTIONS : JSON_VALUE_REDACTIONS)}`,
-		)
-		.sort(compareCodePoints)
-		.join("|")
+		).sort(compareCodePoints),
+		"|",
+	)
 }
 
 /**
@@ -555,16 +568,16 @@ function statusLabel(statusMessage: string): string {
 
 	// Effect ParseError — not valid JSON; label by the first field. Must precede
 	// the JSON branch (these start with "{" but aren't JSON objects).
-	if (statusMessage.startsWith("{ readonly") || statusMessage.includes("└─")) {
+	if (Str.startsWith("{ readonly")(statusMessage) || Str.includes("└─")(statusMessage)) {
 		const m = statusMessage.match(/readonly (\w+)/)
 		return m ? `Schema parse error: ${m[1]}` : "Schema parse error"
 	}
 
 	const entries = jsonObjectEntries(statusMessage)
-	if (entries !== undefined || statusMessage.startsWith("[")) {
+	if (entries !== undefined || Str.startsWith("[")(statusMessage)) {
 		// `JSONType` / `JSONExtractString` read the FIRST of duplicate keys.
 		const text = (key: string) => entries?.find((e) => e.key === key)?.text ?? ""
-		const label = JSON_LABEL_KEYS.map(text).find((v) => v !== "")
+		const label = Arr.map(JSON_LABEL_KEYS, text).find((v) => v !== "")
 		if (label !== undefined) return label
 		const type = text("type")
 		if (type !== "") return /([^/]+)$/u.exec(type)?.[1] ?? ""
@@ -606,28 +619,31 @@ export function computeFingerprintInputs(args: {
 	// A namespaced type plus its message names the failure, so the throw site is enough.
 	// With no message the frames are the only identity left; keep all three.
 	const maxFrames =
-		args.exceptionType.includes("/") && msgSignature !== ""
+		Str.includes("/")(args.exceptionType) && msgSignature !== ""
 			? NAMESPACED_TYPE_MAX_FRAMES
 			: MAX_FINGERPRINT_FRAMES
-	const frameLines = args.exceptionStacktrace
-		.split("\n")
-		.filter(
-			(line) =>
-				FRAME_LINE_RE.test(line) &&
-				!line.includes(EFFECT_SPAN_FRAME_MARKER) &&
-				!SCHEMA_PATH_LINE_RE.test(line) &&
-				!SPAN_NAME_FRAME_RE.test(line) &&
-				!INTERNAL_FRAME_RE.test(line),
-		)
+	const frameLines = Arr.filter(
+		Str.split("\n")(args.exceptionStacktrace),
+		(line) =>
+			FRAME_LINE_RE.test(line) &&
+			!Str.includes(EFFECT_SPAN_FRAME_MARKER)(line) &&
+			!SCHEMA_PATH_LINE_RE.test(line) &&
+			!SPAN_NAME_FRAME_RE.test(line) &&
+			!INTERNAL_FRAME_RE.test(line),
+	)
 	// Repeats collapse after normalizing (`at index.js` twice is two anonymous closures in
 	// one bundle, or recursion), so they do not use up the frames the hash keeps.
-	const topFrames = (PYTHON_FRAME_RE.test(frameLines[0] ?? "") ? [...frameLines].reverse() : frameLines)
-		.slice(0, MAX_NORMALIZED_FRAMES)
-		.map(normalizeFrame)
+	const topFrames = Arr.map(
+		(PYTHON_FRAME_RE.test(frameLines[0] ?? "") ? [...frameLines].reverse() : frameLines).slice(
+			0,
+			MAX_NORMALIZED_FRAMES,
+		),
+		normalizeFrame,
+	)
 		.filter((frame, i, frames) => i === 0 || frame !== frames[i - 1])
 		.slice(0, maxFrames)
 	const topFrame = topFrames[0] ?? ""
-	const fpFrames = topFrames.join("\n")
+	const fpFrames = Arr.join(topFrames, "\n")
 
 	const label = args.exceptionType !== "" ? args.exceptionType : statusLabel(args.statusMessage)
 

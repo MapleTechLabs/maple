@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { ScrapeTargetId } from "@maple/domain/http"
 import type { V2PlanetScaleIntegration, V2PlanetScaleScrapeTarget } from "@maple/domain/http/v2"
 import {
@@ -134,7 +134,7 @@ describe("derivePlanetScaleSetup", () => {
 		const setup = derivePlanetScaleSetup(status(), NOW, { databases: 4, branches: 9 })
 		expect(setup.live).toBe("healthy")
 		expect(setup.awaitingFirstScrape).toBe(false)
-		expect(setup.checks.map((c) => c.state)).toEqual(["done", "done", "done"])
+		expect(Arr.map(setup.checks, (c) => c.state)).toEqual(["done", "done", "done"])
 		expect(setup.checks[1]!.detail).toBe("4 databases, 9 branches")
 	})
 

@@ -33,7 +33,7 @@
 import { spawnSync } from "node:child_process"
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { Predicate, Schema } from "effect"
+import { Predicate, Schema, Array as Arr, String as Str } from "effect"
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -189,13 +189,13 @@ const runMicro = (opts: {
 		return
 	}
 
-	const fmt = (n: number, w = 8) => n.toFixed(3).padStart(w)
+	const fmt = (n: number, w = 8) => Str.padStart(w)(n.toFixed(3))
 	const row = (r: BenchResult) =>
-		`  ${r.label.padEnd(44)} cpu ${fmt(r.cpuMs)} ms   wall ${fmt(r.wallMs)} ms`
+		`  ${Str.padEnd(44)(r.label)} cpu ${fmt(r.cpuMs)} ms   wall ${fmt(r.wallMs)} ms`
 
 	const engine = Predicate.isNotUndefined((globalThis as any).Bun)
 		? "Bun/JSC"
-		: `Node/V8 ${process.versions?.v8 ?? ""}`.trim()
+		: Str.trim(`Node/V8 ${process.versions?.v8 ?? ""}`)
 	console.log(`\nbench-startup-cpu — micro (median of ${reps} reps, ${engine})\n`)
 	console.log(row(rTagged))
 	console.log(row(rStructs))
@@ -271,7 +271,7 @@ const parseProfile = (path: string, json: boolean) => {
 		if (self <= 0) continue
 		if (node.callFrame.functionName === "(idle)") idleUs += self
 		const fn = node.callFrame.functionName || "(anonymous)"
-		const url = node.callFrame.url.replace(/^.*\/(node_modules|src|dist)\//, "$1/")
+		const url = Str.replace(/^.*\/(node_modules|src|dist)\//, "$1/")(node.callFrame.url)
 		const key = `${fn}  ${url}:${node.callFrame.lineNumber}`
 		const isSchema = SCHEMA_FRAME.test(`${fn} ${node.callFrame.url}`)
 		const prev = byFrame.get(key) ?? { self: 0, schema: isSchema }
@@ -281,8 +281,13 @@ const parseProfile = (path: string, json: boolean) => {
 
 	const ranked = [...byFrame.entries()].sort((a, b) => b[1].self - a[1].self)
 	const idleMs = idleUs / 1000
-	const activeCpuMs = (profile.timeDeltas.reduce((sum, delta) => sum + delta, 0) - idleUs) / 1000 // Sampled active time; exclude unsampled time.
-	const schemaMs = ranked.filter(([, v]) => v.schema).reduce((s, [, v]) => s + v.self, 0) / 1000
+	const activeCpuMs = (Arr.reduce(profile.timeDeltas, 0, (sum, delta) => sum + delta) - idleUs) / 1000 // Sampled active time; exclude unsampled time.
+	const schemaMs =
+		Arr.reduce(
+			Arr.filter(ranked, ([, v]) => v.schema),
+			0,
+			(s, [, v]) => s + v.self,
+		) / 1000
 
 	if (json) {
 		console.log(
@@ -293,7 +298,7 @@ const parseProfile = (path: string, json: boolean) => {
 				activeStartupCpuMs: activeCpuMs,
 				schemaAttributedMs: schemaMs,
 				cfStartupBudgetMs: CF_STARTUP_BUDGET_MS,
-				top: ranked.slice(0, 25).map(([frame, v]) => ({ frame, selfMs: v.self / 1000 })),
+				top: Arr.map(ranked.slice(0, 25), ([frame, v]) => ({ frame, selfMs: v.self / 1000 })),
 			}),
 		)
 		return
@@ -316,7 +321,7 @@ const parseProfile = (path: string, json: boolean) => {
 	console.log(`\n  top self-time frames:`)
 	for (const [frame, v] of ranked.slice(0, 20)) {
 		const mark = v.schema ? " «schema»" : ""
-		console.log(`    ${(v.self / 1000).toFixed(2).padStart(8)} ms  ${frame}${mark}`)
+		console.log(`    ${Str.padStart(8)((v.self / 1000).toFixed(2))} ms  ${frame}${mark}`)
 	}
 	console.log()
 }
@@ -342,7 +347,7 @@ const newestCpuProfile = (since: number): string | undefined => {
 				continue
 			}
 			if (st.isDirectory()) walk(p, depth + 1)
-			else if (name.endsWith(".cpuprofile") && st.mtimeMs >= since) {
+			else if (Str.endsWith(".cpuprofile")(name) && st.mtimeMs >= since) {
 				if (!best || st.mtimeMs > best.mtime) best = { path: p, mtime: st.mtimeMs }
 			}
 		}
@@ -413,7 +418,7 @@ const runWorker = (explicitProfile: string | undefined, json: boolean) => {
 }
 
 const argv = process.argv.slice(2)
-const mode = argv[0] && !argv[0].startsWith("-") ? argv[0] : "micro"
+const mode = argv[0] && !Str.startsWith("-")(argv[0]) ? argv[0] : "micro"
 const flag = (name: string, dflt: number): number => {
 	const i = argv.indexOf(`--${name}`)
 	return i >= 0 && argv[i + 1] ? Number(argv[i + 1]) : dflt
@@ -437,7 +442,7 @@ switch (mode) {
 		})
 		break
 	case "parse": {
-		const file = argv[1] && !argv[1].startsWith("-") ? argv[1] : strFlag("profile")
+		const file = argv[1] && !Str.startsWith("-")(argv[1]) ? argv[1] : strFlag("profile")
 		if (!file) {
 			console.error("usage: bench-startup-cpu.ts parse <file.cpuprofile>")
 			process.exit(1)

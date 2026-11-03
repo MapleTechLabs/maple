@@ -21,6 +21,7 @@ import {
 	type MaplePublicErrorType,
 } from "./errors"
 import { MapleEnvironment } from "./MapleEnvironment"
+import { String as Str } from "effect"
 
 /**
  * Thin JSON client for the Maple public v2 API.
@@ -237,7 +238,7 @@ export const listAll = (
 		const items: Array<unknown> = []
 		let cursor: string | null = null
 		do {
-			const sep = path.includes("?") ? "&" : "?"
+			const sep = Str.includes("?")(path) ? "&" : "?"
 			const page = (yield* api.get(
 				cursor === null
 					? `${path}${sep}limit=100`

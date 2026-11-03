@@ -8,7 +8,7 @@ import {
 } from "@maple/views/fixtures/service-map-bench-fixture"
 import type { DeclutterFocus } from "@maple/ui/components/service-map/service-map-declutter"
 import { cn } from "@maple/ui/lib/utils"
-import { Effect, Option, Schema, Stream } from "effect"
+import { Effect, Option, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount, Subscription, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -172,7 +172,7 @@ const groupSwitch = (h: HtmlBuilder<Message>, groups: number): Html =>
 		],
 		[
 			eyebrow(h, {}, ["Namespace groups"]),
-			...GROUP_OPTIONS.map((option) =>
+			...Arr.map(GROUP_OPTIONS, (option) =>
 				h.button(
 					[
 						h.Type("button"),

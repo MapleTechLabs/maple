@@ -24,6 +24,7 @@ import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
 import { isServiceChart, serviceChart, serviceLegend } from "./tiles-service"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `makeChartWidget`: one factory for every widget
 // that mounts a registry chart, each branch handing its chart only the settings it declares.
@@ -63,9 +64,10 @@ const primitiveRows = (rows: Rows): ReadonlyArray<Primitive> => {
 }
 
 const toPrimitiveRows = (rows: Rows): ReadonlyArray<Primitive> =>
-	rows.map((row) =>
-		Object.fromEntries(
-			Object.entries(row).flatMap(
+	Arr.map(rows, (row) =>
+		Rec.fromEntries(
+			Arr.flatMap(
+				Rec.toEntries(row),
 				([key, value]): ReadonlyArray<readonly [string, string | number | boolean]> =>
 					typeof value === "string" || typeof value === "boolean"
 						? [[key, value] as const]
@@ -112,7 +114,7 @@ const thresholdColor = (theme: ThemeColors, color: string | undefined): string =
 
 /** The cartesian block every line, area and bar chart reads (`renderChart`'s `cartesian`). */
 const axisSpecOf = (widget: Widget, theme: ThemeColors): TimeseriesAxisSpec => ({
-	thresholds: (widget.display.thresholds ?? []).map((threshold) => ({
+	thresholds: Arr.map(widget.display.thresholds ?? [], (threshold) => ({
 		value: threshold.value,
 		color: thresholdColor(theme, threshold.color),
 		label: threshold.label ?? null,
@@ -354,7 +356,7 @@ export const chartWidgetTile = <M>(
 					? undefined
 					: serviceLegend(chartId, data, theme, ctx.timeZone, ctx.nowMs)
 				: category === "bar"
-					? hoistedSeries(bucketBarSeries(primitiveRows(data)), theme).map((item) =>
+					? Arr.map(hoistedSeries(bucketBarSeries(primitiveRows(data)), theme), (item) =>
 							item.label === OTHER_LABEL
 								? { ...item, color: resolveColor(theme, "--muted-foreground") }
 								: item,

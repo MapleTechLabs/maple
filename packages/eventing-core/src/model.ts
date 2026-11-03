@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { DECIMAL_INT64_PATTERN, RFC3339_TIMESTAMP_PATTERN } from "./scalar-patterns"
 
 import {
@@ -273,4 +273,4 @@ export const fieldKey = (field: Pick<FieldRef, "namespace" | "key">): string =>
 export const defineSignalFields = (
 	fields: ReadonlyArray<{ readonly field: FieldRef; readonly value: SignalScalar }>,
 ): ReadonlyMap<string, SignalScalar> =>
-	new Map(fields.map(({ field, value }) => [fieldKey(field), value] as const))
+	new Map(Arr.map(fields, ({ field, value }) => [fieldKey(field), value] as const))

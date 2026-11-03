@@ -8,7 +8,7 @@ import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import { encodeLogKey } from "../../lib/log-key"
 import { tryParseJson } from "../../lib/display-text"
 import { SpanId, TraceId } from "@maple/domain"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 /** `LogRow` (`@maple/query-engine` route-rows): one log as the list renders it. */
 export const LogRecord = Schema.Struct({
@@ -80,7 +80,7 @@ const SEVERITY_NUMBER_LABELS = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATA
 
 // packages/ui/src/components/logs/severity-badge.tsx `severityLabel` (a React module).
 export const severityLabel = (severityText: string, severityNumber?: number): string => {
-	if (severityText.trim() !== "") return severityText
+	if (Str.trim(severityText) !== "") return severityText
 	if (severityNumber !== undefined && severityNumber >= 1 && severityNumber <= 24)
 		return SEVERITY_NUMBER_LABELS[Math.floor((severityNumber - 1) / 4)] ?? "UNSET"
 	return "UNSET"
@@ -97,7 +97,7 @@ const shortKey = (key: string): string => {
 	return key
 }
 const truncateValue = (value: string): string =>
-	value.length <= MAX_VALUE_CHARS ? value : value.slice(0, MAX_VALUE_CHARS - 1) + "…"
+	value.length <= MAX_VALUE_CHARS ? value : Str.slice(0, MAX_VALUE_CHARS - 1)(value) + "…"
 
 /** The compact and full timestamp formatters for the viewer's time zone. */
 export interface LogTimeFormat {
@@ -146,19 +146,19 @@ export const toLogRowView = (
 ): LogRowView => {
 	const pinned = new Set(pinnedColumns)
 	const body = stripAnsi(log.body)
-	const lines = body.split("\n")
-	const severity = severityLabel(log.severityText, log.severityNumber).toUpperCase()
+	const lines = Str.split("\n")(body)
+	const severity = Str.toUpperCase(severityLabel(log.severityText, log.severityNumber))
 	const compact = formatWith(time.compact, log.timestamp)
 	const dot = compact.lastIndexOf(".")
-	const chips = pickImportantAttributes(log, Number.POSITIVE_INFINITY)
-		.filter(
+	const chips = Arr.map(
+		Arr.filter(
+			pickImportantAttributes(log, Number.POSITIVE_INFINITY),
 			(attr) =>
 				attr.source === "log" &&
 				!pinned.has(attr.key) &&
-				!(attr.value.length >= 3 && log.body.includes(attr.value)),
-		)
-		.slice(0, MAX_INLINE_CHIPS)
-		.map((attr) => {
+				!(attr.value.length >= 3 && Str.includes(attr.value)(log.body)),
+		).slice(0, MAX_INLINE_CHIPS),
+		(attr) => {
 			const isJson = isJsonValue(attr.value)
 			return {
 				...attr,
@@ -166,10 +166,11 @@ export const toLogRowView = (
 				displayValue: isJson ? "{…}" : truncateValue(attr.value),
 				isJson,
 			}
-		})
+		},
+	)
 	return {
-		timeMain: dot === -1 ? compact : compact.slice(0, dot),
-		timeFraction: dot === -1 ? "" : compact.slice(dot),
+		timeMain: dot === -1 ? compact : Str.slice(0, dot)(compact),
+		timeFraction: dot === -1 ? "" : Str.slice(dot)(compact),
 		timeTitle: formatWith(time.full, log.timestamp),
 		severity,
 		severityColor: getSeverityColor(severity),
@@ -181,14 +182,14 @@ export const toLogRowView = (
 		rawBody: log.body,
 		traceHref: log.traceId === undefined || log.traceId === "" ? "" : links.trace(log.traceId),
 		logHref: Option.match(links.log, { onNone: () => "", onSome: (href) => href(encodeLogKey(log)) }),
-		pinned: pinnedColumns.map((key) => {
+		pinned: Arr.map(pinnedColumns, (key) => {
 			const value = log.logAttributes[key] ?? log.resourceAttributes[key] ?? EMPTY_VALUE
 			const isEmpty = value === EMPTY_VALUE
 			return {
 				key,
 				value,
 				isEmpty,
-				isNumeric: !isEmpty && value.trim() !== "" && !Number.isNaN(Number(value)),
+				isNumeric: !isEmpty && Str.trim(value) !== "" && !Number.isNaN(Number(value)),
 			}
 		}),
 		chips,

@@ -1,4 +1,4 @@
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { CompareCommitsOutput } from "@maple/domain/mcp-outputs"
 import { VCS_COMMIT_RANGE_COMMITS_MAX } from "@maple/domain/http"
 import { CH } from "@maple/query-engine"
@@ -45,7 +45,7 @@ const latestTwoVersions = (
 				(a, b) => DateTime.toEpochMillis(b.firstSeen) - DateTime.toEpochMillis(a.firstSeen),
 			)
 			const env = environment ?? newestFirst[0]?.environment
-			const [head, base] = newestFirst.filter((row) => row.environment === env)
+			const [head, base] = Arr.filter(newestFirst, (row) => row.environment === env)
 			return head === undefined || base === undefined
 				? undefined
 				: { head: head.commitSha, base: base.commitSha, environment: head.environment }
@@ -94,7 +94,7 @@ export function registerCompareCommitsTool(server: McpToolRegistrar) {
 					["head", params.head],
 				] as const,
 				([name, sha]) =>
-					sha === undefined || FULL_SHA.test(sha.toLowerCase())
+					sha === undefined || FULL_SHA.test(Str.toLowerCase(sha))
 						? Effect.void
 						: Effect.fail(
 								new McpInvalidInputError({
@@ -108,8 +108,8 @@ export function registerCompareCommitsTool(server: McpToolRegistrar) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
 			const ends = given
 				? {
-						base: (params.base ?? "").toLowerCase(),
-						head: (params.head ?? "").toLowerCase(),
+						base: Str.toLowerCase(params.base ?? ""),
+						head: Str.toLowerCase(params.head ?? ""),
 						environment: params.environment,
 					}
 				: yield* latestTwoVersions(params.service ?? "", params.environment, st, et)
@@ -168,9 +168,9 @@ export function registerCompareCommitsTool(server: McpToolRegistrar) {
 				repository: range?.repoFullName ?? "",
 				totalCount: range?.totalCount ?? 0,
 				truncated: range?.truncated ?? false,
-				commits: (range?.commits ?? []).map((commit) => ({
+				commits: Arr.map(range?.commits ?? [], (commit) => ({
 					sha: commit.sha,
-					title: commit.message.split("\n")[0] ?? "",
+					title: Str.split("\n")(commit.message)[0] ?? "",
 					author: commit.authorLogin ?? commit.authorName,
 					committedAt: new Date(commit.committedAt).toISOString(),
 					url: commit.htmlUrl,
@@ -182,8 +182,8 @@ export function registerCompareCommitsTool(server: McpToolRegistrar) {
 			const scope: ReadonlyArray<readonly [string, string | undefined]> = [
 				["Service", output.service],
 				["Environment", output.environment],
-				["Base", output.base === "" ? undefined : output.base.slice(0, 12)],
-				["Head", output.head === "" ? undefined : output.head.slice(0, 12)],
+				["Base", output.base === "" ? undefined : Str.slice(0, 12)(output.base)],
+				["Head", output.head === "" ? undefined : Str.slice(0, 12)(output.head)],
 				["Repository", output.repository === "" ? undefined : output.repository],
 			]
 			if (output.status === "unavailable") {
@@ -209,12 +209,12 @@ export function registerCompareCommitsTool(server: McpToolRegistrar) {
 				scope,
 				blocks: [
 					doc.text(
-						`${output.truncated ? "At least " : ""}${output.totalCount} commit${output.totalCount === 1 ? "" : "s"} after ${output.base.slice(0, 12)} up to ${output.head.slice(0, 12)}, newest first.`,
+						`${output.truncated ? "At least " : ""}${output.totalCount} commit${output.totalCount === 1 ? "" : "s"} after ${Str.slice(0, 12)(output.base)} up to ${Str.slice(0, 12)(output.head)}, newest first.`,
 					),
 					doc.table(
 						["Commit", "Committed", "Author", "Title"],
-						output.commits.map((commit) => [
-							commit.sha.slice(0, 12),
+						Arr.map(output.commits, (commit) => [
+							Str.slice(0, 12)(commit.sha),
 							commit.committedAt,
 							commit.author ?? "—",
 							truncate(commit.title, 120),

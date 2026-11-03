@@ -14,6 +14,7 @@ import { previewIssue, previewPayload, previewStateOf, type PreviewState } from 
 import { isoMs } from "../shared/time"
 import type { RuleForm } from "./form"
 import type { Model, TraceFacets } from "./model"
+import { Array as Arr } from "effect"
 
 // The live rows as the documents the editor reads.
 
@@ -27,8 +28,8 @@ export const tagSuggestionsOf = (
 	rows: ReadonlyArray<AlertRuleRow>,
 	previous: ReadonlyArray<string>,
 ): ReadonlyArray<string> => {
-	const tags = [...new Set(rows.flatMap((row) => rowToAlertRuleDocument(row, NO_STATES).tags))].sort()
-	return tags.length === previous.length && tags.every((tag, index) => tag === previous[index])
+	const tags = [...new Set(Arr.flatMap(rows, (row) => rowToAlertRuleDocument(row, NO_STATES).tags))].sort()
+	return tags.length === previous.length && Arr.every(tags, (tag, index) => tag === previous[index])
 		? previous
 		: tags
 }
@@ -39,9 +40,10 @@ export const openIncidentsOf = (
 ): ReadonlyArray<AlertIncidentDocument> =>
 	model.editingRuleId === null
 		? []
-		: (model.incidents ?? [])
-				.map(rowToAlertIncidentDocument)
-				.filter((incident) => incident.ruleId === model.editingRuleId && incident.status === "open")
+		: Arr.filter(
+				Arr.map(model.incidents ?? [], rowToAlertIncidentDocument),
+				(incident) => incident.ruleId === model.editingRuleId && incident.status === "open",
+			)
 
 const NO_FACETS: TraceFacets = {
 	services: [],

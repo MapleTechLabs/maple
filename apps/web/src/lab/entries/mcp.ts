@@ -1,7 +1,7 @@
 import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
 import { QueryEngineTimeoutError } from "@maple/domain/http"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import { Effect, Option } from "effect"
+import { Effect, Option, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
@@ -98,19 +98,26 @@ const SERVER_DESCRIPTION = `MCP ${MCP_OVERVIEW.protocolVersion} over ${MCP_OVERV
 const TOOL_DESCRIPTION = `${MCP_RUN_SQL.calls} calls from ${MCP_RUN_SQL.clients} clients · first call today ${formatClock(MCP_RUN_SQL.firstCallMs, TIME_ZONE)} · last call ${formatRelativeTime(MCP_RUN_SQL.lastCallMs, MCP_NOW)}`
 
 /** The facets list callers only, as the API's `allClients` does. */
-const CALLERS = MCP_OVERVIEW.clients.filter((client) => client.calls > 0)
+const CALLERS = Arr.filter(MCP_OVERVIEW.clients, (client) => client.calls > 0)
 
 /** The kind facet's counts: calls per client kind. */
-const KIND_OPTIONS = MCP_CLIENT_KINDS.map((kind) => ({
-	name: kind,
-	count: CALLERS.filter((client) => client.kind === kind).reduce((sum, client) => sum + client.calls, 0),
-})).filter((option) => option.count > 0)
+const KIND_OPTIONS = Arr.filter(
+	Arr.map(MCP_CLIENT_KINDS, (kind) => ({
+		name: kind,
+		count: Arr.reduce(
+			Arr.filter(CALLERS, (client) => client.kind === kind),
+			0,
+			(sum, client) => sum + client.calls,
+		),
+	})),
+	(option) => option.count > 0,
+)
 
 const toolbar = (h: H, model: Model, withSearch: boolean): Html => {
 	const clientSelect = facetSelect(h, {
 		label: "client",
 		value: model.client,
-		options: CALLERS.map((client) => ({ name: client.name, count: client.calls })),
+		options: Arr.map(CALLERS, (client) => ({ name: client.name, count: client.calls })),
 		model: model.clientSelect,
 		toMessage: (message) => Message.GotSelectMessage({ facet: "client", message }),
 	})
@@ -263,7 +270,7 @@ const pageView = (model: Model, h: H): Html => {
 							percentileToggle: segmented(
 								h,
 								model.percentileToggle,
-								ToolPercentile.literals.map((value) => ({ value, label: value })),
+								Arr.map(ToolPercentile.literals, (value) => ({ value, label: value })),
 								(message) => Message.GotPercentileMessage({ message }),
 								"absolute top-3 right-5 p-px",
 							),
@@ -351,7 +358,7 @@ const pageView = (model: Model, h: H): Html => {
 					tabs: underlineTabStrip(
 						h,
 						{ label: "Service sections", navigation: true },
-						["Overview", "API", "Operations", "Dependencies", "MCP"].map((label) =>
+						Arr.map(["Overview", "API", "Operations", "Dependencies", "MCP"], (label) =>
 							h.a([h.Class(underlineTabClass(label === "MCP")), h.Href("#")], [label]),
 						),
 					),
@@ -408,7 +415,7 @@ const viewSwitcher = (model: Model, h: H): Html =>
 				"fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-raised",
 			),
 		],
-		VIEWS.map((view) =>
+		Arr.map(VIEWS, (view) =>
 			h.button(
 				[
 					h.Type("button"),

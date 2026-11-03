@@ -6,7 +6,17 @@
  * also what renders them into the published description: a description cannot claim a
  * default the decoder does not apply.
  */
-import { Clock, Effect, Option, Schema, SchemaGetter, SchemaTransformation } from "effect"
+import {
+	Clock,
+	Effect,
+	Option,
+	Schema,
+	SchemaGetter,
+	SchemaTransformation,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { AlertDestinationId, AlertRuleId, DashboardId, ErrorIssueId } from "@maple/domain/primitives"
 import { WarehouseTimeInput, type WarehouseDateTime } from "@maple/query-engine"
@@ -22,7 +32,7 @@ import { CurrentWindowNotes } from "./window-notes"
  * `limit: 0`); `Finite` rejects `"soon"`.
  */
 const NumericString = Schema.String.check(
-	Schema.makeFilter((value: string) => value.trim().length > 0, {
+	Schema.makeFilter((value: string) => Str.trim(value).length > 0, {
 		title: "nonBlankNumericString",
 		expected: "a number, or omit the parameter (an empty string is not a number)",
 	}),
@@ -48,7 +58,7 @@ const OPTIONAL_TEXT_TRANSFORMATION = {
 	decode: SchemaGetter.transformOptional((option: Option.Option<string | undefined>) =>
 		option.pipe(
 			Option.flatMap(Option.fromUndefinedOr),
-			Option.map((value) => value.trim()),
+			Option.map((value) => Str.trim(value)),
 			Option.filter((value) => value !== ""),
 		),
 	),
@@ -113,11 +123,11 @@ export const optionalOneOfList = <const L extends ReadonlyArray<string>>(values:
  */
 const COMMA_SPLIT = SchemaTransformation.transform<ReadonlyArray<string>, string>({
 	decode: (value) =>
-		value
-			.split(",")
-			.map((part) => part.trim())
-			.filter((part) => part !== ""),
-	encode: (values) => values.join(","),
+		Arr.filter(
+			Arr.map(Str.split(",")(value), (part) => Str.trim(part)),
+			(part) => part !== "",
+		),
+	encode: (values) => Arr.join(values, ","),
 })
 
 const CommaList = Schema.String.pipe(Schema.decodeTo(Schema.Array(Schema.String), COMMA_SPLIT))
@@ -142,7 +152,7 @@ const RESOURCE_IDS = {
 
 export type ResourceIdKind = keyof typeof RESOURCE_IDS
 
-const KNOWN_PREFIXES: ReadonlySet<string> = new Set(Object.values(PublicIdPrefixes))
+const KNOWN_PREFIXES: ReadonlySet<string> = new Set(Rec.values(PublicIdPrefixes))
 
 /**
  * The internal id behind `raw`: its REST public id (`dest_…`) decodes, anything else passes
@@ -150,8 +160,8 @@ const KNOWN_PREFIXES: ReadonlySet<string> = new Set(Object.values(PublicIdPrefix
  */
 export const internalIdOf = (kind: ResourceIdKind, raw: string): Option.Option<string> => {
 	const { prefix } = RESOURCE_IDS[kind]
-	const value = raw.trim()
-	if (value.startsWith(`${prefix}_`)) return Option.fromNullOr(decodePublicId(prefix, value))
+	const value = Str.trim(raw)
+	if (Str.startsWith(`${prefix}_`)(value)) return Option.fromNullOr(decodePublicId(prefix, value))
 	const other = /^([a-z]+)_/.exec(value)?.[1]
 	return other !== undefined && KNOWN_PREFIXES.has(other) ? Option.none() : Option.some(value)
 }
@@ -165,7 +175,7 @@ const normalizedId = (kind: ResourceIdKind) =>
 		Schema.decodeTo(
 			Schema.String,
 			SchemaTransformation.transform({
-				decode: (raw: string) => Option.getOrElse(internalIdOf(kind, raw), () => raw.trim()),
+				decode: (raw: string) => Option.getOrElse(internalIdOf(kind, raw), () => Str.trim(raw)),
 				encode: (id: string) => id,
 			}),
 		),
@@ -204,7 +214,7 @@ const invalidId = (kind: ResourceIdKind, raw: string, parameter: string) =>
 
 /** A comma-separated string with no ids in it is a model's "nothing", not a request to clear a list. */
 const NonBlankCommaList = Schema.String.check(
-	Schema.makeFilter((value: string) => value.split(",").some((part) => part.trim() !== ""), {
+	Schema.makeFilter((value: string) => Arr.some(Str.split(",")(value), (part) => Str.trim(part) !== ""), {
 		title: "nonBlankList",
 		expected: "at least one id; pass [] to clear the list",
 	}),
@@ -313,15 +323,15 @@ export const timeWindow = (spec: TimeWindowSpec) => {
 	const cap =
 		spec.maxHours === undefined
 			? ""
-			: ` Covers at most ${formatHours(spec.maxHours)}: a wider window keeps end_time and is narrowed to the ${formatHours(spec.maxHours)} before it.`
+			: ` Covers at most ${formatHours(spec.maxHours)}; a wider window is narrowed to the ${formatHours(spec.maxHours)} before end_time.`
 	return {
 		spec,
 		fields: {
 			start_time: Schema.optional(WarehouseTimeInput).annotate({
-				description: `Start of the window, ${TIMESTAMP_FORMAT}. Default: ${formatHours(spec.defaultHours)} before end_time.${cap}`,
+				description: `Window start, ${TIMESTAMP_FORMAT}. Default: ${formatHours(spec.defaultHours)} before end_time.${cap}`,
 			}),
 			end_time: Schema.optional(WarehouseTimeInput).annotate({
-				description: `End of the window, ${TIMESTAMP_FORMAT}. Default: now; a future time is clamped to now.`,
+				description: "Window end, UTC, same format. Default: now.",
 			}),
 		},
 		resolve: (

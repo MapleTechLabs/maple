@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { AlertDestinationId, type IssueEscalationPolicyRule } from "@maple/domain/http"
+import { AlertDestinationId, IssueEscalationPolicyRule } from "@maple/domain/http"
 import { Schema } from "effect"
 import { evaluateEscalationPolicy } from "./escalation-policy"
 
@@ -7,11 +7,11 @@ const decodeDestinationId = Schema.decodeUnknownSync(AlertDestinationId)
 const primary = decodeDestinationId("00000000-0000-4000-8000-000000000001")
 const disabled = decodeDestinationId("00000000-0000-4000-8000-000000000002")
 const rules: ReadonlyArray<IssueEscalationPolicyRule> = [
-	{
+	new IssueEscalationPolicyRule({
 		severity: "high",
 		destinationIds: [primary, disabled],
 		minConfidence: "high",
-	},
+	}),
 ]
 
 describe("evaluateEscalationPolicy", () => {

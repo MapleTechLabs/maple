@@ -1,5 +1,5 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import {
 	LogsFacetDimension,
 	QueryEngineExecuteRequest,
@@ -363,9 +363,10 @@ const getLogsFacetValuesEffect = Effect.fn("QueryEngine.getLogsFacetValues")(fun
 	)
 
 	return {
-		data: extractFacets(response)
-			.filter((row) => row.facetType === input.facet && row.name)
-			.map((row): FacetItem => ({ name: row.name, count: Number(row.count) })),
+		data: Arr.map(
+			extractFacets(response).filter((row) => row.facetType === input.facet && row.name),
+			(row): FacetItem => ({ name: row.name, count: Number(row.count) }),
+		),
 	}
 })
 
@@ -403,7 +404,7 @@ const getLogAttributeKeysEffect = Effect.fn("QueryEngine.getLogAttributeKeys")(f
 	if (result.kind !== "attributeKeys") return { data: [] }
 
 	return {
-		data: result.data.map((row) => ({
+		data: Arr.map(result.data, (row) => ({
 			attributeKey: row.key,
 			usageCount: Number(row.count),
 		})),

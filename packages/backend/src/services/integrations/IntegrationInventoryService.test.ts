@@ -2,10 +2,15 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { RailwayConnections, RailwayEnvironments, ScrapeTargets } from "@maple/db/tables"
 import { OrgId, ScrapeTargetId, SourceId } from "@maple/domain/primitives"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, insertTestSource, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	insertTestSource,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 import { IntegrationInventoryService } from "./IntegrationInventoryService"
 
 const createdDbs: TestDb[] = []
@@ -92,15 +97,13 @@ describe("IntegrationInventoryService", () => {
 			const inventory = yield* (yield* IntegrationInventoryService).list(asOrgId("org_a"))
 
 			assert.deepStrictEqual(
-				inventory.integrations.map((i) => i.provider),
+				Arr.map(inventory.integrations, (i) => i.provider),
 				["railway"],
 			)
 			const railway = inventory.integrations[0]
 			assert.strictEqual(railway?.account, "org_a-workspace")
 			assert.strictEqual(railway?.status, "healthy")
 			assert.strictEqual(railway?.resources[0]?.note, "2 services")
-		}).pipe(
-			Effect.provide(IntegrationInventoryService.layer.pipe(Layer.provideMerge(testDb.layer))),
-		)
+		}).pipe(Effect.provide(IntegrationInventoryService.layer.pipe(Layer.provideMerge(testDb.layer))))
 	})
 })

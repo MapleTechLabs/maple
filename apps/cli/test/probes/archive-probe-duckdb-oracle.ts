@@ -16,6 +16,7 @@ import { execSync } from "node:child_process"
 import { ArchiveProbe, readRows } from "../archive-probe-helpers"
 import { archiveSignal } from "@maple/local-server/archives/signals"
 import { exportSignalShards } from "@maple/local-server/archives/export"
+import { Array as Arr, String as Str } from "effect"
 
 const SCHEMA = `CREATE DATABASE IF NOT EXISTS default;
 CREATE TABLE IF NOT EXISTS default.traces (
@@ -34,13 +35,18 @@ mkdirSync(h.outDir, { recursive: true })
 
 /** Run a scalar/CSV DuckDB query over a list of parquet paths. */
 const duckScalar = (paths: string[], expr: string): string => {
-	const list = paths.map((p) => `'${p}'`).join(",")
-	return execSync(
-		`duckdb -csv -noheader -c "SELECT ${expr} FROM read_parquet([${list}], union_by_name=true)"`,
-		{
-			encoding: "utf8",
-		},
-	).trim()
+	const list = Arr.join(
+		Arr.map(paths, (p) => `'${p}'`),
+		",",
+	)
+	return Str.trim(
+		execSync(
+			`duckdb -csv -noheader -c "SELECT ${expr} FROM read_parquet([${list}], union_by_name=true)"`,
+			{
+				encoding: "utf8",
+			},
+		),
+	)
 }
 
 try {
@@ -72,8 +78,8 @@ try {
 		maxShardBytes: 256 * 1024 * 1024,
 	})
 
-	const tPaths = tShards.map((s) => s.path)
-	const hPaths = hShards.map((s) => s.path)
+	const tPaths = Arr.map(tShards, (s) => s.path)
+	const hPaths = Arr.map(hShards, (s) => s.path)
 
 	// ORACLE 1 — traces row count via DuckDB equals source.
 	const srcTraces = Number(readRows(db.query(`SELECT count() c FROM traces`, "JSONEachRow"))[0]!.c)
@@ -99,10 +105,15 @@ try {
 	// makes epoch_us host-tz-dependent). DuckDB reads DateTime64(9) as TIMESTAMP
 	// WITH TIME ZONE, so epoch_us on the raw column is UTC-stable.
 	const duckMicro = BigInt(
-		execSync(
-			`duckdb -csv -noheader -c "SELECT epoch_us(Timestamp) FROM read_parquet([${tPaths.map((p) => `'${p}'`).join(",")}], union_by_name=true) WHERE TraceId='t1'"`,
-			{ encoding: "utf8" },
-		).trim(),
+		Str.trim(
+			execSync(
+				`duckdb -csv -noheader -c "SELECT epoch_us(Timestamp) FROM read_parquet([${Arr.join(
+					Arr.map(tPaths, (p) => `'${p}'`),
+					",",
+				)}], union_by_name=true) WHERE TraceId='t1'"`,
+				{ encoding: "utf8" },
+			),
+		),
 	)
 	if (duckMicro !== srcMicro) {
 		h.fail(`DuckDB timestamp micros ${duckMicro} != source ${srcMicro} for the high-precision t1 row`)
@@ -120,10 +131,15 @@ try {
 		readRows(db.query(`SELECT BucketCounts FROM metrics_histogram WHERE Count=3`, "JSONEachRow"))[0]!
 			.BucketCounts,
 	)
-	const duckBuckets = execSync(
-		`duckdb -csv -noheader -c "SELECT BucketCounts FROM read_parquet([${hPaths.map((p) => `'${p}'`).join(",")}], union_by_name=true) WHERE Count=3"`,
-		{ encoding: "utf8" },
-	).trim()
+	const duckBuckets = Str.trim(
+		execSync(
+			`duckdb -csv -noheader -c "SELECT BucketCounts FROM read_parquet([${Arr.join(
+				Arr.map(hPaths, (p) => `'${p}'`),
+				",",
+			)}], union_by_name=true) WHERE Count=3"`,
+			{ encoding: "utf8" },
+		),
+	)
 	// DuckDB renders arrays as [1,1,1] or {1,1,1}; both contain three 1s.
 	const srcOnes = (srcBuckets.match(/1/g) || []).length
 	const duckOnes = (duckBuckets.match(/1/g) || []).length

@@ -19,7 +19,7 @@
  * generic Maple card is a worse preview; a rewrite that throws is a broken
  * dashboard, and the page is what people actually came for.
  */
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { ogCardNode } from "./card"
 import { renderOgCard, type AssetFetcher, type EmbeddedImage } from "./render"
 import { ogMetaAdditions, ogMetaReplacements, type ShareOgMeta } from "./share-links"
@@ -69,7 +69,10 @@ const postJson = (api: ApiTarget, path: string, body: unknown): Promise<Response
 
 const digest = async (value: string): Promise<string> => {
 	const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
-	return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+	return Arr.join(
+		Arr.map([...new Uint8Array(bytes)], (byte) => Str.padStart(2, "0")(byte.toString(16))),
+		"",
+	)
 }
 
 /** Cache entry shape. `meta` absent is the cached "this link has no preview". */
@@ -179,10 +182,10 @@ const readCapped = async (
 	const total = await read(0)
 	if (total === undefined) return undefined
 	const data = new Uint8Array(total)
-	chunks.reduce((offset, chunk) => {
+	Arr.reduce(chunks, 0, (offset, chunk) => {
 		data.set(chunk, offset)
 		return offset + chunk.byteLength
-	}, 0)
+	})
 	return data
 }
 

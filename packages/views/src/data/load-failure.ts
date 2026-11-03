@@ -1,5 +1,6 @@
 import { PublicHttpErrorBodySchema } from "@maple/domain/http"
 import { displayError } from "@maple/web-data/lib/error-messages"
+import { String as Str } from "effect"
 
 /**
  * A failed load as the Model keeps it: the public error body `displayError` derives from the
@@ -22,13 +23,14 @@ export const isTransientOutage = (failure: LoadFailure): boolean =>
 	failure.type === "api_error" && failure.retryable && failure.recovery === "retry"
 
 /** Warehouse codes (`warehouse_unavailable`, `warehouse_query_failed`) name the query backend, not the API. */
-export const isWarehouseFailure = (failure: LoadFailure): boolean => failure.code.startsWith("warehouse_")
+export const isWarehouseFailure = (failure: LoadFailure): boolean =>
+	Str.startsWith("warehouse_")(failure.code)
 
 /** Server outages read as one sentence; the title already names the subject. */
 export const failureMessage = (failure: LoadFailure): string => {
 	if (!isTransientOutage(failure)) return failure.message
 	if (isWarehouseFailure(failure)) return FAILURE_SENTENCE.warehouse
-	return failure._tag.startsWith("@maple/web/errors/") ? failure.message : FAILURE_SENTENCE.backend
+	return Str.startsWith("@maple/web/errors/")(failure._tag) ? failure.message : FAILURE_SENTENCE.backend
 }
 
 export const toLoadFailure = (error: unknown): LoadFailure => {

@@ -12,7 +12,7 @@
 // form as local time. Durations stay in nanoseconds all the way to the
 // formatters.
 
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import {
 	AI_TOOLS_OTHER_SERIES_KEY,
 	AiToolErrorDetailRequest,
@@ -120,7 +120,7 @@ const seriesKeyOf = (key: string): string => {
 }
 
 export function mapToolSeries(response: AiToolsSeriesResponse): ReadonlyArray<ToolSeriesPoint> {
-	return response.data.map((row) => ({
+	return Arr.map(response.data, (row) => ({
 		bucket: toEpochMs(row.bucket),
 		seriesKey: seriesKeyOf(row.seriesKey),
 		...measuresOf(row),
@@ -128,7 +128,7 @@ export function mapToolSeries(response: AiToolsSeriesResponse): ReadonlyArray<To
 }
 
 export function mapToolBreakdown(rows: ReadonlyArray<AiToolsBreakdownItem>): ReadonlyArray<ToolBreakdownRow> {
-	return rows.map((row) => ({
+	return Arr.map(rows, (row) => ({
 		key: row.key,
 		...measuresOf(row),
 		lastSeen: toEpochMs(row.lastSeen),
@@ -289,7 +289,7 @@ const AiToolErrorSamplesInput = Schema.Struct({
 export type AiToolErrorSamplesInput = Schema.Schema.Type<typeof AiToolErrorSamplesInput>
 
 export function mapToolErrors(rows: ReadonlyArray<AiToolErrorItem>): ReadonlyArray<ToolErrorRow> {
-	return rows.map((row) => ({
+	return Arr.map(rows, (row) => ({
 		fingerprint: row.fingerprint,
 		errorType: row.errorType,
 		message: row.message,
@@ -299,12 +299,12 @@ export function mapToolErrors(rows: ReadonlyArray<AiToolErrorItem>): ReadonlyArr
 		firstSeen: toEpochMs(row.firstSeen),
 		lastSeen: toEpochMs(row.lastSeen),
 		callsSince: row.callsSince,
-		trend: row.trend.map((point) => ({ bucket: toEpochMs(point.bucket), calls: point.calls })),
+		trend: Arr.map(row.trend, (point) => ({ bucket: toEpochMs(point.bucket), calls: point.calls })),
 	}))
 }
 
 const mapErrorSessions = (rows: ReadonlyArray<AiToolErrorSessionItem>): ReadonlyArray<ToolErrorSessionRow> =>
-	rows.map((row) => ({
+	Arr.map(rows, (row) => ({
 		sessionId: row.sessionId,
 		vendorId: row.vendorId,
 		agentName: row.agentName,
@@ -314,10 +314,10 @@ const mapErrorSessions = (rows: ReadonlyArray<AiToolErrorSessionItem>): Readonly
 	}))
 
 const mapVariants = (rows: ReadonlyArray<AiToolErrorVariantItem>): ReadonlyArray<ToolErrorVariantRow> =>
-	rows.map((row) => ({ message: row.message, calls: row.calls, lastSeen: toEpochMs(row.lastSeen) }))
+	Arr.map(rows, (row) => ({ message: row.message, calls: row.calls, lastSeen: toEpochMs(row.lastSeen) }))
 
 const mapOccurrences = (rows: ReadonlyArray<AiToolErrorOccurrence>): ReadonlyArray<ToolErrorOccurrenceRow> =>
-	rows.map((row) => ({
+	Arr.map(rows, (row) => ({
 		timestamp: toEpochMs(row.timestamp),
 		traceId: row.traceId,
 		spanId: row.spanId,

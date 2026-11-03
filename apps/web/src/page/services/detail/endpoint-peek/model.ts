@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -30,5 +30,5 @@ export const init = (id: string): Model => ({
 	dialog: Dialog.init(id, "sheet"),
 	details: {},
 	series: {},
-	charts: Object.fromEntries(PEEK_CHART_IDS.map((chartId) => [chartId, Chart.init()])),
+	charts: Rec.fromEntries(Arr.map(PEEK_CHART_IDS, (chartId) => [chartId, Chart.init()])),
 })

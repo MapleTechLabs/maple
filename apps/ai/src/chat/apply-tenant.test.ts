@@ -12,7 +12,7 @@
  *     an approval to the identity that does carry `org:admin`.
  */
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import {
 	ActorDocument,
 	AuthorizationUnavailableError,
@@ -127,7 +127,7 @@ describe("whose authority an approval runs under", () => {
 		Effect.gen(function* () {
 			const tenant: TenantContext = yield* resolveTenant(ORG, proposal(ADA)).pipe(
 				Effect.provide([
-					memberships(() => Effect.succeed(Option.some({ orgId: ORG, role: MEMBER }))),
+					memberships(() => Effect.succeedSome({ orgId: ORG, role: MEMBER })),
 					noActors,
 				]),
 			)
@@ -148,7 +148,7 @@ describe("whose authority an approval runs under", () => {
 			// The link outlived the membership. Falling back to the org-level identity here would
 			// hand `org:admin` to somebody who was removed.
 			const failure = yield* resolveTenant(ORG, proposal(ADA)).pipe(
-				Effect.provide([memberships(() => Effect.succeed(Option.none())), noActors]),
+				Effect.provide([memberships(() => Effect.succeedNone), noActors]),
 				Effect.flip,
 			)
 
@@ -216,7 +216,7 @@ describe("whose authority a connector turn reads under", () => {
 		Effect.gen(function* () {
 			const tenant: TenantContext = yield* run(asking(ADA)).pipe(
 				Effect.provide([
-					memberships(() => Effect.succeed(Option.some({ orgId: ORG, role: MEMBER }))),
+					memberships(() => Effect.succeedSome({ orgId: ORG, role: MEMBER })),
 					noActors,
 				]),
 			)
@@ -230,7 +230,7 @@ describe("whose authority a connector turn reads under", () => {
 	it.effect("refuses a linked asker who left the organization", () =>
 		Effect.gen(function* () {
 			const failure = yield* run(asking(ADA)).pipe(
-				Effect.provide([memberships(() => Effect.succeed(Option.none())), noActors]),
+				Effect.provide([memberships(() => Effect.succeedNone), noActors]),
 				Effect.flip,
 			)
 

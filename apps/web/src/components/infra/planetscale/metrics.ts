@@ -8,6 +8,7 @@
 import { formatDuration } from "@maple/ui/lib/format"
 import { type Tone, VALUE_TONE } from "../severity-tokens"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
+import { String as Str } from "effect"
 
 /** Metrics missing for the window sort below every real value. */
 export const MISSING = Number.NEGATIVE_INFINITY
@@ -46,6 +47,6 @@ export const formatStoragePercent = (percent: number) =>
 /** A branch state worth showing: anything but ready/active, lowercased. */
 export const abnormalState = (state: string | null): string | null => {
 	if (state === null) return null
-	const normalized = state.toLowerCase()
+	const normalized = Str.toLowerCase(state)
 	return normalized === "ready" || normalized === "active" ? null : normalized
 }

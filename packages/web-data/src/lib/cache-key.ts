@@ -1,5 +1,5 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { snapTimestamp } from "./time-range"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -22,13 +22,17 @@ function normalize(value: unknown, mode: TimestampMode): unknown {
 		return value
 	}
 
-	if (Array.isArray(value)) {
-		return value.map((entry) => normalize(entry, mode)).filter((entry) => entry !== DROPPED)
+	if (Arr.isArray(value)) {
+		return Arr.filter(
+			Arr.map(value, (entry) => normalize(entry, mode)),
+			(entry) => entry !== DROPPED,
+		)
 	}
 
-	const entries = Object.entries(value as Record<string, unknown>)
-		.filter(([, entryValue]) => entryValue !== undefined)
-		.sort(([left], [right]) => left.localeCompare(right))
+	const entries = Arr.filter(
+		Rec.toEntries(value as Record<string, unknown>),
+		([, entryValue]) => entryValue !== undefined,
+	).sort(([left], [right]) => Str.localeCompare(right)(left))
 
 	const normalized: Record<string, unknown> = {}
 	for (const [key, entryValue] of entries) {
@@ -73,7 +77,7 @@ export function encodeOrgScopedKey(orgId: string | null | undefined, value: unkn
 
 /** Recover just the encoded input from a key built by `encodeOrgScopedKey`. */
 export function orgScopedKeyPayload(key: string): string {
-	return key.slice(key.indexOf(ORG_KEY_SEPARATOR) + 1)
+	return Str.slice(key.indexOf(ORG_KEY_SEPARATOR) + 1)(key)
 }
 
 /**
@@ -95,7 +99,7 @@ export function orgScopedKeyPayload(key: string): string {
  */
 export function identityFromKey(key: string): string {
 	const separatorIndex = key.indexOf(ORG_KEY_SEPARATOR)
-	const orgPrefix = separatorIndex === -1 ? "" : key.slice(0, separatorIndex)
+	const orgPrefix = separatorIndex === -1 ? "" : Str.slice(0, separatorIndex)(key)
 	const payload = orgScopedKeyPayload(key)
 
 	const parsed = decodeJson(payload)

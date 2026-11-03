@@ -5,6 +5,7 @@ import { CreateQuery, MeasureScrollArea } from "./command"
 import { Message } from "./model"
 import { init, update } from "./update"
 import { view } from "./view"
+import { Array as Arr } from "effect"
 
 const model = init({
 	nowMs: Date.UTC(2026, 9, 1, 12, 0, 0),
@@ -40,7 +41,7 @@ describe("query builder lab view", () => {
 	test("disabling every query and running shows the no-enabled-queries error", () => {
 		scene(
 			{ update, view },
-			given({ ...model, queries: model.queries.map((query) => ({ ...query, enabled: false })) }),
+			given({ ...model, queries: Arr.map(model.queries, (query) => ({ ...query, enabled: false })) }),
 			measured(),
 			click(role("button", { name: "Run query" })),
 			expectView(text("No enabled queries to run")).toExist(),

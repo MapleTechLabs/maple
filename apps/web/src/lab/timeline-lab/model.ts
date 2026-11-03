@@ -1,9 +1,5 @@
-import {
-	TIMELINE_LAB_EVENTS,
-	TIMELINE_LAB_MARKERS,
-	TIMELINE_LAB_TRACE,
-} from "../timeline-fixture"
-import { Option, Schema } from "effect"
+import { TIMELINE_LAB_EVENTS, TIMELINE_LAB_MARKERS, TIMELINE_LAB_TRACE } from "../timeline-fixture"
+import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as SpanPanel from "@maple/views/traces/span-panel"
 import * as Timeline from "../../page/traces/detail/timeline"
@@ -21,17 +17,17 @@ export const LAB_TRACE: Option.Option<TraceData> = Schema.decodeUnknownOption(Tr
 	traceId: TIMELINE_LAB_TRACE.spans[0]?.traceId,
 })
 
-export const LAB_MARKERS: SpanEvents = Object.fromEntries(
-	[...TIMELINE_LAB_MARKERS].map(([spanId, events]) => [spanId, [...events]]),
+export const LAB_MARKERS: SpanEvents = Rec.fromEntries(
+	Arr.map([...TIMELINE_LAB_MARKERS], ([spanId, events]) => [spanId, [...events]]),
 )
 
 export const eventsOf = (spanId: string) => TIMELINE_LAB_EVENTS.get(spanId) ?? []
 
 export const LAB_FLOW_GRAPH = Option.map(LAB_TRACE, (trace) =>
 	TraceFlow.buildFlowGraph({
-		rootSpans: trace.rootSpans.map(toSpanNode),
+		rootSpans: Arr.map(trace.rootSpans, toSpanNode),
 		totalDurationMs: trace.totalDurationMs,
-		services: [...new Set(trace.spans.map((span) => span.serviceName))],
+		services: [...new Set(Arr.map(trace.spans, (span) => span.serviceName))],
 	}),
 )
 

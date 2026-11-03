@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Exit, Fiber, Layer, Metric, Schema } from "effect"
+import { Duration, Effect, Exit, Fiber, Layer, Metric, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { ScrapeResultReport, ScrapeTargetId } from "@maple/domain/http"
 import { UptimeMonitorId } from "@maple/domain/primitives"
@@ -37,7 +37,7 @@ const reporterLayer = (harness: Harness) =>
 		),
 	)
 
-const scrapedAts = (harness: Harness) => harness.delivered.flat().map((r) => r.scrapedAt)
+const scrapedAts = (harness: Harness) => Arr.map(harness.delivered.flat(), (r) => r.scrapedAt)
 
 describe("ResultReporter", () => {
 	it.effect("delivers in order, in batches of at most REPORT_BATCH_SIZE, one POST per interval", () =>
@@ -59,7 +59,7 @@ describe("ResultReporter", () => {
 
 				// Full batches go out back to back; the partial one ends the burst.
 				assert.deepStrictEqual(
-					harness.delivered.map((batch) => batch.length),
+					Arr.map(harness.delivered, (batch) => batch.length),
 					[REPORT_BATCH_SIZE, REPORT_BATCH_SIZE, 5],
 				)
 				assert.deepStrictEqual(
@@ -249,7 +249,7 @@ describe("UptimeReporter", () => {
 				yield* Effect.repeat(Effect.yieldNow, { times: 10 })
 				assert.strictEqual(delivered.flat().length, total)
 				const decode = Schema.decodeUnknownExit(UptimeCheckReportList)
-				assert.isTrue(delivered.every((batch) => decode(batch)._tag === "Success"))
+				assert.isTrue(Arr.every(delivered, (batch) => decode(batch)._tag === "Success"))
 			}).pipe(Effect.provide(layer))
 		}),
 	)

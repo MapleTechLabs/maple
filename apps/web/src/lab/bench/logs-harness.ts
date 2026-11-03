@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /**
  * `window.__logsBench` for `perf/logs.perf.spec.ts`: a 121-step scroll, frame and long-task
  * sampling. `reactCommits` counts DOM commits (mutation batches under the stream) and
@@ -73,7 +74,11 @@ const runScroll = (root: HTMLElement): Promise<LogsBenchMetrics> => {
 				frames: frames.length,
 				frameP95Ms: percentile(frames, 95),
 				longTasks: longTasks.length,
-				totalBlockingMs: longTasks.reduce((sum, entry) => sum + Math.max(0, entry.duration - 50), 0),
+				totalBlockingMs: Arr.reduce(
+					longTasks,
+					0,
+					(sum, entry) => sum + Math.max(0, entry.duration - 50),
+				),
 				reactCommits: commits.count,
 				reactDurationMs: 0,
 			}

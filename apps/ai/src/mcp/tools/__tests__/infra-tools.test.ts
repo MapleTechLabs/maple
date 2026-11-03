@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { DiagnoseServiceOutput, InspectInfraOutput, ListInfraOutput } from "@maple/domain/mcp-outputs"
 import type { McpToolResult } from "../types"
 import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../__evals__/fake-warehouse"
@@ -45,9 +45,9 @@ describe("list_infra", () => {
 			ListInfraOutput,
 			await call("list_infra", { kind: "pods", namespace: "shop", status: "hot" }),
 		)
-		const names = output.sections[0]?.rows.map((r) => r.name) ?? []
+		const names = Arr.map(output.sections[0]?.rows, (r) => r.name) ?? []
 		expect(names[0]).toBe(INFRA_WORLD.oomPod)
-		expect(names.every((name) => name.startsWith("checkout-"))).toBe(true)
+		expect(Arr.every(names, (name) => Str.startsWith("checkout-")(name))).toBe(true)
 	})
 
 	it("reads a singular kind as its plural", async () => {
@@ -57,8 +57,8 @@ describe("list_infra", () => {
 
 	it("leaves kinds out of an overview when they cannot apply the filter", async () => {
 		const output = decode(ListInfraOutput, await call("list_infra", { node: INFRA_WORLD.hotNode }))
-		expect(output.sections.map((s) => s.kind)).toEqual(["pods", "nodes"])
-		expect(output.sections[0]?.rows.every((r) => r.node === INFRA_WORLD.hotNode)).toBe(true)
+		expect(Arr.map(output.sections, (s) => s.kind)).toEqual(["pods", "nodes"])
+		expect(Arr.every(output.sections[0]?.rows, (r) => r.node === INFRA_WORLD.hotNode)).toBe(true)
 	})
 
 	it("shows pod restarts in the pod list", async () => {
@@ -68,7 +68,7 @@ describe("list_infra", () => {
 
 	it("keys pod restarts by namespace as well as name", async () => {
 		rules.unshift({
-			match: (sql) => sql.includes(" AS totalRestarts"),
+			match: (sql) => Str.includes(" AS totalRestarts")(sql),
 			rows: [
 				{
 					namespace: "shop",
@@ -98,7 +98,7 @@ describe("list_infra", () => {
 			ListInfraOutput,
 			await call("list_infra", { kind: "pods", status: "no_limits" }),
 		)
-		expect(output.sections[0]?.rows.map((r) => r.name).sort()).toEqual([
+		expect(Arr.map(output.sections[0]?.rows, (r) => r.name).sort()).toEqual([
 			"otel-agent-q4w9e",
 			"otel-agent-x8k2l",
 		])
@@ -113,7 +113,7 @@ describe("list_infra", () => {
 	})
 
 	it("says which kinds report when the asked-for kind does not", async () => {
-		rules.unshift({ match: (sql) => sql.includes(" AS surface"), rows: [{ surface: "hosts" }] })
+		rules.unshift({ match: (sql) => Str.includes(" AS surface")(sql), rows: [{ surface: "hosts" }] })
 		const text = markdown(await call("list_infra", { kind: "pods" }))
 		rules.shift()
 		expect(text).toContain("No pods report metrics in this window. Reporting: hosts.")
@@ -128,7 +128,7 @@ describe("inspect_infra", () => {
 		)
 		expect(output.found).toBe(true)
 		expect(output.entity?.workload).toBe("checkout")
-		const memory = output.series.find((s) => s.label.startsWith("memory"))
+		const memory = output.series.find((s) => Str.startsWith("memory")(s.label))
 		expect(memory?.max).toBeCloseTo(0.98, 2)
 		expect(memory?.maxAt.startsWith("2026-10-01 10:")).toBe(true)
 	})

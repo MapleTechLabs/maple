@@ -6,7 +6,7 @@ import {
 	ONBOARDING_REWARD_AMOUNT_USD,
 	type OnboardingChecklistStepId,
 } from "@maple/domain/onboarding-checklist"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import {
@@ -33,7 +33,7 @@ export const toV2OnboardingChecklist = (report: OnboardingChecklistReport): V2On
 	claimed_at: isoTimestampOrNull(report.claimedAtMs),
 	completed_count: report.completedCount,
 	total_count: report.totalCount,
-	steps: report.steps.map((step) => ({
+	steps: Arr.map(report.steps, (step) => ({
 		object: "onboarding_checklist_step",
 		id: step.id,
 		completed: step.completed,

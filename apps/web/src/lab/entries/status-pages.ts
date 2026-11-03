@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import type { PageContext } from "../../page/contract"
@@ -14,7 +14,11 @@ import { LAB_NOW_MS, LAB_ORG, LAB_PAGES } from "../status-pages-fixture"
 
 // `/lab/status-pages`: the status pages list, the look picker and the form fields over fixture pages.
 
-const context: PageContext = { orgId: Schema.decodeSync(OrgId)(LAB_ORG), pinnedNamespace: null, timeZone: "UTC" }
+const context: PageContext = {
+	orgId: Schema.decodeSync(OrgId)(LAB_ORG),
+	pinnedNamespace: null,
+	timeZone: "UTC",
+}
 
 const Model = Schema.Struct({ list: ListModel })
 type Model = typeof Model.Type
@@ -24,11 +28,18 @@ const Flags = Schema.Struct({})
 
 const listModel = (): ListModel => {
 	const step = (model: ListModel, message: ListMessage) => listUpdate(model, message, context).model
-	const entered = [
-		ListMessage.ReadClock({ nowMs: LAB_NOW_MS }),
-		ListMessage.CompletedFetchSession({ orgId: LAB_ORG, isAdmin: true }),
-	].reduce(step, listInit({ _tag: "StatusPages" }, context).model)
-	return step(entered, ListMessage.CompletedFetchPages({ key: entered.pages.key ?? "", result: Result.succeed(LAB_PAGES) }))
+	const entered = Arr.reduce(
+		[
+			ListMessage.ReadClock({ nowMs: LAB_NOW_MS }),
+			ListMessage.CompletedFetchSession({ orgId: LAB_ORG, isAdmin: true }),
+		],
+		listInit({ _tag: "StatusPages" }, context).model,
+		step,
+	)
+	return step(
+		entered,
+		ListMessage.CompletedFetchPages({ key: entered.pages.key ?? "", result: Result.succeed(LAB_PAGES) }),
+	)
 }
 
 const section = (h: HtmlBuilder<Message>, title: string, children: ReadonlyArray<Html>): Html =>
@@ -49,7 +60,10 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 				toParentMessage: (message) => Message.GotListMessage({ message }),
 			}),
 			h.div(
-				[h.Id("status-pages-lab-parts"), h.Class("mx-auto flex w-full max-w-3xl flex-col gap-8 px-4")],
+				[
+					h.Id("status-pages-lab-parts"),
+					h.Class("mx-auto flex w-full max-w-3xl flex-col gap-8 px-4"),
+				],
 				[
 					section(h, "Look", [
 						presetCards(h, {

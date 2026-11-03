@@ -17,6 +17,7 @@ import { type EnrollStep, Message, type Model } from "./model"
 import { qrCode } from "./qr-code"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -202,14 +203,14 @@ const stepContent = (h: H, model: Model, step: EnrollStep): ReadonlyArray<Html> 
 								"grid grid-cols-2 gap-1.5 rounded-md border border-border bg-surface-sunken p-3 font-mono text-xs",
 							),
 						],
-						step.codes.map((code) => h.span([h.Key(code)], [code])),
+						Arr.map(step.codes, (code) => h.span([h.Key(code)], [code])),
 					),
 				]),
 				DialogView.dialogFooter(h, "dialog", [
 					CopyButton.view(h, {
 						model: model.codesCopy,
 						toParentMessage: (message) => Message.GotCodesCopyMessage({ message }),
-						value: step.codes.join("\n"),
+						value: Arr.join(step.codes, "\n"),
 						label: "Backup codes",
 						idleLabel: "Copy all",
 						variant: "outline",
@@ -253,7 +254,6 @@ const loaded = (h: H, model: Model, user: AccountUser): Html =>
 		}),
 	])
 
-export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>(
-	(model, _inputs, h) =>
-		!model.isLoaded || model.user === null ? accountSectionSkeleton(h) : loaded(h, model, model.user),
+export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>((model, _inputs, h) =>
+	!model.isLoaded || model.user === null ? accountSectionSkeleton(h) : loaded(h, model, model.user),
 )

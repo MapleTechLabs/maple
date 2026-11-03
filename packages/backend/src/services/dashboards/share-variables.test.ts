@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import { preservesClauseStructure, resolveShareVariables } from "./share-variables"
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(Effect.result(effect))
@@ -97,7 +97,7 @@ describe("resolveShareVariables", () => {
 	})
 
 	it("caps free-text length", async () => {
-		const result = await run(resolveShareVariables([textbox], { search: "a".repeat(129) }))
+		const result = await run(resolveShareVariables([textbox], { search: Str.repeat(129)("a") }))
 		expect(result._tag).toBe("Failure")
 	})
 

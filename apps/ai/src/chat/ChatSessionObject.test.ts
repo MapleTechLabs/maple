@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { encodeChatTurnTenant, type ChatTurnTenant } from "@maple/domain/chat-session"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Layer, Option } from "effect"
+import { Effect, Layer, Option, Array as Arr } from "effect"
 import { applyChatSessionMigrations, makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { makeChatSessionActivation } from "./ChatSession"
@@ -103,10 +103,10 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 			const { rpc } = yield* activateOn(state)
 
 			assert.strictEqual(yield* rpc.running(), false)
-			const columns = state.storage.sql
-				.exec("SELECT name FROM pragma_table_info('session')")
-				.toArray()
-				.map((row) => row.name)
+			const columns = Arr.map(
+				state.storage.sql.exec("SELECT name FROM pragma_table_info('session')").toArray(),
+				(row) => row.name,
+			)
 			assert.includeMembers(columns, [
 				"running_since",
 				"running_message_id",

@@ -1,5 +1,5 @@
 import { elementScroll, observeElementOffset, observeElementRect, Virtualizer } from "@tanstack/virtual-core"
-import { Effect, Queue, Stream } from "effect"
+import { Effect, Queue, Stream, Array as Arr, String as Str } from "effect"
 import { Mount } from "foldkit"
 import { Message, type VirtualRow } from "./model"
 
@@ -14,14 +14,14 @@ const MAX_SCROLL_ATTEMPTS = 15
 
 const keysOf = (scroller: HTMLElement): ReadonlyArray<string> => {
 	const raw = scroller.getAttribute(`data-${KEYS_ATTRIBUTE}`) ?? ""
-	return raw === "" ? [] : raw.split(" ")
+	return raw === "" ? [] : Str.split(" ")(raw)
 }
 
 const rowsOf = (scroller: HTMLElement): ReadonlyArray<HTMLElement> =>
 	Array.from(scroller.querySelectorAll<HTMLElement>(":scope > div > [data-index]"))
 
 const sameRows = (a: ReadonlyArray<VirtualRow>, b: ReadonlyArray<VirtualRow>): boolean =>
-	a.length === b.length && a.every((row, i) => row.index === b[i]?.index && row.start === b[i]?.start)
+	a.length === b.length && Arr.every(a, (row, i) => row.index === b[i]?.index && row.start === b[i]?.start)
 
 type WindowMessage = typeof Message.ChangedVirtualWindow.Type
 type Instance = Virtualizer<HTMLElement, HTMLElement>
@@ -80,8 +80,8 @@ interface Parts {
 const attach = (scroller: HTMLElement, parts: Parts): (() => void) => {
 	const { state, virtualizer } = parts
 	const rowObserver = new MutationObserver((records) => {
-		if (records.some((record) => record.removedNodes.length > 0)) virtualizer.measureElement(null)
-		records.forEach((record) =>
+		if (Arr.some(records, (record) => record.removedNodes.length > 0)) virtualizer.measureElement(null)
+		Arr.forEach(records, (record) =>
 			record.addedNodes.forEach((node) => {
 				if (node instanceof HTMLElement && node.hasAttribute("data-index")) parts.measure(node)
 			}),
@@ -103,7 +103,7 @@ const attach = (scroller: HTMLElement, parts: Parts): (() => void) => {
 		attributeFilter: [`data-${KEYS_ATTRIBUTE}`, `data-${SELECTED_ATTRIBUTE}`],
 	})
 	observeBody()
-	rowsOf(scroller).forEach(parts.measure)
+	Arr.forEach(rowsOf(scroller), parts.measure)
 	const unmount = virtualizer._didMount()
 	virtualizer._willUpdate()
 	parts.emitWindow(virtualizer)
@@ -142,9 +142,10 @@ const virtualize = (scroller: HTMLElement): Stream.Stream<WindowMessage> =>
 					handle: 0,
 				}
 				const emitWindow = (instance: Instance): void => {
-					const rows = instance
-						.getVirtualItems()
-						.map((item) => ({ index: item.index, start: item.start }))
+					const rows = Arr.map(instance.getVirtualItems(), (item) => ({
+						index: item.index,
+						start: item.start,
+					}))
 					const totalSize = instance.getTotalSize()
 					if (totalSize === state.totalSize && sameRows(rows, state.rows)) return
 					state.rows = rows

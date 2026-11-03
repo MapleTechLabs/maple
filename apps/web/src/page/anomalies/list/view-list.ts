@@ -19,6 +19,7 @@ import { clusterByService, GROUP_LABEL, groupIncidents } from "./derive"
 import { Message } from "./message"
 import type { GroupKey, Model, StatusTab } from "./model"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // `AnomaliesPageBody` and `AnomalyGroup`: the anomalies, grouped.
 
@@ -59,8 +60,12 @@ const group = (
 			...(isOpen
 				? [
 						h.div(
-							[h.Id(`anomaly-group-${key}`), h.Role("list"), h.Class("divide-y divide-border-subtle")],
-							clusterByService(incidents).map((cluster) =>
+							[
+								h.Id(`anomaly-group-${key}`),
+								h.Role("list"),
+								h.Class("divide-y divide-border-subtle"),
+							],
+							Arr.map(clusterByService(incidents), (cluster) =>
 								h.div(
 									[h.Key(cluster.key + (cluster.incidents[0]?.id ?? ""))],
 									[
@@ -73,17 +78,31 @@ const group = (
 															),
 														],
 														[
-															serviceDot(h, { serviceName: cluster.serviceName, size: "sm" }),
-															h.span([h.Class("font-medium text-foreground-soft")], [cluster.serviceName]),
-															...(cluster.deploymentEnv ? [h.span([], [cluster.deploymentEnv])] : []),
-															h.span([h.Class("tabular-nums")], [String(cluster.incidents.length), " anomalies"]),
+															serviceDot(h, {
+																serviceName: cluster.serviceName,
+																size: "sm",
+															}),
+															h.span(
+																[h.Class("font-medium text-foreground-soft")],
+																[cluster.serviceName],
+															),
+															...(cluster.deploymentEnv
+																? [h.span([], [cluster.deploymentEnv])]
+																: []),
+															h.span(
+																[h.Class("tabular-nums")],
+																[
+																	String(cluster.incidents.length),
+																	" anomalies",
+																],
+															),
 														],
 													),
 												]
 											: []),
 										h.div(
 											[h.Class("divide-y divide-border-subtle")],
-											cluster.incidents.map((incident) =>
+											Arr.map(cluster.incidents, (incident) =>
 												h.div(
 													[h.Key(incident.id), h.Role("listitem")],
 													[
@@ -137,17 +156,23 @@ const quietEmpty = (h: H, model: Model, status: StatusTab, excludedHint: Html | 
 					emptyDescription(h, [PURPOSE]),
 				]),
 				...(presence.status === "present"
-						? [
-								emptyContent(h, [
-									emptyActions(h, [
-										linkButton(h, { variant: "outline", size: "sm", href: hrefOf(AppRoute.AlertsCreate({ search: {} })) }, [
-											"Create an alert rule",
-										]),
-										docsLink(h, "alertRules", "Alert rules"),
-									]),
+					? [
+							emptyContent(h, [
+								emptyActions(h, [
+									linkButton(
+										h,
+										{
+											variant: "outline",
+											size: "sm",
+											href: hrefOf(AppRoute.AlertsCreate({ search: {} })),
+										},
+										["Create an alert rule"],
+									),
+									docsLink(h, "alertRules", "Alert rules"),
 								]),
-							]
-						: []),
+							]),
+						]
+					: []),
 				...(excludedHint === null ? [] : [excludedHint]),
 			]),
 		],
@@ -193,7 +218,9 @@ export const listBody = (h: H, model: Model, input: BodyInput): Html => {
 	return h.div(
 		[],
 		[
-			...groupIncidents(input.incidents).map(([key, incidents]) => group(h, model, key, incidents, input.timeZone)),
+			...Arr.map(groupIncidents(input.incidents), ([key, incidents]) =>
+				group(h, model, key, incidents, input.timeZone),
+			),
 			...(footer === null ? [] : [footer]),
 		],
 	)

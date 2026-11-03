@@ -12,7 +12,7 @@ import {
 	type SpendModel,
 } from "../../../lib/billing/spend"
 import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
@@ -82,7 +82,7 @@ export const cyclePanelSkeleton = (h: H): Html =>
 		),
 		h.div(
 			[h.Class("grid grid-cols-1 border-b sm:grid-cols-3")],
-			[0, 1, 2].map((index) =>
+			Arr.map([0, 1, 2], (index) =>
 				h.div(
 					[h.Key(String(index)), h.Class("flex flex-col gap-2 p-4")],
 					[skeleton(h, "h-2.5 w-16"), skeleton(h, "h-6 w-24"), skeleton(h, "h-2.5 w-28")],
@@ -117,21 +117,25 @@ const spendChart = (h: H, model: Model, spend: SpendModel, daily: DailySpendResp
 	const colors: ThemeColors = model.themeColors ?? {}
 	const primary = resolveColor(colors, "--primary")
 	const projected = spend.projectedCents / 100
-	const peak = Math.max(projected, ...data.map((point) => point.total ?? 0), 1)
+	const peak = Math.max(projected, ...Arr.map(data, (point) => point.total ?? 0), 1)
 	const yMax = Math.ceil((peak * 1.1) / 10) * 10
 	const latest = data.findLast((point) => !point.future)
 	const lastPoint = data[data.length - 1]
 	const hasFuture = lastPoint !== undefined && lastPoint.future
 	const spec: ChartSpec = {
 		_tag: "SpendCumulative",
-		points: data.map((point) => ({
+		points: Arr.map(data, (point) => ({
 			date: point.date,
 			dayMs: point.dayMs,
-			bands: Object.fromEntries(BANDS.map((band) => [band, point[band]])),
+			bands: Rec.fromEntries(Arr.map(BANDS, (band) => [band, point[band]])),
 			projected: point.projected,
 			future: point.future,
 		})),
-		bands: BANDS.map((band) => ({ key: band, label: bandLabel(band, spend), color: bandColor(band) })),
+		bands: Arr.map(BANDS, (band) => ({
+			key: band,
+			label: bandLabel(band, spend),
+			color: bandColor(band),
+		})),
 		primary,
 		chrome: {
 			border: resolveColor(colors, "--border"),
@@ -147,18 +151,21 @@ const spendChart = (h: H, model: Model, spend: SpendModel, daily: DailySpendResp
 			h.div(
 				[h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 pt-3")],
 				[
-					typography(h, { size: "2xs", tone: "muted", weight: "medium" },
-						["Cumulative spend by feature"],
-					),
+					typography(h, { size: "2xs", tone: "muted", weight: "medium" }, [
+						"Cumulative spend by feature",
+					]),
 					// Colors only: the amounts live in the figures and the cost breakdown.
 					seriesLegend(h, {
 						className: "gap-x-4",
 						items: [
-							...BANDS.filter((band) => (latest?.[band] ?? 0) > 0).map((band) => ({
-								key: band,
-								label: bandLabel(band, spend),
-								color: bandColor(band),
-							})),
+							...Arr.map(
+								Arr.filter(BANDS, (band) => (latest?.[band] ?? 0) > 0),
+								(band) => ({
+									key: band,
+									label: bandLabel(band, spend),
+									color: bandColor(band),
+								}),
+							),
 							...(hasFuture
 								? [
 										{
@@ -243,7 +250,7 @@ const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html =>
 		[
 			h.div(
 				[h.Class("divide-y divide-border-subtle")],
-				costBreakdown(spend).map((line) =>
+				Arr.map(costBreakdown(spend), (line) =>
 					h.div(
 						[h.Key(line.key), h.Class("flex items-baseline justify-between gap-4 py-2")],
 						[
@@ -251,7 +258,10 @@ const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html =>
 								[h.Class("min-w-0")],
 								[
 									h.p([h.Class("text-sm")], [line.label]),
-									h.p([h.Class("font-prose text-2xs text-muted-foreground")], [line.detail]),
+									h.p(
+										[h.Class("font-prose text-2xs text-muted-foreground")],
+										[line.detail],
+									),
 								],
 							),
 							h.span(
@@ -266,7 +276,9 @@ const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html =>
 				? [
 						h.p(
 							[h.Class("pt-1 text-2xs text-muted-foreground")],
-							["Some items are on pricing we can't itemize; your invoice has the exact amount."],
+							[
+								"Some items are on pricing we can't itemize; your invoice has the exact amount.",
+							],
 						),
 					]
 				: []),
@@ -292,21 +304,19 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 		h.div(
 			[h.Class("flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3")],
 			[
-				hstack(h, { gap: "2" },
-					[
-						typography(h, { size: "sm", weight: "medium" },
-							[spend.planName === null ? "No plan" : sentenceCasePlanName(spend.planName)],
-						),
-						...(trial.planStatus === null
-							? []
-							: [
-									badge(h, { size: "sm", variant: isTrialing ? "warn" : "ok" }, [
-										isTrialing ? `Trial, ${trial.daysRemaining}d left` : "Active",
-									]),
+				hstack(h, { gap: "2" }, [
+					typography(h, { size: "sm", weight: "medium" }, [
+						spend.planName === null ? "No plan" : sentenceCasePlanName(spend.planName),
+					]),
+					...(trial.planStatus === null
+						? []
+						: [
+								badge(h, { size: "sm", variant: isTrialing ? "warn" : "ok" }, [
+									isTrialing ? `Trial, ${trial.daysRemaining}d left` : "Active",
 								]),
-						...(inputs.isLegacy ? [badge(h, { size: "sm", variant: "warn" }, ["Legacy"])] : []),
-					],
-				),
+							]),
+					...(inputs.isLegacy ? [badge(h, { size: "sm", variant: "warn" }, ["Legacy"])] : []),
+				]),
 				h.div(
 					[h.Class("flex items-center gap-2 text-xs tabular-nums")],
 					[

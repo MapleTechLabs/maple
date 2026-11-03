@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import { AiAgentSpanSchema, AiGenAiValuesSchema } from "../gen-ai"
 import { TinybirdDateTime } from "../query-engine"
 import { BucketSeconds } from "./query-engine"
@@ -206,7 +206,7 @@ export const AI_SESSION_DETAILS_MAX_SESSIONS = 100
 export const AI_SESSION_DETAILS_MAX_EXTENT_MS = 31 * 24 * 60 * 60_000
 
 /** `TinybirdDateTime` is UTC without a zone marker. */
-const tinybirdDateTimeMs = (value: string): number => Date.parse(`${value.replace(" ", "T")}Z`)
+const tinybirdDateTimeMs = (value: string): number => Date.parse(`${Str.replace(" ", "T")(value)}Z`)
 
 export class ListAiSessionDetailsRequest extends Schema.Class<ListAiSessionDetailsRequest>(
 	"ListAiSessionDetailsRequest",

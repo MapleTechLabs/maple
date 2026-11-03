@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -45,7 +45,7 @@ export const resourceAttributesCardSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 			detailRailGroup(
 				h,
 				"Resource attributes",
-				SKELETON_ROWS.map(([label, value]) =>
+				Arr.map(SKELETON_ROWS, ([label, value]) =>
 					h.div(
 						[h.Class("flex items-center justify-between gap-3 py-1")],
 						[skeleton(h, `h-2.5 ${label}`), skeleton(h, `h-2.5 ${value}`)],

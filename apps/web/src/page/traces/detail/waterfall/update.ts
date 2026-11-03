@@ -9,6 +9,7 @@ import type { Command } from "foldkit"
 import { type TraceData, toSpanNode } from "@maple/views/traces/trace-data"
 import { Message, type Model, OutMessage } from "./model"
 import { collectParentIdsByLevel, countSpans } from "./tree"
+import { Array as Arr } from "effect"
 
 export type UpdateReturn = Readonly<{
 	model: Model
@@ -18,12 +19,12 @@ export type UpdateReturn = Readonly<{
 
 export type InitInput = Readonly<{ trace: TraceData; traceStartTime: string; selectedSpanId: string | null }>
 
-const nodesOf = (model: Pick<Model, "rootSpans">) => model.rootSpans.map(toSpanNode)
+const nodesOf = (model: Pick<Model, "rootSpans">) => Arr.map(model.rootSpans, toSpanNode)
 
 /** `useState(() => computeDefaultExpandedSpanIds(rootSpans, { keepVisibleSpanId }))`. */
 export const init = (input: InitInput): UpdateReturn => {
 	const rootSpans = input.trace.rootSpans
-	const expanded = computeDefaultExpandedSpanIds(rootSpans.map(toSpanNode), {
+	const expanded = computeDefaultExpandedSpanIds(Arr.map(rootSpans, toSpanNode), {
 		keepVisibleSpanId: input.selectedSpanId ?? undefined,
 	})
 	return {
@@ -45,7 +46,7 @@ export const setSelectedSpanId = (model: Model, spanId: string | null): UpdateRe
 	if (spanId === model.selectedSpanId) return { model }
 	if (spanId === null) return { model: { ...model, selectedSpanId: null } }
 	const current = new Set(model.expanded)
-	const missing = [...collectAncestorIds(nodesOf(model), spanId)].filter((id) => !current.has(id))
+	const missing = Arr.filter([...collectAncestorIds(nodesOf(model), spanId)], (id) => !current.has(id))
 	return {
 		model: {
 			...model,

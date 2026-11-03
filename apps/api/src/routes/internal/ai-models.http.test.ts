@@ -6,7 +6,7 @@ import {
 	ApiSchemaErrors,
 	ApiUnexpectedErrors,
 } from "@maple/domain/http"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
@@ -123,7 +123,7 @@ describe("POST /internal/ai-models/detect", () => {
 		}
 	})
 
-	it.each(["", "   ", "x".repeat(501)])(
+	it.each(["", "   ", Str.repeat(501)("x")])(
 		"rejects %j as a schema error rather than resolving it",
 		async (model) => {
 			const harness = makeHarness()
@@ -146,14 +146,14 @@ describe("POST /internal/ai-models/detect-many", () => {
 				models: ["claude-sonnet-4-5-20250929", "my-azure-deployment", "gpt-4o-mini"],
 			})
 			expect(response.status).toBe(200)
-			expect(response.body.map((model) => model.displayName)).toEqual([
+			expect(Arr.map(response.body, (model) => model.displayName)).toEqual([
 				"Claude Sonnet 4.5",
 				"My Azure Deployment",
 				"GPT-4o-mini",
 			])
-			expect(response.body.map((model) => model.family)).toEqual(["claude", null, null])
+			expect(Arr.map(response.body, (model) => model.family)).toEqual(["claude", null, null])
 			// The brand travels as a light/dark pair, or null where none is listed.
-			expect(response.body.map((model) => model.brandColor)).toEqual([
+			expect(Arr.map(response.body, (model) => model.brandColor)).toEqual([
 				{ light: "#D97757", dark: "#D97757" },
 				null,
 				{ light: "#000000", dark: "#FFFFFF" },

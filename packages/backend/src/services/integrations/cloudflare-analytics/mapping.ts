@@ -32,6 +32,7 @@ import type {
 	WorkersGroupDefinition,
 } from "./queries"
 import { parseWarehouseDateTime } from "@maple/query-engine"
+import { Array as Arr, String as Str } from "effect"
 
 type Attrs = Record<string, string>
 
@@ -150,10 +151,10 @@ export const OTHER_BUCKET = "other"
 /** Top-N keys by weight; ties break lexicographically so folding is deterministic across runs. */
 export const topNKeys = (weights: ReadonlyMap<string, number>, n: number): ReadonlySet<string> =>
 	new Set(
-		[...weights.entries()]
-			.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-			.slice(0, n)
-			.map(([key]) => key),
+		Arr.map(
+			[...weights.entries()].sort((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0])).slice(0, n),
+			([key]) => key,
+		),
 	)
 
 const httpResourceAttrs = (orgId: string, zoneId: string, zoneName: string): Attrs => ({
@@ -287,15 +288,15 @@ const MAX_PATH_LEN = 200
 export const normalizePath = (raw: string | null | undefined): string => {
 	if (raw == null || raw === "") return "unknown"
 	const query = raw.indexOf("?")
-	const path = query === -1 ? raw : raw.slice(0, query)
+	const path = query === -1 ? raw : Str.slice(0, query)(raw)
 	if (path === "") return "unknown"
-	return path.length > MAX_PATH_LEN ? `${path.slice(0, MAX_PATH_LEN)}…` : path
+	return path.length > MAX_PATH_LEN ? `${Str.slice(0, MAX_PATH_LEN)(path)}…` : path
 }
 
 /** `"HTTP/1.1"` → `"1.1"`: semconv's `network.protocol.version` is the bare version. */
 export const normalizeProtocol = (raw: string | null | undefined): string => {
 	if (raw == null || raw === "") return "unknown"
-	return raw.toUpperCase().startsWith("HTTP/") ? raw.slice(5) : raw
+	return Str.startsWith("HTTP/")(Str.toUpperCase(raw)) ? Str.slice(5)(raw) : raw
 }
 
 export interface MapHttpPathGroupsInput {

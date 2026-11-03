@@ -14,6 +14,7 @@ import { sourceMark, SOURCE_TITLE } from "./source-mark"
 import type { SourceState } from "./state"
 import { typography } from "@maple/views/ui/typography"
 import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 /** The muted caption beside an overview section's title, set in the sans prose face. */
 export const sectionCaption = <M>(h: HtmlBuilder<M>, text: string): Html =>
@@ -44,7 +45,7 @@ const sourceLabel = <M>(h: HtmlBuilder<M>, id: SourceId): Html =>
 
 /** The name truncates; the metric after it ("at 97% CPU") always stays visible. */
 const findingTitle = <M>(h: HtmlBuilder<M>, { subject, title }: Finding): Html =>
-	subject === undefined || subject === "" || !title.startsWith(subject)
+	subject === undefined || subject === "" || !Str.startsWith(subject)(title)
 		? h.span(
 				[h.Class("truncate text-sm text-foreground group-hover:text-primary"), h.Title(title)],
 				[title],
@@ -53,7 +54,10 @@ const findingTitle = <M>(h: HtmlBuilder<M>, { subject, title }: Finding): Html =
 				[h.Class("flex min-w-0 text-sm text-foreground group-hover:text-primary"), h.Title(title)],
 				[
 					h.span([h.Class("truncate")], [subject]),
-					h.span([h.Class("shrink-0 whitespace-pre tabular-nums")], [title.slice(subject.length)]),
+					h.span(
+						[h.Class("shrink-0 whitespace-pre tabular-nums")],
+						[Str.slice(subject.length)(title)],
+					),
 				],
 			)
 
@@ -108,7 +112,7 @@ const entriesOf = <M>(
 	time: TimeSearch,
 ): ReadonlyArray<Entry> =>
 	state.status === "ready"
-		? state.summary.findings.map((finding) => ({
+		? Arr.map(state.summary.findings, (finding) => ({
 				rank: RANK[finding.tone],
 				row: findingRow(h, finding, time),
 			}))
@@ -120,14 +124,14 @@ const entriesOf = <M>(
 export const sharedFailure = (
 	sources: ReadonlyArray<Readonly<{ id: SourceId; state: SourceState }>>,
 ): LoadFailure | undefined => {
-	const failures = sources.flatMap(({ state }) =>
+	const failures = Arr.flatMap(sources, ({ state }) =>
 		state.status === "error" && state.failure !== undefined ? [state.failure] : [],
 	)
 	const [first] = failures
 	return first !== undefined &&
 		sources.length > 1 &&
 		failures.length === sources.length &&
-		failures.every((failure) => isSameFailure(failure, first))
+		Arr.every(failures, (failure) => isSameFailure(failure, first))
 		? first
 		: undefined
 }
@@ -152,12 +156,14 @@ export const needsAttention = <M>(
 	time: TimeSearch,
 	onRetry: M,
 ): Html => {
-	const isSettled = sources !== null && sources.every(({ state }) => state.status !== "loading")
+	const isSettled = sources !== null && Arr.every(sources, ({ state }) => state.status !== "loading")
 	const rows = isSettled
-		? sources
-				.flatMap(({ id, state }) => entriesOf(h, id, state, time))
-				.toSorted((a, b) => a.rank - b.rank)
-				.map(({ row }) => row)
+		? Arr.map(
+				Arr.flatMap(sources, ({ id, state }) => entriesOf(h, id, state, time)).toSorted(
+					(a, b) => a.rank - b.rank,
+				),
+				({ row }) => row,
+			)
 		: []
 	const shared = isSettled ? sharedFailure(sources) : undefined
 	return h.section(

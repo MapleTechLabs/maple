@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Clock, ConfigProvider, Effect, Layer, Schema } from "effect"
+import { Clock, ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import { AlertDestinationId, ErrorIssueId, IssueEscalationId, OrgId } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertDestinations, ErrorIssues, IssueEscalationPolicies, IssueEscalations } from "@maple/db/tables"
@@ -50,7 +50,7 @@ const makeHarness = (
 				}
 				return {
 					...dispatchResult,
-					destinations: destinationIds.map((destinationId) => ({
+					destinations: Arr.map(destinationIds, (destinationId) => ({
 						destinationId,
 						destinationName: "On-call",
 						status:

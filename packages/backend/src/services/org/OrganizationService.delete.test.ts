@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { OrganizationForbiddenError, OrgId, RoleName } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -42,8 +42,8 @@ const role = Schema.decodeUnknownSync(RoleName)
 
 /** Every purged table with the column that ties its rows to an org. */
 const purgedTables = [
-	...ORG_DELETE_REGISTRY.orgScoped.map((table) => ({ name: table.ddl.table.name, column: "org_id" })),
-	...ORG_DELETE_REGISTRY.approvedOrgScoped.map((table) => ({
+	...Arr.map(ORG_DELETE_REGISTRY.orgScoped, (table) => ({ name: table.ddl.table.name, column: "org_id" })),
+	...Arr.map(ORG_DELETE_REGISTRY.approvedOrgScoped, (table) => ({
 		name: table.ddl.table.name,
 		column: "approved_org_id",
 	})),
@@ -66,9 +66,9 @@ const countsFor = (testDb: TestDb, orgId: OrgId) =>
 		countOrgRows(testDb, table.name, table.column, orgId).pipe(
 			Effect.map((count) => [table.name, count] as const),
 		),
-	).pipe(Effect.map((entries) => Object.fromEntries(entries)))
+	).pipe(Effect.map((entries) => Rec.fromEntries(entries)))
 
-const everyTableAt = (count: number) => Object.fromEntries(purgedTables.map((table) => [table.name, count]))
+const everyTableAt = (count: number) => Rec.fromEntries(Arr.map(purgedTables, (table) => [table.name, count]))
 
 describe("OrganizationService.delete", () => {
 	it.effect("purges every registered table for the deleted org and leaves the other org intact", () => {

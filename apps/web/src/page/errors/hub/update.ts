@@ -1,7 +1,7 @@
 import { HUB_SORTS, HUB_VIEWS, SEVERITY_FILTERS } from "../../../lib/errors/hub-params"
 import type { IssueKind } from "@maple/domain/http"
 import { sparkFingerprintHashes } from "../../../lib/models/error-signal"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -279,7 +279,7 @@ export const loadMore = (model: Model, context: PageContext): Return => {
 		onNone: () => ({ model }),
 		onSome: ({ hasMore, nextCursor }) => {
 			if (!hasMore || nextCursor === null) return { model }
-			if (model.pages.some((slot) => slot.cursor === nextCursor)) return { model }
+			if (Arr.some(model.pages, (slot) => slot.cursor === nextCursor)) return { model }
 			const query = pageQuery(model, nextCursor)
 			const key = requestKey(context.orgId, "errorIssues.list", query)
 			const slot: PageSlot = { cursor: nextCursor, page: { key, data: AsyncData.Loading() } }
@@ -337,7 +337,7 @@ const sortIndex = (search: Search) => HUB_SORTS.indexOf(sortOf(search))
 const severityIndex = (search: Search) => SEVERITY_FILTERS.indexOf(severityOf(search))
 
 /** The search the toolbar search would send for its draft (trimmed, empty leaves the URL). */
-const draftQuery = (draft: string): string | undefined => draft.trim() || undefined
+const draftQuery = (draft: string): string | undefined => Str.trim(draft) || undefined
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const search = route.search
@@ -421,7 +421,7 @@ export const contextChanged = (model: Model, context: PageContext): Return =>
 
 // EVENTS
 
-const isIssueKind = (value: string): value is IssueKind => SOURCES.some((kind) => kind === value)
+const isIssueKind = (value: string): value is IssueKind => Arr.some(SOURCES, (kind) => kind === value)
 
 /** Checkbox lists are single-select: the newest tick replaces the current one, re-ticking clears. */
 const toggledFilter = (model: Model, param: FilterParam, name: string): Partial<Search> => {
@@ -446,8 +446,8 @@ export const CLEARED_ERROR_FILTERS = {
 
 /** The header checkbox: every visible row, or none once they all are. */
 const toggledAllRows = (model: Model): Partial<Model> => {
-	const ids = signalsOf(model).map((signal) => signal.id)
-	const isAll = ids.length > 0 && ids.every((id) => model.selectedIds.includes(id))
+	const ids = Arr.map(signalsOf(model), (signal) => signal.id)
+	const isAll = ids.length > 0 && Arr.every(ids, (id) => model.selectedIds.includes(id))
 	return isAll
 		? { selectedIds: [], selectionAnchor: null }
 		: { selectedIds: [...new Set([...model.selectedIds, ...ids])], selectionAnchor: null }
@@ -537,7 +537,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			follow(
 				{
 					...model,
-					pages: model.pages.map((slot) =>
+					pages: Arr.map(model.pages, (slot) =>
 						slot.page.key === key
 							? { ...slot, page: Keyed.accept(slot.page, key, result) }
 							: slot,

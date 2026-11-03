@@ -1,5 +1,5 @@
 import { WIDGET_UNITS } from "@maple/domain/http"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
@@ -20,7 +20,7 @@ type H = HtmlBuilder<Message>
 
 const product = (edit: ProductEdit): Message => Message.ChangedProduct({ edit })
 
-const UNIT_OPTIONS = WIDGET_UNITS.map((unit) => ({ value: unit.token, label: unit.label }))
+const UNIT_OPTIONS = Arr.map(WIDGET_UNITS, (unit) => ({ value: unit.token, label: unit.label }))
 const ALIGN_OPTIONS = [
 	{ value: "left", label: "Left" },
 	{ value: "center", label: "Center" },
@@ -34,19 +34,23 @@ const suggestionList = (h: H, column: ListColumn, index: number, fields: Readonl
 				"absolute top-full left-0 z-50 mt-1 w-full max-h-48 overflow-auto rounded-md border bg-popover shadow-popup",
 			),
 		],
-		fields
-			.filter((field) => !column.field || field.toLowerCase().includes(column.field.toLowerCase()))
-			.slice(0, 20)
-			.map((field) =>
+		Arr.map(
+			Arr.filter(
+				fields,
+				(field) =>
+					!column.field || Str.includes(Str.toLowerCase(column.field))(Str.toLowerCase(field)),
+			).slice(0, 20),
+			(field) =>
 				pressable(
 					h,
 					{
-						className: "w-full px-2 py-1 text-left text-xs hover:bg-accent active:bg-accent truncate",
+						className:
+							"w-full px-2 py-1 text-left text-xs hover:bg-accent active:bg-accent truncate",
 						attributes: [h.OnMouseDown(product(ProductEdit.PickedListField({ index, field })))],
 					},
 					[field],
 				),
-			),
+		),
 	)
 
 const contents = (h: H) => (parts: ReadonlyArray<Html>) => h.div([h.Class("contents")], parts)
@@ -59,7 +63,10 @@ export const listColumnRow = (
 	suggestions: ReadonlyArray<string> | null,
 ): Html =>
 	h.div(
-		[h.Class("relative flex items-center gap-2 rounded-md bg-background py-1"), h.DataAttribute(ROW_ATTRIBUTE, "")],
+		[
+			h.Class("relative flex items-center gap-2 rounded-md bg-background py-1"),
+			h.DataAttribute(ROW_ATTRIBUTE, ""),
+		],
 		[
 			pressable(
 				h,

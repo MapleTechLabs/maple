@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process"
 import { mkdirSync, writeFileSync, appendFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { Effect, Schema } from "effect"
+import { DateTime, Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Transcript } from "./chat-turn"
 import { passAt1, passAtK, passHatK, type Estimate, type TaskTally } from "./stats"
 import type { Grade } from "./targets"
@@ -88,17 +88,17 @@ const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
 const git = (args: ReadonlyArray<string>): string =>
 	spawnSync("git", args, { cwd: APP_ROOT, encoding: "utf8" }).stdout?.trim() ?? ""
 
-const slug = (value: string) => value.replace(/[^a-zA-Z0-9.-]+/g, "_")
+const slug = (value: string) => Str.replace(/[^a-zA-Z0-9.-]+/g, "_")(value)
 
 const tallyOf = (records: ReadonlyArray<TrialRecord>): ReadonlyArray<TaskTally> => {
 	const byTask = new Map<string, { trials: number; passes: number }>()
-	records.forEach((record) => {
+	Arr.forEach(records, (record) => {
 		const tally = byTask.get(record.task) ?? { trials: 0, passes: 0 }
 		tally.trials += 1
 		tally.passes += record.grade.pass ? 1 : 0
 		byTask.set(record.task, tally)
 	})
-	return [...byTask].map(([task, tally]) => ({ task, ...tally }))
+	return Arr.map([...byTask], ([task, tally]) => ({ task, ...tally }))
 }
 
 const group = (records: ReadonlyArray<TrialRecord>): GroupSummary => {
@@ -111,11 +111,14 @@ const groupBy = (
 	keys: (record: TrialRecord) => ReadonlyArray<string>,
 ) => {
 	const groups = new Map<string, Array<TrialRecord>>()
-	records.forEach((record) =>
-		keys(record).forEach((key) => groups.set(key, [...(groups.get(key) ?? []), record])),
+	Arr.forEach(records, (record) =>
+		Arr.forEach(keys(record), (key) => groups.set(key, [...(groups.get(key) ?? []), record])),
 	)
-	return Object.fromEntries(
-		[...groups].sort(([a], [b]) => a.localeCompare(b)).map(([key, list]) => [key, group(list)]),
+	return Rec.fromEntries(
+		Arr.map(
+			[...groups].sort(([a], [b]) => Str.localeCompare(b)(a)),
+			([key, list]) => [key, group(list)],
+		),
 	)
 }
 
@@ -125,17 +128,19 @@ const summarize = <T extends EvalTask>(
 	records: ReadonlyArray<TrialRecord>,
 ): RunSummary => {
 	const tallies = tallyOf(records)
-	const calls = records.flatMap((record) => record.transcript.calls)
-	const sum = (values: ReadonlyArray<number>) => values.reduce((total, value) => total + value, 0)
-	const failing = tallies
-		.filter((tally) => tally.passes < tally.trials)
-		.sort((a, b) => a.passes / a.trials - b.passes / b.trials)
-		.map((tally) => ({
+	const calls = Arr.flatMap(records, (record) => record.transcript.calls)
+	const sum = (values: ReadonlyArray<number>) => Arr.reduce(values, 0, (total, value) => total + value)
+	const failing = Arr.map(
+		Arr.filter(tallies, (tally) => tally.passes < tally.trials).sort(
+			(a, b) => a.passes / a.trials - b.passes / b.trials,
+		),
+		(tally) => ({
 			...tally,
 			example:
 				records.find((record) => record.task === tally.task && !record.grade.pass)?.grade
 					.explanation ?? "",
-		}))
+		}),
+	)
 	return {
 		suite: options.suite,
 		model: options.model,
@@ -149,14 +154,14 @@ const summarize = <T extends EvalTask>(
 		tallies,
 		cost: {
 			trials: records.length,
-			errored: records.filter((record) => record.transcript.errored).length,
+			errored: Arr.filter(records, (record) => record.transcript.errored).length,
 			meanToolCalls: calls.length / Math.max(1, records.length),
-			invalidCallRate: calls.filter((made) => made.invalid).length / Math.max(1, calls.length),
-			toolErrorRate: calls.filter((made) => made.isError).length / Math.max(1, calls.length),
-			inputTokens: sum(records.map((record) => record.transcript.usage.input)),
-			outputTokens: sum(records.map((record) => record.transcript.usage.output)),
+			invalidCallRate: Arr.filter(calls, (made) => made.invalid).length / Math.max(1, calls.length),
+			toolErrorRate: Arr.filter(calls, (made) => made.isError).length / Math.max(1, calls.length),
+			inputTokens: sum(Arr.map(records, (record) => record.transcript.usage.input)),
+			outputTokens: sum(Arr.map(records, (record) => record.transcript.usage.output)),
 			meanDurationMs:
-				sum(records.map((record) => record.transcript.durationMs)) / Math.max(1, records.length),
+				sum(Arr.map(records, (record) => record.transcript.durationMs)) / Math.max(1, records.length),
 		},
 		failing,
 	}
@@ -179,13 +184,15 @@ export const renderSummary = (summary: RunSummary): string => {
 					`- pass^${summary.k} (all trials pass): ${pct(summary.passHatK)}`,
 					`- pass@${summary.k} (any trial passes): ${pct(summary.passAtK)}`,
 				]),
-		...Object.entries(summary.byTier).map(
+		...Arr.map(
+			Rec.toEntries(summary.byTier),
 			([tier, entry]) => `- ${tier} (${entry.tasks}): ${est(entry.passAt1)}`,
 		),
 		"",
 		"| tag | tasks | pass@1 |",
 		"| --- | --- | --- |",
-		...Object.entries(summary.byTag).map(
+		...Arr.map(
+			Rec.toEntries(summary.byTag),
 			([tag, entry]) => `| ${tag} | ${entry.tasks} | ${pct(entry.passAt1.mean)} |`,
 		),
 		"",
@@ -200,11 +207,11 @@ export const renderSummary = (summary: RunSummary): string => {
 			: [
 					"## Failing tasks",
 					"",
-					...summary.failing.flatMap((entry) => [
+					...Arr.flatMap(summary.failing, (entry) => [
 						`### ${entry.task} (${entry.passes}/${entry.trials})`,
 						"",
 						"```",
-						entry.example.slice(0, 1_500),
+						Str.slice(0, 1_500)(entry.example),
 						"```",
 						"",
 					]),
@@ -212,7 +219,7 @@ export const renderSummary = (summary: RunSummary): string => {
 		`Artifacts: ${summary.dir}`,
 		"",
 	]
-	return lines.join("\n")
+	return Arr.join(lines, "\n")
 }
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
@@ -220,22 +227,24 @@ const encodePrettyJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknow
 
 export const runSuite = <T extends EvalTask>(options: RunOptions<T>): Effect.Effect<RunSummary> =>
 	Effect.gen(function* () {
-		const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+		const startedAtUtc = yield* DateTime.now
+		const startedAt = DateTime.formatIso(startedAtUtc)
+		const stamp = Str.replace(/[:.]/g, "-")(startedAt)
 		const dir = join(APP_ROOT, ".evals", "runs", `${stamp}-${slug(options.suite)}-${slug(options.model)}`)
 		mkdirSync(dir, { recursive: true })
 		const manifest = yield* encodePrettyJson({
 			suite: options.suite,
 			model: options.model,
 			k: options.k,
-			startedAt: new Date().toISOString(),
+			startedAt,
 			revision: git(["rev-parse", "HEAD"]),
-			dirty: git(["status", "--porcelain"]).split("\n").filter(Boolean),
-			tasks: options.tasks.map((task) => task.id),
+			dirty: Arr.filter(Str.split("\n")(git(["status", "--porcelain"])), Boolean),
+			tasks: Arr.map(options.tasks, (task) => task.id),
 		}).pipe(Effect.orDie)
 		writeFileSync(join(dir, "manifest.json"), manifest)
 		// Trial-major order: every task's first trial before any second, so a stopped run is balanced.
 		const specs = Array.from({ length: options.k }, (_, trial) =>
-			options.tasks.map((task) => ({ task, trial })),
+			Arr.map(options.tasks, (task) => ({ task, trial })),
 		).flat()
 		const records = yield* Effect.forEach(
 			specs,
@@ -286,23 +295,24 @@ export const runSettings = () => ({
 			? process.env.EVAL_TIER
 			: undefined,
 	/** Comma-separated task ids or `tag:<tag>` selectors. */
-	tasks: (process.env.EVAL_TASKS ?? "")
-		.split(",")
-		.map((entry) => entry.trim())
-		.filter(Boolean),
+	tasks: Arr.filter(
+		Arr.map(Str.split(",")(process.env.EVAL_TASKS ?? ""), (entry) => Str.trim(entry)),
+		Boolean,
+	),
 })
 
 export const selectTasks = <T extends EvalTask>(
 	tasks: ReadonlyArray<T>,
 	settings: ReturnType<typeof runSettings>,
 ) =>
-	tasks.filter(
+	Arr.filter(
+		tasks,
 		(task) =>
 			(settings.tier === undefined || task.tier === settings.tier) &&
 			(settings.tasks.length === 0 ||
-				settings.tasks.some((selector) =>
-					selector.startsWith("tag:")
-						? task.tags.includes(selector.slice(4))
+				Arr.some(settings.tasks, (selector) =>
+					Str.startsWith("tag:")(selector)
+						? task.tags.includes(Str.slice(4)(selector))
 						: selector === task.id,
 				)),
 	)

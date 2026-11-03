@@ -10,6 +10,7 @@ import {
 	type ServiceEdgeData,
 	type ServiceNodeData,
 } from "./service-map-utils"
+import { Array as Arr } from "effect"
 
 export type { PreviousPositions }
 
@@ -148,7 +149,7 @@ export function buildElkGraph(
 		if (!laneNodes) continue
 		children.push({
 			id: `${ELK_CONTAINER_PREFIX}${ns}`,
-			children: laneNodes.map(toElkNode),
+			children: Arr.map(laneNodes, toElkNode),
 			layoutOptions: {
 				// Reserve room at the top for the namespace label chip.
 				"elk.padding": `[top=${NS_LABEL_HEIGHT + NS_PADDING_Y},left=${NS_PADDING_X},bottom=${NS_PADDING_Y},right=${NS_PADDING_X}]`,
@@ -157,7 +158,7 @@ export function buildElkGraph(
 	}
 	for (const node of topLevel) children.push(toElkNode(node))
 
-	const elkEdges: ElkExtendedEdge[] = edges.map((edge) => ({
+	const elkEdges: ElkExtendedEdge[] = Arr.map(edges, (edge) => ({
 		id: edge.id,
 		sources: [edge.source],
 		targets: [edge.target],

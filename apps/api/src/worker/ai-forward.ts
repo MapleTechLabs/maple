@@ -12,7 +12,7 @@
  */
 import { ISOLATE_AGE_HEADER, ISOLATE_ORDINAL_HEADER, MCP_TOOLS_BUILT_HEADER } from "@maple/infra/isolate-age"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Option } from "effect"
+import { Effect, Option, String as Str } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { API_CORS_RESPONSE_HEADERS } from "@maple/backend/http/api-cors"
 
@@ -27,11 +27,11 @@ import { API_CORS_RESPONSE_HEADERS } from "@maple/backend/http/api-cors"
  */
 export const forwardsToAi = (path: string): boolean =>
 	path === "/mcp" ||
-	path.startsWith("/mcp/") ||
-	path.startsWith("/api/chat/") ||
-	path.startsWith("/internal/chat/") ||
-	path.startsWith("/internal/mcp/") ||
-	path.startsWith("/api/security-audit/")
+	Str.startsWith("/mcp/")(path) ||
+	Str.startsWith("/api/chat/")(path) ||
+	Str.startsWith("/internal/chat/")(path) ||
+	Str.startsWith("/internal/mcp/")(path) ||
+	Str.startsWith("/api/security-audit/")(path)
 
 /** maple-ai could not be reached. CORS headers included: an investigation's conversation calls this from a browser. */
 export const aiUnavailableResponse = (): HttpServerResponse.HttpServerResponse =>

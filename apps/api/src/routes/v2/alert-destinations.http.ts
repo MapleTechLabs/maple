@@ -21,7 +21,7 @@ import type {
 	V2TelegramChatList,
 } from "@maple/domain/http/v2"
 import { MapleApiV2, paginateArray } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 
@@ -211,7 +211,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 					const tenant = yield* CurrentTenant.Context
 					const response = yield* destinations.listDestinations(tenant.orgId)
 
-					const page = yield* paginateArray(response.destinations.map(toV2Destination), query)
+					const page = yield* paginateArray(Arr.map(response.destinations, toV2Destination), query)
 					return { object: "list" as const, ...page }
 				}),
 			)
@@ -222,12 +222,10 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 
 					const destination = response.destinations.find((doc) => doc.id === params.id)
 					if (destination === undefined)
-						return yield* Effect.fail(
-							new AlertDestinationNotFoundError({
-								message: "No such alert destination.",
-								destinationId: params.id,
-							}),
-						)
+						return yield* new AlertDestinationNotFoundError({
+							message: "No such alert destination.",
+							destinationId: params.id,
+						})
 					return toV2Destination(destination)
 				}),
 			)

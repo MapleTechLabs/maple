@@ -4,7 +4,7 @@ import type {
 	ServiceMapEdgeRow,
 	ServicePlatform,
 } from "@maple/ui/components/service-map/service-map-types"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { cachedAs } from "../../data/cached"
 
 // The service map's data as Schemas, so the map
@@ -85,9 +85,12 @@ export const graphRowsOf = (
 	platforms: Map<string, ServicePlatform>
 	runtimes: Map<string, string>
 }> => ({
-	edges: data.edges.map((row) => ({ ...row })),
-	dbEdges: data.dbEdges.map((row) => ({ ...row })),
-	serviceOverviews: data.overviews.map((row) => ({ ...row, commits: row.commits.map((commit) => ({ ...commit })) })),
+	edges: Arr.map(data.edges, (row) => ({ ...row })),
+	dbEdges: Arr.map(data.dbEdges, (row) => ({ ...row })),
+	serviceOverviews: Arr.map(data.overviews, (row) => ({
+		...row,
+		commits: Arr.map(row.commits, (commit) => ({ ...commit })),
+	})),
 	platforms: new Map(data.platforms),
 	runtimes: new Map(data.runtimes),
 })

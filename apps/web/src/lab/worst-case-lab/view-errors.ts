@@ -10,6 +10,7 @@ import { occurrencesTable } from "../../page/errors/kit/occurrences-table"
 import { actorIdentities } from "./fixture"
 import { Message, type Model } from "./model"
 import { type H, narrow, wcSection } from "./view-parts"
+import { Array as Arr } from "effect"
 
 // `ErrorsSection`: occurrences, a signal row, avatars.
 
@@ -63,7 +64,7 @@ export const errorsSection = (h: H, model: Model): Html => {
 		narrow(h, [
 			h.div(
 				[h.Class("space-y-2")],
-				actorIdentities(model.mode).map((identity) =>
+				Arr.map(actorIdentities(model.mode), (identity) =>
 					h.div(
 						[h.Key(identity.seed), h.Class("flex items-center gap-2 text-xs")],
 						[

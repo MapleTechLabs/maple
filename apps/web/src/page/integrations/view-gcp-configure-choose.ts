@@ -11,6 +11,7 @@ import { collectFields } from "./view-gcp-configure-collect"
 import { logFilter } from "./view-gcp-configure-filter"
 import { configureFooter, configureHeader, configurePanel, footerNote } from "./view-gcp-configure-parts"
 import { typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr, String as Str } from "effect"
 
 // `ChooseStage`: a connection's data step, and the confirmation for a change that acts at once.
 
@@ -75,23 +76,30 @@ export const chooseConfirm = (h: H, configure: ConfigureModel, connector: V2GcpC
 	confirmSave(h, configure, connector, chooseChanges(connector, configure.chooseFlags))
 
 const named = (list: Changes["immediate"]): string =>
-	list.map(({ capability }) => CAPABILITIES[capability].title.toLowerCase()).join(" and ")
+	Arr.join(
+		Arr.map(list, ({ capability }) => Str.toLowerCase(CAPABILITIES[capability].title)),
+		" and ",
+	)
 
 /** One save can turn one capability off and the other back on: the question names both. */
 const confirmSave = (h: H, configure: ConfigureModel, connector: V2GcpConnector, changes: Changes): Html => {
 	const { immediate, stopping, resuming } = changes
-	const turned = [
-		stopping.length > 0 ? `${named(stopping)} off` : null,
-		resuming.length > 0 ? `${named(resuming)} back on` : null,
-	]
-		.filter((part) => part !== null)
-		.join(" and ")
+	const turned = Arr.join(
+		Arr.filter(
+			[
+				stopping.length > 0 ? `${named(stopping)} off` : null,
+				resuming.length > 0 ? `${named(resuming)} back on` : null,
+			],
+			(part) => part !== null,
+		),
+		" and ",
+	)
 	const list = (term: string, lines: ReadonlyArray<string>): Html =>
 		h.div(
 			[],
 			[
 				h.dt([h.Class("font-medium")], [term]),
-				...lines.map((line) =>
+				...Arr.map(lines, (line) =>
 					h.dd([h.Class(typographyClass({ tone: "muted", className: "text-pretty" }))], [line]),
 				),
 			],
@@ -126,11 +134,11 @@ const confirmSave = (h: H, configure: ConfigureModel, connector: V2GcpConnector,
 				[
 					list(
 						"In Maple",
-						immediate.map(({ capability, acts }) => CAPABILITIES[capability].now[acts]),
+						Arr.map(immediate, ({ capability, acts }) => CAPABILITIES[capability].now[acts]),
 					),
 					list(
 						"In Google Cloud",
-						immediate.map(({ capability, acts }) => CAPABILITIES[capability].later[acts]),
+						Arr.map(immediate, ({ capability, acts }) => CAPABILITIES[capability].later[acts]),
 					),
 				],
 			),

@@ -13,7 +13,7 @@
 // rather than as absent. The `type` tag on each field is what tells the decoder
 // how to turn that string back into a value.
 
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 /** Vendor slug the ingest gateway stamped on the span. */
 export const MAPLE_AI_VENDOR_ID_ATTR = "maple_ai.vendor.id"
@@ -51,8 +51,8 @@ const TRACE_ID_PATTERN = /^[0-9a-f]{32}$/
  * the caller gets the empty-session answer.
  */
 export const traceSessionTraceId = (sessionId: string): string | undefined => {
-	if (!sessionId.startsWith(MAPLE_AI_TRACE_SESSION_PREFIX)) return undefined
-	const traceId = sessionId.slice(MAPLE_AI_TRACE_SESSION_PREFIX.length)
+	if (!Str.startsWith(MAPLE_AI_TRACE_SESSION_PREFIX)(sessionId)) return undefined
+	const traceId = Str.slice(MAPLE_AI_TRACE_SESSION_PREFIX.length)(sessionId)
 	return TRACE_ID_PATTERN.test(traceId) ? traceId : undefined
 }
 
@@ -488,8 +488,8 @@ type AiGenAiFieldSchemas = {
 // Generated from the catalog rather than written out, so the wire schema cannot
 // drift from the field list. `Object.fromEntries` erases the key/value
 // correlation, hence the cast back to the mapped type above.
-const aiGenAiFieldSchemas = Object.fromEntries(
-	Object.entries(AI_GENAI_FIELDS).map(([field, def]) => [
+const aiGenAiFieldSchemas = Rec.fromEntries(
+	Arr.map(Rec.toEntries(AI_GENAI_FIELDS), ([field, def]) => [
 		field,
 		Schema.optionalKey(aiFieldValueSchemas[def.type]),
 	]),

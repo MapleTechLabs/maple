@@ -3,7 +3,7 @@
 // extracting (release assets are mutable even for a fixed tag), extract, and
 // install it. Hosts without a bundled library (the @maple-dev/alchemy sidecar)
 // keep one verified copy per release in a per-user cache.
-import { Duration, Effect, Schedule, Schema, Stream } from "effect"
+import { Duration, Effect, Schedule, Schema, Stream, String as Str } from "effect"
 import { HttpClient } from "effect/http"
 import { createHash, randomUUID } from "node:crypto"
 import { createReadStream, existsSync } from "node:fs"
@@ -132,7 +132,7 @@ const isIntactInstall = (library: string, digestFile: string) =>
 			try: () => readFile(digestFile, "utf8"),
 			catch: (error) => fail(`cannot read ${digestFile}: ${String(error)}`),
 		})
-		return (yield* sha256File(library)) === recorded.trim()
+		return (yield* sha256File(library)) === Str.trim(recorded)
 	})
 
 const findLibrary = (root: string) =>
@@ -141,7 +141,9 @@ const findLibrary = (root: string) =>
 		catch: (error) => fail(`cannot list the extracted archive: ${String(error)}`),
 	}).pipe(
 		Effect.map((entries) =>
-			entries.find((entry) => entry.endsWith("libchdb.so") || entry.endsWith("libchdb.dylib")),
+			entries.find(
+				(entry) => Str.endsWith("libchdb.so")(entry) || Str.endsWith("libchdb.dylib")(entry),
+			),
 		),
 	)
 
@@ -161,7 +163,7 @@ export const provisionLibchdb = (options: ProvisionOptions = {}) =>
 			return yield* fail(`no pinned sha256 for ${asset} at libchdb ${release.version}`)
 
 		const cacheRoot = options.cacheRoot ?? defaultLibchdbCacheRoot()
-		const installDir = join(cacheRoot, release.version, asset.replace(/\.tar\.gz$/, ""))
+		const installDir = join(cacheRoot, release.version, Str.replace(/\.tar\.gz$/, "")(asset))
 		const target = join(installDir, process.platform === "darwin" ? "libchdb.dylib" : "libchdb.so")
 		// Written last: an install without it never completed.
 		const digestFile = `${target}.sha256`

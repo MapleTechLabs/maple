@@ -14,7 +14,7 @@ import {
 	rowToAlertIncidentDocument,
 	rowToAlertRuleDocument,
 } from "@maple/web-data/collections/alerts"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { previewPayload } from "../shared/preview"
 import { isoMs } from "../shared/time"
 import type { Model } from "./model"
@@ -35,7 +35,7 @@ export interface IncidentView {
 
 /** The state rows of one rule (one per group). */
 export const ruleStatesOf = (model: Model, ruleId: string): ReadonlyArray<AlertRuleStateRow> =>
-	(model.states ?? []).filter((row) => row.rule_id === ruleId)
+	Arr.filter(model.states ?? [], (row) => row.rule_id === ruleId)
 
 /** The incident and its rule, or `None` while the incidents list has not answered or lacks it. */
 export const incidentViewOf = (model: Model): Option.Option<IncidentView> => {
@@ -60,9 +60,10 @@ export const incidentViewOf = (model: Model): Option.Option<IncidentView> => {
 	return Option.some({
 		incident,
 		rule,
-		ruleIncidents: model.incidents
-			.filter((row) => row.rule_id === incidentRow.rule_id)
-			.map(rowToAlertIncidentDocument),
+		ruleIncidents: Arr.map(
+			Arr.filter(model.incidents, (row) => row.rule_id === incidentRow.rule_id),
+			rowToAlertIncidentDocument,
+		),
 		range,
 		checksQuery:
 			rule === null || incident.signalType === "uptime"
@@ -89,7 +90,7 @@ export const groupPreviewOf = (
 	incident: AlertIncidentDocument,
 ): AlertRulePreviewResponse | null => {
 	if (preview == null || incident.groupKey == null) return preview
-	const series = preview.series.filter((s) => s.groupKey === incident.groupKey)
+	const series = Arr.filter(preview.series, (s) => s.groupKey === incident.groupKey)
 	if (series.length === 0 || series.length === preview.series.length) return preview
 	return new AlertRulePreviewResponse({ ...preview, series, wouldFire: [] })
 }

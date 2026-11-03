@@ -16,6 +16,7 @@ import {
 	clickhouseExec,
 	uniqueDatabase,
 } from "./clickhouse-e2e-support"
+import { Array as Arr, String as Str } from "effect"
 
 const database = uniqueDatabase("maple_trace_facets_e2e")
 const ORG_ID = "org_trace_facets_e2e"
@@ -24,7 +25,8 @@ const ORG_ID = "org_trace_facets_e2e"
 const HOUR_MS = 3_600_000
 const BASE_MS = Math.floor((Date.now() - 4 * HOUR_MS) / HOUR_MS) * HOUR_MS
 
-const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 19)
+const chDateTime = (epochMs: number): string =>
+	Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 
 interface SeedSpan {
 	readonly traceId: string
@@ -66,12 +68,14 @@ const BATCH_2: ReadonlyArray<SeedSpan> = [
 ]
 
 const insert = async (spans: ReadonlyArray<SeedSpan>): Promise<void> => {
-	const rows = spans
-		.map(
+	const rows = Arr.join(
+		Arr.map(
+			spans,
 			(span, index) =>
 				`('${ORG_ID}', '${chDateTime(span.ms)}', '${span.traceId}', 'span-${span.traceId}-${index}', '${span.parentSpanId ?? ""}', 'op', 'Server', '${span.service}', ${span.durationNs}, '${span.status ?? "Ok"}', '', 1, map(), map('deployment.environment.name', '${span.env ?? ""}'))`,
-		)
-		.join("\n,")
+		),
+		"\n,",
+	)
 	await clickhouseExec(
 		`INSERT INTO traces
 		 (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, StatusMessage, SampleRate, SpanAttributes, ResourceAttributes)
@@ -123,7 +127,7 @@ describe.skipIf(!clickhouseE2eEnabled)("trace_facets_hourly materialization", ()
 	it("rolls up every root span of trace_list_mv, live and from migration 0034's backfill", async () => {
 		const expected = await fromTraceList()
 		assert.strictEqual(
-			expected.reduce((total, row) => total + Number(row.traces), 0),
+			Arr.reduce(expected, 0, (total, row) => total + Number(row.traces)),
 			9,
 		)
 		assert.deepStrictEqual(await fromRollup(), expected)
@@ -142,7 +146,11 @@ describe.skipIf(!clickhouseE2eEnabled)("trace_facets_hourly materialization", ()
 	it("answers the sidebar identically from the splice and from trace_list_mv alone", async () => {
 		const run = (sql: string) => runJson(normalizeSqlForClickHouseClient(sql))
 		const byFacet = (rows: ReadonlyArray<Record<string, unknown>>) =>
-			[...rows].sort((a, b) => `${a.facetType}:${a.name}`.localeCompare(`${b.facetType}:${b.name}`))
+			[...rows].sort((a, b) =>
+				Str.localeCompare(JSON.stringify([b.facetType, b.name]))(
+					JSON.stringify([a.facetType, a.name]),
+				),
+			)
 
 		for (const [filters, longestMs] of [
 			[{}, 80],

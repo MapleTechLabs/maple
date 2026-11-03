@@ -1,7 +1,7 @@
 import * as Command from "effect/cli/Command"
 import * as Argument from "effect/cli/Argument"
 import * as Flag from "effect/cli/Flag"
-import { Effect, Option } from "effect"
+import { Effect, Option, String as Str } from "effect"
 import * as f from "../lib/flags"
 import { CliNotFoundError, CliUsageError } from "../lib/errors"
 import { traceLink, withTraceLinks } from "../lib/local-links"
@@ -107,7 +107,7 @@ export const trace = Command.make("trace", {
 	]),
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
-			const traceId = a.traceId.trim().toLowerCase()
+			const traceId = Str.toLowerCase(Str.trim(a.traceId))
 			if (!TRACE_ID_RE.test(traceId)) {
 				return yield* new CliUsageError({
 					message: `"${a.traceId}" is not a trace id`,

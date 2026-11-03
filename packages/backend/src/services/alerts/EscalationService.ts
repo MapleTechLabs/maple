@@ -26,7 +26,7 @@ import {
 	type IssueEscalationPolicyRow,
 	type IssueEscalationRow,
 } from "@maple/db/tables"
-import { Cause, Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Cause, Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -135,7 +135,7 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 				decodeJsonRecord(row.payloadJson),
 				(): Record<string, unknown> => ({}),
 			)
-			const configuredDestinationIds = rules.flatMap((rule) => rule.destinationIds)
+			const configuredDestinationIds = Arr.flatMap(rules, (rule) => rule.destinationIds)
 			const destinationRows =
 				configuredDestinationIds.length === 0
 					? []
@@ -157,7 +157,7 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 				severity: row.severity,
 				source: row.source,
 				...(!(confidence === undefined) ? { confidence } : undefined),
-				enabledDestinationIds: new Set(destinationRows.map((destination) => destination.id)),
+				enabledDestinationIds: new Set(Arr.map(destinationRows, (destination) => destination.id)),
 			})
 			yield* Effect.annotateCurrentSpan({
 				"maple.escalation.policy_outcome": decision.outcome,
@@ -303,7 +303,8 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 					),
 				),
 			)
-			const count = (outcome: (typeof outcomes)[number]) => outcomes.filter((o) => o === outcome).length
+			const count = (outcome: (typeof outcomes)[number]) =>
+				Arr.filter(outcomes, (o) => o === outcome).length
 			return {
 				processed: outcomes.length - count("contended"),
 				sent: count("sent"),

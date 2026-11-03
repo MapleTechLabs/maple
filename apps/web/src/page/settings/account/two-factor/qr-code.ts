@@ -1,12 +1,18 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { encode } from "uqr"
+import { Array as Arr } from "effect"
 
 // `QrCode`: one `<path>` in `currentColor`, a 1x1 square per dark module, so the code inherits
 // the theme's foreground.
 
 export const qrCode = <M>(h: HtmlBuilder<M>, value: string, className?: string): Html => {
 	const result = encode(value, { border: 1 })
-	const path = result.data.flatMap((row, y) => row.map((isDark, x) => (isDark ? `M${x} ${y}h1v1h-1z` : ""))).join("")
+	const path = Arr.join(
+		Arr.flatMap(result.data, (row, y) =>
+			Arr.map(row, (isDark, x) => (isDark ? `M${x} ${y}h1v1h-1z` : "")),
+		),
+		"",
+	)
 	return h.svg(
 		[
 			h.Attribute("xmlns", "http://www.w3.org/2000/svg"),

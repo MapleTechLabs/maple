@@ -1,4 +1,4 @@
-import { Result } from "effect"
+import { Result, Array as Arr } from "effect"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import {
@@ -322,13 +322,12 @@ describe("interleaveAlertRulesByTenant", () => {
 			{ tenantId: "a", id: "a3" },
 			{ tenantId: "b", id: "b2" },
 		]
-		expect(interleaveAlertRulesByTenant(rows, (row) => row.tenantId).map(({ id }) => id)).toEqual([
-			"a1",
-			"b1",
-			"a2",
-			"b2",
-			"a3",
-		])
+		expect(
+			Arr.map(
+				interleaveAlertRulesByTenant(rows, (row) => row.tenantId),
+				({ id }) => id,
+			),
+		).toEqual(["a1", "b1", "a2", "b2", "a3"])
 	})
 })
 

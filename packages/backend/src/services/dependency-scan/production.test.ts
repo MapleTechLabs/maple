@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { riskScore } from "./production"
+import { Array as Arr } from "effect"
 
 const rank = (
 	findings: ReadonlyArray<{
@@ -9,7 +10,10 @@ const rank = (
 		readonly spans: number
 	}>,
 ) =>
-	[...findings].sort((a, b) => riskScore(b, b.spans) - riskScore(a, a.spans)).map((finding) => finding.name)
+	Arr.map(
+		[...findings].sort((a, b) => riskScore(b, b.spans) - riskScore(a, a.spans)),
+		(finding) => finding.name,
+	)
 
 describe("riskScore", () => {
 	it("puts a medium advisory a busy service runs above a high one nothing deploys", () => {

@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import {
 	readAiToolErrors,
 	readAiToolsBreakdowns,
@@ -107,11 +107,11 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 						? readAiToolsBreakdowns(tenant, new AiToolsBreakdownsRequest(scope)).pipe(
 								Effect.map((response) => response.tools),
 							)
-						: Effect.succeed(undefined),
+						: Effect.undefined,
 					// The groups are fingerprints of ONE tool's failures, and "every tool's groups" is a
 					// list with no question behind it.
 					selected === undefined
-						? Effect.succeed(undefined)
+						? Effect.undefined
 						: readAiToolErrors(
 								tenant,
 								new AiToolErrorsRequest({
@@ -147,7 +147,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 								tool: selected.tool,
 								bucketSeconds: selected.bucketSeconds,
 								cap: ERROR_GROUPS_MAX,
-								groups: errorGroups.map((group) => ({
+								groups: Arr.map(errorGroups, (group) => ({
 									...group,
 									trend: compactTrend(group.trend, {
 										startMs,
@@ -242,7 +242,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 								: [
 										doc.table(
 											GROUP_COLUMNS,
-											failureGroups.groups.map((group) => [
+											Arr.map(failureGroups.groups, (group) => [
 												group.fingerprint,
 												cellOrDash(group.errorType, 40),
 												cellOrDash(group.message, MESSAGE_CHARS),
@@ -268,7 +268,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 			const groupSteps: ReadonlyArray<NextCall> =
 				failureGroups === undefined
 					? []
-					: failureGroups.groups.slice(0, 3).map((group) =>
+					: Arr.map(failureGroups.groups.slice(0, 3), (group) =>
 							doc.next(
 								"get_agent_tool_error",
 								{
@@ -283,9 +283,9 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 			// The tool worth looking at next is the one failing most, not the busiest; a tool with
 			// no failures has nothing to open.
 			const tools = output.tools ?? []
-			const worst = [...tools]
-				.filter((item) => item.errors > 0)
-				.sort((a, b) => b.errors / b.calls - a.errors / a.calls)[0]
+			const worst = Arr.filter([...tools], (item) => item.errors > 0).sort(
+				(a, b) => b.errors / b.calls - a.errors / a.calls,
+			)[0]
 			const busiest = selection.tool === undefined ? tools[0]?.key : selection.tool
 
 			return {
@@ -351,7 +351,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 										"First seen",
 										"Last seen",
 									],
-									output.tools.map((item) => [
+									Arr.map(output.tools, (item) => [
 										truncate(item.key === "" ? "(unnamed)" : item.key, 60),
 										formatNumber(item.calls),
 										formatNumber(item.sessions),

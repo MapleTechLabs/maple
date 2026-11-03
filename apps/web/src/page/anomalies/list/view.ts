@@ -24,6 +24,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { filtersRail } from "./view-filters"
 import { listBody } from "./view-list"
+import { Array as Arr } from "effect"
 
 // The anomalies page.
 
@@ -89,12 +90,18 @@ const listSkeleton = (h: H): Html =>
 			),
 			h.div(
 				[h.Class("divide-y divide-border-subtle")],
-				SKELETON_WIDTHS.map((width) =>
+				Arr.map(SKELETON_WIDTHS, (width) =>
 					h.div(
 						[h.Class("flex h-9 items-center gap-2 px-3"), h.AriaHidden(true)],
 						[
-							h.span([h.Class("flex w-3 shrink-0 justify-center")], [skeleton(h, "size-2 rounded-full")]),
-							h.span([h.Class("flex flex-1 items-center sm:w-32 sm:flex-none")], [skeleton(h, `h-3.5 ${width}`)]),
+							h.span(
+								[h.Class("flex w-3 shrink-0 justify-center")],
+								[skeleton(h, "size-2 rounded-full")],
+							),
+							h.span(
+								[h.Class("flex flex-1 items-center sm:w-32 sm:flex-none")],
+								[skeleton(h, `h-3.5 ${width}`)],
+							),
 							h.span([h.Class("flex w-28 shrink-0 justify-end")], [skeleton(h, "h-3 w-14")]),
 							h.span([h.Class("hidden md:flex")], [skeleton(h, "h-4 w-24 rounded-full")]),
 							h.span([h.Class("hidden min-w-0 flex-1 sm:block")]),
@@ -129,7 +136,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					incidents: filtered,
 					status: statusOf(model.search),
 					hasActiveFilters: hasAnomalyFilters(filters),
-					excludedValues: chips.filter((chip) => chip.negated).flatMap((chip) => chip.values),
+					excludedValues: Arr.filter(chips, (chip) => chip.negated).flatMap((chip) => chip.values),
 					hasMore: nextCursorOf(model) !== null,
 					timeZone: inputs.context.timeZone,
 				}),
@@ -137,7 +144,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		)
 	}
 	const chipBar = activeFilterChips(h, {
-		chips: chips.map((chip) => ({
+		chips: Arr.map(chips, (chip) => ({
 			id: chip.param,
 			label: chip.label,
 			values: chip.values,
@@ -156,15 +163,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			actions: AsyncData.hasError(data) ? undefined : liveChip(h, isLiveOf(model.search)),
 			sticky: toolbar(h, model, hasFirstPage ? filtered.length : null),
 		},
-		[
-			h.div(
-				[],
-				[
-					...(chipBar === null ? [] : [chipBar]),
-					body,
-				],
-			),
-		],
+		[h.div([], [...(chipBar === null ? [] : [chipBar]), body])],
 	)
 })
 

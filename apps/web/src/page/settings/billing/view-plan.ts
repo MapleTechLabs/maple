@@ -20,6 +20,7 @@ import { settingsSection } from "../kit/section"
 import { Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -30,7 +31,7 @@ const CURRENT_PLAN_CAPTION = "Change or cancel it in Manage billing"
 
 /** A hard-capped plan bills nothing past its allotments, so "+ usage" would be untrue. */
 const billsUsage = (spend: SpendModel) =>
-	spend.features.some((feature) => feature.overageAllowed !== false && feature.ratePerUnit !== null)
+	Arr.some(spend.features, (feature) => feature.overageAllowed !== false && feature.ratePerUnit !== null)
 
 const priceLabel = (spend: SpendModel): { price: string; suffix: string } => {
 	const plan = spend.charges.find((charge) => charge.kind === "plan")
@@ -60,35 +61,34 @@ const planLine = (
 			h.Class("flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-3"),
 		],
 		[
-			vstack(h, { gap: "0.5", shrink: true },
-				[
-					h.span(
-						[
-							h.Class(
-								cn(typographyClass({ size: "sm", weight: "medium" }), options.muted === true && "text-muted-foreground"),
+			vstack(h, { gap: "0.5", shrink: true }, [
+				h.span(
+					[
+						h.Class(
+							cn(
+								typographyClass({ size: "sm", weight: "medium" }),
+								options.muted === true && "text-muted-foreground",
 							),
-						],
-						[options.name],
-					),
-					typography(h, { size: "2xs", tone: "muted" }, [options.caption]),
-				],
-			),
-			hstack(h, { gap: "4" },
-				[
-					h.span(
-						[
-							h.Class(
-								cn(
-									typographyClass({ size: "sm", mono: true, numeric: true }),
-									options.muted === true && "text-muted-foreground",
-								),
+						),
+					],
+					[options.name],
+				),
+				typography(h, { size: "2xs", tone: "muted" }, [options.caption]),
+			]),
+			hstack(h, { gap: "4" }, [
+				h.span(
+					[
+						h.Class(
+							cn(
+								typographyClass({ size: "sm", mono: true, numeric: true }),
+								options.muted === true && "text-muted-foreground",
 							),
-						],
-						[options.price],
-					),
-					...(options.action === undefined ? [] : [options.action]),
-				],
-			),
+						),
+					],
+					[options.price],
+				),
+				...(options.action === undefined ? [] : [options.action]),
+			]),
 		],
 	)
 
@@ -96,12 +96,14 @@ const planLine = (
 const planRow = (h: H, spend: SpendModel, plans: ReadonlyArray<CatalogPlan>, canManage: boolean): Html => {
 	if (spend.planName === null)
 		return panel(h, { padded: true }, [
-			typography(h, { size: "sm", tone: "muted", as: "p" }, ["No active plan. Compare plans to pick one."]),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [
+				"No active plan. Compare plans to pick one.",
+			]),
 		])
 	const { price, suffix } = priceLabel(spend)
-	const activeIds = new Set(spend.addOns.map((addOn) => addOn.id))
-	const available = plans.filter((plan) => plan.addOn === true && !activeIds.has(plan.id))
-	const activeCharges = spend.charges.filter((charge) => charge.kind === "addOn")
+	const activeIds = new Set(Arr.map(spend.addOns, (addOn) => addOn.id))
+	const available = Arr.filter(plans, (plan) => plan.addOn === true && !activeIds.has(plan.id))
+	const activeCharges = Arr.filter(spend.charges, (charge) => charge.kind === "addOn")
 	return panel(h, { className: "divide-y divide-border-subtle" }, [
 		planLine(h, {
 			key: "plan",
@@ -112,17 +114,18 @@ const planRow = (h: H, spend: SpendModel, plans: ReadonlyArray<CatalogPlan>, can
 				[price, h.span([h.Class("font-sans text-2xs text-muted-foreground")], [suffix])],
 			),
 		}),
-		...activeCharges.map((charge) =>
+		...Arr.map(activeCharges, (charge) =>
 			planLine(h, {
 				key: charge.key,
-				name: hstack(h, { gap: "2", as: "span" },
-					[sentenceCasePlanName(charge.name), badge(h, { size: "sm", variant: "ok" }, ["Active"])],
-				),
+				name: hstack(h, { gap: "2", as: "span" }, [
+					sentenceCasePlanName(charge.name),
+					badge(h, { size: "sm", variant: "ok" }, ["Active"]),
+				]),
 				caption: "Add-on, billed with your plan",
 				price: perInterval(charge.dollars, charge.interval),
 			}),
 		),
-		...available.map((addOn) =>
+		...Arr.map(available, (addOn) =>
 			planLine(h, {
 				key: addOn.id,
 				name: sentenceCasePlanName(addOn.name),
@@ -142,8 +145,8 @@ const planRow = (h: H, spend: SpendModel, plans: ReadonlyArray<CatalogPlan>, can
 }
 
 const includedRun = (plan: CatalogPlan): string =>
-	plan.items
-		.flatMap((item) => {
+	Arr.join(
+		Arr.flatMap(plan.items, (item) => {
 			if (
 				!isPricingCardFeature(item.featureId) ||
 				item.included === undefined ||
@@ -157,8 +160,9 @@ const includedRun = (plan: CatalogPlan): string =>
 					? `${amount} GB ${item.featureId}`
 					: `${amount} ${featureUnit(item.featureId)}`,
 			]
-		})
-		.join(" · ")
+		}),
+		" · ",
+	)
 
 const currentBadge = (h: H, text: string): Html =>
 	badge(
@@ -178,17 +182,21 @@ const customPlanPlate = (h: H, spend: SpendModel): Html => {
 	const price = spend.basePlan?.price?.amount
 	const interval = spend.basePlan?.price?.interval ?? "month"
 	const hasUsage = billsUsage(spend)
-	const included = spend.features
-		.filter((feature) => feature.included !== null || feature.unlimited)
-		.map((feature) =>
-			feature.unlimited
-				? `unlimited ${feature.label.toLowerCase()}`
-				: `${formatCount(Number(feature.included))} ${featureUnit(feature.featureId) === "GB" ? "GB" : ""} ${feature.label.toLowerCase()}`.replace(
-						/\s+/g,
-						" ",
-					),
-		)
-		.join(" · ")
+	const included = Arr.join(
+		Arr.map(
+			spend.features.filter((feature) => feature.included !== null || feature.unlimited),
+			(feature) =>
+				feature.unlimited
+					? `unlimited ${Str.toLowerCase(feature.label)}`
+					: Str.replace(
+							/\s+/g,
+							" ",
+						)(
+							`${formatCount(Number(feature.included))} ${featureUnit(feature.featureId) === "GB" ? "GB" : ""} ${Str.toLowerCase(feature.label)}`,
+						),
+		),
+		" · ",
+	)
 	const isPriced = price !== undefined && price !== null
 	return panel(
 		h,
@@ -201,12 +209,10 @@ const customPlanPlate = (h: H, spend: SpendModel): Html => {
 			h.div(
 				[h.Class("max-w-sm")],
 				[
-					hstack(h, { gap: "2" },
-						[
-							h.span([h.Class("text-sm")], [spend.planName ?? "Your plan"]),
-							currentBadge(h, "Current plan"),
-						],
-					),
+					hstack(h, { gap: "2" }, [
+						h.span([h.Class("text-sm")], [spend.planName ?? "Your plan"]),
+						currentBadge(h, "Current plan"),
+					]),
 					h.div(
 						[h.Class("mt-3 flex items-baseline gap-2")],
 						[
@@ -214,15 +220,13 @@ const customPlanPlate = (h: H, spend: SpendModel): Html => {
 								[h.Class("font-mono text-3xl font-semibold tabular-nums")],
 								[isPriced ? `$${price}` : "Custom"],
 							),
-							typography(h, { size: "2xs", tone: "muted" },
-								[
-									!isPriced
-										? "negotiated pricing"
-										: hasUsage
-											? `/${interval} + usage`
-											: `/${interval}`,
-								],
-							),
+							typography(h, { size: "2xs", tone: "muted" }, [
+								!isPriced
+									? "negotiated pricing"
+									: hasUsage
+										? `/${interval} + usage`
+										: `/${interval}`,
+							]),
 						],
 					),
 					h.p(
@@ -262,7 +266,7 @@ const offerPanel = (
 ): Html => {
 	const isActive = !options.isCustom && plan.customerEligibility?.status === "active"
 	const isTrialAvailable = plan.customerEligibility?.trialAvailable === true
-	const retention = getPlanFeatures(plan.id.toLowerCase()).find(
+	const retention = getPlanFeatures(Str.toLowerCase(plan.id)).find(
 		(feature) => feature.label === "Data retention",
 	)
 	return panel(
@@ -278,12 +282,10 @@ const offerPanel = (
 			h.div(
 				[h.Class("max-w-sm")],
 				[
-					hstack(h, { gap: "2" },
-						[
-							h.span([h.Class("text-sm")], [plan.name]),
-							...(isActive ? [currentBadge(h, options.trialText ?? "Current plan")] : []),
-						],
-					),
+					hstack(h, { gap: "2" }, [
+						h.span([h.Class("text-sm")], [plan.name]),
+						...(isActive ? [currentBadge(h, options.trialText ?? "Current plan")] : []),
+					]),
 					h.div(
 						[h.Class("mt-3 flex items-baseline gap-2")],
 						[
@@ -291,9 +293,11 @@ const offerPanel = (
 								[h.Class("font-mono text-3xl font-semibold tabular-nums")],
 								["$", String(plan.price?.amount ?? 0)],
 							),
-							typography(h, { size: "2xs", tone: "muted" },
-								["/", plan.price?.interval ?? "month", " + usage"],
-							),
+							typography(h, { size: "2xs", tone: "muted" }, [
+								"/",
+								plan.price?.interval ?? "month",
+								" + usage",
+							]),
 						],
 					),
 					h.p(
@@ -312,15 +316,22 @@ const offerPanel = (
 							includedRun(plan),
 							...(retention === undefined
 								? []
-								: [` · ${retention.value.toLowerCase()} retention`]),
+								: [` · ${Str.toLowerCase(retention.value)} retention`]),
 						],
 					),
 					...(addOns.length > 0
 						? [
 								h.div(
 									[h.Class("mt-3 space-y-1")],
-									addOns.map((addOn) =>
-										typography(h, { size: "2xs", tone: "muted", as: "p", attributes: [h.Key(addOn.id)] },
+									Arr.map(addOns, (addOn) =>
+										typography(
+											h,
+											{
+												size: "2xs",
+												tone: "muted",
+												as: "p",
+												attributes: [h.Key(addOn.id)],
+											},
 											[
 												addOn.customerEligibility?.status === "active"
 													? "Add-on active · "
@@ -399,15 +410,17 @@ const planOffer = (
 			errorState(h, { failure, title: "Unable to load pricing plans", variant: "row" }),
 		],
 		onData: (plans) => {
-			const offers = plans.filter((plan) => plan.addOn !== true && plan.autoEnable !== true)
-			const addOns = plans.filter((plan) => plan.addOn === true)
+			const offers = Arr.filter(plans, (plan) => plan.addOn !== true && plan.autoEnable !== true)
+			const addOns = Arr.filter(plans, (plan) => plan.addOn === true)
 			const isCustom = spend?.isCustomPlan === true && spend.planName !== null
 			return [
 				h.div(
 					[h.Class("space-y-3")],
 					[
 						...(isCustom && spend !== null ? [customPlanPlate(h, spend)] : []),
-						...offers.map((plan) => offerPanel(h, model, plan, addOns, { isCustom, trialText })),
+						...Arr.map(offers, (plan) =>
+							offerPanel(h, model, plan, addOns, { isCustom, trialText }),
+						),
 					],
 				),
 			]
@@ -478,7 +491,10 @@ export const planSection = (
 					},
 					[
 						"Compare plans",
-						icon(h, "ArrowRightIcon", { className: "size-3.5", attributes: [h.AriaHidden(true)] }),
+						icon(h, "ArrowRightIcon", {
+							className: "size-3.5",
+							attributes: [h.AriaHidden(true)],
+						}),
 					],
 				),
 			}),

@@ -1,7 +1,7 @@
 import { DEFAULT_HEATMAP_COLOR_SCALE, type HeatmapColorScale } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { Message, Model } from "./chart"
@@ -43,27 +43,65 @@ type H = HtmlBuilder<Message>
 
 const SCALES = ["amber", "blues", "reds", "viridis", "magma", "cividis"] as const
 const FALLBACKS = {
-	amber: ["oklch(0.32 0.035 70)", "oklch(0.45 0.075 65)", "oklch(0.58 0.115 60)", "oklch(0.71 0.15 57)", "oklch(0.85 0.13 78)"],
-	blues: ["oklch(0.32 0.04 255)", "oklch(0.45 0.08 252)", "oklch(0.58 0.12 250)", "oklch(0.71 0.15 248)", "oklch(0.85 0.11 238)"],
-	reds: ["oklch(0.32 0.045 28)", "oklch(0.45 0.09 28)", "oklch(0.58 0.14 28)", "oklch(0.71 0.185 30)", "oklch(0.85 0.135 45)"],
-	viridis: ["oklch(0.32 0.055 285)", "oklch(0.45 0.095 265)", "oklch(0.58 0.09 200)", "oklch(0.71 0.135 150)", "oklch(0.85 0.17 112)"],
-	magma: ["oklch(0.32 0.06 300)", "oklch(0.45 0.12 312)", "oklch(0.58 0.175 350)", "oklch(0.71 0.16 35)", "oklch(0.85 0.115 80)"],
-	cividis: ["oklch(0.32 0.045 262)", "oklch(0.45 0.055 250)", "oklch(0.58 0.03 130)", "oklch(0.71 0.075 95)", "oklch(0.85 0.13 95)"],
+	amber: [
+		"oklch(0.32 0.035 70)",
+		"oklch(0.45 0.075 65)",
+		"oklch(0.58 0.115 60)",
+		"oklch(0.71 0.15 57)",
+		"oklch(0.85 0.13 78)",
+	],
+	blues: [
+		"oklch(0.32 0.04 255)",
+		"oklch(0.45 0.08 252)",
+		"oklch(0.58 0.12 250)",
+		"oklch(0.71 0.15 248)",
+		"oklch(0.85 0.11 238)",
+	],
+	reds: [
+		"oklch(0.32 0.045 28)",
+		"oklch(0.45 0.09 28)",
+		"oklch(0.58 0.14 28)",
+		"oklch(0.71 0.185 30)",
+		"oklch(0.85 0.135 45)",
+	],
+	viridis: [
+		"oklch(0.32 0.055 285)",
+		"oklch(0.45 0.095 265)",
+		"oklch(0.58 0.09 200)",
+		"oklch(0.71 0.135 150)",
+		"oklch(0.85 0.17 112)",
+	],
+	magma: [
+		"oklch(0.32 0.06 300)",
+		"oklch(0.45 0.12 312)",
+		"oklch(0.58 0.175 350)",
+		"oklch(0.71 0.16 35)",
+		"oklch(0.85 0.115 80)",
+	],
+	cividis: [
+		"oklch(0.32 0.045 262)",
+		"oklch(0.45 0.055 250)",
+		"oklch(0.58 0.03 130)",
+		"oklch(0.71 0.075 95)",
+		"oklch(0.85 0.13 95)",
+	],
 } satisfies Readonly<Record<(typeof SCALES)[number], readonly [string, string, string, string, string]>>
 const GROUT_FALLBACK = "oklch(0.175 0.008 62)"
 
 /** Every custom property the heatmap reads; a page resolves them with `ResolveThemeColors`. */
 export const HEATMAP_TOKENS: ReadonlyArray<string> = [
-	...SCALES.flatMap((scale) => [0, 1, 2, 3, 4].map((index) => `--heatmap-${scale}-${index}`)),
+	...Arr.flatMap(SCALES, (scale) => Arr.map([0, 1, 2, 3, 4], (index) => `--heatmap-${scale}-${index}`)),
 	"--heatmap-grout",
 	"--foreground",
 ]
 
 const isKnownScale = (value: string): value is HeatmapColorScale & (typeof SCALES)[number] =>
-	SCALES.some((scale) => scale === value)
+	Arr.some(SCALES, (scale) => scale === value)
 
 const rampStops = (theme: ThemeColors, scale: (typeof SCALES)[number]): ReadonlyArray<string> =>
-	FALLBACKS[scale].map((fallback, index) => resolveColor(theme, `--heatmap-${scale}-${index}`, fallback))
+	Arr.map(FALLBACKS[scale], (fallback, index) =>
+		resolveColor(theme, `--heatmap-${scale}-${index}`, fallback),
+	)
 
 const grout = (theme: ThemeColors) => resolveColor(theme, "--heatmap-grout", GROUT_FALLBACK)
 
@@ -137,7 +175,9 @@ const tooltipBody = (
 								? [typography(h, { tone: "muted", className: "italic" }, ["no data"])]
 								: [
 										swatch(h, { color: colorAt(tooltip.value) }),
-										typography(h, { tone: "foreground", weight: "medium", numeric: true },
+										typography(
+											h,
+											{ tone: "foreground", weight: "medium", numeric: true },
 											[formatScalar(tooltip.value, unit)],
 										),
 									],
@@ -148,12 +188,16 @@ const tooltipBody = (
 
 const footnoteOf = (hiddenX: number, hiddenY: number): string | null =>
 	hiddenX > 0 || hiddenY > 0
-		? `${[
-				hiddenX > 0 ? countLabel(hiddenX, "empty column") : null,
-				hiddenY > 0 ? countLabel(hiddenY, "empty row") : null,
-			]
-				.filter((part) => part !== null)
-				.join(" · ")} hidden`
+		? `${Arr.join(
+				Arr.filter(
+					[
+						hiddenX > 0 ? countLabel(hiddenX, "empty column") : null,
+						hiddenY > 0 ? countLabel(hiddenY, "empty row") : null,
+					],
+					(part) => part !== null,
+				),
+				" · ",
+			)} hidden`
 		: null
 
 export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((chart, inputs, h) => {
@@ -164,7 +208,7 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 	const scaleType = inputs.scaleType ?? "linear"
 	const stops = rampStops(inputs.theme, palette)
 	const colorAt = sequentialColorScale({ stops, domain: model.domain, scaleType })
-	const allYIso = model.yDomain.every((value) => ISO_RE.test(value))
+	const allYIso = Arr.every(model.yDomain, (value) => ISO_RE.test(value))
 	const label = (y: string) => shortenYLabel(y, allYIso, inputs.timeZone)
 	const footnote = footnoteOf(model.hiddenX, model.hiddenY)
 	const layout = solveHeatmapLayout({
@@ -172,22 +216,24 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 		containerH: chart.containerHeight,
 		columns: model.xDomain.length,
 		rows: model.yDomain.length,
-		longestYLabelChars: model.yDomain.reduce((longest, value) => Math.max(longest, label(value).length), 0),
+		longestYLabelChars: Arr.reduce(model.yDomain, 0, (longest, value) =>
+			Math.max(longest, label(value).length),
+		),
 		hasFootnote: footnote !== null,
 	})
 	const hoveredKey = Option.getOrNull(chart.activeKey)
 	const hovered =
 		hoveredKey === null
 			? null
-			: ([...model.cells, ...model.holes].find((slot) => `${slot.x}\u0000${slot.y}` === hoveredKey)?.value ??
-				null)
+			: ([...model.cells, ...model.holes].find((slot) => `${slot.x}\u0000${slot.y}` === hoveredKey)
+					?.value ?? null)
 	const spec = ChartSpec.Heatmap({
 		cells: model.cells,
 		holes: model.holes,
 		xDomain: model.xDomain,
 		yDomain: model.yDomain,
-		yLabels: Object.fromEntries(
-			model.yDomain.map((y) => [y, truncateYLabel(label(y), layout.yLabelChars)]),
+		yLabels: Rec.fromEntries(
+			Arr.map(model.yDomain, (y) => [y, truncateYLabel(label(y), layout.yLabelChars)]),
 		),
 		margin: layout.margin,
 		paddingInnerX: layout.paddingInnerX,
@@ -227,7 +273,9 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 					: {
 							footer: h.p(
 								[
-									h.Class("pt-1 text-right text-3xs leading-3 tabular-nums text-foreground-subtle"),
+									h.Class(
+										"pt-1 text-right text-3xs leading-3 tabular-nums text-foreground-subtle",
+									),
 									h.Style({
 										height: `${FOOTNOTE_BLOCK_H}px`,
 										"padding-left": `${layout.gutter}px`,

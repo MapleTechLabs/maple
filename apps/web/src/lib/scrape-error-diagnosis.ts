@@ -1,4 +1,5 @@
 import type { ScrapeTargetType } from "@maple/domain/primitives"
+import { String as Str } from "effect"
 
 /**
  * A human-readable diagnosis of a scrape failure. The scraper records raw error
@@ -17,7 +18,7 @@ export interface ScrapeErrorDiagnosis {
 }
 
 /** Strip the `[branch:<x>] ` prefix the API adds to PlanetScale rollup errors. */
-const stripBranchPrefix = (message: string): string => message.replace(/^\[branch:[^\]]*\]\s*/, "")
+const stripBranchPrefix = (message: string): string => Str.replace(/^\[branch:[^\]]*\]\s*/, "")(message)
 
 const httpStatusOf = (message: string): number | null => {
 	const match = message.match(/HTTP (\d{3})/)
@@ -35,7 +36,7 @@ export const diagnoseScrapeError = (
 	targetType: ScrapeTargetType,
 ): ScrapeErrorDiagnosis | null => {
 	if (!rawMessage) return null
-	const message = stripBranchPrefix(rawMessage.trim())
+	const message = stripBranchPrefix(Str.trim(rawMessage))
 	if (message.length === 0) return null
 
 	const planetScale = isPlanetScale(targetType)

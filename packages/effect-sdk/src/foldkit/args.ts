@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 // Command args become span attributes verbatim in Foldkit's runtime, and apps
 // put message text, invite tokens and API keys in them. Default-deny: only ids
 // and flags survive unless the app allows a key by name.
@@ -20,14 +21,14 @@ const ID_KEY = /(?:^id|Id|Ids|_id|_ids)$/
 type Primitive = string | number | boolean
 
 const capString = (value: string): string =>
-	value.length > MAX_STRING ? `${value.slice(0, MAX_STRING)}…` : value
+	value.length > MAX_STRING ? `${Str.slice(0, MAX_STRING)(value)}…` : value
 
 /** Primitives and arrays of primitives, size-capped. Anything else is not an attribute. */
 const toAttributeValue = (value: unknown): Primitive | ReadonlyArray<Primitive> | null | undefined => {
 	if (value === null) return null
 	if (typeof value === "string") return capString(value)
 	if (typeof value === "number" || typeof value === "boolean") return value
-	if (Array.isArray(value)) {
+	if (Arr.isArray(value)) {
 		const items: Array<Primitive> = []
 		for (const item of value.slice(0, MAX_ARRAY)) {
 			if (typeof item === "string") items.push(capString(item))
@@ -48,7 +49,7 @@ export const makeArgsScrubber = (
 	return (args) => {
 		const out: Record<string, unknown> = {}
 		if (args === undefined) return out
-		for (const key of Object.keys(args)) {
+		for (const key of Rec.keys(args)) {
 			const value = toAttributeValue(args[key])
 			if (value === undefined) continue
 			const kept =

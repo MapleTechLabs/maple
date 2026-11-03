@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Timeline from "../../page/traces/detail/timeline"
@@ -39,9 +39,9 @@ export type Return = Readonly<{
 
 export const flowGraphOf = (trace: TraceData): TraceFlow.FlowGraph =>
 	TraceFlow.buildFlowGraph({
-		rootSpans: trace.rootSpans.map(toSpanNode),
+		rootSpans: Arr.map(trace.rootSpans, toSpanNode),
 		totalDurationMs: trace.totalDurationMs,
-		services: [...new Set(trace.spans.map((span) => span.serviceName))],
+		services: [...new Set(Arr.map(trace.spans, (span) => span.serviceName))],
 	})
 
 const liftTimeline = (step: Timeline.UpdateReturn, model: Model): Return => ({

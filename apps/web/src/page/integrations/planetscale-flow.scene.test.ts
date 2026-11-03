@@ -5,7 +5,7 @@ import {
 	V2PlanetScaleIntegration,
 	V2PlanetScaleOrganizationList,
 } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -26,7 +26,7 @@ const context: PageContext = {
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const NOW = Date.parse("2026-10-24T12:00:00Z")
 
 const send = (model: Model, message: IntegrationMessage) =>
@@ -174,16 +174,20 @@ describe("PlanetScale connect flow", () => {
 			connected,
 			IntegrationMessage.SelectedPlanetscaleMetricsMethod({ method: "service_token" }),
 		).model
-		const filled = [
-			IntegrationMessage.GotPlanetscaleTokenField({
-				field: "id",
-				message: Field.Message.ChangedValue({ value: "tok_1" }),
-			}),
-			IntegrationMessage.GotPlanetscaleTokenField({
-				field: "secret",
-				message: Field.Message.ChangedValue({ value: "pscale_tkn_x" }),
-			}),
-		].reduce((model, message) => send(model, message).model, chosen)
+		const filled = Arr.reduce(
+			[
+				IntegrationMessage.GotPlanetscaleTokenField({
+					field: "id",
+					message: Field.Message.ChangedValue({ value: "tok_1" }),
+				}),
+				IntegrationMessage.GotPlanetscaleTokenField({
+					field: "secret",
+					message: Field.Message.ChangedValue({ value: "pscale_tkn_x" }),
+				}),
+			],
+			chosen,
+			(model, message) => send(model, message).model,
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(filled),
@@ -208,9 +212,10 @@ describe("PlanetScale connect flow", () => {
 
 	test("Go live checks access, resources and the first poll, and flags a failed poll", () => {
 		const live = (loaded: V2PlanetScaleIntegration) =>
-			[Message.ClickedContinue(), Message.ClickedContinue()].reduce(
-				(model, message) => pageUpdate(model, message).model,
+			Arr.reduce(
+				[Message.ClickedContinue(), Message.ClickedContinue()],
 				entered(loaded).model,
+				(model, message) => pageUpdate(model, message).model,
 			)
 		scene(
 			{ update: pageUpdate, view },

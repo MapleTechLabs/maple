@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /** Edge-cacheable for 15s, served stale for a day if this Worker errors. */
 export const PUBLIC_CACHE_CONTROL = "public, max-age=15, stale-while-revalidate=60, stale-if-error=86400"
 
@@ -8,15 +9,18 @@ const COMMON_HEADERS = {
 
 /** Inline style and script run only with this response's nonce; images may come from any https host. */
 export const htmlCsp = (nonce: string): string =>
-	[
-		"default-src 'none'",
-		`style-src 'nonce-${nonce}'`,
-		`script-src 'nonce-${nonce}'`,
-		"img-src https: data:",
-		"form-action 'self'",
-		"base-uri 'none'",
-		"frame-ancestors 'none'",
-	].join("; ")
+	Arr.join(
+		[
+			"default-src 'none'",
+			`style-src 'nonce-${nonce}'`,
+			`script-src 'nonce-${nonce}'`,
+			"img-src https: data:",
+			"form-action 'self'",
+			"base-uri 'none'",
+			"frame-ancestors 'none'",
+		],
+		"; ",
+	)
 
 export const html = (
 	body: string,

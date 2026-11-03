@@ -1,4 +1,4 @@
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import { replaceUrl } from "foldkit/navigation"
 import * as AlertsHub from "../../page/alerts/hub/update"
@@ -103,7 +103,7 @@ const isRulesLocal = (message: Message & { _tag: "GotRulesMessage" }): boolean =
 }
 
 const toggled = (list: ReadonlyArray<string>, key: string): ReadonlyArray<string> =>
-	list.includes(key) ? list.filter((entry) => entry !== key) : [...list, key]
+	list.includes(key) ? Arr.filter(list, (entry) => entry !== key) : [...list, key]
 
 const liftBox = (
 	box: TraceBox.Model | null,

@@ -38,6 +38,7 @@ import {
 	type SpineNodeData,
 	type XY,
 } from "@maple/web-data/investigations/provenance-graph"
+import { Array as Arr, String as Str } from "effect"
 
 /* -------------------------------------------------------------------------------------------------
  * Grid
@@ -136,10 +137,10 @@ const isCard = (node: ProvenanceNode) => node.type === "spine" || node.type === 
 /** Spine cards sharing a row take the row's tallest height, so a row reads as one strip. */
 const evenRows = (nodes: ReadonlyArray<ProvenanceNode>): ReadonlyArray<ProvenanceNode> => {
 	const tallest = new Map<number, number>()
-	nodes.filter(isCard).forEach((node) => {
+	Arr.forEach(Arr.filter(nodes, isCard), (node) => {
 		tallest.set(node.position.y, Math.max(tallest.get(node.position.y) ?? 0, node.height))
 	})
-	return nodes.map((node) =>
+	return Arr.map(nodes, (node) =>
 		isCard(node) ? { ...node, height: tallest.get(node.position.y) ?? node.height } : node,
 	)
 }
@@ -281,9 +282,9 @@ export function buildNodeCatalogue(): NodeCatalogue {
 
 	g.section("SPINE · GLYPH")
 	for (const glyph of GLYPHS) {
-		spineCell(g, glyph.toUpperCase(), {
+		spineCell(g, Str.toUpperCase(glyph), {
 			glyph,
-			eyebrow: glyph.toUpperCase(),
+			eyebrow: Str.toUpperCase(glyph),
 			title: "checkout-api",
 			at: AT,
 		})
@@ -373,11 +374,11 @@ export function buildNodeCatalogue(): NodeCatalogue {
 
 	g.section("SPINE · STATUS TONE")
 	for (const tone of TONES) {
-		spineCell(g, tone.toUpperCase(), {
+		spineCell(g, Str.toUpperCase(tone), {
 			glyph: "check",
 			eyebrow: "CHECK",
 			title: "pool_active / pool_max",
-			status: tone.toUpperCase(),
+			status: Str.toUpperCase(tone),
 			statusTone: tone,
 			detail: "0.94",
 			at: AT,
@@ -396,9 +397,9 @@ export function buildNodeCatalogue(): NodeCatalogue {
 	let ordinal = 0
 	for (const kind of ACTION_KINDS) {
 		ordinal += 1
-		actionCell(g, kind.toUpperCase(), {
+		actionCell(g, Str.toUpperCase(kind), {
 			kind,
-			ordinal: String(ordinal).padStart(2, "0"),
+			ordinal: Str.padStart(2, "0")(String(ordinal)),
 			text: `${ACTION_KIND_LABEL[kind]}: what this kind of action reads like`,
 		})
 	}

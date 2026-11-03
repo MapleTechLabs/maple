@@ -24,7 +24,7 @@ import type {
 } from "@maple/domain/http/v2"
 import { formatWarehouseDateTimeMs, parseUtc } from "@maple/query-engine"
 import { sessionTagsOf } from "@maple/domain/query-engine"
-import { DateTime, Effect, Option, Schema } from "effect"
+import { DateTime, Effect, Option, Schema, Array as Arr } from "effect"
 import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
 import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
 
@@ -48,7 +48,7 @@ const decodeTraceId = Schema.decodeSync(TraceId)
  * a backstop for the pre-cutover inline rows, not the effective limit.
  */
 const assertRangeFitsBudget = (rows: ReadonlyArray<{ readonly byteSize: number }>) => {
-	const total = rows.reduce((sum, row) => sum + row.byteSize, 0)
+	const total = Arr.reduce(rows, 0, (sum, row) => sum + row.byteSize)
 	return total <= MAX_REPLAY_RANGE_PAYLOAD_BYTES
 		? Effect.void
 		: Effect.fail(V2SessionReplayRangeTooLarge.make(undefined, { param: "to_chunk_seq" }))
@@ -56,14 +56,12 @@ const assertRangeFitsBudget = (rows: ReadonlyArray<{ readonly byteSize: number }
 
 /** An ISO-8601 request param as a `DateTime.Utc`, validated. */
 const toUtc = (value: string, param: string) =>
-	Option.match(parseUtc(value), {
-		onNone: () =>
-			Effect.fail(V2ParameterInvalid.make(`Invalid ISO-8601 timestamp for ${param}.`, { param })),
-		onSome: (instant) => Effect.succeed(instant),
-	})
+	Effect.fromOption(parseUtc(value), () =>
+		V2ParameterInvalid.make(`Invalid ISO-8601 timestamp for ${param}.`, { param }),
+	)
 
 const optUtc = (value: string | undefined, param: string) =>
-	value === undefined ? Effect.succeed(undefined) : toUtc(value, param)
+	value === undefined ? Effect.undefined : toUtc(value, param)
 
 const isoOf = (value: DateTime.Utc): Timestamp => timestamp(DateTime.formatIso(value))
 
@@ -72,10 +70,7 @@ const isoOrNull = (value: DateTime.Utc | null): Timestamp | null => (value === n
 const nullableUserId = (value: string | null): string | null => (value ? value : null)
 
 const orNotFound = <A>(found: Option.Option<A>) =>
-	Option.match(found, {
-		onNone: () => Effect.fail(V2SessionReplayNotFound.make()),
-		onSome: Effect.succeed,
-	})
+	Effect.fromOption(found, () => V2SessionReplayNotFound.make())
 
 export const HttpV2SessionReplaysLive = HttpApiBuilder.group(MapleApiV2, "sessionReplays", (handlers) =>
 	Effect.gen(function* () {
@@ -167,7 +162,7 @@ export const HttpV2SessionReplaysLive = HttpApiBuilder.group(MapleApiV2, "sessio
 					const hasMore = rows.length > limit
 					return {
 						object: "list" as const,
-						data: dataRows.map((row): V2SessionReplayListItem => ({
+						data: Arr.map(dataRows, (row): V2SessionReplayListItem => ({
 							id: decodeSessionId(row.sessionId),
 							object: "session_replay" as const,
 							start_time: isoOf(row.startTime),
@@ -255,7 +250,7 @@ export const HttpV2SessionReplaysLive = HttpApiBuilder.group(MapleApiV2, "sessio
 						error_count: data.errorCount,
 						trace_count: data.traceIds.length,
 						user_agent: data.userAgent,
-						trace_ids: data.traceIds.map((traceId) => decodeTraceId(traceId)),
+						trace_ids: Arr.map(data.traceIds, (traceId) => decodeTraceId(traceId)),
 						resource_attributes: data.resourceAttributes,
 						active_time_ms: activity ? activity.activeTimeMs : null,
 						idle_time_ms: activity ? activity.idleTimeMs : null,
@@ -272,7 +267,8 @@ export const HttpV2SessionReplaysLive = HttpApiBuilder.group(MapleApiV2, "sessio
 						.chunkIndex(tenant, params.id, { startTime: windowStart, endTime: windowEnd })
 						.pipe(Effect.flatMap(orNotFound))
 					const truncated = rows.length > MAX_REPLAY_MANIFEST_CHUNKS
-					const chunks = rows.slice(0, MAX_REPLAY_MANIFEST_CHUNKS).map(
+					const chunks = Arr.map(
+						rows.slice(0, MAX_REPLAY_MANIFEST_CHUNKS),
 						(row) =>
 							({
 								chunk_seq: row.chunkSeq,
@@ -292,7 +288,7 @@ export const HttpV2SessionReplaysLive = HttpApiBuilder.group(MapleApiV2, "sessio
 						session_id: params.id,
 						chunks,
 						chunk_count: chunks.length,
-						total_byte_size: chunks.reduce((sum, chunk) => sum + chunk.byte_size, 0),
+						total_byte_size: Arr.reduce(chunks, 0, (sum, chunk) => sum + chunk.byte_size),
 						max_chunks_per_request: MAX_REPLAY_CHUNKS_PER_REQUEST,
 						max_bytes_per_request: MAX_REPLAY_RANGE_PAYLOAD_BYTES,
 						truncated,
@@ -360,7 +356,7 @@ export const HttpV2SessionReplaysLive = HttpApiBuilder.group(MapleApiV2, "sessio
 								Effect.tap(assertRangeFitsBudget),
 								Effect.flatMap((rows) => replays.hydrateChunks(tenant, params.id, rows)),
 								Effect.map((rows): ReadonlyArray<V2SessionReplayChunk> =>
-									rows.map((row) => ({
+									Arr.map(rows, (row) => ({
 										object: "session_replay.event_chunk" as const,
 										chunk_seq: row.chunkSeq,
 										timestamp: isoOf(row.timestamp),
@@ -392,7 +388,7 @@ export const HttpV2SessionReplaysLive = HttpApiBuilder.group(MapleApiV2, "sessio
 							.pipe(
 								Effect.flatMap(orNotFound),
 								Effect.map((rows): ReadonlyArray<V2SessionTranscriptEvent> =>
-									rows.map((row) => ({
+									Arr.map(rows, (row) => ({
 										object: "session_replay.transcript_event" as const,
 										timestamp: isoOf(row.timestamp),
 										seq: row.seq,
@@ -434,7 +430,7 @@ export const HttpV2SessionReplaysLive = HttpApiBuilder.group(MapleApiV2, "sessio
 							.forTrace(tenant, payload.trace_id, { startTime, endTime }, { limit, offset })
 							.pipe(
 								Effect.map((rows): ReadonlyArray<V2SessionReplayRef> =>
-									rows.map((row) => ({
+									Arr.map(rows, (row) => ({
 										object: "session_replay.ref" as const,
 										id: decodeSessionId(row.sessionId),
 										start_time: isoOf(row.startTime),

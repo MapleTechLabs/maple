@@ -12,7 +12,7 @@ import {
 	OnboardingRewardNotClaimableError,
 } from "@maple/domain/onboarding-checklist"
 import { EdgeCacheService } from "@maple/cache"
-import { Clock, Context, Effect, Layer, Option } from "effect"
+import { Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
@@ -176,7 +176,8 @@ const make = Effect.gen(function* () {
 						.read(tenant)
 						.pipe(
 							Effect.map((report) =>
-								report.signals.some(
+								Arr.some(
+									report.signals,
 									(signal) =>
 										signal.status === "present" &&
 										(signal.signal === "traces" ||
@@ -194,7 +195,10 @@ const make = Effect.gen(function* () {
 						.listInstallationsByOrg(orgId)
 						.pipe(
 							Effect.map((installations) =>
-								installations.some((i) => i.provider === "github" && i.status === "active"),
+								Arr.some(
+									installations,
+									(i) => i.provider === "github" && i.status === "active",
+								),
 							),
 						),
 				),

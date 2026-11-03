@@ -6,6 +6,7 @@ import { copyButton, type CopyStatus } from "./copy-button"
 import { eyebrow } from "./eyebrow"
 import { icon } from "./icon"
 import { truncationNote } from "./logs/log-message"
+import { Array as Arr } from "effect"
 
 // Port of `ErrorSection` (packages/ui/src/components/error-section.tsx): the error banner, its
 // highlighted body that copies itself, the "Copy as prompt" control and the Show more toggle.
@@ -141,13 +142,13 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 						shown.length > TOKENIZE_MAX_CHARS
 							? [shown]
 							: body.format === "json"
-								? tokenizeJson(shown).map((token) =>
+								? Arr.map(tokenizeJson(shown), (token) =>
 										h.span(
 											[h.Style({ color: JSON_TOKEN_COLOR[token.type] })],
 											[token.text],
 										),
 									)
-								: splitErrorText(shown).map((line) =>
+								: Arr.map(splitErrorText(shown), (line) =>
 										h.span(
 											[h.Class(cn("block", line.frame && "text-severity-error/55"))],
 											[line.text === "" ? " " : line.text],

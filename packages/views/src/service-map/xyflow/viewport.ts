@@ -1,5 +1,6 @@
 import { getViewportForBounds } from "@xyflow/system"
 import type { PlacedNode, Rect, Viewport } from "./geometry"
+import { Array as Arr } from "effect"
 
 /** `getInternalNodesBounds` over measured nodes; unmeasured nodes are left out, as in React Flow. */
 export const measuredBounds = (nodes: ReadonlyArray<PlacedNode>): Rect | undefined => {
@@ -44,12 +45,12 @@ const focusPoint = (nodes: ReadonlyArray<PlacedNode>, focusNodeId: string | unde
 	const focused = nodes.find((node) => node.id === focusNodeId)
 	const point = focused === undefined ? undefined : centre(focused)
 	if (point !== undefined) return point
-	const centres = nodes.flatMap((node) => {
+	const centres = Arr.flatMap(nodes, (node) => {
 		const c = centre(node)
 		return c === undefined ? [] : [c]
 	})
 	if (centres.length === 0) return undefined
-	const sum = centres.reduce((acc, c) => ({ x: acc.x + c.x, y: acc.y + c.y }), { x: 0, y: 0 })
+	const sum = Arr.reduce(centres, { x: 0, y: 0 }, (acc, c) => ({ x: acc.x + c.x, y: acc.y + c.y }))
 	return { x: sum.x / centres.length, y: sum.y / centres.length }
 }
 
@@ -84,7 +85,7 @@ const cropsCard = (
 	viewport: Viewport,
 	pane: { readonly width: number; readonly height: number },
 ): boolean =>
-	nodes.some((node) => {
+	Arr.some(nodes, (node) => {
 		if (node.measured === undefined) return false
 		const left = node.position.x * viewport.zoom + viewport.x
 		const top = node.position.y * viewport.zoom + viewport.y
@@ -95,10 +96,13 @@ const cropsCard = (
 
 /** Zooms tried around the readable zoom, nearest first, so the far edges fall between cards. */
 const nearbyZooms = (zoom: number): ReadonlyArray<number> =>
-	Array.from({ length: 30 }, (_, i) => {
-		const step = Math.floor(i / 2) + 1
-		return zoom * (1 + (i % 2 === 0 ? -1 : 1) * step * 0.01)
-	}).filter((candidate) => candidate >= FIT_ALL_FLOOR)
+	Arr.filter(
+		Array.from({ length: 30 }, (_, i) => {
+			const step = Math.floor(i / 2) + 1
+			return zoom * (1 + (i % 2 === 0 ? -1 : 1) * step * 0.01)
+		}),
+		(candidate) => candidate >= FIT_ALL_FLOOR,
+	)
 
 /** `fitViewport`: the camera that frames every measured node in a `width` x `height` pane. */
 export const fitViewport = (
@@ -122,9 +126,9 @@ export const fitViewport = (
 	const focus = focusPoint(nodes, options.focusNodeId) ?? { x: bounds.x, y: bounds.y }
 	const first = readableViewport(bounds, pane, readable, padding, focus)
 	if (!cropsCard(nodes, first, pane)) return first
-	const clean = nearbyZooms(readable)
-		.map((zoom) => readableViewport(bounds, pane, zoom, padding, focus))
-		.find((viewport) => !cropsCard(nodes, viewport, pane))
+	const clean = Arr.map(nearbyZooms(readable), (zoom) =>
+		readableViewport(bounds, pane, zoom, padding, focus),
+	).find((viewport) => !cropsCard(nodes, viewport, pane))
 	return clean ?? first
 }
 

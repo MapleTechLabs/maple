@@ -6,6 +6,7 @@ import type { Expr } from "@maple-dev/effect-orm/expr"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { compile } from "@maple-dev/effect-orm/sql"
 import { AI_CRAWLERS } from "../ai-traffic"
+import { Array as Arr } from "effect"
 
 interface MapColumnLike {
 	get(key: string): Expr<string>
@@ -15,11 +16,12 @@ const spanAttributes: MapColumnLike = {
 	get: (key) => CH.mapGet(CH.dynamicColumn<Record<string, string>>("SpanAttributes"), key),
 }
 
-const stringArray = (values: ReadonlyArray<string>) => CH.arrayOf(...values.map((value) => CH.lit(value)))
+const stringArray = (values: ReadonlyArray<string>) =>
+	CH.arrayOf(...Arr.map(values, (value) => CH.lit(value)))
 
 /** First non-empty of the given expressions, else `''`. */
 const firstNonEmpty = (...values: ReadonlyArray<Expr<string>>): Expr<string> =>
-	CH.coalesce(...values.map((value) => CH.nullIf(value, "")), CH.lit(""))
+	CH.coalesce(...Arr.map(values, (value) => CH.nullIf(value, "")), CH.lit(""))
 
 /** `user_agent.original`, or the pre-1.26 semconv `http.user_agent`. */
 export function userAgentExpr(attrs: MapColumnLike): Expr<string> {
@@ -31,13 +33,16 @@ export function aiCrawlerIndexExpr(attrs: MapColumnLike): Expr<number> {
 	return CH.compileFnCall<number>(
 		"multiSearchFirstIndexCaseInsensitive",
 		userAgentExpr(attrs),
-		stringArray(AI_CRAWLERS.map((crawler) => crawler.token)),
+		stringArray(Arr.map(AI_CRAWLERS, (crawler) => crawler.token)),
 	)
 }
 
 /** The crawler's display name, `''` when the user agent names none. */
 export function aiCrawlerNameExpr(attrs: MapColumnLike): Expr<string> {
-	return CH.arrayElement(stringArray(AI_CRAWLERS.map((crawler) => crawler.name)), aiCrawlerIndexExpr(attrs))
+	return CH.arrayElement(
+		stringArray(Arr.map(AI_CRAWLERS, (crawler) => crawler.name)),
+		aiCrawlerIndexExpr(attrs),
+	)
 }
 
 /** Request host without a port: `server.address`, then the legacy and URL spellings. */

@@ -24,7 +24,7 @@ import {
 } from "@maple/web-data/alerts/chart-series"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
 import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { bucketTooltipBody } from "@maple/views/charts/bucket-tooltip"
@@ -150,20 +150,21 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 	const labelOf = (key: string) =>
 		isMultiSeries ? key : source === "none" ? "Observed" : SIGNAL_SOURCE_LABEL[source]
 
-	const maxVal = chartData.reduce(
+	const maxVal = Arr.reduce(
+		chartData,
+		Math.max(threshold, thresholdUpper ?? threshold, criticalThreshold ?? threshold),
 		(max, point) =>
 			Math.max(
 				max,
-				...seriesKeys.map((key) => num(point[key])),
+				...Arr.map(seriesKeys, (key) => num(point[key])),
 				point[GHOST_KEY] != null ? num(point[GHOST_KEY]) : 0,
 			),
-		Math.max(threshold, thresholdUpper ?? threshold, criticalThreshold ?? threshold),
 	)
 	const upper = Math.max(maxVal * 1.15, threshold * 1.3)
 	const breachBelow = inputs.comparator === "lt" || inputs.comparator === "lte"
 
 	const incidentBands = clipToDomain(
-		incidents.map((incident) => ({
+		Arr.map(incidents, (incident) => ({
 			x1: new Date(incident.firstTriggeredAt).getTime(),
 			x2: incident.resolvedAt
 				? new Date(incident.resolvedAt).getTime()
@@ -175,7 +176,7 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 		domain,
 	)
 	const heldBands = clipToDomain(
-		incidents.flatMap((incident) =>
+		Arr.flatMap(incidents, (incident) =>
 			incident.status === "open" && incident.heldSince
 				? [{ x1: isoMs(incident.heldSince), x2: domain.max }]
 				: [],
@@ -186,17 +187,20 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 		inputs.showWouldFire !== true || inputs.preview == null
 			? []
 			: clipToDomain(
-					inputs.preview.wouldFire.map((span) => ({ x1: isoMs(span.start), x2: isoMs(span.end) })),
+					Arr.map(inputs.preview.wouldFire, (span) => ({
+						x1: isoMs(span.start),
+						x2: isoMs(span.end),
+					})),
 					domain,
 				)
-	const plain = (bands: ReadonlyArray<Band>) => bands.map((band) => ({ x1: band.x1, x2: band.x2 }))
+	const plain = (bands: ReadonlyArray<Band>) => Arr.map(bands, (band) => ({ x1: band.x1, x2: band.x2 }))
 	const resolved = (token: string) => resolveColor(inputs.colors, token)
 
 	const spec = ChartSpec.AlertRule({
-		rows: chartData.map((row) => ({ ...row })),
+		rows: Arr.map(chartData, (row) => ({ ...row })),
 		seriesKeys,
-		labels: Object.fromEntries([
-			...seriesKeys.map((key) => [key, labelOf(key)] as const),
+		labels: Rec.fromEntries([
+			...Arr.map(seriesKeys, (key) => [key, labelOf(key)] as const),
 			...(hasGhost ? [[GHOST_KEY, SIGNAL_SOURCE_LABEL[otherSource]] as const] : []),
 		]),
 		isMultiSeries,
@@ -208,8 +212,8 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 			muted: resolved("--muted-foreground"),
 			border: resolved("--border"),
 			background: resolved("--background"),
-			...Object.fromEntries(
-				seriesKeys.map((key) => [key, resolved(seriesColors.get(key) ?? SIGNAL_TOKEN)]),
+			...Rec.fromEntries(
+				Arr.map(seriesKeys, (key) => [key, resolved(seriesColors.get(key) ?? SIGNAL_TOKEN)]),
 			),
 		},
 		domainMin: domain.min,
@@ -222,12 +226,12 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 		signalType,
 		bands: {
 			noData: plain(noDataBands),
-			incidentOpen: plain(incidentBands.filter((band) => band.open)),
-			incidentClosed: plain(incidentBands.filter((band) => !band.open)),
+			incidentOpen: plain(Arr.filter(incidentBands, (band) => band.open)),
+			incidentClosed: plain(Arr.filter(incidentBands, (band) => !band.open)),
 			held: plain(heldBands),
 			wouldFire: plain(wouldFireBands),
 		},
-		meta: [...previewChart.meta.entries()].map(([t, meta]) => ({
+		meta: Arr.map([...previewChart.meta.entries()], ([t, meta]) => ({
 			t,
 			sampleCount: meta.sampleCount,
 			status: meta.status,
@@ -247,7 +251,7 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 								seriesLegend(h, {
 									className:
 										"h-8 flex-nowrap justify-start overflow-x-auto whitespace-nowrap",
-									items: seriesKeys.map((key) => ({
+									items: Arr.map(seriesKeys, (key) => ({
 										key,
 										label: key,
 										color: resolved(seriesColors.get(key) ?? SIGNAL_TOKEN),
@@ -366,7 +370,7 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 						),
 						" ",
 						"— ",
-						SIGNAL_SOURCE_LABEL[otherSource].toLowerCase(),
+						Str.toLowerCase(SIGNAL_SOURCE_LABEL[otherSource]),
 						" has no points in this window.",
 					]),
 					...(inputs.error != null
@@ -494,29 +498,26 @@ const rail = <M>(
 		opened: false,
 		errorMessage: null,
 	})
-	const buckets = checks.reduce(
-		(acc, check) => {
-			const t = new Date(normalizeTimestampInput(check.timestamp)).getTime()
-			if (!Number.isFinite(t)) return acc
-			const index = Math.floor(((t - domain.min) / range) * RAIL_CELLS)
-			const bucket = acc[index]
-			if (index < 0 || index >= RAIL_CELLS || bucket === undefined) return acc
-			if (check.status === "breached") bucket.breached += 1
-			else if (check.status === "healthy") bucket.healthy += 1
-			else if (check.status === "error") {
-				bucket.errored += 1
-				if (bucket.errorMessage == null && check.errorMessage != null)
-					bucket.errorMessage = check.errorMessage
-			} else {
-				bucket.skipped += 1
-				if (check.skipReason === "no_data") bucket.noData += 1
-			}
-			if (check.incidentTransition === "opened") bucket.opened = true
-			return acc
-		},
-		Array.from({ length: RAIL_CELLS }, empty),
-	)
-	const cells = buckets.map((bucket, i) => {
+	const buckets = Arr.reduce(checks, Array.from({ length: RAIL_CELLS }, empty), (acc, check) => {
+		const t = new Date(normalizeTimestampInput(check.timestamp)).getTime()
+		if (!Number.isFinite(t)) return acc
+		const index = Math.floor(((t - domain.min) / range) * RAIL_CELLS)
+		const bucket = acc[index]
+		if (index < 0 || index >= RAIL_CELLS || bucket === undefined) return acc
+		if (check.status === "breached") bucket.breached += 1
+		else if (check.status === "healthy") bucket.healthy += 1
+		else if (check.status === "error") {
+			bucket.errored += 1
+			if (bucket.errorMessage == null && check.errorMessage != null)
+				bucket.errorMessage = check.errorMessage
+		} else {
+			bucket.skipped += 1
+			if (check.skipReason === "no_data") bucket.noData += 1
+		}
+		if (check.incidentTransition === "opened") bucket.opened = true
+		return acc
+	})
+	const cells = Arr.map(buckets, (bucket, i) => {
 		const total = bucket.breached + bucket.healthy + bucket.skipped + bucket.errored
 		const status: RailStatus =
 			total === 0
@@ -530,18 +531,22 @@ const rail = <M>(
 							: "skipped"
 		const start = domain.min + (i / RAIL_CELLS) * range
 		const end = domain.min + ((i + 1) / RAIL_CELLS) * range
-		const counts = [
-			bucket.errored > 0 ? `${bucket.errored} failed` : null,
-			bucket.breached > 0 ? `${bucket.breached} breached` : null,
-			bucket.healthy > 0 ? `${bucket.healthy} healthy` : null,
-			bucket.skipped > 0
-				? bucket.noData > 0
-					? `${bucket.skipped} skipped (${bucket.noData} no data)`
-					: `${bucket.skipped} skipped`
-				: null,
-		]
-			.filter((part) => part !== null)
-			.join(", ")
+		const counts = Arr.join(
+			Arr.filter(
+				[
+					bucket.errored > 0 ? `${bucket.errored} failed` : null,
+					bucket.breached > 0 ? `${bucket.breached} breached` : null,
+					bucket.healthy > 0 ? `${bucket.healthy} healthy` : null,
+					bucket.skipped > 0
+						? bucket.noData > 0
+							? `${bucket.skipped} skipped (${bucket.noData} no data)`
+							: `${bucket.skipped} skipped`
+						: null,
+				],
+				(part) => part !== null,
+			),
+			", ",
+		)
 		const window = `${formatTime(start, "tick")} – ${formatTime(end, "tick")}`
 		const title =
 			total === 0
@@ -549,18 +554,16 @@ const rail = <M>(
 				: `${window} · ${counts}${bucket.opened ? " · incident opened" : ""}${bucket.errorMessage != null ? ` · ${bucket.errorMessage}` : ""}`
 		return { status, opened: bucket.opened, title }
 	})
-	const totals = checks.reduce(
-		(acc, check) =>
-			check.status === "breached"
-				? { ...acc, breached: acc.breached + 1 }
-				: check.status === "healthy"
-					? { ...acc, healthy: acc.healthy + 1 }
-					: check.status === "error"
-						? { ...acc, errored: acc.errored + 1 }
-						: { ...acc, skipped: acc.skipped + 1 },
-		{ breached: 0, healthy: 0, skipped: 0, errored: 0 },
+	const totals = Arr.reduce(checks, { breached: 0, healthy: 0, skipped: 0, errored: 0 }, (acc, check) =>
+		check.status === "breached"
+			? { ...acc, breached: acc.breached + 1 }
+			: check.status === "healthy"
+				? { ...acc, healthy: acc.healthy + 1 }
+				: check.status === "error"
+					? { ...acc, errored: acc.errored + 1 }
+					: { ...acc, skipped: acc.skipped + 1 },
 	)
-	const spans = incidentBands.map((band) => ({
+	const spans = Arr.map(incidentBands, (band) => ({
 		left: (clamp01((band.x1 - domain.min) / range) * 100).toFixed(4),
 		width: (clamp01((Math.max(band.x2, band.x1) - band.x1) / range) * 100).toFixed(4),
 		open: band.open,
@@ -582,7 +585,7 @@ const rail = <M>(
 					gutter("Eval"),
 					h.div(
 						[h.Class("flex h-3.5 flex-1 gap-px")],
-						cells.map((cell, i) => {
+						Arr.map(cells, (cell, i) => {
 							const isSelected = selected === i
 							return pressable(
 								h,
@@ -613,7 +616,7 @@ const rail = <M>(
 					gutter("Incident"),
 					h.div(
 						[h.Class("relative h-1 flex-1 rounded-2xs bg-surface-strong")],
-						spans.map((span) =>
+						Arr.map(spans, (span) =>
 							h.div([
 								h.Class(
 									cn(

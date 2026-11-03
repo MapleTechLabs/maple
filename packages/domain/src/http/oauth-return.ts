@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import { ChatConnectorId } from "../primitives"
 import { VcsAccountType, VcsRepoSelection } from "./vcs"
 
@@ -93,7 +93,7 @@ const decodeRequest = Schema.decodeUnknownOption(OAuthCompleteRequest)
 
 /** The return a dashboard URL fragment carries, if it carries one. */
 export const decodeOAuthReturnHash = (hash: string): Option.Option<OAuthCompleteRequest> => {
-	const params = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash)
+	const params = new URLSearchParams(Str.startsWith("#")(hash) ? Str.slice(1)(hash) : hash)
 	const flow = params.get(HASH_KEY)
 	const connector = params.get("connector")
 	return flow === null

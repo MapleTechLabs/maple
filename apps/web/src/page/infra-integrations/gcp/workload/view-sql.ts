@@ -26,6 +26,7 @@ import type { Statement } from "../data"
 import { Message } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // `GcpCloudSqlTopQueries` and the workload page's `GcpAppWaitCallout`.
 
@@ -62,7 +63,7 @@ const callers = (h: H, traced: GcpTracedStatement | undefined): Html => {
 	const more = traced.serviceCount - traced.services.length
 	return h.div(
 		[h.Class(SUB)],
-		["called by ", traced.services.join(" · "), ...(more > 0 ? [` +${more}`] : [])],
+		["called by ", Arr.join(traced.services, " · "), ...(more > 0 ? [` +${more}`] : [])],
 	)
 }
 
@@ -180,7 +181,7 @@ export const topQueries = (h: H, inputs: TopQueriesInputs): Html => {
 				h.span([h.Class(CHEVRON)], []),
 			],
 			[
-				...shown.map((row) =>
+				...Arr.map(shown, (row) =>
 					statementRow(h, row, inputs.traced.get(row.queryHash), row.queryHash === inputs.peekHash),
 				),
 				h.div(

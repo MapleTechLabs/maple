@@ -1,4 +1,5 @@
 import { formatNumber, formatValueByUnit } from "@maple/ui/lib/format"
+import { String as Str } from "effect"
 
 // Copied from packages/ui/src/components/charts/histogram/query-builder-histogram-chart.tsx (a React
 // module). Shared by the definition (tick labels) and the view (tooltip heading).
@@ -17,7 +18,7 @@ const splitBoundsAt = (name: string): number => {
 /** The lower bound of a bin label, for an axis tick that has room for one number. */
 export const binLowerBoundLabel = (name: string): string => {
 	const separator = splitBoundsAt(name)
-	return separator === -1 ? name : name.slice(0, separator)
+	return separator === -1 ? name : Str.slice(0, separator)(name)
 }
 
 export const formatBound = (value: number, unit: string | null): string =>

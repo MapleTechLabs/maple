@@ -11,7 +11,7 @@ import {
 	ModelProtocolError,
 } from "@yielded/agent/agent-error"
 import { PR_REVIEW_FAILURE_COPY, type PrReviewFailureReason } from "@maple/domain/http"
-import { Cause } from "effect"
+import { Cause, Array as Arr } from "effect"
 import { isAiError, type AiError } from "effect/ai/AiError"
 
 /** Whose OpenRouter key the run used: a rejected org key is theirs to fix, a rejected Maple key is ours. */
@@ -72,10 +72,10 @@ export const reviewFailureReason = (
 	cause: Cause.Cause<unknown>,
 	context: ReviewFailureContext,
 ): PrReviewFailureReason => {
-	const errors = cause.reasons.flatMap((reason) =>
+	const errors = Arr.flatMap(cause.reasons, (reason) =>
 		Cause.isFailReason(reason) ? [reason.error] : Cause.isDieReason(reason) ? [reason.defect] : [],
 	)
-	const reasons = errors.map((error) => reasonOf(error, context))
+	const reasons = Arr.map(errors, (error) => reasonOf(error, context))
 	return (
 		reasons.find((reason) => reason !== undefined && !PROVIDER_REASONS.has(reason)) ??
 		reasons.find((reason) => reason !== undefined) ??

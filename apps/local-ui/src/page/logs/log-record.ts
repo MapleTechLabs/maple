@@ -1,5 +1,10 @@
-import { type LogRowLinks, type LogRowView, logTimeFormat, toLogRowView } from "@maple/views/ui/logs/log-row-view"
-import { Option } from "effect"
+import {
+	type LogRowLinks,
+	type LogRowView,
+	logTimeFormat,
+	toLogRowView,
+} from "@maple/views/ui/logs/log-row-view"
+import { Option, Array as Arr } from "effect"
 import { toLogRecord } from "../../lib/log-shape"
 import { hrefFor } from "../../route"
 import type { LocalLog } from "./model"
@@ -18,5 +23,5 @@ export const toStreamRows = (
 	timeZone: string,
 ): ReadonlyArray<LogRowView> => {
 	const time = logTimeFormat(timeZone)
-	return logs.map((log) => toLogRowView(toLogRecord(log), columns, time, LOCAL_LOG_LINKS))
+	return Arr.map(logs, (log) => toLogRowView(toLogRecord(log), columns, time, LOCAL_LOG_LINKS))
 }

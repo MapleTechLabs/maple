@@ -6,6 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { input } from "@maple/views/ui/input"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { Message, type Model } from "./update"
+import { Array as Arr, String as Str } from "effect"
 
 // `ServiceInventory` with nothing selected: the searchable list sorted by error rate.
 
@@ -75,12 +76,12 @@ const header = (h: H, model: Model): Html =>
 	)
 
 export const inventory = (h: H, model: Model): Html => {
-	const needle = model.query.trim().toLowerCase()
-	const sorted = topology.nodes
-		.filter((node) => `${node.label} ${node.namespace} ${node.kind}`.includes(needle))
-		.toSorted((a, b) => b.errorRate - a.errorRate)
+	const needle = Str.toLowerCase(Str.trim(model.query))
+	const sorted = Arr.filter(topology.nodes, (node) =>
+		Str.includes(needle)(`${node.label} ${node.namespace} ${node.kind}`),
+	).toSorted((a, b) => b.errorRate - a.errorRate)
 	const countOf = (level: "elevated" | "degraded") =>
-		topology.nodes.filter((node) => health(node.errorRate) === level).length
+		Arr.filter(topology.nodes, (node) => health(node.errorRate) === level).length
 	const degraded = countOf("elevated")
 	const failing = countOf("degraded")
 	return h.aside(
@@ -124,7 +125,7 @@ export const inventory = (h: H, model: Model): Html => {
 								),
 							]
 						: []),
-					...sorted.map((node) => row(h, node)),
+					...Arr.map(sorted, (node) => row(h, node)),
 				],
 			),
 			h.p(

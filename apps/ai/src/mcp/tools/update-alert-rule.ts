@@ -10,11 +10,13 @@ import {
 	ALERT_EVALUATION_INTERVALS,
 	AlertRuleUpsertRequest,
 	isRangeComparator,
+	MAX_ALERT_WINDOW_MINUTES,
 	QueryBuilderQueryDraftSchema,
 	type AlertComparator,
 	type AlertRuleDocument,
 	type AlertThreshold,
 } from "@maple/domain/http"
+import { MAX_RAW_SQL_ALERT_GROUPS } from "@maple/domain/raw-sql"
 import {
 	ALERT_COMPARATORS,
 	ALERT_REDUCERS,
@@ -42,7 +44,7 @@ export const UpdateAlertRuleParameters = Schema.Struct({
 	name: P.optionalText("New rule name"),
 	severity: P.optionalOneOf(ALERT_SEVERITIES, "Alert severity"),
 	threshold: P.optionalNumber("Threshold value. E.g. 0.05 for 5% error rate, 1000 for 1s latency"),
-	window_minutes: P.optionalNumber("Evaluation window in minutes"),
+	window_minutes: P.optionalNumber(`Evaluation window in minutes, at most ${MAX_ALERT_WINDOW_MINUTES}`),
 	evaluation_interval_minutes: P.optionalNullableNumberOneOf(
 		ALERT_EVALUATION_INTERVALS,
 		'Minutes between checks, at most window_minutes. A raw_query rule checked less often gets a longer query time limit: 5s under 5 min, 15s at 5, 25s at 10 or more. Omit to keep the current one; pass "auto" to derive it from the window (a fifth, 1 to 5). Any edit also clears a slowdown the scheduler applied.',
@@ -54,7 +56,7 @@ export const UpdateAlertRuleParameters = Schema.Struct({
 	enabled: P.optionalFlag("Whether the rule is enabled"),
 	destination_ids: P.optionalResourceIdList(
 		"alertDestination",
-		"Destination IDs to notify (replaces the current destinations; use list_alert_destinations to find IDs)",
+		"Destination IDs to notify, from list_alert_destinations; replaces the current ones. A rule needs at least one",
 	),
 	add_destination_ids: P.optionalResourceIdList(
 		"alertDestination",
@@ -88,7 +90,7 @@ export const UpdateAlertRuleParameters = Schema.Struct({
 		"Query-builder draft, same shape as create_alert_rule (for signal_type=builder_query)",
 	),
 	raw_query_sql: P.optionalText(
-		"ClickHouse SQL returning a numeric `value` column (for signal_type=raw_query). Must reference $__orgFilter and $__timeFilter(col).",
+		`ClickHouse SQL returning a numeric \`value\` column (for signal_type=raw_query), at most ${MAX_RAW_SQL_ALERT_GROUPS} groups. Must reference $__orgFilter and $__timeFilter(col).`,
 	),
 	raw_query_reducer: P.optionalOneOf(
 		ALERT_REDUCERS,
@@ -233,7 +235,10 @@ const mergeDestinations = (
 ): Array<string> => {
 	const base = params.destination_ids ?? current
 	const removed = new Set(params.remove_destination_ids ?? [])
-	return [...new Set([...base, ...(params.add_destination_ids ?? [])])].filter((id) => !removed.has(id))
+	return Arr.filter(
+		[...new Set([...base, ...(params.add_destination_ids ?? [])])],
+		(id) => !removed.has(id),
+	)
 }
 
 const noTargets = new McpInvalidInputError({
@@ -250,9 +255,9 @@ const resolveTargets = (
 	if (ids.length === 0) return Effect.fail(noTargets)
 	if (ids.includes("*")) return rules.length > 0 ? Effect.succeed(rules) : Effect.fail(noTargets)
 	const unique = [...new Set(ids)]
-	const missing = unique.find((id) => !rules.some((r) => r.id === id))
+	const missing = unique.find((id) => !Arr.some(rules, (r) => r.id === id))
 	if (missing !== undefined) return Effect.fail(ruleNotFound(missing))
-	return Effect.succeed(rules.filter((r) => unique.includes(r.id)))
+	return Effect.succeed(Arr.filter(rules, (r) => unique.includes(r.id)))
 }
 
 export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
@@ -321,15 +326,15 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 			const head = saved[0]
 			if (head === undefined) return yield* noTargets
 			const bulk = saved.length > 1
-			const configWarnings = saved.flatMap(({ rule }) =>
-				ruleConfigWarnings(rule).map((w) => (bulk ? `${rule.name}: ${w}` : w)),
+			const configWarnings = Arr.flatMap(saved, ({ rule }) =>
+				Arr.map(ruleConfigWarnings(rule), (w) => (bulk ? `${rule.name}: ${w}` : w)),
 			)
 			// One rule gets a first-evaluation preview; a bulk change would run one per rule.
 			const evaluated = bulk ? undefined : yield* firstEvaluation(head.request, head.rule.enabled)
 			const warnings = [...configWarnings, ...(evaluated?.warnings ?? [])]
 			return {
 				rule: toAlertRuleRow(head.rule),
-				...(bulk ? { rules: saved.map(({ rule }) => toAlertRuleRow(rule)) } : undefined),
+				...(bulk ? { rules: Arr.map(saved, ({ rule }) => toAlertRuleRow(rule)) } : undefined),
 				...(warnings.length > 0 ? { warnings } : undefined),
 				...(evaluated === undefined ? undefined : { evaluation: evaluated.evaluation }),
 			}

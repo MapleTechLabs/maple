@@ -27,6 +27,7 @@ import { listRelativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `ReviewTable`: the pull requests and their reviews.
 
@@ -232,7 +233,7 @@ export const reviewTable = (
 			),
 			tableBody(
 				h,
-				reviews.map((review) => reviewRow(h, review, context)),
+				Arr.map(reviews, (review) => reviewRow(h, review, context)),
 			),
 		]),
 	])

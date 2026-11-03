@@ -5,7 +5,7 @@ import {
 	type AlertRulePreviewSeries,
 	type AlertSkipReason,
 } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 import {
 	buildRuleCreateParamsV2,
@@ -48,14 +48,15 @@ export function focusPreviewOnClosestGroups(
 	if (preview === null || preview.series.length <= limit) {
 		return { preview, shownGroups: [], hiddenGroupCount: 0 }
 	}
-	const ranked = preview.series
-		.map((series) => ({ series, ...thresholdProximity(series, preview) }))
-		.sort((a, b) => b.breaches - a.breaches || a.gap - b.gap)
-		.slice(0, limit)
-		.map((entry) => entry.series)
+	const ranked = Arr.map(
+		Arr.map(preview.series, (series) => ({ series, ...thresholdProximity(series, preview) }))
+			.sort((a, b) => b.breaches - a.breaches || a.gap - b.gap)
+			.slice(0, limit),
+		(entry) => entry.series,
+	)
 	return {
 		preview: new AlertRulePreviewResponse({ ...preview, series: ranked }),
-		shownGroups: ranked.map((series) => series.groupKey),
+		shownGroups: Arr.map(ranked, (series) => series.groupKey),
 		hiddenGroupCount: preview.series.length - ranked.length,
 	}
 }
@@ -66,12 +67,12 @@ function thresholdProximity(
 ): { breaches: number; gap: number } {
 	const scale = Math.max(Math.abs(preview.threshold), Number.EPSILON)
 	const bounds = [preview.threshold, ...(preview.thresholdUpper === null ? [] : [preview.thresholdUpper])]
-	const values = series.points.flatMap((point) => (point.value === null ? [] : [point.value]))
+	const values = Arr.flatMap(series.points, (point) => (point.value === null ? [] : [point.value]))
 	return {
-		breaches: series.points.filter((point) => point.status === "breached").length,
+		breaches: Arr.filter(series.points, (point) => point.status === "breached").length,
 		gap: Math.min(
 			Number.POSITIVE_INFINITY,
-			...values.flatMap((value) => bounds.map((bound) => Math.abs(value - bound) / scale)),
+			...Arr.flatMap(values, (value) => Arr.map(bounds, (bound) => Math.abs(value - bound) / scale)),
 		),
 	}
 }
@@ -90,23 +91,21 @@ export function countSkippedWindows(preview: AlertRulePreviewResponse | null): S
 		byReason: { below_min_samples: 0, no_data: 0, no_value: 0 },
 	}
 	if (preview === null) return empty
-	return preview.series
-		.flatMap((series) => series.points)
-		.reduce(
-			(acc, point) =>
-				point.status !== "skipped"
-					? { ...acc, total: acc.total + 1 }
-					: {
-							total: acc.total + 1,
-							skipped: acc.skipped + 1,
-							byReason: {
-								...acc.byReason,
-								[point.skipReason ?? "no_data"]:
-									acc.byReason[point.skipReason ?? "no_data"] + 1,
-							},
+	return Arr.reduce(
+		Arr.flatMap(preview.series, (series) => series.points),
+		empty,
+		(acc, point) =>
+			point.status !== "skipped"
+				? { ...acc, total: acc.total + 1 }
+				: {
+						total: acc.total + 1,
+						skipped: acc.skipped + 1,
+						byReason: {
+							...acc.byReason,
+							[point.skipReason ?? "no_data"]: acc.byReason[point.skipReason ?? "no_data"] + 1,
 						},
-			empty,
-		)
+					},
+	)
 }
 
 /**
@@ -121,19 +120,24 @@ export function incidentsClearedByDraft(
 	if (draftPreview === null) return []
 	const windowMs = draftPreview.windowMinutes * 60_000
 	const stillOpen = new Set(
-		draftPreview.series
-			.filter((series) => {
-				const lastComplete = series.points
-					.filter((point) => point.provisional !== true)
-					.reduce((max, point) => Math.max(max, Date.parse(point.bucket)), Number.NEGATIVE_INFINITY)
-				return draftPreview.wouldFire.some(
+		Arr.map(
+			Arr.filter(draftPreview.series, (series) => {
+				const lastComplete = Arr.reduce(
+					Arr.filter(series.points, (point) => point.provisional !== true),
+					Number.NEGATIVE_INFINITY,
+					(max, point) => Math.max(max, Date.parse(point.bucket)),
+				)
+				return Arr.some(
+					draftPreview.wouldFire,
 					(span) =>
 						span.groupKey === series.groupKey && Date.parse(span.end) >= lastComplete + windowMs,
 				)
-			})
-			.map((series) => series.groupKey),
+			}),
+			(series) => series.groupKey,
+		),
 	)
-	return incidents.filter(
+	return Arr.filter(
+		incidents,
 		(incident) => incident.status === "open" && !stillOpen.has(incident.groupKey ?? UNGROUPED_GROUP_KEY),
 	)
 }
@@ -156,7 +160,7 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 	// The escalation tier only: a one-tier critical rule reports through the plain threshold rows.
 	const critical = (params: typeof a) => params.thresholds?.[1]
 	const list = (values: readonly string[] | null | undefined) =>
-		values == null || values.length === 0 ? "all" : values.join(", ")
+		values == null || values.length === 0 ? "all" : Arr.join(values, ", ")
 	const query = (form: RuleFormState) =>
 		form.signalType === "builder_query"
 			? `${form.queryBuilderDraft.aggregation} where ${form.queryBuilderDraft.whereClause || "(none)"}`
@@ -301,15 +305,16 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 			before: String(a.destination_ids?.length ?? 0),
 			after: String(b.destination_ids?.length ?? 0),
 			same:
-				[...(a.destination_ids ?? [])].sort().join() === [...(b.destination_ids ?? [])].sort().join(),
+				Arr.join([...(a.destination_ids ?? [])].sort(), ",") ===
+				Arr.join([...(b.destination_ids ?? [])].sort(), ","),
 		},
 		{
 			field: "Critical destinations",
 			before: String(critical(a)?.destination_ids.length ?? 0),
 			after: String(critical(b)?.destination_ids.length ?? 0),
 			same:
-				[...(critical(a)?.destination_ids ?? [])].sort().join() ===
-				[...(critical(b)?.destination_ids ?? [])].sort().join(),
+				Arr.join([...(critical(a)?.destination_ids ?? [])].sort(), ",") ===
+				Arr.join([...(critical(b)?.destination_ids ?? [])].sort(), ","),
 		},
 		{ field: "Name", before: a.name, after: b.name, same: a.name === b.name },
 		{
@@ -320,9 +325,9 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 		},
 		{
 			field: "Tags",
-			before: saved.tags.join(", "),
-			after: draft.tags.join(", "),
-			same: saved.tags.join() === draft.tags.join(),
+			before: Arr.join(saved.tags, ", "),
+			after: Arr.join(draft.tags, ", "),
+			same: Arr.join(saved.tags, ",") === Arr.join(draft.tags, ","),
 		},
 		{
 			field: "Message",
@@ -337,7 +342,10 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 			same: a.enabled === b.enabled,
 		},
 	]
-	return rows.filter((row) => !row.same).map(({ same: _same, ...change }) => change)
+	return Arr.map(
+		Arr.filter(rows, (row) => !row.same),
+		({ same: _same, ...change }) => change,
+	)
 }
 
 /** The draft's threshold as a domain value, for the chart and the verdict. */
@@ -348,7 +356,7 @@ export function draftThresholds(form: RuleFormState): {
 } {
 	const threshold = formThresholdToDomain(form, form.threshold)
 	const upper =
-		form.thresholdUpper.trim().length > 0 && Number.isFinite(Number(form.thresholdUpper))
+		Str.trim(form.thresholdUpper).length > 0 && Number.isFinite(Number(form.thresholdUpper))
 			? formThresholdToDomain(form, form.thresholdUpper)
 			: null
 	const escalation = comparatorSupportsTiers(form.comparator) ? form.escalation : null

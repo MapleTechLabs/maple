@@ -7,7 +7,7 @@
  * takes every link with it.
  */
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, String as Str } from "effect"
 import { ChatConnectorId, ChatIdentityId, OrgId, UserId } from "@maple/domain/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -30,7 +30,7 @@ const EXTERNAL = "platform-user-1"
 
 let minted = 0
 const newId = () =>
-	Schema.decodeSync(ChatIdentityId)(`00000000-0000-4000-8000-${String(++minted).padStart(12, "0")}`)
+	Schema.decodeSync(ChatIdentityId)(`00000000-0000-4000-8000-${Str.padStart(12, "0")(String(++minted))}`)
 
 const link = (orgId: OrgId, userId: UserId, externalUserId = EXTERNAL, displayName?: string) =>
 	Effect.flatMap(Database, (database) =>

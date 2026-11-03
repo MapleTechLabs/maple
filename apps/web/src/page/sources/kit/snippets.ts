@@ -2,6 +2,7 @@ import type { SourcePlatform } from "@maple/domain/primitives"
 import { type FrameworkId, sdkSnippets } from "../../../components/quick-start/sdk-snippets"
 import { ingestUrl } from "../../../lib/services/common/ingest-url"
 import { dockerCommand, HOST_CONFIG, helmCommand, hostCommand } from "../../infra/kit/install-snippets"
+import { Array as Arr, String as Str } from "effect"
 
 // `sourceSnippets`, `maskedToken`.
 
@@ -16,11 +17,14 @@ const envSnippet = (token: string, serviceName: string): SourceSnippet => ({
 	id: "env",
 	label: "Environment",
 	language: "shell",
-	code: [
-		`export OTEL_EXPORTER_OTLP_ENDPOINT="${ingestUrl}"`,
-		`export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20${token}"`,
-		`export OTEL_SERVICE_NAME="${serviceName}"`,
-	].join("\n"),
+	code: Arr.join(
+		[
+			`export OTEL_EXPORTER_OTLP_ENDPOINT="${ingestUrl}"`,
+			`export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20${token}"`,
+			`export OTEL_SERVICE_NAME="${serviceName}"`,
+		],
+		"\n",
+	),
 })
 
 const collectorSnippet = (token: string): SourceSnippet => ({
@@ -42,7 +46,10 @@ const sdkSnippet = (platform: SourcePlatform, token: string): SourceSnippet | nu
 		id: "sdk",
 		label: `${snippet.label} SDK`,
 		language: framework === "python" ? "python" : framework === "go" ? "go" : "typescript",
-		code: snippet.instrument.replace(/\{\{INGEST_URL\}\}/g, ingestUrl).replace(/\{\{API_KEY\}\}/g, token),
+		code: Str.replace(
+			/\{\{API_KEY\}\}/g,
+			token,
+		)(Str.replace(/\{\{INGEST_URL\}\}/g, ingestUrl)(snippet.instrument)),
 	}
 }
 
@@ -57,29 +64,33 @@ const claudeCodeSnippet = (token: string): SourceSnippet => ({
 	id: "claude-code",
 	label: "Claude Code",
 	language: "shell",
-	code: [
-		"export CLAUDE_CODE_ENABLE_TELEMETRY=1",
-		"export OTEL_LOGS_EXPORTER=otlp",
-		"export OTEL_METRICS_EXPORTER=otlp",
-		"export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf",
-		`export OTEL_EXPORTER_OTLP_ENDPOINT="${ingestUrl}"`,
-		`export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20${token}"`,
-	].join("\n"),
+	code: Arr.join(
+		[
+			"export CLAUDE_CODE_ENABLE_TELEMETRY=1",
+			"export OTEL_LOGS_EXPORTER=otlp",
+			"export OTEL_METRICS_EXPORTER=otlp",
+			"export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf",
+			`export OTEL_EXPORTER_OTLP_ENDPOINT="${ingestUrl}"`,
+			`export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20${token}"`,
+		],
+		"\n",
+	),
 })
 
 /** The service name the env snippet suggests: the source name, slugged. */
 const serviceNameOf = (name: string): string =>
-	name
-		.trim()
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-|-$/g, "") || "my-service"
+	Str.replace(/^-|-$/g, "")(Str.replace(/[^a-z0-9]+/g, "-")(Str.toLowerCase(Str.trim(name)))) ||
+	"my-service"
 
 /**
  * Setup snippets for a push platform, most specific first. `token` is the full token right
  * after create or roll, otherwise a masked placeholder built from the prefix.
  */
-export const sourceSnippets = (platform: SourcePlatform, token: string, name: string): ReadonlyArray<SourceSnippet> => {
+export const sourceSnippets = (
+	platform: SourcePlatform,
+	token: string,
+	name: string,
+): ReadonlyArray<SourceSnippet> => {
 	const serviceName = serviceNameOf(name)
 	switch (platform) {
 		case "kubernetes":
@@ -106,4 +117,5 @@ export const sourceSnippets = (platform: SourcePlatform, token: string, name: st
 }
 
 /** Stands in for the token once it can no longer be shown. */
-export const maskedToken = (prefix: string | null): string => `${prefix ?? "maple_src_"}${"•".repeat(16)}`
+export const maskedToken = (prefix: string | null): string =>
+	`${prefix ?? "maple_src_"}${Str.repeat(16)("•")}`

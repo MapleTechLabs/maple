@@ -1,5 +1,5 @@
 import { SpanId, TraceId } from "@maple/domain"
-import { Effect, Option, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr } from "effect"
 import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { inertHtml as ih } from "foldkit/html"
 import { describe, expect, test } from "vitest"
@@ -32,18 +32,26 @@ const span: SpanNodeData = {
 
 const input = { span, traceStartTime: "2026-10-01 11:43:32.411", totalDurationMs: 4920 }
 
-const view = withViewInputs(panelView, { timeZone: "UTC", canFilterAttributes: true, logsDocsHref: "https://maple.dev/docs" })()
+const view = withViewInputs(panelView, {
+	timeZone: "UTC",
+	canFilterAttributes: true,
+	logsDocsHref: "https://maple.dev/docs",
+})()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const detail = { spanAttributes: { "db.system.name": "postgresql" }, resourceAttributes: {}, events: [] }
 
 const loaded = (): Model => {
 	const entered = init(input).model
-	return [
-		Message.CompletedFetchDetail({ key: entered.detail.key ?? "", result: Result.succeed(detail) }),
-		Message.CompletedFetchLogs({ key: entered.logs.key ?? "", result: Result.succeed([]) }),
-	].reduce((model, message) => update(model, message).model, entered)
+	return Arr.reduce(
+		[
+			Message.CompletedFetchDetail({ key: entered.detail.key ?? "", result: Result.succeed(detail) }),
+			Message.CompletedFetchLogs({ key: entered.logs.key ?? "", result: Result.succeed([]) }),
+		],
+		entered,
+		(model, message) => update(model, message).model,
+	)
 }
 
 // The tab strip is a Tabs Submodel, so its mount resolves with the Submodel's own Message.
@@ -57,7 +65,9 @@ const indicatorMeasured = () =>
 
 describe("span panel", () => {
 	test("mounting asks for the span's logs and its full attributes", () => {
-		expect(names(init(input).commands)).toEqual(expect.arrayContaining([FetchSpanLogs.name, FetchSpanDetail.name]))
+		expect(names(init(input).commands)).toEqual(
+			expect.arrayContaining([FetchSpanLogs.name, FetchSpanDetail.name]),
+		)
 	})
 
 	test("a span missing from the trace only asks for its logs", () => {
@@ -104,12 +114,19 @@ describe("span panel", () => {
 	})
 	test("a refresh asks the source again past its cache, keeping the loaded data up", () => {
 		const refreshed = refresh(loaded())
-		expect(names(refreshed.commands)).toEqual(expect.arrayContaining([FetchSpanLogs.name, FetchSpanDetail.name]))
+		expect(names(refreshed.commands)).toEqual(
+			expect.arrayContaining([FetchSpanLogs.name, FetchSpanDetail.name]),
+		)
 		expect(refreshed.model.detail.data._tag).toBe("Refreshing")
 	})
 
 	test("a log row and an attribute filter ask the page", () => {
-		const log = { key: "log-1", timestamp: "2026-10-01 11:43:33.000", severityText: "ERROR", body: "pool exhausted" }
+		const log = {
+			key: "log-1",
+			timestamp: "2026-10-01 11:43:33.000",
+			severityText: "ERROR",
+			body: "pool exhausted",
+		}
 		const entered = init(input).model
 		const withLogs = update(
 			{ ...loaded(), tabs: { ...entered.tabs, selected: "logs" } },
@@ -158,7 +175,10 @@ describe("span panel", () => {
 			fallback: { spanAttributes: span.spanAttributes, resourceAttributes: span.resourceAttributes },
 		}
 		const stale = update(entered.model, Message.FoundCachedDetail({ fetch, detail, isFresh: false }))
-		expect([stale.model.detail.data._tag, names(stale.commands)]).toEqual(["Refreshing", [FetchSpanDetail.name]])
+		expect([stale.model.detail.data._tag, names(stale.commands)]).toEqual([
+			"Refreshing",
+			[FetchSpanDetail.name],
+		])
 		const fresh = update(entered.model, Message.FoundCachedDetail({ fetch, detail, isFresh: true }))
 		expect([fresh.model.detail.data._tag, names(fresh.commands)]).toEqual(["Success", []])
 	})
@@ -166,14 +186,20 @@ describe("span panel", () => {
 	test("a span the source has no row for falls back to the trace's trimmed attributes", async () => {
 		const command = init(input).commands?.find(({ name }) => name === FetchSpanDetail.name)
 		const source = TraceSource.of({
-			spanDetail: () => Effect.succeed(Option.none()),
+			spanDetail: () => Effect.succeedNone,
 			spanLogs: () => Effect.succeed([]),
 		})
-		const message = await Effect.runPromise(Effect.provideService(command?.effect ?? Effect.never, TraceSource, source))
+		const message = await Effect.runPromise(
+			Effect.provideService(command?.effect ?? Effect.never, TraceSource, source),
+		)
 		expect(message).toEqual(
 			Message.CompletedFetchDetail({
 				key: init(input).model.detail.key ?? "",
-				result: Result.succeed({ spanAttributes: span.spanAttributes, resourceAttributes: {}, events: [] }),
+				result: Result.succeed({
+					spanAttributes: span.spanAttributes,
+					resourceAttributes: {},
+					events: [],
+				}),
 			}),
 		)
 	})

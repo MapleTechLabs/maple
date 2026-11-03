@@ -20,6 +20,7 @@ import { needsAttention, sharedFailure } from "./view-findings"
 import { sourcesTable } from "./view-sources"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `InfraOverviewPage`.
 
@@ -46,7 +47,9 @@ const addSource = (h: H, missing: ReadonlyArray<SourceId>): Html =>
 					typography(h, { size: "xs", tone: "muted" }, [
 						"Not reporting yet:",
 						" ",
-						...missing.flatMap((id, index) => missingMark(h, id, index === missing.length - 1)),
+						...Arr.flatMap(missing, (id, index) =>
+							missingMark(h, id, index === missing.length - 1),
+						),
 					]),
 				]),
 				h.div(
@@ -68,8 +71,8 @@ const addSource = (h: H, missing: ReadonlyArray<SourceId>): Html =>
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const sources = presentSources(surfacesOf(model, inputs.context))
-	const missing = sources === null ? [] : SOURCE_IDS.filter((id) => !sources.includes(id))
-	const states = sources === null ? null : sources.map((id) => ({ id, state: sourceState(model, id) }))
+	const missing = sources === null ? [] : Arr.filter(SOURCE_IDS, (id) => !sources.includes(id))
+	const states = sources === null ? null : Arr.map(sources, (id) => ({ id, state: sourceState(model, id) }))
 	const time = pickTimeSearch(model.search)
 	// "Needs attention" states a failure every source shares once, so the rows need not repeat it.
 	const isFailureExplained = states !== null && sharedFailure(states) !== undefined

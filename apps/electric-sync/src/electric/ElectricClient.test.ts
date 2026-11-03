@@ -1,5 +1,15 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Fiber, Layer, Option, Redacted, Tracer } from "effect"
+import {
+	Duration,
+	Effect,
+	Fiber,
+	Layer,
+	Option,
+	Redacted,
+	Tracer,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { type RecordedRequest, stubFetch, syncConfigLayer } from "../test-support"
@@ -414,7 +424,7 @@ describe("ElectricClient.fetchShape", () => {
 	it.effect("truncates a huge upstream body in the span message but not in the response", () =>
 		Effect.gen(function* () {
 			const electric = yield* ElectricClient
-			const huge = "x".repeat(1000)
+			const huge = Str.repeat(1000)("x")
 			const error = yield* electric.fetchShape(syncRequest("dashboards"), "org_live").pipe(
 				withFetch([], () => new Response(huge, { status: 500 })),
 				Effect.flip,
@@ -586,6 +596,6 @@ describe("Electric upstream span never carries the secret", () => {
 		assert.isUndefined(attributes["url.query"])
 		assert.strictEqual(attributes["url.path"], "/v1/shape")
 		assert.strictEqual(attributes["server.address"], "electric:3000")
-		for (const value of Object.values(attributes)) assert.notInclude(value, "sh_secret")
+		for (const value of Rec.values(attributes)) assert.notInclude(value, "sh_secret")
 	})
 })

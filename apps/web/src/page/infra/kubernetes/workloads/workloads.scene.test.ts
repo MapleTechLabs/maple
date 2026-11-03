@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { Command, expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../../contract"
@@ -87,7 +87,7 @@ describe("workloads", () => {
 			DetailMessage.ToggledGroupByPod({ isChecked: false }),
 			context,
 		)
-		expect((aggregate.commands ?? []).map(({ name }) => name)).toEqual(["FetchInfraWorkloadSeries"])
+		expect(Arr.map(aggregate.commands ?? [], ({ name }) => name)).toEqual(["FetchInfraWorkloadSeries"])
 	})
 	test("an empty kind in a reporting cluster says so, without the install advice", () => {
 		const model = emptyKind()

@@ -5,7 +5,7 @@ import {
 	type AwsSetupPlan,
 } from "@maple/domain/aws"
 import type { AwsAccountId, AwsConnectionId } from "@maple/domain/primitives"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { forPaste } from "../paste-script"
 
 const DOCS_URL = "https://maple.dev/docs/integrations/aws"
@@ -18,12 +18,12 @@ const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown,
 export const AWS_STACK_REGION = "us-east-1"
 
 /** CloudFormation logical id of a module's policy: `ObservabilityPolicy`. */
-const policyLogicalId = (module: string) => `${module[0]?.toUpperCase() ?? ""}${module.slice(1)}Policy`
+const policyLogicalId = (module: string) => `${module[0]?.toUpperCase() ?? ""}${Str.slice(1)(module)}Policy`
 
 /** The trust policy with its federated principal swapped for `principal`. */
 const trustingPrincipal = (plan: AwsSetupPlan, principal: unknown) => ({
 	...plan.trustPolicy,
-	Statement: plan.trustPolicy.Statement.map((statement) => ({
+	Statement: Arr.map(plan.trustPolicy.Statement, (statement) => ({
 		...statement,
 		Principal: { Federated: principal },
 	})),
@@ -35,8 +35,8 @@ const trustingPrincipal = (plan: AwsSetupPlan, principal: unknown) => ({
  * only when told to (the console default), and keeps it when deleted, since another role may trust it.
  */
 export const renderAwsCloudFormation = (connectionId: AwsConnectionId, plan: AwsSetupPlan) => {
-	const policies = Object.fromEntries(
-		plan.modules.map((module) => [
+	const policies = Rec.fromEntries(
+		Arr.map(plan.modules, (module) => [
 			policyLogicalId(module.module),
 			{
 				Type: "AWS::IAM::ManagedPolicy",
@@ -80,8 +80,8 @@ export const renderAwsCloudFormation = (connectionId: AwsConnectionId, plan: Aws
 					}),
 					MaxSessionDuration: 3600,
 					ManagedPolicyArns: [
-						...new Set(plan.modules.flatMap((module) => module.managedPolicies)),
-						...plan.modules.map((module) => ({ Ref: policyLogicalId(module.module) })),
+						...new Set(Arr.flatMap(plan.modules, (module) => module.managedPolicies)),
+						...Arr.map(plan.modules, (module) => ({ Ref: policyLogicalId(module.module) })),
 					],
 					Policies: [{ PolicyName: "maple-self-read", PolicyDocument: plan.selfReadPolicy }],
 					Tags: plan.tags,
@@ -253,7 +253,7 @@ export const renderAwsMetricsCloudFormation = (
 					FirehoseArn: { "Fn::GetAtt": ["DeliveryStream", "Arn"] },
 					RoleArn: { "Fn::GetAtt": ["MetricStreamRole", "Arn"] },
 					OutputFormat: "opentelemetry1.0",
-					IncludeFilters: stream.namespaces.map((namespace) => ({ Namespace: namespace })),
+					IncludeFilters: Arr.map(stream.namespaces, (namespace) => ({ Namespace: namespace })),
 				},
 			},
 		},
@@ -329,7 +329,10 @@ const deleteMetricsStackFunction = (stackName: string) => `delete_metrics_stack(
 }
 `
 
-const removeMetricsStacks = (stackName: string, keep: ReadonlyArray<string>) => `keep=" ${keep.join(" ")} "
+const removeMetricsStacks = (
+	stackName: string,
+	keep: ReadonlyArray<string>,
+) => `keep=" ${Arr.join(keep, " ")} "
 for region in $(aws ec2 describe-regions --region ${AWS_STACK_REGION} --query 'Regions[].RegionName' --output text); do
   case "$keep" in *" $region "*) continue ;; esac
   if aws cloudformation describe-stacks --region "$region" --stack-name ${stackName} >/dev/null 2>&1; then
@@ -347,7 +350,7 @@ const deployMetricsStacks = (
 ) => `metrics_template="$(mktemp)"
 cat > "$metrics_template" <<'MAPLE_METRICS_TEMPLATE'
 ${template}MAPLE_METRICS_TEMPLATE
-for region in ${stream.regions.join(" ")}; do
+for region in ${Arr.join(stream.regions, " ")}; do
   status="$(aws cloudformation describe-stacks --region "$region" --stack-name ${stackName} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
   if [ "$status" = "ROLLBACK_COMPLETE" ]; then
     delete_metrics_stack "$region"
@@ -417,8 +420,9 @@ const hcl = (value: unknown) => encodeJson(value)
 
 /** The same setup as a self-contained Terraform file for the `aws` provider. */
 export const renderAwsTerraform = (connectionId: AwsConnectionId, plan: AwsSetupPlan) => {
-	const modulePolicies = plan.modules
-		.map(
+	const modulePolicies = Arr.join(
+		Arr.map(
+			plan.modules,
 			(module) => `
 resource "aws_iam_policy" "maple_${module.module}" {
   name   = ${hcl(module.policyName)}
@@ -430,22 +434,25 @@ resource "aws_iam_role_policy_attachment" "maple_${module.module}" {
   policy_arn = aws_iam_policy.maple_${module.module}.arn
 }
 `,
-		)
-		.join("")
-	const managed = [...new Set(plan.modules.flatMap((module) => module.managedPolicies))]
-		.map(
+		),
+		"",
+	)
+	const managed = Arr.join(
+		Arr.map(
+			[...new Set(Arr.flatMap(plan.modules, (module) => module.managedPolicies))],
 			(arn, index) => `
 resource "aws_iam_role_policy_attachment" "maple_managed_${index}" {
   role       = aws_iam_role.maple.name
   policy_arn = ${hcl(arn)}
 }
 `,
-		)
-		.join("")
-	const trust = hcl(trustingPrincipal(plan, "__PROVIDER__")).replace(
+		),
+		"",
+	)
+	const trust = Str.replace(
 		'"__PROVIDER__"',
 		"data.aws_iam_openid_connect_provider.maple.arn",
-	)
+	)(hcl(trustingPrincipal(plan, "__PROVIDER__")))
 	return `# Maple integration ${connectionId} (setup v${AWS_TEMPLATE_VERSION}): a read-only role Maple assumes.
 # Apply it with credentials for the account in the role ARN below.
 # Details: ${DOCS_URL}
@@ -462,7 +469,7 @@ resource "aws_iam_role" "maple" {
   description          = "Assumed by Maple to read this account"
   max_session_duration = 3600
   assume_role_policy   = jsonencode(${trust})
-  tags                 = ${hcl(Object.fromEntries(plan.tags.map((tag) => [tag.Key, tag.Value])))}
+  tags                 = ${hcl(Rec.fromEntries(Arr.map(plan.tags, (tag) => [tag.Key, tag.Value])))}
 }
 
 resource "aws_iam_role_policy" "maple_self_read" {

@@ -1,6 +1,7 @@
 import { v2RouteNotFoundBody } from "@maple/domain/http/v2"
 import { describe, expect, it } from "vitest"
 import { apiNotFoundBody, handleRequest, isApiPath, markdownTwin, notFoundMarkdown } from "./handler"
+import { String as Str } from "effect"
 
 /**
  * A stand-in for the Workers Assets binding: a path → body map with the same
@@ -10,12 +11,13 @@ const assets = (files: Record<string, string>) => ({
 	fetch: async (request: Request): Promise<Response> => {
 		const { pathname } = new URL(request.url)
 		// Workers Assets resolves a directory request to its index.html.
-		const resolved = pathname.endsWith("/") && !(pathname in files) ? `${pathname}index.html` : pathname
+		const resolved =
+			Str.endsWith("/")(pathname) && !(pathname in files) ? `${pathname}index.html` : pathname
 		const body = files[resolved]
 		if (body === undefined) return new Response(null, { status: 404 })
-		const type = resolved.endsWith(".md")
+		const type = Str.endsWith(".md")(resolved)
 			? "text/markdown; charset=utf-8"
-			: resolved.endsWith(".html")
+			: Str.endsWith(".html")(resolved)
 				? "text/html; charset=utf-8"
 				: "application/octet-stream"
 		return new Response(body, { status: 200, headers: { "Content-Type": type } })

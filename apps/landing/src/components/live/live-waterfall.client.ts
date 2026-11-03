@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /**
  * Drives the live trace waterfall animation with the Web Animations API. Cycle structure:
  *
@@ -37,7 +38,7 @@ export function startWaterfall(root: HTMLElement) {
 	const cursor = root.querySelector<HTMLElement>("[data-trace-cursor]")
 	const firstTrack = root.querySelector<HTMLElement>(".span-bar-track")
 
-	const rows: Row[] = Array.from(root.querySelectorAll<HTMLElement>(".waterfall-row")).map((row) => {
+	const rows: Row[] = Arr.map(Array.from(root.querySelectorAll<HTMLElement>(".waterfall-row")), (row) => {
 		const bar = row.querySelector<HTMLElement>(".span-bar")!
 		const leftPct = parsePct(bar.style.left)
 		const widthPct = parsePct(bar.style.width)
@@ -72,18 +73,18 @@ export function startWaterfall(root: HTMLElement) {
 	let phaseTimers: number[] = []
 
 	const stopInflight = () => {
-		inflight.forEach((a) => a.cancel())
+		Arr.forEach(inflight, (a) => a.cancel())
 		inflight = []
 	}
 
 	const clearPhaseTimers = () => {
-		phaseTimers.forEach((t) => window.clearTimeout(t))
+		Arr.forEach(phaseTimers, (t) => window.clearTimeout(t))
 		phaseTimers = []
 	}
 
 	const armRows = () => {
 		stopInflight()
-		rows.forEach((r) => {
+		Arr.forEach(rows, (r) => {
 			r.bar.style.transform = "scaleX(0)"
 			r.row.classList.remove("is-active", "is-slowest")
 		})
@@ -98,7 +99,7 @@ export function startWaterfall(root: HTMLElement) {
 		const playSec = (totalMs * speedDivisor) / 1000
 
 		const barAnims: Animation[] = []
-		rows.forEach((r) => {
+		Arr.forEach(rows, (r) => {
 			const startSec = (r.startMs * speedDivisor) / 1000
 			const durSec = Math.max(0.01, (r.durationMs * speedDivisor) / 1000)
 
@@ -133,7 +134,7 @@ export function startWaterfall(root: HTMLElement) {
 		}
 
 		inflight = cursorAnim ? [...barAnims, cursorAnim] : barAnims
-		return Promise.all(inflight.map((a) => a.finished)).catch(() => {})
+		return Promise.all(Arr.map(inflight, (a) => a.finished)).catch(() => {})
 	}
 
 	const phaseDelay = (ms: number) =>

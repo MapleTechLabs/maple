@@ -1,7 +1,7 @@
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import { attributeIssues, previousSha, shortReleaseLabel } from "../../../components/releases/release-model"
 import { errorIssueFromV2 } from "../../../lib/services/error-issues"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { BreadcrumbEntry } from "../../../shell"
@@ -70,7 +70,7 @@ const deployIssues = (h: H, model: Model, clock: Clock): Html => {
 		onRefreshing: (issues) => lists(issues),
 	})
 	function lists(wire: ReadonlyArray<Parameters<typeof errorIssueFromV2>[0]>): Html {
-		const documents: Array<ErrorIssueDocument> = wire.map(errorIssueFromV2)
+		const documents: Array<ErrorIssueDocument> = Arr.map(wire, errorIssueFromV2)
 		const split = attributeIssues(impacts, documents).get(model.commitSha) ?? { fresh: [], regressed: [] }
 		const isServiceShown = (group?.services.length ?? 0) > 1
 		return grid(h, { lg: 2, gap: "3" }, [

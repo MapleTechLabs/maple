@@ -1,5 +1,5 @@
 import { AlertDestinationId } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -29,7 +29,8 @@ const decodeDestinationId = Schema.decodeUnknownOption(AlertDestinationId)
 
 export const DESTINATION_MENU_ID = "uptime-form-destinations"
 
-const isKind = (value: string): value is Form["kind"] => MonitorKind.literals.some((kind) => kind === value)
+const isKind = (value: string): value is Form["kind"] =>
+	Arr.some(MonitorKind.literals, (kind) => kind === value)
 const kindOf = (raw: string | undefined): Form["kind"] => (raw !== undefined && isKind(raw) ? raw : "http")
 
 export const init = (route: FormRoute, context: PageContext): Return => {
@@ -79,7 +80,9 @@ const changedText = (model: Model, field: TextField, value: string): Return =>
 		: withForm(model, { [field]: value })
 
 const mapAssertion = (model: Model, id: number, change: (row: AssertionDraft) => AssertionDraft): Return =>
-	withForm(model, { assertions: model.form.assertions.map((row) => (row.id === id ? change(row) : row)) })
+	withForm(model, {
+		assertions: Arr.map(model.form.assertions, (row) => (row.id === id ? change(row) : row)),
+	})
 
 const addAssertion = (model: Model): Return =>
 	withForm(model, {
@@ -118,7 +121,7 @@ const updateDestinationMenu = (model: Model, message: Menu.Message): Return => {
 	)
 	const next = { ...model, destinationMenu: result.model }
 	const picked = result.outMessage?._tag === "SelectedItem" ? result.outMessage.value : null
-	const isKnown = (model.destinations ?? []).some((destination) => destination.id === picked)
+	const isKnown = Arr.some(model.destinations ?? [], (destination) => destination.id === picked)
 	return Option.match(isKnown ? decodeDestinationId(picked) : Option.none(), {
 		onNone: () => ({ model: next, commands }),
 		onSome: (id) =>
@@ -178,7 +181,7 @@ const updateForm = (model: Model, message: Message, context: PageContext): Retur
 		PickedInterval: ({ seconds }) => withForm(model, { intervalSeconds: seconds }),
 		AddedAssertion: () => addAssertion(model),
 		RemovedAssertion: ({ id }) =>
-			withForm(model, { assertions: model.form.assertions.filter((row) => row.id !== id) }),
+			withForm(model, { assertions: Arr.filter(model.form.assertions, (row) => row.id !== id) }),
 		ChangedAssertionType: ({ id, type }) =>
 			mapAssertion(model, id, (row) => ({
 				...row,
@@ -191,7 +194,7 @@ const updateForm = (model: Model, message: Message, context: PageContext): Retur
 			mapAssertion(model, id, (row) => ({ ...row, [part]: value })),
 		RemovedDestination: ({ id }) =>
 			withForm(model, {
-				destinationIds: model.form.destinationIds.filter((existing) => existing !== id),
+				destinationIds: Arr.filter(model.form.destinationIds, (existing) => existing !== id),
 			}),
 		GotDestinationMenuMessage: ({ message: child }) => updateDestinationMenu(model, child),
 		ClickedTest: () => test(model),

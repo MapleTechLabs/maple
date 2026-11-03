@@ -1,4 +1,4 @@
-import { Config, Effect, Option } from "effect"
+import { Config, Effect, Option, String as Str } from "effect"
 
 import { trySyncOrUndefined } from "../shared/try-sync.js"
 
@@ -109,12 +109,12 @@ export const repositoryUrl = Effect.gen(function* () {
  */
 export const parseOtelResourceAttributes = (input: string): Record<string, string> => {
 	const result: Record<string, string> = {}
-	for (const pair of input.split(",")) {
+	for (const pair of Str.split(",")(input)) {
 		const eq = pair.indexOf("=")
 		if (eq === -1) continue
-		const key = pair.slice(0, eq).trim()
+		const key = Str.trim(Str.slice(0, eq)(pair))
 		if (!key) continue
-		const raw = pair.slice(eq + 1).trim()
+		const raw = Str.trim(Str.slice(eq + 1)(pair))
 		// The spec allows URL-encoded values but doesn't require them, so a literal
 		// `%` in the value is a decode failure and the raw string is the answer.
 		result[key] = trySyncOrUndefined(() => decodeURIComponent(raw)) ?? raw

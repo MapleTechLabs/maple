@@ -3,7 +3,7 @@ import { findFirstPartialIndex, trimEmptyTrailingBuckets } from "@maple/ui/compo
 import { bucketTimeScale, minBarLength } from "@maple/ui/components/plot/plot-scales"
 import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
 import { barY, type ChartValue, defineChart, group } from "@tanstack/charts"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { thresholdMarks } from "./threshold-marks"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import {
@@ -49,11 +49,16 @@ const bucketBandDomain = (
 	rows: ReadonlyArray<TimeseriesRow>,
 	bucketSeconds: number | undefined,
 ): [Date, Date] | null => {
-	const times = rows.map((row) => row.date.getTime()).filter((time) => Number.isFinite(time))
+	const times = Arr.filter(
+		Arr.map(rows, (row) => row.date.getTime()),
+		(time) => Number.isFinite(time),
+	)
 	if (rows.length < 2 || times.length === 0) return null
 	const min = Math.min(...times)
 	const max = Math.max(...times)
-	const gaps = times.slice(1).flatMap((time, index) => (time > times[index] ? [time - times[index]] : []))
+	const gaps = Arr.flatMap(times.slice(1), (time, index) =>
+		time > times[index] ? [time - times[index]] : [],
+	)
 	const smallestGap = gaps.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...gaps)
 	if (min === max) return null
 	const interval =
@@ -85,15 +90,19 @@ const cellsOf = (
 	first: number,
 	stacked: boolean,
 ): ReadonlyArray<BarCell> =>
-	rows.flatMap((row, index) => {
+	Arr.flatMap(rows, (row, index) => {
 		const partial = first !== -1 && index >= first
-		return visible.map((entry, entryIndex) => ({
+		return Arr.map(visible, (entry, entryIndex) => ({
 			row,
 			key: entry.key,
 			color: entry.color,
 			value: asFiniteNumber(row[entry.key]),
 			base: stacked
-				? visible.slice(0, entryIndex).reduce((sum, below) => sum + asFiniteNumber(row[below.key]), 0)
+				? Arr.reduce(
+						visible.slice(0, entryIndex),
+						0,
+						(sum, below) => sum + asFiniteNumber(row[below.key]),
+					)
 				: 0,
 			partial,
 		}))
@@ -102,15 +111,15 @@ const cellsOf = (
 export const buildQueryBuilderBar = (spec: BarSpec): BuiltChart<BarCell, ChartValue, number> => {
 	const { definitions } = seriesDefinitionsOf(spec.data)
 	const unit = spec.unit ?? undefined
-	const keys = definitions.map((definition) => definition.chartKey)
+	const keys = Arr.map(definitions, (definition) => definition.chartKey)
 	const normalised = normaliseRows(spec.data, definitions)
 	const rows = scaleRates(normalised, keys, unit, bucketSecondsOf(normalised))
-	const visible: ReadonlyArray<Series> = definitions.map((definition) => ({
+	const visible: ReadonlyArray<Series> = Arr.map(definitions, (definition) => ({
 		key: definition.chartKey,
 		label: definition.rawKey,
 		color: spec.colors[definition.chartKey] ?? spec.fallbackColor,
 	}))
-	const visibleKeys = visible.map((entry) => entry.key)
+	const visibleKeys = Arr.map(visible, (entry) => entry.key)
 	const axisContext = axisContextOf(rows, spec.timeZone ?? undefined)
 	const first = findFirstPartialIndex(rows, { now: spec.nowMs })
 	// A trailing in-flight bucket with nothing in it is dropped: it is not a reading of zero.
@@ -162,7 +171,10 @@ export const buildQueryBuilderBar = (spec: BarSpec): BuiltChart<BarCell, ChartVa
 
 	const definition = defineChart({
 		marks: [
-			...thresholdMarks(axis?.thresholds ?? [], bucketBandDomain(plotRows, axisContext.bucketSeconds)?.[1] ?? plotRows.at(-1)?.date),
+			...thresholdMarks(
+				axis?.thresholds ?? [],
+				bucketBandDomain(plotRows, axisContext.bucketSeconds)?.[1] ?? plotRows.at(-1)?.date,
+			),
 			lane(false),
 			lane(true),
 		],
@@ -180,7 +192,7 @@ export const buildQueryBuilderBar = (spec: BarSpec): BuiltChart<BarCell, ChartVa
 			Option.map(Option.fromNullishOr(points[0]?.datum.row), (row) =>
 				ChartTooltip.Bucket({
 					heading: formatBucketLabel(row.bucket, axisContext, "tooltip"),
-					rows: visible.map((entry) => ({
+					rows: Arr.map(visible, (entry) => ({
 						label: entry.label,
 						color: entry.color,
 						dashed: false,

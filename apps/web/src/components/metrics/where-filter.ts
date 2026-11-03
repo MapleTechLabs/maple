@@ -1,7 +1,8 @@
+import { String as Str } from "effect"
 // The where-clause helpers of the metric breakdown, pure so other surfaces can share them.
 
 function quoteFilterValue(value: string): string {
-	return `"${value.replaceAll('"', '\\"')}"`
+	return `"${Str.replaceAll('"', '\\"')(value)}"`
 }
 
 /**
@@ -11,13 +12,13 @@ function quoteFilterValue(value: string): string {
  */
 export function appendWhereFilter(where: string, key: string, value: string): string {
 	const clause = `${key} = ${quoteFilterValue(value)}`
-	const trimmed = where.trim()
+	const trimmed = Str.trim(where)
 	if (!trimmed) return clause
 
-	const escapedKey = key.replaceAll(".", "\\.")
+	const escapedKey = Str.replaceAll(".", "\\.")(key)
 	const sameKeyClause = new RegExp(`${escapedKey}\\s*=\\s*"(?:[^"\\\\]|\\\\.)*"`)
 	if (sameKeyClause.test(trimmed)) {
-		return trimmed.replace(sameKeyClause, clause)
+		return Str.replace(sameKeyClause, clause)(trimmed)
 	}
 
 	return `${trimmed} AND ${clause}`

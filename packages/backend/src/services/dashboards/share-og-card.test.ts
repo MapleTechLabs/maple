@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { RedactedDashboard } from "@maple/widgets/dashboard"
 import { ogDescription, ogSubtitle, ogTiles, ogTitle } from "./share-og-card"
+import { Array as Arr, String as Str } from "effect"
 
 const widget = (id: string, overrides: Partial<RedactedDashboard["widgets"][number]> = {}) => ({
 	id,
@@ -39,10 +40,10 @@ describe("ogTitle", () => {
 	})
 
 	it("truncates a very long name", () => {
-		const title = ogTitle(dashboard({ name: "x".repeat(400) }), undefined)
+		const title = ogTitle(dashboard({ name: Str.repeat(400)("x") }), undefined)
 
 		expect(title.length).toBe(120)
-		expect(title.endsWith("…")).toBe(true)
+		expect(Str.endsWith("…")(title)).toBe(true)
 	})
 })
 
@@ -101,7 +102,7 @@ describe("ogTiles", () => {
 			],
 		})
 
-		expect(ogTiles(board).map((tile) => tile.title)).toEqual(["Widget w4"])
+		expect(Arr.map(ogTiles(board), (tile) => tile.title)).toEqual(["Widget w4"])
 	})
 
 	it("stacks sections instead of drawing them on top of each other", () => {
@@ -115,7 +116,7 @@ describe("ogTiles", () => {
 			],
 		})
 
-		expect(ogTiles(board).map((t) => ({ x: t.x, y: t.y }))).toEqual([
+		expect(Arr.map(ogTiles(board), (t) => ({ x: t.x, y: t.y }))).toEqual([
 			{ x: 0, y: 0 },
 			{ x: 0, y: 2 },
 			{ x: 6, y: 2 },
@@ -130,7 +131,7 @@ describe("ogTiles", () => {
 			],
 		})
 
-		expect(ogTiles(board).map((t) => t.title)).toEqual(["Widget w1"])
+		expect(Arr.map(ogTiles(board), (t) => t.title)).toEqual(["Widget w1"])
 	})
 
 	it("stops at the first screen of a very tall board", () => {

@@ -1,4 +1,4 @@
-import { Option, Schema, Stream } from "effect"
+import { Option, Schema, Stream, Array as Arr } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import type { PageSubscriptionInput } from "../../contract"
 import { modalKeys } from "./error-modal-command"
@@ -11,7 +11,7 @@ import type { Model } from "./model"
 const positionOf = (model: Model) => {
 	const fingerprints = Option.match(AsyncData.getData(model.errors.data), {
 		onNone: (): ReadonlyArray<string> => [],
-		onSome: (errors) => errors.data.map((row) => row.fingerprint),
+		onSome: (errors) => Arr.map(errors.data, (row) => row.fingerprint),
 	})
 	return { index: fingerprints.indexOf(model.errorModal.fingerprint ?? ""), total: fingerprints.length }
 }
@@ -20,10 +20,15 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 	errorModalKeys: entry(
 		{ isOpen: Schema.Boolean, index: Schema.Number, total: Schema.Number },
 		{
-			modelToDependencies: ({ model }) => ({ isOpen: model.errorModal.dialog.isOpen, ...positionOf(model) }),
+			modelToDependencies: ({ model }) => ({
+				isOpen: model.errorModal.dialog.isOpen,
+				...positionOf(model),
+			}),
 			dependenciesToStream: ({ isOpen, index, total }) =>
 				isOpen
-					? Stream.map(modalKeys({ index, total }), (message) => Message.GotErrorModalMessage({ message }))
+					? Stream.map(modalKeys({ index, total }), (message) =>
+							Message.GotErrorModalMessage({ message }),
+						)
 					: Stream.empty,
 		},
 	),

@@ -65,24 +65,20 @@ interface ResolvedPlanetScaleOAuthConfig {
 }
 
 const resolveConfig = Effect.fn("PlanetScaleOAuthService.resolveConfig")(function* (env: EnvConfig) {
-	const clientId = yield* Option.match(env.PLANETSCALE_OAUTH_CLIENT_ID, {
-		onNone: () =>
-			Effect.fail(
-				new IntegrationsConfigurationError({
-					message: "PLANETSCALE_OAUTH_CLIENT_ID is required to use the PlanetScale integration",
-				}),
-			),
-		onSome: (value) => Effect.succeed(value),
-	})
-	const clientSecret = yield* Option.match(env.PLANETSCALE_OAUTH_CLIENT_SECRET, {
-		onNone: () =>
-			Effect.fail(
-				new IntegrationsConfigurationError({
-					message: "PLANETSCALE_OAUTH_CLIENT_SECRET is required to use the PlanetScale integration",
-				}),
-			),
-		onSome: (value) => Effect.succeed(value),
-	})
+	const clientId = yield* Effect.fromOption(
+		env.PLANETSCALE_OAUTH_CLIENT_ID,
+		() =>
+			new IntegrationsConfigurationError({
+				message: "PLANETSCALE_OAUTH_CLIENT_ID is required to use the PlanetScale integration",
+			}),
+	)
+	const clientSecret = yield* Effect.fromOption(
+		env.PLANETSCALE_OAUTH_CLIENT_SECRET,
+		() =>
+			new IntegrationsConfigurationError({
+				message: "PLANETSCALE_OAUTH_CLIENT_SECRET is required to use the PlanetScale integration",
+			}),
+	)
 	return {
 		clientId,
 		clientSecret,
@@ -415,12 +411,10 @@ export class PlanetScaleOAuthService extends Context.Service<
 					"PlanetScale OAuth token exchange returned no refresh token — refusing connection",
 					{ orgId },
 				)
-				return yield* Effect.fail(
-					new IntegrationsValidationError({
-						message:
-							"PlanetScale returned no refresh token, so this connection would stop working when the access token expires. Reconnect and grant offline access.",
-					}),
-				)
+				return yield* new IntegrationsValidationError({
+					message:
+						"PlanetScale returned no refresh token, so this connection would stop working when the access token expires. Reconnect and grant offline access.",
+				})
 			}
 
 			// Resolve what the grant can see before persisting anything: a grant with
@@ -441,7 +435,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 						})
 						if (Result.isSuccess(retried)) return retried.success
 						if (retried.failure._tag !== "@maple/http/errors/IntegrationsRevokedError") {
-							return yield* Effect.fail(retried.failure)
+							return yield* retried.failure
 						}
 
 						const verdict = yield* introspectToken(tokenResponse.access_token)
@@ -449,23 +443,19 @@ export class PlanetScaleOAuthService extends Context.Service<
 							"maple.planetscale.token.introspection": verdict,
 						})
 						if (verdict === "valid") {
-							return yield* Effect.fail(
-								toUpstreamError(
-									"PlanetScale's API rejected the new access token even though PlanetScale's auth server reports it as valid. Reconnecting won't help — try again in a few minutes, and contact support if it persists.",
-									401,
-								),
+							return yield* toUpstreamError(
+								"PlanetScale's API rejected the new access token even though PlanetScale's auth server reports it as valid. Reconnecting won't help — try again in a few minutes, and contact support if it persists.",
+								401,
 							)
 						}
-						return yield* Effect.fail(rejection)
+						return yield* rejection
 					}),
 				),
 			)
 			if (organizations.length === 0) {
-				return yield* Effect.fail(
-					new IntegrationsValidationError({
-						message: "The PlanetScale authorization grants access to no organizations",
-					}),
-				)
+				return yield* new IntegrationsValidationError({
+					message: "The PlanetScale authorization grants access to no organizations",
+				})
 			}
 
 			// Identify the grant for display. `/v1/user` may be outside the app's

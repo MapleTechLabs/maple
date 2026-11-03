@@ -1,4 +1,4 @@
-import { DateTime } from "effect"
+import { DateTime, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { mergeSupabaseSeries } from "./supabase-infra-series"
 
@@ -41,7 +41,7 @@ describe("mergeSupabaseSeries", () => {
 			[gauge("2026-07-02T00:05:00Z", 0.6), gauge("2026-07-02T00:00:00Z", 0.5)],
 			[rate("2026-07-02T00:00:00Z", 0.2), rate("2026-07-02T00:05:00Z", 0.3)],
 		)
-		expect(rows.map((row) => [row.bucket, row.memoryAvg, row.cpu])).toEqual([
+		expect(Arr.map(rows, (row) => [row.bucket, row.memoryAvg, row.cpu])).toEqual([
 			["2026-07-02T00:00:00.000Z", 0.5, 0.2],
 			["2026-07-02T00:05:00.000Z", 0.6, 0.3],
 		])

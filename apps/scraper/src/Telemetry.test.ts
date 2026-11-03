@@ -1,4 +1,4 @@
-import { Effect, Layer, Redacted } from "effect"
+import { Effect, Layer, Redacted, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, it } from "vitest"
 import { ScraperEnv, type ScraperEnvConfig } from "./Env"
@@ -41,7 +41,10 @@ const captureCollector = () => {
 	const original = globalThis.fetch
 	globalThis.fetch = Object.assign(
 		async (input: string | URL | Request, init?: RequestInit) => {
-			if (String(input).endsWith("/v1/traces") && typeof init?.body === "string") {
+			if (
+				Str.endsWith("/v1/traces")(input instanceof Request ? input.url : input.toString()) &&
+				typeof init?.body === "string"
+			) {
 				bodies.push(JSON.parse(init.body))
 			}
 			return new Response(null, { status: 200 })
@@ -117,17 +120,21 @@ describe("scraper telemetry", () => {
 			),
 		)
 
-		const spans = collector.bodies.flatMap((body) =>
-			body.resourceSpans.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans)),
+		const spans = Arr.flatMap(collector.bodies, (body) =>
+			Arr.flatMap(body.resourceSpans, (resource) =>
+				Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
+			),
 		)
 		const client = spans.find((span) => span.kind === 3 /* client */)
 		expect(client?.attributes.find((a) => a.key === "http.response.status_code")?.value.intValue).toBe(
 			402,
 		)
 		// A 402 is a billing block, not a fault: no Error span, so no error issue.
-		expect(spans.map((span) => span.status.code)).not.toContain(2 /* Error */)
-		expect(spans.flatMap((span) => span.events.map((event) => event.name))).not.toContain("exception")
-		expect(collector.bodies[0]?.resourceSpans[0]?.resource.attributes.map((a) => a.key)).toContain(
+		expect(Arr.map(spans, (span) => span.status.code)).not.toContain(2 /* Error */)
+		expect(Arr.flatMap(spans, (span) => Arr.map(span.events, (event) => event.name))).not.toContain(
+			"exception",
+		)
+		expect(Arr.map(collector.bodies[0]?.resourceSpans[0]?.resource.attributes, (a) => a.key)).toContain(
 			"vcs.repository.url.full",
 		)
 	})

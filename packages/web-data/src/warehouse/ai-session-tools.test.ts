@@ -5,6 +5,7 @@ import { AiToolsSeriesResponse } from "@maple/domain/http"
 import { OTHER_SERIES_KEY } from "../lib/tool-analytics"
 
 import { mapToolBreakdown, mapToolErrors, mapToolSeries } from "./ai-session-tools"
+import { Array as Arr } from "effect"
 
 const measures = { calls: 3, sessions: 1, errors: 0, p50: 1_000, p90: 2_000, p95: 3_000 }
 
@@ -12,7 +13,11 @@ const seriesOf = (keys: ReadonlyArray<string>) =>
 	mapToolSeries(
 		new AiToolsSeriesResponse({
 			seriesKind: "model",
-			data: keys.map((seriesKey) => ({ bucket: "2026-09-10T12:00:00.000Z", seriesKey, ...measures })),
+			data: Arr.map(keys, (seriesKey) => ({
+				bucket: "2026-09-10T12:00:00.000Z",
+				seriesKey,
+				...measures,
+			})),
 		}),
 	)
 

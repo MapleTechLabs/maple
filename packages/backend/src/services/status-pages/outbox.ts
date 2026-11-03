@@ -1,7 +1,7 @@
 import * as Orm from "@maple-dev/effect-orm/database"
 import type { MapleDb } from "@maple/db/client"
 import type { OrgId, StatusPageId, UptimeMonitorId } from "@maple/domain/primitives"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 
 // The status-page outbox: a write a visitor could see bumps `status_pages.revision` in its own
 // transaction, and the publisher republishes every page whose `published_revision` lags.
@@ -24,7 +24,7 @@ export const bumpPagesForMonitors = (
 		WHERE org_id = ${orgId}::text AND id IN (
 			SELECT page_id FROM status_page_components
 			WHERE org_id = ${orgId}::text AND monitor_id IN (${Orm.sql.join(
-				monitorIds.map((id) => Orm.sql`${id}::text`),
+				Arr.map(monitorIds, (id) => Orm.sql`${id}::text`),
 				Orm.sql`, `,
 			)})
 		)`)

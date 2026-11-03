@@ -2,7 +2,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { StatusPageCleanups, StatusPages } from "@maple/db/tables"
 import type { StatusPageCleanupRow } from "@maple/db/tables"
 import type { StatusPageId } from "@maple/domain/primitives"
-import { Clock, Context, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { bumpPage } from "./outbox"
@@ -57,7 +57,10 @@ const encodeJson = (value: unknown) =>
 	Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(value).pipe(Effect.orDie)
 
 const toHex = (buffer: ArrayBuffer) =>
-	Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, "0")).join("")
+	Arr.join(
+		Array.from(new Uint8Array(buffer), (byte) => Str.padStart(2, "0")(byte.toString(16))),
+		"",
+	)
 
 /** SHA-256 hex of the text. */
 export const sha256Hex = (text: string) =>

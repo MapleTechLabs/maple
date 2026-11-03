@@ -1,4 +1,4 @@
-import { Option, Result } from "effect"
+import { Option, Result, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { accept, acceptCached } from "@maple/views/data/keyed"
 import { fetchAfterCache } from "./load"
@@ -9,12 +9,24 @@ import { settleRefresh, type UpdateReturn } from "./update"
 
 type FetchMessage = Extract<
 	Message,
-	{ readonly _tag: "SucceededFetchLogs" | "FailedFetchLogs" | "SucceededFetchPatterns" | "FailedFetchPatterns" }
+	{
+		readonly _tag:
+			| "SucceededFetchLogs"
+			| "FailedFetchLogs"
+			| "SucceededFetchPatterns"
+			| "FailedFetchPatterns"
+	}
 >
 
 type FoundMessage = Extract<
 	Message,
-	{ readonly _tag: "FoundCachedLogs" | "FoundCachedPatterns" | "FoundCachedServices" | "FoundCachedSeverities" }
+	{
+		readonly _tag:
+			| "FoundCachedLogs"
+			| "FoundCachedPatterns"
+			| "FoundCachedServices"
+			| "FoundCachedSeverities"
+	}
 >
 
 /** The cache answered first: show it, then fetch the real rows unless it is fresh. */
@@ -29,17 +41,31 @@ export const updateFound = (model: Model, message: FoundMessage, context: PageCo
 		if (model.logs.key !== key) return { model }
 		const logs = acceptCached(model.logs, key, message.cached, cached.isFresh)
 		const shown = step({ ...model, logs, logsUpdatedAtMs: cached.updatedAtMs }, "logs")
-		return withPresence(shown, Option.exists(AsyncData.getData(logs.data), (data) => data.pages.every((page) => page.length === 0)))
+		return withPresence(
+			shown,
+			Option.exists(AsyncData.getData(logs.data), (data) =>
+				Arr.every(data.pages, (page) => page.length === 0),
+			),
+		)
 	}
 	if (message._tag === "FoundCachedPatterns") {
 		const patterns = acceptCached(model.patterns, key, message.cached, cached.isFresh)
-		const patternsUpdatedAtMs = model.patterns.key === key ? cached.updatedAtMs : model.patternsUpdatedAtMs
-		const isEmpty = model.patterns.key === key && Option.exists(AsyncData.getData(patterns.data), (data) => data.patterns.length === 0)
+		const patternsUpdatedAtMs =
+			model.patterns.key === key ? cached.updatedAtMs : model.patternsUpdatedAtMs
+		const isEmpty =
+			model.patterns.key === key &&
+			Option.exists(AsyncData.getData(patterns.data), (data) => data.patterns.length === 0)
 		return withPresence(step({ ...model, patterns, patternsUpdatedAtMs }, "patterns"), isEmpty)
 	}
 	if (message._tag === "FoundCachedServices")
-		return step({ ...model, services: acceptCached(model.services, key, message.cached, cached.isFresh) }, "services")
-	return step({ ...model, severities: acceptCached(model.severities, key, message.cached, cached.isFresh) }, "severities")
+		return step(
+			{ ...model, services: acceptCached(model.services, key, message.cached, cached.isFresh) },
+			"services",
+		)
+	return step(
+		{ ...model, severities: acceptCached(model.severities, key, message.cached, cached.isFresh) },
+		"severities",
+	)
 }
 
 /** An empty list renders `SignalEmptyState`, which reads the shared signal presence. */
@@ -55,11 +81,16 @@ export const updateFetch = (model: Model, message: FetchMessage): UpdateReturn =
 			logs: accept(model.logs, message.key, Result.succeed(message.data), message.fetchedAtMs),
 			logsUpdatedAtMs: isCurrent ? message.fetchedAtMs : model.logsUpdatedAtMs,
 		})
-		const isEmpty = isCurrent && message.data.pages.every((page) => page.length === 0)
+		const isEmpty = isCurrent && Arr.every(message.data.pages, (page) => page.length === 0)
 		return withPresence({ model: next }, isEmpty)
 	}
 	if (message._tag === "FailedFetchLogs")
-		return { model: settleRefresh({ ...model, logs: accept(model.logs, message.key, Result.fail(message.failure)) }) }
+		return {
+			model: settleRefresh({
+				...model,
+				logs: accept(model.logs, message.key, Result.fail(message.failure)),
+			}),
+		}
 	if (message._tag === "SucceededFetchPatterns") {
 		const isCurrent = model.patterns.key === message.key
 		const next = settleRefresh({
@@ -69,5 +100,10 @@ export const updateFetch = (model: Model, message: FetchMessage): UpdateReturn =
 		})
 		return withPresence({ model: next }, isCurrent && message.data.patterns.length === 0)
 	}
-	return { model: settleRefresh({ ...model, patterns: accept(model.patterns, message.key, Result.fail(message.failure)) }) }
+	return {
+		model: settleRefresh({
+			...model,
+			patterns: accept(model.patterns, message.key, Result.fail(message.failure)),
+		}),
+	}
 }

@@ -23,6 +23,7 @@ import {
 import { idsOf, lenses, numberField, textareaField, valueState } from "./view-fields"
 import { RULES_COPY } from "./copy"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `ReviewRulesForm`'s layout, selects, toggles and footer.
 
@@ -31,7 +32,7 @@ type H = HtmlBuilder<Message>
 export type ViewInputs = Readonly<{ isAdmin: boolean }>
 
 const entries = (items: ReadonlyArray<readonly [string, string]>): ReadonlyArray<SelectEntry> =>
-	items.map(([value, label]) => ({ _tag: "Item", item: { value, label } }))
+	Arr.map(items, ([value, label]) => ({ _tag: "Item", item: { value, label } }))
 
 const selectField = (
 	h: H,
@@ -235,7 +236,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 						slug: "severity",
 						label: RULES_COPY.severity.label,
 						className: "w-full",
-						items: [...inheritOption(inheritedSeverity), ...Object.entries(SEVERITY_LABELS)],
+						items: [...inheritOption(inheritedSeverity), ...Rec.toEntries(SEVERITY_LABELS)],
 						description: RULES_COPY.severity.description,
 					}),
 					selectField(h, model, {
@@ -243,7 +244,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 						slug: "feedback",
 						label: RULES_COPY.feedback.label,
 						className: "w-full",
-						items: [...inheritOption(inheritedFeedback), ...Object.entries(FEEDBACK_LABELS)],
+						items: [...inheritOption(inheritedFeedback), ...Rec.toEntries(FEEDBACK_LABELS)],
 						description: RULES_COPY.feedback.description,
 					}),
 					numberField(h, model, {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Redacted } from "effect"
+import { Effect, Layer, Redacted, Record as Rec } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import type { ChatConnectorConfig } from "../../install"
 import { BOT_ID_CONFIG, BOT_TOKEN_CONFIG } from "./api"
@@ -39,7 +39,7 @@ describe("hazel install", () => {
 	it("sends the admin to Hazel's consent page for this bot", () => {
 		const url = new URL(hazelInstallUrl("bot-1", { state: "nonce", redirectUri }))
 		expect(`${url.origin}${url.pathname}`).toBe("https://app.hazel.sh/oauth/bot-install")
-		expect(Object.fromEntries(url.searchParams)).toEqual({
+		expect(Rec.fromEntries(url.searchParams)).toEqual({
 			bot_id: "bot-1",
 			redirect_uri: redirectUri,
 			state: "nonce",

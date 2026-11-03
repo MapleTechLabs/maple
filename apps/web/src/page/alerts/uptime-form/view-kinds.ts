@@ -10,17 +10,18 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { type H, nameSection, section, selectField, textField } from "./view-fields"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The TCP, DNS and heartbeat sections, and the Service and Notify sections every kind shares.
 
 const isRecordType = (value: string): value is typeof RecordType.Type =>
-	RecordType.literals.some((type) => type === value)
+	Arr.some(RecordType.literals, (type) => type === value)
 const isUnit = (value: string): value is typeof EveryUnit.Type =>
-	EveryUnit.literals.some((unit) => unit === value)
+	Arr.some(EveryUnit.literals, (unit) => unit === value)
 const isGraceUnit = (value: string): value is typeof GraceUnit.Type =>
-	GraceUnit.literals.some((unit) => unit === value)
+	Arr.some(GraceUnit.literals, (unit) => unit === value)
 const isMode = (value: string): value is typeof ScheduleMode.Type =>
-	ScheduleMode.literals.some((mode) => mode === value)
+	Arr.some(ScheduleMode.literals, (mode) => mode === value)
 
 export const tcpSection = (h: H, model: Model): ReadonlyArray<Html> => [
 	section(h, "Host and port", undefined, [
@@ -55,7 +56,7 @@ export const dnsSection = (h: H, model: Model): ReadonlyArray<Html> => [
 				label: "Record type",
 				isLabelHidden: true,
 				value: model.form.recordType,
-				entries: RecordType.literals.map((type) => ({ value: type, label: type })),
+				entries: Arr.map(RecordType.literals, (type) => ({ value: type, label: type })),
 				onChange: (value) =>
 					Message.ChangedRecordType({ recordType: isRecordType(value) ? value : "A" }),
 				className: "w-24 shrink-0",
@@ -114,7 +115,7 @@ export const heartbeatSection = (h: H, model: Model): ReadonlyArray<Html> => {
 							label: "Unit",
 							isLabelHidden: true,
 							value: form.everyUnit,
-							entries: EveryUnit.literals.map((unit) => ({ value: unit, label: unit })),
+							entries: Arr.map(EveryUnit.literals, (unit) => ({ value: unit, label: unit })),
 							onChange: (value) =>
 								Message.ChangedEveryUnit({ unit: isUnit(value) ? value : "hours" }),
 							className: "w-32",
@@ -136,7 +137,7 @@ export const heartbeatSection = (h: H, model: Model): ReadonlyArray<Html> => {
 								label: "Time zone",
 								isLabelHidden: true,
 								value: form.cronTimezone,
-								entries: zones.map((zone) => ({ value: zone, label: zone })),
+								entries: Arr.map(zones, (zone) => ({ value: zone, label: zone })),
 								onChange: (value) => Message.ChangedText({ field: "cronTimezone", value }),
 								className: "w-52",
 							}),
@@ -158,7 +159,7 @@ export const heartbeatSection = (h: H, model: Model): ReadonlyArray<Html> => {
 					label: "Grace unit",
 					isLabelHidden: true,
 					value: form.graceUnit,
-					entries: GraceUnit.literals.map((unit) => ({ value: unit, label: unit })),
+					entries: Arr.map(GraceUnit.literals, (unit) => ({ value: unit, label: unit })),
 					onChange: (value) =>
 						Message.ChangedGraceUnit({ unit: isGraceUnit(value) ? value : "minutes" }),
 					className: "w-32",
@@ -181,7 +182,7 @@ export const serviceSection = (h: H, model: Model): Html => {
 			value: current,
 			entries: [
 				{ value: "", label: "No service" },
-				...names.map((name) => ({ value: name, label: name })),
+				...Arr.map(names, (name) => ({ value: name, label: name })),
 			],
 			onChange: (value) => Message.ChangedText({ field: "serviceName", value }),
 			className: "max-w-xs",
@@ -194,14 +195,14 @@ export const notifySection = (h: H, model: Model): Html => {
 	const rows = model.destinations ?? []
 	// `null` until destinations sync: a neutral name, not "unavailable", for the saved ones.
 	const fallback = model.destinations === null ? "Destination" : "Unavailable destination"
-	const selected = model.form.destinationIds.map((id) => ({
+	const selected = Arr.map(model.form.destinationIds, (id) => ({
 		id,
 		name: rows.find((row) => row.id === id)?.name ?? fallback,
 	}))
-	const available = rows.filter((row) => !model.form.destinationIds.some((id) => id === row.id))
+	const available = Arr.filter(rows, (row) => !Arr.some(model.form.destinationIds, (id) => id === row.id))
 	return section(h, "Notify", undefined, [
 		panel(h, { className: "divide-y shadow-none" }, [
-			...selected.map((destination) =>
+			...Arr.map(selected, (destination) =>
 				h.div(
 					[h.Key(destination.id), h.Class("flex items-center gap-2 px-3 py-2")],
 					[
@@ -235,7 +236,7 @@ export const notifySection = (h: H, model: Model): Html => {
 							model: model.destinationMenu,
 							view: MenuView.view,
 							viewInputs: {
-								entries: available.map((row): MenuView.MenuEntry => ({
+								entries: Arr.map(available, (row): MenuView.MenuEntry => ({
 									_tag: "Item",
 									value: row.id,
 									label: row.name,

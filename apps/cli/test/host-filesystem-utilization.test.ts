@@ -3,16 +3,16 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as CH from "@maple/query-engine/ch"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
 import { Chdb } from "@maple/local-server/chdb"
 import { LOCAL_ORG_ID } from "../src/core/executor"
 import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
 import { describeWithChdb } from "./libchdb-test-support"
 
-const iso = (ms: number) => new Date(ms).toISOString().replace("T", " ").replace("Z", "")
+const iso = (ms: number) => Str.replace("Z", "")(Str.replace("T", " ")(new Date(ms).toISOString()))
 const nowMs = Date.now()
-const window = { startTime: iso(nowMs - 3_600_000).slice(0, 19), endTime: iso(nowMs).slice(0, 19) }
+const window = { startTime: Str.slice(0, 19)(iso(nowMs - 3_600_000)), endTime: Str.slice(0, 19)(iso(nowMs)) }
 
 // The hostmetrics receiver emits utilization with no `state`; other shippers split it by state.
 const point = (host: string, mount: string, fsType: string, value: number, state?: string) => {
@@ -42,7 +42,7 @@ describeWithChdb("host filesystem utilization", () => {
 			point("split-host", "/", "ext4", 0.4, "free"),
 		]
 		db.exec(
-			`INSERT INTO metrics_gauge (OrgId, ResourceAttributes, MetricName, Attributes, TimeUnix, Value) VALUES ${rows.join(", ")}`,
+			`INSERT INTO metrics_gauge (OrgId, ResourceAttributes, MetricName, Attributes, TimeUnix, Value) VALUES ${Arr.join(rows, ", ")}`,
 		)
 	})
 
@@ -53,13 +53,13 @@ describeWithChdb("host filesystem utilization", () => {
 
 	const run = async (compiled: Effect.Effect<{ readonly sql: string }, unknown>) => {
 		const { sql } = await Effect.runPromise(compiled)
-		return db.query(sql.replace(/\s+FORMAT\s+\w+\s*$/, "\nFORMAT JSONEachRow"))
+		return db.query(Str.replace(/\s+FORMAT\s+\w+\s*$/, "\nFORMAT JSONEachRow")(sql))
 	}
 	const params = { orgId: LOCAL_ORG_ID, ...window }
 
 	test("host disk % reads stateless points and keeps only the used share of split ones", async () => {
 		const rows = decodeHosts(await run(CH.compile(CH.listHostsQuery({}), params)))
-		const disk = Object.fromEntries(rows.map((row) => [row.hostName, Number(row.diskPct)]))
+		const disk = Rec.fromEntries(Arr.map(rows, (row) => [row.hostName, Number(row.diskPct)]))
 		expect(disk["receiver-host"]).toBeCloseTo(0.42)
 		expect(disk["split-host"]).toBeCloseTo(0.6)
 	})
@@ -69,7 +69,7 @@ describeWithChdb("host filesystem utilization", () => {
 			await run(CH.compile(CH.hostFilesystemsQuery({ hostName: "receiver-host" }), params)),
 		)
 		// The squashfs mount reads 100% and is dropped, as in the headline disk %.
-		expect(rows.map((row) => [row.mountpoint, Number(row.usedMax)])).toEqual([["/", 0.42]])
+		expect(Arr.map(rows, (row) => [row.mountpoint, Number(row.usedMax)])).toEqual([["/", 0.42]])
 		const split = decodeMounts(
 			await run(CH.compile(CH.hostFilesystemsQuery({ hostName: "split-host" }), params)),
 		)
@@ -89,8 +89,8 @@ describeWithChdb("host filesystem utilization", () => {
 				{ ...params, bucketSeconds: 3600 },
 			)
 		const receiver = decodeSeries(await run(series("receiver-host")))
-		expect(receiver.map((row) => [row.attributeValue, Number(row.avgValue)])).toEqual([["/", 0.42]])
+		expect(Arr.map(receiver, (row) => [row.attributeValue, Number(row.avgValue)])).toEqual([["/", 0.42]])
 		const split = decodeSeries(await run(series("split-host")))
-		expect(split.map((row) => Number(row.avgValue))).toEqual([0.6])
+		expect(Arr.map(split, (row) => Number(row.avgValue))).toEqual([0.6])
 	})
 })

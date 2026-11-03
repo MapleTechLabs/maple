@@ -11,7 +11,17 @@ import { AgentPolicy } from "@yielded/agent/agent-policy"
 import * as Subagent from "@yielded/agent/subagent"
 import { SubagentReservationsMemoryLive } from "@yielded/agent/subagent-reservations"
 import * as Output from "@yielded/agent/output"
-import { Clock, Duration, Effect, Layer, Predicate, Schema } from "effect"
+import {
+	Clock,
+	Duration,
+	Effect,
+	Layer,
+	Predicate,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { LanguageModel, Prompt, type Tool, Toolkit } from "effect/ai"
 import type { ResolvedModel } from "../platform/Llm"
 import { MODEL_RETRIES } from "./budgets"
@@ -119,8 +129,12 @@ export const childFailureMessage = (failure: unknown): string =>
 const isWarnedToDeliver = (prompt: Prompt.RawInput): boolean => {
 	const last = Prompt.make(prompt).content.at(-1)
 	if (last === undefined || last.role !== "user") return false
-	return last.content.some(
-		(part) => part.type === "text" && part.text.includes("<run-status>") && part.text.includes("WARNING"),
+	return Arr.some(
+		last.content,
+		(part) =>
+			part.type === "text" &&
+			Str.includes("<run-status>")(part.text) &&
+			Str.includes("WARNING")(part.text),
 	)
 }
 
@@ -186,7 +200,7 @@ export const buildReviewFanout = <Tools extends Record<string, Tool.Any>>(
 		// The default grant is the toolkit's own names; a tool reached only through `run_code` is
 		// refused unless named here as well.
 		grant: Subagent.SubagentGrant.make({
-			allowedToolNames: [...new Set([...Object.keys(toolkit.tools), ...programmatic])],
+			allowedToolNames: [...new Set([...Rec.keys(toolkit.tools), ...programmatic])],
 			maxDepth: 1,
 		}),
 		parameters: ReviewFilesParameters,
@@ -206,7 +220,9 @@ export const buildReviewFanout = <Tools extends Record<string, Tool.Any>>(
 			Effect.sync(() => childFindings?.observe(output)).pipe(
 				Effect.as({
 					findings:
-						output.length > MAX_RESULT_CHARS ? `${output.slice(0, MAX_RESULT_CHARS)}…` : output,
+						output.length > MAX_RESULT_CHARS
+							? `${Str.slice(0, MAX_RESULT_CHARS)(output)}…`
+							: output,
 					budgetExhausted: context.budgetExhausted,
 				}),
 			),
@@ -231,7 +247,7 @@ export const buildReviewFanout = <Tools extends Record<string, Tool.Any>>(
 
 /** The pull request number, whether the model sent `42` or `"42"`. */
 const pullRequestNumber = (raw: number | string): number | undefined => {
-	const text = `${raw}`.trim()
+	const text = Str.trim(`${raw}`)
 	const value = Number(text)
 	return /^[1-9]\d*$/.test(text) && Number.isSafeInteger(value) ? value : undefined
 }
@@ -246,12 +262,15 @@ const groupInput = (parameters: typeof ReviewFilesParameters.Type) => {
 					`review_files takes 1 to ${MAX_GROUP_FILES} paths per group; got ${parameters.paths.length}. Split the group and call it again.`,
 				)
 			: Effect.succeed(
-					[
-						`Pull request #${number} of ${parameters.repository}, head ${parameters.headSha}.`,
-						`Review these files: ${parameters.paths.join(", ")}.`,
-						...(parameters.focus === undefined
-							? []
-							: [`Look in particular for: ${parameters.focus}`]),
-					].join("\n"),
+					Arr.join(
+						[
+							`Pull request #${number} of ${parameters.repository}, head ${parameters.headSha}.`,
+							`Review these files: ${Arr.join(parameters.paths, ", ")}.`,
+							...(parameters.focus === undefined
+								? []
+								: [`Look in particular for: ${parameters.focus}`]),
+						],
+						"\n",
+					),
 				)
 }

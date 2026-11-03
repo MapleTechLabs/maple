@@ -1,4 +1,4 @@
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr } from "effect"
 import {
 	appendTick,
 	classifyTier,
@@ -99,7 +99,7 @@ export const evaluateAlertObservation = (
 			comparator: policy.comparator,
 			reason: "No data in the selected window",
 			derivedFromNoData: true,
-			levels: policy.tiers.map((tier) => ({ severity: tier.severity, status: "breach" as const })),
+			levels: Arr.map(policy.tiers, (tier) => ({ severity: tier.severity, status: "breach" as const })),
 		}
 	}
 
@@ -133,12 +133,12 @@ export const evaluateAlertObservation = (
 		}
 	}
 
-	const levels = policy.tiers.map((tier) => ({
+	const levels = Arr.map(policy.tiers, (tier) => ({
 		severity: tier.severity,
 		status: classifyTier(value, policy.comparator, tier),
 	}))
 	return {
-		status: levels.some((level) => level.status === "breach") ? "breached" : "healthy",
+		status: Arr.some(levels, (level) => level.status === "breach") ? "breached" : "healthy",
 		levels,
 		value,
 		sampleCount,

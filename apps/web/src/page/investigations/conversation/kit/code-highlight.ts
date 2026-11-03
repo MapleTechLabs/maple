@@ -1,5 +1,5 @@
 import type * as Markdown from "@foldkit/markdown"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { highlightTokens } from "@maple/views/lib/highlight"
 
 // A fenced block's tokens. Each token is coloured by its `--sh-<slot>` theme variable (`theme.css`);
@@ -16,14 +16,14 @@ export type HighlightedCode = typeof HighlightedCode.Type
 export const highlightedFences = (
 	blocks: ReadonlyArray<Markdown.Block>,
 ): ReadonlyArray<{ readonly language: string; readonly code: string }> =>
-	blocks.flatMap((block) => {
+	Arr.flatMap(blocks, (block) => {
 		switch (block._tag) {
 			case "CodeBlock": {
 				const language = Option.getOrElse(block.maybeLanguage, () => "")
 				return language === "chart" ? [] : [{ language, code: block.value }]
 			}
 			case "List":
-				return block.items.flatMap((item) => highlightedFences(item.blocks))
+				return Arr.flatMap(block.items, (item) => highlightedFences(item.blocks))
 			case "Blockquote":
 			case "Island":
 				return highlightedFences(block.blocks)

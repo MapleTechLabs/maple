@@ -35,7 +35,7 @@ import {
 	type ListAiSessionsRequest,
 } from "@maple/domain/http"
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
-import { Array as Arr, Effect } from "effect"
+import { Array as Arr, Effect, Record as Rec } from "effect"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 // The warehouse's own tenant type, which both callers satisfy: the HTTP
@@ -230,13 +230,15 @@ export const listAiSessions = Effect.fn("AiSessionReads.list")(function* (
 				return yield* readPage(
 					Integrations.aiSessionPageQuery({
 						...opts,
-						sessionIds: ranked.map((row) => row.sessionId),
+						sessionIds: Arr.map(ranked, (row) => row.sessionId),
 					}),
 					{
 						orgId: tenant.orgId,
 						// Fixed-width literals, so they order as the instants do.
-						fanOutStart: ranked.map((row) => row.agentStart).reduce((a, b) => (a < b ? a : b)),
-						fanOutEnd: ranked.map((row) => row.agentEnd).reduce((a, b) => (a > b ? a : b)),
+						fanOutStart: Arr.map(ranked, (row) => row.agentStart).reduce((a, b) =>
+							a < b ? a : b,
+						),
+						fanOutEnd: Arr.map(ranked, (row) => row.agentEnd).reduce((a, b) => (a > b ? a : b)),
 						endTime: payload.endTime,
 					},
 				)
@@ -251,7 +253,7 @@ export const listAiSessions = Effect.fn("AiSessionReads.list")(function* (
 	// The page's order is the order shown. The row's bounds are the
 	// agent spans' extent, which the details replace with the true one.
 	return new ListAiSessionsResponse({
-		data: page.map((row) => ({
+		data: Arr.map(page, (row) => ({
 			sessionId: row.sessionId,
 			vendorId: row.vendorId,
 			vendorVersion: row.vendorVersion,
@@ -303,8 +305,9 @@ export const readAiSessionDetails = Effect.fn("AiSessionReads.details")(function
 		...countedFilters(payload),
 		sessionIds: payload.sessionIds,
 	})
-	const sliced = yield* Effect.all(
-		slices.map((slice) =>
+	const sliced = yield* Effect.forEach(
+		slices,
+		(slice) =>
 			warehouse.compiledQuery(
 				tenant,
 				CH.compile(query, {
@@ -315,7 +318,6 @@ export const readAiSessionDetails = Effect.fn("AiSessionReads.details")(function
 				}),
 				{ profile: "list", context: "aiSessionsDetails" },
 			),
-		),
 		{ concurrency: DETAILS_SLICE_CONCURRENCY },
 	)
 	const rows = Integrations.mergeAiSessionDetails(sliced)
@@ -344,7 +346,10 @@ export const readAiSessionFacets = Effect.fn("AiSessionReads.facets")(function* 
 	})
 	// One UNION ALL result carrying every dimension, split by facetType.
 	const pick = (facetType: Integrations.AiSessionFacetType) =>
-		rows.filter((row) => row.facetType === facetType).map((row) => ({ name: row.name, count: row.count }))
+		Arr.map(
+			Arr.filter(rows, (row) => row.facetType === facetType),
+			(row) => ({ name: row.name, count: row.count }),
+		)
 	return new ListAiSessionsFacetsResponse({
 		vendors: pick("vendor"),
 		services: pick("service"),
@@ -377,9 +382,10 @@ export const readAiSessionDistributions = Effect.fn("AiSessionReads.distribution
 		const row = rows.find((candidate) => candidate.measure === measure)
 		if (row === undefined) return { buckets: [], p50: 0, p95: 0 }
 		return {
-			buckets: Object.entries(row.buckets)
-				.map(([floor, count]) => ({ floor: Number(floor), count }))
-				.sort((a, b) => a.floor - b.floor),
+			buckets: Arr.map(Rec.toEntries(row.buckets), ([floor, count]) => ({
+				floor: Number(floor),
+				count,
+			})).sort((a, b) => a.floor - b.floor),
 			p50: row.p50,
 			p95: row.p95,
 		}
@@ -650,7 +656,7 @@ export const readAiToolsBreakdowns = Effect.fn("AiSessionReads.toolsBreakdowns")
 		),
 		{ profile: "aggregation", context: "aiToolsBreakdowns" },
 	)
-	return new AiToolsBreakdownsResponse({ tools: rows.map(breakdownItem) })
+	return new AiToolsBreakdownsResponse({ tools: Arr.map(rows, breakdownItem) })
 })
 
 export const readAiToolErrors = Effect.fn("AiSessionReads.toolErrors")(function* (
@@ -680,13 +686,13 @@ export const readAiToolErrors = Effect.fn("AiSessionReads.toolErrors")(function*
 		{ profile: "aggregation", context: "aiToolsErrors" },
 	)
 	return new AiToolErrorsResponse({
-		data: rows.map((row) => ({
+		data: Arr.map(rows, (row) => ({
 			...row,
 			// A map on the wire, a series on the page: the ISO buckets
 			// are fixed width, so they sort as the instants do.
-			trend: Object.entries(row.trend)
-				.map(([bucket, calls]) => ({ bucket, calls }))
-				.sort((a, b) => (a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : 0)),
+			trend: Arr.map(Rec.toEntries(row.trend), ([bucket, calls]) => ({ bucket, calls })).sort((a, b) =>
+				a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : 0,
+			),
 		})),
 	})
 })
@@ -800,13 +806,14 @@ export const readAiToolErrorSamples = Effect.fn("AiSessionReads.toolErrorSamples
 				{ profile: "list", context: "aiToolsErrorPayloads" },
 			)
 	const payloadBySpan = new Map(
-		payloads.map(
+		Arr.map(
+			payloads,
 			(row) => [`${row.traceId}:${row.spanId}`, Integrations.aiToolErrorPayload(row)] as const,
 		),
 	)
 	return new AiToolErrorSamplesResponse({
 		...(nextCursor !== undefined && { nextCursor }),
-		occurrences: occurrences.map((row) => {
+		occurrences: Arr.map(occurrences, (row) => {
 			// A call whose span the payload read did not return — raw
 			// retention is shorter than nothing here, but a span that
 			// was never exported is real — still belongs on the list:
@@ -960,7 +967,7 @@ const foldSummary = (
 	const kept = rows.slice(0, AI_SESSION_SUMMARY_MAX_TURNS)
 	const usage = usageOf(totals)
 
-	const turns: AiSessionTurnSummary[] = kept.map((row) => {
+	const turns: AiSessionTurnSummary[] = Arr.map(kept, (row) => {
 		const turnUsage = usageOf(row)
 		return {
 			turnKey: row.turnKey,

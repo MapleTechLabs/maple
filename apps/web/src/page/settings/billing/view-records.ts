@@ -22,6 +22,7 @@ import { taxIdValue, view as detailsDialogView } from "./details/view"
 import { Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -32,7 +33,7 @@ const RECENT_INVOICES = 4
 
 /** Stripe invoice statuses as badges; an unknown status shows its raw text. */
 const statusBadge = (status: string) => {
-	switch (status.toLowerCase()) {
+	switch (Str.toLowerCase(status)) {
 		case "paid":
 			return { label: "Paid", variant: "ok" } as const
 		case "open":
@@ -51,7 +52,7 @@ const statusBadge = (status: string) => {
 
 /** Stripe statuses that still want paying: open, or overdue enough to be marked uncollectible. */
 const isUnpaid = (invoice: BillingInvoice) =>
-	["open", "past_due", "uncollectible"].includes(invoice.status.toLowerCase())
+	["open", "past_due", "uncollectible"].includes(Str.toLowerCase(invoice.status))
 
 const hostedUrl = (invoice: BillingInvoice): string | null =>
 	invoice.hostedInvoiceUrl === undefined ||
@@ -64,7 +65,12 @@ const externalLink = (h: H, href: string) => [h.Href(href), h.Rel("noopener nore
 
 const planLabel = (invoice: BillingInvoice, catalog: ReadonlyArray<CatalogPlan>): string => {
 	const ids = invoice.planIds ?? []
-	return ids.length === 0 ? EMPTY_VALUE : ids.map((id) => planDisplayName(id, catalog)).join(" + ")
+	return ids.length === 0
+		? EMPTY_VALUE
+		: Arr.join(
+				Arr.map(ids, (id) => planDisplayName(id, catalog)),
+				" + ",
+			)
 }
 
 const INVOICE_COLUMNS = [
@@ -105,7 +111,9 @@ const invoiceRow = (
 							h.a(
 								[
 									h.AriaLabel(`${unpaid ? "Pay" : "View"} invoice from ${date}`),
-									h.Class("text-primary text-xs font-medium hover:underline active:underline"),
+									h.Class(
+										"text-primary text-xs font-medium hover:underline active:underline",
+									),
 									...externalLink(h, url),
 								],
 								[unpaid ? "Pay" : "View"],
@@ -143,7 +151,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 	)
 	// Unpaid invoices always stay in the compact list, however old.
 	const visible = model.isAdmin
-		? invoices.filter((invoice, index) => index < RECENT_INVOICES || isUnpaid(invoice))
+		? Arr.filter(invoices, (invoice, index) => index < RECENT_INVOICES || isUnpaid(invoice))
 		: invoices
 	const body = AsyncData.matchDataSplitEmpty(model.invoices, {
 		onIdle: () => invoicesSkeleton(h),
@@ -158,7 +166,9 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 						title: "Couldn't load invoices",
 						onRetry: Message.ClickedRetryInvoices(),
 					}),
-					typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" },
+					typography(
+						h,
+						{ size: "xs", tone: "muted", as: "p", className: "font-prose" },
 						model.isAdmin
 							? [
 									"You can still view them in the ",
@@ -191,12 +201,16 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 							tableHeader(h, [
 								tableRow(
 									h,
-									INVOICE_COLUMNS.map((column) =>
+									Arr.map(INVOICE_COLUMNS, (column) =>
 										tableHead(
 											h,
 											[column.label],
 											cn(
-												typographyClass({ size: "2xs", tone: "muted", weight: "medium" }),
+												typographyClass({
+													size: "2xs",
+													tone: "muted",
+													weight: "medium",
+												}),
 												column.className,
 											),
 											[h.Key(column.label)],
@@ -206,7 +220,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 							]),
 							tableBody(
 								h,
-								visible.map((invoice, index) =>
+								Arr.map(visible, (invoice, index) =>
 									invoiceRow(h, invoice, timeZone, catalog, index),
 								),
 							),
@@ -251,7 +265,7 @@ const detailsSkeleton = (h: H): Html =>
 	panel(
 		h,
 		{},
-		[0, 1, 2].map((index) =>
+		Arr.map([0, 1, 2], (index) =>
 			h.div(
 				[h.Key(String(index)), h.Class("flex gap-8 border-b px-4 py-3 last:border-b-0")],
 				[skeleton(h, "h-3.5 w-16"), skeleton(h, "h-3.5 w-56")],
@@ -268,11 +282,9 @@ export const detailsSection = (h: H, model: Model): Html => {
 		onFailure: (failure) =>
 			failure.isNotConfigured
 				? panel(h, { padded: true }, [
-						typography(h, { size: "sm", tone: "muted", as: "p", className: "font-prose" },
-							[
-								"Billing details aren't set up for this deployment. Company name, address and tax IDs are managed in the billing portal instead.",
-							],
-						),
+						typography(h, { size: "sm", tone: "muted", as: "p", className: "font-prose" }, [
+							"Billing details aren't set up for this deployment. Company name, address and tax IDs are managed in the billing portal instead.",
+						]),
 					])
 				: errorState(h, {
 						variant: "row",
@@ -282,7 +294,7 @@ export const detailsSection = (h: H, model: Model): Html => {
 						onRetry: Message.ClickedRetryProfile(),
 					}),
 		onData: (details) => {
-			const address = formatAddressLines(details.address).join(", ")
+			const address = Arr.join(formatAddressLines(details.address), ", ")
 			return panel(h, {}, [
 				keyValueList(
 					h,
@@ -304,8 +316,10 @@ export const detailsSection = (h: H, model: Model): Html => {
 											? "None on file"
 											: "Available once your organization has a plan",
 									)
-								: vstack(h, { gap: "1", as: "span" },
-										details.taxIds.map((taxId) => taxIdValue(h, taxId)),
+								: vstack(
+										h,
+										{ gap: "1", as: "span" },
+										Arr.map(details.taxIds, (taxId) => taxIdValue(h, taxId)),
 									),
 						]),
 					],
@@ -352,17 +366,18 @@ export const detailsSection = (h: H, model: Model): Html => {
 
 /** Above everything else on the tab: what is owed and a direct way to pay it on Stripe's invoice page. */
 export const unpaidInvoicesNotice = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
-	const unpaid = AsyncData.getOrElse(model.invoices, () => [])
-		.filter(isUnpaid)
-		.toSorted((a, b) => a.createdAt - b.createdAt)
+	const unpaid = Arr.filter(
+		AsyncData.getOrElse(model.invoices, () => []),
+		isUnpaid,
+	).toSorted((a, b) => a.createdAt - b.createdAt)
 	const oldest = unpaid[0]
 	if (oldest === undefined) return []
-	const overdue = unpaid.some((invoice) => invoice.status.toLowerCase() !== "open")
-	const currencies = new Set(unpaid.map((invoice) => invoice.currency.toLowerCase()))
+	const overdue = Arr.some(unpaid, (invoice) => Str.toLowerCase(invoice.status) !== "open")
+	const currencies = new Set(Arr.map(unpaid, (invoice) => Str.toLowerCase(invoice.currency)))
 	const amount =
 		currencies.size === 1
 			? formatCurrency(
-					unpaid.reduce((sum, invoice) => sum + invoice.total, 0),
+					Arr.reduce(unpaid, 0, (sum, invoice) => sum + invoice.total),
 					oldest.currency,
 				)
 			: null

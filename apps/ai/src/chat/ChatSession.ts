@@ -34,7 +34,7 @@
  * for the route graph.
  */
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, FileSystem, Option, Path, Schema } from "effect"
+import { Effect, FileSystem, Option, Path, Schema, Array as Arr, Record as Rec } from "effect"
 import {
 	ChatTurnOrigin as ChatTurnOriginSchema,
 	ChatTurnTenant,
@@ -107,13 +107,13 @@ interface ColumnRow extends Record<string, SqlStorageValue> {
  */
 export const addMissingSessionColumns = (sql: SqlStorage): void => {
 	const present = new Set(
-		sql
-			.exec<ColumnRow>("SELECT name FROM pragma_table_info('session')")
-			.toArray()
-			.map((row) => row.name),
+		Arr.map(
+			sql.exec<ColumnRow>("SELECT name FROM pragma_table_info('session')").toArray(),
+			(row) => row.name,
+		),
 	)
 	if (present.size === 0) return
-	for (const [column, type] of Object.entries(LATE_SESSION_COLUMNS)) {
+	for (const [column, type] of Rec.toEntries(LATE_SESSION_COLUMNS)) {
 		if (!present.has(column)) sql.exec(`ALTER TABLE session ADD COLUMN ${column} ${type}`)
 	}
 }
@@ -402,7 +402,7 @@ export class ChatSession {
 				cursor,
 			)
 			.toArray()
-		return rows.map((row) => decodeChatEventPayload(row.payload, row.seq))
+		return Arr.map(rows, (row) => decodeChatEventPayload(row.payload, row.seq))
 	}
 
 	/**
@@ -446,7 +446,7 @@ export class ChatSession {
 				// is tagged with `task` and merely closes its card — treating it as terminal would
 				// cut the connection the moment the first delegated search finished, and the rest of
 				// the parent's answer would only arrive on the client's next reconnect.
-				if (events.some((event) => event.type === "turn-end" && event.task === undefined)) return
+				if (Arr.some(events, (event) => event.type === "turn-end" && event.task === undefined)) return
 				// The idle budget is spent on silence only: a batch that went out resets it, so a
 				// long turn streams over one connection instead of being recycled mid-answer.
 				if (!(yield* waitForAppend(seen, SUBSCRIBE_IDLE_MS))) return

@@ -8,6 +8,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "./message"
 import type { LogPattern } from "./model"
+import { Array as Arr, String as Str } from "effect"
 
 // The Logs page's patterns list.
 
@@ -24,7 +25,7 @@ const patternRow = (h: HtmlBuilder<Message>, pattern: LogPattern, share: number)
 				h,
 				{
 					onClick: Message.ClickedPattern({ pattern }),
-					label: `${pattern.count} logs: ${pattern.template.slice(0, 120)}`,
+					label: `${pattern.count} logs: ${Str.slice(0, 120)(pattern.template)}`,
 					className: cn(
 						hstackClass({ gap: "4" }),
 						"w-full px-4 py-2 text-left hover:bg-muted/50 active:bg-muted/50 focus-visible:bg-muted/50",
@@ -47,7 +48,7 @@ const patternRow = (h: HtmlBuilder<Message>, pattern: LogPattern, share: number)
 								truncate: true,
 								attributes: [h.Title(pattern.template)],
 							},
-							splitTemplate(pattern.template).map((segment) =>
+							Arr.map(splitTemplate(pattern.template), (segment) =>
 								segment.variable
 									? h.span([h.Class("text-muted-foreground/50")], [segment.text])
 									: h.span([], [segment.text]),
@@ -64,7 +65,7 @@ const patternRow = (h: HtmlBuilder<Message>, pattern: LogPattern, share: number)
 								hstack(
 									h,
 									{ as: "span", gap: "2", className: "shrink-0" },
-									severityBreakdown(pattern.severityCounts).map((entry) =>
+									Arr.map(severityBreakdown(pattern.severityCounts), (entry) =>
 										typography(
 											h,
 											{
@@ -82,13 +83,18 @@ const patternRow = (h: HtmlBuilder<Message>, pattern: LogPattern, share: number)
 								h.span(
 									[
 										h.Class("hidden shrink-0 truncate lg:inline"),
-										h.Title(services.map((s) => `${s.name} (${s.count})`).join(", ")),
+										h.Title(
+											Arr.join(
+												Arr.map(services, (s) => `${s.name} (${s.count})`),
+												", ",
+											),
+										),
 									],
 									[
-										services
-											.slice(0, VISIBLE_SERVICES)
-											.map((s) => s.name)
-											.join(", "),
+										Arr.join(
+											Arr.map(services.slice(0, VISIBLE_SERVICES), (s) => s.name),
+											", ",
+										),
 										services.length > VISIBLE_SERVICES
 											? ` +${services.length - VISIBLE_SERVICES}`
 											: "",
@@ -136,7 +142,7 @@ export const patternsList = (
 ): Html =>
 	h.ul(
 		[h.AriaLabel("Log patterns"), h.Class(cn("h-full overflow-auto", refreshingClass(options.isDimmed)))],
-		options.patterns.map((pattern) =>
+		Arr.map(options.patterns, (pattern) =>
 			patternRow(h, pattern, options.totalSampled > 0 ? pattern.count / options.totalSampled : 0),
 		),
 	)

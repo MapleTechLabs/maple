@@ -1,6 +1,6 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
@@ -61,28 +61,26 @@ const kindPicker = (h: H, model: Model): Html =>
 		[h.AriaLabel("Type"), h.Class("grid gap-x-8 gap-y-2 px-4 py-4 sm:grid-cols-[136px_minmax(0,1fr)]")],
 		[
 			heading(h, { level: 3, variant: "subsection", className: "sm:pt-1.5" }, ["Type"]),
-			vstack(h, { gap: "2", shrink: true },
-				[
-					segmentedSelect(h, {
-						ariaLabel: "Monitor type",
-						size: "sm",
-						// Four labelled kinds outgrow a phone column, so the track wraps like the old picker.
-						className: "w-fit flex-wrap",
-						value: model.form.kind,
-						onChange: (kind) => Message.PickedKind({ kind }),
-						// Editing keeps the kind: the others stay visible but can't be picked.
-						options: KINDS.map((option) => ({
-							value: option.kind,
-							label: option.label,
-							icon: icon(h, option.icon, { size: 14 }),
-							isDisabled: model.editingId !== null && option.kind !== model.form.kind,
-						})),
-					}),
-					typography(h, { size: "xs", tone: "muted", as: "p" },
-						[KINDS.find((option) => option.kind === model.form.kind)?.description ?? ""],
-					),
-				],
-			),
+			vstack(h, { gap: "2", shrink: true }, [
+				segmentedSelect(h, {
+					ariaLabel: "Monitor type",
+					size: "sm",
+					// Four labelled kinds outgrow a phone column, so the track wraps like the old picker.
+					className: "w-fit flex-wrap",
+					value: model.form.kind,
+					onChange: (kind) => Message.PickedKind({ kind }),
+					// Editing keeps the kind: the others stay visible but can't be picked.
+					options: Arr.map(KINDS, (option) => ({
+						value: option.kind,
+						label: option.label,
+						icon: icon(h, option.icon, { size: 14 }),
+						isDisabled: model.editingId !== null && option.kind !== model.form.kind,
+					})),
+				}),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					KINDS.find((option) => option.kind === model.form.kind)?.description ?? "",
+				]),
+			]),
 		],
 	)
 
@@ -108,13 +106,18 @@ const describeAssertion = (row: AssertionDraft): string => {
 
 const testResultBody = (h: H, model: Model): ReadonlyArray<Html> => {
 	if (model.testFailure !== null)
-		return [h.p([h.Role("alert"), h.Class("text-sm text-destructive-foreground")], [model.testFailure.message])]
+		return [
+			h.p(
+				[h.Role("alert"), h.Class("text-sm text-destructive-foreground")],
+				[model.testFailure.message],
+			),
+		]
 	const result = model.testResult
 	if (result === null)
 		return [
-			typography(h, { size: "sm", tone: "muted", as: "p" },
-				["Run the check once from Ashburn, US before you save it."],
-			),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [
+				"Run the check once from Ashburn, US before you save it.",
+			]),
 		]
 	return [
 		h.p(
@@ -128,15 +131,15 @@ const testResultBody = (h: H, model: Model): ReadonlyArray<Html> => {
 			],
 		),
 		...(result.error === null ? [] : [h.p([h.Class(cn("text-sm", TONE_TEXT.crit))], [result.error])]),
-		vstack(h, { gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) },
+		vstack(
+			h,
+			{ gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) },
 			result.ok
-				? model.form.assertions.map((row) =>
-						hstack(h, { gap: "2", as: "li", attributes: [h.Key(String(row.id))] },
-							[
-								icon(h, "CheckIcon", { className: "text-severity-info" }),
-								describeAssertion(row),
-							],
-						),
+				? Arr.map(model.form.assertions, (row) =>
+						hstack(h, { gap: "2", as: "li", attributes: [h.Key(String(row.id))] }, [
+							icon(h, "CheckIcon", { className: "text-severity-info" }),
+							describeAssertion(row),
+						]),
 					)
 				: [
 						h.li(
@@ -170,7 +173,7 @@ const testPanel = (h: H, model: Model): Html =>
 					size: "sm",
 					variant: "outline",
 					isLoading: model.isTesting,
-					isDisabled: model.form.url.trim() === "",
+					isDisabled: Str.trim(model.form.url) === "",
 					attributes: [h.OnClick(Message.ClickedTest())],
 				},
 				[icon(h, "ArrowRotateClockwiseIcon"), model.testResult === null ? "Run test" : "Run again"],
@@ -197,15 +200,28 @@ const actionBar = (h: H, model: Model, widthClass: string): Html => {
 				[h.Class(cn(hstackClass({ gap: "4", justify: "between" }), widthClass))],
 				[
 					issues.length === 0
-						? hstack(h, { gap: "1.5", as: "span", className: typographyClass({ size: "xs", className: "text-severity-info" }) },
+						? hstack(
+								h,
+								{
+									gap: "1.5",
+									as: "span",
+									className: typographyClass({
+										size: "xs",
+										className: "text-severity-info",
+									}),
+								},
 								[icon(h, "CheckIcon", { size: 14 }), "Ready to save"],
 							)
 						: h.p(
 								[
 									h.AriaLabel("Fix before saving"),
-									h.Title(issues.join(" ")),
+									h.Title(Arr.join(issues, " ")),
 									h.Class(
-										hstackClass({ gap: "1.5", shrink: true, className: typographyClass({ size: "xs", tone: "muted" }) }),
+										hstackClass({
+											gap: "1.5",
+											shrink: true,
+											className: typographyClass({ size: "xs", tone: "muted" }),
+										}),
 									),
 								],
 								[
@@ -217,7 +233,7 @@ const actionBar = (h: H, model: Model, widthClass: string): Html => {
 										[h.Class("truncate")],
 										[
 											"Fix before saving: ",
-											...issues.flatMap((issue, index) => [
+											...Arr.flatMap(issues, (issue, index) => [
 												...(index === 0 ? [] : [" "]),
 												h.span([h.Key(issue), h.Class("text-foreground")], [issue]),
 											]),
@@ -225,31 +241,27 @@ const actionBar = (h: H, model: Model, widthClass: string): Html => {
 									),
 								],
 							),
-					hstack(h, { gap: "2", className: "shrink-0" },
-						[
-							linkButton(
-								h,
-								{
-									variant: "outline",
-									href:
-										model.editingId === null
-											? uptimeTabHref()
-											: monitorHref(model.editingId),
-								},
-								["Cancel"],
-							),
-							button(
-								h,
-								{
-									// Until the session says this is an admin, a click would be dropped by `save`.
-									isDisabled: issues.length > 0 || !model.isAdmin,
-									isLoading: model.isSaving,
-									attributes: [h.OnClick(Message.ClickedSave())],
-								},
-								[isEdit ? "Save changes" : "Create monitor"],
-							),
-						],
-					),
+					hstack(h, { gap: "2", className: "shrink-0" }, [
+						linkButton(
+							h,
+							{
+								variant: "outline",
+								href:
+									model.editingId === null ? uptimeTabHref() : monitorHref(model.editingId),
+							},
+							["Cancel"],
+						),
+						button(
+							h,
+							{
+								// Until the session says this is an admin, a click would be dropped by `save`.
+								isDisabled: issues.length > 0 || !model.isAdmin,
+								isLoading: model.isSaving,
+								attributes: [h.OnClick(Message.ClickedSave())],
+							},
+							[isEdit ? "Save changes" : "Create monitor"],
+						),
+					]),
 				],
 			),
 		],
@@ -265,7 +277,7 @@ const hasSavedRequestExtras = (model: Model): boolean =>
 		onNone: () => false,
 		onSome: (monitor) =>
 			monitor.config.type === "http" &&
-			(Object.keys(monitor.config.headers ?? {}).length > 0 || (monitor.config.body ?? "") !== ""),
+			(Rec.keys(monitor.config.headers ?? {}).length > 0 || (monitor.config.body ?? "") !== ""),
 	})
 
 const kindSections = (h: H, model: Model): ReadonlyArray<Html> => {

@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
@@ -13,7 +13,7 @@ export const MCP_CLIENTS: ReadonlyArray<{ readonly id: McpClient; readonly label
 ]
 
 export const isMcpClient = (value: unknown): value is McpClient =>
-	MCP_CLIENTS.some((client) => client.id === value)
+	Arr.some(MCP_CLIENTS, (client) => client.id === value)
 
 const authHeaders = (apiKey: string | undefined) =>
 	apiKey ? { headers: { Authorization: `Bearer ${apiKey}` } } : undefined

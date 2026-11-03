@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 import { serviceApiTimeseriesQuery, serviceApiTotalsQuery } from "./service-api"
+import { String as Str } from "effect"
 
 const params = {
 	orgId: OrgId.make("org_1"),
@@ -9,7 +10,7 @@ const params = {
 	endTime: "2024-01-02 00:20:00",
 }
 
-const orgScopes = (sql: string) => sql.split("OrgId = 'org_1'").length - 1
+const orgScopes = (sql: string) => Str.split("OrgId = 'org_1'")(sql).length - 1
 
 describe("serviceApiTotalsQuery", () => {
 	it("splices raw edges, minutely edges and the hourly interior", () => {

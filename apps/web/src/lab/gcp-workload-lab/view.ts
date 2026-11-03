@@ -9,6 +9,7 @@ import type * as Shell from "../../shell"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { type LabPage, Message, type Model, SPAN_STATES } from "./model"
 import { workloadOf } from "./update"
+import { Array as Arr } from "effect"
 
 /** `WorkloadPage`'s props, read off the fixture. */
 const dataOf = (page: LabPage): PageData => {
@@ -79,7 +80,7 @@ export const overlay = (model: Model, h: HtmlBuilder<Message>): Html =>
 			segmentedSelect(h, {
 				size: "xs",
 				ariaLabel: "Lab page",
-				options: PAGES.map((value) => ({ value, label: PAGE_LABEL[value] })),
+				options: Arr.map(PAGES, (value) => ({ value, label: PAGE_LABEL[value] })),
 				value: model.page,
 				onChange: (page) => Message.ClickedLabPage({ page }),
 			}),
@@ -88,7 +89,7 @@ export const overlay = (model: Model, h: HtmlBuilder<Message>): Html =>
 						segmentedSelect(h, {
 							size: "xs",
 							ariaLabel: "Statement spans",
-							options: SPAN_STATES.map((value) => ({ value, label: `spans: ${value}` })),
+							options: Arr.map(SPAN_STATES, (value) => ({ value, label: `spans: ${value}` })),
 							value: model.spanState,
 							onChange: (state) => Message.ClickedSpanState({ state }),
 						}),

@@ -10,6 +10,7 @@ import { formatDurationAtStep } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 
 import type { IdleGap } from "@maple/agent-sessions"
+import { Array as Arr } from "effect"
 
 export interface AxisTick {
 	/** Position along the axis, 0…1. */
@@ -59,7 +60,7 @@ export function buildSessionAxis(options: {
 }): SessionAxis {
 	const { startMs, endMs } = options
 	const collapsedGaps = [...options.collapsedGaps].sort((a, b) => a.startMs - b.startMs)
-	const removedMs = collapsedGaps.reduce((total, gap) => total + gap.durationMs, 0)
+	const removedMs = Arr.reduce(collapsedGaps, 0, (total, gap) => total + gap.durationMs)
 	// A one-millisecond floor rather than a guard at every call site: a session
 	// with no measurable duration would otherwise make every fraction NaN.
 	const totalMs = Math.max(1, endMs - startMs - removedMs)

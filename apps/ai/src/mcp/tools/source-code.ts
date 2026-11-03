@@ -1,4 +1,4 @@
-import { Array as Arr, Effect, Schema } from "effect"
+import { Array as Arr, Effect, Schema, String as Str } from "effect"
 import {
 	ListSourceRepositoriesOutput,
 	ReadSourceFileOutput,
@@ -22,7 +22,7 @@ const HINTS = { readOnly: true, openWorld: true } as const
 const AGENT = "agent" as const
 
 const unsafePath = (path: string): boolean =>
-	path.startsWith("/") || path.split("/").some((segment) => segment === "..")
+	Str.startsWith("/")(path) || Arr.some(Str.split("/")(path), (segment) => segment === "..")
 
 const REPOSITORY = P.text("Connected repository in owner/name form")
 
@@ -34,23 +34,23 @@ const IGNORED_PUNCTUATION = /[.,:;/\\`'"=*!?#$&+^|~<>(){}[\]@]/
 
 /** GitHub's `path:` qualifier names a directory; a file path splits into `path:` plus `filename:`. */
 export const splitSearchPath = (raw: string): { readonly dir?: string; readonly filename?: string } => {
-	const path = raw.trim().replace(/^\.\//, "").replace(/\/+$/, "")
+	const path = Str.replace(/\/+$/, "")(Str.replace(/^\.\//, "")(Str.trim(raw)))
 	const slash = path.lastIndexOf("/")
-	const base = path.slice(slash + 1)
-	if (!base.includes(".")) return path === "" ? {} : { dir: path }
-	return slash === -1 ? { filename: base } : { dir: path.slice(0, slash), filename: base }
+	const base = Str.slice(slash + 1)(path)
+	if (!Str.includes(".")(base)) return path === "" ? {} : { dir: path }
+	return slash === -1 ? { filename: base } : { dir: Str.slice(0, slash)(path), filename: base }
 }
 
 /** 1-based lines holding the query, else the first snippet line; at most a few. */
 export const matchLines = (content: string, query: string, snippet: string | undefined): Array<number> => {
-	const lines = content.split("\n")
+	const lines = Str.split("\n")(content)
 	const find = (needle: string) =>
-		lines.flatMap((line, i) => (line.toLowerCase().includes(needle) ? [i + 1] : []))
-	const byQuery = find(query.toLowerCase())
+		Arr.flatMap(lines, (line, i) => (Str.includes(needle)(Str.toLowerCase(line)) ? [i + 1] : []))
+	const byQuery = find(Str.toLowerCase(query))
 	if (byQuery.length > 0) return byQuery.slice(0, MAX_LINES_PER_MATCH)
 	const anchor = snippet
 		?.split("\n")
-		.find((line) => line.trim().length > 0)
+		.find((line) => Str.trim(line).length > 0)
 		?.trim()
 		.toLowerCase()
 	return anchor === undefined ? [] : find(anchor).slice(0, MAX_LINES_PER_MATCH)
@@ -74,7 +74,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 				.listRepositories(tenant.orgId)
 				.pipe(Effect.mapError(fromVcsLookupError("list_source_repositories")))
 			return {
-				repositories: repositories.map((repo) => ({
+				repositories: Arr.map(repositories, (repo) => ({
 					provider: repo.provider,
 					fullName: repo.fullName,
 					trackedBranch: repo.trackedBranch,
@@ -106,7 +106,8 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 					? []
 					: [
 							doc.list(
-								output.repositories.map(
+								Arr.map(
+									output.repositories,
 									(repo) =>
 										`${repo.fullName}: tracked ref \`${repo.trackedBranch}\`${repo.isArchived ? " (archived)" : ""}${repo.syncError === undefined ? "" : `. NOT SYNCING: ${repo.syncError}. Reads of it may fail; grant the GitHub App access to it again.`}`,
 								),
@@ -131,7 +132,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 		audience: AGENT,
 		phrases: ["Searching the code", "Searching source code"],
 		handler: Effect.fn("McpTool.searchSourceCode")(function* ({ repository, query, path, limit }) {
-			const trimmed = query.trim()
+			const trimmed = Str.trim(query)
 			if (!trimmed || trimmed.length > 256 || /(?:^|\s)(?:repo|org|user):/i.test(trimmed)) {
 				return yield* new McpInvalidInputError({
 					message:
@@ -147,7 +148,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 			}
 			const tenant = yield* CurrentMcpTenant
 			const source = yield* VcsSourceService
-			const repo = repository.trim()
+			const repo = Str.trim(repository)
 			const { dir, filename } = path === undefined ? {} : splitSearchPath(path)
 			const matches = yield* source
 				.searchCode(
@@ -174,15 +175,15 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 				repository: repo,
 				query: trimmed,
 				...(path === undefined ? undefined : { path }),
-				matches: matches.map((match, i) => {
+				matches: Arr.map(matches, (match, i) => {
 					const found = lines[i] ?? []
 					return {
 						path: match.path,
 						sha: match.sha,
 						htmlUrl: match.htmlUrl,
-						snippets: match.snippets
-							.slice(0, 2)
-							.map((snippet) => snippet.slice(0, MAX_SNIPPET_CHARS)),
+						snippets: Arr.map(match.snippets.slice(0, 2), (snippet) =>
+							Str.slice(0, MAX_SNIPPET_CHARS)(snippet),
+						),
 						...(found.length === 0 ? undefined : { lines: found }),
 					}
 				}),
@@ -214,16 +215,16 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 						},
 					}
 				: undefined),
-			blocks: output.matches.flatMap((match): Array<DocBlock> => [
+			blocks: Arr.flatMap(output.matches, (match): Array<DocBlock> => [
 				doc.heading(match.path),
 				doc.fields([
 					["Blob", `\`${match.sha}\``],
 					["URL", match.htmlUrl],
 					["Lines", match.lines?.join(", ")],
 				]),
-				...match.snippets.map((snippet) => doc.code("", snippet)),
+				...Arr.map(match.snippets, (snippet) => doc.code("", snippet)),
 			]),
-			next: output.matches.slice(0, 3).map((match) =>
+			next: Arr.map(output.matches.slice(0, 3), (match) =>
 				doc.next(
 					"read_source_file",
 					{
@@ -264,7 +265,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 			start_line,
 			end_line,
 		}) {
-			const filePath = path.trim()
+			const filePath = Str.trim(path)
 			if (!filePath || unsafePath(filePath)) {
 				return yield* new McpInvalidInputError({
 					message: "path must be repository-relative",
@@ -283,15 +284,15 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const source = yield* VcsSourceService
 			const file = yield* source
-				.readFile(tenant.orgId, repository.trim(), filePath, ref)
+				.readFile(tenant.orgId, Str.trim(repository), filePath, ref)
 				.pipe(Effect.mapError(fromVcsLookupError("read_source_file")))
-			if (file.content.includes("\u0000")) {
+			if (Str.includes("\u0000")(file.content)) {
 				return yield* new McpInvalidInputError({
 					message: "The requested file is binary and cannot be read as source text",
 					parameter: "path",
 				})
 			}
-			const allLines = file.content.split("\n")
+			const allLines = Str.split("\n")(file.content)
 			// Whole lines up to the character budget, so every returned line keeps its number.
 			const candidates = allLines.slice(start - 1, end)
 			// Characters spent before each line: every line costs its length plus a newline.
@@ -302,7 +303,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 			)
 			const endLine = start + lines.length - 1
 			return {
-				repository: repository.trim(),
+				repository: Str.trim(repository),
 				path: file.path,
 				ref: file.ref,
 				sha: file.sha,
@@ -338,9 +339,13 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 					: [
 							doc.code(
 								"",
-								output.lines
-									.map((line, index) => `${output.startLine + index}: ${line}`)
-									.join("\n"),
+								Arr.join(
+									Arr.map(
+										output.lines,
+										(line, index) => `${output.startLine + index}: ${line}`,
+									),
+									"\n",
+								),
 							),
 						]),
 			],

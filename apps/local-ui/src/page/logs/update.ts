@@ -5,7 +5,7 @@ import * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import * as Popover from "@maple/views/ui/popover"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import * as Tooltip from "@maple/views/ui/tooltip"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { idle } from "@maple/views/data/keyed"
 import { queryOf } from "../../route"
@@ -18,7 +18,10 @@ import type { Model } from "./model"
 import { syncStream } from "./update-stream"
 
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PageOutMessage, Resources>
-export type InitReturn = Readonly<{ model: Model; commands: ReadonlyArray<Command.Command<Message, never, Resources>> }>
+export type InitReturn = Readonly<{
+	model: Model
+	commands: ReadonlyArray<Command.Command<Message, never, Resources>>
+}>
 
 export const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
@@ -54,7 +57,11 @@ export const init = (context: PageContext): InitReturn => {
 			isRefreshing: false,
 			copies: {},
 		},
-		commands: [ReadClock(), ReadPreferences(), Command.mapMessage(FilterSections.ReadRemembered(), toSections)],
+		commands: [
+			ReadClock(),
+			ReadPreferences(),
+			Command.mapMessage(FilterSections.ReadRemembered(), toSections),
+		],
 	}
 }
 
@@ -88,6 +95,9 @@ export const selectPattern = (model: Model, context: PageContext, template: stri
 export const settleRefresh = (model: Model): Model => {
 	const isLoading = (data: AsyncData.AsyncData<unknown, unknown>) =>
 		AsyncData.isLoading(data) || AsyncData.isRefreshing(data)
-	const busy = [model.logs.data, model.patterns.data, model.services.data, model.severities.data].some(isLoading)
+	const busy = Arr.some(
+		[model.logs.data, model.patterns.data, model.services.data, model.severities.data],
+		isLoading,
+	)
 	return model.isRefreshing && !busy ? { ...model, isRefreshing: false } : model
 }

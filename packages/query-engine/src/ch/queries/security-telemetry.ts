@@ -10,6 +10,7 @@ import type { CHQuery, ColumnDefs, ColumnAccessor } from "@maple-dev/effect-orm/
 import { CRITICAL_PROBE_SIGNATURES } from "@maple/domain/security-telemetry"
 import { ScannerRequests, ServiceRuntimesHourly, orgIdParam, utcSecondsParam } from "../tables"
 import { utcHourFloor } from "./query-helpers"
+import { Array as Arr } from "effect"
 
 type ScannerAccessor = ColumnAccessor<typeof ScannerRequests.columns>
 
@@ -90,7 +91,7 @@ export function scannerExposedQuery(
 			...scannerWhere($),
 			CH.inList(
 				$.Signature,
-				CRITICAL_PROBE_SIGNATURES.map((signature) => signature.token),
+				Arr.map(CRITICAL_PROBE_SIGNATURES, (signature) => signature.token),
 			),
 			answered($),
 		])

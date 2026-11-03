@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 /**
  * How a model Maple ran on is named to Autumn's AI credit system.
  *
@@ -13,7 +14,7 @@ const WORKERS_AI_PREFIX = "@cf/"
  * part of the models.dev key.
  */
 export const autumnModelId = (model: string): string => {
-	if (model.startsWith(WORKERS_AI_PREFIX)) return `cloudflare-workers-ai/${model}`
+	if (Str.startsWith(WORKERS_AI_PREFIX)(model)) return `cloudflare-workers-ai/${model}`
 	const variant = model.indexOf(":")
-	return `openrouter/${variant === -1 ? model : model.slice(0, variant)}`
+	return `openrouter/${variant === -1 ? model : Str.slice(0, variant)(model)}`
 }

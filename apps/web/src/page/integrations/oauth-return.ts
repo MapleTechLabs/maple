@@ -95,9 +95,19 @@ const handOff = (
 		const payload: CallbackMessage = { type: `maple:integration:${provider}`, status, message }
 		if (github !== undefined) payload.github = github
 		opener.postMessage(payload, window.location.origin)
-		if (status === "success") setTimeout(() => window.close(), 600)
 		return true
-	})
+	}).pipe(
+		Effect.tap((handedOff) =>
+			handedOff && status === "success"
+				? Effect.forkDetach(
+						Effect.delay(
+							Effect.sync(() => window.close()),
+							"600 millis",
+						),
+					)
+				: Effect.void,
+		),
+	)
 
 type CompletionResult = Pick<OAuthCompleteResponse, "status" | "message" | "chat" | "github">
 

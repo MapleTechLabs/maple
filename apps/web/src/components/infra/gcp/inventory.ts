@@ -16,6 +16,7 @@ import { appendWhereFilter } from "../../metrics/where-filter"
 import { encodeLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
 
 import { gcpWorkloadLocation, gcpWorkloadProject } from "./tabs"
+import { Array as Arr, String as Str } from "effect"
 
 const RUN_SERVICE = "run.googleapis.com/Service"
 const FUNCTION = "cloudfunctions.googleapis.com/CloudFunction"
@@ -36,7 +37,7 @@ const RESOURCE_OF: Record<
 	gke: { assetType: CLUSTER, name: (keys) => keys[2] },
 	computeEngine: { assetType: INSTANCE, name: (keys) => keys[0] },
 	// Cloud Monitoring names an instance `<project>:<instance>`.
-	cloudSql: { assetType: SQL_INSTANCE, name: (keys) => keys[0].slice(keys[0].indexOf(":") + 1) },
+	cloudSql: { assetType: SQL_INSTANCE, name: (keys) => Str.slice(keys[0].indexOf(":") + 1)(keys[0]) },
 	pubsub: { assetType: SUBSCRIPTION, name: (keys) => keys[0] },
 	loadBalancing: { assetType: URL_MAP, name: (keys) => keys[0] },
 } satisfies Record<
@@ -44,7 +45,7 @@ const RESOURCE_OF: Record<
 	{ readonly assetType: string; readonly name: (keys: ReadonlyArray<string>) => string }
 >
 
-const lastSegment = (name: string) => name.slice(name.lastIndexOf("/") + 1)
+const lastSegment = (name: string) => Str.slice(name.lastIndexOf("/") + 1)(name)
 
 /** A Cloud SQL instance's settings from the inventory, by the `<project>:<instance>` the metrics name it. */
 export interface GcpCloudSqlInstance extends GcpCloudSqlSettings {
@@ -60,7 +61,7 @@ export const GCP_CLOUD_SQL_INVENTORY_QUERY = { assetType: SQL_INSTANCE }
 export const gcpCloudSqlInstances = (
 	resources: ReadonlyArray<GcpResource>,
 ): ReadonlyArray<GcpCloudSqlInstance> =>
-	resources.flatMap((resource) =>
+	Arr.flatMap(resources, (resource) =>
 		resource.assetType !== SQL_INSTANCE || resource.details === null
 			? []
 			: [
@@ -90,7 +91,8 @@ export function gcpMatchResource(
 ): GcpResource | undefined {
 	const { assetType, projectId, name } = gcpResourceQuery(service, keys)
 	const location = gcpWorkloadLocation(service, keys)
-	const matches = resources.filter(
+	const matches = Arr.filter(
+		resources,
 		(resource) =>
 			resource.assetType === assetType &&
 			resource.projectId === projectId &&
@@ -132,7 +134,10 @@ export interface GcpConsoleLinks {
 }
 
 const resourceFilter = (resourceType: string, labels: ReadonlyArray<readonly [string, string]>) =>
-	[`resource.type="${resourceType}"`, ...labels.map(([label, value]) => `${label}="${value}"`)].join("\n")
+	Arr.join(
+		[`resource.type="${resourceType}"`, ...Arr.map(labels, ([label, value]) => `${label}="${value}"`)],
+		"\n",
+	)
 
 /**
  * A workload's console pages, from its identity alone: Cloud Run, Cloud Functions, Compute Engine,
@@ -206,7 +211,7 @@ export function gcpConsoleLinks(service: GcpInfraServiceId, keys: ReadonlyArray<
 		}
 		case "cloudSql": {
 			// The instance's id is `project:instance`.
-			const instance = name.slice(name.indexOf(":") + 1)
+			const instance = Str.slice(name.indexOf(":") + 1)(name)
 			return {
 				page: {
 					label: "Cloud SQL instance",
@@ -252,12 +257,15 @@ export function gcpConsoleScopePage(scope: {
 export const gcpConsoleProjectPages = (
 	project: string,
 ): ReadonlyArray<{ readonly label: string; readonly href: string }> =>
-	[
-		["Dashboard", "home/dashboard"],
-		["Metrics Explorer", "monitoring/metrics-explorer"],
-		["Logs Explorer", "logs/query"],
-		["Asset Inventory", "iam-admin/asset-inventory/dashboard"],
-	].map(([label, path]) => ({ label, href: consoleUrl(path, "project", project) }))
+	Arr.map(
+		[
+			["Dashboard", "home/dashboard"],
+			["Metrics Explorer", "monitoring/metrics-explorer"],
+			["Logs Explorer", "logs/query"],
+			["Asset Inventory", "iam-admin/asset-inventory/dashboard"],
+		],
+		([label, path]) => ({ label, href: consoleUrl(path, "project", project) }),
+	)
 
 /**
  * Where a workload's other telemetry is. Its metrics, and its traces when it is instrumented, are

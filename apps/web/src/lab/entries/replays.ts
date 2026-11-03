@@ -6,7 +6,7 @@ import {
 	pageScrollAreaStyles,
 	pageStickyAreaStyles,
 } from "@maple/ui/styles/ui/page-layout"
-import { Clock, Effect, Schema, Stream } from "effect"
+import { Clock, Effect, Schema, Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -79,7 +79,7 @@ const updateState = (model: Model, message: Message): Model =>
 		ToggledRun: ({ key }) => ({
 			...model,
 			expanded: model.expanded.includes(key)
-				? model.expanded.filter((other) => other !== key)
+				? Arr.filter(model.expanded, (other) => other !== key)
 				: [...model.expanded, key],
 		}),
 		// TODO(lab-navigation): navigate to `/replays/$sessionId`; the lab has no router.
@@ -90,7 +90,8 @@ const updateState = (model: Model, message: Message): Model =>
 	})
 
 const visibleRows = (model: Model, rows: ReadonlyArray<SessionRow>) =>
-	rows.filter(
+	Arr.filter(
+		rows,
 		(row) =>
 			(!model.isErrorsOnly || row.errorCount > 0) &&
 			(!model.isEngagedOnly || row.tags.includes("engaged")) &&
@@ -112,69 +113,114 @@ const widthButton = (h: HtmlBuilder<Message>, model: Model, option: (typeof WIDT
 		[option.label],
 	)
 
-const clearLabel = (model: Model) => [model.tag, model.group].filter((value) => value !== null).join(" + ")
+const clearLabel = (model: Model) =>
+	Arr.join(
+		Arr.filter([model.tag, model.group], (value) => value !== null),
+		" + ",
+	)
 
 const page = (model: Model, h: HtmlBuilder<Message>): Html => {
 	const rows = labSessions(model.nowMs)
 	const visible = visibleRows(model, rows)
-	return h.div([h.Class("flex h-svh flex-col gap-4 p-6")], [
-		h.div([h.Class("flex items-center gap-2")], [
-			...(model.tag !== null || model.group !== null
-				? [
-						h.button(
-							[
-								h.Type("button"),
-								h.OnClick(Message.ClickedClear()),
-								h.Class("rounded-sm border border-border px-2 py-1 text-xs"),
-							],
-							["Clear ", clearLabel(model)],
-						),
-					]
-				: []),
-			...WIDTHS.map((option) => widthButton(h, model, option)),
-		]),
-		h.div(
-			[
-				h.Class("flex min-h-0 flex-1 flex-col"),
-				...(model.width === null ? [] : [h.Style({ width: `${model.width}px` })]),
-			],
-			[
-				h.div([h.DataAttribute("slot", "page-layout"), h.Class(pageLayoutStyles)], [
-					h.main([h.Id("main-content"), h.DataAttribute("slot", "page-content"), h.Class(pageContentStyles)], [
-						h.div([h.DataAttribute("slot", "page-sticky-area"), h.Class(cn(pageStickyAreaStyles, "pb-3"))], [
-							replaysToolbar(h, {
-								query: model.query,
-								onInput: (value) => Message.ChangedSearch({ value }),
-								onClear: Message.ChangedSearch({ value: "" }),
-								errorSessions: rows.filter((row) => row.errorCount > 0).length,
-								isErrorsOnly: model.isErrorsOnly,
-								onToggleErrorsOnly: Message.ToggledErrorsOnly(),
-								engagedSessions: rows.filter((row) => row.tags.includes("engaged")).length,
-								isEngagedOnly: model.isEngagedOnly,
-								onToggleEngagedOnly: Message.ToggledEngagedOnly(),
-							}),
-						]),
-						h.div([h.DataAttribute("slot", "page-scroll-area"), h.Class(cn(pageScrollAreaStyles, "pt-0"))], [
-							sessionsList(h, {
-								items: sessionListItems(visible, {
-									collapse: !model.isEngagedOnly && model.tag === null,
-									expanded: model.expanded,
-									nowMs: model.nowMs,
-								}),
-								nowMs: model.nowMs,
-								timeZone: model.timeZone,
-								durationP95: 1_200_000,
-								onOpen: (session) => Message.ClickedSession({ sessionId: session.sessionId }),
-								onToggleRun: (key) => Message.ToggledRun({ key }),
-								onFilterTag: (tag) => Message.ClickedTag({ tag }),
-								onFilterGroup: (group) => Message.ClickedGroup({ group }),
-							}, { window: model.virtualWindow, mount: h.OnMount(VirtualizeList()) }),
-						]),
-					]),
-				]),
-			],
-		),
-	])
+	return h.div(
+		[h.Class("flex h-svh flex-col gap-4 p-6")],
+		[
+			h.div(
+				[h.Class("flex items-center gap-2")],
+				[
+					...(model.tag !== null || model.group !== null
+						? [
+								h.button(
+									[
+										h.Type("button"),
+										h.OnClick(Message.ClickedClear()),
+										h.Class("rounded-sm border border-border px-2 py-1 text-xs"),
+									],
+									["Clear ", clearLabel(model)],
+								),
+							]
+						: []),
+					...Arr.map(WIDTHS, (option) => widthButton(h, model, option)),
+				],
+			),
+			h.div(
+				[
+					h.Class("flex min-h-0 flex-1 flex-col"),
+					...(model.width === null ? [] : [h.Style({ width: `${model.width}px` })]),
+				],
+				[
+					h.div(
+						[h.DataAttribute("slot", "page-layout"), h.Class(pageLayoutStyles)],
+						[
+							h.main(
+								[
+									h.Id("main-content"),
+									h.DataAttribute("slot", "page-content"),
+									h.Class(pageContentStyles),
+								],
+								[
+									h.div(
+										[
+											h.DataAttribute("slot", "page-sticky-area"),
+											h.Class(cn(pageStickyAreaStyles, "pb-3")),
+										],
+										[
+											replaysToolbar(h, {
+												query: model.query,
+												onInput: (value) => Message.ChangedSearch({ value }),
+												onClear: Message.ChangedSearch({ value: "" }),
+												errorSessions: Arr.filter(rows, (row) => row.errorCount > 0)
+													.length,
+												isErrorsOnly: model.isErrorsOnly,
+												onToggleErrorsOnly: Message.ToggledErrorsOnly(),
+												engagedSessions: Arr.filter(rows, (row) =>
+													row.tags.includes("engaged"),
+												).length,
+												isEngagedOnly: model.isEngagedOnly,
+												onToggleEngagedOnly: Message.ToggledEngagedOnly(),
+											}),
+										],
+									),
+									h.div(
+										[
+											h.DataAttribute("slot", "page-scroll-area"),
+											h.Class(cn(pageScrollAreaStyles, "pt-0")),
+										],
+										[
+											sessionsList(
+												h,
+												{
+													items: sessionListItems(visible, {
+														collapse: !model.isEngagedOnly && model.tag === null,
+														expanded: model.expanded,
+														nowMs: model.nowMs,
+													}),
+													nowMs: model.nowMs,
+													timeZone: model.timeZone,
+													durationP95: 1_200_000,
+													onOpen: (session) =>
+														Message.ClickedSession({
+															sessionId: session.sessionId,
+														}),
+													onToggleRun: (key) => Message.ToggledRun({ key }),
+													onFilterTag: (tag) => Message.ClickedTag({ tag }),
+													onFilterGroup: (group) => Message.ClickedGroup({ group }),
+												},
+												{
+													window: model.virtualWindow,
+													mount: h.OnMount(VirtualizeList()),
+												},
+											),
+										],
+									),
+								],
+							),
+						],
+					),
+				],
+			),
+		],
+	)
 }
 
 const VirtualizeList = Mount.defineStream("VirtualizeLabReplaysList", {
@@ -193,7 +239,10 @@ const Flags = Schema.Struct({ nowMs: Schema.Number, timeZone: Schema.String })
 export const lab = defineLabWithFlags("Session replays list", {
 	Model,
 	Flags,
-	flags: Effect.all({ nowMs: Clock.currentTimeMillis, timeZone: Effect.map(viewerFlags, (flags) => flags.timeZone) }),
+	flags: Effect.all({
+		nowMs: Clock.currentTimeMillis,
+		timeZone: Effect.map(viewerFlags, (flags) => flags.timeZone),
+	}),
 	init: ({ nowMs, timeZone }) => ({
 		model: {
 			nowMs,

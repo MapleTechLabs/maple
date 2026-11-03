@@ -5,6 +5,7 @@ import * as SelectView from "@maple/views/ui/select-view"
 import { modelLabel } from "./format"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The two model pickers both dialogs show: which model hunts, and which one verifies.
 
@@ -17,13 +18,13 @@ export const STAGE_LABEL = {
 
 /** Every listed model hunts; only the ones that answered verifier prompts in the eval verify. */
 const optionsFor = (stage: ModelStage) =>
-	SECURITY_AUDIT_MODELS.filter((model) => stage === "discovery" || model.verifies)
+	Arr.filter(SECURITY_AUDIT_MODELS, (model) => stage === "discovery" || model.verifies)
 
 export const modelIdsFor = (stage: ModelStage): ReadonlyArray<string> =>
-	optionsFor(stage).map((model) => model.id)
+	Arr.map(optionsFor(stage), (model) => model.id)
 
 const entriesFor = (stage: ModelStage): ReadonlyArray<SelectView.SelectEntry> =>
-	optionsFor(stage).map((model) => ({
+	Arr.map(optionsFor(stage), (model) => ({
 		_tag: "Item",
 		item: { value: model.id, label: model.label, title: model.provider },
 	}))

@@ -10,6 +10,7 @@ import type { Capability, GcpFlags } from "./gcp-configure-schema"
 import { Message } from "./message"
 import { GCP_TITLE, SMALL } from "./view-gcp-parts"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `CollectFields`: a switch per capability, with the log filter under Logs. Nothing is saved here.
 
@@ -28,7 +29,7 @@ export const collectFields = (
 	}>,
 ): Html => {
 	const { flags } = options
-	const locks = CAPABILITY_IDS.map((capability) =>
+	const locks = Arr.map(CAPABILITY_IDS, (capability) =>
 		gcpCollectLock(flags, capability, options.metricsAvailable),
 	)
 	return h.fieldset(
@@ -37,7 +38,7 @@ export const collectFields = (
 			h.legend([h.Class(cn(GCP_TITLE, "mb-3"))], ["What should Maple collect?"]),
 			h.div(
 				[h.Class("divide-y divide-border-subtle rounded-md border")],
-				CAPABILITY_IDS.map((capability, index) => {
+				Arr.map(CAPABILITY_IDS, (capability, index) => {
 					const { title, flag, description, effects } = CAPABILITIES[capability]
 					const note = options.effect?.(capability) ?? null
 					const inputId = `${COLLECT_ID}-${capability}`

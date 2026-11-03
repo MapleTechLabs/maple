@@ -27,6 +27,7 @@ import {
 	Option,
 	Schema,
 	Stream,
+	String as Str,
 } from "effect"
 import { TestClock } from "effect/testing"
 import {
@@ -150,13 +151,14 @@ const commitJson = (sha: string) => ({
 	author: { login: "octo" },
 })
 
-const commitsResponse = (shas: ReadonlyArray<string>) => jsonResponse(shas.map(commitJson))
+const commitsResponse = (shas: ReadonlyArray<string>) => jsonResponse(Arr.map(shas, commitJson))
 
 // 429 carrying retry-after (seconds): 0 ⇒ ride out inline; large ⇒ defer.
 const rateLimited = (retryAfterSeconds: number) =>
 	new Response("rate limited", { status: 429, headers: { "retry-after": String(retryAfterSeconds) } })
 
-const hexShas = (count: number) => Array.from({ length: count }, (_, n) => n.toString(16).padStart(40, "0"))
+const hexShas = (count: number) =>
+	Array.from({ length: count }, (_, n) => Str.padStart(40, "0")(n.toString(16)))
 
 describe("GithubProvider.webhookToJobs", () => {
 	const pushBody = JSON.stringify({
@@ -330,12 +332,15 @@ describe("GithubProvider.webhookToJobs", () => {
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
 			const review = (box: " " | "x", extra = "") =>
-				[
-					"<!-- maple-pr-review r1 0 -->",
-					"## Maple review",
-					`- [${box}] **Secret** · Add secret \`FOO\` <!-- ms:secret:FOO -->`,
-					`- [ ] **Manual** · Create the flag <!-- ms:manual:create-the-flag -->${extra}`,
-				].join("\n")
+				Arr.join(
+					[
+						"<!-- maple-pr-review r1 0 -->",
+						"## Maple review",
+						`- [${box}] **Secret** · Add secret \`FOO\` <!-- ms:secret:FOO -->`,
+						`- [ ] **Manual** · Create the flag <!-- ms:manual:create-the-flag -->${extra}`,
+					],
+					"\n",
+				)
 			const edit = (overrides: {
 				readonly from?: string
 				readonly to?: string
@@ -444,7 +449,7 @@ describe("GithubProvider.webhookToJobs", () => {
 					merged: false,
 					merged_at: null,
 					draft: false,
-					head: { sha: SHA.toUpperCase(), ref: "feat/x", repo: { full_name: "fork/repo" } },
+					head: { sha: Str.toUpperCase(SHA), ref: "feat/x", repo: { full_name: "fork/repo" } },
 					base: { sha: "not a sha", ref: "main" },
 				},
 			})
@@ -530,7 +535,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				})
 				.pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
-			assert.ok(findError(exit) instanceof VcsWebhookSignatureError)
+			assert.ok(Schema.is(VcsWebhookSignatureError)(findError(exit)))
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
@@ -540,12 +545,12 @@ describe("GithubProvider.webhookToJobs", () => {
 			const QUEUE_MESSAGE_LIMIT = 128 * 1024
 			const provider = yield* GithubProvider
 			const shas = hexShas(400)
-			const message = "x".repeat(1024) // ~1 KB messages ⇒ ~440 KB total ⇒ several jobs
+			const message = Str.repeat(1024)("x") // ~1 KB messages ⇒ ~440 KB total ⇒ several jobs
 			const body = JSON.stringify({
 				ref: "refs/heads/main",
 				repository: { id: 7, owner: { login: "octo" } },
 				installation: { id: 42 },
-				commits: shas.map((sha) => ({
+				commits: Arr.map(shas, (sha) => ({
 					id: sha,
 					message,
 					timestamp: "2026-01-01T00:00:00Z",
@@ -569,8 +574,8 @@ describe("GithubProvider.webhookToJobs", () => {
 				assert.strictEqual(job.branch, "main")
 			}
 			// Every commit is preserved across the slices, in order — none dropped.
-			const splitShas = jobs.flatMap((job) =>
-				job.kind === "push" ? job.commits.map((c) => c.sha) : [],
+			const splitShas = Arr.flatMap(jobs, (job) =>
+				job.kind === "push" ? Arr.map(job.commits, (c) => c.sha) : [],
 			)
 			assert.deepStrictEqual(splitShas, shas)
 		}).pipe(Effect.provide(providerLayer())),
@@ -582,13 +587,13 @@ describe("GithubProvider.webhookToJobs", () => {
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
 			const shas = hexShas(400)
-			const message = "x".repeat(1024) // ~1 KB messages ⇒ several jobs
+			const message = Str.repeat(1024)("x") // ~1 KB messages ⇒ several jobs
 			const body = JSON.stringify({
 				ref: "refs/heads/main",
 				repository: { id: 7, owner: { login: "octo" } },
 				installation: { id: 42 },
 				forced: true,
-				commits: shas.map((sha) => ({
+				commits: Arr.map(shas, (sha) => ({
 					id: sha,
 					message,
 					timestamp: "2026-01-01T00:00:00Z",
@@ -761,7 +766,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				.webhookToJobs({ headers: { "x-github-event": "push" }, rawBody: pushBody })
 				.pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
-			assert.ok(findError(exit) instanceof VcsWebhookSignatureError)
+			assert.ok(Schema.is(VcsWebhookSignatureError)(findError(exit)))
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
@@ -777,7 +782,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				})
 				.pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
-			assert.ok(findError(exit) instanceof VcsWebhookSignatureError)
+			assert.ok(Schema.is(VcsWebhookSignatureError)(findError(exit)))
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
@@ -793,7 +798,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				})
 				.pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
-			assert.ok(findError(exit) instanceof VcsWebhookSignatureError)
+			assert.ok(Schema.is(VcsWebhookSignatureError)(findError(exit)))
 		}).pipe(Effect.provide(providerLayerNoSecret())),
 	)
 
@@ -981,7 +986,7 @@ describe("GithubProvider.webhookToJobs", () => {
 			assert.strictEqual(job.queuedAtMs, Date.parse("2026-01-01T00:00:10Z"))
 			assert.strictEqual(job.startedAtMs, Date.parse("2026-01-01T00:00:40Z"))
 			assert.deepStrictEqual(
-				job.steps.map((step) => step.name),
+				Arr.map(job.steps, (step) => step.name),
 				["Set up job"],
 			)
 		}).pipe(Effect.provide(providerLayer())),
@@ -1039,7 +1044,7 @@ describe("GithubProvider.webhookToJobs", () => {
 
 			const finished = yield* mapWorkflow("workflow_run", approvedForkRun("completed"))
 			assert.deepStrictEqual(
-				finished.map((each) => each.kind),
+				Arr.map(finished, (each) => each.kind),
 				["workflow-run", "pull-request-ci-approved"],
 			)
 		}).pipe(Effect.provide(providerLayer())),
@@ -1048,7 +1053,7 @@ describe("GithubProvider.webhookToJobs", () => {
 	it.effect("finds no approval in a run the author started, a held run, or a bot's re-run", () =>
 		Effect.gen(function* () {
 			const kinds = (body: string) =>
-				mapWorkflow("workflow_run", body).pipe(Effect.map((jobs) => jobs.map((job) => job.kind)))
+				mapWorkflow("workflow_run", body).pipe(Effect.map((jobs) => Arr.map(jobs, (job) => job.kind)))
 			assert.deepStrictEqual(
 				yield* kinds(
 					approvedForkRun("in_progress", { triggering_actor: { login: "OctoCat", type: "User" } }),
@@ -1075,7 +1080,7 @@ describe("GithubProvider.webhookToJobs", () => {
 		Effect.gen(function* () {
 			const steps = Array.from({ length: 1000 }, (_, n) => ({
 				number: n + 1,
-				name: `Step ${n + 1} ${"x".repeat(2000)}`,
+				name: `Step ${n + 1} ${Str.repeat(2000)("x")}`,
 				conclusion: "success",
 				started_at: "2026-01-01T00:00:40Z",
 				completed_at: "2026-01-01T00:00:41Z",
@@ -1114,10 +1119,10 @@ describe("GithubProvider.fetchBranches", () => {
 			// The provider is oblivious to which branch is the default (the repo layer
 			// derives that display hint) — it returns names + heads only.
 			assert.deepStrictEqual(
-				[...result.branches].sort((a, b) => a.name.localeCompare(b.name)),
+				[...result.branches].sort((a, b) => Str.localeCompare(b.name)(a.name)),
 				[
-					{ name: "feature", headSha: "b".repeat(40) },
-					{ name: "main", headSha: "a".repeat(40) },
+					{ name: "feature", headSha: Str.repeat(40)("b") },
+					{ name: "main", headSha: Str.repeat(40)("a") },
 				],
 			)
 		}).pipe(
@@ -1126,8 +1131,8 @@ describe("GithubProvider.fetchBranches", () => {
 					tokenResponse,
 					() =>
 						jsonResponse([
-							{ name: "main", commit: { sha: "a".repeat(40) } },
-							{ name: "feature", commit: { sha: "b".repeat(40) } },
+							{ name: "main", commit: { sha: Str.repeat(40)("a") } },
+							{ name: "feature", commit: { sha: Str.repeat(40)("b") } },
 						]),
 				]),
 			),
@@ -1197,8 +1202,8 @@ describe("GithubProvider.fetchBranches", () => {
 describe("VcsRepository", () => {
 	it.effect("branches: upsert list, tracked-branch change wipes commits, reconcile, delete", () => {
 		const testDb = createTestDb(trackedDbs)
-		const SHA_X = "a".repeat(40)
-		const SHA_Y = "b".repeat(40)
+		const SHA_X = Str.repeat(40)("a")
+		const SHA_Y = Str.repeat(40)("b")
 		const mk = (sha: string, committedAt: number) => ({
 			sha,
 			message: "m",
@@ -1250,7 +1255,12 @@ describe("VcsRepository", () => {
 			// isDefault is a display hint derived from the repo's defaultBranch ("main");
 			// the branch table no longer carries a per-branch tracked flag.
 			assert.ok(branches.find((b) => b.name === "main")!.isDefault)
-			assert.ok(branches.filter((b) => b.name !== "main").every((b) => !b.isDefault))
+			assert.ok(
+				Arr.every(
+					Arr.filter(branches, (b) => b.name !== "main"),
+					(b) => !b.isDefault,
+				),
+			)
 
 			yield* repo.upsertCommits(r, [mk(SHA_X, 100), mk(SHA_Y, 200)])
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_X))))
@@ -1370,7 +1380,7 @@ describe("VcsRepository", () => {
 			)
 			const exit = yield* repo.resolveInstallation("github", "55").pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
-			assert.ok(findError(exit) instanceof VcsRepoDecodeError)
+			assert.ok(Schema.is(VcsRepoDecodeError)(findError(exit)))
 		}).pipe(Effect.provide(repoLayer(testDb)))
 	})
 
@@ -1383,8 +1393,8 @@ describe("VcsRepository", () => {
 				const orgId = asOrgId("org_purge")
 				const repoFixture = (externalRepoId: string, fullName: string) => ({
 					externalRepoId,
-					owner: fullName.split("/")[0]!,
-					name: fullName.split("/")[1]!,
+					owner: Str.split("/")(fullName)[0]!,
+					name: Str.split("/")(fullName)[1]!,
 					fullName,
 					defaultBranch: "main",
 					htmlUrl: `https://github.com/${fullName}`,
@@ -1425,8 +1435,8 @@ describe("VcsRepository", () => {
 				yield* seed("99", "other", "200")
 				yield* upsertReposFor(repo, "42", [repoFixture("7", "octo/repo")])
 				yield* upsertReposFor(repo, "99", [repoFixture("8", "other/repo")])
-				const SHA_42 = "a".repeat(40)
-				const SHA_99 = "b".repeat(40)
+				const SHA_42 = Str.repeat(40)("a")
+				const SHA_99 = Str.repeat(40)("b")
 				yield* upsertCommitsFor(repo, orgId, "7", [commitFixture(SHA_42)])
 				yield* upsertCommitsFor(repo, orgId, "8", [commitFixture(SHA_99)])
 
@@ -1434,7 +1444,7 @@ describe("VcsRepository", () => {
 				const sources = () =>
 					Effect.promise(() =>
 						testDb.pglite.query<{ name: string }>("SELECT name FROM sources ORDER BY name"),
-					).pipe(Effect.map((result) => result.rows.map((row) => row.name)))
+					).pipe(Effect.map((result) => Arr.map(result.rows, (row) => row.name)))
 				assert.deepStrictEqual(yield* sources(), ["GitHub octo", "GitHub other"])
 
 				yield* purgeInstallationFor(repo, orgId, "42")
@@ -1462,7 +1472,7 @@ describe("VcsRepository", () => {
 	// and shield the (org, sha) reads from any orphan.
 	it.effect("stale snapshots cannot resurrect purged data, and orphans are unreadable", () => {
 		const testDb = createTestDb(trackedDbs)
-		const SHA = "c".repeat(40)
+		const SHA = Str.repeat(40)("c")
 		const commitFixture = {
 			sha: SHA,
 			message: "m",
@@ -1577,7 +1587,7 @@ describe("VcsRepository", () => {
 	// only its own row — a missing org filter would leak another tenant's commit.
 	it.effect("findCommitBySha is org-scoped — the same SHA in two orgs never crosses over", () => {
 		const testDb = createTestDb(trackedDbs)
-		const SHARED = "a".repeat(40)
+		const SHARED = Str.repeat(40)("a")
 		const commitFixture = {
 			sha: SHARED,
 			message: "m",
@@ -1618,7 +1628,7 @@ describe("VcsRepository", () => {
 	// the inline comment warns about).
 	it.effect("changeTrackedBranch with a foreign orgId neither retargets nor wipes commits", () => {
 		const testDb = createTestDb(trackedDbs)
-		const SHA_X = "a".repeat(40)
+		const SHA_X = Str.repeat(40)("a")
 		return Effect.gen(function* () {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_owner")
@@ -1666,10 +1676,10 @@ describe("VcsRepository", () => {
 			const active = yield* repo.listRepositoriesByInstallation(inst.id, "active")
 			const all = yield* repo.listRepositoriesByInstallation(inst.id, "all")
 			assert.deepStrictEqual(
-				active.map((r) => r.externalRepoId),
+				Arr.map(active, (r) => r.externalRepoId),
 				["7"],
 			)
-			assert.deepStrictEqual(all.map((r) => r.externalRepoId).sort(), ["7", "8"])
+			assert.deepStrictEqual(Arr.map(all, (r) => r.externalRepoId).sort(), ["7", "8"])
 		}).pipe(Effect.provide(repoLayer(testDb)))
 	})
 
@@ -1727,7 +1737,7 @@ describe("VcsRepository", () => {
 	// split into two rows.
 	it.effect("upsertCommits lowercases the SHA so a lowercase lookup finds an uppercased commit", () => {
 		const testDb = createTestDb(trackedDbs)
-		const UPPER = "A".repeat(40)
+		const UPPER = Str.repeat(40)("A")
 		return Effect.gen(function* () {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_lower")
@@ -1748,7 +1758,9 @@ describe("VcsRepository", () => {
 				},
 			])
 			// Stored lowercased → found by the lowercase form.
-			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, decodeGitCommitSha("a".repeat(40)))))
+			assert.ok(
+				Option.isSome(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(Str.repeat(40)("a")))),
+			)
 		}).pipe(Effect.provide(repoLayer(testDb)))
 	})
 
@@ -1773,12 +1785,12 @@ describe("VcsRepository", () => {
 })
 
 describe("VcsSyncService orchestrator", () => {
-	const SHA_A = "a".repeat(40)
-	const SHA_B = "b".repeat(40)
+	const SHA_A = Str.repeat(40)("a")
+	const SHA_B = Str.repeat(40)("b")
 
 	const commit = (sha: string, committedAt: number) => ({
 		sha,
-		message: `commit ${sha.slice(0, 7)}`,
+		message: `commit ${Str.slice(0, 7)(sha)}`,
 		authorName: null,
 		authorEmail: null,
 		authorLogin: null,
@@ -2034,9 +2046,10 @@ describe("VcsSyncService orchestrator", () => {
 			const names = (yield* repo.listBranchesByRepository(r.id)).map((b) => b.name).sort()
 			assert.deepStrictEqual(names, ["main", "release"])
 			// Exactly one commit-sync, for the single tracked branch (the default "main").
-			const synced = sent
-				.filter((j) => j.kind === "sync-commits")
-				.map((j) => (j.kind === "sync-commits" ? j.branch : ""))
+			const synced = Arr.map(
+				Arr.filter(sent, (j) => j.kind === "sync-commits"),
+				(j) => (j.kind === "sync-commits" ? j.branch : ""),
+			)
 			assert.deepStrictEqual(synced, ["main"])
 		}).pipe(
 			Effect.provide(
@@ -2319,7 +2332,7 @@ describe("VcsSyncService orchestrator", () => {
 				// The stalled check never reached the log; the next job's log went out.
 				assert.deepStrictEqual(workflowLogRequests, ["556"])
 				assert.deepStrictEqual(
-					forwardedLogs.map((log) => log.jobId),
+					Arr.map(forwardedLogs, (log) => log.jobId),
 					["556"],
 				)
 			}).pipe(
@@ -2571,7 +2584,7 @@ describe("VcsSyncService orchestrator", () => {
 			const updated = yield* repoFor(repo, orgId, "7")
 			assert.strictEqual(updated.trackedBranch, "main")
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_A))))
-			const backfills = sent.filter((j) => j.kind === "sync-commits")
+			const backfills = Arr.filter(sent, (j) => j.kind === "sync-commits")
 			assert.strictEqual(backfills.length, 1)
 			assert.strictEqual(backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : "", "main")
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, repos: oneRepo })))
@@ -2610,7 +2623,7 @@ describe("VcsSyncService orchestrator", () => {
 			const updated = yield* repoFor(repo, orgId, "7")
 			assert.strictEqual(updated.trackedBranch, "main")
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_A))))
-			const backfills = sent.filter((j) => j.kind === "sync-commits")
+			const backfills = Arr.filter(sent, (j) => j.kind === "sync-commits")
 			assert.strictEqual(backfills.length, 1)
 			assert.strictEqual(backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : "", "main")
 		}).pipe(
@@ -2644,7 +2657,7 @@ describe("VcsSyncService orchestrator", () => {
 					commits: [commit(SHA_A, 1)],
 				}),
 			)
-			const backfills = sent.filter((j) => j.kind === "sync-commits")
+			const backfills = Arr.filter(sent, (j) => j.kind === "sync-commits")
 			assert.strictEqual(backfills.length, 1)
 			assert.strictEqual(
 				backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : undefined,
@@ -2677,7 +2690,7 @@ describe("VcsSyncService orchestrator", () => {
 			yield* push("feature/x")
 			yield* push("main")
 			assert.deepStrictEqual(
-				sent.filter((job) => job.kind === "dependency-scan"),
+				Arr.filter(sent, (job) => job.kind === "dependency-scan"),
 				[
 					{
 						kind: "dependency-scan",
@@ -2709,7 +2722,7 @@ describe("VcsSyncService orchestrator", () => {
 					commits: [commit(SHA_A, 1)],
 				}),
 			)
-			assert.isFalse(sent.some((job) => job.kind === "dependency-scan"))
+			assert.isFalse(Arr.some(sent, (job) => job.kind === "dependency-scan"))
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, repos: oneRepo })))
 	})
 
@@ -2791,7 +2804,7 @@ describe("VcsSyncService orchestrator", () => {
 			)
 			// The branch is visible (so it can be tracked later) but is not the tracked one…
 			const branches = yield* repo.listBranchesByRepository(r.id)
-			assert.ok(branches.some((b) => b.name === "feature/x"))
+			assert.ok(Arr.some(branches, (b) => b.name === "feature/x"))
 			// …and its commits are NOT stored — only the tracked branch's commits are.
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_A))))
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent })))
@@ -2885,8 +2898,8 @@ describe("VcsSyncService orchestrator", () => {
 			// Per repo: only a branch-list sync. The commit backfills (default + tracked)
 			// are enqueued later, when that sync-branches job is itself processed.
 			assert.strictEqual(sent.length, 1)
-			assert.strictEqual(sent.filter((j) => j.kind === "sync-branches").length, 1)
-			assert.strictEqual(sent.filter((j) => j.kind === "sync-commits").length, 0)
+			assert.strictEqual(Arr.filter(sent, (j) => j.kind === "sync-branches").length, 1)
+			assert.strictEqual(Arr.filter(sent, (j) => j.kind === "sync-commits").length, 0)
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, repos })))
 	})
 
@@ -3087,7 +3100,7 @@ describe("VcsSyncService orchestrator", () => {
 					isArchived: false,
 				},
 			])
-			const STALE_SHA = "c".repeat(40)
+			const STALE_SHA = Str.repeat(40)("c")
 			yield* upsertCommitsFor(repo, orgId, "70", [commit(STALE_SHA, 1)])
 
 			// The stale row predates the new install in reality; backdate it so the
@@ -3459,7 +3472,7 @@ describe("VcsSyncService orchestrator", () => {
 			const exit = yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job)).pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
 			const error = findError(exit)
-			assert.ok(error instanceof VcsRateLimitedError)
+			assert.ok(Schema.is(VcsRateLimitedError)(error))
 			assert.strictEqual((error as VcsRateLimitedError).retryAfterSeconds, 600)
 		}).pipe(
 			Effect.provide(
@@ -3831,7 +3844,7 @@ describe("VcsSyncService orchestrator", () => {
 				)
 				.pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
-			assert.ok(findError(exit) instanceof VcsRateLimitedError)
+			assert.ok(Schema.is(VcsRateLimitedError)(findError(exit)))
 			assert.strictEqual(sent.length, 0)
 		}).pipe(
 			Effect.provide(
@@ -4180,12 +4193,12 @@ describe("git SHA validation (branded type)", () => {
 	it("GitCommitSha accepts mixed-case input and normalizes it to lowercase", () => {
 		const decode = decodeGitCommitSha
 		// All-uppercase 40-hex is accepted and lowercased.
-		assert.strictEqual(decode("A".repeat(40)), "a".repeat(40))
+		assert.strictEqual(decode(Str.repeat(40)("A")), Str.repeat(40)("a"))
 		// Mixed case round-trips to its lowercase form (so case never splits a row).
 		const mixed = "AbCdEf0123456789aBcDeF0123456789AbCdEf01"
 		assert.strictEqual(decode(mixed), mixed.toLowerCase())
 		// Non-hex / wrong length are still rejected (after lowercasing).
-		assert.throws(() => decode("Z".repeat(40)))
+		assert.throws(() => decode(Str.repeat(40)("Z")))
 		assert.throws(() => decode("abc"))
 	})
 
@@ -4206,7 +4219,7 @@ describe("git SHA validation (branded type)", () => {
 				})
 				.pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
-			assert.ok(findError(exit) instanceof VcsWebhookParseError)
+			assert.ok(Schema.is(VcsWebhookParseError)(findError(exit)))
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
@@ -4256,7 +4269,7 @@ describe("git SHA validation (branded type)", () => {
 			]).pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
 			const error = findError(exit)
-			assert.ok(error instanceof VcsRepoDecodeError)
+			assert.ok(Schema.is(VcsRepoDecodeError)(error))
 			// The write-side decode pins the offending column so a row-build failure is
 			// distinguishable from a read-side row decode (which carries no column).
 			assert.strictEqual((error as VcsRepoDecodeError).column, "sha")
@@ -4299,7 +4312,7 @@ describe("GithubProvider rate-limit handling", () => {
 				stubbedProviderLayer([
 					tokenResponse,
 					() => rateLimited(0),
-					() => commitsResponse(["a".repeat(40)]),
+					() => commitsResponse([Str.repeat(40)("a")]),
 				]),
 			),
 		),
@@ -4330,7 +4343,7 @@ describe("GithubProvider rate-limit handling", () => {
 			const exit = yield* provider.fetchRepositories(installation).pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
 			const error = findError(exit)
-			assert.ok(error instanceof VcsRateLimitedError)
+			assert.ok(Schema.is(VcsRateLimitedError)(error))
 			assert.strictEqual((error as VcsRateLimitedError).retryAfterSeconds, 600)
 		}).pipe(
 			// token → repos page 1 (429, retry-after 600 → surfaced, not resumable)

@@ -1,6 +1,6 @@
 import { formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { TONE_FILL } from "@maple/ui/lib/tone"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
@@ -166,7 +166,8 @@ const errorRow = <M>(
 }
 
 const failures = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOptions<M>): Html => {
-	const isUnnamed = data.errorGroups.length > 0 && data.errorGroups.every((group) => group.message === null)
+	const isUnnamed =
+		data.errorGroups.length > 0 && Arr.every(data.errorGroups, (group) => group.message === null)
 	return h.section(
 		[h.AriaLabel("Failures"), h.Class("@container/panel min-w-0 px-6 pt-5 pb-2")],
 		[
@@ -211,7 +212,7 @@ const failures = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOp
 									"No failed calls in this window",
 								]),
 							]
-						: data.errorGroups.map((group) => errorRow(h, group, data.errors, options)),
+						: Arr.map(data.errorGroups, (group) => errorRow(h, group, data.errors, options)),
 				),
 			]),
 			...(isUnnamed
@@ -261,7 +262,11 @@ const callRow = <M>(h: HtmlBuilder<M>, call: McpCallRow, max: number, options: T
 		numberCell(h, `#${call.requestId}`, "hidden w-16 text-foreground-subtle @min-[640px]/panel:block"),
 		durationMeterCell(h, { durationNs: call.durationNs, max, isFailed: call.errorType !== null }),
 		resultCell(h, call.errorType),
-		numberCell(h, call.traceId.slice(0, 8), "hidden w-20 text-muted-foreground @min-[800px]/panel:block"),
+		numberCell(
+			h,
+			Str.slice(0, 8)(call.traceId),
+			"hidden w-20 text-muted-foreground @min-[800px]/panel:block",
+		),
 		hstack(
 			h,
 			{
@@ -279,7 +284,7 @@ const LIST_NOUN = { slowest: "slowest", failed: "failed", recent: "most recent" 
 
 const calls = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOptions<M>): Html => {
 	const list = data[options.callList]
-	const max = Math.max(...list.map((call) => call.durationNs), 1)
+	const max = Math.max(...Arr.map(list, (call) => call.durationNs), 1)
 	return h.section(
 		[h.AriaLabel("Calls"), h.Class("@container/panel min-w-0 px-6 pt-6 pb-6")],
 		[
@@ -308,7 +313,7 @@ const calls = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOptio
 					h,
 					list.length === 0
 						? [filteredEmpty(h, { noun: "calls", description: "", className: "py-10 md:py-12" })]
-						: list.map((call) => callRow(h, call, max, options)),
+						: Arr.map(list, (call) => callRow(h, call, max, options)),
 				),
 			]),
 			toolTableFooter(

@@ -1,5 +1,5 @@
 import type { DashboardDocument, DashboardVersionChangeKind } from "@maple/domain/http"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 
 type Widget = DashboardDocument["widgets"][number]
 
@@ -81,10 +81,10 @@ export const summarizeDashboardChange = (
 	const prevSections = prev.sections ?? []
 	const nextSections = next.sections ?? []
 	if (!sameJson(prevSections, nextSections)) {
-		const prevSectionIds = new Set(prevSections.map((section) => section.id))
-		const nextSectionIds = new Set(nextSections.map((section) => section.id))
-		const addedSections = nextSections.filter((section) => !prevSectionIds.has(section.id))
-		const removedSections = prevSections.filter((section) => !nextSectionIds.has(section.id))
+		const prevSectionIds = new Set(Arr.map(prevSections, (section) => section.id))
+		const nextSectionIds = new Set(Arr.map(nextSections, (section) => section.id))
+		const addedSections = Arr.filter(nextSections, (section) => !prevSectionIds.has(section.id))
+		const removedSections = Arr.filter(prevSections, (section) => !nextSectionIds.has(section.id))
 
 		if (addedSections.length > 0) {
 			kinds.add("section_added")
@@ -110,11 +110,11 @@ export const summarizeDashboardChange = (
 		}
 	}
 
-	const prevById = new Map(prev.widgets.map((w) => [w.id, w] as const))
-	const nextById = new Map(next.widgets.map((w) => [w.id, w] as const))
+	const prevById = new Map(Arr.map(prev.widgets, (w) => [w.id, w] as const))
+	const nextById = new Map(Arr.map(next.widgets, (w) => [w.id, w] as const))
 
-	const added = next.widgets.filter((w) => !prevById.has(w.id))
-	const removed = prev.widgets.filter((w) => !nextById.has(w.id))
+	const added = Arr.filter(next.widgets, (w) => !prevById.has(w.id))
+	const removed = Arr.filter(prev.widgets, (w) => !nextById.has(w.id))
 
 	if (added.length > 0) {
 		kinds.add("widget_added")

@@ -1,4 +1,5 @@
 import { resolveSequentialDomain, type SequentialScaleType } from "./sequential-domain"
+import { Array as Arr, String as Str } from "effect"
 
 // `createSequentialColorScale` (packages/ui/src/components/plot/color-scale.ts) without d3: the
 // view needs the ramp's colours for legends, and d3-scale stays behind the chart Mount (S2).
@@ -13,16 +14,18 @@ interface Oklch {
 const OKLCH_RE = /^oklch\(\s*([\d.]+%?)\s+([\d.]+%?)\s+([-\d.]+)/i
 
 const parsePercentOrUnit = (raw: string, full: number): number =>
-	raw.endsWith("%") ? (Number.parseFloat(raw) / 100) * full : Number.parseFloat(raw)
+	Str.endsWith("%")(raw) ? (Number.parseFloat(raw) / 100) * full : Number.parseFloat(raw)
 
 const srgbToLinear = (channel: number): number =>
 	channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
 
 const parseHexToOklch = (color: string): Oklch | null => {
-	if (!color.startsWith("#")) return null
-	const body = color.slice(1)
+	if (!Str.startsWith("#")(color)) return null
+	const body = Str.slice(1)(color)
 	const expanded =
-		body.length === 3 ? `${body[0]}${body[0]}${body[1]}${body[1]}${body[2]}${body[2]}` : body.slice(0, 6)
+		body.length === 3
+			? `${body[0]}${body[0]}${body[1]}${body[1]}${body[2]}${body[2]}`
+			: Str.slice(0, 6)(body)
 	if (expanded.length !== 6) return null
 	const int = Number.parseInt(expanded, 16)
 	if (!Number.isFinite(int)) return null
@@ -39,8 +42,8 @@ const parseHexToOklch = (color: string): Oklch | null => {
 }
 
 const parseOklch = (color: string): Oklch | null => {
-	const oklch = OKLCH_RE.exec(color.trim())
-	if (oklch === null) return parseHexToOklch(color.trim())
+	const oklch = OKLCH_RE.exec(Str.trim(color))
+	if (oklch === null) return parseHexToOklch(Str.trim(color))
 	const l = parsePercentOrUnit(oklch[1] ?? "", 1)
 	const c = parsePercentOrUnit(oklch[2] ?? "", 0.4)
 	const h = Number.parseFloat(oklch[3] ?? "")
@@ -84,7 +87,7 @@ export const sequentialColorScale = (options: {
 	readonly domain: readonly [number, number]
 	readonly scaleType: SequentialScaleType
 }): ((value: number) => string) => {
-	const parsed = options.stops.map(parseOklch)
+	const parsed = Arr.map(options.stops, parseOklch)
 	const [lo, hi] = resolveSequentialDomain(options.domain, options.scaleType)
 	const transform = options.scaleType === "log" ? Math.log : (value: number) => value
 	const t0 = transform(lo)

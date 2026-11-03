@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { deepStrictEqual, ok, strictEqual } from "node:assert"
-import { Effect, Result } from "effect"
+import { Effect, Result, Array as Arr, String as Str } from "effect"
 import { HttpClientRequest } from "effect/http"
 import { withLocalAccessToken } from "../src/core/local-access"
 import {
@@ -19,7 +19,7 @@ import { __testables, isBrowserOriginAllowed, makeBrowserOriginPolicy } from "@m
 
 const INGEST_KEY = "ingest-key-0123456789abcdef"
 const ACCESS_TOKEN = "access-token-0123456789abcdef"
-const CREDENTIALS = { maintenanceToken: "m".repeat(64), consumerToken: "c".repeat(64) }
+const CREDENTIALS = { maintenanceToken: Str.repeat(64)("m"), consumerToken: Str.repeat(64)("c") }
 const BOTH: RemoteAuth = { ingestKey: INGEST_KEY, accessToken: ACCESS_TOKEN }
 const NOW = 1_800_000_000_000
 
@@ -156,7 +156,7 @@ describe("sessions", () => {
 	})
 
 	it("reject a tampered expiry and a rotated access token", () => {
-		const [expiry, signature] = issueSession(ACCESS_TOKEN, NOW).split(".")
+		const [expiry, signature] = Str.split(".")(issueSession(ACCESS_TOKEN, NOW))
 		ok(!sessionValid(ACCESS_TOKEN, `${Number(expiry) + SESSION_TTL_MS}.${signature}`, NOW))
 		ok(!sessionValid("rotated-token-0123456789abcdef", `${expiry}.${signature}`, NOW))
 		ok(!sessionValid(ACCESS_TOKEN, "garbage", NOW))
@@ -179,11 +179,11 @@ describe("sign-in", () => {
 			strictEqual(response.headers.get("location"), "/traces")
 			const setCookie = response.headers.get("set-cookie") ?? ""
 			ok(
-				setCookie.includes("HttpOnly") &&
-					setCookie.includes("Secure") &&
-					setCookie.includes("SameSite=Lax"),
+				Str.includes("HttpOnly")(setCookie) &&
+					Str.includes("Secure")(setCookie) &&
+					Str.includes("SameSite=Lax")(setCookie),
 			)
-			const cookie = setCookie.split(";")[0] ?? ""
+			const cookie = Str.split(";")(setCookie)[0] ?? ""
 			ok(
 				hasValidSession(
 					BOTH,
@@ -202,7 +202,7 @@ describe("sign-in", () => {
 				return __testables.loginSpan(BOTH, throttle, req, url)
 			})
 			deepStrictEqual(
-				wrong.map((response) => response.status),
+				Arr.map(wrong, (response) => response.status),
 				[401, 401],
 			)
 			const { req, url } = form(ACCESS_TOKEN)
@@ -224,7 +224,7 @@ describe("sign-in", () => {
 				{ concurrency: "unbounded" },
 			)
 			deepStrictEqual(
-				responses.map((response) => response.status).sort(),
+				Arr.map(responses, (response) => response.status).sort(),
 				[401, 401, 429, 429, 429, 429, 429],
 			)
 		}),

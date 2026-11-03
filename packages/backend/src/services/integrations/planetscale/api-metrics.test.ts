@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { apiMetricRows, type ApiMetricBranch, type ApiMetricSeries } from "./api-metrics"
+import { Array as Arr } from "effect"
 
 const postgres: ApiMetricBranch = {
 	organization: "acme",
@@ -14,7 +15,10 @@ const T0 = 1_792_797_840
 const window = { fromSeconds: T0, untilSeconds: T0 + 60 }
 
 const valuesOf = (rows: ReturnType<typeof apiMetricRows>, name: string) =>
-	rows.filter((row) => row.metric_name === name).map((row) => row.value)
+	Arr.map(
+		Arr.filter(rows, (row) => row.metric_name === name),
+		(row) => row.value,
+	)
 
 describe("apiMetricRows", () => {
 	it("lands Postgres branch metrics under the names the infra queries read", () => {
@@ -34,8 +38,8 @@ describe("apiMetricRows", () => {
 
 		expect(valuesOf(rows, "planetscale_pods_cpu_util_percentages")).toEqual([5.1])
 		expect(valuesOf(rows, "planetscale_api_connections")).toEqual([7])
-		const lag = rows.filter((row) => row.metric_name === "planetscale_postgres_replica_lag_seconds")
-		expect(lag.map((row) => [row.metric_attributes.planetscale_series, row.value])).toEqual([
+		const lag = Arr.filter(rows, (row) => row.metric_name === "planetscale_postgres_replica_lag_seconds")
+		expect(Arr.map(lag, (row) => [row.metric_attributes.planetscale_series, row.value])).toEqual([
 			["replica-a", 0.4],
 			["replica-b", 1.2],
 		])

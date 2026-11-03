@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { AGENT_GATEWAY_CARDS, AGENT_GUIDE_CATEGORIES, AGENT_GUIDES } from "./agent-tracing-guides"
+import { Array as Arr, String as Str } from "effect"
 
 const hrefs = (id: string) => AGENT_GUIDE_CATEGORIES.find((c) => c.id === id)?.cards.map((c) => c.href)
 
@@ -22,9 +23,13 @@ describe("AGENT_GUIDE_CATEGORIES", () => {
 	})
 
 	it("lists gateways once on their own, not under a language", () => {
-		expect(AGENT_GATEWAY_CARDS.map((c) => c.href)).toContain("/docs/agent-tracing/openrouter")
-		const languageHrefs = AGENT_GUIDE_CATEGORIES.flatMap((c) => c.cards.map((card) => card.href))
-		expect(languageHrefs.some((href) => href.startsWith("/docs/agent-tracing/openrouter"))).toBe(false)
+		expect(Arr.map(AGENT_GATEWAY_CARDS, (c) => c.href)).toContain("/docs/agent-tracing/openrouter")
+		const languageHrefs = Arr.flatMap(AGENT_GUIDE_CATEGORIES, (c) =>
+			Arr.map(c.cards, (card) => card.href),
+		)
+		expect(
+			Arr.some(languageHrefs, (href) => Str.startsWith("/docs/agent-tracing/openrouter")(href)),
+		).toBe(false)
 	})
 
 	it("points every guide at a page", () => {

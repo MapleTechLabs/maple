@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { buildTraceDetail, type SpanHierarchyRow } from "@maple/ui/lib/span-tree"
 import { formatWarehouseDateTimeMs } from "@maple/query-engine"
 
@@ -159,7 +159,7 @@ const ROWS: SpanHierarchyRow[] = [
 		durationMs: 54,
 	}),
 	// three consecutive identical spans → one combined ×3 card
-	...[1, 2, 3].map((i) =>
+	...Arr.map([1, 2, 3], (i) =>
 		row({
 			spanId: `events-${i}`,
 			startTime: at(440 + i * 20),

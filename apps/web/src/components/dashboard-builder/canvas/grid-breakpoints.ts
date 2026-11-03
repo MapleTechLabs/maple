@@ -1,5 +1,6 @@
 import type { GridItem, Layout } from "@maple/grid-engine"
 import type { WidgetLayoutSchema } from "@maple/widgets/dashboard"
+import { Array as Arr } from "effect"
 
 /**
  * The minimum a widget must expose to be placed on the grid.
@@ -91,7 +92,7 @@ function clamp(value: number, min: number, max: number): number {
  * which is why the canvas draws derived tiers without compaction.
  */
 export function projectLayout(widgets: ReadonlyArray<PlacedWidget>, tier: GridTier): Layout {
-	const base = widgets.map((w) => ({
+	const base = Arr.map(widgets, (w) => ({
 		i: w.id,
 		x: w.layout.x,
 		y: w.layout.y,
@@ -116,7 +117,7 @@ export function projectLayout(widgets: ReadonlyArray<PlacedWidget>, tier: GridTi
 	// ever renders a ragged right edge.
 	const flushRow = () => {
 		if (row.length === 0) return
-		let remainder = tier.cols - row.reduce((sum, item) => sum + item.w, 0)
+		let remainder = tier.cols - Arr.reduce(row, 0, (sum, item) => sum + item.w)
 		for (let index = 0; remainder > 0; index = (index + 1) % row.length) {
 			row[index].w += 1
 			remainder -= 1
@@ -127,7 +128,7 @@ export function projectLayout(widgets: ReadonlyArray<PlacedWidget>, tier: GridTi
 		// compactor can't fill (it's switched off here precisely so rows hold
 		// together), and the result reads as holes rather than as a grid.
 		let x = 0
-		const rowHeight = Math.max(...row.map((item) => item.h))
+		const rowHeight = Math.max(...Arr.map(row, (item) => item.h))
 		for (const item of row) {
 			projected.push({ i: item.i, x, y: rowY, w: item.w, h: rowHeight })
 			x += item.w
@@ -142,7 +143,7 @@ export function projectLayout(widgets: ReadonlyArray<PlacedWidget>, tier: GridTi
 			Math.min(tier.minSpan, tier.cols),
 			tier.cols,
 		)
-		const used = row.reduce((sum, r) => sum + r.w, 0)
+		const used = Arr.reduce(row, 0, (sum, r) => sum + r.w)
 		if (used + scaled > tier.cols) flushRow()
 		row.push({ i: item.i, w: scaled, h: item.h })
 	}

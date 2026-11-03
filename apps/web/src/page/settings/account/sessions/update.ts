@@ -34,7 +34,7 @@ const LoadSessions = Command.define("LoadClerkSessions", {
 		const currentSessionId = yield* currentClerkSessionId
 		const result = yield* withUser("Couldn't load your sessions", (user) => user.getSessions()).pipe(
 			Effect.mapBoth({
-				onSuccess: (sessions) => sessions.map(toRow),
+				onSuccess: (sessions) => Array.map(sessions, toRow),
 				onFailure: (error) => error.message,
 			}),
 			Effect.result,

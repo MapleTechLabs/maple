@@ -10,6 +10,7 @@
 // Framework-free and relative-imported: the Foldkit app imports it too.
 import type { ListPodsResponse } from "@maple/domain/http"
 import { formatWholePercent } from "../format"
+import { Array as Arr } from "effect"
 
 type PodRow = ListPodsResponse["data"][number]
 
@@ -109,7 +110,7 @@ function firstCrossingMs(points: ReadonlyArray<BucketPoint>, threshold: number):
  * only that no matching rise was found.
  */
 function median(values: ReadonlyArray<number>): number {
-	const sorted = values.filter((v) => Number.isFinite(v)).toSorted((a, b) => a - b)
+	const sorted = Arr.filter(values, (v) => Number.isFinite(v)).toSorted((a, b) => a - b)
 	if (sorted.length === 0) return 0
 	const mid = Math.floor(sorted.length / 2)
 	return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!
@@ -132,19 +133,20 @@ export function deriveLensVerdict({
 	const sampled = pods.length < totalPods
 	const podCount = Math.max(totalPods, pods.length)
 	if (podCount === 0) return { kind: "no-pods" }
-	const saturatedPods = pods.filter((p) => p.saturation >= SATURATED)
-	const worst = pods.reduce((max, p) => Math.max(max, p.saturation), 0)
+	const saturatedPods = Arr.filter(pods, (p) => p.saturation >= SATURATED)
+	const worst = Arr.reduce(pods, 0, (max, p) => Math.max(max, p.saturation))
 	// Same definition as the pod list's "unbounded" scope: reporting usage, with
 	// neither limit set.
-	const unbounded = pods.filter(
+	const unbounded = Arr.filter(
+		pods,
 		(p) => p.cpuLimitPct === 0 && p.memoryLimitPct === 0 && p.cpuUsage > 0,
 	).length
 
 	// Only buckets that served traffic can speak to latency. A service busy for
 	// a third of the window has a zero median otherwise, and every real spike
 	// then measures as "no spike at all".
-	const served = latency.filter((point) => point.hasTraffic)
-	const baseline = median(served.map((point) => point.value))
+	const served = Arr.filter(latency, (point) => point.hasTraffic)
+	const baseline = median(Arr.map(served, (point) => point.value))
 	const spikeMs = baseline > 0 ? firstCrossingMs(served, baseline * SPIKE_RATIO) : null
 	const saturationMs = firstCrossingMs(cpuOfLimit, SATURATED)
 

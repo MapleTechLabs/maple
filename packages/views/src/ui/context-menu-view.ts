@@ -9,7 +9,7 @@ import {
 	contextMenuSubTriggerStyles,
 	contextMenuTriggerStyles,
 } from "@maple/ui/styles/ui/context-menu"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import { type Attribute, type Html, type HtmlBuilder } from "foldkit/html"
 import {
@@ -166,7 +166,7 @@ const submenuPortal = (h: H, model: Model, entry: SubmenuEntry, triggerId: strin
 							h.Role("menu"),
 							h.Tabindex(-1),
 						],
-						entry.entries.map((sub, index) =>
+						Arr.map(entry.entries, (sub, index) =>
 							item(h, sub, {
 								id: subItemId(model.id, index),
 								isHighlighted: model.subHighlighted === index,
@@ -189,7 +189,8 @@ const menuKeys = (h: H, entries: ReadonlyArray<Entry>) =>
 			? Option.some(
 					Message.PressedMenuKey({
 						key,
-						enabled: entries.map(
+						enabled: Arr.map(
+							entries,
 							(entry) =>
 								entry._tag !== "Separator" &&
 								!(entry._tag === "Item" && entry.isDisabled === true),
@@ -243,7 +244,7 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 							menuKeys(h, inputs.entries),
 							h.OnMouseLeave(Message.LeftMenu()),
 						],
-						inputs.entries.map((entry, index) => {
+						Arr.map(inputs.entries, (entry, index) => {
 							switch (entry._tag) {
 								case "Separator":
 									return separator(h)
@@ -283,7 +284,7 @@ export const idleTrigger = <M>(
 	)
 
 /** The trigger area, with the menu's portal as its last child while open (moved to `<body>`). */
-export const view =Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) =>
+export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 	h.div(
 		[
 			h.Class(cn(contextMenuTriggerStyles, inputs.triggerClassName)),

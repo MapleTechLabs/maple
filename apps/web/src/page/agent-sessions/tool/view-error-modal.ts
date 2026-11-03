@@ -10,7 +10,7 @@ import {
 } from "../../../lib/agent-sessions/tool-error-display"
 import { UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -55,10 +55,11 @@ export const detailOf = (model: Model): ErrorDetail =>
 	Option.getOrElse(AsyncData.getData(model.detail.data), () => EMPTY_DETAIL)
 
 export const differencesOf = (detail: ErrorDetail): ReadonlyMap<string, VariantDifference> => {
-	const found = variantDifferences(detail.variants.map((row) => unwrapToolErrorText(row.message).text))
+	const found = variantDifferences(Arr.map(detail.variants, (row) => unwrapToolErrorText(row.message).text))
 	return new Map(
-		detail.variants.flatMap((row, index) =>
-			Option.toArray(Option.fromUndefinedOr(found[index])).map(
+		Arr.flatMap(detail.variants, (row, index) =>
+			Arr.map(
+				Option.toArray(Option.fromUndefinedOr(found[index])),
 				(difference) => [row.message, difference] as const,
 			),
 		),
@@ -66,13 +67,11 @@ export const differencesOf = (detail: ErrorDetail): ReadonlyMap<string, VariantD
 }
 
 const facts = (h: H, items: ReadonlyArray<Html | string>): ReadonlyArray<Html> =>
-	items.map((item, index) =>
+	Arr.map(items, (item, index) =>
 		h.span(
 			[h.Class("contents")],
 			[
-				...(index > 0
-					? [h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])]
-					: []),
+				...(index > 0 ? [h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])] : []),
 				typeof item === "string" ? h.span([h.Class("text-muted-foreground")], [item]) : item,
 			],
 		),
@@ -83,17 +82,15 @@ const mutedHeading = (h: H, text: string): Html =>
 
 const headingOf = (h: H, group: Prepared, text: string): Html => {
 	if (group.fingerprint === UNGROUPED_FINGERPRINT)
-		return vstack(h, { gap: "1" },
-			[
-				mutedHeading(h, "Failures recorded before error grouping"),
-				h.p(
-					[h.Class("max-w-[90ch] font-mono text-xs leading-[17px] text-muted-foreground")],
-					[
-						"These calls failed before Maple kept a failure's text, so they cannot be told apart by what they said. They leave this list as raw retention ages them out.",
-					],
-				),
-			],
-		)
+		return vstack(h, { gap: "1" }, [
+			mutedHeading(h, "Failures recorded before error grouping"),
+			h.p(
+				[h.Class("max-w-[90ch] font-mono text-xs leading-[17px] text-muted-foreground")],
+				[
+					"These calls failed before Maple kept a failure's text, so they cannot be told apart by what they said. They leave this list as raw retention ages them out.",
+				],
+			),
+		])
 	if (text === "") return mutedHeading(h, "No error message recorded")
 	return errorTextHeading(h, errorTextTokens(text))
 }
@@ -180,9 +177,10 @@ const headerTrend = (h: H, inputs: ModalInputs): Html => {
 						"Failed calls / ",
 						bucket.unit,
 					]),
-					typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
-						["max ", formatNumber(Math.max(0, ...group.spark))],
-					),
+					typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" }, [
+						"max ",
+						formatNumber(Math.max(0, ...group.spark)),
+					]),
 				],
 			),
 			miniBars(h, {
@@ -209,7 +207,7 @@ const headerTrend = (h: H, inputs: ModalInputs): Html => {
 				calls: inputs.toolCalls,
 				failures: group.calls,
 				activeBuckets: {
-					active: group.spark.filter((count) => count > 0).length,
+					active: Arr.filter(group.spark, (count) => count > 0).length,
 					total: group.spark.length,
 					unit: bucket.unit,
 				},
@@ -294,71 +292,67 @@ const NAV_BUTTON = typographyClass({ tone: "muted", hoverTone: "foreground" })
 
 const headerActions = (h: H, model: Model, inputs: ModalInputs): Html => {
 	const { position } = inputs
-	return hstack(h, { gap: "2" },
-		[
-			iconButton(
-				h,
-				{
-					label: "Previous error",
-					variant: "outline",
-					className: NAV_BUTTON,
-					isDisabled: position.index === 0,
-					attributes: [h.OnClick(Message.ClickedStep({ offset: -1 }))],
-				},
-				[icon(h, "ChevronUpIcon", { attributes: [h.AriaHidden(true)] })],
-			),
-			iconButton(
-				h,
-				{
-					label: "Next error",
-					variant: "outline",
-					className: NAV_BUTTON,
-					isDisabled: position.index >= position.total - 1,
-					attributes: [h.OnClick(Message.ClickedStep({ offset: 1 }))],
-				},
-				[icon(h, "ChevronDownIcon", { attributes: [h.AriaHidden(true)] })],
-			),
-			iconButton(
-				h,
-				{
-					label:
-						model.linkCopy === "failed"
-							? "Copy failed"
-							: model.linkCopy === "copied"
-								? "Link copied"
-								: "Copy link",
-					variant: "outline",
-					className: NAV_BUTTON,
-					attributes: [h.OnClick(Message.ClickedCopyLink())],
-				},
-				[
-					icon(h, model.linkCopy === "copied" ? "CheckIcon" : "LinkIcon", {
-						attributes: [h.AriaHidden(true)],
-					}),
-				],
-			),
-			linkButton(
-				h,
-				{
-					variant: "outline",
-					size: "sm",
-					className: "font-mono text-2xs sm:text-2xs",
-					href: hrefOf(
-						AppRoute.AgentSessions({ search: { tools: [inputs.tool], hasErrors: true } }),
-					),
-				},
-				[
-					"Open in Sessions",
-					icon(h, "ExternalLinkIcon", {
-						size: 12,
-						className: "text-muted-foreground",
-						attributes: [h.AriaHidden(true)],
-					}),
-				],
-			),
-			iconButton(h, { label: "Close", attributes: [h.OnClick(Message.ClickedClose())] }, [
-				icon(h, "XmarkIcon", { attributes: [h.AriaHidden(true)] }),
-			]),
-		],
-	)
+	return hstack(h, { gap: "2" }, [
+		iconButton(
+			h,
+			{
+				label: "Previous error",
+				variant: "outline",
+				className: NAV_BUTTON,
+				isDisabled: position.index === 0,
+				attributes: [h.OnClick(Message.ClickedStep({ offset: -1 }))],
+			},
+			[icon(h, "ChevronUpIcon", { attributes: [h.AriaHidden(true)] })],
+		),
+		iconButton(
+			h,
+			{
+				label: "Next error",
+				variant: "outline",
+				className: NAV_BUTTON,
+				isDisabled: position.index >= position.total - 1,
+				attributes: [h.OnClick(Message.ClickedStep({ offset: 1 }))],
+			},
+			[icon(h, "ChevronDownIcon", { attributes: [h.AriaHidden(true)] })],
+		),
+		iconButton(
+			h,
+			{
+				label:
+					model.linkCopy === "failed"
+						? "Copy failed"
+						: model.linkCopy === "copied"
+							? "Link copied"
+							: "Copy link",
+				variant: "outline",
+				className: NAV_BUTTON,
+				attributes: [h.OnClick(Message.ClickedCopyLink())],
+			},
+			[
+				icon(h, model.linkCopy === "copied" ? "CheckIcon" : "LinkIcon", {
+					attributes: [h.AriaHidden(true)],
+				}),
+			],
+		),
+		linkButton(
+			h,
+			{
+				variant: "outline",
+				size: "sm",
+				className: "font-mono text-2xs sm:text-2xs",
+				href: hrefOf(AppRoute.AgentSessions({ search: { tools: [inputs.tool], hasErrors: true } })),
+			},
+			[
+				"Open in Sessions",
+				icon(h, "ExternalLinkIcon", {
+					size: 12,
+					className: "text-muted-foreground",
+					attributes: [h.AriaHidden(true)],
+				}),
+			],
+		),
+		iconButton(h, { label: "Close", attributes: [h.OnClick(Message.ClickedClose())] }, [
+			icon(h, "XmarkIcon", { attributes: [h.AriaHidden(true)] }),
+		]),
+	])
 }

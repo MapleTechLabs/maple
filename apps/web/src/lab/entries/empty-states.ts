@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Clock, Effect, Result, Schema } from "effect"
+import { Clock, Effect, Result, Schema, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -87,13 +87,19 @@ const errorsModel = (nowMs: number, presence: Presence): Errors.Model => ({
 const errorsEmptyView = Submodel.defineView<Errors.Model, ErrorsMessage.Message, { isNarrowed: boolean }>(
 	(model, inputs, h) => hubEmpty(h, model, inputs.isNarrowed),
 )
-const errorsFooterView = Submodel.defineView<Errors.Model, ErrorsMessage.Message, { paging: "more" | "failed" }>(
-	(_model, inputs, h) => h.div([], pagingFooter(h, inputs.paging)),
-)
+const errorsFooterView = Submodel.defineView<
+	Errors.Model,
+	ErrorsMessage.Message,
+	{ paging: "more" | "failed" }
+>((_model, inputs, h) => h.div([], pagingFooter(h, inputs.paging)))
 
 const WINDOW = { startTime: "2026-11-01 00:00:00", endTime: "2026-11-01 06:00:00" }
 
-const releasesModel = (nowMs: number, presence: Presence, search: Releases.Model["search"]): Releases.Model => {
+const releasesModel = (
+	nowMs: number,
+	presence: Presence,
+	search: Releases.Model["search"],
+): Releases.Model => {
 	const entered = initReleases({ search }, context).model
 	const resolved = updateReleases(
 		entered,
@@ -121,24 +127,38 @@ const releasesModel = (nowMs: number, presence: Presence, search: Releases.Model
 const anomaliesModel = (nowMs: number, presence: Presence | null): Anomalies.Model => {
 	const entered = initAnomalies({ search: {} }, context).model
 	if (presence === null) return entered
-	const loaded = [
-		AnomaliesMessage.Message.ReadClock({ nowMs }),
-		AnomaliesMessage.Message.CompletedFetchFirstPage({
-			key: entered.firstPage.key ?? "",
-			result: Result.succeed({ data: [], nextCursor: null }),
-		}),
-	].reduce((model, message) => updateAnomalies(model, message, context).model, entered)
+	const loaded = Arr.reduce(
+		[
+			AnomaliesMessage.Message.ReadClock({ nowMs }),
+			AnomaliesMessage.Message.CompletedFetchFirstPage({
+				key: entered.firstPage.key ?? "",
+				result: Result.succeed({ data: [], nextCursor: null }),
+			}),
+		],
+		entered,
+		(model, message) => updateAnomalies(model, message, context).model,
+	)
 	return { ...loaded, presence: presenceOf(presence) }
 }
 
-const FAILED_PROGRESS = { phase: "failed", agentSpansComplete: false, loadedSpans: 1200, loadedAgentSpans: 340 } as const
+const FAILED_PROGRESS = {
+	phase: "failed",
+	agentSpansComplete: false,
+	loadedSpans: 1200,
+	loadedAgentSpans: 340,
+} as const
 
 const sessionView = Submodel.defineView<AgentSession.Model, AgentSessionMessage.Message>((model, h) =>
 	h.div(
 		[h.Class("flex flex-col gap-10")],
 		[
 			h.div([h.Class("flex justify-end border-b pb-4")], [loadIndicator(h, model, FAILED_PROGRESS)]),
-			dividerBlock(h, { kind: "divider", key: "divider:more", depth: 0, dividerKind: "more", startMs: undefined }, FAILED_PROGRESS, "UTC"),
+			dividerBlock(
+				h,
+				{ kind: "divider", key: "divider:more", depth: 0, dividerKind: "more", startMs: undefined },
+				FAILED_PROGRESS,
+				"UTC",
+			),
 		],
 	),
 )
@@ -197,7 +217,8 @@ const itemView = (model: Model, h: HtmlBuilder<Message>): Html => {
 		case "recommendations-loading":
 			return h.submodel({
 				slotId: "lab-recommendations",
-				model: initRecommendations(AppRoute.Recommendation({ recommendationKey: "lab" }), context).model,
+				model: initRecommendations(AppRoute.Recommendation({ recommendationKey: "lab" }), context)
+					.model,
 				view: recommendationsView,
 				toParentMessage: ignore,
 				viewInputs: { context },

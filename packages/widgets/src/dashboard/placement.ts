@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /**
  * Where an auto-placed widget lands on the canvas.
  *
@@ -40,11 +41,11 @@ export const findNextPosition = (
 ): { x: number; y: number } => {
 	if (widgets.length === 0) return { x: 0, y: 0 }
 
-	const maxY = Math.max(...widgets.map((widget) => widget.layout.y))
-	const bottomRow = widgets.filter((widget) => widget.layout.y === maxY)
-	const rightEdge = Math.max(...bottomRow.map((widget) => widget.layout.x + widget.layout.w))
+	const maxY = Math.max(...Arr.map(widgets, (widget) => widget.layout.y))
+	const bottomRow = Arr.filter(widgets, (widget) => widget.layout.y === maxY)
+	const rightEdge = Math.max(...Arr.map(bottomRow, (widget) => widget.layout.x + widget.layout.w))
 
 	if (rightEdge + newWidth <= DASHBOARD_GRID_COLS) return { x: rightEdge, y: maxY }
 
-	return { x: 0, y: Math.max(...widgets.map((widget) => widget.layout.y + widget.layout.h)) }
+	return { x: 0, y: Math.max(...Arr.map(widgets, (widget) => widget.layout.y + widget.layout.h)) }
 }

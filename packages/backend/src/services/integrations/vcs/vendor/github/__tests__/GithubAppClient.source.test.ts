@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import {
@@ -42,7 +42,7 @@ describe("GithubAppClient source access", () => {
 		const responses = [
 			jsonResponse({ token: "installation-token", expires_at: "2099-01-01T00:00:00Z" }),
 			jsonResponse({
-				sha: "a".repeat(40),
+				sha: Str.repeat(40)("a"),
 				html_url: "https://github.com/octo/shop/commit/a",
 				commit: { message: "m", author: null },
 				author: null,
@@ -172,8 +172,8 @@ describe("GithubAppClient source access", () => {
 		return Effect.gen(function* () {
 			const client = yield* GithubAppClient
 			const file = yield* client.getSourceFile("42", "octo", "shop", ".maple/review.md", "main")
-			const unknownSha = yield* client.getCommit("42", "octo", "shop", "a".repeat(40))
-			const otherRepo = yield* client.getCommit("42", "octo", "shop", "b".repeat(40))
+			const unknownSha = yield* client.getCommit("42", "octo", "shop", Str.repeat(40)("a"))
+			const otherRepo = yield* client.getCommit("42", "octo", "shop", Str.repeat(40)("b"))
 			assert.isTrue(Option.isNone(file))
 			assert.isTrue(Option.isNone(unknownSha))
 			assert.isTrue(Option.isNone(otherRepo))

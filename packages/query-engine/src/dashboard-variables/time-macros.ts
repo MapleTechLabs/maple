@@ -1,3 +1,4 @@
+import { Record as Rec } from "effect"
 /**
  * `$__startTime` / `$__endTime` substitution in widget data-source params.
  *
@@ -29,7 +30,7 @@ export function interpolateTimeMacros(
 ): Record<string, unknown> {
 	const result: Record<string, unknown> = {}
 
-	for (const [key, value] of Object.entries(params)) {
+	for (const [key, value] of Rec.toEntries(params)) {
 		if (typeof value === "string") {
 			if (value === START_TIME_MACRO) {
 				result[key] = window.startTime

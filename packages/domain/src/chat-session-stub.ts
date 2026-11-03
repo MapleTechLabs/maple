@@ -5,7 +5,7 @@
  * api, alerting and chat-bot, which hold a cross-script binding to it. Keeping them in one place
  * is what keeps those bindings structurally safe.
  */
-import { Effect, Schema, Stream } from "effect"
+import { Effect, Schema, Stream, Array as Arr } from "effect"
 import type {
 	ChatEvent,
 	ChatEventInput,
@@ -28,7 +28,7 @@ export const CHAT_ABORT_REASONS = ["user", "superseded", "stale", "evicted"] as 
 export type ChatAbortReason = (typeof CHAT_ABORT_REASONS)[number]
 
 export const isChatAbortReason = (value: unknown): value is ChatAbortReason =>
-	CHAT_ABORT_REASONS.some((reason) => reason === value)
+	Arr.some(CHAT_ABORT_REASONS, (reason) => reason === value)
 
 /**
  * The `ChatSession` Durable Object's RPC surface, as the object answers it over Workers RPC.

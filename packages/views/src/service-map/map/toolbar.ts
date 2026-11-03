@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
 import * as Combobox from "../../ui/combobox"
@@ -123,7 +123,8 @@ const focusControls = <M>(
 				{
 					size: "icon-xs",
 					label: "Clear focus",
-					className: "-mr-0.5 size-5 text-muted-foreground hover:text-foreground active:text-foreground sm:size-5",
+					className:
+						"-mr-0.5 size-5 text-muted-foreground hover:text-foreground active:text-foreground sm:size-5",
 					attributes: [h.OnClick(inputs.onClearFocus)],
 				},
 				[icon(h, "XmarkIcon")],
@@ -157,7 +158,7 @@ const focusControls = <M>(
 	),
 ]
 
-const TRAFFIC_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = TRAFFIC_FILTER_STEPS.map((pct) => ({
+const TRAFFIC_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(TRAFFIC_FILTER_STEPS, (pct) => ({
 	_tag: "Item",
 	item: { value: String(pct), label: trafficStepLabel(pct) },
 }))
@@ -209,28 +210,26 @@ const presentationControls = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>, tr
 			// The value shows raw, capitalized by CSS.
 			renderValue: (value) => [value],
 			toView: (parts) =>
-				hstack(h, { gap: "2", className: "ml-auto" },
-					[
-						...parts,
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "sm",
-								className: "max-sm:size-8 max-sm:px-0",
-								attributes: [
-									...trigger(TIP_RESORT),
-									h.AriaLabel("Re-sort"),
-									h.OnClick(inputs.onResort),
-								],
-							},
-							[
-								icon(h, "ArrowRotateAnticlockwiseIcon"),
-								h.span([h.Class("max-sm:sr-only")], ["Re-sort"]),
+				hstack(h, { gap: "2", className: "ml-auto" }, [
+					...parts,
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "sm",
+							className: "max-sm:size-8 max-sm:px-0",
+							attributes: [
+								...trigger(TIP_RESORT),
+								h.AriaLabel("Re-sort"),
+								h.OnClick(inputs.onResort),
 							],
-						),
-					],
-				),
+						},
+						[
+							icon(h, "ArrowRotateAnticlockwiseIcon"),
+							h.span([h.Class("max-sm:sr-only")], ["Re-sort"]),
+						],
+					),
+				]),
 		},
 	})
 

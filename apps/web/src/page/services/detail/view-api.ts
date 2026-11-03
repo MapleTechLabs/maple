@@ -30,6 +30,7 @@ import type { Endpoint } from "./model-tabs"
 import { SPARK_TOKENS, sparkline } from "./view-api-charts"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The API tab: endpoint rows and group rows.
 
@@ -344,7 +345,7 @@ const groupHeaderRow = (
 ) => {
 	const { group } = options
 	const sum = (pick: (endpoint: Endpoint) => number) =>
-		group.endpoints.reduce((acc, endpoint) => acc + pick(endpoint), 0)
+		Arr.reduce(group.endpoints, 0, (acc, endpoint) => acc + pick(endpoint))
 	const mix = knownStatusMix({
 		httpClassifiedSpanCount: sum((endpoint) => endpoint.httpClassifiedSpanCount),
 		httpStatusCount: sum((endpoint) => endpoint.httpStatusCount),
@@ -412,7 +413,7 @@ const formatLatencyText = (ms: number) => (ms > 0 ? formatLatency(ms) : EMPTY_VA
 
 /** Whether a sibling in the group serves the same route, so only the method tells them apart. */
 const sharesRoute = (endpoints: ReadonlyArray<Endpoint>, endpoint: Endpoint) =>
-	endpoints.some((other) => other !== endpoint && other.route === endpoint.route)
+	Arr.some(endpoints, (other) => other !== endpoint && other.route === endpoint.route)
 
 /** `GroupRows`: a collapsed bucket with its explainer, or a stem header and its rows. */
 export const groupRows = (
@@ -423,7 +424,7 @@ export const groupRows = (
 ): ReadonlyArray<Html> => {
 	if (group.kind === "unrouted" || group.kind === "probes") {
 		const copy = COLLAPSED_COPY[group.kind]
-		const sample = group.endpoints.slice(0, 2).map((endpoint) => endpoint.route)
+		const sample = Arr.map(group.endpoints.slice(0, 2), (endpoint) => endpoint.route)
 		const remaining = group.endpoints.length - sample.length
 		return [
 			groupHeaderRow(h, {
@@ -445,7 +446,7 @@ export const groupRows = (
 									h.span(
 										[h.Class("truncate text-2xs text-foreground-faint")],
 										[
-											sample.join("  ·  "),
+											Arr.join(sample, "  ·  "),
 											remaining > 0 ? `  ·  ${formatNumber(remaining)} more` : "",
 										],
 									),
@@ -473,7 +474,7 @@ export const groupRows = (
 				"border-b hover:bg-transparent active:bg-transparent",
 			),
 			...(isExpanded
-				? group.endpoints.map((endpoint) =>
+				? Arr.map(group.endpoints, (endpoint) =>
 						endpointRow(h, endpoint, "", context, sharesRoute(group.endpoints, endpoint)),
 					)
 				: []),
@@ -491,7 +492,7 @@ export const groupRows = (
 					}),
 				]
 			: []),
-		...group.endpoints.map((endpoint) =>
+		...Arr.map(group.endpoints, (endpoint) =>
 			endpointRow(h, endpoint, group.stem, context, sharesRoute(group.endpoints, endpoint)),
 		),
 	]
@@ -507,7 +508,7 @@ export const visibleEndpoints = (
 	groups: ReadonlyArray<EndpointGroup<Endpoint>>,
 	expanded: ReadonlyArray<string>,
 ): ReadonlyArray<Endpoint> =>
-	groups.flatMap((group) =>
+	Arr.flatMap(groups, (group) =>
 		(group.kind === "unrouted" || group.kind === "probes") && !expanded.includes(group.kind)
 			? []
 			: group.endpoints,

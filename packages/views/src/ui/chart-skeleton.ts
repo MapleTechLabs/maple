@@ -10,6 +10,7 @@ import {
 	pieGhost,
 	statGhost,
 } from "./chart-skeleton-shapes"
+import { Array as Arr } from "effect"
 
 // Port of `ChartSkeleton` (packages/ui/src/components/charts/_shared/chart-skeleton.tsx), every
 // ghost shape. `ChartLoading` is in `chart-state.ts`; the newer ghosts are in `chart-skeleton-shapes.ts`.
@@ -32,10 +33,10 @@ const STROKE = "var(--muted-foreground)"
 const TREND = "M 2 72 L 20 52 L 38 64 L 56 30 L 74 46 L 98 16"
 
 const attrs = <M>(h: HtmlBuilder<M>, entries: ReadonlyArray<readonly [string, string]>) =>
-	entries.map(([name, value]) => h.Attribute(name, value))
+	Arr.map(entries, ([name, value]) => h.Attribute(name, value))
 
 const gridLines = <M>(h: HtmlBuilder<M>): ReadonlyArray<Html> =>
-	[28, 52, 76].map((y) =>
+	Arr.map([28, 52, 76], (y) =>
 		h.line(
 			attrs(h, [
 				["x1", "0"],
@@ -94,7 +95,7 @@ const HISTOGRAM_HEIGHTS = [14, 28, 46, 68, 86, 96, 84, 64, 42, 26, 13]
 
 /** `Bars`: ghost columns. */
 const bars = <M>(h: HtmlBuilder<M>, heights: ReadonlyArray<number>) =>
-	heights.map((height) =>
+	Arr.map(heights, (height) =>
 		h.div([h.Class("flex-1 rounded-xs bg-foreground/15"), h.Style({ height: `${height}%` })]),
 	)
 

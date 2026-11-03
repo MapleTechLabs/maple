@@ -1,10 +1,13 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Logger } from "effect"
+import { Effect, Logger, Array as Arr, String as Str } from "effect"
 import { PROBE_CHECKS, PROBE_SENTINEL } from "./executor-probe"
 import { type ExecutorContainer, type ExecutorProbeReport, type ProbeStore, probeOnce } from "./executor-run"
 
 /** Script output answering every check with exit 0. */
-const ALL_ANSWERED = PROBE_CHECKS.map((check) => `${PROBE_SENTINEL} ${check.id} 0 `).join("\n")
+const ALL_ANSWERED = Arr.join(
+	Arr.map(PROBE_CHECKS, (check) => `${PROBE_SENTINEL} ${check.id} 0 `),
+	"\n",
+)
 
 interface Fake {
 	readonly calls: Array<string>
@@ -31,7 +34,9 @@ const fake = (options: {
 			if (options.script === "fails")
 				return record("exec script").pipe(Effect.andThen(Effect.fail("aborted")))
 			const stdout =
-				options.script === "partial" ? ALL_ANSWERED.split("\n").slice(0, 3).join("\n") : ALL_ANSWERED
+				options.script === "partial"
+					? Arr.join(Str.split("\n")(ALL_ANSWERED).slice(0, 3), "\n")
+					: ALL_ANSWERED
 			return record("exec script").pipe(Effect.as({ exitCode: 0, stdout }))
 		},
 		interceptHttp: record("intercept http"),
@@ -56,7 +61,7 @@ const run = (subject: Fake) =>
 		Effect.provide(
 			Logger.layer([
 				Logger.make(({ message }) => {
-					const [first] = Array.isArray(message) ? message : [message]
+					const [first] = Arr.isArray(message) ? message : [message]
 					subject.calls.push(`log ${String(first)}`)
 				}),
 			]),
@@ -64,7 +69,7 @@ const run = (subject: Fake) =>
 	)
 
 const withoutCheckLogs = (calls: ReadonlyArray<string>) =>
-	calls.filter((call) => call !== "log executor probe check")
+	Arr.filter(calls, (call) => call !== "log executor probe check")
 
 describe("probeOnce", () => {
 	it.effect("runs every step, logs the report, stores it, then destroys the container", () =>
@@ -83,7 +88,7 @@ describe("probeOnce", () => {
 				"put",
 			])
 			assert.strictEqual(
-				subject.calls.filter((call) => call === "log executor probe check").length,
+				Arr.filter(subject.calls, (call) => call === "log executor probe check").length,
 				PROBE_CHECKS.length,
 			)
 			const [report] = subject.stored

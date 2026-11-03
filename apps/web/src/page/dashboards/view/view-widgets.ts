@@ -18,7 +18,7 @@ import * as Popover from "@maple/views/ui/popover"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { isAlertable } from "./widget-actions"
 import { moveValue } from "./move-target"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec } from "effect"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -152,8 +152,8 @@ const moveToEntry = (sections: Sections, widget: Widget): MenuView.MenuEntry => 
 		separatorAfter: 0,
 		entries: [
 			{ _tag: "Item", value: moveValue(null), label: "Ungrouped", isDisabled: inRoot },
-			...sections.flatMap((section) =>
-				section.tabs.map((tab): MenuView.MenuItemEntry => ({
+			...Arr.flatMap(sections, (section) =>
+				Arr.map(section.tabs, (tab): MenuView.MenuItemEntry => ({
 					_tag: "Item",
 					value: moveValue({ sectionId: section.id, tabId: tab.id }),
 					label: section.tabs.length === 1 ? section.title : `${section.title} · ${tab.title}`,
@@ -262,9 +262,9 @@ export const tileContext = (
 // MEMO
 
 const sameFields = (a: TileInputs, b: TileInputs): boolean => {
-	const before = Object.values(a)
-	const after = Object.values(b)
-	return before.length === after.length && before.every((value, index) => value === after[index])
+	const before = Rec.values(a)
+	const after = Rec.values(b)
+	return before.length === after.length && Arr.every(before, (value, index) => value === after[index])
 }
 
 type TileMemo = Readonly<{ lazy: ReturnType<typeof createLazy>; inputs: TileInputs }>

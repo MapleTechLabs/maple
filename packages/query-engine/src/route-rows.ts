@@ -14,9 +14,10 @@
  * driver — the one input a shaper needs beyond its rows is the window's
  * duration, and the caller hands that in.
  */
-import { DateTime, Option, Schema } from "effect"
+import { DateTime, Option, Schema, Array as Arr } from "effect"
 import { SpanId, TraceId } from "@maple/domain"
 import { parseWarehouseDateTime, warehouseDateTimeToIso } from "./datetime"
+import { rowText } from "./row-text"
 
 // ---------------------------------------------------------------------------
 // Sampling helpers (shared with the browser's service pages and custom charts)
@@ -123,11 +124,11 @@ export interface ServiceOverview {
  */
 type RawCommitTuple = readonly [unknown, unknown, unknown, unknown]
 
-const isCommitTuple = (value: unknown): value is RawCommitTuple => Array.isArray(value) && value.length === 4
+const isCommitTuple = (value: unknown): value is RawCommitTuple => Arr.isArray(value) && value.length === 4
 
 /** A row timestamp as a string: decoded rows carry a `DateTime.Utc`, HTTP JSON the string. */
 const timeString = (value: unknown): string =>
-	DateTime.isDateTime(value) ? DateTime.formatIso(value) : String(value ?? "")
+	DateTime.isDateTime(value) ? DateTime.formatIso(value) : rowText(value)
 
 /**
  * One services-list row, already collapsed to (service, environment) by
@@ -154,11 +155,11 @@ export function coerceServiceOverviewRow(
 	const resolvedCount = resolveThroughput(spanCount, estimatedSpanCount, undefined)
 	const sampling = summarizeSampling(resolvedCount, spanCount, durationSeconds)
 
-	const rawCommits = Array.isArray(raw.commits) ? raw.commits : []
-	const commits: CommitBreakdown[] = rawCommits.filter(isCommitTuple).map((tuple) => {
+	const rawCommits = Arr.isArray(raw.commits) ? raw.commits : []
+	const commits: CommitBreakdown[] = Arr.map(Arr.filter(rawCommits, isCommitTuple), (tuple) => {
 		const commitSpanCount = Number(tuple[1] ?? 0)
 		return {
-			commitSha: String(tuple[0] ?? "N/A"),
+			commitSha: rowText(tuple[0], "N/A"),
 			spanCount: commitSpanCount,
 			percentage: spanCount > 0 ? Math.round((commitSpanCount / spanCount) * 100) : 0,
 			errorCount: Number(tuple[2] ?? 0),
@@ -167,10 +168,10 @@ export function coerceServiceOverviewRow(
 	})
 
 	return {
-		serviceName: String(raw.serviceName ?? ""),
-		serviceNamespace: String(raw.serviceNamespace ?? ""),
+		serviceName: rowText(raw.serviceName),
+		serviceNamespace: rowText(raw.serviceNamespace),
 		// `||`, not `??`: the warehouse stores a missing environment as "".
-		environment: String(raw.environment || "unknown"),
+		environment: rowText(raw.environment) || "unknown",
 		commits,
 		p50LatencyMs: Number(raw.p50LatencyMs ?? 0),
 		p95LatencyMs: Number(raw.p95LatencyMs ?? 0),
@@ -196,7 +197,7 @@ export function coerceServiceOverviewRows(
 	rows: ReadonlyArray<Record<string, unknown>>,
 	durationSeconds: number,
 ): ServiceOverview[] {
-	return rows.map((row) => coerceServiceOverviewRow(row, durationSeconds))
+	return Arr.map(rows, (row) => coerceServiceOverviewRow(row, durationSeconds))
 }
 
 // ---------------------------------------------------------------------------
@@ -222,8 +223,8 @@ export interface ServiceUsageTotals {
 }
 
 export function coerceServiceUsageRows(rows: ReadonlyArray<Record<string, unknown>>): ServiceUsage[] {
-	return rows.map((row) => ({
-		serviceName: String(row.serviceName ?? ""),
+	return Arr.map(rows, (row) => ({
+		serviceName: rowText(row.serviceName),
 		totalLogs: Number(row.totalLogCount ?? 0),
 		totalTraces: Number(row.totalTraceCount ?? 0),
 		totalMetrics:
@@ -280,15 +281,13 @@ export interface ErrorByType {
 
 /** A decoded `DateTime.Utc` in process, or its string form once it has crossed JSON. */
 const toDate = (value: unknown): Date =>
-	DateTime.isDateTime(value)
-		? DateTime.toDateUtc(value)
-		: new Date(warehouseDateTimeToIso(String(value ?? "")))
+	DateTime.isDateTime(value) ? DateTime.toDateUtc(value) : new Date(warehouseDateTimeToIso(rowText(value)))
 
 export function coerceErrorsByTypeRows(rows: ReadonlyArray<Record<string, unknown>>): ErrorByType[] {
-	return rows.map((raw) => ({
-		fingerprintHash: String(raw.fingerprintHash ?? ""),
-		errorLabel: String(raw.errorLabel ?? ""),
-		sampleMessage: String(raw.sampleMessage ?? ""),
+	return Arr.map(rows, (raw) => ({
+		fingerprintHash: rowText(raw.fingerprintHash),
+		errorLabel: rowText(raw.errorLabel),
+		sampleMessage: rowText(raw.sampleMessage),
 		count: Number(raw.count),
 		affectedServicesCount: Number(raw.affectedServicesCount),
 		firstSeen: toDate(raw.firstSeen),
@@ -357,24 +356,24 @@ function parseAttributes(value: unknown): Record<string, string> {
 
 /** A decoded `DateTime.Utc` in process, or the ISO string it became on the HTTP wire. */
 const isoTimestamp = (value: unknown): string =>
-	DateTime.isDateTime(value) ? DateTime.formatIso(value) : String(value ?? "")
+	DateTime.isDateTime(value) ? DateTime.formatIso(value) : rowText(value)
 
 export function coerceLogRow(raw: Record<string, unknown>): LogRow {
 	return {
 		timestamp: isoTimestamp(raw.timestamp),
-		exactTimestamp: String(raw.exactTimestamp ?? ""),
+		exactTimestamp: rowText(raw.exactTimestamp),
 		recordIdentity: typeof raw.recordIdentity === "string" ? raw.recordIdentity : undefined,
-		severityText: String(raw.severityText ?? ""),
+		severityText: rowText(raw.severityText),
 		severityNumber: Number(raw.severityNumber ?? 0),
-		serviceName: String(raw.serviceName ?? ""),
-		body: String(raw.body ?? ""),
-		traceId: raw.traceId ? toTraceId(String(raw.traceId)) : undefined,
-		spanId: raw.spanId ? toSpanId(String(raw.spanId)) : undefined,
+		serviceName: rowText(raw.serviceName),
+		body: rowText(raw.body),
+		traceId: raw.traceId ? toTraceId(rowText(raw.traceId)) : undefined,
+		spanId: raw.spanId ? toSpanId(rowText(raw.spanId)) : undefined,
 		logAttributes: parseAttributes(raw.logAttributes),
 		resourceAttributes: parseAttributes(raw.resourceAttributes),
 	}
 }
 
 export function coerceLogRows(rows: ReadonlyArray<Record<string, unknown>>): LogRow[] {
-	return rows.map(coerceLogRow)
+	return Arr.map(rows, coerceLogRow)
 }

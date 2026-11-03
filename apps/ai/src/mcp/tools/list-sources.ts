@@ -1,6 +1,6 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
 import { truncate } from "../lib/format"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, DateTime, Effect, Schema, Array as Arr } from "effect"
 import { ListSourcesOutput } from "@maple/domain/mcp-outputs"
 import { SourcePlatform } from "@maple/domain/primitives"
 import { SOURCE_HEALTH_STATUSES } from "@maple/domain/source-health"
@@ -12,7 +12,7 @@ import { publicSourceId } from "@maple/backend/services/org/integration-sources"
 
 const TOOL = "list_sources"
 
-const RANK = new Map(SOURCE_HEALTH_STATUSES.map((status, index) => [status, index]))
+const RANK = new Map(Arr.map(SOURCE_HEALTH_STATUSES, (status, index) => [status, index]))
 
 export function registerListSourcesTool(server: McpToolRegistrar) {
 	server.define({
@@ -23,7 +23,8 @@ export function registerListSourcesTool(server: McpToolRegistrar) {
 			"(each with its own token, or the default ingest keys), Kubernetes clusters, Docker hosts, Prometheus scrape " +
 			"targets and connected integrations (Cloudflare, Google Cloud, Railway, PlanetScale, GitHub CI). Each source " +
 			"says whether data is arriving and when it last did. Telemetry carries its source in the `maple_source_id` " +
-			"resource attribute, so a source id filters traces, logs and metrics.",
+			"resource attribute, so a source id filters traces, logs and metrics. Use it to find which sender stopped; " +
+			"ingest_freshness says whether any data arrives at all, list_integrations covers provider credentials and pollers.",
 		parameters: Schema.Struct({
 			platform: P.optionalOneOf(SourcePlatform.literals, "Only sources of this platform"),
 		}),
@@ -41,9 +42,9 @@ export function registerListSourcesTool(server: McpToolRegistrar) {
 							new McpQueryError({ message: error.message, pipeName: TOOL, cause: error }),
 					),
 				)
-			const rows = sources
-				.filter((source) => platform === undefined || source.platform === platform)
-				.map((source) => ({
+			const rows = Arr.map(
+				Arr.filter(sources, (source) => platform === undefined || source.platform === platform),
+				(source) => ({
 					id: publicSourceId(source.id),
 					name: source.name,
 					platform: source.platform,
@@ -52,15 +53,15 @@ export function registerListSourcesTool(server: McpToolRegistrar) {
 					lastDataAt: source.health.lastDataAt,
 					problem: source.health.problem,
 					allowedSignals: source.allowedSignals,
-				}))
-				.sort((a, b) => (RANK.get(a.status) ?? 0) - (RANK.get(b.status) ?? 0))
+				}),
+			).sort((a, b) => (RANK.get(a.status) ?? 0) - (RANK.get(b.status) ?? 0))
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				"maple.sources.count": rows.length,
-				"maple.sources.unhealthy": rows.filter((row) => row.status !== "healthy").length,
+				"maple.sources.unhealthy": Arr.filter(rows, (row) => row.status !== "healthy").length,
 			})
 			const now = yield* Clock.currentTimeMillis
-			return { generatedAt: new Date(now).toISOString(), sources: rows }
+			return { generatedAt: DateTime.formatIso(DateTime.makeUnsafe(now)), sources: rows }
 		}),
 		render: (output) => {
 			if (output.sources.length === 0) {
@@ -73,7 +74,8 @@ export function registerListSourcesTool(server: McpToolRegistrar) {
 					blocks: [],
 				}
 			}
-			const unhealthyPull = output.sources.some(
+			const unhealthyPull = Arr.some(
+				output.sources,
 				(s) => s.kind === "integration" && s.status !== "healthy",
 			)
 			return {
@@ -81,7 +83,7 @@ export function registerListSourcesTool(server: McpToolRegistrar) {
 				blocks: [
 					doc.table(
 						["Source", "Platform", "Status", "Last data", "Id", "Problem"],
-						output.sources.map((s) => [
+						Arr.map(output.sources, (s) => [
 							s.kind === "default" ? `${s.name} (default keys)` : s.name,
 							s.platform,
 							s.status,

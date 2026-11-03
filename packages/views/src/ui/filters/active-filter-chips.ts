@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../button"
 import { icon } from "../icon"
 import { iconButton } from "../icon-button"
+import { Array as Arr } from "effect"
 
 // Port of `ActiveFilterChips` (packages/ui/src/components/filters/active-filter-chips.tsx).
 
@@ -20,7 +21,7 @@ export type ActiveFilterChip<M> = Readonly<{
 
 const summarize = <M>(chip: ActiveFilterChip<M>): string => {
 	const labelFor = (value: string) => chip.valueLabel?.(value) ?? value
-	const shown = chip.values.slice(0, MAX_CHIP_VALUES).map(labelFor).join(", ")
+	const shown = Arr.join(Arr.map(chip.values.slice(0, MAX_CHIP_VALUES), labelFor), ", ")
 	const rest = chip.values.length - MAX_CHIP_VALUES
 	return rest > 0 ? `${shown} +${rest}` : shown
 }
@@ -34,9 +35,9 @@ export const activeFilterChips = <M>(
 	return h.div(
 		[h.Class(cn("mb-4 flex flex-wrap items-center gap-1.5", options.className))],
 		[
-			...options.chips.map((chip) => {
+			...Arr.map(options.chips, (chip) => {
 				const isNegated = chip.isNegated ?? false
-				const description = `${chip.label} ${isNegated ? "is not" : "is"} ${chip.values.join(", ")}`
+				const description = `${chip.label} ${isNegated ? "is not" : "is"} ${Arr.join(chip.values, ", ")}`
 				return h.span(
 					[
 						h.Key(chip.id),
@@ -69,7 +70,8 @@ export const activeFilterChips = <M>(
 							{
 								size: "icon-xs",
 								label: `Remove filter: ${description}`,
-								className: "-my-1 text-current/60 hover:bg-current/10 active:bg-current/10 hover:text-current active:text-current",
+								className:
+									"-my-1 text-current/60 hover:bg-current/10 active:bg-current/10 hover:text-current active:text-current",
 								attributes: [h.OnClick(chip.onRemove)],
 							},
 							[icon(h, "XmarkIcon")],
@@ -84,7 +86,8 @@ export const activeFilterChips = <M>(
 							{
 								variant: "link",
 								size: "xs",
-								className: "ml-1 text-muted-foreground hover:text-foreground active:text-foreground",
+								className:
+									"ml-1 text-muted-foreground hover:text-foreground active:text-foreground",
 								attributes: [h.OnClick(options.onClearAll)],
 							},
 							["Clear all"],

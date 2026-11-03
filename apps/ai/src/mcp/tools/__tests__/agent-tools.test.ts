@@ -8,7 +8,7 @@ import {
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import { mapleToolCatalog, toInputSchema } from "../registry"
 import type { McpToolResult } from "../types"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { GetAgentToolErrorOutput, GetAgentToolsOverviewOutput } from "@maple/domain/mcp-outputs"
 import { TREND_BUCKETS } from "../../lib/agent-tool-analytics"
 import { AI_TOOL_ERROR_PAYLOAD_MAX } from "@maple/query-engine-integrations/ai"
@@ -29,19 +29,19 @@ const definitionOf = (name: string) => {
 }
 
 /** A table line's cells, without the leading and trailing pipe. */
-const lineCells = (line: string): ReadonlyArray<string> => line.slice(2, -2).split(" | ")
+const lineCells = (line: string): ReadonlyArray<string> => Str.split(" | ")(Str.slice(2, -2)(line))
 
 /** The cells of the table row starting with `first` — asserting cell by cell
  *  keeps a new column from breaking every table test. */
 const rowCells = (rendered: string, first: string): ReadonlyArray<string> => {
-	const line = rendered.split("\n").find((candidate) => candidate.startsWith(`| ${first} |`))
+	const line = Str.split("\n")(rendered).find((candidate) => Str.startsWith(`| ${first} |`)(candidate))
 	if (line === undefined) throw new Error(`no table row starting with '${first}'`)
 	return lineCells(line)
 }
 
 /** The clipped arguments payload of the first sample — one line in its fence. */
 const clippedArguments = (rendered: string): string =>
-	rendered.split("\n").find((line) => line.startsWith(`{"query":"x`)) ?? ""
+	Str.split("\n")(rendered).find((line) => Str.startsWith(`{"query":"x`)(line)) ?? ""
 
 // A 12h window, whose trend bucket is the window over 23 — one short of the
 // grid, so an unaligned window still fits it (see `compactTrend`).
@@ -110,7 +110,7 @@ const errorGroup = {
 	trend: {
 		"2026-09-12T00:00:00.000000Z": 3,
 		"2026-09-12T06:00:00.000000Z": 4,
-		[`${SEEN.replace(" ", "T")}.000000Z`]: 5,
+		[`${Str.replace(" ", "T")(SEEN)}.000000Z`]: 5,
 	},
 }
 
@@ -135,13 +135,13 @@ const breakdownPairRows = [{ model: "claude-sonnet-4", service: "api", calls: 9 
 // Arguments longer than the read keeps: it cuts them to `AI_TOOL_ERROR_PAYLOAD_MAX`
 // characters and reports the true size the span carried.
 const LONG_ARGUMENTS_BYTES = 12_000
-const LONG_ARGUMENTS = `{"query":"${"x".repeat(LONG_ARGUMENTS_BYTES - 12)}"}`
+const LONG_ARGUMENTS = `{"query":"${Str.repeat(LONG_ARGUMENTS_BYTES - 12)("x")}"}`
 
 /** The payload rows below are joined to these by trace and span id. */
 const occurrence = (ids: [string, string], sessionId: string, timestamp: string, durationNs: number) => ({
 	timestamp,
-	traceId: ids[0].repeat(32),
-	spanId: ids[1].repeat(16),
+	traceId: Str.repeat(32)(ids[0]),
+	spanId: Str.repeat(16)(ids[1]),
 	sessionId,
 	vendorId: "openai-agents",
 	agentName: "researcher",
@@ -159,8 +159,8 @@ const occurrenceRows = [
 
 /** `statusCode` is Title case on the wire, like every other Maple span status. */
 const payload = (ids: [string, string], args: string, result = "TimeoutError: upstream timed out") => ({
-	traceId: ids[0].repeat(32),
-	spanId: ids[1].repeat(16),
+	traceId: Str.repeat(32)(ids[0]),
+	spanId: Str.repeat(16)(ids[1]),
 	statusCode: "Error",
 	spanAttributes: { "gen_ai.tool.call.arguments": args, "gen_ai.tool.call.result": result },
 	cutAttributeBytes: {},
@@ -183,8 +183,11 @@ const executedSql: string[] = []
 /** The samples page's own statement: all four error-detail reads share the
  *  `failing_tool_calls` subquery, and only this one is ordered by the keyset. */
 const samplesSql = (): ReadonlyArray<string> =>
-	executedSql.filter(
-		(sql) => sql.includes("failing_tool_calls") && sql.includes("ORDER BY timestamp DESC, spanId DESC"),
+	Arr.filter(
+		executedSql,
+		(sql) =>
+			Str.includes("failing_tool_calls")(sql) &&
+			Str.includes("ORDER BY timestamp DESC, spanId DESC")(sql),
 	)
 
 const record = (match: (sql: string) => boolean) => (sql: string) => {
@@ -200,22 +203,22 @@ const fixtures: FixtureRule[] = [
 	{ match: record((sql) => readsTraceSpans(sql)), rows: payloadRows },
 	// The only read that selects the tool's description.
 	{
-		match: record((sql) => sql.includes("ToolDescription")),
+		match: record((sql) => Str.includes("ToolDescription")(sql)),
 		rows: [{ description: TOOL_DESCRIPTION }],
 	},
-	{ match: record((sql) => sql.includes("tool_calls_current")), rows: totalsRows },
-	{ match: record((sql) => sql.includes("tool_breakdown")), rows: breakdownRows },
-	{ match: record((sql) => sql.includes("numbered_tool_calls")), rows: [errorGroup] },
-	{ match: record((sql) => sql.includes("GROUP BY sessionId")), rows: sessionRows },
-	{ match: record((sql) => sql.includes("GROUP BY message")), rows: variantRows },
-	{ match: record((sql) => sql.includes("GROUP BY model, service")), rows: breakdownPairRows },
+	{ match: record((sql) => Str.includes("tool_calls_current")(sql)), rows: totalsRows },
+	{ match: record((sql) => Str.includes("tool_breakdown")(sql)), rows: breakdownRows },
+	{ match: record((sql) => Str.includes("numbered_tool_calls")(sql)), rows: [errorGroup] },
+	{ match: record((sql) => Str.includes("GROUP BY sessionId")(sql)), rows: sessionRows },
+	{ match: record((sql) => Str.includes("GROUP BY message")(sql)), rows: variantRows },
+	{ match: record((sql) => Str.includes("GROUP BY model, service")(sql)), rows: breakdownPairRows },
 	// The samples page is the one failing-calls read that groups by nothing.
-	{ match: record((sql) => sql.includes("failing_tool_calls")), rows: occurrenceRows },
+	{ match: record((sql) => Str.includes("failing_tool_calls")(sql)), rows: occurrenceRows },
 ]
 
 /** Nothing anywhere, except the totals read, which answers one row per period. */
 const EMPTY_RULES: FixtureRule[] = [
-	{ match: (sql) => sql.includes("tool_calls_current"), rows: emptyTotalsRows },
+	{ match: (sql) => Str.includes("tool_calls_current")(sql), rows: emptyTotalsRows },
 	{ match: () => true, rows: [] },
 ]
 
@@ -319,7 +322,7 @@ describe("get_agent_tools_overview rendering", () => {
 		// Calls 120 against 100 in the equal window before it, which is the window
 		// shifted back by its own length.
 		expect(rowCells(rendered, "Calls")).toEqual(["Calls", "120", "100", "+20.0%"])
-		expect(executedSql.some((sql) => sql.includes(PREVIOUS_START))).toBe(true)
+		expect(Arr.some(executedSql, (sql) => Str.includes(PREVIOUS_START)(sql))).toBe(true)
 		// 6 of 120 against 2 of 100.
 		// The change between two rates is points, not a percentage of a percentage.
 		expect(rowCells(rendered, "Error rate")).toEqual(["Error rate", "5.00%", "2.00%", "+3.00 pp"])
@@ -368,7 +371,9 @@ describe("get_agent_tools_overview failure groups", () => {
 		// the one that reaches `toStartOfInterval`.
 		expect(TREND_BUCKET_SECONDS).toBe(1879)
 		expect(rendered).toContain(`per ${TREND_BUCKET_SECONDS}s bucket`)
-		expect(executedSql.some((sql) => sql.includes(`INTERVAL ${TREND_BUCKET_SECONDS} SECOND`))).toBe(true)
+		expect(
+			Arr.some(executedSql, (sql) => Str.includes(`INTERVAL ${TREND_BUCKET_SECONDS} SECOND`)(sql)),
+		).toBe(true)
 		const group = rowCells(rendered, FINGERPRINT)
 		expect(group.slice(1, 6)).toEqual(["TimeoutError", "upstream timed out after 30s", "12", "4", "2"])
 		expect(group[8]).toBe("15")
@@ -390,26 +395,26 @@ describe("get_agent_tools_overview failure groups", () => {
 	// bucket, the one the group's oldest failures are in, is the one at risk.
 	it("keeps the first bucket of a window that does not start on a boundary", async () => {
 		const width = Math.ceil((24 * 60 * 60) / (TREND_BUCKETS - 1)) * 1000
-		const startMs = Date.parse(`${UNALIGNED_WINDOW.start_time.replace(" ", "T")}Z`)
+		const startMs = Date.parse(`${Str.replace(" ", "T")(UNALIGNED_WINDOW.start_time)}Z`)
 		const firstBucket = new Date(Math.floor(startMs / width) * width).toISOString()
 		const rendered = await renderWith(
 			[
 				{
-					match: (sql) => sql.includes("numbered_tool_calls"),
+					match: (sql) => Str.includes("numbered_tool_calls")(sql),
 					rows: [{ ...errorGroup, trend: { [firstBucket]: 7 } }],
 				},
 			],
 			OVERVIEW,
 			{ ...UNALIGNED_WINDOW, tool: "search_docs" },
 		)
-		const trend = (rowCells(rendered, FINGERPRINT)[9] ?? "").split(",")
+		const trend = Str.split(",")(rowCells(rendered, FINGERPRINT)[9] ?? "")
 		expect(trend).toHaveLength(TREND_BUCKETS)
 		expect(trend[0]).toBe("7")
 	})
 
 	it("answers a tool with no failures", async () => {
 		const rendered = await renderWith(
-			[{ match: (sql) => sql.includes("numbered_tool_calls"), rows: [] }],
+			[{ match: (sql) => Str.includes("numbered_tool_calls")(sql), rows: [] }],
 			OVERVIEW,
 			{ ...WINDOW, tool: "search_docs" },
 		)
@@ -450,12 +455,12 @@ describe("get_agent_tool_error rendering", () => {
 		const rendered = await render(ERROR_DETAIL, { ...GROUP, samples_limit: 1 })
 		// One row past the page is what tells the read there is a next page — on
 		// the samples statement, not the variants read's constant `LIMIT 20`.
-		expect(samplesSql().some((sql) => /\bLIMIT 2\b/.test(sql))).toBe(true)
+		expect(Arr.some(samplesSql(), (sql) => /\bLIMIT 2\b/.test(sql))).toBe(true)
 		expect(rendered).toContain("More samples exist past this page")
 
 		executedSql.length = 0
 		await call(ERROR_DETAIL, { ...GROUP, samples_limit: 999 })
-		expect(samplesSql().some((sql) => /\bLIMIT 101\b/.test(sql))).toBe(true)
+		expect(Arr.some(samplesSql(), (sql) => /\bLIMIT 101\b/.test(sql))).toBe(true)
 	})
 
 	it("clamps payload_chars to its default and its ceiling", async () => {

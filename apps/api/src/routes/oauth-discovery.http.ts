@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -120,7 +120,7 @@ export const OAuthDiscoveryRouter = HttpRouter.use((router) =>
 		// `Host`/`X-Forwarded-*` are client-controlled, and these documents are
 		// served publicly cacheable and tell clients where to send credentials.
 		const env = yield* Env
-		const origin = env.MAPLE_API_BASE_URL.replace(/\/+$/, "")
+		const origin = Str.replace(/\/+$/, "")(env.MAPLE_API_BASE_URL)
 
 		const publicCache = { "cache-control": "public, max-age=300" }
 		const authorizationServerMetadata = Effect.succeed(

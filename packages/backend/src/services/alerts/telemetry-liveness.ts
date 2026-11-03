@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect"
+import { Effect, Option, Array as Arr } from "effect"
 import * as CH from "@maple/query-engine/ch"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -171,7 +171,7 @@ const probeOrgWindow = (
 			profile: "list",
 			context: "telemetryLivenessPulse",
 		})
-		return rows.reduce((total, row) => total + row.count, 0)
+		return Arr.reduce(rows, 0, (total, row) => total + row.count)
 	}).pipe(Effect.orElseSucceed(() => null))
 
 /**
@@ -218,7 +218,8 @@ export const probeLiveness: (input: LivenessProbeInput) => Effect.Effect<Livenes
 				// env-scoped rule cannot have a production gap papered over by
 				// staging traffic on the same service.
 				yield* Effect.forEach(
-					serviceNames.flatMap(
+					Arr.flatMap(
+						serviceNames,
 						(
 							serviceName,
 						): ReadonlyArray<{
@@ -227,7 +228,7 @@ export const probeLiveness: (input: LivenessProbeInput) => Effect.Effect<Livenes
 						}> =>
 							input.environments.length === 0
 								? [{ serviceName, deploymentEnv: null }]
-								: input.environments.map((deploymentEnv) => ({
+								: Arr.map(input.environments, (deploymentEnv) => ({
 										serviceName,
 										deploymentEnv,
 									})),

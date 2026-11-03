@@ -1,4 +1,4 @@
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { SupabaseInfraProjectsRequest, SupabaseInfraProjectTimeseriesRequest } from "@maple/domain/http"
 import { SupabaseProjectRef } from "@maple/domain/primitives"
 import { MapleInternalHttp } from "./warehouse-services"
@@ -9,6 +9,7 @@ import {
 	runWarehouseQuery,
 	wireNumber,
 	wireNumberOrNull,
+	wireString,
 } from "./effect-utils"
 
 /** /infra/supabase data access over the metrics scraped from each Supabase project. */
@@ -105,8 +106,8 @@ export const getSupabaseProjects = Effect.fn("QueryEngine.getSupabaseProjects")(
 		}),
 	)
 	return {
-		projects: result.data.map((row): SupabaseProjectRow => ({
-			projectRef: String(row.projectRef ?? ""),
+		projects: Arr.map(result.data, (row): SupabaseProjectRow => ({
+			projectRef: wireString(row.projectRef),
 			cpuAvg: wireNumber(row.cpuAvg),
 			cpuMax: wireNumber(row.cpuMax),
 			memoryAvg: wireNumber(row.memoryAvg),
@@ -122,7 +123,7 @@ export const getSupabaseProjects = Effect.fn("QueryEngine.getSupabaseProjects")(
 			requestsPerMinute: wireNumber(row.requestsPerMinute),
 			errors5xx: wireNumber(row.errors5xx),
 			issueCount: wireNumber(row.issueCount),
-			lastSeen: String(row.lastSeen ?? ""),
+			lastSeen: wireString(row.lastSeen),
 		})),
 	}
 })
@@ -148,8 +149,8 @@ export const getSupabaseProjectTimeseries = Effect.fn("QueryEngine.getSupabasePr
 		}),
 	)
 	return {
-		buckets: result.data.map((row): SupabaseProjectTimeseriesRow => ({
-			bucket: String(row.bucket ?? ""),
+		buckets: Arr.map(result.data, (row): SupabaseProjectTimeseriesRow => ({
+			bucket: wireString(row.bucket),
 			cpu: wireNumberOrNull(row.cpu),
 			memoryAvg: wireNumber(row.memoryAvg),
 			memoryMax: wireNumber(row.memoryMax),

@@ -6,6 +6,7 @@ import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { chartLoading } from "@maple/views/ui/chart-state"
 import { chartCard } from "./chart-card"
 import { gridClass } from "@maple/views/ui/grid"
+import { Array as Arr } from "effect"
 
 // A detail page's grid of bucketed metric charts, one card per chart, two columns from `lg`.
 
@@ -28,8 +29,8 @@ export const metricChartRows = <Row extends Bucketed>(
 	chart: MetricChart<Row>,
 	buckets: ReadonlyArray<Row>,
 ): ReadonlyArray<LongRow> =>
-	buckets.flatMap((row) =>
-		chart.series.flatMap(([label, pick]) => {
+	Arr.flatMap(buckets, (row) =>
+		Arr.flatMap(chart.series, ([label, pick]) => {
 			const value = pick(row)
 			return value === null ? [] : [{ bucket: row.bucket, attributeValue: label, value }]
 		}),
@@ -59,10 +60,10 @@ export const metricChartCards = <Row extends Bucketed, M>(
 	h: HtmlBuilder<M>,
 	options: MetricChartCardsOptions<Row, M>,
 ): Html => {
-	const xDomain = options.buckets.map((row) => row.bucket)
+	const xDomain = Arr.map(options.buckets, (row) => row.bucket)
 	return h.div(
 		[h.Class(GRID)],
-		options.charts.map((chart, index) =>
+		Arr.map(options.charts, (chart, index) =>
 			chartCard(h, { title: chart.id }, [
 				h.submodel({
 					slotId: `${options.idPrefix}-chart-${index}`,

@@ -1,6 +1,6 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
 import { truncate } from "../lib/format"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListAlertChecksOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
@@ -33,11 +33,16 @@ const formatSkipped = (output: {
 	readonly noData: number
 	readonly belowMinSamples: number
 }): string => {
-	const parts = [
-		output.noData > 0 ? `${output.noData} no data` : undefined,
-		output.belowMinSamples > 0 ? `${output.belowMinSamples} below min samples` : undefined,
-	].filter((part) => part !== undefined)
-	return parts.length > 0 ? `${output.skipped} skipped [${parts.join(", ")}]` : `${output.skipped} skipped`
+	const parts = Arr.filter(
+		[
+			output.noData > 0 ? `${output.noData} no data` : undefined,
+			output.belowMinSamples > 0 ? `${output.belowMinSamples} below min samples` : undefined,
+		],
+		(part) => part !== undefined,
+	)
+	return parts.length > 0
+		? `${output.skipped} skipped [${Arr.join(parts, ", ")}]`
+		: `${output.skipped} skipped`
 }
 
 export function registerListAlertChecksTool(server: McpToolRegistrar) {
@@ -88,7 +93,7 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 				)
 
 			const checks = result.checks
-			const count = (status: string) => checks.filter((c) => c.status === status).length
+			const count = (status: string) => Arr.filter(checks, (c) => c.status === status).length
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
@@ -103,11 +108,11 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 				breached: count("breached"),
 				healthy: count("healthy"),
 				skipped: count("skipped"),
-				noData: checks.filter((c) => c.skipReason === "no_data").length,
-				belowMinSamples: checks.filter((c) => c.skipReason === "below_min_samples").length,
+				noData: Arr.filter(checks, (c) => c.skipReason === "no_data").length,
+				belowMinSamples: Arr.filter(checks, (c) => c.skipReason === "below_min_samples").length,
 				errored: count("error"),
-				transitions: checks.filter((c) => c.incidentTransition !== "none").length,
-				checks: checks.map((c) => ({
+				transitions: Arr.filter(checks, (c) => c.incidentTransition !== "none").length,
+				checks: Arr.map(checks, (c) => ({
 					timestamp: c.timestamp,
 					groupKey: c.groupKey,
 					status: c.status,
@@ -226,8 +231,8 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 										"Transition",
 										"Eval ms",
 									],
-									shown.map((c) => [
-										c.timestamp.slice(0, 19),
+									Arr.map(shown, (c) => [
+										Str.slice(0, 19)(c.timestamp),
 										c.status,
 										c.status === "error" && c.errorMessage != null
 											? truncate(c.errorMessage, 40)
@@ -258,9 +263,10 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 												{
 													rule_id: output.ruleId,
 													start_time: output.timeRange.start,
-													end_time: oldestShown.timestamp
-														.slice(0, 19)
-														.replace("T", " "),
+													end_time: Str.replace(
+														"T",
+														" ",
+													)(Str.slice(0, 19)(oldestShown.timestamp)),
 													group_key: output.groupKey,
 													status: output.status,
 												},

@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto"
+import { String as Str } from "effect"
 
 /** Which of a subscriber row's two emails a link turns off. */
 export type UnsubscribeKind = "digest" | "web-analytics"
@@ -24,7 +25,7 @@ export const verifyUnsubscribeToken = (
 	secret: string,
 	token: string,
 ): { readonly kind: UnsubscribeKind; readonly subscriptionId: string } | undefined => {
-	const [rawKind, subscriptionId, rawSig, ...rest] = token.split(".")
+	const [rawKind, subscriptionId, rawSig, ...rest] = Str.split(".")(token)
 	const kind = KINDS.find((k) => k === rawKind)
 	if (kind === undefined || !subscriptionId || !rawSig || rest.length > 0) return undefined
 	const expected = sign(secret, kind, subscriptionId)

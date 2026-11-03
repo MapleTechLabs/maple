@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import type { FunnelPopulationFilterField } from "@maple/query-model"
 import { DashboardDocument } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { CaretMessage } from "../../kit/where-autocomplete"
@@ -31,7 +31,9 @@ const document = Schema.decodeUnknownSync(DashboardDocument)({
 			dataSource: {
 				kind: "query",
 				resultShape: "timeseries",
-				queries: [{ id: "q1", name: "A", dataSource: "traces", aggregation: "count", whereClause: "" }],
+				queries: [
+					{ id: "q1", name: "A", dataSource: "traces", aggregation: "count", whereClause: "" },
+				],
 			},
 			display: { title: "Throughput", chartId: "query-builder-line" },
 			layout: { x: 0, y: 0, w: 6, h: 6 },
@@ -53,7 +55,10 @@ const run = (step: Step, ...messages: ReadonlyArray<Message>): Step =>
 
 const opened = (...messages: ReadonlyArray<Message>): Step =>
 	run(
-		{ model: init({ dashboardId: "dash_platform", widgetId: "throughput", search: {} }, context).model, commands: [] },
+		{
+			model: init({ dashboardId: "dash_platform", widgetId: "throughput", search: {} }, context).model,
+			commands: [],
+		},
 		Message.CompletedReadClock({ nowMs: NOW }),
 		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
 		...messages,
@@ -61,20 +66,31 @@ const opened = (...messages: ReadonlyArray<Message>): Step =>
 
 const field = (message: WhereFieldMessage) => Message.GotWhereFieldMessage({ message })
 const edit = (change: ProductEdit) => Message.ChangedProduct({ edit: change })
-const names = (step: Step) => step.commands.map(({ name }) => name)
+const names = (step: Step) => Arr.map(step.commands, ({ name }) => name)
 const fresh = (step: Step): Step => ({ model: step.model, commands: [] })
 
 /** Focus `fieldId`, type `text` through `toEdit`, the caret at its end. */
 const typed = (step: Step, fieldId: string, text: string, toEdit: (value: string) => ProductEdit): Step =>
 	run(
 		step,
-		field(WhereFieldMessage.GotCaret({ fieldId, message: CaretMessage.FocusedEditor({ cursor: 0, anchor }) })),
+		field(
+			WhereFieldMessage.GotCaret({
+				fieldId,
+				message: CaretMessage.FocusedEditor({ cursor: 0, anchor }),
+			}),
+		),
 		edit(toEdit(text)),
-		field(WhereFieldMessage.GotCaret({ fieldId, message: CaretMessage.MovedCaret({ cursor: text.length, anchor, keyUp: null }) })),
+		field(
+			WhereFieldMessage.GotCaret({
+				fieldId,
+				message: CaretMessage.MovedCaret({ cursor: text.length, anchor, keyUp: null }),
+			}),
+		),
 	)
 
 const listWhere = (value: string) => ProductEdit.ChangedListWhere({ value })
-const population = (scope: StepScope) => (value: string) => ProductEdit.ChangedPopulationFilter({ scope, value })
+const population = (scope: StepScope) => (value: string) =>
+	ProductEdit.ChangedPopulationFilter({ scope, value })
 
 /** The provider's traces facets answered with `services`. */
 const servicesAnswered = (step: Step, services: ReadonlyArray<string>): Step =>
@@ -94,7 +110,7 @@ const countriesAnswered = (step: Step, countries: ReadonlyArray<string>): Step =
 		Message.CompletedFetchSuggestions({
 			key: step.model.suggestions.facets?.key ?? "",
 			lookup: "facets",
-			result: Result.succeed(countries.map((name) => ({ name, count: null, field: COUNTRY }))),
+			result: Result.succeed(Arr.map(countries, (name) => ({ name, count: null, field: COUNTRY }))),
 		}),
 	)
 
@@ -106,7 +122,10 @@ const accept = (fieldId: string) => [
 describe("widget where fields", () => {
 	test("the list filter's second service, accepted with Enter, becomes its where clause", () => {
 		const focused = opened(Message.ClickedPanelType({ panel: "list" }), Message.FocusedQueryEditor())
-		const listed = servicesAnswered(typed(focused, LIST_FILTER_ID, "service.name = ", listWhere), ["checkout", "payments"])
+		const listed = servicesAnswered(typed(focused, LIST_FILTER_ID, "service.name = ", listWhere), [
+			"checkout",
+			"payments",
+		])
 		const accepted = run(fresh(listed), ...accept(LIST_FILTER_ID))
 		expect(accepted.model.state?.listWhereClause).toBe('service.name = "payments" ')
 		expect(names(accepted)).toContain("PlaceWhereFieldCaret")
@@ -122,7 +141,12 @@ describe("widget where fields", () => {
 	})
 
 	test("a caret in an attribute's value asks for its span values only once the provider is active", () => {
-		const inactive = typed(opened(Message.ClickedPanelType({ panel: "list" })), LIST_FILTER_ID, "attr.http.route = ", listWhere)
+		const inactive = typed(
+			opened(Message.ClickedPanelType({ panel: "list" })),
+			LIST_FILTER_ID,
+			"attr.http.route = ",
+			listWhere,
+		)
 		expect(names(inactive)).not.toContain("FetchWhereFieldValues")
 		const active = typed(
 			opened(Message.ClickedPanelType({ panel: "list" }), Message.FocusedQueryEditor()),
@@ -130,12 +154,17 @@ describe("widget where fields", () => {
 			"attr.http.route = ",
 			listWhere,
 		)
-		expect(active.commands.filter(({ name }) => name === "FetchWhereFieldValues")).toHaveLength(1)
+		expect(Arr.filter(active.commands, ({ name }) => name === "FetchWhereFieldValues")).toHaveLength(1)
 	})
 
 	test("the funnel population offers the facets' countries and Enter accepts one", () => {
 		const onPaths = opened(Message.ClickedPanelType({ panel: "paths" }))
-		const typedIn = typed(countriesAnswered(onPaths, ["DE", "FR"]), populationFilterId("paths"), "country = ", population("paths"))
+		const typedIn = typed(
+			countriesAnswered(onPaths, ["DE", "FR"]),
+			populationFilterId("paths"),
+			"country = ",
+			population("paths"),
+		)
 		const accepted = run(typedIn, ...accept(populationFilterId("paths")))
 		expect(accepted.model.state?.paths.filterClause).toBe('country = "FR" ')
 	})
@@ -155,8 +184,16 @@ describe("widget where fields", () => {
 
 	test("Enter after blur leaves the population text alone", () => {
 		const id = populationFilterId("funnel")
-		const typedIn = typed(opened(Message.ClickedPanelType({ panel: "funnel" })), id, "visitor_type = ", population("funnel"))
-		const blurred = run(typedIn, field(WhereFieldMessage.GotCaret({ fieldId: id, message: CaretMessage.BlurredEditor() })))
+		const typedIn = typed(
+			opened(Message.ClickedPanelType({ panel: "funnel" })),
+			id,
+			"visitor_type = ",
+			population("funnel"),
+		)
+		const blurred = run(
+			typedIn,
+			field(WhereFieldMessage.GotCaret({ fieldId: id, message: CaretMessage.BlurredEditor() })),
+		)
 		const pressed = run(fresh(blurred), field(WhereFieldMessage.PressedEnter({ fieldId: id })))
 		expect(pressed.model.state?.funnel.filterClause).toBe("visitor_type = ")
 		expect(pressed.commands).toEqual([])

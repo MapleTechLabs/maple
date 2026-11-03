@@ -6,7 +6,7 @@
 // hours sealed before the exclusion existed.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { OrgId } from "@maple/domain"
 import * as CH from "@maple/query-engine/ch"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
@@ -27,7 +27,8 @@ const DAY_MS = 86_400_000
 const HOUR_MS = 3_600_000
 const MINUTE_MS = 60_000
 
-const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 19)
+const chDateTime = (epochMs: number): string =>
+	Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 
 const BASE_MS = Math.floor((Date.now() - 3 * DAY_MS) / DAY_MS) * DAY_MS
 // Unaligned at both ends, so the partial hours hold rows the live join must read.
@@ -79,20 +80,22 @@ const CALL_TIMES = [
 	END_HOUR_FLOOR_MS + 5 * MINUTE_MS,
 ]
 
-const SEED_SPANS: ReadonlyArray<SeedSpan> = CALL_TIMES.flatMap((ms) => [
+const SEED_SPANS: ReadonlyArray<SeedSpan> = Arr.flatMap(CALL_TIMES, (ms) => [
 	...callPair(ms, "frontend"),
 	...callPair(ms + MINUTE_MS, UPTIME),
 ])
 
-const quote = (value: string): string => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
 
 const insertSpans = async (spans: ReadonlyArray<SeedSpan>): Promise<void> => {
-	const rows = spans
-		.map(
+	const rows = Arr.join(
+		Arr.map(
+			spans,
 			(row) =>
 				`(${quote(ORG_ID)}, ${quote(chDateTime(row.ms))}, ${quote(row.traceId)}, ${quote(row.spanId)}, ${quote(row.parentSpanId)}, 'op', ${quote(row.kind)}, ${quote(row.service)}, 90000000, 'Ok', 1, '', map('server.address', 'checkout.internal'), map('deployment.environment', 'production'))`,
-		)
-		.join(",\n")
+		),
+		",\n",
+	)
 
 	await clickhouseExec(
 		`INSERT INTO traces
@@ -141,7 +144,7 @@ const num = (value: unknown): number => Number(value ?? 0)
 const edgeKey = (row: Record<string, unknown>) => `${String(row.sourceService)}->${String(row.targetService)}`
 
 const assertOnlyRealEdge = (rows: ReadonlyArray<Record<string, unknown>>): void => {
-	assert.deepStrictEqual(rows.map(edgeKey), ["frontend->checkout-api"])
+	assert.deepStrictEqual(Arr.map(rows, edgeKey), ["frontend->checkout-api"])
 	assert.strictEqual(num(rows[0]?.callCount), CALL_TIMES.length, "frontend edge lost calls from a tier")
 }
 

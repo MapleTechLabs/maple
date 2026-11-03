@@ -4,6 +4,7 @@ import { iconButton } from "@maple/views/ui/icon-button"
 import { COPY_PATH, DOWNLOAD_PATH, LINE_CLASS } from "../../../kit/message-response"
 import { type HighlightedCode, highlightKey } from "./code-highlight"
 import { typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr, String as Str } from "effect"
 
 // Streamdown's full code block, its lines coloured by `code-highlight.ts`.
 
@@ -82,13 +83,13 @@ const codeLines = <M>(
 	highlighted: HighlightedCode | null,
 ): ReadonlyArray<Html> =>
 	highlighted === null
-		? code.split("\n").map((line) => h.span([h.Class(LINE_CLASS)], [line === "" ? "\n" : line]))
-		: highlighted.lines.map((line) =>
+		? Arr.map(Str.split("\n")(code), (line) => h.span([h.Class(LINE_CLASS)], [line === "" ? "\n" : line]))
+		: Arr.map(highlighted.lines, (line) =>
 				h.span(
 					[h.Class(LINE_CLASS)],
 					line.length === 0
 						? ["\n"]
-						: line.map((token) =>
+						: Arr.map(line, (token) =>
 								h.span([h.Style({ color: `var(--sh-${token.slot})` })], [token.content]),
 							),
 				),
@@ -96,7 +97,7 @@ const codeLines = <M>(
 
 /** A fenced block: the language header, Download and Copy, numbered lines coloured. */
 export const codeBlock = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, value: string, language: string): Html => {
-	const code = value.replace(/\n+$/, "")
+	const code = Str.replace(/\n+$/, "")(value)
 	const highlighted = host.highlights[highlightKey(language, value)] ?? null
 	const languageClass = highlighted === null ? undefined : `language-${language}`
 	return h.div(

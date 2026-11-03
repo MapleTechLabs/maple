@@ -1,5 +1,5 @@
 import { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { defaultRuleForm } from "./form-utils"
@@ -243,7 +243,7 @@ describe("blindSpots", () => {
 				[disabled.id, derived({ status: "disabled" })],
 			]),
 		)
-		expect(spots.map((s) => [s.rule.id, s.kind])).toEqual([
+		expect(Arr.map(spots, (s) => [s.rule.id, s.kind])).toEqual([
 			[erroring.id, "error"],
 			[unrouted.id, "unrouted"],
 		])
@@ -283,7 +283,7 @@ describe("blindSpots", () => {
 				],
 			]),
 		)
-		expect(spots.map((s) => [s.rule.id, s.kind])).toEqual([
+		expect(Arr.map(spots, (s) => [s.rule.id, s.kind])).toEqual([
 			[slowedUnrouted.id, "unrouted"],
 			[unrouted.id, "unrouted"],
 			[slowed.id, "slowed"],

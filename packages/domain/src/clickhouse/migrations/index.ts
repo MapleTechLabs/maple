@@ -51,6 +51,7 @@ import { migration_0049_service_map_db_edges_minutely } from "./0049_service_map
 import { migration_0050_security_telemetry } from "./0050_security_telemetry"
 import { migration_0051_error_fingerprint_fuzz_fixes } from "./0051_error_fingerprint_fuzz_fixes"
 import { migration_0052_error_fingerprint_json_frames } from "./0052_error_fingerprint_json_frames"
+import { Array as Arr } from "effect"
 
 /**
  * A migration statement is either a raw SQL string (structural DDL) or a
@@ -138,9 +139,8 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied
  * ClickHouse instance reaches. */
-export const latestMigrationVersion: number = migrations.reduce(
-	(max, migration) => Math.max(max, migration.version),
-	0,
+export const latestMigrationVersion: number = Arr.reduce(migrations, 0, (max, migration) =>
+	Math.max(max, migration.version),
 )
 
 /**
@@ -162,8 +162,7 @@ export const latestMigrationVersion: number = migrations.reduce(
  * `clickhouse_insert_mappings.rs` by `scripts/generate-clickhouse-insert-mappings.ts`).
  */
 export const clickHouseSchemaVersion: string = String(
-	migrations.reduce(
-		(max, migration) => (migration.requiredForIngest === false ? max : Math.max(max, migration.version)),
-		0,
+	Arr.reduce(migrations, 0, (max, migration) =>
+		migration.requiredForIngest === false ? max : Math.max(max, migration.version),
 	),
 )

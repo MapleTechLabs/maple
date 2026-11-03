@@ -21,6 +21,7 @@ import { Message, type Model } from "./model"
 import { type Context, shownEntries } from "./update"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 /**
  * Layout-free wrapper: group labels take the sidebar's uppercase tracked style, and a short scroll
@@ -47,9 +48,9 @@ const glyph = <M>(h: HtmlBuilder<M>, value: Glyph): Html => {
 }
 
 const groupsOf = <M>(h: HtmlBuilder<M>, entries: ReadonlyArray<PaletteEntry>): ReadonlyArray<CommandGroup> =>
-	groupEntries(entries).map((section) => ({
+	Arr.map(groupEntries(entries), (section) => ({
 		label: section.group,
-		items: section.entries.map((entry) => ({
+		items: Arr.map(section.entries, (entry) => ({
 			title: entry.title,
 			value: entry.id,
 			leading: glyph(h, entry.glyph),
@@ -108,7 +109,11 @@ export const paletteView = <M>(
 							onClickItem: (id) => toMessage(Message.ClickedEntry({ id })),
 							empty: shown.isSearch ? empty(h, model.list.inputValue) : undefined,
 							viewportAttributes: [
-								h.OnMount(Mount.mapMessage(MeasureCommandList(), () => toMessage(Message.CompletedMeasureList()))),
+								h.OnMount(
+									Mount.mapMessage(MeasureCommandList(), () =>
+										toMessage(Message.CompletedMeasureList()),
+									),
+								),
 							],
 							hasMeasuredScrollbar: true,
 						}),

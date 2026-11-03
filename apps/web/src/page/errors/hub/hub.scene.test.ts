@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { V2ErrorIssue } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import {
 	expect as expectView,
 	given,
@@ -37,7 +37,7 @@ const measured = Mount.resolve(MeasureTabIndicator, TabsMessage.MeasuredIndicato
 const railMounted = Mount.resolve(MountFilterRail, Message.MountedFilterRail())
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const issue = (overrides: Partial<Record<string, unknown>> = {}) =>
 	Schema.decodeUnknownSync(V2ErrorIssue)({

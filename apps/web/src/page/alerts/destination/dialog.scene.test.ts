@@ -6,7 +6,7 @@ import {
 	type V2ChatDestination,
 	type V2TelegramChat,
 } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
 	expect as expectView,
@@ -66,14 +66,14 @@ const channel = (id: string, name: string, isPrivate = false): V2ChatDestination
 	private: isPrivate,
 })
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const opened = () => openNew(init("test-destination")).model
 const CREATED = Schema.decodeSync(AlertDestinationId)("0199a001-0000-7000-8000-0000000000ff")
 
 describe("destination dialog", () => {
 	test("opening a new destination fetches the chat connectors once", () => {
 		const first = openNew(init("test-destination"))
-		expect((first.commands ?? []).map(({ name }) => name)).toContain("FetchChatConnectors")
+		expect(Arr.map(first.commands ?? [], ({ name }) => name)).toContain("FetchChatConnectors")
 	})
 
 	test("a webhook destination is created from its URL", () => {
@@ -349,7 +349,7 @@ describe("destination dialog", () => {
 			{ ...opened(), form: { ...opened().form, type: "webhook" } },
 			Message.ClickedSave(),
 		)
-		expect((saving.commands ?? []).map(({ name }) => name)).toEqual(["CreateAlertDestination"])
+		expect(Arr.map(saving.commands ?? [], ({ name }) => name)).toEqual(["CreateAlertDestination"])
 		expect(update(saving.model, Message.ClickedSave()).commands ?? []).toHaveLength(0)
 		const failed = update(
 			saving.model,

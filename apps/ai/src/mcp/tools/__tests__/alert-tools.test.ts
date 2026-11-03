@@ -3,7 +3,7 @@
  * typed output on `structuredContent`, the rendered text, and input errors naming the parameter.
  */
 import { describe, expect, it } from "vitest"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import {
 	AlertChecksListResponse,
 	AlertDestinationsListResponse,
@@ -90,25 +90,28 @@ const ALL_ID = "8a1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
 const RAW_ID = "9b1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
 const OTHER_RAW_ID = "ab1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
 /** An unscoped rule (every service) and two raw-SQL rules, one naming maple-api in its SQL. */
-const extraRules = [
-	{ ...rule, id: ALL_ID, name: "Latency", serviceNames: [], signalType: "p95_latency" },
-	{
-		...rule,
-		id: RAW_ID,
-		name: "Raw api",
-		serviceNames: [],
-		signalType: "raw_query",
-		rawQuerySql: "SELECT count() AS value FROM traces WHERE ServiceName = 'maple-api'",
-	},
-	{
-		...rule,
-		id: OTHER_RAW_ID,
-		name: "Raw web",
-		serviceNames: [],
-		signalType: "raw_query",
-		rawQuerySql: "SELECT 1",
-	},
-].map((r) => Schema.decodeUnknownSync(AlertRuleDocument)(r))
+const extraRules = Arr.map(
+	[
+		{ ...rule, id: ALL_ID, name: "Latency", serviceNames: [], signalType: "p95_latency" },
+		{
+			...rule,
+			id: RAW_ID,
+			name: "Raw api",
+			serviceNames: [],
+			signalType: "raw_query",
+			rawQuerySql: "SELECT count() AS value FROM traces WHERE ServiceName = 'maple-api'",
+		},
+		{
+			...rule,
+			id: OTHER_RAW_ID,
+			name: "Raw web",
+			serviceNames: [],
+			signalType: "raw_query",
+			rawQuerySql: "SELECT 1",
+		},
+	],
+	(r) => Schema.decodeUnknownSync(AlertRuleDocument)(r),
+)
 
 const incident = (overrides: Record<string, unknown>) => ({
 	id: INCIDENT_ID,
@@ -166,12 +169,14 @@ const layer = (seen: Seen) =>
 			createRule: (_org: unknown, _user: unknown, _roles: unknown, request: AlertRuleUpsertRequest) => {
 				seen.created = request
 				// Echo the fields the write warnings read, so a raw-SQL create reads back as one.
-				return Effect.succeed({
-					...rule,
-					signalType: request.signalType,
-					rawQuerySql: request.rawQuerySql ?? null,
-					minimumSampleCount: request.minimumSampleCount ?? 0,
-				} as never)
+				return Effect.succeed(
+					Schema.decodeUnknownSync(AlertRuleDocument)({
+						...rule,
+						signalType: request.signalType,
+						rawQuerySql: request.rawQuerySql ?? null,
+						minimumSampleCount: request.minimumSampleCount ?? 0,
+					}),
+				)
 			},
 			deleteRule: (_org: unknown, _roles: unknown, id: string) =>
 				id === RULE_ID
@@ -242,14 +247,15 @@ const layer = (seen: Seen) =>
 				return Effect.succeed(
 					id === RULE_ID
 						? rule
-						: {
+						: Schema.decodeUnknownSync(AlertRuleDocument)({
 								...rule,
 								id,
 								name: "Latency",
-								destinationIds: (request.thresholds ?? []).flatMap(
+								destinationIds: Arr.flatMap(
+									request.thresholds ?? [],
 									(tier) => tier.destinationIds,
 								),
-							},
+							}),
 				)
 			},
 			listDestinations: () =>
@@ -283,7 +289,8 @@ const layer = (seen: Seen) =>
 				]
 				return Effect.succeed(
 					Schema.decodeUnknownSync(AlertIncidentsListResponse)({
-						incidents: all.filter(
+						incidents: Arr.filter(
+							all,
 							(i) => options.status === undefined || i.status === options.status,
 						),
 					}),
@@ -380,7 +387,7 @@ describe("alert tools", () => {
 		})
 		const output = Schema.decodeUnknownSync(ListAlertRulesOutput)(result.structuredContent)
 		// The unscoped rule covers checkout too; raw-SQL rules not naming it do not.
-		expect(output.rules.map((r) => r.id)).toEqual([RULE_ID, ALL_ID])
+		expect(Arr.map(output.rules, (r) => r.id)).toEqual([RULE_ID, ALL_ID])
 		expect(output.services).toEqual(["checkout", "billing"])
 		expect(text(result)).toContain("Services: checkout, billing")
 		expect(text(result)).toContain(RULE_ID)
@@ -575,7 +582,7 @@ describe("alert tools", () => {
 
 		const quiet = await ok("create_alert_rule", {
 			...base,
-			raw_query_sql: sql.replace("AS value", "AS value, count() AS samples"),
+			raw_query_sql: Str.replace("AS value", "AS value, count() AS samples")(sql),
 		})
 		expect(
 			Schema.decodeUnknownSync(CreateAlertRuleOutput)(quiet.structuredContent).warnings,
@@ -732,7 +739,7 @@ describe("alert tools", () => {
 				remove_destination_ids: ["00000000-0000-4000-8000-00000000d002"],
 			}),
 		)
-		expect(added.thresholds.map((tier) => tier.destinationIds)).toEqual([
+		expect(Arr.map(added.thresholds, (tier) => tier.destinationIds)).toEqual([
 			["00000000-0000-4000-8000-00000000d001", "00000000-0000-4000-8000-00000000d003"],
 			[],
 		])
@@ -744,10 +751,10 @@ describe("alert tools", () => {
 	it("names each invalid-rule detail once, though the domain message already carries them", () => {
 		const details = ["threshold must be a finite number", "at least one destination must be selected"]
 		const message = invalidRuleInput(
-			new AlertValidationError({ message: `Invalid alert rule: ${details.join("; ")}`, details }),
+			new AlertValidationError({ message: `Invalid alert rule: ${Arr.join(details, "; ")}`, details }),
 		).message
 		for (const detail of details) {
-			expect(message.split(detail)).toHaveLength(2)
+			expect(Str.split(detail)(message)).toHaveLength(2)
 		}
 	})
 
@@ -775,7 +782,7 @@ describe("alert tools", () => {
 	it("list_alert_rules by service includes unscoped rules and raw_query rules naming it", async () => {
 		const result = await ok("list_alert_rules", { service_names: "maple-api" })
 		const output = Schema.decodeUnknownSync(ListAlertRulesOutput)(result.structuredContent)
-		expect(output.rules.map((r) => r.id)).toEqual([ALL_ID, RAW_ID])
+		expect(Arr.map(output.rules, (r) => r.id)).toEqual([ALL_ID, RAW_ID])
 		expect(text(result)).toContain("Services: all")
 		expect(text(result)).toContain("| all |")
 		expect(text(result)).toContain("(raw SQL)")
@@ -914,7 +921,7 @@ describe("alert tools", () => {
 	it("preview_alert_rule times one raw-SQL check against the interval's limit", async () => {
 		const sql = "SELECT count() AS value\nFROM traces\nWHERE $__orgFilter AND $__timeFilter(Timestamp)"
 		const seen: Seen = {
-			rules: [{ ...slowedRule, rawQuerySql: sql }],
+			rules: [new AlertRuleDocument({ ...slowedRule, rawQuerySql: sql })],
 			queryTiming: {
 				elapsedMs: 7800,
 				failure: null,

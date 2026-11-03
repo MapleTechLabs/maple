@@ -20,7 +20,17 @@ import {
 	UnauthorizedError,
 	UserId,
 } from "@maple/domain/http"
-import { Clock, Effect, Option, Redacted, Schema, SchemaGetter } from "effect"
+import {
+	Clock,
+	Effect,
+	Option,
+	Redacted,
+	Schema,
+	SchemaGetter,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 
 /**
  * A self-hosted session is bounded by TWO clocks, because the HMAC key IS the
@@ -76,10 +86,10 @@ const JwtSeconds = Schema.Number.check(Schema.isFinite())
 const normalizeRoles = (value: readonly string[] | string): readonly string[] => {
 	const roles =
 		typeof value === "string"
-			? value
-					.split(",")
-					.map((part) => part.trim())
-					.filter(Boolean)
+			? Arr.filter(
+					Arr.map(Str.split(",")(value), (part) => Str.trim(part)),
+					Boolean,
+				)
 			: value
 	// A self-hosted token that names no role is the root operator: the HMAC key IS
 	// the root password, so signing capability already implies root. Preserved from
@@ -158,21 +168,21 @@ const decodeRoleName = (value: string, message: string): Effect.Effect<RoleName,
 const getHeader = (headers: HeaderRecord, key: string): string | undefined => {
 	const exact = headers[key]
 	if (exact) return exact
-	return headers[key.toLowerCase()]
+	return headers[Str.toLowerCase(key)]
 }
 
 const getBearerToken = (headers: HeaderRecord): string | undefined => {
 	const header = getHeader(headers, "authorization")
 	if (!header) return undefined
-	const [scheme, token] = header.split(" ")
-	if (!scheme || !token || scheme.toLowerCase() !== "bearer") return undefined
+	const [scheme, token] = Str.split(" ")(header)
+	if (!scheme || !token || Str.toLowerCase(scheme) !== "bearer") return undefined
 	return token
 }
 
 const toHeaders = (headers: HeaderRecord): Headers => {
 	const requestHeaders = new Headers()
 
-	for (const [name, value] of Object.entries(headers)) {
+	for (const [name, value] of Rec.toEntries(headers)) {
 		if (value !== undefined) {
 			requestHeaders.set(name, value)
 		}
@@ -191,9 +201,9 @@ const toRequest = (headers: HeaderRecord): Request => {
 }
 
 const decodeBase64Url = (input: string): string => {
-	const normalized = input.replace(/-/g, "+").replace(/_/g, "/")
+	const normalized = Str.replace(/_/g, "/")(Str.replace(/-/g, "+")(input))
 	const padding = normalized.length % 4
-	const padded = padding === 0 ? normalized : normalized + "=".repeat(4 - padding)
+	const padded = padding === 0 ? normalized : normalized + Str.repeat(4 - padding)("=")
 	return Buffer.from(padded, "base64").toString("utf8")
 }
 
@@ -205,7 +215,7 @@ const verifySelfHostedSessionToken = Effect.fn("AuthService.verifySelfHostedSess
 	token: string,
 	secret: string,
 ): Effect.fn.Return<SelfHostedSessionClaims, UnauthorizedError> {
-	const parts = token.split(".")
+	const parts = Str.split(".")(token)
 	if (parts.length !== 3) {
 		return yield* unauthorized("Invalid JWT format")
 	}
@@ -335,7 +345,7 @@ const constantTimeEquals = (left: string, right: string): boolean => {
 	return leftBuffer.length === rightBuffer.length && timingSafeEqual(normalizedLeft, normalizedRight)
 }
 
-const getAuthMode = (mode: string): AuthMode => (mode.toLowerCase() === "clerk" ? "clerk" : "self_hosted")
+const getAuthMode = (mode: string): AuthMode => (Str.toLowerCase(mode) === "clerk" ? "clerk" : "self_hosted")
 
 const makeSelfHostedTenant = (defaultOrgId: string): TenantContext => ({
 	orgId: decodeOrgIdSync(defaultOrgId),
@@ -433,21 +443,17 @@ export const makeLoginSelfHosted = (
 		SelfHostedAuthDisabledError | SelfHostedInvalidPasswordError
 	> {
 		if (getAuthMode(env.MAPLE_AUTH_MODE) !== "self_hosted") {
-			return yield* Effect.fail(
-				new SelfHostedAuthDisabledError({
-					message: "Self-hosted password login is disabled",
-				}),
-			)
+			return yield* new SelfHostedAuthDisabledError({
+				message: "Self-hosted password login is disabled",
+			})
 		}
 
 		const rootPassword = yield* requireSecret(env.MAPLE_ROOT_PASSWORD, "MAPLE_ROOT_PASSWORD")
 
 		if (!constantTimeEquals(password, rootPassword)) {
-			return yield* Effect.fail(
-				new SelfHostedInvalidPasswordError({
-					message: "Invalid root password",
-				}),
-			)
+			return yield* new SelfHostedInvalidPasswordError({
+				message: "Invalid root password",
+			})
 		}
 
 		const tenant = makeSelfHostedTenant(env.MAPLE_DEFAULT_ORG_ID)
@@ -480,11 +486,9 @@ export const makeRefreshSelfHostedSession = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE
 		token: string,
 	): Effect.fn.Return<SelfHostedLoginResponse, SelfHostedAuthDisabledError | UnauthorizedError> {
 		if (getAuthMode(env.MAPLE_AUTH_MODE) !== "self_hosted") {
-			return yield* Effect.fail(
-				new SelfHostedAuthDisabledError({
-					message: "Self-hosted session renewal is disabled",
-				}),
-			)
+			return yield* new SelfHostedAuthDisabledError({
+				message: "Self-hosted session renewal is disabled",
+			})
 		}
 
 		const rootPassword = yield* requireSecret(env.MAPLE_ROOT_PASSWORD, "MAPLE_ROOT_PASSWORD")
@@ -594,7 +598,7 @@ const selectRequestedOrg = Effect.fnUntraced(function* (
 	if (!requested) return Option.none()
 
 	const requestedOrgId = yield* decodeOrgId(requested, "Invalid organization selection")
-	if (!verify) return yield* Effect.fail(organizationAccessDenied(requestedOrgId))
+	if (!verify) return yield* organizationAccessDenied(requestedOrgId)
 
 	// Stamped only when the header actually decides the organization, so
 	// `maple.auth.org_source` answers "how much traffic selects an organization
@@ -606,7 +610,7 @@ const selectRequestedOrg = Effect.fnUntraced(function* (
 
 	const membership = yield* verify(userId, requestedOrgId)
 	if (Option.isNone(membership)) {
-		return yield* Effect.fail(organizationAccessDenied(requestedOrgId))
+		return yield* organizationAccessDenied(requestedOrgId)
 	}
 	return membership
 })
@@ -631,7 +635,7 @@ const applyRequestedOrg = Effect.fnUntraced(function* (
 	// branch here that returns the original tenant: that shape is what a silent
 	// ignore looks like, and it is the failure this whole path exists to avoid.
 	const membership = yield* selectRequestedOrg(tenant.userId, headers, verify)
-	if (Option.isNone(membership)) return yield* Effect.fail(organizationAccessDenied(requestedOrgId))
+	if (Option.isNone(membership)) return yield* organizationAccessDenied(requestedOrgId)
 
 	// The role travels with the organization. Carrying the token's `orgRole`
 	// across would grant an admin of org A admin of org B.
@@ -780,7 +784,7 @@ export const makeResolveTenant = (
 					return { orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" }
 				}
 				// Outside development, membership the resolver cannot prove (no verifier) is a refusal.
-				return yield* Effect.fail(organizationAccessDenied(pinnedOrgId))
+				return yield* organizationAccessDenied(pinnedOrgId)
 			}
 
 			if (!auth.orgId) {

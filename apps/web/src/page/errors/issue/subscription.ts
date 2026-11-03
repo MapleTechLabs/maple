@@ -1,4 +1,4 @@
-import { Clock, Duration, Option, Schema, Stream } from "effect"
+import { Clock, Duration, Option, Schema, Stream, Array as Arr } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import { type OrgCollections, orgLive } from "../../../data/collections/org-collections"
 import { liveQueryStream } from "../../../data/live-query"
@@ -15,7 +15,7 @@ const destinations = (orgId: string): Stream.Stream<Message, never, OrgCollectio
 			(rows) =>
 				Message.UpdatedDestinations({
 					orgId,
-					destinations: rows.map((row) => ({ id: row.id, name: row.name })),
+					destinations: Arr.map(rows, (row) => ({ id: row.id, name: row.name })),
 				}),
 		),
 	)

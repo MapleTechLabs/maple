@@ -1,5 +1,5 @@
 import { getTracesFacetValues } from "@maple/web-data/warehouse/traces"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { ReadCache } from "../../data/read-cache"
 import { requestKey } from "@maple/views/data/request-key"
@@ -28,7 +28,7 @@ export const LoadPaletteServices = Command.define("LoadPaletteServices", {
 			},
 			getTracesFacetValues(SERVICES_INPUT),
 		)
-		return Message.SucceededLoadServices({ serviceNames: response.data.map((item) => item.name) })
+		return Message.SucceededLoadServices({ serviceNames: Arr.map(response.data, (item) => item.name) })
 	}).pipe(Effect.orElseSucceed(() => Message.FailedLoadServices())),
 })
 

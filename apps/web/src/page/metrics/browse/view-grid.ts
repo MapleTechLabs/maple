@@ -1,5 +1,5 @@
 import { validateCssColor } from "@maple/ui/lib/sanitizers"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData as FoldkitAsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
@@ -52,8 +52,9 @@ const pageSparklines = (
 	entries: ReadonlyArray<PreviewEntry>,
 ): PageSparklines => {
 	const { window } = model
-	const types = SPARKLINE_METRIC_TYPES.filter((type) => namesOfType(entries, type).length > 0)
-	const slots = types.map(
+	const types = Arr.filter(SPARKLINE_METRIC_TYPES, (type) => namesOfType(entries, type).length > 0)
+	const slots = Arr.map(
+		types,
 		(type) =>
 			[
 				type,
@@ -64,22 +65,24 @@ const pageSparklines = (
 	)
 	return {
 		pointsByMetric: new Map(
-			slots.flatMap(([type, slot]) =>
+			Arr.flatMap(slots, ([type, slot]) =>
 				slot === undefined
 					? []
-					: Option.getOrElse(FoldkitAsyncData.getData(slot.data), () => []).map(
+					: Arr.map(
+							Option.getOrElse(FoldkitAsyncData.getData(slot.data), () => []),
 							(series) => [entryKey(series.metricName, type), series.points] as const,
 						),
 			),
 		),
-		isLoading: slots.some(
+		isLoading: Arr.some(
+			slots,
 			([, slot]) =>
 				slot === undefined ||
 				FoldkitAsyncData.isIdle(slot.data) ||
 				FoldkitAsyncData.isLoading(slot.data),
 		),
 		failedTypes: new Set(
-			slots.flatMap(([type, slot]) =>
+			Arr.flatMap(slots, ([type, slot]) =>
 				slot !== undefined && FoldkitAsyncData.isFailure(slot.data) ? [type] : [],
 			),
 		),
@@ -116,7 +119,7 @@ const sparkline = (h: H, theme: ThemeColors, entry: PreviewEntry, values: Readon
 
 const previewCard = (h: H, theme: ThemeColors, entry: PreviewEntry, sparklines: PageSparklines): Html => {
 	const points = sparklines.pointsByMetric.get(entryKey(entry.metricName, entry.metricType)) ?? []
-	const values = sparklineValues(entry.metricType, points).map(finiteOrZero)
+	const values = Arr.map(sparklineValues(entry.metricType, points), finiteOrZero)
 	const status = sparklines.isLoading
 		? "Loading…"
 		: sparklines.failedTypes.has(entry.metricType)
@@ -205,9 +208,9 @@ export const previewGrid = (
 		[
 			h.div(
 				[h.Class(GRID_CLASS)],
-				pages.flatMap((page) => {
+				Arr.flatMap(pages, (page) => {
 					const sparklines = pageSparklines(model, orgId, page)
-					return page.map((entry) => previewCard(h, theme, entry, sparklines))
+					return Arr.map(page, (entry) => previewCard(h, theme, entry, sparklines))
 				}),
 			),
 			listFooter(h, {

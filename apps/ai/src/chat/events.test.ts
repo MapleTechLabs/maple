@@ -11,6 +11,7 @@ import type { ChatEvent } from "@maple/domain/chat-session"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import { APPROVAL_REQUIRED, type ToolUiPayload } from "../mcp/tools/llm-tools"
 import { makeTextSanitizer, toChatEvents, type AdapterContext } from "./events"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * Engine events are structural here on purpose.
@@ -154,17 +155,20 @@ describe("toChatEvents", () => {
 			message: "create_dashboard requires user approval and was not executed.",
 		}
 		// The sequence the engine emits for a gated call (see `run-tool-failures.test.ts`).
-		const chat = [
-			event("RunStarted"),
-			event("ToolCallDeclared", { toolCallId: "c", toolName: "create_dashboard", parameters: {} }),
-			event("ToolCallFailed", { toolCallId: "c", toolName: "create_dashboard", ...refusal }),
-			event("RunFailed", refusal),
-		].flatMap((engine) => toChatEvents(engine, context))
+		const chat = Arr.flatMap(
+			[
+				event("RunStarted"),
+				event("ToolCallDeclared", { toolCallId: "c", toolName: "create_dashboard", parameters: {} }),
+				event("ToolCallFailed", { toolCallId: "c", toolName: "create_dashboard", ...refusal }),
+				event("RunFailed", refusal),
+			],
+			(engine) => toChatEvents(engine, context),
+		)
 		const transcript = makeChatTranscript()
-		chat.forEach((wire, index) => transcript.add({ ...wire, seq: index + 1 } as ChatEvent, 0))
+		Arr.forEach(chat, (wire, index) => transcript.add({ ...wire, seq: index + 1 } as ChatEvent, 0))
 
 		assert.deepEqual(
-			chat.map((wire) => wire.type),
+			Arr.map(chat, (wire) => wire.type),
 			["turn-start", "tool-call", "turn-end"],
 		)
 		assert.deepInclude(chat.at(-1), { reason: "stop" })
@@ -295,7 +299,7 @@ describe("toChatEvents", () => {
 describe("makeTextSanitizer", () => {
 	const stripped = (chunks: ReadonlyArray<string>) => {
 		const sanitizer = makeTextSanitizer()
-		const text = chunks.map(sanitizer.strip).join("")
+		const text = Arr.join(Arr.map(chunks, sanitizer.strip), "")
 		return { text, leaked: sanitizer.leaked() }
 	}
 
@@ -320,7 +324,7 @@ describe("makeTextSanitizer", () => {
 
 	it("drops a tool call written as text and names the tag once", () => {
 		const call = "<tool_call>search_errors<arg_key>service</arg_key></tool_call>"
-		const { text, leaked } = stripped(["Errors are up.", call.slice(0, 9), call.slice(9)])
+		const { text, leaked } = stripped(["Errors are up.", Str.slice(0, 9)(call), Str.slice(9)(call)])
 
 		assert.equal(text, "Errors are up.")
 		assert.equal(leaked, "<tool_call>")

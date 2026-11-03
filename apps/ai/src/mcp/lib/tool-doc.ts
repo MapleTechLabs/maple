@@ -8,6 +8,7 @@
  */
 import { fencedBlock, formatTable, tableCell } from "./format"
 import { stringifyJson } from "./json"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 export type ToolArgValue = string | number | boolean | ReadonlyArray<string>
 
@@ -63,7 +64,7 @@ export const doc = {
 	}),
 	fields: (entries: ReadonlyArray<readonly [string, string | number | undefined]>): DocBlock => ({
 		_tag: "fields",
-		entries: entries.flatMap(([label, value]) =>
+		entries: Arr.flatMap(entries, ([label, value]) =>
 			value === undefined ? [] : [[label, String(value)] as const],
 		),
 	}),
@@ -75,21 +76,22 @@ export const doc = {
 		why: string,
 	): NextCall => ({
 		tool,
-		args: Object.fromEntries(
-			Object.entries(args).filter((entry): entry is [string, ToolArgValue] => entry[1] !== undefined),
+		args: Rec.fromEntries(
+			Arr.filter(
+				Rec.toEntries(args),
+				(entry): entry is [string, ToolArgValue] => entry[1] !== undefined,
+			),
 		),
 		why,
 	}),
 }
 
 const formatArg = (value: ToolArgValue): string =>
-	typeof value === "string" || Array.isArray(value)
-		? (stringifyJson(value) ?? String(value))
-		: String(value)
+	typeof value === "string" || Arr.isArray(value) ? (stringifyJson(value) ?? String(value)) : String(value)
 
 export const formatNextCall = (call: NextCall): string => {
-	const args = Object.entries(call.args).map(([key, value]) => `${key}=${formatArg(value)}`)
-	return `\`${[call.tool, ...args].join(" ")}\`: ${call.why}`
+	const args = Arr.map(Rec.toEntries(call.args), ([key, value]) => `${key}=${formatArg(value)}`)
+	return `\`${Arr.join([call.tool, ...args], " ")}\`: ${call.why}`
 }
 
 const renderBlock = (block: DocBlock): string => {
@@ -101,40 +103,61 @@ const renderBlock = (block: DocBlock): string => {
 		case "table":
 			// Cells are escaped here, once: pass raw text, clipped with `truncate` if needed.
 			return formatTable(
-				block.headers.map((header) => tableCell(header)),
-				block.rows.map((row) => row.map((cell) => tableCell(cell))),
+				Arr.map(block.headers, (header) => tableCell(header)),
+				Arr.map(block.rows, (row) => Arr.map(row, (cell) => tableCell(cell))),
 			)
 		case "fields":
-			return block.entries.map(([label, value]) => `${label}: ${value}`).join("\n")
+			return Arr.join(
+				Arr.map(block.entries, ([label, value]) => `${label}: ${value}`),
+				"\n",
+			)
 		case "list":
-			return block.items.map((item) => `- ${item}`).join("\n")
+			return Arr.join(
+				Arr.map(block.items, (item) => `- ${item}`),
+				"\n",
+			)
 		case "code":
-			return fencedBlock(block.text).replace(/^(`+)\n/, `$1${block.language}\n`)
+			return Str.replace(/^(`+)\n/, `$1${block.language}\n`)(fencedBlock(block.text))
 	}
 }
 
 const renderScope = (scope: NonNullable<ToolDoc["scope"]>): string | undefined => {
-	const parts = scope.flatMap(([label, value]) =>
+	const parts = Arr.flatMap(scope, ([label, value]) =>
 		value === undefined || value === "" ? [] : [`${label}: ${value}`],
 	)
-	return parts.length === 0 ? undefined : parts.join(" · ")
+	return parts.length === 0 ? undefined : Arr.join(parts, " · ")
 }
 
 /** Markdown, in a fixed order, with blank lines between sections. */
 export const renderToolDoc = (tool: ToolDoc): string => {
 	const sections: Array<string> = [`## ${tool.title}`]
 	if (tool.warnings !== undefined && tool.warnings.length > 0) {
-		sections.push(tool.warnings.map((warning) => `Warning: ${warning}`).join("\n"))
+		sections.push(
+			Arr.join(
+				Arr.map(tool.warnings, (warning) => `Warning: ${warning}`),
+				"\n",
+			),
+		)
 	}
 	const scope = tool.scope === undefined ? undefined : renderScope(tool.scope)
 	if (scope !== undefined) sections.push(scope)
 	if (tool.notices !== undefined && tool.notices.length > 0) {
-		sections.push(tool.notices.map((notice) => `Note: ${notice}`).join("\n"))
+		sections.push(
+			Arr.join(
+				Arr.map(tool.notices, (notice) => `Note: ${notice}`),
+				"\n",
+			),
+		)
 	}
 	if (tool.empty !== undefined) {
 		sections.push(tool.empty.message)
 		if (tool.empty.hints !== undefined && tool.empty.hints.length > 0) {
-			sections.push(tool.empty.hints.map((hint) => `- ${hint}`).join("\n"))
+			sections.push(
+				Arr.join(
+					Arr.map(tool.empty.hints, (hint) => `- ${hint}`),
+					"\n",
+				),
+			)
 		}
 	}
 	for (const block of tool.blocks) sections.push(renderBlock(block))
@@ -145,9 +168,14 @@ export const renderToolDoc = (tool: ToolDoc): string => {
 		sections.push(`Showing ${shown}${of} ${noun}.${more}`)
 	}
 	if (tool.next !== undefined && tool.next.length > 0) {
-		sections.push(`Next:\n${tool.next.map((call) => `- ${formatNextCall(call)}`).join("\n")}`)
+		sections.push(
+			`Next:\n${Arr.join(
+				Arr.map(tool.next, (call) => `- ${formatNextCall(call)}`),
+				"\n",
+			)}`,
+		)
 	}
-	return sections.join("\n\n")
+	return Arr.join(sections, "\n\n")
 }
 
 /** Every {@link NextCall} a doc carries, for validation against the target tools. */

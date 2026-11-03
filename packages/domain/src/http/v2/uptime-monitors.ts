@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import {
 	UptimeIntervalSeconds,
 	UptimeMonitorId,
@@ -256,7 +256,7 @@ export const uptimeConfigFromWire = (config: V2UptimeMonitorConfig): UptimeMonit
 				assertions:
 					config.assertions === undefined
 						? DEFAULT_ASSERTIONS
-						: config.assertions.map(assertionFromWire),
+						: Arr.map(config.assertions, assertionFromWire),
 				timeoutMs: config.timeout_ms ?? UPTIME_DEFAULT_TIMEOUT_MS,
 			}
 		case "tcp":
@@ -293,7 +293,7 @@ export const uptimeConfigToWire = (config: UptimeMonitorConfig): V2UptimeMonitor
 				method: config.method,
 				headers: config.headers,
 				...(config.body === undefined ? undefined : { body: config.body }),
-				assertions: config.assertions.map(assertionToWire),
+				assertions: Arr.map(config.assertions, assertionToWire),
 				timeout_ms: config.timeoutMs,
 			}
 		case "tcp":

@@ -3,7 +3,7 @@ import { formatClock } from "@maple/ui/lib/replay-format"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { cn } from "@maple/ui/lib/utils"
 import { parseChTimestampMs, spanRange } from "../../../components/replays/replay-timeline"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -43,19 +43,17 @@ export const markerLegend = (h: H): Html =>
 			h.Class("flex flex-wrap items-center gap-x-3 gap-y-1 text-3xs text-muted-foreground"),
 			h.AriaLabel("Activity marker legend"),
 		],
-		KINDS.map((kind) =>
-			hstack(h, { gap: "1.5", as: "li" },
-				[
-					h.span(
-						[
-							h.Class(cn("size-1.5 rounded-full ring-1 ring-card", MARKER_STYLES[kind])),
-							h.AriaHidden(true),
-						],
-						[],
-					),
-					MARKER_LABELS[kind],
-				],
-			),
+		Arr.map(KINDS, (kind) =>
+			hstack(h, { gap: "1.5", as: "li" }, [
+				h.span(
+					[
+						h.Class(cn("size-1.5 rounded-full ring-1 ring-card", MARKER_STYLES[kind])),
+						h.AriaHidden(true),
+					],
+					[],
+				),
+				MARKER_LABELS[kind],
+			]),
 		),
 	)
 
@@ -67,7 +65,7 @@ const timeRuler = (h: H, totalMs: number): Html => {
 			h.div([h.Class(cn(LANE_GUTTER, "shrink-0 border-r border-border-subtle"))], []),
 			h.div(
 				[h.Class("relative h-5 flex-1")],
-				ticks.map((ms, i) =>
+				Arr.map(ticks, (ms, i) =>
 					h.span(
 						[
 							h.Class(
@@ -278,9 +276,12 @@ const spanLane = (h: H, view: TracesView, traceId: string): Html => {
 					])
 				: h.div(
 						[h.Class("max-h-56 space-y-px overflow-y-auto bg-surface-faint py-1")],
-						[...spans]
-							.sort((a, b) => parseChTimestampMs(a.startTime) - parseChTimestampMs(b.startTime))
-							.map((span) => spanRowItem(h, view, span)),
+						Arr.map(
+							[...spans].sort(
+								(a, b) => parseChTimestampMs(a.startTime) - parseChTimestampMs(b.startTime),
+							),
+							(span) => spanRowItem(h, view, span),
+						),
 					),
 	})
 }
@@ -346,40 +347,38 @@ const traceRow = (h: H, view: TracesView, summary: TraceSummary): Html => {
 									),
 								],
 								[
-									vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" },
-										[
-											h.span(
-												[
-													h.Class(
-														"flex items-center gap-1 truncate font-medium leading-tight text-foreground",
+									vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
+										h.span(
+											[
+												h.Class(
+													"flex items-center gap-1 truncate font-medium leading-tight text-foreground",
+												),
+											],
+											[
+												httpSpanLabel(h, {
+													spanName: summary.rootSpanName || "trace",
+													spanAttributes: parseAttributes(
+														summary.rootSpanAttributes,
 													),
-												],
-												[
-													httpSpanLabel(h, {
-														spanName: summary.rootSpanName || "trace",
-														spanAttributes: parseAttributes(
-															summary.rootSpanAttributes,
-														),
-														spanKind: summary.rootSpanKind,
-														className: "min-w-0",
-														textClassName: "truncate",
-													}),
-													icon(h, "ExternalLinkIcon", {
-														className:
-															"size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/trace:opacity-100",
-													}),
-												],
-											),
-											h.span(
-												[
-													h.Class(
-														"block truncate font-mono text-3xs leading-tight text-muted-foreground",
-													),
-												],
-												[summary.rootServiceName],
-											),
-										],
-									),
+													spanKind: summary.rootSpanKind,
+													className: "min-w-0",
+													textClassName: "truncate",
+												}),
+												icon(h, "ExternalLinkIcon", {
+													className:
+														"size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/trace:opacity-100",
+												}),
+											],
+										),
+										h.span(
+											[
+												h.Class(
+													"block truncate font-mono text-3xs leading-tight text-muted-foreground",
+												),
+											],
+											[summary.rootServiceName],
+										),
+									]),
 								],
 							),
 						],
@@ -461,7 +460,7 @@ const tracesTrack = (h: H, view: TracesView, traceIds: ReadonlyArray<string>): H
 						])
 					: h.ul(
 							[h.Class("max-h-72 overflow-y-auto")],
-							summaries.map((summary) => traceRow(h, view, summary)),
+							Arr.map(summaries, (summary) => traceRow(h, view, summary)),
 						),
 			],
 		}),

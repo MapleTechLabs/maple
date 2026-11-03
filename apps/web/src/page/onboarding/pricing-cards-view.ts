@@ -26,6 +26,7 @@ import {
 } from "./pricing-plans"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -87,7 +88,7 @@ const platformFeatures = (h: H, slug: string): Html =>
 			eyebrow(h, { className: "mb-3", as: "div" }, ["Platform features"]),
 			h.div(
 				[h.Class("space-y-2.5")],
-				getPlanFeatures(slug).map((feature) =>
+				Arr.map(getPlanFeatures(slug), (feature) =>
 					h.div(
 						[h.Class("flex items-start gap-2.5 text-sm")],
 						[
@@ -322,7 +323,7 @@ export const planCards = (h: H, plans: ReadonlyArray<CatalogPlan>, loadingPlanId
 				),
 			),
 		],
-		[...plans.map((plan) => planCard(h, plan, loadingPlanId)), enterpriseCard(h)],
+		[...Arr.map(plans, (plan) => planCard(h, plan, loadingPlanId)), enterpriseCard(h)],
 	)
 }
 
@@ -333,7 +334,7 @@ const plansGrid = (h: H, plans: ReadonlyArray<CatalogPlan>, model: Model): Html 
 			...(model.checkoutReturn === "TimedOut" ? [checkoutTimedOut(h)] : []),
 			planCards(
 				h,
-				plans.filter((plan) => !plan.addOn && !plan.autoEnable),
+				Arr.filter(plans, (plan) => !plan.addOn && !plan.autoEnable),
 				model.loadingPlanId,
 			),
 		],
@@ -346,7 +347,7 @@ const dataIncluded = (h: H, rows: ReadonlyArray<FeatureRow>, isDetailed: boolean
 			eyebrow(h, { className: "mb-3", as: "div" }, ["Data included"]),
 			h.div(
 				[h.Class("space-y-2.5")],
-				rows.map((row) => dataRow(h, row, isDetailed)),
+				Arr.map(rows, (row) => dataRow(h, row, isDetailed)),
 			),
 		],
 	)

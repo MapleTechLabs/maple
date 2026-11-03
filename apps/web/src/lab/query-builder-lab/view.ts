@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { textInput } from "../../page/kit/query-builder/parts"
@@ -230,8 +230,8 @@ export const view = (model: Model, h: H): Html =>
 								h.div(
 									[h.Class("space-y-2")],
 									[
-										...model.queries.map((query) => queryRow(h, model, query)),
-										...model.formulas.map((formula) => formulaRow(h, formula)),
+										...Arr.map(model.queries, (query) => queryRow(h, model, query)),
+										...Arr.map(model.formulas, (formula) => formulaRow(h, formula)),
 									],
 								),
 								resultsCard(h, model),

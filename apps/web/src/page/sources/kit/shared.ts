@@ -12,7 +12,7 @@ import {
 	type SourceAttributeMode,
 	type SourceSignal,
 } from "@maple/domain/primitives"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { AppRoute, hrefOf } from "../../../route"
 import { SOURCE_TABS, type SourceTab } from "../../../route/search"
 import { statusRank } from "./status"
@@ -35,9 +35,13 @@ export const MODE_LABELS = {
 export const signalsSummary = (signals: V2Source["allowed_signals"]): string =>
 	signals === null
 		? "All signals"
-		: SIGNALS.filter((signal) => signals.includes(signal.value))
-				.map((signal) => signal.label)
-				.join(", ")
+		: Arr.join(
+				Arr.map(
+					Arr.filter(SIGNALS, (signal) => signals.includes(signal.value)),
+					(signal) => signal.label,
+				),
+				", ",
+			)
 
 export const rateLimitLabel = (rps: number | null): string => (rps === null ? "No limit" : `${rps} req/s`)
 
@@ -61,8 +65,8 @@ export const hasToken = (source: V2Source): boolean => source.key_prefix !== nul
 
 /** Default source first, then worst status first, then the API's order (newest first). */
 export const orderSources = (sources: ReadonlyArray<V2Source>): ReadonlyArray<V2Source> => [
-	...sources.filter((source) => source.is_default),
-	...sources.filter((source) => !source.is_default).toSorted((a, b) => statusRank(a) - statusRank(b)),
+	...Arr.filter(sources, (source) => source.is_default),
+	...Arr.filter(sources, (source) => !source.is_default).toSorted((a, b) => statusRank(a) - statusRank(b)),
 ]
 
 /** `/sources/$sourceId` in its public id form; the overview tab drops `tab`. */
@@ -81,7 +85,7 @@ export const integrationPlatformOf = (source: V2Source): PullSourcePlatform | nu
 /** The tabs a source shows: Setup for push sources, Connection for integration sources. */
 export const tabsOf = (source: V2Source): ReadonlyArray<SourceTab> => {
 	const hidden: SourceTab = integrationPlatformOf(source) === null ? "connection" : "setup"
-	return SOURCE_TABS.filter((tab) => tab !== hidden)
+	return Arr.filter(SOURCE_TABS, (tab) => tab !== hidden)
 }
 
 /** `?tab=` as this source shows it: a link to the other kind's tab opens this kind's one. */

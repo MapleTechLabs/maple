@@ -1,4 +1,4 @@
-import { Option, Result } from "effect"
+import { Option, Result, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -17,14 +17,7 @@ import {
 	ResolveClock,
 	ToggleFullscreen,
 } from "./command"
-import {
-	detailOf,
-	manifestTotalMs,
-	playerStatus,
-	realOffsetOf,
-	traceWindowOf,
-	windowOf,
-} from "./derive"
+import { detailOf, manifestTotalMs, playerStatus, realOffsetOf, traceWindowOf, windowOf } from "./derive"
 import {
 	advance,
 	cacheRange,
@@ -308,7 +301,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const advanced = advance(stored, Option.some(result.success))
 			// A range fetched only for its markers is not kept: past the cap, holding its events is the
 			// memory the cap exists to bound.
-			const isHeld = advanced.loader.loaded.some(
+			const isHeld = Arr.some(
+				advanced.loader.loaded,
 				(entry) => rangeRequestKey(advanced, context, entry.range) === key,
 			)
 			const kept = isHeld
@@ -372,9 +366,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		RequestedSeekBy: ({ deltaMs }) => seekTo(model, context, model.player.currentMs + deltaMs),
 		RequestedSeekToTimestamp: ({ timestamp }) => {
 			const offset = realOffsetOf(model, timestamp)
-			return offset === undefined
-				? { model }
-				: seekTo(model, context, offset)
+			return offset === undefined ? { model } : seekTo(model, context, offset)
 		},
 		PickedSpeed: ({ speed }) => ({ model: { ...model, player: { ...model.player, speed } } }),
 		ToggledSkipIdle: () => ({
@@ -402,14 +394,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedEvent: ({ index, timestamp }) => {
 			const toggled = { ...model, openEventIndex: model.openEventIndex === index ? null : index }
 			const offset = realOffsetOf(toggled, timestamp)
-			return offset === undefined
-				? { model: toggled }
-				: seekTo(toggled, context, offset)
+			return offset === undefined ? { model: toggled } : seekTo(toggled, context, offset)
 		},
 		ToggledTraceSpans: ({ traceId, startTime }) => {
 			const isOpen = model.expandedTraces.includes(traceId)
 			const expandedTraces = isOpen
-				? model.expandedTraces.filter((id) => id !== traceId)
+				? Arr.filter(model.expandedTraces, (id) => id !== traceId)
 				: [...model.expandedTraces, traceId]
 			// Opening the lane asks again after a failure.
 			const cached = model.spans[traceId]

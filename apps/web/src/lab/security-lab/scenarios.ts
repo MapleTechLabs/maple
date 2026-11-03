@@ -8,7 +8,7 @@ import {
 	SecurityAuditTargetExistsError,
 } from "@maple/domain/http"
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../page/contract"
@@ -115,7 +115,7 @@ type Step<M, Msg> = Readonly<{ model: M; commands: ReadonlyArray<Command.Command
 
 /** Commands that leave the page (API, session, clock) are the lab's to answer, not the browser's. */
 export const isLocalCommand = (command: { readonly name: string }): boolean =>
-	!command.name.startsWith("SecurityApi") && !command.name.startsWith("ReadSecurity")
+	!Str.startsWith("SecurityApi")(command.name) && !Str.startsWith("ReadSecurity")(command.name)
 
 const fold = <M, Msg>(
 	start: Step<M, Msg>,
@@ -130,10 +130,10 @@ const fold = <M, Msg>(
 			const next = update(step.model, toMessage(step.model))
 			return {
 				model: next.model,
-				commands: [...step.commands, ...(next.commands ?? []).filter(isLocalCommand)],
+				commands: [...step.commands, ...Arr.filter(next.commands ?? [], isLocalCommand)],
 			}
 		},
-		{ model: start.model, commands: start.commands.filter(isLocalCommand) },
+		{ model: start.model, commands: Arr.filter(start.commands, isLocalCommand) },
 	)
 
 const targetId = (id: string) => Schema.decodeSync(SecurityAuditTargetId)(id)
@@ -185,7 +185,8 @@ const tabs = (
 				key: model.githubStatus.key ?? "",
 				result: Result.succeed(githubStatusOf()),
 			}),
-		...Object.values(TARGET_IDS).map(
+		...Arr.map(
+			Rec.values(TARGET_IDS),
 			(id) => (model: TabsPage.Model) =>
 				M.CompletedFetchTargetRuns({
 					targetId: targetId(id),
@@ -194,11 +195,12 @@ const tabs = (
 						runs:
 							options.empty === true
 								? []
-								: runsOf(nowMs).runs.filter((run) => run.targetId === id),
+								: Arr.filter(runsOf(nowMs).runs, (run) => run.targetId === id),
 					}),
 				}),
 		),
-		...Object.values(TARGET_IDS).map(
+		...Arr.map(
+			Rec.values(TARGET_IDS),
 			(id) => (model: TabsPage.Model) =>
 				M.CompletedFetchFindings({
 					targetId: targetId(id),
@@ -213,7 +215,8 @@ const tabs = (
 							: Result.succeed(findingsOf(nowMs, id)),
 				}),
 		),
-		...Object.values(RUN_IDS).map(
+		...Arr.map(
+			Rec.values(RUN_IDS),
 			(id) => (model: TabsPage.Model) =>
 				M.CompletedFetchLatestRun({
 					runId: runId(id),
@@ -579,7 +582,8 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 					repositories: cleanRepositoriesOf(nowMs),
 					findings: {
 						...dependencyFindingsOf(nowMs),
-						findings: dependencyFindingsOf(nowMs).findings.filter(
+						findings: Arr.filter(
+							dependencyFindingsOf(nowMs).findings,
 							(finding) => finding.status !== "open",
 						),
 					},

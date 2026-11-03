@@ -1,6 +1,6 @@
 import { AlertRuleId, AnomalyIncidentId, DashboardId, ErrorIssueId } from "@maple/domain/http"
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { pipe, Schema } from "effect"
+import { pipe, Schema, Record as Rec } from "effect"
 import { Route } from "foldkit"
 import { query, schemaSegment, slash } from "foldkit/route"
 import { AppRoute } from "./app-route"
@@ -516,7 +516,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.McpServer,
 		routers.AgentSessionTools,
 		routers.ErrorIssues,
-		...Object.values(routers),
+		...Rec.values(routers),
 	),
 	AppRoute.NotFound,
 )

@@ -14,7 +14,7 @@ import {
 	copyLabelLayerStyles,
 	copyLabelStyles,
 } from "@maple/ui/styles/ui/copy-button"
-import { Duration, Effect, Schema } from "effect"
+import { Duration, Effect, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -264,7 +264,7 @@ export const copyButton = <M>(h: HtmlBuilder<M>, options: CopyButtonOptions<M>):
 				: [
 						h.span(
 							[h.AriaHidden(true), h.Class(copyLabelStyles)],
-							labels.map(([key, text]) =>
+							Arr.map(labels, ([key, text]) =>
 								h.span(
 									[h.Class(cn(copyLabelLayerStyles, copyLabelActiveStyles[key]))],
 									[text],

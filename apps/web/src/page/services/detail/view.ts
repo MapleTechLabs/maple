@@ -35,6 +35,7 @@ import { operationsTab } from "./view-operations"
 import { runsOnLinks } from "./view-footprint"
 import { overviewTab, THEME_TOKENS } from "./view-overview"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // TODO(unnamed-service): `UnnamedServiceHint` beside an unnamed service's title is not ported.
 
@@ -51,11 +52,14 @@ const environmentItems = (model: Model): ReadonlyArray<SelectView.SelectEntry> =
 	)
 	const current = environmentsOf(model.search)?.[0]
 	const options = [...new Set([...loaded, ...(current === undefined ? [] : [current])])].toSorted((a, b) =>
-		a.localeCompare(b),
+		Str.localeCompare(b)(a),
 	)
 	return [
 		{ _tag: "Item", item: { value: ALL_ENVIRONMENTS, label: "All environments" } },
-		...options.map((env): SelectView.SelectEntry => ({ _tag: "Item", item: { value: env, label: env } })),
+		...Arr.map(options, (env): SelectView.SelectEntry => ({
+			_tag: "Item",
+			item: { value: env, label: env },
+		})),
 	]
 }
 
@@ -85,7 +89,12 @@ const runsOn = (h: H, model: Model): Html => {
 			href: first.href,
 			attributes: [
 				h.AriaLabel(`Runs on ${first.label} ${first.name}`),
-				h.Title(links.map((link) => `${link.label}: ${link.name}`).join("\n")),
+				h.Title(
+					Arr.join(
+						Arr.map(links, (link) => `${link.label}: ${link.name}`),
+						"\n",
+					),
+				),
 			],
 		},
 		[
@@ -162,7 +171,7 @@ const tabs = (h: H, model: Model): Html => {
 	return underlineTabStrip(
 		h,
 		{ label: "Service sections", navigation: true },
-		SERVICE_TABS.map((tab) => {
+		Arr.map(SERVICE_TABS, (tab) => {
 			const isCurrent = tab.value === active
 			const isLinkActive = tab.value === "overview" || model.search.tab === tab.value
 			return h.a(
@@ -218,15 +227,15 @@ const scopeLabel = (model: Model): string => {
 	const environment = environmentsOf(model.search)?.join(", ") ?? "all environments"
 	const preset =
 		model.search.timePreset ?? (model.search.startTime === undefined ? DEFAULT_PRESET : undefined)
-	const range = preset === undefined ? "custom range" : presetLabel(preset).toLowerCase()
-	return [model.serviceName, environment, range].join(" · ")
+	const range = preset === undefined ? "custom range" : Str.toLowerCase(presetLabel(preset))
+	return Arr.join([model.serviceName, environment, range], " · ")
 }
 
 /** The peeked endpoint's buckets: the tab's sparkline read, or the drawer's own for the rest. */
 const peekSeries = (model: Model, spanName: string) =>
 	seriesSpanNames(model).includes(spanName)
 		? AsyncData.map(model.endpointSeries.data, (buckets) =>
-				buckets.filter((bucket) => bucket.spanName === spanName),
+				Arr.filter(buckets, (bucket) => bucket.spanName === spanName),
 			)
 		: (model.endpointPeek.series[spanName]?.data ?? AsyncData.Idle())
 

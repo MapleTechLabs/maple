@@ -1,7 +1,7 @@
 // The platform a span ran on, shared by the trace views and MCP `inspect_span`. The tree
 // projection returns every requested key with an empty value, so only non-blank values count.
 
-import { Record, Schema } from "effect"
+import { Record, Schema, Array as Arr, String as Str } from "effect"
 
 export const CloudflareWorkerSummary = Schema.TaggedStruct("cloudflare", {
 	scriptName: Schema.optionalKey(Schema.String),
@@ -48,7 +48,8 @@ type Attrs = Readonly<Record<string, string>>
 
 const EMPTY: Attrs = {}
 
-const isPresent = (value: string | undefined): value is string => value !== undefined && value.trim() !== ""
+const isPresent = (value: string | undefined): value is string =>
+	value !== undefined && Str.trim(value) !== ""
 
 /** One key only when its value is defined, so an absent field stays absent. */
 const field = <K extends string, V>(key: K, value: V | undefined): { readonly [P in K]?: V } =>
@@ -58,7 +59,7 @@ const field = <K extends string, V>(key: K, value: V | undefined): { readonly [P
 const reader = (span: Attrs, resource: Attrs) => {
 	const get = (key: string): string | undefined =>
 		isPresent(span[key]) ? span[key] : isPresent(resource[key]) ? resource[key] : undefined
-	const pick = (...keys: ReadonlyArray<string>): string | undefined => keys.map(get).find(isPresent)
+	const pick = (...keys: ReadonlyArray<string>): string | undefined => Arr.map(keys, get).find(isPresent)
 	// Zero is a real timing (the Workers clock only advances on I/O); unparsable is absent.
 	const millis = (key: string): number | undefined => {
 		const raw = get(key)
@@ -66,8 +67,11 @@ const reader = (span: Attrs, resource: Attrs) => {
 		return Number.isFinite(value) ? value : undefined
 	}
 	const hasPrefix = (prefix: string): boolean =>
-		[span, resource].some((attrs) =>
-			Object.entries(attrs).some(([key, value]) => key.startsWith(prefix) && isPresent(value)),
+		Arr.some([span, resource], (attrs) =>
+			Arr.some(
+				Record.toEntries(attrs),
+				([key, value]) => Str.startsWith(prefix)(key) && isPresent(value),
+			),
 		)
 	return { get, pick, millis, hasPrefix }
 }
@@ -117,7 +121,7 @@ const cloud = (span: Attrs, resource: Attrs): CloudPlatformSummary | undefined =
 	const isCloud =
 		cloudAttr("cloud.provider") !== undefined ||
 		cloudAttr("cloud.platform") !== undefined ||
-		FAAS_SELF_KEYS.some((key) => faas.get(key) !== undefined)
+		Arr.some(FAAS_SELF_KEYS, (key) => faas.get(key) !== undefined)
 	if (!isCloud) return undefined
 	return {
 		_tag: "cloud",

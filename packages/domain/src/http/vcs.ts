@@ -1,4 +1,4 @@
-import { Effect, Schema, SchemaGetter } from "effect"
+import { Effect, Schema, SchemaGetter, String as Str } from "effect"
 import { OrgId, UserId } from "../primitives"
 import { PullRequestLinkState } from "./fix-verification"
 
@@ -50,7 +50,7 @@ const GitCommitShaBrand = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/u
 export const GitCommitSha = Schema.String.pipe(
 	// Lowercase before the pattern check so `aBc…` and `ABC…` resolve to the same branded value.
 	Schema.decodeTo(GitCommitShaBrand, {
-		decode: SchemaGetter.transform((s: string) => s.toLowerCase()),
+		decode: SchemaGetter.transform((s: string) => Str.toLowerCase(s)),
 		encode: SchemaGetter.passthrough<string>(),
 	}),
 	Schema.annotate({ identifier: "@maple/GitCommitSha", title: "Git Commit SHA" }),

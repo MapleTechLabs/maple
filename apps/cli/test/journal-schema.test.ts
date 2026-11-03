@@ -4,7 +4,7 @@
 // `maple-store-migration.json`. Its purpose is to fail loudly if the schema
 // ever stops accepting a journal an installed store already holds — the
 // declaration is only safe because this pins the accepted form.
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	decodeMigrationJournal,
@@ -22,18 +22,18 @@ const golden = {
 			from: {
 				version: 7,
 				fingerprint: "0123456789abcdef",
-				digest: "a".repeat(64),
-				manifestDigest: "b".repeat(64),
+				digest: Str.repeat(64)("a"),
+				manifestDigest: Str.repeat(64)("b"),
 				chdb: "3.6.0",
-				projectRevision: "c".repeat(64),
+				projectRevision: Str.repeat(64)("c"),
 			},
 			to: {
 				version: 8,
 				fingerprint: "51081e951066442a",
-				digest: "d".repeat(64),
-				manifestDigest: "e".repeat(64),
+				digest: Str.repeat(64)("d"),
+				manifestDigest: Str.repeat(64)("e"),
 				chdb: "3.6.0",
-				projectRevision: "f".repeat(64),
+				projectRevision: Str.repeat(64)("f"),
 			},
 			status: "running",
 			state: { module: "local-0007-to-0008-apple-crash-frames", version: 1, rawRows: {} },
@@ -45,13 +45,13 @@ const golden = {
 	sourceStoreId: "8b7d9f1e-0000-4000-8000-000000000001",
 	sourceChdb: "3.6.0",
 	sourceFingerprint: "0123456789abcdef",
-	sourceDigest: "a".repeat(64),
+	sourceDigest: Str.repeat(64)("a"),
 	sourceVersion: 7,
 	targetDataDir: "/var/lib/maple/.maple-migrations/m/target/data",
 	targetStoreId: "8b7d9f1e-0000-4000-8000-000000000002",
 	targetChdb: "3.6.0",
 	targetFingerprint: "51081e951066442a",
-	targetDigest: "d".repeat(64),
+	targetDigest: Str.repeat(64)("d"),
 	targetVersion: 8,
 	cutoffAt: "2026-08-19T10:15:00.000Z",
 	createdAt: "2026-08-19T10:15:00.000Z",

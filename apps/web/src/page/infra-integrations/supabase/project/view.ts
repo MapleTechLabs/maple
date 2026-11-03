@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { BAR_CHART_TOKENS } from "@maple/views/charts/bar-chart"
@@ -137,7 +137,7 @@ const heroMeta = (
 				typography(
 					h,
 					{ size: "xs", tone: "muted", mono: true, as: "p" },
-					parts.flatMap((part, index) => (index === 0 ? [part] : [" · ", part])),
+					Arr.flatMap(parts, (part, index) => (index === 0 ? [part] : [" · ", part])),
 				),
 			]
 }

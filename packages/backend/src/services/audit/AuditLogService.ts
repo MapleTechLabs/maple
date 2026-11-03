@@ -5,7 +5,7 @@ import type { AuditActorType, AuditChanges, AuditLogSource, AuditOutcome } from 
 import type { ActorId, ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
 import { AuditLogEntryId as AuditLogEntryIdSchema } from "@maple/domain/primitives"
 import * as CH from "@maple/query-engine/ch"
-import { Clock, Context, DateTime, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, DateTime, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { AuditEventsQueueProducer } from "@maple/backend/platform/bindings"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
@@ -335,29 +335,29 @@ export function makeMemoryAuditLog(): AuditLogServiceApi {
 		})
 	const list: AuditLogServiceApi["list"] = (orgId, filters) =>
 		Effect.succeed(
-			entries
-				.filter(
-					(entry) =>
-						entry.orgId === orgId &&
-						(filters.actorType === undefined || entry.actorType === filters.actorType) &&
-						(filters.userId === undefined || entry.userId === filters.userId) &&
-						(filters.apiKeyId === undefined || entry.apiKeyId === filters.apiKeyId) &&
-						(filters.actorId === undefined || entry.actorId === filters.actorId) &&
-						(filters.affectedUserId === undefined ||
-							entry.affectedUserId === filters.affectedUserId) &&
-						(filters.action === undefined || entry.action === filters.action) &&
-						(filters.outcome === undefined || entry.outcome === filters.outcome) &&
-						(filters.resourceType === undefined || entry.resourceType === filters.resourceType) &&
-						(filters.resourceId === undefined || entry.resourceId === filters.resourceId) &&
-						(filters.changedField === undefined ||
-							(entry.changedFields?.includes(filters.changedField) ?? false)) &&
-						(filters.requestId === undefined || entry.requestId === filters.requestId) &&
-						(filters.sinceMs === undefined || entry.occurredAt.getTime() >= filters.sinceMs) &&
-						(filters.untilMs === undefined || entry.occurredAt.getTime() <= filters.untilMs) &&
-						!(filters.excludeActionSuffixes ?? []).some((suffix) =>
-							entry.action.endsWith(suffix),
-						),
-				)
+			Arr.filter(
+				entries,
+				(entry) =>
+					entry.orgId === orgId &&
+					(filters.actorType === undefined || entry.actorType === filters.actorType) &&
+					(filters.userId === undefined || entry.userId === filters.userId) &&
+					(filters.apiKeyId === undefined || entry.apiKeyId === filters.apiKeyId) &&
+					(filters.actorId === undefined || entry.actorId === filters.actorId) &&
+					(filters.affectedUserId === undefined ||
+						entry.affectedUserId === filters.affectedUserId) &&
+					(filters.action === undefined || entry.action === filters.action) &&
+					(filters.outcome === undefined || entry.outcome === filters.outcome) &&
+					(filters.resourceType === undefined || entry.resourceType === filters.resourceType) &&
+					(filters.resourceId === undefined || entry.resourceId === filters.resourceId) &&
+					(filters.changedField === undefined ||
+						(entry.changedFields?.includes(filters.changedField) ?? false)) &&
+					(filters.requestId === undefined || entry.requestId === filters.requestId) &&
+					(filters.sinceMs === undefined || entry.occurredAt.getTime() >= filters.sinceMs) &&
+					(filters.untilMs === undefined || entry.occurredAt.getTime() <= filters.untilMs) &&
+					!Arr.some(filters.excludeActionSuffixes ?? [], (suffix) =>
+						Str.endsWith(suffix)(entry.action),
+					),
+			)
 				.sort(
 					(a, b) =>
 						b.occurredAt.getTime() - a.occurredAt.getTime() ||

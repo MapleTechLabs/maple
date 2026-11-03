@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import {
 	readAiToolErrorDetail,
 	readAiToolErrorSamples,
@@ -68,7 +68,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 				"The failing tool (exact `gen_ai.tool.name`, as `get_agent_tools_overview` lists it)",
 			).check(Schema.isMaxLength(AI_TOOLS_SELECTION_MAX_CHARS)),
 			fingerprint: P.text(
-				"The error group, as `get_agent_tools_overview` reported it for this tool (a decimal number)",
+				"The agent tool failure group, the decimal Fingerprint column of `get_agent_tools_overview tool=…`; not an error fingerprint from find_errors",
 			),
 			...agentToolScopeParams,
 			samples_session: boundedText(
@@ -95,7 +95,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 					example: `get_agent_tool_error tool="search_docs" fingerprint="10453282193948324021"`,
 				})
 			}
-			const tool = params.tool.trim()
+			const tool = Str.trim(params.tool)
 			if (tool === "") {
 				return yield* new McpInvalidInputError({
 					message:
@@ -155,10 +155,10 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 				variantsCap: AI_TOOL_ERROR_VARIANTS_LIMIT,
 				breakdown: detail.breakdown,
 				// Clipped here, so the output carries what the answer shows; `*Bytes` keep the true size.
-				samples: samples.occurrences.map((sample) => ({
+				samples: Arr.map(samples.occurrences, (sample) => ({
 					...sample,
-					arguments: sample.arguments.slice(0, payloadChars),
-					result: sample.result.slice(0, payloadChars),
+					arguments: Str.slice(0, payloadChars)(sample.arguments),
+					result: Str.slice(0, payloadChars)(sample.result),
 				})),
 				hasMoreSamples: samples.nextCursor !== undefined,
 			}
@@ -190,15 +190,18 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 				}
 			}
 
-			const sampleBlocks: ReadonlyArray<DocBlock> = samples.flatMap((sample) => [
+			const sampleBlocks: ReadonlyArray<DocBlock> = Arr.flatMap(samples, (sample) => [
 				doc.text(
-					[
-						`**${formatSeen(sample.timestamp)}** · session \`${tableCell(sample.sessionId)}\` · agent ${orDash(sample.agentName)} · model ${sample.model === "" ? "(unattributed)" : tableCell(sample.model)} · service ${orDash(sample.service)}`,
-						`duration ${formatNanos(sample.durationNs)} · status ${orDash(sample.statusCode)} · error.type ${orDash(sample.errorType)}`,
-						`trace \`${tableCell(sample.traceId)}\` span \`${tableCell(sample.spanId)}\``,
-						`Message: ${orDash(sample.message, 400)}`,
-						"Arguments:",
-					].join("\n"),
+					Arr.join(
+						[
+							`**${formatSeen(sample.timestamp)}** · session \`${tableCell(sample.sessionId)}\` · agent ${orDash(sample.agentName)} · model ${sample.model === "" ? "(unattributed)" : tableCell(sample.model)} · service ${orDash(sample.service)}`,
+							`duration ${formatNanos(sample.durationNs)} · status ${orDash(sample.statusCode)} · error.type ${orDash(sample.errorType)}`,
+							`trace \`${tableCell(sample.traceId)}\` span \`${tableCell(sample.spanId)}\``,
+							`Message: ${orDash(sample.message, 400)}`,
+							"Arguments:",
+						],
+						"\n",
+					),
 				),
 				doc.code("", samplePayload(sample.arguments, sample.argumentsBytes, sample.retained)),
 				doc.text("Result:"),
@@ -220,7 +223,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 								),
 								doc.table(
 									["Session", "Vendor", "Agent", "Service", "Hits", "Last seen"],
-									sessions.map((row) => [
+									Arr.map(sessions, (row) => [
 										row.sessionId,
 										cellOrDash(row.vendorId),
 										cellOrDash(row.agentName, 40),
@@ -245,7 +248,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 								),
 								doc.table(
 									["Calls", "Last seen", "Message"],
-									variants.map((row) => [
+									Arr.map(variants, (row) => [
 										formatNumber(row.calls),
 										formatSeen(row.lastSeen),
 										cellOrDash(row.message, 200),
@@ -265,7 +268,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 								doc.heading("Where it fails"),
 								doc.table(
 									["Model", "Service", "Calls"],
-									breakdown.map((row) => [
+									Arr.map(breakdown, (row) => [
 										row.model === "" ? "(unattributed)" : row.model,
 										cellOrDash(row.service),
 										formatNumber(row.calls),

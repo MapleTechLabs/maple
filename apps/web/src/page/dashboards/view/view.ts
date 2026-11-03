@@ -1,7 +1,7 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { WIDGET_CHART_TOKENS } from "../kit/chart-tokens"
@@ -10,7 +10,14 @@ import { AppRoute, hrefOf } from "../../../route"
 import { alert, alertDescription } from "@maple/views/ui/alert"
 import { button, linkButton } from "@maple/views/ui/button"
 import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import {
+	empty,
+	emptyContent,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { inlineRenameInput } from "@maple/views/ui/inline-rename-input"
@@ -63,7 +70,7 @@ const title = (h: H, model: Model, name: string): Html => {
 				}),
 			],
 		)
-	const isBlank = name.trim() === ""
+	const isBlank = Str.trim(name) === ""
 	const shown = isBlank ? "Untitled dashboard" : name
 	return pageTitle(
 		h,
@@ -109,7 +116,7 @@ const viewSkeleton = (h: H): Html => {
 			vstack(h, { gap: "4", attributes: [h.AriaHidden(true)] }, [
 				h.div(
 					[h.Class("grid grid-cols-2 gap-4 lg:grid-cols-4")],
-					[0, 1, 2, 3].map((index) => ghost(index, "h-28")),
+					Arr.map([0, 1, 2, 3], (index) => ghost(index, "h-28")),
 				),
 				grid(h, { cols: 1, lg: 2, gap: "4" }, [ghost(4, "h-64"), ghost(5, "h-64")]),
 				ghost(6, "h-64"),
@@ -144,7 +151,7 @@ const blankDashboard = (h: H, isReadOnly: boolean): Html =>
 			emptyMedia(h, {}, [
 				h.div(
 					[h.AriaHidden(true), h.Class("flex w-64 gap-2")],
-					GRID_PREVIEW.map(({ glyph, className }) =>
+					Arr.map(GRID_PREVIEW, ({ glyph, className }) =>
 						h.div(
 							[
 								h.Class(

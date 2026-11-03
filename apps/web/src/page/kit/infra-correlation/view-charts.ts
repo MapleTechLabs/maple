@@ -2,13 +2,17 @@ import type { InfraCorrelation } from "../../../components/infra/infra-correlati
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
-import { INFRA_METRIC_CHART_HEIGHT, metricView as metricChartView } from "@maple/views/charts/infra-metric-chart"
+import {
+	INFRA_METRIC_CHART_HEIGHT,
+	metricView as metricChartView,
+} from "@maple/views/charts/infra-metric-chart"
 import { chartError, chartLoading, chartPlotArea } from "@maple/views/ui/chart-state"
 import { panel } from "@maple/views/ui/panel"
 import { hostSeriesSummary } from "../../infra/hosts/detail/view-panels"
 import { k8sChart } from "../../infra/kit/k8s-chart"
 import { Message, type Model } from "./model"
 import { chartIdOf } from "./update"
+import { Array as Arr, String as Str } from "effect"
 
 // `renderCharts`: each group's charts, drawn as the detail charts.
 
@@ -33,7 +37,13 @@ const SERIES_LABELS = new Map([
 const toChart = (chartId: string) => (message: Chart.Message) => Message.GotChartMessage({ chartId, message })
 
 /** `ContainerDetailChart`, `PodDetailChart`, `NodeDetailChart`: `K8sMetricChartView` cards. */
-const k8sCard = (h: H, model: Model, chartId: string, showThreshold: boolean | undefined, timeZone: string): Html =>
+const k8sCard = (
+	h: H,
+	model: Model,
+	chartId: string,
+	showThreshold: boolean | undefined,
+	timeZone: string,
+): Html =>
 	k8sChart(h, {
 		slot: model.series[chartId],
 		chart: model.charts[chartId],
@@ -83,22 +93,41 @@ const hostChart = (h: H, model: Model, chartId: string, isStacked: boolean, time
 	])
 }
 
-export const correlationCharts = (h: H, model: Model, correlation: InfraCorrelation, timeZone: string): Html => {
+export const correlationCharts = (
+	h: H,
+	model: Model,
+	correlation: InfraCorrelation,
+	timeZone: string,
+): Html => {
 	const idOf = (metric: string) => chartIdOf(correlation, metric)
 	const charts = (): ReadonlyArray<Html> => {
 		switch (correlation.kind) {
 			case "container":
-				return correlation.charts.map(({ metric }) =>
-					k8sCard(h, model, idOf(metric), metric === "cpu" || metric === "memory_percent", timeZone),
+				return Arr.map(correlation.charts, ({ metric }) =>
+					k8sCard(
+						h,
+						model,
+						idOf(metric),
+						metric === "cpu" || metric === "memory_percent",
+						timeZone,
+					),
 				)
 			case "pod":
-				return correlation.charts.map(({ metric }) =>
-					k8sCard(h, model, idOf(metric), metric.startsWith("cpu_") || metric.startsWith("memory_"), timeZone),
+				return Arr.map(correlation.charts, ({ metric }) =>
+					k8sCard(
+						h,
+						model,
+						idOf(metric),
+						Str.startsWith("cpu_")(metric) || Str.startsWith("memory_")(metric),
+						timeZone,
+					),
 				)
 			case "node":
-				return correlation.charts.map(({ metric }) => k8sCard(h, model, idOf(metric), undefined, timeZone))
+				return Arr.map(correlation.charts, ({ metric }) =>
+					k8sCard(h, model, idOf(metric), undefined, timeZone),
+				)
 			case "host":
-				return correlation.charts.map(({ metric, label }) =>
+				return Arr.map(correlation.charts, ({ metric, label }) =>
 					panel(h, { padded: true, attributes: [h.Key(idOf(metric))] }, [
 						h.div([h.Class("mb-1 text-xs font-medium text-foreground")], [label]),
 						hostChart(h, model, idOf(metric), metric === "cpu" || metric === "memory", timeZone),

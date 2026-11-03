@@ -1,5 +1,5 @@
 import { allowedTransitionsForAll, type IssueSeverity } from "@maple/domain/http"
-import { Option, Result } from "effect"
+import { Option, Result, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { Resources } from "../../../platform/resources"
@@ -116,7 +116,8 @@ export const evaluatedEscalation = (
 		}),
 		onSuccess: (preview) => {
 			if (preview.outcome !== "route") return startWrite(model, { _tag: "SetSeverity", severity })
-			const names = preview.destinationIds.map(
+			const names = Arr.map(
+				preview.destinationIds,
 				(id) => model.destinations.find((destination) => destination.id === id)?.name ?? id,
 			)
 			return liftConfirm(

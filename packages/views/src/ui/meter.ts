@@ -11,6 +11,7 @@ import {
 	segmentedBarStyles,
 } from "@maple/ui/styles/ui/meter"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr } from "effect"
 
 // Port of packages/ui/src/components/ui/meter.tsx: Meter, SegmentedBar and BackdropBar.
 
@@ -94,7 +95,7 @@ export const segmentedBar = <M>(
 		readonly className?: string
 	},
 ): Html => {
-	const sum = options.total ?? options.segments.reduce((acc, s) => acc + Math.max(0, s.value), 0)
+	const sum = options.total ?? Arr.reduce(options.segments, 0, (acc, s) => acc + Math.max(0, s.value))
 	const label = options.label
 	return h.div(
 		[
@@ -103,9 +104,10 @@ export const segmentedBar = <M>(
 			...(label ? [h.Role("img"), h.AriaLabel(label)] : [h.AriaHidden(true)]),
 		],
 		sum > 0
-			? options.segments
-					.filter((segment) => segment.value > 0)
-					.map((segment) => segmentView(h, segment, sum, options.minVisible ?? 0))
+			? Arr.map(
+					Arr.filter(options.segments, (segment) => segment.value > 0),
+					(segment) => segmentView(h, segment, sum, options.minVisible ?? 0),
+				)
 			: [],
 	)
 }

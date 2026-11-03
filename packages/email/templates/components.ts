@@ -8,9 +8,10 @@
  */
 import type { Html } from "foldkit/html"
 import { cellsSlot, type Child, type H, MARK_SRC, rowsSlot } from "./render"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 const attributes = (h: H, values: Readonly<Record<string, string>>) =>
-	Object.entries(values).map(([key, value]) => h.Attribute(key, value))
+	Arr.map(Rec.toEntries(values), ([key, value]) => h.Attribute(key, value))
 
 /** react-email's `<Section>`/`<Container>` table attributes. */
 const presentation = (h: H) =>
@@ -58,7 +59,9 @@ export const sectionLabel = (h: H, children: ReadonlyArray<Child>, extraClass = 
 	h.p(
 		[
 			h.Class(
-				`m-0 font-mono text-[10px] uppercase leading-[24px] tracking-widest text-maple-fg-dim ${extraClass}`.trim(),
+				Str.trim(
+					`m-0 font-mono text-[10px] uppercase leading-[24px] tracking-widest text-maple-fg-dim ${extraClass}`,
+				),
 			),
 		],
 		children,
@@ -69,7 +72,9 @@ export const panel = (h: H, children: ReadonlyArray<Child>, extraClass = ""): Ht
 	h.div(
 		[
 			h.Class(
-				`overflow-hidden rounded-lg border border-solid border-maple-border-subtle bg-maple-card ${extraClass}`.trim(),
+				Str.trim(
+					`overflow-hidden rounded-lg border border-solid border-maple-border-subtle bg-maple-card ${extraClass}`,
+				),
 			),
 		],
 		children,
@@ -83,7 +88,7 @@ const tile = (h: H, className: string, children: ReadonlyArray<Child>): Html =>
 const trendText = (h: H, extraClass = ""): Html =>
 	h.p(
 		[
-			h.Class(`m-0 font-mono text-[10px] leading-tight ${extraClass}`.trim()),
+			h.Class(Str.trim(`m-0 font-mono text-[10px] leading-tight ${extraClass}`)),
 			h.Attribute("style", "color:[[color]]"),
 		],
 		["[[arrow]] [[value]]"],

@@ -3,7 +3,7 @@
  * I/O. Verdicts come from explicit human grades; location overlap only suggests what to grade.
  */
 import { Findings } from "@maple/security-audit"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 export const Language = Schema.Literals(["typescript", "javascript", "python", "go", "rust", "java"])
 export type Language = typeof Language.Type
@@ -154,10 +154,10 @@ const decodeEventJson = Schema.decodeUnknownOption(Schema.fromJsonString(EventLi
 
 /** A run's `events.jsonl` text. A line that does not decode (a write in progress) is skipped. */
 export const parseEventLines = (text: string): ReadonlyArray<EventLine> =>
-	text
-		.split("\n")
-		.filter((line) => line.trim() !== "")
-		.flatMap((line) => Option.toArray(decodeEventJson(line)))
+	Arr.flatMap(
+		Arr.filter(Str.split("\n")(text), (line) => Str.trim(line) !== ""),
+		(line) => Option.toArray(decodeEventJson(line)),
+	)
 export const decodeFindings = Schema.decodeUnknownSync(Findings)
 export const decodeCaseResult = Schema.decodeUnknownSync(CaseResult)
 export const decodeGrades = Schema.decodeUnknownSync(Grades)
@@ -173,7 +173,7 @@ const EXECUTION_BLOCKER =
 export const isExecutionOnly = (finding: Finding): boolean =>
 	finding.verdict === "needs_validation" &&
 	finding.blockers.length > 0 &&
-	finding.blockers.every((blocker) => EXECUTION_BLOCKER.test(blocker))
+	Arr.every(finding.blockers, (blocker) => EXECUTION_BLOCKER.test(blocker))
 
 const ZERO_USAGE = {
 	agentsOk: 0,
@@ -185,19 +185,18 @@ const ZERO_USAGE = {
 }
 
 export const usageOf = (events: ReadonlyArray<EventLine>) =>
-	events
-		.filter((event) => event._tag === "Agent")
-		.reduce(
-			(acc, event) => ({
-				agentsOk: acc.agentsOk + (event.outcome === "ok" ? 1 : 0),
-				agentsDiscarded: acc.agentsDiscarded + (event.outcome === "discarded" ? 1 : 0),
-				agentsFailed: acc.agentsFailed + (event.outcome === "failed" ? 1 : 0),
-				inputTokens: acc.inputTokens + (event.usage?.inputTokens ?? 0),
-				outputTokens: acc.outputTokens + (event.usage?.outputTokens ?? 0),
-				costUsd: acc.costUsd + (event.usage?.costUsd ?? 0),
-			}),
-			ZERO_USAGE,
-		)
+	Arr.reduce(
+		Arr.filter(events, (event) => event._tag === "Agent"),
+		ZERO_USAGE,
+		(acc, event) => ({
+			agentsOk: acc.agentsOk + (event.outcome === "ok" ? 1 : 0),
+			agentsDiscarded: acc.agentsDiscarded + (event.outcome === "discarded" ? 1 : 0),
+			agentsFailed: acc.agentsFailed + (event.outcome === "failed" ? 1 : 0),
+			inputTokens: acc.inputTokens + (event.usage?.inputTokens ?? 0),
+			outputTokens: acc.outputTokens + (event.usage?.outputTokens ?? 0),
+			costUsd: acc.costUsd + (event.usage?.costUsd ?? 0),
+		}),
+	)
 
 export const metricsOf = (input: {
 	readonly status: string
@@ -206,7 +205,8 @@ export const metricsOf = (input: {
 	readonly wallClockSeconds: number
 }): RunMetrics => {
 	const usage = usageOf(input.events)
-	const count = (verdict: Finding["verdict"]) => input.findings.filter((f) => f.verdict === verdict).length
+	const count = (verdict: Finding["verdict"]) =>
+		Arr.filter(input.findings, (f) => f.verdict === verdict).length
 	return {
 		status: input.status,
 		invocations: usage.agentsOk + usage.agentsDiscarded + usage.agentsFailed,
@@ -215,7 +215,7 @@ export const metricsOf = (input: {
 		confirmed: count("confirmed"),
 		needsValidation: count("needs_validation"),
 		rejected: count("rejected"),
-		needsValidationExecutionOnly: input.findings.filter(isExecutionOnly).length,
+		needsValidationExecutionOnly: Arr.filter(input.findings, isExecutionOnly).length,
 	}
 }
 
@@ -224,11 +224,14 @@ const TEST_PATH =
 
 export const isTestPath = (path: string) => TEST_PATH.test(path)
 
-const normalize = (path: string) => path.replace(/^\.?\//, "").replace(/:\d+(-\d+)?$/, "")
+const normalize = (path: string) => Str.replace(/:\d+(-\d+)?$/, "")(Str.replace(/^\.?\//, "")(path))
 
 export const filesOf = (finding: Finding): ReadonlyArray<string> => [
 	...new Set(
-		[...finding.trace.map((step) => step.file), ...finding.evidence.map((e) => e.file)].map(normalize),
+		Arr.map(
+			[...Arr.map(finding.trace, (step) => step.file), ...Arr.map(finding.evidence, (e) => e.file)],
+			normalize,
+		),
 	),
 ]
 
@@ -237,18 +240,23 @@ export const locationMatches = (
 	findings: ReadonlyArray<Finding>,
 	bugs: ReadonlyArray<KnownBug>,
 ): ReadonlyArray<LocationMatch> =>
-	bugs.flatMap((bug) => {
-		const touched = new Set(bug.touchedFiles.filter((path) => !isTestPath(path)).map(normalize))
-		return findings
-			.map((finding) => ({
+	Arr.flatMap(bugs, (bug) => {
+		const touched = new Set(
+			Arr.map(
+				Arr.filter(bug.touchedFiles, (path) => !isTestPath(path)),
+				normalize,
+			),
+		)
+		return Arr.filter(
+			Arr.map(findings, (finding) => ({
 				bug: bug.id,
 				fingerprint: finding.fingerprint,
 				verdict: finding.verdict,
 				title: finding.title,
-				files: filesOf(finding).filter((file) => touched.has(file)),
-			}))
-			.filter((match) => match.files.length > 0)
-			.sort((a, b) => b.files.length - a.files.length)
+				files: Arr.filter(filesOf(finding), (file) => touched.has(file)),
+			})),
+			(match) => match.files.length > 0,
+		).sort((a, b) => b.files.length - a.files.length)
 	})
 
 export type ScoredVerdict = BugVerdict | "unscored"
@@ -289,12 +297,10 @@ const VERDICT_RANK = { confirmed: 2, needs_validation: 1, rejected: 0 } satisfie
 export const scoreBug = (findings: ReadonlyArray<Finding>, grade: BugGrade | undefined) => {
 	if (grade === undefined) return { verdict: "unscored" as const, missReason: undefined }
 	const matched = new Set(grade.matched ?? [])
-	const best = findings
-		.filter((f) => matched.has(f.fingerprint))
-		.reduce<Finding | undefined>(
-			(top, f) => (top === undefined || VERDICT_RANK[f.verdict] > VERDICT_RANK[top.verdict] ? f : top),
-			undefined,
-		)
+	const best = Arr.filter(findings, (f) => matched.has(f.fingerprint)).reduce<Finding | undefined>(
+		(top, f) => (top === undefined || VERDICT_RANK[f.verdict] > VERDICT_RANK[top.verdict] ? f : top),
+		undefined,
+	)
 	const verdict: BugVerdict =
 		grade.verdict ??
 		(best?.verdict === "confirmed"
@@ -309,15 +315,17 @@ export const scoreBug = (findings: ReadonlyArray<Finding>, grade: BugGrade | und
 }
 
 export const scoreRun = (result: CaseResult, findings: ReadonlyArray<Finding>, grades: Grades): ScoredRun => {
-	const bugGrades = grades.bugs.filter((g) => g.key === result.key)
-	const matchedAll = new Set(bugGrades.flatMap((g) => g.matched ?? []))
-	const spot = grades.spotChecks
-		.filter((check) => check.key === result.key)
-		.reduce((acc, check) => ({ ...acc, [check.class]: acc[check.class] + 1 }), {
+	const bugGrades = Arr.filter(grades.bugs, (g) => g.key === result.key)
+	const matchedAll = new Set(Arr.flatMap(bugGrades, (g) => g.matched ?? []))
+	const spot = Arr.reduce(
+		Arr.filter(grades.spotChecks, (check) => check.key === result.key),
+		{
 			real: 0,
 			plausible: 0,
 			"false-positive": 0,
-		})
+		},
+		(acc, check) => ({ ...acc, [check.class]: acc[check.class] + 1 }),
+	)
 	return {
 		key: result.key,
 		caseId: result.case.id,
@@ -325,7 +333,7 @@ export const scoreRun = (result: CaseResult, findings: ReadonlyArray<Finding>, g
 		language: result.case.language,
 		profile: result.profile,
 		budget: result.budget,
-		bugs: result.case.bugs.map((bug) => ({
+		bugs: Arr.map(result.case.bugs, (bug) => ({
 			key: result.key,
 			bug: bug.id,
 			reference: bug.reference,
@@ -336,7 +344,8 @@ export const scoreRun = (result: CaseResult, findings: ReadonlyArray<Finding>, g
 				bugGrades.find((g) => g.bug === bug.id),
 			),
 		})),
-		unrelated: findings.filter((f) => f.verdict !== "rejected" && !matchedAll.has(f.fingerprint)).length,
+		unrelated: Arr.filter(findings, (f) => f.verdict !== "rejected" && !matchedAll.has(f.fingerprint))
+			.length,
 		spotChecks: spot,
 		metrics: result.metrics,
 	}
@@ -375,12 +384,12 @@ export const aggregate = (
 		(acc, run) => new Map(acc).set(groupOf(run), [...(acc.get(groupOf(run)) ?? []), run]),
 		new Map(),
 	)
-	return [...groups.entries()]
-		.sort(([a], [b]) => (a < b ? -1 : 1))
-		.map(([group, members]) => {
-			const bugs = members.flatMap((m) => m.bugs)
-			const n = (verdict: ScoredVerdict) => bugs.filter((b) => b.verdict === verdict).length
-			const sum = (f: (m: ScoredRun) => number) => members.reduce((acc, m) => acc + f(m), 0)
+	return Arr.map(
+		[...groups.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),
+		([group, members]) => {
+			const bugs = Arr.flatMap(members, (m) => m.bugs)
+			const n = (verdict: ScoredVerdict) => Arr.filter(bugs, (b) => b.verdict === verdict).length
+			const sum = (f: (m: ScoredRun) => number) => Arr.reduce(members, 0, (acc, m) => acc + f(m))
 			const graded = bugs.length - n("unscored")
 			return {
 				group,
@@ -404,7 +413,8 @@ export const aggregate = (
 				needsValidation: sum((m) => m.metrics.needsValidation),
 				needsValidationExecutionOnly: sum((m) => m.metrics.needsValidationExecutionOnly),
 			}
-		})
+		},
+	)
 }
 
 /** Expected cost of a run: its budget at the mean observed cost per invocation so far. */
@@ -413,8 +423,8 @@ export const estimateCost = (
 	previous: ReadonlyArray<RunMetrics>,
 	fallbackPerInvocation: number,
 ): number => {
-	const invocations = previous.reduce((acc, m) => acc + m.invocations, 0)
-	const cost = previous.reduce((acc, m) => acc + m.costUsd, 0)
+	const invocations = Arr.reduce(previous, 0, (acc, m) => acc + m.invocations)
+	const cost = Arr.reduce(previous, 0, (acc, m) => acc + m.costUsd)
 	return budget * (invocations === 0 ? fallbackPerInvocation : cost / invocations)
 }
 
@@ -426,21 +436,36 @@ const pct = (value: number | null) => (value === null ? "-" : `${Math.round(valu
 const usd = (value: number) => `$${value.toFixed(2)}`
 
 export const renderTable = (rows: ReadonlyArray<AggregateRow>) =>
-	[
-		"| Group | Runs | Bugs | Hit confirmed | Hit needs_validation | Miss | Wrong location | Unscored | Hit rate | Unrelated | Spot real/plausible/FP | Invocations | Input tok | Output tok | Cost | needs_validation (exec-only) |",
-		"| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-		...rows.map(
-			(r) =>
-				`| ${r.group} | ${r.runs} | ${r.bugs} | ${r.hitConfirmed} | ${r.hitNeedsValidation} | ${r.miss} | ${r.wrongLocation} | ${r.unscored} | ${pct(r.hitRate)} | ${r.unrelated} | ${r.spotReal}/${r.spotPlausible}/${r.spotFalsePositive} | ${r.invocations} | ${r.inputTokens} | ${r.outputTokens} | ${usd(r.costUsd)} | ${r.needsValidation} (${r.needsValidationExecutionOnly}) |`,
-		),
-	].join("\n")
+	Arr.join(
+		[
+			"| Group | Runs | Bugs | Hit confirmed | Hit needs_validation | Miss | Wrong location | Unscored | Hit rate | Unrelated | Spot real/plausible/FP | Invocations | Input tok | Output tok | Cost | needs_validation (exec-only) |",
+			"| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+			...Arr.map(
+				rows,
+				(r) =>
+					`| ${r.group} | ${r.runs} | ${r.bugs} | ${r.hitConfirmed} | ${r.hitNeedsValidation} | ${r.miss} | ${r.wrongLocation} | ${r.unscored} | ${pct(r.hitRate)} | ${r.unrelated} | ${r.spotReal}/${r.spotPlausible}/${r.spotFalsePositive} | ${r.invocations} | ${r.inputTokens} | ${r.outputTokens} | ${usd(r.costUsd)} | ${r.needsValidation} (${r.needsValidationExecutionOnly}) |`,
+			),
+		],
+		"\n",
+	)
 
 export const renderRuns = (runs: ReadonlyArray<ScoredRun>) =>
-	[
-		"| Run | Lang | Profile/budget | Bugs (verdict) | Unrelated | Invocations | Wall clock | In/out tokens | Cost | C/NV/R | NV exec-only | Status |",
-		"| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-		...runs.map(
-			(r) =>
-				`| ${r.key} | ${r.language} | ${r.profile}/${r.budget} | ${r.bugs.map((b) => `${b.reference}: ${b.verdict}${b.missReason === undefined ? "" : ` (${b.missReason})`}`).join("; ")} | ${r.unrelated} | ${r.metrics.invocations} | ${Math.round(r.metrics.wallClockSeconds / 60)}m | ${r.metrics.inputTokens}/${r.metrics.outputTokens} | ${usd(r.metrics.costUsd)} | ${r.metrics.confirmed}/${r.metrics.needsValidation}/${r.metrics.rejected} | ${r.metrics.needsValidationExecutionOnly} | ${r.metrics.status} |`,
-		),
-	].join("\n")
+	Arr.join(
+		[
+			"| Run | Lang | Profile/budget | Bugs (verdict) | Unrelated | Invocations | Wall clock | In/out tokens | Cost | C/NV/R | NV exec-only | Status |",
+			"| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+			...Arr.map(
+				runs,
+				(r) =>
+					`| ${r.key} | ${r.language} | ${r.profile}/${r.budget} | ${Arr.join(
+						Arr.map(
+							r.bugs,
+							(b) =>
+								`${b.reference}: ${b.verdict}${b.missReason === undefined ? "" : ` (${b.missReason})`}`,
+						),
+						"; ",
+					)} | ${r.unrelated} | ${r.metrics.invocations} | ${Math.round(r.metrics.wallClockSeconds / 60)}m | ${r.metrics.inputTokens}/${r.metrics.outputTokens} | ${usd(r.metrics.costUsd)} | ${r.metrics.confirmed}/${r.metrics.needsValidation}/${r.metrics.rejected} | ${r.metrics.needsValidationExecutionOnly} | ${r.metrics.status} |`,
+			),
+		],
+		"\n",
+	)

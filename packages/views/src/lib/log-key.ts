@@ -7,7 +7,7 @@
 // never throws — malformed input yields `null` so the page can render its
 // "invalid link" state.
 
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 
 export interface LogKey {
 	/** Raw Log.timestamp — ClickHouse DateTime64 string. */
@@ -31,11 +31,11 @@ function toBase64Url(str: string): string {
 	const bytes = new TextEncoder().encode(str)
 	let binary = ""
 	for (const byte of bytes) binary += String.fromCharCode(byte)
-	return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+	return Str.replace(/=+$/, "")(Str.replace(/\//g, "_")(Str.replace(/\+/g, "-")(btoa(binary))))
 }
 
 function fromBase64Url(token: string): string {
-	const padded = token.replace(/-/g, "+").replace(/_/g, "/")
+	const padded = Str.replace(/_/g, "/")(Str.replace(/-/g, "+")(token))
 	const binary = atob(padded)
 	const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
 	return new TextDecoder().decode(bytes)
@@ -57,7 +57,9 @@ const LogKeyTuple = Schema.fromJsonString(
 	Schema.Tuple([Schema.NonEmptyString, Schema.NonEmptyString, Schema.String, Schema.String]),
 )
 const decodeTuple = Schema.decodeUnknownOption(LogKeyTuple)
-const encodeTuple = Schema.encodeSync(Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String, Schema.String, Schema.String])))
+const encodeTuple = Schema.encodeSync(
+	Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String, Schema.String, Schema.String])),
+)
 const decodeBase64Url = Option.liftThrowable(fromBase64Url)
 
 /** Decode a `$logId` token back into a LogKey, or `null` if it is malformed. */
@@ -65,7 +67,12 @@ export function decodeLogKey(token: string): LogKey | null {
 	return Option.getOrNull(
 		Option.map(
 			Option.flatMap(decodeBase64Url(token), decodeTuple),
-			([timestamp, serviceName, traceId, spanId]): LogKey => ({ timestamp, serviceName, traceId, spanId }),
+			([timestamp, serviceName, traceId, spanId]): LogKey => ({
+				timestamp,
+				serviceName,
+				traceId,
+				spanId,
+			}),
 		),
 	)
 }
