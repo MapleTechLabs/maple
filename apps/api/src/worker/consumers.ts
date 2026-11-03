@@ -13,6 +13,7 @@ import {
 	AuditEventsQueue,
 	CancellationReviewsQueue,
 	PlanetScaleWebhookQueue,
+	VcsBackfillQueue,
 	VcsSyncQueue,
 } from "../resources/queues"
 import type { ApiPortsLayer } from "./bindings"
@@ -52,7 +53,7 @@ const auditEventsConsumer = (deadLetterQueue: string | undefined): Cloudflare.Qu
 })
 
 /**
- * Attaches the four consumers to the host at plan time and their listeners
+ * Attaches the five consumers to the host at plan time and their listeners
  * at runtime. Needs `Queues.EventSourceLive`. `renamedFrom` carries the
  * consumer resources over from the ids the api factory declared them under,
  * so the deploy migrates their state rows instead of re-creating the
@@ -71,6 +72,13 @@ export const registerQueueConsumers = (
 				consumeVcsSyncBatch(ports, env, vcsSyncCaches, messages),
 			),
 		).pipe(renamedFrom({ fqn: "vcs-sync-consumer" }))
+		// Same handler, own consumer: a scheduled sync's backlog drains here without holding up webhooks.
+		const vcsBackfillQueue = yield* VcsBackfillQueue
+		yield* Cloudflare.Queues.consumeQueueMessages(vcsBackfillQueue, VCS_SYNC_CONSUMER, (stream) =>
+			Effect.flatMap(Stream.runCollect(stream), (messages) =>
+				consumeVcsSyncBatch(ports, env, vcsSyncCaches, messages),
+			),
+		)
 		const planetScaleWebhookQueue = yield* PlanetScaleWebhookQueue
 		yield* Cloudflare.Queues.consumeQueueMessages(
 			planetScaleWebhookQueue,

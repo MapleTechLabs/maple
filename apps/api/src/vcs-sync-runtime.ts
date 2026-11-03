@@ -5,8 +5,8 @@ import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
 import { VcsScheduledSyncService } from "@maple/backend/services/integrations/vcs/VcsScheduledSyncService"
 import {
 	clampQueueDelaySeconds,
-	MESSAGING_DESTINATION,
 	MESSAGING_SYSTEM,
+	vcsQueueFor,
 	VcsSyncQueue,
 } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import { VcsSyncService } from "@maple/backend/services/integrations/vcs/VcsSyncService"
@@ -172,21 +172,22 @@ const settleMessage = (service: VcsSyncService["Service"], message: PlacedMessag
 			kind: "consumer",
 			attributes: {
 				"messaging.system": MESSAGING_SYSTEM,
-				"messaging.destination.name": MESSAGING_DESTINATION,
+				"messaging.destination.name": vcsQueueFor(message.body),
 				"messaging.operation.name": "process",
 				"messaging.message.delivery_attempt": message.attempts,
 			},
 		}),
 	)
 
-const batchSpan = (messageCount: number, dispatch: "inline" | "placed") =>
+// A batch comes from one queue, so its first message names it.
+const batchSpan = (messages: ReadonlyArray<{ readonly body: unknown }>, dispatch: "inline" | "placed") =>
 	Effect.withSpan("VcsSyncQueue.processBatch", {
 		kind: "consumer",
 		attributes: {
 			"messaging.system": MESSAGING_SYSTEM,
-			"messaging.destination.name": MESSAGING_DESTINATION,
+			"messaging.destination.name": vcsQueueFor(messages[0]?.body),
 			"messaging.operation.name": "receive",
-			"messaging.batch.message_count": messageCount,
+			"messaging.batch.message_count": messages.length,
 			"maple.vcs.dispatch": dispatch,
 		},
 	})
@@ -203,7 +204,7 @@ export const processBatch = (batch: QueueBatch) =>
 				),
 			{ discard: true },
 		)
-	}).pipe(batchSpan(batch.messages.length, "inline"))
+	}).pipe(batchSpan(batch.messages, "inline"))
 
 /** The batch in the placed fetch handler: the outcomes go back to the consumer that holds the messages. */
 export const processPlacedBatch = (messages: ReadonlyArray<PlacedMessage>, placement: string) =>
@@ -211,7 +212,7 @@ export const processPlacedBatch = (messages: ReadonlyArray<PlacedMessage>, place
 		const service = yield* VcsSyncService
 		yield* Effect.annotateCurrentSpan("maple.placement", placement)
 		return yield* Effect.forEach(messages, (message) => settleMessage(service, message))
-	}).pipe(batchSpan(messages.length, "placed"))
+	}).pipe(batchSpan(messages, "placed"))
 
 /**
  * Final deliveries whose placed run failed with an unknown outcome: no redelivery is left, so the
@@ -235,7 +236,7 @@ export const recordExhaustedBatch = (messages: ReadonlyArray<Message<unknown>>) 
 			kind: "consumer",
 			attributes: {
 				"messaging.system": MESSAGING_SYSTEM,
-				"messaging.destination.name": MESSAGING_DESTINATION,
+				"messaging.destination.name": vcsQueueFor(messages[0]?.body),
 				"messaging.operation.name": "settle",
 				"messaging.batch.message_count": messages.length,
 			},

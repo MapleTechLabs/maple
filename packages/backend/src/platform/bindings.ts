@@ -34,9 +34,14 @@ export interface QueueProducer {
 	) => Effect.Effect<void, QueueSendError>
 }
 
-/** Vendor-agnostic VCS sync jobs (commit backfill + webhook deltas). */
+/** Vendor-agnostic VCS webhook deltas: pushes, pull request and CI events. */
 export class VcsSyncQueueProducer extends Context.Service<VcsSyncQueueProducer, QueueProducer>()(
 	"@maple/backend/platform/VcsSyncQueueProducer",
+) {}
+
+/** Bulk VCS refreshes (branch and commit backfills, dependency scans), kept off the webhook queue. */
+export class VcsBackfillQueueProducer extends Context.Service<VcsBackfillQueueProducer, QueueProducer>()(
+	"@maple/backend/platform/VcsBackfillQueueProducer",
 ) {}
 
 /** PlanetScale webhook deliveries, decoupled from the receiving request. */

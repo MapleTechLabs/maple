@@ -28,6 +28,7 @@ import {
 	type RateLimiter,
 	ReplayBlobBucket,
 	SchemaApplyWorkflow,
+	VcsBackfillQueueProducer,
 	VcsSyncQueueProducer,
 	WorkflowStartError,
 	type WorkflowStarter,
@@ -44,6 +45,7 @@ import {
 	AuditEventsQueue,
 	CancellationReviewsQueue,
 	PlanetScaleWebhookQueue,
+	VcsBackfillQueue,
 	VcsSyncQueue,
 } from "../resources/queues"
 import { ReplayBlobs } from "../resources/replay-blobs"
@@ -57,6 +59,7 @@ export const bindApiClients = Effect.gen(function* () {
 	yield* MapleDb("api")
 	return {
 		vcsSync: yield* Cloudflare.Queues.WriteQueue(VcsSyncQueue),
+		vcsBackfill: yield* Cloudflare.Queues.WriteQueue(VcsBackfillQueue),
 		planetScaleWebhooks: yield* Cloudflare.Queues.WriteQueue(PlanetScaleWebhookQueue),
 		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditEventsQueue),
 		cancellationReviews: yield* Cloudflare.Queues.WriteQueue(CancellationReviewsQueue),
@@ -181,6 +184,7 @@ export const apiPorts = (
 ) =>
 	Layer.mergeAll(
 		Layer.succeed(VcsSyncQueueProducer, producer(clients.vcsSync)),
+		Layer.succeed(VcsBackfillQueueProducer, producer(clients.vcsBackfill)),
 		Layer.succeed(PlanetScaleWebhookQueueProducer, producer(clients.planetScaleWebhooks)),
 		Layer.succeed(AuditEventsQueueProducer, producer(clients.auditEvents)),
 		Layer.succeed(CancellationReviewQueueProducer, producer(clients.cancellationReviews)),
