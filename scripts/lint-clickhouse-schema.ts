@@ -12,7 +12,6 @@
  */
 import { latestSnapshotStatements } from "../packages/domain/src/generated/clickhouse-schema"
 import { parseEmittedStatement } from "../packages/domain/src/clickhouse/ddl-emitter"
-import { String as Str } from "effect"
 
 interface Violation {
 	readonly kind: string
@@ -29,7 +28,7 @@ for (const stmt of latestSnapshotStatements) {
 	if (parsed === null) {
 		violations.push({
 			kind: "unparseable_statement",
-			message: `parseEmittedStatement returned null for: ${Str.split("\n")(stmt)[0]?.slice(0, 120)}`,
+			message: `parseEmittedStatement returned null for: ${stmt.split("\n")[0]?.slice(0, 120)}`,
 		})
 		continue
 	}
@@ -62,7 +61,7 @@ for (const stmt of latestSnapshotStatements) {
 	if (match) {
 		violations.push({
 			kind: "icu_gated_function",
-			message: `Statement uses ${match[1]}(), which is missing from local mode's non-ICU libchdb. Use ${match[1] === "upperUTF8" ? "upper" : "lower"}() (identical for ASCII) or an ICU-free formulation. Statement: ${Str.split("\n")(stmt)[0]?.slice(0, 120)}`,
+			message: `Statement uses ${match[1]}(), which is missing from local mode's non-ICU libchdb. Use ${match[1] === "upperUTF8" ? "upper" : "lower"}() (identical for ASCII) or an ICU-free formulation. Statement: ${stmt.split("\n")[0]?.slice(0, 120)}`,
 		})
 	}
 }

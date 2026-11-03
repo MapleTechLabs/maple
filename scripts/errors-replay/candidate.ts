@@ -8,7 +8,6 @@
  * fingerprint.ts and the MV SQL, bump FINGERPRINT_VERSION, and reset this file.
  */
 import { computeFingerprintInputs } from "../../packages/domain/src/tinybird/fingerprint"
-import { Array as Arr } from "effect"
 
 export interface ReplayEvent {
 	readonly serviceName: string
@@ -23,7 +22,7 @@ interface KeyInputs {
 }
 
 const key = (event: ReplayEvent, inputs: KeyInputs): string =>
-	Arr.join([event.serviceName, event.exceptionType, inputs.fpFrames, inputs.msgSignature], "\u0000")
+	[event.serviceName, event.exceptionType, inputs.fpFrames, inputs.msgSignature].join("\u0000")
 
 /** The proposal. No proposal is open, so this is production. */
 const candidateInputs = (event: ReplayEvent): KeyInputs => computeFingerprintInputs(event)

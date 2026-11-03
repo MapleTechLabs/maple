@@ -2,7 +2,6 @@
 import { createHash } from "node:crypto"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { LOCAL_CONTROL_SCHEMA_VERSION } from "../packages/local-server/src/local-schema-version"
-import { String as Str } from "effect"
 
 const root = "packages/local-server/src"
 const next = LOCAL_CONTROL_SCHEMA_VERSION + 1
@@ -11,19 +10,19 @@ const snapshotPath = `${root}/schema/control-schema-v${next}.sql`
 if (existsSync(snapshotPath)) throw new Error(`control schema v${next} already exists`)
 const current = readFileSync(currentPath, "utf8")
 const pragma = `PRAGMA user_version = ${LOCAL_CONTROL_SCHEMA_VERSION};`
-if (!Str.includes(pragma)(current)) throw new Error("current control schema version pragma does not match")
-const sql = Str.replace(pragma, `PRAGMA user_version = ${next};`)(current)
+if (!current.includes(pragma)) throw new Error("current control schema version pragma does not match")
+const sql = current.replace(pragma, `PRAGMA user_version = ${next};`)
 const digest = createHash("sha256").update(sql).digest("hex")
 const versionPath = `${root}/local-schema-version.ts`
 const historyPath = `${root}/local-schema-history.ts`
 const currentVersion = readFileSync(versionPath, "utf8")
 const versionAnchor = `LOCAL_CONTROL_SCHEMA_VERSION = ${LOCAL_CONTROL_SCHEMA_VERSION} as const`
-if (Str.split(versionAnchor)(currentVersion).length !== 2)
+if (currentVersion.split(versionAnchor).length !== 2)
 	throw new Error("control version anchor must occur exactly once")
-const version = Str.replace(
+const version = currentVersion.replace(
 	`LOCAL_CONTROL_SCHEMA_VERSION = ${LOCAL_CONTROL_SCHEMA_VERSION} as const`,
 	`LOCAL_CONTROL_SCHEMA_VERSION = ${next} as const`,
-)(currentVersion)
+)
 const history = readFileSync(historyPath, "utf8")
 const tip = /export const LOCAL_CONTROL_SCHEMA_HISTORY = Object\.freeze\(\[([\s\S]*?)\] as const\)/
 if (!tip.test(history)) throw new Error("control schema history anchor not found")

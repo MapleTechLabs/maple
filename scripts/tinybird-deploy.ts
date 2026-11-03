@@ -21,7 +21,6 @@
 import { spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { writeTinybirdDatafiles } from "./write-tinybird-datafiles"
-import { Array as Arr, String as Str } from "effect"
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url))
 
@@ -45,7 +44,7 @@ const fail = (message: string): never => {
 }
 
 const isCommand = (value: string | undefined): value is Command =>
-	Arr.some(COMMANDS, (command) => command === value)
+	COMMANDS.some((command) => command === value)
 
 const DESTRUCTIVE_FLAG = "--allow-destructive-operations"
 
@@ -55,7 +54,7 @@ const parseArgs = (): {
 	destructive: ReadonlyArray<string>
 } => {
 	const [, , rawCommand, ...rest] = process.argv
-	const usage = `Usage: bun run tinybird:deploy <${Arr.join(COMMANDS, "|")}> [--region us|eu] [${DESTRUCTIVE_FLAG}]`
+	const usage = `Usage: bun run tinybird:deploy <${COMMANDS.join("|")}> [--region us|eu] [${DESTRUCTIVE_FLAG}]`
 	if (!isCommand(rawCommand)) return fail(usage)
 	const destructive = rest.includes(DESTRUCTIVE_FLAG) ? [DESTRUCTIVE_FLAG] : []
 	const flag = rest.indexOf("--region")
@@ -70,17 +69,17 @@ const infisicalSecrets = (env: string): Auth => {
 		["secrets", "get", "TINYBIRD_HOST", "TINYBIRD_TOKEN", `--env=${env}`, "--plain", "--silent"],
 		{ cwd: REPO_ROOT, encoding: "utf8", stdio: ["inherit", "pipe", "pipe"] },
 	)
-	const [host, token = ""] = Str.split("\n")(Str.trim(proc.stdout ?? ""))
+	const [host = "", token = ""] = (proc.stdout ?? "").trim().split("\n")
 	if (proc.status !== 0 || host === "" || token === "") {
 		return fail(
 			`Could not read TINYBIRD_HOST/TINYBIRD_TOKEN from Infisical env "${env}". Run \`infisical login\`.`,
 		)
 	}
-	return { host: Str.trim(host), token: Str.trim(token) }
+	return { host: host.trim(), token: token.trim() }
 }
 
 const authFor = (region: Region): Auth => {
-	const prefix = `TINYBIRD_${Str.toUpperCase(region.id)}`
+	const prefix = `TINYBIRD_${region.id.toUpperCase()}`
 	const host = process.env[`${prefix}_HOST`]?.trim()
 	const token = process.env[`${prefix}_TOKEN`]?.trim()
 	return host && token ? { host, token } : infisicalSecrets(region.infisicalEnv)
@@ -88,7 +87,7 @@ const authFor = (region: Region): Auth => {
 
 /** Runs `tb --cloud` against `auth` from the repo root, where `tinybird.json` points at the datafiles. */
 const runTb = (region: Region, auth: Auth, args: ReadonlyArray<string>): boolean => {
-	console.log(`\n[${region.id}] ${auth.host}\n$ tb --cloud ${Arr.join(args, " ")}`)
+	console.log(`\n[${region.id}] ${auth.host}\n$ tb --cloud ${args.join(" ")}`)
 	const proc = spawnSync("tb", ["--cloud", "--host", auth.host, "--token", auth.token, ...args], {
 		cwd: REPO_ROOT,
 		stdio: "inherit",
@@ -106,47 +105,24 @@ const ARGS = {
 	promote: ["deployment", "promote"],
 	discard: ["deployment", "discard"],
 } as const satisfies Record<Exclude<Command, "start">, ReadonlyArray<string>>
-const targets = Arr.map(regions, (region) => ({ region, auth: authFor(region) }))
+const targets = regions.map((region) => ({ region, auth: authFor(region) }))
 const revision = writeTinybirdDatafiles()
-console.log(
-	`Tinybird project ${revision}, regions: ${Arr.join(
-		Arr.map(regions, (r) => r.id),
-		", ",
-	)}`,
-)
+console.log(`Tinybird project ${revision}, regions: ${regions.map((r) => r.id).join(", ")}`)
 
 if (command === "start") {
-	const refused = Arr.filter(targets, ({ region, auth }) => !runTb(region, auth, ARGS.check))
+	const refused = targets.filter(({ region, auth }) => !runTb(region, auth, ARGS.check))
 	if (refused.length > 0) {
-		fail(
-			`Check failed for ${Arr.join(
-				Arr.map(refused, (t) => t.region.id),
-				", ",
-			)}; no deployment was created.`,
-		)
+		fail(`Check failed for ${refused.map((t) => t.region.id).join(", ")}; no deployment was created.`)
 	}
-	const failed = Arr.filter(
-		targets,
-		({ region, auth }) =>
-			!runTb(region, auth, ["deployment", "create", "--no-auto", "--no-wait", ...destructive]),
+	const failed = targets.filter(
+		({ region, auth }) => !runTb(region, auth, ["deployment", "create", "--no-auto", "--no-wait", ...destructive]),
 	)
 	if (failed.length > 0)
-		fail(
-			`Could not create a deployment for ${Arr.join(
-				Arr.map(failed, (t) => t.region.id),
-				", ",
-			)}.`,
-		)
+		fail(`Could not create a deployment for ${failed.map((t) => t.region.id).join(", ")}.`)
 	console.log(
 		"\nStaged. Watch with `bun run tinybird:deploy status`, then `bun run tinybird:deploy promote`.",
 	)
 } else {
-	const failed = Arr.filter(targets, ({ region, auth }) => !runTb(region, auth, ARGS[command]))
-	if (failed.length > 0)
-		fail(
-			`\`${command}\` failed for ${Arr.join(
-				Arr.map(failed, (t) => t.region.id),
-				", ",
-			)}.`,
-		)
+	const failed = targets.filter(({ region, auth }) => !runTb(region, auth, ARGS[command]))
+	if (failed.length > 0) fail(`\`${command}\` failed for ${failed.map((t) => t.region.id).join(", ")}.`)
 }

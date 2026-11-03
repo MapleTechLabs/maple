@@ -10,7 +10,6 @@ import {
 	trackedFiles,
 	type Workspace,
 } from "./plan-tests.ts"
-import { Array as Arr, String as Str } from "effect"
 
 const suite = (name: string, files: number, extra: Partial<Suite> = {}): Suite => ({
 	name,
@@ -24,26 +23,22 @@ const suite = (name: string, files: number, extra: Partial<Suite> = {}): Suite =
 const expectCoverage = (suites: ReadonlyArray<Suite>) => {
 	const { include } = plan(suites)
 	for (const s of suites) {
-		const lanes = Arr.filter(include, (lane) => lane.filters.includes(s.name))
-		const shards = Arr.flatMap(lanes, (lane) =>
-			Arr.map(
-				Arr.filter(lane.args, (a) => Str.startsWith("--shard=")(a)),
-				(a) => Str.slice(8)(a),
-			),
+		const lanes = include.filter((lane) => lane.filters.includes(s.name))
+		const shards = lanes.flatMap((lane) =>
+			lane.args.filter((a) => a.startsWith("--shard=")).map((a) => a.slice(8)),
 		)
 		if (shards.length > 0) {
 			expect(shards.toSorted()).toEqual(
 				Array.from({ length: shards.length }, (_, i) => `${i + 1}/${shards.length}`).toSorted(),
 			)
-			expect(Arr.every(lanes, (lane) => lane.filters.length === 1)).toBe(true)
+			expect(lanes.every((lane) => lane.filters.length === 1)).toBe(true)
 		} else {
 			expect(lanes).toHaveLength(1)
 		}
-		if (s.vitest)
-			expect(Arr.every(lanes, (lane) => lane["estimated-seconds"] <= TARGET_SECONDS)).toBe(true)
+		if (s.vitest) expect(lanes.every((lane) => lane["estimated-seconds"] <= TARGET_SECONDS)).toBe(true)
 		else expect(lanes[0]?.["bun-filters"]).toContain(s.name)
 	}
-	const names = Arr.map(include, (lane) => lane.name)
+	const names = include.map((lane) => lane.name)
 	expect(new Set(names).size).toBe(names.length)
 	return include
 }
@@ -52,10 +47,10 @@ describe("plan", () => {
 	test("covers the real workspace inventory and its fivefold growth", async () => {
 		const files = await trackedFiles()
 		const suites = suitesOf(await discoverWorkspaces(files), files)
-		expect(Arr.map(suites, (s) => s.name)).toContain("@maple/backend")
-		expect(Arr.map(suites, (s) => s.name)).not.toContain("@maple/ingest")
+		expect(suites.map((s) => s.name)).toContain("@maple/backend")
+		expect(suites.map((s) => s.name)).not.toContain("@maple/ingest")
 		const current = expectCoverage(suites)
-		const grown = expectCoverage(Arr.map(suites, (s) => ({ ...s, files: s.files * 5 })))
+		const grown = expectCoverage(suites.map((s) => ({ ...s, files: s.files * 5 })))
 		expect(grown.length).toBeGreaterThan(current.length)
 		expect(grown.length).toBeLessThanOrEqual(MAX_LANES)
 	})
