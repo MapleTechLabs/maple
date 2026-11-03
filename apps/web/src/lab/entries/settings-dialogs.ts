@@ -198,7 +198,7 @@ const dashboardView = Submodel.defineView<DashboardListModel.Model, DashboardLis
 	deleteDialog(h, model),
 )
 const sourceView = Submodel.defineView<SourceDetailModel.Model, SourceMessage>((model, h) =>
-	settingsTab(h, model, source),
+	settingsTab(h, model, source, "UTC"),
 )
 
 const render = (h: HtmlBuilder<Message>, item: string): Html => {

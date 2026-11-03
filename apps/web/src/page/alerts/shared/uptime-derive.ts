@@ -169,7 +169,7 @@ export const checkHealth = (
 }
 
 export const formatMs = (ms: number | null): string =>
-	ms === null ? "–" : ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`
+	ms === null ? "–" : Math.round(ms) >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`
 
 /** The status segments of the Uptime tab. */
 export type StatusFilter = "all" | "down" | "degraded" | "paused"
