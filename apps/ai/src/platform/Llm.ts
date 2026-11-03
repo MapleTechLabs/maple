@@ -23,6 +23,7 @@ import {
 	Effect,
 	Layer,
 	Option,
+	Predicate,
 	Redacted,
 	Schema,
 	Stream,
@@ -691,6 +692,9 @@ export const resolveSecurityAuditModel = (
  * router latency) nests under the span that made the call instead of arriving as a twin trace that
  * only shares a session id. The model config cannot carry them — it is built once per layer, and the
  * ids are per call — which is why they ride here with `usage`.
+ *
+ * Each tool's `strict: null` is dropped too: the provider sends it for every tool without a strict
+ * annotation, and some upstreams reject a null `strict`, failing the whole turn. Absent means the same.
  */
 const withPerCallFields = (client: HttpClient.HttpClient): HttpClient.HttpClient =>
 	HttpClient.mapRequestEffect(client, (request) =>
@@ -716,10 +720,24 @@ const splicePerCallFields = (
 		}
 		return yield* HttpClientRequest.bodyJson(request, {
 			...decoded,
+			...("tools" in decoded && Arr.isArray(decoded.tools)
+				? {
+						tools: Arr.map(decoded.tools, (tool) =>
+							Predicate.isObject(tool) ? dropNullStrict(tool) : tool,
+						),
+					}
+				: undefined),
 			usage: { include: true },
 			...(Object.keys(trace).length === 0 ? undefined : { trace }),
 		})
 	})
+
+const dropNullStrict = (tool: Record<PropertyKey, unknown>): Record<PropertyKey, unknown> => {
+	const fn = tool.function
+	if (!Predicate.isObject(fn) || fn.strict !== null) return tool
+	const { strict: _strict, ...rest } = fn
+	return { ...tool, function: rest }
+}
 
 /** The HTTP client every OpenRouter call goes out on, with the app-attribution headers. */
 const openRouterHttp = Layer.effect(HttpClient.HttpClient)(
