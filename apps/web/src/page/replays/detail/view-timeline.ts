@@ -1,4 +1,4 @@
-import { formatDuration } from "@maple/ui/lib/format"
+import { countLabel, formatDuration } from "@maple/ui/lib/format"
 import { formatClock } from "@maple/ui/lib/replay-format"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { cn } from "@maple/ui/lib/utils"
@@ -342,7 +342,7 @@ const traceRow = (h: H, view: TracesView, summary: TraceSummary): Html => {
 									),
 									...tooltipTrigger(
 										h,
-										`Open trace in new tab · ${summary.rootServiceName} · ${summary.spanCount} spans`,
+										`Open trace in new tab · ${summary.rootServiceName} · ${countLabel(summary.spanCount, "span")}`,
 									),
 								],
 								[

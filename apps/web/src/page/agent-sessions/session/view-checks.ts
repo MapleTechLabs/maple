@@ -307,7 +307,7 @@ const coverageSignals = (
 			title: "Messages",
 			explains: {
 				captured:
-					"At least one model call recorded its prompts and replies. Refusals and Reply length read them.",
+					"At least one model call recorded its prompts or its replies. Refusals and Reply length read them.",
 				missing:
 					"No model call recorded its prompts or replies. Refusals and Reply length go by status codes only.",
 				absent: NO_MODEL_CALL,
