@@ -54,6 +54,44 @@ const member = (
 	runnerMs: counts.runnerHours * HOUR_MS,
 })
 
+const REPOSITORIES = ["acme/web", "acme/api", "acme/ingest", "acme/infra"] as const
+/** How often each person shows up on a weekday, out of 1. */
+const CADENCE = [
+	["acme-ada", 0.8],
+	["acme-jonas", 0.55],
+	["acme-mei", 0.2],
+	["acme-priya", 0.45],
+	["acme-sam", 0.1],
+	["acme-tomas", 0.3],
+] as const
+
+/** A month of the calendar, seeded so every load draws the same one; weekends stay quiet. */
+const activityAt = (nowMs: number) => {
+	let seed = 7
+	const next = () => {
+		seed = (seed * 16_807) % 2_147_483_647
+		return seed / 2_147_483_647
+	}
+	return Array.from({ length: 31 }, (_, index) => nowMs - (30 - index) * DAY).flatMap((at) => {
+		const day = new Date(at).toISOString().slice(0, 10)
+		const weekday = new Date(at).getUTCDay()
+		const busy = weekday === 0 || weekday === 6 ? 0.15 : 1
+		return CADENCE.flatMap(([login, cadence]) =>
+			next() < cadence * busy
+				? [
+						{
+							day,
+							login,
+							repository: REPOSITORIES[Math.floor(next() * REPOSITORIES.length)] ?? "acme/web",
+							opened: 1 + Math.floor(next() * 3),
+							merged: Math.floor(next() * 3),
+						},
+					]
+				: [],
+		)
+	})
+}
+
 // Logins no GitHub account holds, so the avatars fall back to initials.
 const teamAt = (nowMs: number) =>
 	Schema.decodeUnknownSync(CodeReviewTeam)({
@@ -190,6 +228,7 @@ const teamAt = (nowMs: number) =>
 				runnerHours: 35,
 			}),
 		],
+		activity: activityAt(nowMs),
 	})
 
 const context: PageContext = {

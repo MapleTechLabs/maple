@@ -1,5 +1,6 @@
 import {
 	CodeReviewTeam,
+	CodeReviewTeamActivity,
 	CodeReviewTeamMember,
 	type CodeReviewTeamQuery,
 	CodeReviewTeamTotals,
@@ -47,6 +48,9 @@ export interface TeamPullRequest {
 	readonly repositoryId: string
 	readonly number: number
 	readonly author: string | null
+	/** Its first review, epoch ms. */
+	readonly firstCreatedAt: number | null
+	readonly mergedAt: number | null
 	readonly mergeSeconds: number | null
 	readonly firstReviewSeconds: number | null
 	readonly shippedClean: boolean
@@ -98,10 +102,66 @@ const emptyMember = (login: string): MemberCounts => ({
 	runnerMs: 0,
 })
 
+/** `YYYY-MM-DD` of an epoch ms in a zone. */
+const dayFormatter = (timeZone: string) => {
+	const format = new Intl.DateTimeFormat("en-CA", {
+		timeZone,
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+	})
+	return (ms: number) => format.format(ms)
+}
+
+/** Each pull request's first review and merge in the window, folded by day, person and repository. */
+export const buildActivity = (input: {
+	readonly startTime: number
+	readonly endTime: number
+	readonly timeZone: string
+	readonly pullRequests: ReadonlyArray<TeamPullRequest>
+	/** `owner/name` by repository id. */
+	readonly repositories: ReadonlyMap<string, string>
+}): ReadonlyArray<CodeReviewTeamActivity> => {
+	const dayOf = dayFormatter(input.timeZone)
+	const cells = new Map<
+		string,
+		{ day: string; login: string; repository: string; opened: number; merged: number }
+	>()
+	const cellOf = (at: number, login: string, repository: string) => {
+		const day = dayOf(at)
+		const key = `${day}\u0000${login}\u0000${repository}`
+		const found = cells.get(key)
+		if (found !== undefined) return found
+		const created = { day, login, repository, opened: 0, merged: 0 }
+		cells.set(key, created)
+		return created
+	}
+	const inWindow = (at: number) => at >= input.startTime && at < input.endTime
+	for (const pr of input.pullRequests) {
+		if (pr.author === null || isBotLogin(pr.author)) continue
+		const repository = input.repositories.get(pr.repositoryId) ?? pr.repositoryId
+		if (pr.firstCreatedAt !== null && inWindow(pr.firstCreatedAt))
+			cellOf(pr.firstCreatedAt, pr.author, repository).opened += 1
+		if (pr.mergedAt !== null && inWindow(pr.mergedAt))
+			cellOf(pr.mergedAt, pr.author, repository).merged += 1
+	}
+	return [...cells.values()]
+		.toSorted((a, b) =>
+			a.day === b.day
+				? a.login === b.login
+					? a.repository.localeCompare(b.repository)
+					: a.login.localeCompare(b.login)
+				: a.day.localeCompare(b.day),
+		)
+		.map((cell) => new CodeReviewTeamActivity(cell))
+}
+
 /** The pull request authors and CI actors as one row per login, bots left out. */
 export const buildTeam = (input: {
 	readonly startTime: number
 	readonly endTime: number
+	readonly timeZone: string
+	readonly repositories: ReadonlyMap<string, string>
 	readonly pullRequests: ReadonlyArray<TeamPullRequest>
 	readonly findings: ReadonlyArray<TeamFindingCounts>
 	readonly ci: ReadonlyArray<TeamCiActor>
@@ -175,6 +235,7 @@ export const buildTeam = (input: {
 					}),
 			)
 			.toSorted((a, b) => a.login.localeCompare(b.login, "en", { sensitivity: "base" })),
+		activity: buildActivity(input),
 	})
 }
 
@@ -213,6 +274,8 @@ export class CodeReviewTeamService extends Context.Service<CodeReviewTeamService
 									number: $.number,
 									author: PG.sql(PG.nullable(PG.text))`max(${$.authorLogin})`,
 									lastCreatedAt: PG.max($.createdAt),
+									firstCreatedAt: PG.min($.createdAt),
+									mergedAt: PG.max($.mergedAt),
 									// First review to the merge.
 									mergeSeconds: PG.sql(
 										PG.nullable(PG.float8),
@@ -298,11 +361,15 @@ export class CodeReviewTeamService extends Context.Service<CodeReviewTeamService
 						? repositories
 						: repositories.filter((repo) => repo.id === query.repositoryId)
 				const repository = query.repositoryId === undefined ? undefined : scoped[0]
+				const timeZone = query.timeZone ?? "UTC"
+				const repositoryNames = new Map(scoped.map((repo) => [repo.id, `${repo.owner}/${repo.name}`]))
 				// An id that is not the org's reads as an empty team, never another org's runs.
 				if (query.repositoryId !== undefined && repository === undefined)
 					return buildTeam({
 						startTime,
 						endTime,
+						timeZone,
+						repositories: repositoryNames,
 						pullRequests: [],
 						findings: [],
 						ci: [],
@@ -347,6 +414,8 @@ export class CodeReviewTeamService extends Context.Service<CodeReviewTeamService
 				return buildTeam({
 					startTime,
 					endTime,
+					timeZone,
+					repositories: repositoryNames,
 					pullRequests,
 					findings,
 					ci,

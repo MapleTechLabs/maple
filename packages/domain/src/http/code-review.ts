@@ -1,6 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { SessionAuthorization } from "./current-tenant"
+import { DigestTimeZone } from "./digest"
 import {
 	PrReviewCategory,
 	PrReviewFindingStatus,
@@ -391,6 +392,8 @@ export const CodeReviewTeamQuery = Schema.Struct({
 	startTime: EpochMs,
 	endTime: EpochMs,
 	repositoryId: Schema.optional(VcsRepositoryId),
+	/** The zone the activity calendar's days are in; UTC when absent. */
+	timeZone: Schema.optional(DigestTimeZone),
 })
 export type CodeReviewTeamQuery = Schema.Schema.Type<typeof CodeReviewTeamQuery>
 
@@ -437,6 +440,18 @@ export class CodeReviewTeamTotals extends Schema.Class<CodeReviewTeamTotals>("Co
 	p95QueueMs: Schema.NullOr(Schema.Number),
 }) {}
 
+/** One person's pull requests in one repository on one day: a cell of the activity calendar. */
+export class CodeReviewTeamActivity extends Schema.Class<CodeReviewTeamActivity>("CodeReviewTeamActivity")({
+	/** `YYYY-MM-DD` in the query's time zone. */
+	day: Schema.String,
+	login: Schema.String,
+	/** `owner/name`. */
+	repository: Schema.String,
+	/** First reviewed that day. */
+	opened: Schema.Number,
+	merged: Schema.Number,
+}) {}
+
 export class CodeReviewTeam extends Schema.Class<CodeReviewTeam>("CodeReviewTeam")({
 	/** The window read, epoch ms; a longer one is cut to what CI runs keep. */
 	startTime: Schema.Number,
@@ -444,6 +459,8 @@ export class CodeReviewTeam extends Schema.Class<CodeReviewTeam>("CodeReviewTeam
 	totals: CodeReviewTeamTotals,
 	/** By login. */
 	members: Schema.Array(CodeReviewTeamMember),
+	/** By day, bots left out; days without a pull request are absent. */
+	activity: Schema.Array(CodeReviewTeamActivity),
 }) {}
 
 export class CodeReviewApiGroup extends HttpApiGroup.make("codeReview")

@@ -275,6 +275,29 @@ describe("CodeReviewTeamService.team", () => {
 		),
 	)
 
+	it.effect("folds first reviews and merges by day in the asked zone, bots left out", () =>
+		withService({}, (service) =>
+			Effect.gen(function* () {
+				const cells = (team: { readonly activity: ReadonlyArray<object> }) =>
+					team.activity.map((cell) => ({ ...cell }))
+				assert.deepStrictEqual(cells(yield* service.team(tenant, window)), [
+					{ day: "2026-10-01", login: "ada", repository: "acme/web", opened: 2, merged: 1 },
+					{ day: "2026-10-02", login: "lin", repository: "acme/web", opened: 1, merged: 1 },
+				])
+				// Seven hours behind UTC: ada's first review falls on the last day of September.
+				assert.deepStrictEqual(
+					cells(yield* service.team(tenant, { ...window, timeZone: "America/Los_Angeles" })),
+					[
+						{ day: "2026-09-30", login: "ada", repository: "acme/web", opened: 1, merged: 0 },
+						{ day: "2026-10-01", login: "ada", repository: "acme/web", opened: 1, merged: 1 },
+						{ day: "2026-10-01", login: "lin", repository: "acme/web", opened: 1, merged: 0 },
+						{ day: "2026-10-02", login: "lin", repository: "acme/web", opened: 0, merged: 1 },
+					],
+				)
+			}),
+		),
+	)
+
 	it.effect("judges default-branch runs by each repository's own default branch", () =>
 		withService({}, (_service, reads) =>
 			Effect.gen(function* () {
