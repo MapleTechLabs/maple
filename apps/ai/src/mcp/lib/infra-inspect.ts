@@ -133,7 +133,10 @@ export const inspectInfra = (target: InspectTarget, window: InfraWindow) =>
 						["cloud.provider", summary.cloudProvider],
 						["cloud.region", summary.cloudRegion],
 						...Arr.map(filesystems, (fs): readonly [string, string] => [
-							`disk ${fs.mountpoint}`,
+							// A remounted mountpoint lists once per device; keep both.
+							Arr.filter(filesystems, (other) => other.mountpoint === fs.mountpoint).length > 1
+								? `disk ${fs.mountpoint} (${fs.device})`
+								: `disk ${fs.mountpoint}`,
 							`${formatPercent(fs.usedMax)} full at most (avg ${formatPercent(fs.usedAvg)})${fs.device ? `, ${fs.device}` : ""}`,
 						]),
 					]),

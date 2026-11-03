@@ -71,7 +71,7 @@ MAPLE_INGEST_KEY=YOUR_INGEST_KEY otelcol-contrib --config config.yaml
 
 Notes on the config:
 
-- **The three `*.utilization` metrics must be enabled.** The `host_metrics` receiver leaves them off by default. The Hosts page reads them for CPU and memory, and the Host Metrics dashboard template for filesystems. DSK reads `system.filesystem.usage`, which is on by default.
+- **The three `*.utilization` metrics must be enabled.** The `host_metrics` receiver leaves them off by default. The Hosts page reads them for CPU and memory, and the Host Metrics dashboard template for filesystems. DSK reads `system.filesystem.usage`, which is on by default, and the utilization metric when it is there.
 - **`resource_detection` sets `host.name`.** Maple keys each host on `host.name`. The `system` detector also sets `os.type` and `host.arch`, which the detail page shows. Add a cloud detector (`ec2`, `gcp` or `azure`) to fill in `cloud.provider` and `cloud.region`.
 - **EU organizations** use `https://ingest.eu.maple.dev` as the endpoint.
 - **Older Collector releases use the previous names:** `hostmetrics`, `resourcedetection` and `otlphttp`.
