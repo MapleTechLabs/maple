@@ -82,7 +82,7 @@ export class PlanetScaleOrgForbiddenError extends Schema.TaggedError<PlanetScale
 ) {}
 
 export const isPlanetScaleTokenRejected = (error: unknown): error is PlanetScaleTokenRejectedError =>
-	error instanceof PlanetScaleTokenRejectedError
+	Schema.is(PlanetScaleTokenRejectedError)(error)
 
 /**
  * Any failure an SDK operation declares. Each operation's error union holds its own generated

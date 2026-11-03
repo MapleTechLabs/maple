@@ -84,17 +84,15 @@ describe("maintenance lock Effect boundary", () => {
 			strictEqual(okExit, 7)
 			ok(!existsSync(lockPathOf(dataDir)), "released after success")
 
-			const failed = await Effect.runPromise(
-				Effect.exit(
-					maintenanceOperation({
-						operation: "test.failure",
-						try: () =>
-							withMaintenanceLock(dataDir, crypto.randomUUID(), async () => {
-								throw new Error("boom")
-							}),
-						catch: (error) => (error instanceof Error ? error.message : String(error)),
-					}),
-				),
+			const failed = await Effect.runPromiseExit(
+				maintenanceOperation({
+					operation: "test.failure",
+					try: () =>
+						withMaintenanceLock(dataDir, crypto.randomUUID(), async () => {
+							throw new Error("boom")
+						}),
+					catch: (error) => (error instanceof Error ? error.message : String(error)),
+				}),
 			)
 			strictEqual(Exit.isFailure(failed), true)
 			ok(!existsSync(lockPathOf(dataDir)), "released after failure")

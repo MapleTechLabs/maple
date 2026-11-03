@@ -211,11 +211,9 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 					): Effect.Effect<Option.Option<CH.TraceTimeProbeOutput>, WarehouseExecutorError> => {
 						const [head, ...rest] = windows
 						return head === undefined
-							? Effect.succeed(Option.none())
+							? Effect.succeedNone
 							: probeWindow(head).pipe(
-									Effect.flatMap((found) =>
-										Option.isSome(found) ? Effect.succeed(found) : probeTiers(rest),
-									),
+									Effect.filterOrElse(Option.isSome, () => probeTiers(rest)),
 								)
 					}
 					// The default lookback just read the last day in full, so the tiers start below it.
@@ -248,8 +246,10 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 			options?.includeAttributes === true,
 		)
 		const resourceAttributes = yield* parseJsonAttributes(span.resourceAttributes ?? "{}")
+		// A malformed id off the warehouse stays a defect, as the sync decode had it.
+		const spanId = yield* Schema.decodeEffect(SpanId)(span.spanId).pipe(Effect.orDie)
 		const node: MutableSpanNode = {
-			spanId: Schema.decodeSync(SpanId)(span.spanId),
+			spanId,
 			parentSpanId: span.parentSpanId,
 			spanName: span.spanName,
 			...(span.rawSpanName !== undefined && span.rawSpanName !== span.spanName
@@ -305,7 +305,7 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 	yield* Effect.annotateCurrentSpan("result.serviceCount", serviceCount)
 
 	return {
-		traceId: Schema.decodeSync(TraceId)(traceId),
+		traceId: yield* Schema.decodeEffect(TraceId)(traceId).pipe(Effect.orDie),
 		serviceCount,
 		spanCount: spans.length,
 		rootDurationMs: roots[0]?.durationMs ?? 0,

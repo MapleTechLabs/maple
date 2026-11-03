@@ -51,10 +51,11 @@ try {
 			archived.push(String(r.TraceId))
 	}
 	archived.sort()
-	if (archived.join(",") !== sourceSet.join(",")) h.fail(`source [${sourceSet}] != archived [${archived}]`)
+	if (archived.join(",") !== sourceSet.join(","))
+		h.fail(`source [${sourceSet.join(",")}] != archived [${archived.join(",")}]`)
 	if (archived.length !== 8) h.fail(`expected 8 rows got ${archived.length}`)
-	if (new Set(archived).size !== 8) h.fail(`duplicates among ${archived}`)
-	h.ok(`multi-part hour archived exact set [${archived}] (${written.length} shards)`)
+	if (new Set(archived).size !== 8) h.fail(`duplicates among ${archived.join(",")}`)
+	h.ok(`multi-part hour archived exact set [${archived.join(",")}] (${written.length} shards)`)
 } catch (e) {
 	h.fail(e instanceof Error ? e.message : String(e))
 }

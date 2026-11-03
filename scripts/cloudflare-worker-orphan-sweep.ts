@@ -93,14 +93,13 @@ const PR_RESOURCE_PATTERN = /^maple-((?:(?!-dev-).)+)-pr-(\d+)$/
 const cfRequest = async (
 	token: string,
 	path: string,
-	init?: RequestInit,
+	init?: Omit<RequestInit, "headers">,
 ): Promise<{ ok: boolean; status: number; result: unknown; errors: unknown }> => {
 	const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
 		...init,
 		headers: {
 			Authorization: `Bearer ${token}`,
 			"Content-Type": "application/json",
-			...init?.headers,
 		},
 	})
 	const body = (await response.json().catch(() => ({}))) as {

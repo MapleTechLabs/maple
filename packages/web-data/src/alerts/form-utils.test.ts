@@ -378,7 +378,7 @@ describe("v2 response mappers", () => {
 			},
 		})
 		expect(response.seriesFailure).toBe("query_too_slow")
-		expect(response.queryTiming && { ...response.queryTiming }).toEqual({
+		expect(response.queryTiming).toEqual({
 			elapsedMs: 7_800,
 			failure: null,
 			probeLimitMs: 25_000,

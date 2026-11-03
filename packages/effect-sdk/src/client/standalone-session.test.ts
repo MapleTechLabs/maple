@@ -254,9 +254,7 @@ describe("standalone session emission (client)", () => {
 		const store = stubBrowser()
 
 		const telemetry = make(baseConfig)
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await new Promise((resolve) => setTimeout(resolve, 0))
 
 		const firstSession = JSON.parse(store.get("maple.session")!).id
@@ -266,7 +264,7 @@ describe("standalone session emission (client)", () => {
 		const stale = JSON.parse(store.get("maple.session")!)
 		store.set("maple.session", JSON.stringify({ ...stale, lastActivityAt: Date.now() - 31 * 60_000 }))
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
 		)
 		await new Promise((resolve) => setTimeout(resolve, 0))
 

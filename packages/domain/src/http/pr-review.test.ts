@@ -13,6 +13,7 @@ import {
 	parseReplyCommand,
 	reviewerMention,
 	prReviewFailureReason,
+	PrReviewCoverageUnit,
 	PrReviewReport,
 	scorePrReview,
 } from "./pr-review"
@@ -343,7 +344,14 @@ describe("confidencePrReview", () => {
 			summary: "s",
 			coverage:
 				extra.unobservable === true
-					? [{ unit: "cron", kind: "background", instrumented: false, evidence: "no span" }]
+					? [
+							new PrReviewCoverageUnit({
+								unit: "cron",
+								kind: "background",
+								instrumented: false,
+								evidence: "no span",
+							}),
+						]
 					: [],
 			findings,
 			...(extra.tests === undefined ? undefined : { tests: extra.tests }),

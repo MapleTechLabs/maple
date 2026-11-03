@@ -843,7 +843,7 @@ describe("UptimeMonitorsService", () => {
 	it.effect("lets only one of two concurrent creates take the plan's last slot", () => {
 		const testDb = createTestDb(trackedDbs)
 		const allowance = Layer.succeed(UptimeMonitorAllowance, {
-			limit: () => Effect.succeed(Option.some(1)),
+			limit: () => Effect.succeedSome(1),
 			track: () => Effect.void,
 		})
 		return Effect.gen(function* () {

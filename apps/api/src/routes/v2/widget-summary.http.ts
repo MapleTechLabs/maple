@@ -13,7 +13,7 @@ import {
 } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime, QueryEngineExecuteRequest } from "@maple/query-engine"
 import { computeBucketSeconds } from "@maple/query-engine/runtime"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, DateTime, Effect, Schema } from "effect"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import {
@@ -104,8 +104,8 @@ export const HttpV2WidgetSummaryLive = HttpApiBuilder.group(MapleApiV2, "widgetS
 					// documented on `listIssues` and both are the right trade here: a
 					// widget filtered to staging must not count production's issues.
 					deploymentEnv,
-					startTime: new Date(issuesStartMs).toISOString(),
-					endTime: new Date(nowMs).toISOString(),
+					startTime: DateTime.formatIso(DateTime.makeUnsafe(issuesStartMs)),
+					endTime: DateTime.formatIso(DateTime.makeUnsafe(nowMs)),
 					limit: WIDGET_SUMMARY_ISSUE_LIMIT,
 				})
 
@@ -181,7 +181,7 @@ export const HttpV2WidgetSummaryLive = HttpApiBuilder.group(MapleApiV2, "widgetS
 				return {
 					object: "widget_summary" as const,
 					schema_version: WIDGET_SUMMARY_SCHEMA_VERSION,
-					generated_at: timestamp(new Date(nowMs).toISOString()),
+					generated_at: timestamp(DateTime.formatIso(DateTime.makeUnsafe(nowMs))),
 					organization_id: tenant.orgId,
 					deployment_environment: deploymentEnv ?? null,
 					issues: {

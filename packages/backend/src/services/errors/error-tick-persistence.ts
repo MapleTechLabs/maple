@@ -312,7 +312,7 @@ const claimLost = (orgId: string, stage: "preflight" | "checkpoint") =>
 	new ErrorTickClaimLost({ message: `claim for ${orgId} was lost before ${stage}`, orgId, stage })
 
 export const isErrorTickClaimLost = (error: unknown): error is ErrorTickClaimLost =>
-	error instanceof ErrorTickClaimLost
+	Schema.is(ErrorTickClaimLost)(error)
 
 /** The batched issue upsert's RETURNING omitted a fingerprint it was handed. */
 export class ErrorTickUpsertMissingRow extends Schema.TaggedError<ErrorTickUpsertMissingRow>()(
@@ -436,7 +436,7 @@ export const persistErrorTickWindow = (
 					.where(($) => [$.orgId.eq(input.orgId), $.claimToken.eq(input.claimToken)])
 					.forUpdate(),
 			)
-			if (held.length === 0) return yield* Effect.fail(claimLost(input.orgId, "preflight"))
+			if (held.length === 0) return yield* claimLost(input.orgId, "preflight")
 
 			const rows = mergeScanRows(input.rows)
 			const fingerprints = rows.map((row) => row.fingerprintHash)
@@ -972,7 +972,7 @@ export const persistErrorTickWindow = (
 					.where(($) => [$.orgId.eq(input.orgId), $.claimToken.eq(input.claimToken)])
 					.returning("orgId"),
 			)
-			if (advanced.length === 0) return yield* Effect.fail(claimLost(input.orgId, "checkpoint"))
+			if (advanced.length === 0) return yield* claimLost(input.orgId, "checkpoint")
 
 			return {
 				issuesTouched: observed.length,

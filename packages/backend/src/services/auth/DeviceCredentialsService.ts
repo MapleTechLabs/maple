@@ -151,15 +151,13 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 			const lastUsedMemo = new Map<string, number>()
 			const trustAnchor = yield* AppAttestTrustAnchor
 
-			const requireSigner = Option.match(signer, {
-				onNone: () =>
-					Effect.fail(
-						new DeviceTokensUnavailableError({
-							message: "MAPLE_DEVICE_TOKEN_SIGNING_KEY is not configured",
-						}),
-					),
-				onSome: Effect.succeed,
-			})
+			const requireSigner = Effect.fromOption(
+				signer,
+				() =>
+					new DeviceTokensUnavailableError({
+						message: "MAPLE_DEVICE_TOKEN_SIGNING_KEY is not configured",
+					}),
+			)
 
 			/** Record a single-use value; false when it was already recorded (a replay). */
 			const consumeOnce = (key: string, expiresAt: number) =>

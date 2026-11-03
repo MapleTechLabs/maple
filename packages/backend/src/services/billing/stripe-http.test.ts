@@ -64,7 +64,7 @@ const withFetch = async (
 		const text =
 			init?.body === undefined || init.body === null ? "" : await new Response(init.body).text()
 		captured = {
-			url: String(input),
+			url: String(input instanceof Request ? input.url : input),
 			method: String(init?.method),
 			headers: new Headers(init?.headers),
 			body: text,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { CANCELLATION_FIXTURES } from "./fixtures"
 import { deriveSignals, ruleReason } from "./signals"
+import { CancellationSnapshot } from "@maple/domain/http"
 
 const fixture = (id: string) => {
 	const found = CANCELLATION_FIXTURES.find((candidate) => candidate.id === id)
@@ -23,18 +24,21 @@ describe("ruleReason", () => {
 	it("reads a few last active days from a long-standing org as winding down, not a trial run", () => {
 		const { snapshot } = fixture("pipeline-off")
 		const volume = { logsGB: 1, tracesGB: 0, metricsGB: 0, browserSessions: 0, activeDays: 1 }
-		const tail = { ...snapshot, ingest: { recent: volume, prior: volume, daysSinceLastData: 24 } }
+		const tail = new CancellationSnapshot({
+			...snapshot,
+			ingest: { recent: volume, prior: volume, daysSinceLastData: 24 },
+		})
 		expect(ruleReason(tail)).toBe("stopped_sending")
 	})
 
 	it("reads an org that switched off months ago as stopped, not as never having started", () => {
 		const { snapshot } = fixture("never-sent")
 		const idle = { logsGB: 0, tracesGB: 0, metricsGB: 0, browserSessions: 0, activeDays: 0 }
-		const longGone = {
+		const longGone = new CancellationSnapshot({
 			...snapshot,
 			org: snapshot.org === null ? null : { ...snapshot.org, everReceivedData: true },
 			ingest: { recent: idle, prior: idle, daysSinceLastData: 140 },
-		}
+		})
 		expect(ruleReason(longGone)).toBe("stopped_sending")
 		expect(deriveSignals(longGone)[1]).toEqual({
 			topic: "telemetry",
@@ -45,17 +49,20 @@ describe("ruleReason", () => {
 
 	it("does not call the first charge after a $0 invoice a bill jump", () => {
 		const { snapshot } = fixture("healthy-team")
-		const firstCharge = {
+		const firstCharge = new CancellationSnapshot({
 			...snapshot,
 			billing: { lastInvoiceTotal: 39, previousInvoiceTotal: 0, overAllowance: [] },
-		}
+		})
 		expect(ruleReason(firstCharge)).toBe("unclear")
 	})
 
 	it("keeps payment failure for a plan that ended, not one the org scheduled to cancel", () => {
 		const { snapshot } = fixture("past-due")
 		expect(ruleReason(snapshot)).toBe("payment_failure")
-		const chosen = { ...snapshot, plan: { ...snapshot.plan, phase: "scheduled" as const } }
+		const chosen = new CancellationSnapshot({
+			...snapshot,
+			plan: { ...snapshot.plan, phase: "scheduled" as const },
+		})
 		expect(ruleReason(chosen)).toBe("unclear")
 	})
 
@@ -72,14 +79,14 @@ describe("ruleReason", () => {
 			text: "Visits fell away: in the app on 1 day of the last 30, 14 the month before",
 		})
 		// A handful of visits either month is not a habit to fall away from.
-		const occasional = {
+		const occasional = new CancellationSnapshot({
 			...snapshot,
 			visits: {
 				recent: { activeDays: 1, peakDailyUsers: 1 },
 				prior: { activeDays: 4, peakDailyUsers: 1 },
 				daysSinceLastVisit: 9,
 			},
-		}
+		})
 		expect(ruleReason(occasional)).toBe("unclear")
 	})
 })
@@ -115,7 +122,14 @@ describe("deriveSignals", () => {
 
 	it("stays silent about sections that could not be read", () => {
 		const { snapshot } = fixture("healthy-team")
-		const unread = { ...snapshot, ingest: null, visits: null, adoption: null, billing: null, org: null }
+		const unread = new CancellationSnapshot({
+			...snapshot,
+			ingest: null,
+			visits: null,
+			adoption: null,
+			billing: null,
+			org: null,
+		})
 		expect(deriveSignals(unread)).toEqual([])
 	})
 })

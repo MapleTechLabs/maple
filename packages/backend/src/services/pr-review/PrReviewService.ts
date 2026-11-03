@@ -2542,7 +2542,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							installation,
 						),
 						Option.isNone(repository)
-							? Effect.succeed(undefined)
+							? Effect.undefined
 							: diffFactsFor(orgId, repository.value, review.number),
 					],
 					{ concurrency: "unbounded" },

@@ -62,10 +62,10 @@ describe("MapleFlush.make (server)", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-1"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-1"), Effect.provide(telemetry.layer)),
 		)
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
 		)
 
 		await telemetry.flush()
@@ -175,7 +175,7 @@ describe("MapleFlush.make (server)", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-once"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-once"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 		const firstCount = calls.length
@@ -193,9 +193,7 @@ describe("MapleFlush.make (server)", () => {
 		// No `ingestKey` and no endpoint → resolveResource yields no key → no-op.
 		const telemetry = make({ serviceName: "unit-test", autoFlushInterval: false })
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
 		expect(calls.length).toBe(0)
@@ -204,7 +202,7 @@ describe("MapleFlush.make (server)", () => {
 
 		// One-shot: a second flush stays silent.
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 		expect(calls.length).toBe(0)
@@ -221,9 +219,7 @@ describe("MapleFlush.make (server)", () => {
 		const { ingestKey: _ingestKey, ...keyless } = baseConfig
 		const telemetry = make({ ...keyless, endpoint: "http://localhost:4318" })
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
 		const tracesCall = calls.find((c) => c.url === "http://localhost:4318/v1/traces")
@@ -241,14 +237,12 @@ describe("MapleFlush.make (server)", () => {
 		}
 		const telemetry = make(baseConfig)
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush() // fails, sets cooldown
 		const failedCount = calls.length
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush() // within cooldown, no POST
 		expect(calls.length).toBe(failedCount)
@@ -262,7 +256,7 @@ describe("MapleFlush.make (server)", () => {
 		const telemetry = make({ ...baseConfig, autoFlushInterval: 5_000 })
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("timed-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("timed-op"), Effect.provide(telemetry.layer)),
 		)
 
 		// No manual flush — advance past the interval and let async work settle.
@@ -282,16 +276,10 @@ describe("MapleFlush.make (server)", () => {
 		const telemetry = make({ ...baseConfig, dropSpanNames: ["internal."] })
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(
-				Effect.withSpan("internal.healthcheck"),
-				Effect.provide(telemetry.layer),
-			),
+			Effect.undefined.pipe(Effect.withSpan("internal.healthcheck"), Effect.provide(telemetry.layer)),
 		)
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(
-				Effect.withSpan("public.request"),
-				Effect.provide(telemetry.layer),
-			),
+			Effect.undefined.pipe(Effect.withSpan("public.request"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 
@@ -328,9 +316,7 @@ describe("MapleFlush.make (server)", () => {
 		restore = r
 		const telemetry = make({ ...baseConfig, endpoint: "https://collector.test/" })
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
 		const traceCall = calls.find((c) => c.url.includes("/v1/traces"))

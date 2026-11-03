@@ -144,7 +144,7 @@ export class ClickHouseExecError extends Schema.TaggedError<ClickHouseExecError>
 ) {}
 
 const toClickHouseExecError = (cause: unknown): ClickHouseExecError =>
-	cause instanceof ClickHouseExecError
+	Schema.is(ClickHouseExecError)(cause)
 		? cause
 		: new ClickHouseExecError({ message: cause instanceof Error ? cause.message : String(cause) })
 

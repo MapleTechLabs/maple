@@ -22,7 +22,7 @@ import {
 	type PlanetScaleEventRow,
 } from "@maple/db/tables"
 import * as PlanetScale from "@distilled.cloud/planetscale"
-import { Cause, Clock, Context, Duration, Effect, Layer, Predicate, Schema } from "effect"
+import { DateTime, Cause, Clock, Context, Duration, Effect, Layer, Predicate, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -973,11 +973,9 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				)
 				const connection = connections[0]
 				if (connection === undefined) {
-					return yield* Effect.fail(
-						new IntegrationsNotConnectedError({
-							message: "PlanetScale is not connected for this organization",
-						}),
-					)
+					return yield* new IntegrationsNotConnectedError({
+						message: "PlanetScale is not connected for this organization",
+					})
 				}
 
 				// Default to the database's production branch from the inventory.
@@ -1010,8 +1008,8 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 						organization: connection.psOrganization,
 						database: options.database,
 						branch,
-						from: new Date(options.startTime).toISOString(),
-						to: new Date(options.endTime).toISOString(),
+						from: DateTime.formatIso(DateTime.makeUnsafe(options.startTime)),
+						to: DateTime.formatIso(DateTime.makeUnsafe(options.endTime)),
 						sort: "totalTime",
 						dir: "desc",
 						per_page: limit,
@@ -1034,7 +1032,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 									: Effect.fail(error),
 					}),
 				)
-				if (insights instanceof PlanetScaleQueryInsightsResponse) return insights
+				if (Schema.is(PlanetScaleQueryInsightsResponse)(insights)) return insights
 				const insightRows = yield* decodeConsumed(
 					Schema.Array(InsightRowSchema),
 					"Query Insights",

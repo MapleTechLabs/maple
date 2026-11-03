@@ -144,9 +144,7 @@ export const DashboardProvider = () =>
 							.get(`/v2/dashboards/${encodeURIComponent(dashboardId)}`)
 							.pipe(
 								Effect.catchTag(MapleErrorTags.dashboardNotFound, (error) =>
-									news.dashboardId !== undefined
-										? Effect.fail(error)
-										: Effect.succeed(undefined),
+									news.dashboardId !== undefined ? Effect.fail(error) : Effect.undefined,
 								),
 							)
 						if (fetched !== undefined) observed = yield* decodeWireDashboard(fetched)
@@ -174,9 +172,7 @@ export const DashboardProvider = () =>
 						.get(`/v2/dashboards/${encodeURIComponent(dashboardId)}`)
 						.pipe(
 							Effect.catchTag(MapleErrorTags.dashboardNotFound, (error) =>
-								olds.dashboardId !== undefined
-									? Effect.fail(error)
-									: Effect.succeed(undefined),
+								olds.dashboardId !== undefined ? Effect.fail(error) : Effect.undefined,
 							),
 						)
 					if (fetched === undefined) return undefined

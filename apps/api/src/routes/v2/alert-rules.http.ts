@@ -59,15 +59,11 @@ const decodeChecksCursor = (value: string | undefined) => {
 	if (Result.isFailure(decoded)) {
 		return Effect.fail(V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" }))
 	}
-	return Option.match(
+	return Effect.fromOption(
 		decodeChecksCursorParts(decoded.success).pipe(
 			Option.filter(([ts]) => Number.isFinite(timestampMs(ts))),
 		),
-		{
-			onNone: () =>
-				Effect.fail(V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" })),
-			onSome: (parts) => Effect.succeed(parts),
-		},
+		() => V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" }),
 	)
 }
 
@@ -450,12 +446,10 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 				const response = yield* rules.listRules(orgId)
 				const rule = response.rules.find((doc) => doc.id === ruleId)
 				if (rule === undefined)
-					return yield* Effect.fail(
-						new AlertRuleNotFoundError({
-							message: "No such alert rule.",
-							ruleId,
-						}),
-					)
+					return yield* new AlertRuleNotFoundError({
+						message: "No such alert rule.",
+						ruleId,
+					})
 				return rule
 			})
 

@@ -621,26 +621,24 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			// still gets its say. Interrupts stay interrupts.
 			const recoverAutonomousFailure = <R>(effect: Effect.Effect<ChatRunOutcome, unknown, R>) =>
 				effect.pipe(
-					Effect.catchCause((cause) =>
-						Cause.hasInterruptsOnly(cause)
-							? Effect.failCause(cause)
-							: Effect.sync(() => {
-									failure ??= reviewFailureReason(cause, { ownKey: Option.isSome(orgKey) })
-								}).pipe(
-									Effect.andThen(
-										Effect.logWarning("Autonomous pass failed; closing it out"),
-									),
-									Effect.annotateLogs({
-										sessionId: input.sessionId,
-										messageId: input.messageId,
-										cause: summarizeCause(cause),
-									}),
-									Effect.as<ChatRunOutcome>({
-										autonomous: true,
-										submitted: false,
-										compactions: 0,
-									}),
-								),
+					Effect.catchCauseIf(
+						(cause) => !Cause.hasInterruptsOnly(cause),
+						(cause) =>
+							Effect.sync(() => {
+								failure ??= reviewFailureReason(cause, { ownKey: Option.isSome(orgKey) })
+							}).pipe(
+								Effect.andThen(Effect.logWarning("Autonomous pass failed; closing it out")),
+								Effect.annotateLogs({
+									sessionId: input.sessionId,
+									messageId: input.messageId,
+									cause: summarizeCause(cause),
+								}),
+								Effect.as<ChatRunOutcome>({
+									autonomous: true,
+									submitted: false,
+									compactions: 0,
+								}),
+							),
 					),
 				)
 
@@ -807,7 +805,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		// Resolved before the turn so the finalizer has nothing left to look up. A failed lookup
 		// meters nothing rather than a guess: the org's own customer may be the wrong card.
 		const customerId = yield* (yield* BillingCustomerResolver).customerFor(tenant.orgId).pipe(
-			Effect.map(Option.some),
+			Effect.asSome,
 			Effect.catchTag("@maple/http/errors/BillingAccountPersistenceError", (error) =>
 				Effect.logError("Billing org lookup failed; this turn's AI usage is not metered").pipe(
 					Effect.annotateLogs({

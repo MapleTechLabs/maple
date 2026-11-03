@@ -9,7 +9,7 @@ import {
 	type AlertSignalType,
 	type OrgId,
 } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { DateTime, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { dispatchDelivery as dispatchDeliveryImpl } from "./delivery/dispatch"
 import type { DispatchContext } from "./delivery/context"
@@ -194,7 +194,7 @@ const make: Effect.Effect<
 			},
 			linkUrl: request.linkUrl,
 			chatUrl,
-			sentAt: new Date(sentAtMs).toISOString(),
+			sentAt: DateTime.formatIso(DateTime.makeUnsafe(sentAtMs)),
 		}).pipe(
 			Effect.mapError(
 				(cause) =>

@@ -420,7 +420,7 @@ const make: Effect.Effect<
 			Effect.map(([tracesRows, logsRows]) => {
 				const active = new Set<string>(byo)
 				for (const row of [...tracesRows, ...logsRows]) {
-					const orgId = String((row as { orgId?: unknown }).orgId ?? "")
+					const orgId = row.orgId
 					if (orgId) active.add(orgId)
 				}
 				return active as ReadonlySet<string>
@@ -518,9 +518,7 @@ const make: Effect.Effect<
 		)
 		const refreshed = yield* loadSettingsRow(orgId)
 		if (!refreshed) {
-			return yield* Effect.fail(
-				new AnomalyPersistenceError({ message: "Failed to create anomaly settings row" }),
-			)
+			return yield* new AnomalyPersistenceError({ message: "Failed to create anomaly settings row" })
 		}
 		return refreshed
 	})
@@ -687,12 +685,10 @@ const make: Effect.Effect<
 		)
 		const row = rows[0]
 		if (!row) {
-			return yield* Effect.fail(
-				new AnomalyIncidentNotFoundError({
-					message: `No such anomaly incident: '${incidentId}'`,
-					incidentId,
-				}),
-			)
+			return yield* new AnomalyIncidentNotFoundError({
+				message: `No such anomaly incident: '${incidentId}'`,
+				incidentId,
+			})
 		}
 		return row
 	})
@@ -771,12 +767,10 @@ const make: Effect.Effect<
 				),
 			)
 			if (issueRows.length === 0) {
-				return yield* Effect.fail(
-					new AnomalyLinkedIssueNotFoundError({
-						message: `No such error issue: '${issueId}'`,
-						issueId,
-					}),
-				)
+				return yield* new AnomalyLinkedIssueNotFoundError({
+					message: `No such error issue: '${issueId}'`,
+					issueId,
+				})
 			}
 		}
 		const nowMs = yield* Clock.currentTimeMillis
@@ -975,7 +969,7 @@ const make: Effect.Effect<
 		currentHourStartMs: number,
 		cached: CachedBaselines,
 	) {
-		const hoursOfDay = CH.matchedHoursOfDay(new Date(nowMs).getUTCHours())
+		const hoursOfDay = CH.matchedHoursOfDay(DateTime.getPartUtc(DateTime.makeUnsafe(nowMs), "hour"))
 
 		// The 7-day matched-hours baseline only changes when the hour rolls over,
 		// so compute it once per org per hour and share the blob from the edge cache. Only the
@@ -1066,7 +1060,7 @@ const make: Effect.Effect<
 		currentHourStartMs: number,
 		cached: CachedBaselines,
 	) {
-		const hoursOfDay = CH.matchedHoursOfDay(new Date(nowMs).getUTCHours())
+		const hoursOfDay = CH.matchedHoursOfDay(DateTime.getPartUtc(DateTime.makeUnsafe(nowMs), "hour"))
 
 		// Same split as fetchGoldenSeries: cache the sealed 7-day baseline per
 		// hour, fetch only the in-progress hour fresh.
@@ -1788,7 +1782,7 @@ const make: Effect.Effect<
 								baselineSigma: evaluation.baselineSigma,
 								thresholdValue: evaluation.threshold,
 								sampleCount: evaluation.sampleCount,
-								detectedAt: new Date(nowMs).toISOString(),
+								detectedAt: DateTime.formatIso(DateTime.makeUnsafe(nowMs)),
 							},
 							chatSessions,
 						}).pipe(Effect.provideService(Database, database))

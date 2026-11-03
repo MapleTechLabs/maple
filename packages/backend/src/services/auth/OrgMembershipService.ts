@@ -209,7 +209,7 @@ const make = Effect.gen(function* () {
 	 * account would be told it is not a member of an org it is in.
 	 */
 	const verifyPair = Effect.fn("OrgMembershipService.verifyPair")(function* (userId: UserId, orgId: OrgId) {
-		if (clerk === null) return yield* Effect.fail(unavailable("Clerk is not configured"))
+		if (clerk === null) return yield* unavailable("Clerk is not configured")
 		const response = yield* clerkRequest(
 			"Clerk.organizations.getOrganizationMembershipList",
 			{ "tenant.userId": userId, orgId },

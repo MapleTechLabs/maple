@@ -62,7 +62,7 @@ const captureRequest = (
 			// The body arrives as bytes, not a string — `Response` is the cheapest correct decoder.
 			const bodyText = await new Response(init?.body ?? "{}").text()
 			captured = {
-				url: String(input),
+				url: input instanceof Request ? input.url : input.toString(),
 				headers,
 				body: JSON.parse(bodyText) as Record<string, unknown>,
 			}
@@ -740,7 +740,7 @@ describe("layerDecisionModel — Clef on Workers AI", () => {
 				})
 				const bodyText = await new Response(init?.body ?? "{}").text()
 				captured = {
-					url: String(input),
+					url: input instanceof Request ? input.url : input.toString(),
 					headers,
 					body: JSON.parse(bodyText) as Record<string, unknown>,
 				}

@@ -8,7 +8,7 @@
  * written to `seed-demo/.last-seed.json`; screenshots pin their time ranges to it.
  */
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
-import { Console, DateTime, Effect, FileSystem, Option, Schema } from "effect"
+import { Clock, Console, DateTime, Effect, FileSystem, Option, Schema } from "effect"
 import { Command, Flag } from "effect/cli"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
@@ -177,7 +177,7 @@ const resetDemo = Effect.fn("seedDemo.reset")(function* (orgId: string, incident
 	)
 
 	const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-	const watermark = new Date(incidentAt - 5 * MINUTE).toISOString()
+	const watermark = DateTime.formatIso(DateTime.makeUnsafe(incidentAt - 5 * MINUTE))
 	yield* spawner
 		.string(
 			ChildProcess.make("psql", [
@@ -436,7 +436,8 @@ const seed = Command.make(
 
 		yield* Console.log(`\nfollowing from ${clock(cursor)}: one window per minute, Ctrl-C to stop`)
 		return yield* Effect.gen(function* () {
-			const end = Math.floor(Date.now() / MINUTE) * MINUTE
+			const now = yield* Clock.currentTimeMillis
+			const end = Math.floor(now / MINUTE) * MINUTE
 			const catchUp = Array.from(
 				{ length: Math.ceil((end - cursor) / HOUR) },
 				(_, i) => cursor + i * HOUR,
@@ -454,7 +455,8 @@ const seed = Command.make(
 					Console.warn(`  ! ${error.path}: ${error.message}; retrying next minute`),
 				),
 			)
-			yield* Effect.sleep(`${MINUTE - (Date.now() % MINUTE) + 2_000} millis`)
+			const sleepFrom = yield* Clock.currentTimeMillis
+			yield* Effect.sleep(`${MINUTE - (sleepFrom % MINUTE) + 2_000} millis`)
 		}).pipe(Effect.forever)
 	}),
 ).pipe(Command.withDescription("Seed the local stack with the Acme Shop demo world"))

@@ -83,6 +83,16 @@ export type PipeCompiledQuery = CompiledQuery<unknown>
 
 type PipeParams = Record<string, unknown> & { org_id: OrgId }
 
+/** A wire param as text; an array joins with `,` the way `String()` did. An object has no text form. */
+const paramText = (value: unknown): string | undefined => {
+	if (value === null || value === undefined) return undefined
+	if (typeof value === "string") return value
+	if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint")
+		return value.toString()
+	if (Array.isArray(value)) return value.map((item: unknown) => paramText(item) ?? "").join(",")
+	return undefined
+}
+
 /**
  * Erase the specific output type for the generic pipe dispatcher.
  *
@@ -120,7 +130,7 @@ export function compilePipeQuery(
 	capabilities: WarehouseCapabilities = baselineWarehouseCapabilities(),
 ): PipeCompiled | undefined {
 	const orgId = params.org_id
-	const str = (key: string) => (params[key] != null ? String(params[key]) : undefined)
+	const str = (key: string) => paramText(params[key])
 	const startTime = str("start_time") ?? "2023-01-01 00:00:00"
 	const endTime = str("end_time") ?? "2099-12-31 23:59:59"
 	/**
@@ -855,7 +865,7 @@ const pipeCursor = (
 	raw: string | undefined,
 ): Effect.Effect<DateTime.Utc | CH.Expr<DateTime.Utc> | undefined, QueryBuilderError> =>
 	raw === undefined
-		? Effect.succeed(undefined)
+		? Effect.undefined
 		: Option.match(parseUtc(raw), {
 				onNone: () =>
 					Effect.fail(
@@ -885,16 +895,12 @@ function buildAttributeFiltersFromParams(
 	prefix: "attribute_filter" | "resource_filter",
 ): AttrFilter[] | undefined {
 	const filters = A.filterMap(SUFFIXES, (suffix) => {
-		const key = params[`${prefix}_key${suffix}`]
-		if (key == null) return Result.failVoid
+		const key = paramText(params[`${prefix}_key${suffix}`])
+		if (key === undefined) return Result.failVoid
 		const exists = params[`${prefix}_exists${suffix}`] === "1"
 		return Result.succeed({
-			key: String(key),
-			value: exists
-				? undefined
-				: params[`${prefix}_value${suffix}`] != null
-					? String(params[`${prefix}_value${suffix}`])
-					: undefined,
+			key,
+			value: exists ? undefined : paramText(params[`${prefix}_value${suffix}`]),
 			mode: (exists ? "exists" : "equals") as "equals" | "exists",
 		})
 	})
@@ -918,7 +924,7 @@ function errorsOnlyParam(raw: string | undefined): boolean | undefined {
 }
 
 function pipeParamsToTracesTimeseriesOpts(params: PipeParams): TracesTimeseriesOpts {
-	const str = (key: string) => (params[key] != null ? String(params[key]) : undefined)
+	const str = (key: string) => paramText(params[key])
 	const int = (key: string, def: number) => (params[key] != null ? Number(params[key]) : def)
 
 	const groupBy: string[] = []
@@ -949,7 +955,7 @@ function pipeParamsToTracesTimeseriesOpts(params: PipeParams): TracesTimeseriesO
 }
 
 function pipeParamsToTracesBreakdownOpts(params: PipeParams): TracesBreakdownOpts {
-	const str = (key: string) => (params[key] != null ? String(params[key]) : undefined)
+	const str = (key: string) => paramText(params[key])
 	const int = (key: string, def: number) => (params[key] != null ? Number(params[key]) : def)
 
 	let groupBy = "service"

@@ -424,7 +424,10 @@ function normalizeDirectCacheValue(value: unknown, snapWindowSeconds: number, pa
 		)
 	}
 
-	return String(value)
+	// bigint, symbol or function: every other type returned above.
+	return typeof value === "bigint" || typeof value === "symbol" || typeof value === "function"
+		? value.toString()
+		: value
 }
 
 export function buildDirectRouteCacheKey(
@@ -1501,12 +1504,12 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 		}
 		if ("filters" in request.query && request.query.filters) {
 			const filters = request.query.filters as Record<string, unknown>
-			if (filters.serviceName)
-				yield* Effect.annotateCurrentSpan("query.filter.serviceName", String(filters.serviceName))
-			if (filters.spanName)
-				yield* Effect.annotateCurrentSpan("query.filter.spanName", String(filters.spanName))
-			if (filters.metricName)
-				yield* Effect.annotateCurrentSpan("query.filter.metricName", String(filters.metricName))
+			if (typeof filters.serviceName === "string" && filters.serviceName !== "")
+				yield* Effect.annotateCurrentSpan("query.filter.serviceName", filters.serviceName)
+			if (typeof filters.spanName === "string" && filters.spanName !== "")
+				yield* Effect.annotateCurrentSpan("query.filter.spanName", filters.spanName)
+			if (typeof filters.metricName === "string" && filters.metricName !== "")
+				yield* Effect.annotateCurrentSpan("query.filter.metricName", filters.metricName)
 		}
 
 		const range = yield* validateExecute(request)
@@ -1576,18 +1579,18 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				// other rollup fallbacks so the retry happens *before* the response
 				// cache: the value stored is the one that succeeded.
 				const rows = yield* runAllMetrics(options?.overviewTiers).pipe(
-					Effect.catch((error) => {
-						if (options?.overviewTiers === "hour" || !isMissingServiceOverviewMinutely(error)) {
-							return Effect.fail(error)
-						}
-						return Effect.gen(function* () {
-							yield* Effect.logWarning(
-								"service_overview_minutely is absent on this cluster; restricting to the hourly tier. Apply ClickHouse schema to restore the fast path.",
-							).pipe(Effect.annotateLogs({ orgId: tenant.orgId }))
-							yield* Effect.annotateCurrentSpan("query.rollup.fallback", true)
-							return yield* runAllMetrics("hour")
-						})
-					}),
+					Effect.catchIf(
+						(error) =>
+							options?.overviewTiers !== "hour" && isMissingServiceOverviewMinutely(error),
+						() =>
+							Effect.gen(function* () {
+								yield* Effect.logWarning(
+									"service_overview_minutely is absent on this cluster; restricting to the hourly tier. Apply ClickHouse schema to restore the fast path.",
+								).pipe(Effect.annotateLogs({ orgId: tenant.orgId }))
+								yield* Effect.annotateCurrentSpan("query.rollup.fallback", true)
+								return yield* runAllMetrics("hour")
+							}),
+					),
 				)
 
 				return new QueryEngineExecuteResponse({

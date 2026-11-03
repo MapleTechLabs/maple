@@ -168,13 +168,13 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						? autumn.updateCustomerName(customerId, org.name).pipe(
 								// No customer yet (a 404 from the update): create it already named,
 								// or attach would create it unnamed.
-								Effect.flatMap((result) =>
-									result.statusCode === 404
-										? autumn.getOrCreateCustomer(customerId, {
-												expand: [],
-												customerData: { name: org.name },
-											})
-										: Effect.succeed(result),
+								Effect.filterOrElse(
+									(result) => result.statusCode !== 404,
+									() =>
+										autumn.getOrCreateCustomer(customerId, {
+											expand: [],
+											customerData: { name: org.name },
+										}),
 								),
 								Effect.flatMap(ensureOk),
 							)

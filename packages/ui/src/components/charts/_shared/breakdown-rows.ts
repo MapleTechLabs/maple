@@ -17,6 +17,14 @@ export function asFiniteNumber(value: unknown): number {
 	return Number.isFinite(parsed) ? parsed : 0
 }
 
+/** A row cell as text; a missing or non-scalar cell reads as `fallback`. */
+export function cellText(value: unknown, fallback = ""): string {
+	if (typeof value === "string") return value
+	if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint")
+		return `${value}`
+	return fallback
+}
+
 /** The first numeric column that isn't the category label. */
 export function pickValueField(rows: ReadonlyArray<Record<string, unknown>>): string {
 	if (rows.length === 0) return "value"
@@ -54,7 +62,7 @@ export function toBreakdownRows(
 		)
 	}
 	return source.map((row) => {
-		const raw = row.name == null ? "" : String(row.name).trim()
+		const raw = cellText(row.name).trim()
 		return {
 			name: raw === "" ? "(no value)" : raw,
 			unnamed: raw === "",

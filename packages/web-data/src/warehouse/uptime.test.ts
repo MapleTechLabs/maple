@@ -48,7 +48,8 @@ const check = (at: string, durationMs: number, ok: boolean, phases: Record<strin
 /** The internal API, answering `/uptime-checks` and `/uptime-phase-timings` by path; anything else fails. */
 const withApi = (answers: Readonly<Record<string, () => Response>>) => {
 	const fetch: typeof globalThis.fetch = async (input) => {
-		const path = new URL(String(input), "http://api.test").pathname
+		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+		const path = new URL(url, "http://api.test").pathname
 		const answer = Object.entries(answers).find(([suffix]) => path.endsWith(suffix))?.[1]
 		return answer === undefined ? Promise.reject(new Error(`unmocked ${path}`)) : answer()
 	}

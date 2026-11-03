@@ -211,6 +211,10 @@ const sampleRecords = Effect.fnUntraced(function* (
 	)
 })
 
+/** A rule value as the transcript shows it: strings as-is, anything structured as JSON. */
+const showValue = (value: unknown): string =>
+	typeof value === "string" ? value : (stringifyJson(value) ?? "")
+
 /** `key -> after` for every top-level value a rule changed; the value before stays out of the transcript. */
 const changedValues = (before: RuleRecord, after: RuleRecord): ReadonlyArray<string> => {
 	const diff = (scope: string, a: AttrMap, b: AttrMap) =>
@@ -219,11 +223,11 @@ const changedValues = (before: RuleRecord, after: RuleRecord): ReadonlyArray<str
 			if (next === undefined) return [`${scope}${key}: removed`]
 			return stringifyJson(next) === stringifyJson(value)
 				? []
-				: [`${scope}${key} -> ${truncate(String(next), 60)}`]
+				: [`${scope}${key} -> ${truncate(showValue(next), 60)}`]
 		})
 	const body =
 		before.body !== undefined && stringifyJson(before.body) !== stringifyJson(after.body)
-			? [`body: ${truncate(String(after.body), 120)}`]
+			? [`body: ${truncate(showValue(after.body), 120)}`]
 			: []
 	return [
 		...diff("", before.attributes, after.attributes),

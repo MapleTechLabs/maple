@@ -20,7 +20,7 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
 import { ApiKeys, CliDeviceAuthorizations, type CliDeviceAuthorizationRow } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { DateTime, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
@@ -221,7 +221,7 @@ export class CliDeviceAuthService extends Context.Service<
 			return new CliDeviceInfoResponse({
 				userCode: displayUserCode(normalized),
 				deviceName: row.deviceName,
-				expiresAt: new Date(row.expiresAt).toISOString(),
+				expiresAt: DateTime.formatIso(DateTime.makeUnsafe(row.expiresAt)),
 				status,
 			})
 		})

@@ -955,7 +955,7 @@ describe("live-store reset safety", () => {
 				})}\n`,
 			)
 
-			const exit = await Effect.runPromise(Effect.exit(reconcileCheckpointRecovery(dataDir)))
+			const exit = await Effect.runPromiseExit(reconcileCheckpointRecovery(dataDir))
 			ok(Exit.isFailure(exit))
 			const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
 			ok(failure)

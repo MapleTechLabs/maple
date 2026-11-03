@@ -91,14 +91,16 @@ export const SaveStored = Command.define("SaveServiceMapStored", {
 	args: { orgId: Schema.String, stored: StoredSchema },
 	messages: [Message.CompletedSaveStored],
 	execute: ({ orgId, stored }) =>
-		Effect.sync(() => {
-			writeLocalStorage(prefsKey(orgId), Schema.encodeSync(PrefsJson)(stored.prefs))
-			writeLocalStorage(
-				layoutKey(orgId),
-				Schema.encodeSync(LayoutJson)({ snapshots: stored.snapshots }),
-			)
+		Effect.gen(function* () {
+			const prefs = yield* Schema.encodeEffect(PrefsJson)(stored.prefs)
+			const layout = yield* Schema.encodeEffect(LayoutJson)({ snapshots: stored.snapshots })
+			writeLocalStorage(prefsKey(orgId), prefs)
+			writeLocalStorage(layoutKey(orgId), layout)
 			return Message.CompletedSaveStored()
-		}),
+		}).pipe(
+			// The stored prefs and layout are already typed, so a failed encode is a defect.
+			Effect.orDie,
+		),
 })
 
 // FETCHES (each carries its request key back so `update` drops a superseded answer, S6)

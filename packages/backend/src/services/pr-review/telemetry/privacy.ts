@@ -323,10 +323,12 @@ const CARD_ISSUER = /^(?:4|5[1-5]|2[2-7]|3[47]|6011|65)/
 
 /** Whether a digit string passes the Luhn check card numbers carry. */
 const luhn = (digits: string): boolean =>
-	[...digits].reverse().reduce((sum, char, i) => {
-		const doubled = Number(char) * (i % 2 === 1 ? 2 : 1)
-		return sum + (doubled > 9 ? doubled - 9 : doubled)
-	}, 0) %
+	Array.from(digits)
+		.reverse()
+		.reduce((sum, char, i) => {
+			const doubled = Number(char) * (i % 2 === 1 ? 2 : 1)
+			return sum + (doubled > 9 ? doubled - 9 : doubled)
+		}, 0) %
 		10 ===
 	0
 
@@ -381,11 +383,16 @@ const blankLiterals = (text: string) => {
 					: /\b[rRbB]?[fF][rRbB]?$/.test(before)
 						? PY_INTERPOLATION
 						: undefined
-			const blank = Array.from(whole, () => " ")
+			// Per UTF-16 unit, so offsets into `code` stay those of the source.
+			const blank = Array.from({ length: whole.length }, () => " ")
 			for (const match of pattern === undefined ? [] : value.matchAll(pattern)) {
 				const inner = match[1] ?? ""
 				const at = 1 + (match.index ?? 0) + match[0].indexOf(inner)
-				blank.splice(at, inner.length, ...inner)
+				blank.splice(
+					at,
+					inner.length,
+					...Array.from({ length: inner.length }, (_, i) => inner[i] ?? ""),
+				)
 				interpolations.push([offset + at, offset + at + inner.length])
 			}
 			return blank.join("")

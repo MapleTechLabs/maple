@@ -27,7 +27,7 @@ import {
 	type PriorRun,
 	runAudit,
 } from "@maple/security-audit"
-import { ConfigProvider, Console, Effect, Layer, Option, References, Schema } from "effect"
+import { Clock, ConfigProvider, Console, Effect, Layer, Option, References, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { type ExecutorTransport, SandboxClientError } from "@maple/backend/sandbox/client"
 import { makeExecutor } from "@maple/backend/services/sandbox/ExecutorService"
@@ -140,7 +140,7 @@ const bounded = (text: string) => {
 
 const safePath = (path: string | undefined) =>
 	path === undefined || path === "" || path === "."
-		? Effect.succeed(undefined)
+		? Effect.undefined
 		: isSafeRelativePath(path.replace(/\/+$/, ""))
 			? Effect.succeed(path.replace(/\/+$/, ""))
 			: Effect.fail(new SourceReadError({ message: `not a safe repository-relative path: ${path}` }))
@@ -184,18 +184,10 @@ const localSource = (dir: string, sha: string): SourceReaderApi => ({
 			return Effect.succeed(bounded(result.stdout.replaceAll(`${sha}:`, "")))
 		}),
 	listFiles: (path) =>
-		Effect.flatMap(safePath(path), (safe) =>
-			Effect.succeed(
-				bounded(
-					git(dir, [
-						"ls-tree",
-						"-r",
-						"--name-only",
-						sha,
-						"--",
-						...(safe === undefined ? [] : [safe]),
-					]).stdout,
-				),
+		Effect.map(safePath(path), (safe) =>
+			bounded(
+				git(dir, ["ls-tree", "-r", "--name-only", sha, "--", ...(safe === undefined ? [] : [safe])])
+					.stdout,
 			),
 		),
 	nearby: (path, basename) =>
@@ -211,20 +203,18 @@ const localSource = (dir: string, sha: string): SourceReaderApi => ({
 			),
 		),
 	log: (path) =>
-		Effect.flatMap(safePath(path), (safe) =>
-			Effect.succeed(
-				bounded(
-					git(dir, [
-						"log",
-						"--format=%h %ad %s",
-						"--date=short",
-						"-n",
-						"40",
-						sha,
-						"--",
-						...(safe === undefined ? [] : [safe]),
-					]).stdout,
-				),
+		Effect.map(safePath(path), (safe) =>
+			bounded(
+				git(dir, [
+					"log",
+					"--format=%h %ad %s",
+					"--date=short",
+					"-n",
+					"40",
+					sha,
+					"--",
+					...(safe === undefined ? [] : [safe]),
+				]).stdout,
 			),
 		),
 })
@@ -391,7 +381,7 @@ const main = async () => {
 					})
 		const target = { repository: repo, sha }
 		// Every run its own executor: run directories share the name `run` across eval cases.
-		const executorRun = `${repo}-${sha.slice(0, 8)}-${Date.now()}`
+		const executorRun = `${repo}-${sha.slice(0, 8)}-${yield* Clock.currentTimeMillis}`
 		// A failed prepare leaves the run source-only, as a deployed run does.
 		const installs =
 			executor === undefined

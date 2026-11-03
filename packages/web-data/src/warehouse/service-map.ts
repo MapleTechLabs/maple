@@ -10,7 +10,7 @@ import {
 } from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
 import { summarizeSampling } from "@maple/query-engine"
-import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
+import { WarehouseDateTimeString, decodeInput, runWarehouseQuery, wireString } from "./effect-utils"
 import { transformExternalEdge } from "./service-external-edges"
 import { coerceOverviewRows } from "./services"
 
@@ -135,8 +135,8 @@ function transformEdge(row: Record<string, unknown>, durationSeconds: number): S
 	const sampling = summarizeSampling(estimatedSpanCount, callCount, durationSeconds)
 	const estimatedCallCount = sampling.hasSampling ? Math.round(estimatedSpanCount) : callCount
 	return {
-		sourceService: String(row.sourceService ?? ""),
-		targetService: String(row.targetService ?? ""),
+		sourceService: wireString(row.sourceService),
+		targetService: wireString(row.targetService),
 		callCount,
 		estimatedCallCount,
 		errorCount,
@@ -202,9 +202,9 @@ function transformDbEdge(row: Record<string, unknown>, durationSeconds: number):
 	const sampling = summarizeSampling(estimatedSpanCount, callCount, durationSeconds)
 	const estimatedCallCount = sampling.hasSampling ? Math.round(estimatedSpanCount) : callCount
 	return {
-		sourceService: String(row.sourceService ?? ""),
-		dbSystem: String(row.dbSystem ?? ""),
-		dbNamespace: String(row.dbNamespace ?? ""),
+		sourceService: wireString(row.sourceService),
+		dbSystem: wireString(row.dbSystem),
+		dbNamespace: wireString(row.dbNamespace),
 		callCount,
 		estimatedCallCount,
 		errorCount,
@@ -241,7 +241,7 @@ function transformCloudflareService(
 	row: Record<string, unknown>,
 	durationSeconds: number,
 ): CloudflareService {
-	const serviceName = String(row.serviceName ?? "")
+	const serviceName = wireString(row.serviceName)
 	const displayName = serviceName.startsWith(WORKER_SERVICE_PREFIX)
 		? serviceName.slice(WORKER_SERVICE_PREFIX.length)
 		: serviceName
@@ -319,7 +319,7 @@ function transformPlanetScaleStat(row: Record<string, unknown>): PlanetScaleData
 	// can't masquerade as a healthy 0% — see planetscaleStorageSQL.
 	const storageSamples = Number(row.storageSamples ?? 0)
 	return {
-		database: String(row.database ?? ""),
+		database: wireString(row.database),
 		connectionsAvg: Number(row.connectionsAvg ?? 0),
 		connectionsMax: Number(row.connectionsMax ?? 0),
 		cpuMaxPercent: Number(row.cpuMaxPercent ?? 0),
@@ -388,7 +388,7 @@ export const getPlanetScaleBranchStats = Effect.fn("QueryEngine.getPlanetScaleBr
 	return {
 		branches: result.data.map((row): PlanetScaleBranchStat => ({
 			...transformPlanetScaleStat(row),
-			branch: String(row.branch ?? ""),
+			branch: wireString(row.branch),
 		})),
 	}
 })

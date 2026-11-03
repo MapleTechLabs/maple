@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect } from "effect"
 import { TestClock } from "effect/testing"
 import { inspectTrace, traceProbeWindows } from "./inspect-trace"
 import { WarehouseExecutor } from "./WarehouseExecutor"
@@ -87,9 +87,7 @@ const makeExecutor = (
 const run = (executor: WarehouseExecutorApi, options?: Parameters<typeof inspectTrace>[1]) =>
 	Effect.gen(function* () {
 		yield* TestClock.setTime(NOW)
-		return yield* inspectTrace(TRACE_ID, options).pipe(
-			Effect.provide(Layer.succeed(WarehouseExecutor, executor)),
-		)
+		return yield* inspectTrace(TRACE_ID, options).pipe(Effect.provideService(WarehouseExecutor, executor))
 	})
 
 const hierarchyCalls = (captured: Captured) => captured.pipeCalls.filter((c) => c.pipe === "span_hierarchy")

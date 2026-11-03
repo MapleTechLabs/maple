@@ -54,7 +54,7 @@ const MODEL_NAME = "@cf/test/model"
 
 const INVESTIGATION_SESSION = `${orgId}:inv-00000000-0000-0000-0000-000000000000`
 
-const submitDiagnosis: SubmitDiagnosis = () => Effect.succeed(undefined)
+const submitDiagnosis: SubmitDiagnosis = () => Effect.undefined
 
 const SESSION_ATTRIBUTES = { [MAPLE_NATIVE_SESSION_ID_ATTR]: "session-1" }
 
@@ -146,7 +146,7 @@ describe("buildDiagnosisCompletion", () => {
 
 describe("buildReviewCompletion", () => {
 	const REVIEW_SESSION = prReviewSessionId(orgId, "7f1d3c2e-9a4b-4c8d-8e2f-1a2b3c4d5e6f")
-	const submitReview: SubmitReview = () => Effect.succeed(undefined)
+	const submitReview: SubmitReview = () => Effect.undefined
 	const buildReview = (sessionId: string, origin: ChatTurnOrigin) =>
 		buildReviewCompletion(sessionId, tenantFor(human), origin, submitReview, makeRunUsage(), MODEL_NAME)
 

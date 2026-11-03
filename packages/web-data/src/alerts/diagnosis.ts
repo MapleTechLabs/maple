@@ -35,11 +35,19 @@ export const intervalBeforeSlowdown = (
 	rule: AlertRuleDocument,
 	kind: AlertEvaluationErrorKind | null = rule.lastEvaluationErrorKind,
 ): number => {
-	const base = alertRuleIntervalMinutes({ ...rule, slowedIntervalMinutes: null })
+	const base = alertRuleIntervalMinutes({
+		windowMinutes: rule.windowMinutes,
+		evaluationIntervalMinutes: rule.evaluationIntervalMinutes,
+		slowedIntervalMinutes: null,
+	})
 	const slowed = rule.slowedIntervalMinutes
 	if (slowed === null) return base
 	const exceeded: ReadonlyArray<"time" | "memory"> =
-		kind === "query_too_slow" ? ["time"] : kind === "query_too_much_memory" ? ["memory"] : ["time", "memory"]
+		kind === "query_too_slow"
+			? ["time"]
+			: kind === "query_too_much_memory"
+				? ["memory"]
+				: ["time", "memory"]
 	const steps = [
 		base,
 		...ALERT_EVALUATION_INTERVALS.filter((minutes) => minutes > base && minutes < slowed),

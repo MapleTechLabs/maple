@@ -1,11 +1,11 @@
 import { readRealFile, ensureLocalToken, localTokenMatches } from "../local-token"
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 import { createHash, randomUUID } from "node:crypto"
-import { existsSync, lstatSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { mkdir, rm } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import type { Chdb } from "../chdb"
-import { durableJson, durableRemove, durableRename, durableWrite, syncDirectory } from "../durable-files"
+import { durableJson, durableRemove, durableRename, syncDirectory } from "../durable-files"
 import { withMaintenanceLock } from "../checkpoints"
 import { computeMultisetDigest, captureSourceSchema } from "./export"
 import { assertCatalogExact, listActiveGenerations, rebuildCatalog, verifyActiveGeneration } from "./listing"
@@ -471,7 +471,7 @@ const parseExpireOperation = (value: unknown): ExpireOperation => {
 		(typeof removingSignal !== "string" ||
 			!ARCHIVE_SIGNALS.some((candidate) => candidate.name === removingSignal))
 	)
-		throw new Error(`invalid removingSignal: ${String(removingSignal)}`)
+		throw new Error(`invalid removingSignal: ${encodeJson(removingSignal)}`)
 	const expectedRemoving = ARCHIVE_SIGNALS[completedSignals.length]?.name ?? null
 	if (removingSignal !== null && removingSignal !== expectedRemoving)
 		throw new Error("removingSignal must be the next canonical signal")

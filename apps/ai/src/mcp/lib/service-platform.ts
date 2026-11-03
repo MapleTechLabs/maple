@@ -39,9 +39,7 @@ const calledDatabases = (service: string, window: InfraWindow) =>
 			)
 		// A cluster without migration 0049 has no minute tier; the raw shape answers the same.
 		const rows = yield* read(true).pipe(
-			Effect.catch((error) =>
-				isMissingServiceMapDbEdgesMinutely(error) ? read(false) : Effect.fail(error),
-			),
+			Effect.catchIf(isMissingServiceMapDbEdgesMinutely, () => read(false)),
 		)
 		return new Set(rows.map((row) => row.dbNamespace))
 	})

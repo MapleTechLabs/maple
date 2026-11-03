@@ -716,7 +716,7 @@ const CLICKHOUSE_RETRY_SCHEDULE = Schedule.max([Schedule.exponential("100 millis
 export const isRetryableUpstream = (
 	error: OrgClickHouseSettingsUpstreamRejectedError | OrgClickHouseSettingsUpstreamUnavailableError,
 ): boolean => {
-	if (!(error instanceof OrgClickHouseSettingsUpstreamUnavailableError)) return false
+	if (!Schema.is(OrgClickHouseSettingsUpstreamUnavailableError)(error)) return false
 	const status = error.statusCode
 	if (status === null) return true // network-level failure (reset/refused) — cheap to retry
 	// Gateway/proxy codes that are typically transient. 500/501 are excluded:
@@ -951,11 +951,9 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			roles: ReadonlyArray<RoleName>,
 		) {
 			if (isOrgAdmin(roles)) return
-			return yield* Effect.fail(
-				new OrgClickHouseSettingsForbiddenError({
-					message: "Only org admins can manage ClickHouse settings",
-				}),
-			)
+			return yield* new OrgClickHouseSettingsForbiddenError({
+				message: "Only org admins can manage ClickHouse settings",
+			})
 		})
 
 		const selectActiveRow = Effect.fn("OrgClickHouseSettingsService.selectActiveRow")(function* (
@@ -1048,11 +1046,9 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		) {
 			const row = yield* selectActiveRow(orgId)
 			if (Option.isSome(row)) return row.value
-			return yield* Effect.fail(
-				new OrgClickHouseSettingsValidationError({
-					message: "BYO ClickHouse is not configured for this org",
-				}),
-			)
+			return yield* new OrgClickHouseSettingsValidationError({
+				message: "BYO ClickHouse is not configured for this org",
+			})
 		})
 
 		const decryptStoredPassword = (
@@ -1295,11 +1291,9 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			// Resolve the binding BEFORE claiming: a missing binding must not leave
 			// a queued row behind that every later attempt reads as already_running.
 			if (Option.isNone(schemaApplyWorkflow)) {
-				return yield* Effect.fail(
-					new OrgClickHouseSettingsPersistenceError({
-						message: "Schema-apply workflow binding unavailable",
-					}),
-				)
+				return yield* new OrgClickHouseSettingsPersistenceError({
+					message: "Schema-apply workflow binding unavailable",
+				})
 			}
 			const workflow = schemaApplyWorkflow.value
 
@@ -1687,7 +1681,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 						"maple.clickhouse.config.source": "postgres_failed",
 						"maple.clickhouse.config.failure_reused": true,
 					})
-					return yield* Effect.fail(failed.error)
+					return yield* failed.error
 				}
 
 				// Overwritten by `readSharedOrPostgres` on success; setting it first

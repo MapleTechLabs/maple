@@ -120,11 +120,7 @@ export const ApiKeyProvider = () =>
 					if (output?.keyId) {
 						const fetched = yield* api
 							.get(`/v2/api_keys/${output.keyId}`)
-							.pipe(
-								Effect.catchTag(MapleErrorTags.apiKeyNotFound, () =>
-									Effect.succeed(undefined),
-								),
-							)
+							.pipe(Effect.catchTag(MapleErrorTags.apiKeyNotFound, () => Effect.undefined))
 						if (fetched !== undefined) {
 							const wire = yield* decodeWireApiKey(fetched)
 							if (!wire.revoked) observed = wire
@@ -161,7 +157,7 @@ export const ApiKeyProvider = () =>
 					if (!output?.keyId) return undefined
 					const fetched = yield* api
 						.get(`/v2/api_keys/${output.keyId}`)
-						.pipe(Effect.catchTag(MapleErrorTags.apiKeyNotFound, () => Effect.succeed(undefined)))
+						.pipe(Effect.catchTag(MapleErrorTags.apiKeyNotFound, () => Effect.undefined))
 					if (fetched === undefined) return undefined
 					const wire = yield* decodeWireApiKey(fetched)
 					if (wire.revoked) return undefined

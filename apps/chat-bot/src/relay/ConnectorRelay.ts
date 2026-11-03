@@ -259,7 +259,12 @@ export class ConnectorRelay {
 				? this.remember(conversation.conversationKey)
 				: Effect.try({
 						try: () => connectorRelayByName(this.env, name),
-						catch: (cause) => cause,
+						catch: (cause) =>
+							new ConnectorRelayStorageError({
+								operation: "resolveConversationRelay",
+								message: "The conversation's relay object could not be resolved",
+								cause,
+							}),
 					}).pipe(
 						// No namespace bound: nothing to write to, and the answer still goes out.
 						Effect.flatMap((relay) =>

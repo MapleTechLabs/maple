@@ -66,7 +66,7 @@ describe("eventTelemetry", () => {
 		Effect.gen(function* () {
 			const exported: Array<string> = []
 			globalThis.fetch = (async (input: RequestInfo | URL) => {
-				exported.push(String(input))
+				exported.push(new Request(input).url)
 				return new Response(null, { status: 200 })
 			}) as typeof fetch
 			const env = { MAPLE_ENDPOINT: "https://collector.test", MAPLE_INGEST_KEY: "secret" }

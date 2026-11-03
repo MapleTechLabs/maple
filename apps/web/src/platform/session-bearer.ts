@@ -46,7 +46,7 @@ function makeSelfHosted() {
 								Effect.andThen(clearSessionToken, announceSessionTokenChanged),
 								Option.none(),
 							)
-						: Effect.succeed(Option.some(token)),
+						: Effect.succeedSome(token),
 				),
 			)
 

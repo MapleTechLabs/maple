@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { strict as assert } from "node:assert"
-import { Cause, Effect, Exit, Layer, Option, Tracer } from "effect"
+import { Cause, Effect, Exit, Layer, Option, Schema, Tracer } from "effect"
 import {
 	FetchHttpClient,
 	HttpClient,
@@ -95,7 +95,7 @@ describe("rawQuery failures", () => {
 		const error = await run(() =>
 			Effect.succeed(new Response("read-only query endpoint: CREATE is not allowed", { status: 400 })),
 		)
-		assert.ok(error instanceof ReadOnlyQueryError)
+		assert.ok(Schema.is(ReadOnlyQueryError)(error))
 		assert.equal(error.message, "maple query is read-only: CREATE is not allowed")
 	})
 
@@ -110,7 +110,7 @@ describe("rawQuery failures", () => {
 				}),
 			),
 		)
-		assert.ok(error instanceof LocalServerUnreachableError)
+		assert.ok(Schema.is(LocalServerUnreachableError)(error))
 		assert.match(error.message, /http:\/\/127\.0\.0\.1:4318/)
 		assert.match(error.hint ?? "", /MAPLE_LOCAL_URL/)
 	})
@@ -236,7 +236,7 @@ describe("assertKnownService", () => {
 		const exit = await run(0)
 		assert.ok(Exit.isFailure(exit))
 		const error = Cause.findErrorOption(exit.cause)
-		assert.ok(Option.isSome(error) && error.value instanceof CliNotFoundError)
+		assert.ok(Option.isSome(error) && Schema.is(CliNotFoundError)(error.value))
 		assert.strictEqual(error.value.message, "no telemetry for 'checkout' in the last hour")
 		assert.match(error.value.hint ?? "", /known services: (api, worker|worker, api)/)
 	})

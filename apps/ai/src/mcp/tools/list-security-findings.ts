@@ -1,10 +1,5 @@
 import { Clock, DateTime, Effect, Schema } from "effect"
-import {
-	ListSecurityFindingsOutput,
-	SECURITY_AREAS,
-	type SecurityArea,
-	type SecurityFindingRow,
-} from "@maple/domain/mcp-outputs"
+import { ListSecurityFindingsOutput, SECURITY_AREAS, type SecurityArea } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { truncate } from "../lib/format"
@@ -125,7 +120,7 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 				params.area === undefined
 					? params.repository === undefined || !telemetry(area)
 					: params.area === area
-			const skip = Effect.succeed(undefined)
+			const skip = Effect.undefined
 			// Code findings borrow the dependency scanner's repository-to-service join, so they read it too.
 			const [codeRead, dependencyRead, exposure, runtimes] = yield* Effect.all(
 				[
@@ -160,7 +155,7 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 			})
 			const now = yield* Clock.currentTimeMillis
 			return {
-				generatedAt: new Date(now).toISOString(),
+				generatedAt: DateTime.formatIso(DateTime.makeUnsafe(now)),
 				window,
 				...(params.area === undefined ? undefined : { areaFilter: params.area }),
 				filters: {

@@ -2,7 +2,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { Duration, Effect, Exit, Fiber, Ref, Schema, Tracer } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId } from "@maple/domain"
-import { RawSqlValidationError } from "@maple/domain/http"
+import { RawSqlValidationError, WarehouseQueryRequest } from "@maple/domain/http"
 import { compileUnsafe, listRuleChecksQuery, rawCompiledQuery } from "../ch"
 import { logBodySearchMode, type WarehouseCapabilities } from "../capabilities"
 import { makeWarehouseExecutor } from "./executor"
@@ -1106,15 +1106,18 @@ describe("makeWarehouseExecutor capability-aware compilation", () => {
 					}),
 			})
 
-			yield* executor.query(tenant, {
-				pipeName: "list_logs",
-				params: {
-					start_time: "2026-01-01 00:00:00",
-					end_time: "2026-01-02 00:00:00",
-					search: "Upstream Connection Timeout Reached",
-					limit: 10,
-				},
-			})
+			yield* executor.query(
+				tenant,
+				new WarehouseQueryRequest({
+					pipeName: "list_logs",
+					params: {
+						start_time: "2026-01-01 00:00:00",
+						end_time: "2026-01-02 00:00:00",
+						search: "Upstream Connection Timeout Reached",
+						limit: 10,
+					},
+				}),
+			)
 
 			const executed = sqls.find((sql) => sql.includes("FROM logs") && sql.includes("hasAllTokens"))
 			assert.isDefined(executed)
@@ -1311,7 +1314,7 @@ describe("makeWarehouseExecutor client cache partitions", () => {
 									try: () => {
 										calls.push({ clientId, operation: "insert" })
 									},
-									catch: WarehouseDriverError.fromUnknown,
+									catch: (cause) => WarehouseDriverError.fromUnknown(cause),
 								}),
 						}
 					}),

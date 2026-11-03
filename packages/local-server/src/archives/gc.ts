@@ -21,9 +21,8 @@ import {
 	parseArchiveActivePointer,
 	readArchiveGenerationManifest,
 	type ArchiveGenerationManifest,
-	type ArchiveShardRecord,
 } from "./manifest"
-import { archiveSignal, type ArchiveSignalName, ARCHIVE_SIGNALS } from "./signals"
+import { archiveSignal, ARCHIVE_SIGNALS } from "./signals"
 import {
 	archiveCompletedOperation,
 	operationDir,

@@ -8,6 +8,10 @@ import { dispatchDelivery as dispatchDeliveryRaw } from "./delivery/dispatch"
 import { FetchHttpClient } from "effect/http"
 import type { EffectTransportDeps } from "./delivery/Transport"
 
+/** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
+const requestBodyText = (body: RequestInit["body"]): string =>
+	body instanceof Uint8Array ? new TextDecoder().decode(body) : typeof body === "string" ? body : ""
+
 type DispatchArgs = Parameters<typeof dispatchDeliveryRaw>
 
 /** The runtime provides the HTTP client; each test fakes the wire as `FetchHttpClient.Fetch`. */
@@ -124,10 +128,10 @@ const recorder = (response: () => Response) => {
 	const calls: Array<RecordedCall> = []
 	const fetchFn: typeof fetch = async (input, init) => {
 		calls.push({
-			url: String(input),
+			url: String(input instanceof Request ? input.url : input),
 			method: init?.method ?? "GET",
 			headers: new Headers(init?.headers),
-			body: String(init?.body ?? ""),
+			body: requestBodyText(init?.body),
 		})
 		return response()
 	}

@@ -21,7 +21,7 @@ type Widget = TileWidget
 export const formatStatValue = (value: unknown, unit?: string, prefix?: string, suffix?: string): string => {
 	if (value === null || value === undefined || typeof value === "object") return EMPTY_VALUE
 	const num = typeof value === "number" ? value : Number(value)
-	if (Number.isNaN(num)) return String(value)
+	if (Number.isNaN(num)) return typeof value === "string" ? value : EMPTY_VALUE
 	return `${prefix ?? ""}${formatValueByUnit(num, unit)}${suffix ?? ""}`
 }
 
@@ -48,7 +48,8 @@ export const sparklineValues = (state: WidgetDataState | null | undefined): Read
 		.flatMap((row) =>
 			isRecord(row)
 				? Object.entries(row).filter(
-						([key, value]) => key !== "bucket" && typeof value === "number" && Number.isFinite(value),
+						([key, value]) =>
+							key !== "bucket" && typeof value === "number" && Number.isFinite(value),
 					)
 				: [],
 		)
@@ -64,7 +65,12 @@ export const sparklineValues = (state: WidgetDataState | null | undefined): Read
 const sparkline = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget, color: string): Html => {
 	const values = sparklineValues(ctx.sparkline)
 	const theme = ctx.themeColors
-	if (values.length < 2 || theme === null || !isChartRuntimeReady(ctx.chartRuntime) || ctx.onSparklineChart === undefined)
+	if (
+		values.length < 2 ||
+		theme === null ||
+		!isChartRuntimeReady(ctx.chartRuntime) ||
+		ctx.onSparklineChart === undefined
+	)
 		return h.empty
 	const stroke = resolveColor(theme, validateCssColor(color) ?? "var(--chart-1)")
 	return h.div(
@@ -112,7 +118,10 @@ export const statTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widg
 			? h.div(
 					[h.Class("flex h-full w-full flex-col")],
 					[
-						h.div([h.Class("flex flex-1 items-center justify-center")], [chartSkeleton(h, "stat")]),
+						h.div(
+							[h.Class("flex flex-1 items-center justify-center")],
+							[chartSkeleton(h, "stat")],
+						),
 						chartSkeleton(h, "line", "h-10 shrink-0"),
 					],
 				)

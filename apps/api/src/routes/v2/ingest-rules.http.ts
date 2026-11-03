@@ -76,13 +76,11 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 					const startMs =
 						query.start_time === undefined ? endMs - DAY_MS : timestampMs(query.start_time)
 					if (!(startMs < endMs) || endMs - startMs > MAX_STATS_WINDOW_MS) {
-						return yield* Effect.fail(
-							V2ParameterInvalid.make(
-								"start_time must be before end_time, at most 62 days apart.",
-								{
-									param: "start_time",
-								},
-							),
+						return yield* V2ParameterInvalid.make(
+							"start_time must be before end_time, at most 62 days apart.",
+							{
+								param: "start_time",
+							},
 						)
 					}
 					const stats = yield* service.stats(tenant.orgId, startMs, endMs)

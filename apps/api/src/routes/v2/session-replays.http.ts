@@ -56,14 +56,12 @@ const assertRangeFitsBudget = (rows: ReadonlyArray<{ readonly byteSize: number }
 
 /** An ISO-8601 request param as a `DateTime.Utc`, validated. */
 const toUtc = (value: string, param: string) =>
-	Option.match(parseUtc(value), {
-		onNone: () =>
-			Effect.fail(V2ParameterInvalid.make(`Invalid ISO-8601 timestamp for ${param}.`, { param })),
-		onSome: (instant) => Effect.succeed(instant),
-	})
+	Effect.fromOption(parseUtc(value), () =>
+		V2ParameterInvalid.make(`Invalid ISO-8601 timestamp for ${param}.`, { param }),
+	)
 
 const optUtc = (value: string | undefined, param: string) =>
-	value === undefined ? Effect.succeed(undefined) : toUtc(value, param)
+	value === undefined ? Effect.undefined : toUtc(value, param)
 
 const isoOf = (value: DateTime.Utc): Timestamp => timestamp(DateTime.formatIso(value))
 
@@ -72,10 +70,7 @@ const isoOrNull = (value: DateTime.Utc | null): Timestamp | null => (value === n
 const nullableUserId = (value: string | null): string | null => (value ? value : null)
 
 const orNotFound = <A>(found: Option.Option<A>) =>
-	Option.match(found, {
-		onNone: () => Effect.fail(V2SessionReplayNotFound.make()),
-		onSome: Effect.succeed,
-	})
+	Effect.fromOption(found, () => V2SessionReplayNotFound.make())
 
 export const HttpV2SessionReplaysLive = HttpApiBuilder.group(MapleApiV2, "sessionReplays", (handlers) =>
 	Effect.gen(function* () {

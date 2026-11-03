@@ -41,7 +41,7 @@ const recordingEdgeCache = () => {
 		invalidate: (options) =>
 			Effect.sync(() => void invalidated.push({ bucket: options.bucket, key: options.key })),
 		rawGetDetailed: () => Effect.succeed({ status: "miss", value: Option.none(), readMs: 0 }),
-		rawGet: () => Effect.succeed(Option.none()),
+		rawGet: () => Effect.succeedNone,
 		rawPut: () => Effect.void,
 		rawDelete: () => Effect.void,
 	}

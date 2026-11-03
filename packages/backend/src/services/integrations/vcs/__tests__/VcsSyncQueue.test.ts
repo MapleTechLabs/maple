@@ -6,7 +6,7 @@ import {
 	VcsBackfillQueueProducer,
 	VcsSyncQueueProducer,
 } from "@maple/backend/platform/bindings"
-import { Effect, Exit, Layer, Tracer } from "effect"
+import { Effect, Exit, Layer, Tracer, Schema } from "effect"
 import {
 	MESSAGING_SYSTEM,
 	QUEUE_BATCH_MAX_BYTES,
@@ -29,7 +29,8 @@ const kindOf = (body: unknown): string | undefined =>
 // it went to. `reject` makes every call fail so the VcsQueueError path can be exercised.
 const fakeQueueEnv = (opts?: { reject?: boolean }) => {
 	const chunks: CapturedMessage[][] = []
-	const sentTo: Array<{ readonly queue: VcsQueueName; readonly kinds: ReadonlyArray<string | undefined> }> = []
+	const sentTo: Array<{ readonly queue: VcsQueueName; readonly kinds: ReadonlyArray<string | undefined> }> =
+		[]
 	const producer = (queue: VcsQueueName): QueueProducer => ({
 		sendBatch: (messages) =>
 			opts?.reject
@@ -262,7 +263,7 @@ describe("VcsSyncQueue error paths", () => {
 			const exit = yield* Effect.exit(queue.sendBatch([installSyncJob(1)]))
 			assert.ok(Exit.isFailure(exit), "sendBatch surfaces the rejection")
 			const error = findError(exit)
-			assert.ok(error instanceof VcsQueueError)
+			assert.ok(Schema.is(VcsQueueError)(error))
 			assert.match(error.message, /simulated queue outage/)
 		}).pipe(provideQueue(layer))
 	})

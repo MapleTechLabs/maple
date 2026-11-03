@@ -9,7 +9,7 @@ import {
 } from "@maple/domain/http"
 import { MapleApiV2, paginateArray } from "@maple/domain/http/v2"
 import type { V2AttributeMapping } from "@maple/domain/http/v2"
-import { Array as Arr, Effect, Option } from "effect"
+import { Array as Arr, Effect } from "effect"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { diffAuditChanges, pickPresentFields } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
@@ -54,18 +54,13 @@ export const HttpV2AttributeMappingsLive = HttpApiBuilder.group(MapleApiV2, "att
 		const findMapping = (orgId: OrgId, id: IngestAttributeMappingId) =>
 			listMappings(orgId).pipe(
 				Effect.flatMap((response) =>
-					Option.match(
+					Effect.fromOption(
 						Arr.findFirst(response.mappings, (candidate) => candidate.id === id),
-						{
-							onNone: () =>
-								Effect.fail(
-									new IngestAttributeMappingNotFoundError({
-										mappingId: id,
-										message: "No such attribute mapping.",
-									}),
-								),
-							onSome: Effect.succeed,
-						},
+						() =>
+							new IngestAttributeMappingNotFoundError({
+								mappingId: id,
+								message: "No such attribute mapping.",
+							}),
 					),
 				),
 			)

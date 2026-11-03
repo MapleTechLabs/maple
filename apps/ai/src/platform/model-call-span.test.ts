@@ -23,6 +23,10 @@ import { FetchHttpClient } from "effect/http"
 import { instrumentLanguageModel } from "./genai-spans"
 import { layerLlm, MODEL_ATTEMPT_CAP, MODEL_CALL_OUTPUT_TOKENS, resolveTriageModel } from "./Llm"
 
+/** A stubbed fetch body as text: the client sends the JSON as bytes. */
+const requestBodyText = (body: BodyInit | null | undefined): string =>
+	typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : "{}"
+
 /** Two frames, the first naming the response and the model that served it. */
 const SSE = [
 	": OPENROUTER PROCESSING",
@@ -706,7 +710,7 @@ describe("runaway model calls", () => {
 		Effect.gen(function* () {
 			const bodies: Array<unknown> = []
 			const capture: typeof globalThis.fetch = (_input, init) => {
-				bodies.push(JSON.parse(String(init?.body)))
+				bodies.push(JSON.parse(requestBodyText(init?.body)))
 				return sseFetch(_input, init)
 			}
 			yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
@@ -820,7 +824,7 @@ describe("model calls cut at their attempt cap", () => {
 	const stalledThenAnswered =
 		(bodies: Array<Record<string, unknown>>): typeof globalThis.fetch =>
 		(input, init) => {
-			bodies.push(JSON.parse(String(init?.body)))
+			bodies.push(JSON.parse(requestBodyText(init?.body)))
 			if (bodies.length > 1) return sseFetch(input, init)
 			const open = new ReadableStream<Uint8Array>({
 				start: (controller) =>

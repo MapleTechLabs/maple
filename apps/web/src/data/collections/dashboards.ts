@@ -74,16 +74,14 @@ export const makeDashboardsCollection = (config: {
 		onUpdate: ({ transaction }) =>
 			Effect.gen(function* () {
 				const { modified } = transaction.mutations[0]
-				const document = yield* Option.match(rowToDocument(modified), {
-					onNone: () =>
-						Effect.fail(
-							new UndecodableDashboardError({
-								message: "This dashboard's saved layout couldn't be read",
-								rawId: modified.id,
-							}),
-						),
-					onSome: Effect.succeed,
-				})
+				const document = yield* Effect.fromOption(
+					rowToDocument(modified),
+					() =>
+						new UndecodableDashboardError({
+							message: "This dashboard's saved layout couldn't be read",
+							rawId: modified.id,
+						}),
+				)
 				const id = yield* decodeDashboardId(modified.id)
 				const result = yield* config.client.dashboards.update({
 					params: { id },

@@ -79,14 +79,13 @@ export const makeRollupFallback =
 		annotate: SpanAnnotator = annotateCurrent,
 	): Effect.Effect<A, E, R> =>
 		rollup(tenant, payload).pipe(
-			Effect.catch((error) => {
-				if (!detect(error)) return Effect.fail(error)
-				return Effect.gen(function* () {
+			Effect.catchIf(detect, () =>
+				Effect.gen(function* () {
 					yield* Effect.logWarning(warning).pipe(Effect.annotateLogs({ orgId: tenant.orgId }))
 					yield* annotate("query.rollup.fallback", true)
 					return yield* raw(tenant, payload)
-				})
-			}),
+				}),
+			),
 		)
 
 /**

@@ -1,4 +1,5 @@
 import { Context, Effect, Layer, Option, Redacted, type Scope, Stream, type Types } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Base64 } from "effect/encoding"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import {
@@ -9,6 +10,8 @@ import {
 	type ClickHouseError,
 } from "./errors"
 import { decodeRows, type Limits } from "./protocol"
+
+const secureRandom = SecureRandom.make(SecureRandom.randomBytesUnsafe)
 
 export interface ClientConfig {
 	/** HTTP(S) endpoint; proxy paths and ordinary URL parameters are preserved. */
@@ -189,7 +192,10 @@ export const make = (
 			})
 		// A fresh ID per execution: the same lazy Effect can run many times.
 		const openWithId = (options: QueryOptions) =>
-			Effect.suspend(() => open(options, options.queryId ?? crypto.randomUUID()))
+			Effect.flatMap(
+				options.queryId === undefined ? secureRandom.uuidV4() : Effect.succeed(options.queryId),
+				(id) => open(options, id),
+			)
 
 		return {
 			stream: (options) => Stream.unwrap(Effect.map(openWithId(options), (query) => query.rows)),

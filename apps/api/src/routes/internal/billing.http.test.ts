@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { BillingOrgService } from "@maple/backend/services/billing/BillingOrgService"
-import { ConfigProvider, Context, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import {
@@ -108,7 +108,7 @@ describe("AutumnClient.updateCustomerBillingControls", () => {
 	it("uses Autumn's canonical customer update route and v2.3 wire shape", async () => {
 		let request: { readonly url: string; readonly init?: RequestInit } | undefined
 		const fetch = (async (input, init) => {
-			request = { url: String(input), init }
+			request = { url: new Request(input).url, init }
 			return new Response(JSON.stringify({ id: ORG }), { status: 200 })
 		}) as typeof globalThis.fetch
 
@@ -216,7 +216,7 @@ describe("AutumnClient.updateCustomerName", () => {
 	it("renames the customer through customers.update", async () => {
 		let request: { readonly url: string; readonly body: string } | undefined
 		const fetch = (async (input, init) => {
-			request = { url: String(input), body: await new Response(init?.body).text() }
+			request = { url: new Request(input).url, body: await new Response(init?.body).text() }
 			return new Response(JSON.stringify({ id: ORG }), { status: 200 })
 		}) as typeof globalThis.fetch
 
@@ -636,7 +636,7 @@ describe("billing writes over HTTP", () => {
 				Effect.fail(
 					new BillingManagedByBillingOrgError({ message: "billed elsewhere", billingOrgId: payer }),
 				),
-			readLink: () => Effect.succeed(Option.some(payer)),
+			readLink: () => Effect.succeedSome(payer),
 			forget: () => Effect.void,
 		})
 

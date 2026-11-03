@@ -65,7 +65,7 @@ describe("withSessionLink — user.id span stamping", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("anon-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("anon-op"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 
@@ -80,7 +80,7 @@ describe("withSessionLink — user.id span stamping", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("known-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("known-op"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 
@@ -97,7 +97,7 @@ describe("withSessionLink — user.id span stamping", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("signed-out-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("signed-out-op"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 
@@ -113,10 +113,7 @@ describe("withSessionLink — user.id span stamping", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(
-				Effect.withSpan("null-cleared-op"),
-				Effect.provide(telemetry.layer),
-			),
+			Effect.undefined.pipe(Effect.withSpan("null-cleared-op"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 

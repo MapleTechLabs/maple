@@ -5,7 +5,7 @@ import type {
 	PlanetScaleQueryInsightsResponse,
 	SelfDescribingHttpError,
 } from "@maple/domain/http"
-import { CurrentTenant } from "@maple/domain/http"
+import { CurrentTenant, PlanetScaleMetricsTokenRequest } from "@maple/domain/http"
 import type { PlanetScaleDatabaseRow } from "@maple/db/tables"
 import type {
 	V2PlanetScaleConnectResponse,
@@ -257,10 +257,8 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 										origin,
 									},
 								)
-								return yield* Effect.fail(
-									V2CallbackHostUnavailable.make(
-										"PlanetScale connections are not available from this host",
-									),
+								return yield* V2CallbackHostUnavailable.make(
+									"PlanetScale connections are not available from this host",
 								)
 							}
 							const result = yield* planetscaleOAuth
@@ -333,10 +331,13 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 								),
 							)
 							const status = yield* planetscale
-								.setMetricsToken(tenant.orgId, {
-									tokenId: payload.token_id,
-									tokenSecret: payload.token_secret,
-								})
+								.setMetricsToken(
+									tenant.orgId,
+									new PlanetScaleMetricsTokenRequest({
+										tokenId: payload.token_id,
+										tokenSecret: payload.token_secret,
+									}),
+								)
 								.pipe(tapHttpErrors("PlanetScale metrics token update failed"))
 							// The token id names which credential was installed; its secret
 							// is write-only and never reaches an audit row.

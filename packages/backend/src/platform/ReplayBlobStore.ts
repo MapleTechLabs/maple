@@ -75,7 +75,7 @@ const makeHydrate =
 			chunks,
 			(chunk) => {
 				// Pre-cutover row: the payload is already in hand.
-				if (chunk.events !== "") return Effect.succeed(Option.some(chunk))
+				if (chunk.events !== "") return Effect.succeedSome(chunk)
 				const key = replayObjectKey(orgId, sessionId, chunk.chunkSeq)
 				return bucket.getBytes(key).pipe(
 					Effect.flatMap(

@@ -1,11 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
-import { Context, Effect, Option, Schema } from "effect"
+import { Context, Effect, Schema } from "effect"
 import { WarehouseExecutor, productEventsFunnel } from "@maple/query-engine/observability"
 import { CH } from "@maple/query-engine"
 import { OrgId } from "@maple/domain/http"
 import { ListProductEventsOutput, QueryFunnelOutput } from "@maple/domain/mcp-outputs"
 import type { McpToolResult } from "../types"
-import { mapleToolCatalog, toInputSchema } from "../registry"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../__evals__/fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
@@ -185,7 +184,7 @@ describe("productEventsFunnel (observability helper)", () => {
 			// only query these tests compile is the funnel, whose row type is `T`.
 			return Effect.succeed(rows as ReadonlyArray<T>)
 		},
-		compiledQueryFirst: () => Effect.succeed(Option.none()),
+		compiledQueryFirst: () => Effect.succeedNone,
 	})
 
 	it.effect("compiles a definition and returns the executor's rows", () =>
@@ -230,7 +229,7 @@ describe("productEventsFunnel (observability helper)", () => {
 				}).pipe(Effect.provide(executor)),
 			)
 			expect(failed).toBeInstanceOf(CH.ProductEventsFunnelError)
-			expect((failed as CH.ProductEventsFunnelError).reason).toBe("NoSteps")
+			expect(failed).toHaveProperty("reason", "NoSteps")
 		}),
 	)
 })

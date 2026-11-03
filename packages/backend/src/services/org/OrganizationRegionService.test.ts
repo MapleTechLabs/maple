@@ -43,7 +43,7 @@ const makeDirectory = Effect.fnUntraced(function* (initial: Option.Option<Direct
 								cause: undefined,
 							}),
 						),
-					onSome: (organization) => Effect.succeed(Option.some(organization)),
+					onSome: (organization) => Effect.succeedSome(organization),
 				}),
 			),
 		)
@@ -58,7 +58,7 @@ const isolate = (backend: EdgeCacheBackend, directory: { readonly read: ReadDire
 
 const isWrongRegion = <A, E>(exit: Exit.Exit<A, E>): boolean =>
 	Exit.isFailure(exit) &&
-	Option.exists(Exit.findErrorOption(exit), (error) => error instanceof OrganizationWrongRegionError)
+	Option.exists(Exit.findErrorOption(exit), (error) => Schema.is(OrganizationWrongRegionError)(error))
 
 describe("OrganizationRegionService", () => {
 	it.effect("a miss reads Clerk once, then the isolate answers", () =>
@@ -291,10 +291,9 @@ describe("OrganizationRegionService", () => {
 					Effect.flatMap(
 						Ref.getAndUpdate(calls, (n) => n + 1),
 						(n) =>
-							Effect.flatMap(directory.read(id), (answer) =>
+							Effect.tap(directory.read(id), () =>
 								Deferred.succeed(firstReadStarted, undefined).pipe(
 									Effect.andThen(Effect.sleep(n === 0 ? "100 millis" : "200 millis")),
-									Effect.as(answer),
 								),
 							),
 					),

@@ -23,7 +23,7 @@ import {
 } from "../../../lib/billing/controls"
 import { buildSpendModel, SPEND_FEATURES, type SpendModel } from "../../../lib/billing/spend"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
-import { Cause, Clock, Duration, Effect, Option, Result, Schema } from "effect"
+import { Cause, Clock, DateTime, Duration, Effect, Option, Result, Schema } from "effect"
 import { AsyncData, Command, Dom } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { trackProduct } from "../../../data/analytics"
@@ -137,9 +137,11 @@ const FetchRuleStats = Command.define("FetchBillingRuleStats", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const nowMs = yield* Clock.currentTimeMillis
-			const start = new Date(Math.max(startMs, nowMs - RULE_STATS_MAX_MS)).toISOString()
+			const start = DateTime.formatIso(
+				DateTime.makeUnsafe(Math.max(startMs, nowMs - RULE_STATS_MAX_MS)),
+			)
 			return yield* client.ingestRules.stats({
-				query: { start_time: start, end_time: new Date(nowMs).toISOString() },
+				query: { start_time: start, end_time: DateTime.formatIso(DateTime.makeUnsafe(nowMs)) },
 			})
 		}).pipe(loaded((result) => Message.CompletedFetchRuleStats({ result }))),
 })

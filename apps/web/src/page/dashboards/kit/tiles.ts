@@ -4,7 +4,7 @@ import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import { dataSourceTransform } from "@maple/widgets/dashboard"
-import { Schema } from "effect"
+import { Formatter, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Chart from "@maple/views/charts/chart"
 import type { ChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -13,7 +13,15 @@ import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
 import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
 import { skeletonList } from "@maple/views/ui/skeleton"
-import { sortButton, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import {
+	sortButton,
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "@maple/views/ui/table"
 import type { WidgetDataState } from "./data-state"
 import { renderMarkdown } from "./markdown"
 import { widgetEmptyState, widgetFrame, widgetShell } from "./tile-shell"
@@ -72,11 +80,19 @@ export type TileContext<M> = Readonly<{
 
 // VALUES
 
+/** A cell as text: primitives as themselves, objects and arrays as JSON-like text. */
+const cellText = (value: unknown): string =>
+	typeof value === "string"
+		? value
+		: typeof value === "number" || typeof value === "boolean" || typeof value === "bigint"
+			? String(value)
+			: Formatter.format(value)
+
 /** `formatCellValue`: units format numbers; unitless cells stay raw. */
 export const formatCell = (value: unknown, unit?: string): string => {
 	if (value === null || value === undefined) return EMPTY_VALUE
 	const num = Number(value)
-	if (Number.isNaN(num) || unit === undefined || unit === "") return String(value)
+	if (Number.isNaN(num) || unit === undefined || unit === "") return cellText(value)
 	return formatValueByUnit(num, unit)
 }
 

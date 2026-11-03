@@ -72,12 +72,12 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 			const isExposureId = /^[^\s:]+:\//u.test(query)
 			const [code, dependencies, runtimes, exposure] = yield* Effect.all(
 				[
-					isDependencyId || isExposureId ? Effect.succeed(undefined) : readCode(tenant),
+					isDependencyId || isExposureId ? Effect.undefined : readCode(tenant),
 					isExposureId
-						? Effect.succeed(undefined)
+						? Effect.undefined
 						: readDependencies(tenant, { findingId: Option.getOrUndefined(dependencyId) }),
-					isDependencyId || isExposureId ? Effect.succeed(undefined) : readRuntimes(tenant, window),
-					isExposureId ? readExposure(tenant, window) : Effect.succeed(undefined),
+					isDependencyId || isExposureId ? Effect.undefined : readRuntimes(tenant, window),
+					isExposureId ? readExposure(tenant, window) : Effect.undefined,
 				],
 				{ concurrency: 4 },
 			)

@@ -1,4 +1,4 @@
-import { CancellationModelRead } from "@maple/domain/http"
+import { CancellationModelRead, CancellationSnapshot } from "@maple/domain/http"
 import type { IntegrationEntry } from "@maple/domain/integration-inventory"
 import { describe, expect, it } from "vitest"
 import { CANCELLATION_FIXTURES } from "./fixtures"
@@ -275,7 +275,7 @@ describe("buildCancellationMessage", () => {
 
 	it("names the sections it could not read instead of showing zeros", () => {
 		const base = report("healthy-team")
-		const snapshot = { ...base.snapshot, visits: null, billing: null }
+		const snapshot = new CancellationSnapshot({ ...base.snapshot, visits: null, billing: null })
 		const message = buildCancellationMessage({ ...base, snapshot, signals: deriveSignals(snapshot) })
 		expect(text(message)).toContain("Could not read: app visits, billing")
 		expect(text(message)).not.toContain("In the app")

@@ -206,7 +206,7 @@ const declarePrdDb = ({ stage, region }: MapleDeployment, profile: MapleProfile)
 
 const declareMapleDb = (deployment: MapleDeployment, profile: MapleProfile) =>
 	!profile.migratesDatabase
-		? Effect.succeed(undefined)
+		? Effect.undefined
 		: profile.database === "preview"
 			? declarePreviewDb(deployment, profile)
 			: declarePrdDb(deployment, profile)

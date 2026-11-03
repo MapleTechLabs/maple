@@ -251,7 +251,7 @@ const make = Effect.gen(function* () {
 			(attempt) => {
 				const name = supportChannelName(orgName, orgId, attempt)
 				return slack.call("conversations.create", { name, is_private: false }).pipe(
-					Effect.map(Option.some),
+					Effect.asSome,
 					Effect.catchTag("@maple/backend/support/SupportSlackRefusedError", (refused) =>
 						refused.error === "name_taken"
 							? findUnrecordedChannel(name).pipe(

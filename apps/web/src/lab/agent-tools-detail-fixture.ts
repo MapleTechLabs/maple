@@ -456,7 +456,7 @@ const fingerprintOf = (message: string, index: number) =>
 	message === ""
 		? "0"
 		: String(
-				[...message].reduce(
+				Array.from(message).reduce(
 					(hash, char) => (hash * 31n + BigInt(char.charCodeAt(0))) % 18_446_744_073_709_551_557n,
 					BigInt(index + 7),
 				),

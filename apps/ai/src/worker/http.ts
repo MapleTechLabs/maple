@@ -10,8 +10,6 @@ import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/work
 import type { HttpEffect } from "alchemy/Http"
 import { type Context, Effect, Exit, Layer } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
-import * as Etag from "effect/http/Etag"
-import * as HttpPlatform from "effect/http/HttpPlatform"
 import type { MapleDbConnection } from "@maple/backend/platform/bindings"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"

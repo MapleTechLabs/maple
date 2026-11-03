@@ -13,7 +13,7 @@ import {
 	encodeChatEventPayload,
 	type ChatEvent,
 	type ChatEventInput,
-	type ChatMessage,
+	ChatMessage,
 	type ChatProposalOutcome,
 	type ChatProposalSettlement,
 } from "@maple/domain/chat-session"
@@ -706,14 +706,14 @@ describe("relaying a message that mentioned nobody", () => {
 
 	/** A session whose last turn was `ago` milliseconds before NOW. */
 	const spokeAt = (ago: number): ReadonlyArray<ChatMessage> => [
-		{
+		new ChatMessage({
 			id: "a1",
 			role: "assistant",
 			text: "Checkout is slow.",
 			toolCalls: [],
 			createdAt: NOW - ago,
 			startSeq: 2,
-		},
+		}),
 	]
 
 	/** A minute ago, which is what makes the conversation live. */
@@ -784,14 +784,14 @@ describe("relaying a message that mentioned nobody", () => {
 			// The conversation has an unanswered message in it, which is not a recent answer.
 			const stale: ReadonlyArray<ChatMessage> = [
 				...spokeAt(FOLLOW_UP_WINDOW_MS + 1),
-				{
+				new ChatMessage({
 					id: "u2",
 					role: "user",
 					text: "still there?",
 					toolCalls: [],
 					createdAt: NOW - 60_000,
 					startSeq: 3,
-				},
+				}),
 			]
 			const platform = chat()
 			const agent = session([silentTurn], { transcript: stale })
@@ -1349,14 +1349,14 @@ describe("reading the workspace row", () => {
 		mentionsBot: false,
 	}
 	const answered: ReadonlyArray<ChatMessage> = [
-		{
+		new ChatMessage({
 			id: "a1",
 			role: "assistant",
 			text: "Checkout is slow.",
 			toolCalls: [],
 			createdAt: NOW - 60_000,
 			startSeq: 2,
-		},
+		}),
 	]
 
 	/**

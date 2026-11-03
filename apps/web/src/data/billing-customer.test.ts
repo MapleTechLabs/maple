@@ -42,9 +42,11 @@ describe("BillingCustomerCache loader", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const runs = yield* Ref.make(0)
-					const load = Effect.flatMap(
-						Ref.updateAndGet(runs, (n) => n + 1),
-						(n) => (n === 1 ? Effect.fail("unreachable") : Effect.succeed(n)),
+					const load = Ref.updateAndGet(runs, (n) => n + 1).pipe(
+						Effect.filterOrFail(
+							(n) => n !== 1,
+							() => "unreachable",
+						),
 					)
 					const get = yield* orgLoader(load)
 					expect(yield* Effect.flip(get({ orgId: "org_a" }))).toBe("unreachable")

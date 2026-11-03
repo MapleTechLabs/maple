@@ -35,7 +35,7 @@ import type {
 } from "@maple/domain/http/v2"
 import type { DashboardShare, DashboardShareMode, ShareWidgetDataOutcome } from "@maple/domain/http"
 import type { DashboardId } from "@maple/domain/primitives"
-import { Clock, Effect, Option, Ref, Schema } from "effect"
+import { Clock, DateTime, Effect, Option, Ref, Schema } from "effect"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
 import { dataSourceRawSql } from "@maple/widgets/dashboard"
 import { getTemplateById, listTemplateMetadata } from "@maple/backend/dashboard-templates"
@@ -453,11 +453,9 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 						const nowMs = yield* Clock.currentTimeMillis
 						const window = resolveTimeRangeWindow(payload.time_range, { nowMs })
 						if (window === null) {
-							return yield* Effect.fail(
-								V2TimeRangeInvalid.make("time_range could not be resolved.", {
-									param: "time_range",
-								}),
-							)
+							return yield* V2TimeRangeInvalid.make("time_range could not be resolved.", {
+								param: "time_range",
+							})
 						}
 						const { results, variables } = yield* widgetData
 							.resolveBatch(tenant.orgId, document, {
@@ -513,7 +511,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						const now = yield* Clock.currentTimeMillis
-						const updatedAt = asIsoDateTime(new Date(now).toISOString())
+						const updatedAt = asIsoDateTime(DateTime.formatIso(DateTime.makeUnsafe(now)))
 						// Capture the pre-state the mutate callback already reads, for the diff.
 						const previous = yield* Ref.make(Option.none<DashboardDocument>())
 						const dashboard = yield* persistence.mutate(
@@ -588,11 +586,9 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 						const before =
 							query.cursor === undefined ? undefined : decodeVersionCursor(query.cursor)
 						if (query.cursor !== undefined && before === null) {
-							return yield* Effect.fail(
-								V2ParameterInvalid.make("Invalid dashboard version cursor", {
-									param: "cursor",
-								}),
-							)
+							return yield* V2ParameterInvalid.make("Invalid dashboard version cursor", {
+								param: "cursor",
+							})
 						}
 						const tenant = yield* CurrentTenant.Context
 						const response = yield* persistence.listVersions(tenant.orgId, params.id, {
@@ -679,12 +675,10 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 					Effect.gen(function* () {
 						const template = getTemplateById(params.template_id)
 						if (!template)
-							return yield* Effect.fail(
-								new DashboardTemplateNotFoundError({
-									templateId: params.template_id,
-									message: "No such dashboard template.",
-								}),
-							)
+							return yield* new DashboardTemplateNotFoundError({
+								templateId: params.template_id,
+								message: "No such dashboard template.",
+							})
 
 						const built = yield* Effect.try({
 							try: () => template.build(payload.parameters ?? {}),
@@ -708,23 +702,19 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 					Effect.gen(function* () {
 						const template = getTemplateById(params.template_id)
 						if (!template)
-							return yield* Effect.fail(
-								new DashboardTemplateNotFoundError({
-									templateId: params.template_id,
-									message: "No such dashboard template.",
-								}),
-							)
+							return yield* new DashboardTemplateNotFoundError({
+								templateId: params.template_id,
+								message: "No such dashboard template.",
+							})
 
 						const provided: TemplateParameterValues = payload.parameters ?? {}
 						const missing = template.parameters
 							.filter((parameter) => parameter.required && !provided[parameter.key])
 							.map((parameter) => parameter.key)
 						if (missing.length > 0) {
-							return yield* Effect.fail(
-								V2ParameterMissing.make(
-									`Missing required template parameters: ${missing.join(", ")}`,
-									{ param: "parameters" },
-								),
+							return yield* V2ParameterMissing.make(
+								`Missing required template parameters: ${missing.join(", ")}`,
+								{ param: "parameters" },
 							)
 						}
 
@@ -784,12 +774,10 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 						// token that resolves to a permanently blank tile, so the widget is
 						// checked here rather than at first view.
 						if (!context.dashboard.widgets.some((w) => w.id === params.widget_id)) {
-							return yield* Effect.fail(
-								new ShareWidgetNotFoundError({
-									message: "That widget is not on this dashboard.",
-									widgetId: params.widget_id,
-								}),
-							)
+							return yield* new ShareWidgetNotFoundError({
+								message: "That widget is not on this dashboard.",
+								widgetId: params.widget_id,
+							})
 						}
 
 						return yield* upsertShareIn(context, payload.mode)

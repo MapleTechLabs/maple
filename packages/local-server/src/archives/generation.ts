@@ -68,7 +68,6 @@ import {
 	type ArchiveOperationIntent,
 	type ArchiveOperationPhase,
 	type CreateOperationIntent,
-	type GcOperationIntent,
 } from "./journal"
 import { assertCatalogExact, rebuildCatalog } from "./listing"
 import {
@@ -652,7 +651,7 @@ export const createArchiveGeneration = async (
 			// A refusal is a verdict, not a crash: reconcile the aborted operation
 			// now so it does not linger for the next create to clean up.
 			return await created.catch((error: unknown) =>
-				error instanceof ArchiveCreateRefusedError
+				Schema.is(ArchiveCreateRefusedError)(error)
 					? reconcileArchiveGeneration(dataDir, archiveDir, tuning.scratchRoot).then(() =>
 							Promise.reject(error),
 						)
@@ -716,7 +715,7 @@ const parseCount = (text: string): number => {
 	if (!row) return 0
 	const value = row["count()"] ?? row.count
 	const count = typeof value === "number" ? value : Number(value ?? 0)
-	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid count result: ${value}`)
+	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid count result: ${String(value)}`)
 	return count
 }
 

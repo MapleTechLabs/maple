@@ -610,6 +610,6 @@ export const convertPersesDashboardToPortable = Effect.fn("PersesDashboardImport
 				details: [error instanceof Error ? error.message : String(error)],
 			}),
 	})
-	if (result instanceof DashboardValidationError) return yield* result
+	if (Schema.is(DashboardValidationError)(result)) return yield* result
 	return result
 })

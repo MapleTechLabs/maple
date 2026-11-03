@@ -9,6 +9,7 @@ import {
 	runWarehouseQuery,
 	wireNumber,
 	wireNumberOrNull,
+	wireString,
 } from "./effect-utils"
 
 /** /infra/supabase data access over the metrics scraped from each Supabase project. */
@@ -106,7 +107,7 @@ export const getSupabaseProjects = Effect.fn("QueryEngine.getSupabaseProjects")(
 	)
 	return {
 		projects: result.data.map((row): SupabaseProjectRow => ({
-			projectRef: String(row.projectRef ?? ""),
+			projectRef: wireString(row.projectRef),
 			cpuAvg: wireNumber(row.cpuAvg),
 			cpuMax: wireNumber(row.cpuMax),
 			memoryAvg: wireNumber(row.memoryAvg),
@@ -122,7 +123,7 @@ export const getSupabaseProjects = Effect.fn("QueryEngine.getSupabaseProjects")(
 			requestsPerMinute: wireNumber(row.requestsPerMinute),
 			errors5xx: wireNumber(row.errors5xx),
 			issueCount: wireNumber(row.issueCount),
-			lastSeen: String(row.lastSeen ?? ""),
+			lastSeen: wireString(row.lastSeen),
 		})),
 	}
 })
@@ -149,7 +150,7 @@ export const getSupabaseProjectTimeseries = Effect.fn("QueryEngine.getSupabasePr
 	)
 	return {
 		buckets: result.data.map((row): SupabaseProjectTimeseriesRow => ({
-			bucket: String(row.bucket ?? ""),
+			bucket: wireString(row.bucket),
 			cpu: wireNumberOrNull(row.cpu),
 			memoryAvg: wireNumber(row.memoryAvg),
 			memoryMax: wireNumber(row.memoryMax),

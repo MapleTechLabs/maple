@@ -283,12 +283,10 @@ const make: Effect.Effect<
 		)
 		const row = rows[0]
 		if (!row) {
-			return yield* Effect.fail(
-				new ErrorIssueNotFoundError({
-					message: "Error issue not found",
-					issueId,
-				}),
-			)
+			return yield* new ErrorIssueNotFoundError({
+				message: "Error issue not found",
+				issueId,
+			})
 		}
 		return row
 	})
@@ -646,7 +644,7 @@ const make: Effect.Effect<
 		const timestamp = yield* Clock.currentTimeMillis
 		const current = yield* requireIssue(orgId, issueId)
 		if (current.leaseHolderActorId !== actorId) {
-			return yield* Effect.fail(leaseConflict(issueId, current))
+			return yield* leaseConflict(issueId, current)
 		}
 		const previous = current.leaseExpiresAt ?? timestamp
 		const leaseMs = Math.max(DEFAULT_LEASE_DURATION_MS, previous - (current.claimedAt ?? previous))
@@ -705,7 +703,7 @@ const make: Effect.Effect<
 		const timestamp = yield* Clock.currentTimeMillis
 		const current = yield* requireIssue(orgId, issueId)
 		if (current.leaseHolderActorId !== null && current.leaseHolderActorId !== actorId) {
-			return yield* Effect.fail(leaseConflict(issueId, current))
+			return yield* leaseConflict(issueId, current)
 		}
 		yield* dbExecute((db) =>
 			db.run(
@@ -742,12 +740,10 @@ const make: Effect.Effect<
 		const timestamp = yield* Clock.currentTimeMillis
 		const current = yield* requireIssue(orgId, issueId)
 		if (toActorId !== null && !(yield* actorsService.actorExists(orgId, toActorId))) {
-			return yield* Effect.fail(
-				new ActorNotFoundError({
-					message: `Actor '${toActorId}' not found`,
-					actorId: toActorId,
-				}),
-			)
+			return yield* new ActorNotFoundError({
+				message: `Actor '${toActorId}' not found`,
+				actorId: toActorId,
+			})
 		}
 		const assignedRows = yield* dbExecute((db) =>
 			db.run(

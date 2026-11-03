@@ -368,7 +368,7 @@ export const listLogDrains = Effect.fn("SupabaseApi.listLogDrains")(function* (
 		),
 		what,
 	).pipe(
-		Effect.map(Option.some),
+		Effect.asSome,
 		Effect.catchIf(
 			(error) => error.kind === "forbidden",
 			() => Effect.succeed(Option.none<string>()),

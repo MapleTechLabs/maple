@@ -371,7 +371,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 			const issuer = awsOidcIssuer(env.MAPLE_API_BASE_URL)
 			// Without a usable key nothing can be assumed, so no setup is handed out either.
 			const signer: AwsOidcSigner | undefined = yield* Option.match(env.MAPLE_AWS_OIDC_SIGNING_KEY, {
-				onNone: () => Effect.succeed(undefined),
+				onNone: () => Effect.undefined,
 				onSome: (key) =>
 					makeAwsOidcSigner(issuer, key).pipe(
 						Effect.catchTag("@maple/backend/integrations/AwsOidcKeyError", (error) =>
@@ -703,7 +703,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 						// deadline, and the rows left stay leased, then come due again.
 						Effect.flatMap(Clock.currentTimeMillis, (now) =>
 							now >= deadlineAt
-								? Effect.succeed(undefined)
+								? Effect.undefined
 								: runCheck(signer, row).pipe(Effect.map(({ ok }) => ok)),
 						).pipe(
 							Effect.withSpan("AwsConnectionService.checkDue.connection", {

@@ -163,7 +163,11 @@ const window = { start_time: startTime.toISOString(), end_time: endTime.toISOStr
 await call("/v2/ingest_keys", "GET", "/v2/ingest_keys")
 await call("/v2/dashboards", "GET", "/v2/dashboards?limit=10")
 await call("/v2/alerts/rules", "GET", "/v2/alerts/rules?limit=10")
-await call("/v2/services", "GET", `/v2/services?${new URLSearchParams({ ...window, limit: "10" })}`)
+await call(
+	"/v2/services",
+	"GET",
+	`/v2/services?${new URLSearchParams({ ...window, limit: "10" }).toString()}`,
+)
 await call("/v2/traces/search", "POST", "/v2/traces/search", { ...window, limit: 10 })
 await call("/v2/logs/search", "POST", "/v2/logs/search", { ...window, limit: 10 })
 

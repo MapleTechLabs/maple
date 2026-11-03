@@ -165,8 +165,9 @@ export const AlertDestinationProvider = () =>
 						const fetched = yield* api
 							.get(`/v2/alerts/destinations/${output.destinationId}`)
 							.pipe(
-								Effect.catchTag(MapleErrorTags.alertDestinationNotFound, () =>
-									Effect.succeed(undefined),
+								Effect.catchTag(
+									MapleErrorTags.alertDestinationNotFound,
+									() => Effect.undefined,
 								),
 							)
 						if (fetched !== undefined) observed = yield* decodeWireDestination(fetched)
@@ -200,9 +201,7 @@ export const AlertDestinationProvider = () =>
 					const fetched = yield* api
 						.get(`/v2/alerts/destinations/${output.destinationId}`)
 						.pipe(
-							Effect.catchTag(MapleErrorTags.alertDestinationNotFound, () =>
-								Effect.succeed(undefined),
-							),
+							Effect.catchTag(MapleErrorTags.alertDestinationNotFound, () => Effect.undefined),
 						)
 					if (fetched === undefined) return undefined
 					const decoded = yield* decodeWireDestination(fetched)

@@ -298,23 +298,19 @@ export class DashboardWidgetDataService extends Context.Service<
 
 			const widget = findWidget(document, request.widgetId)
 			if (widget === undefined) {
-				return yield* Effect.fail(
-					new ShareWidgetNotFoundError({
-						message: "That widget is not on this dashboard.",
-						widgetId: request.widgetId,
-					}),
-				)
+				return yield* new ShareWidgetNotFoundError({
+					message: "That widget is not on this dashboard.",
+					widgetId: request.widgetId,
+				})
 			}
 
 			const dataSource =
 				request.source === "sparkline" ? widget.display?.sparkline?.dataSource : widget.dataSource
 			if (dataSource === undefined) {
-				return yield* Effect.fail(
-					new ShareWidgetNotFoundError({
-						message: "That widget is not on this dashboard.",
-						widgetId: request.widgetId,
-					}),
-				)
+				return yield* new ShareWidgetNotFoundError({
+					message: "That widget is not on this dashboard.",
+					widgetId: request.widgetId,
+				})
 			}
 
 			const tenant = shareViewerTenant(orgId)
@@ -344,15 +340,13 @@ export class DashboardWidgetDataService extends Context.Service<
 					: { maxDataPoints: request.maxDataPoints }),
 			})
 			if (plan.kind === "disabled") {
-				return yield* Effect.fail(
-					new ShareWidgetExecutionError({
-						message:
-							plan.reason === "metric_not_selected"
-								? "This widget has no metric selected."
-								: "This widget's own time range couldn't be resolved.",
-						widgetId: request.widgetId,
-					}),
-				)
+				return yield* new ShareWidgetExecutionError({
+					message:
+						plan.reason === "metric_not_selected"
+							? "This widget has no metric selected."
+							: "This widget's own time range couldn't be resolved.",
+					widgetId: request.widgetId,
+				})
 			}
 
 			// A pinned range is the author's, not the viewer's, but it still has to
@@ -473,13 +467,11 @@ export class DashboardWidgetDataService extends Context.Service<
 
 			const routePlan = ROUTE_ENDPOINT_PLANS[executed.endpoint]
 			if (routePlan === undefined) {
-				return yield* Effect.fail(
-					new ShareUnsupportedWidgetError({
-						message: UNSUPPORTED_WIDGET_MESSAGE,
-						widgetId: request.widgetId,
-						kind: executed.endpoint,
-					}),
-				)
+				return yield* new ShareUnsupportedWidgetError({
+					message: UNSUPPORTED_WIDGET_MESSAGE,
+					widgetId: request.widgetId,
+					kind: executed.endpoint,
+				})
 			}
 
 			const context: RouteEndpointContext = {

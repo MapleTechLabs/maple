@@ -156,11 +156,8 @@ const every = (millis: number, message: () => Message) =>
 	Stream.map(pollTicks(Duration.millis(millis)), message)
 
 const after = (millis: number, message: () => Message) =>
-	Stream.callback<Message>((queue) =>
-		Effect.acquireRelease(
-			Effect.sync(() => setTimeout(() => Queue.offerUnsafe(queue, message()), millis)),
-			(timeout) => Effect.sync(() => clearTimeout(timeout)),
-		).pipe(Effect.andThen(Effect.never)),
+	Stream.fromEffect(Effect.delay(Effect.sync(message), Duration.millis(millis))).pipe(
+		Stream.concat(Stream.never),
 	)
 
 const CLOUDFLARE_INGEST_MS = 30_000

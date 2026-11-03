@@ -74,7 +74,7 @@ export const AutumnWebhookRouter = HttpRouter.use((router) =>
 					// Linking cancels the org's own plans: that is billing moving, not churn. An unread link
 					// answers 503 so the delivery comes back, rather than reporting churn that was not.
 					const linked = yield* Option.match(decodeOrgId(data.value.customer_id), {
-						onNone: () => Effect.succeed(Option.some(false)),
+						onNone: () => Effect.succeedSome(false),
 						onSome: (orgId) =>
 							billingCustomers.readLink(orgId).pipe(
 								Effect.map((link) => Option.some(Option.isSome(link))),

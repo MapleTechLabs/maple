@@ -51,7 +51,7 @@ const adminOnly = (tool: string) =>
 
 const decodeInterval = (raw: number | undefined) =>
 	raw === undefined
-		? Effect.succeed(undefined)
+		? Effect.undefined
 		: Schema.decodeUnknownEffect(UptimeIntervalSeconds)(raw).pipe(
 				Effect.mapError(
 					() =>
@@ -94,7 +94,7 @@ const refuseProbeSettingsForHeartbeat = (
 
 const decodeDestinations = (raw: ReadonlyArray<string> | undefined) =>
 	raw === undefined
-		? Effect.succeed(undefined)
+		? Effect.undefined
 		: Effect.forEach(raw, P.decodeResourceId("alertDestination", "destination_ids"))
 
 /** A monitor by its id, REST id (`upm_…`) or exact name. */

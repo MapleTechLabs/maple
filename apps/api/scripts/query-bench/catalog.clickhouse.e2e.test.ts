@@ -193,7 +193,7 @@ describe.skipIf(!clickhouseE2eEnabled)("Query benchmark catalog analyzer sweep",
 					const decoded: Exit.Exit<
 						ReadonlyArray<unknown>,
 						CompiledQueryDecodeError
-					> = await Effect.runPromise(Effect.exit(entry.compiled.decodeRows([row])))
+					> = await Effect.runPromiseExit(entry.compiled.decodeRows([row]))
 					if (decoded._tag === "Failure") {
 						assert.fail(
 							`${entry.id} declares a row schema that rejects ClickHouse's own JSON output ` +
@@ -219,8 +219,8 @@ describe.skipIf(!clickhouseE2eEnabled)("Query benchmark catalog analyzer sweep",
 					const decoded: Exit.Exit<
 						ReadonlyArray<unknown>,
 						CompiledQueryDecodeError
-					> = await Effect.runPromise(
-						Effect.exit(entry.compiled.decodeRows([rowWithNull(row, column.name)])),
+					> = await Effect.runPromiseExit(
+						entry.compiled.decodeRows([rowWithNull(row, column.name)]),
 					)
 					if (decoded._tag === "Failure") {
 						assert.fail(

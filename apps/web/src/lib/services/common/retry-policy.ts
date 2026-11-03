@@ -80,13 +80,14 @@ export const withUnauthorizedResign = <E, R, E2, R2>(
 			),
 			Effect.flatMap((signed) => client.postprocess(Effect.succeed(signed))),
 		)
-		return Effect.flatMap(requestEffect, (response) =>
-			response.status === 401
-				? Effect.repeat(resend, {
-						times: 2,
-						schedule: Schedule.passthrough(mapleRetrySchedule),
-						while: (retried) => retried.status === 401,
-					})
-				: Effect.succeed(response),
+		return Effect.filterOrElse(
+			requestEffect,
+			(response) => response.status !== 401,
+			() =>
+				Effect.repeat(resend, {
+					times: 2,
+					schedule: Schedule.passthrough(mapleRetrySchedule),
+					while: (retried) => retried.status === 401,
+				}),
 		)
 	})

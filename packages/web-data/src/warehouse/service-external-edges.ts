@@ -1,4 +1,5 @@
 import { summarizeSampling } from "@maple/query-engine"
+import { wireString } from "./effect-utils"
 
 type ServiceExternalTargetType = "http" | "messaging" | "rpc"
 
@@ -38,10 +39,10 @@ export function transformExternalEdge(
 	const sampling = summarizeSampling(estimatedSpanCount, callCount, durationSeconds)
 	const estimatedCallCount = sampling.hasSampling ? Math.round(estimatedSpanCount) : callCount
 	return {
-		sourceService: String(row.sourceService ?? ""),
+		sourceService: wireString(row.sourceService),
 		targetType: coerceTargetType(row.targetType),
-		targetSystem: String(row.targetSystem ?? ""),
-		targetName: String(row.targetName ?? ""),
+		targetSystem: wireString(row.targetSystem),
+		targetName: wireString(row.targetName),
 		callCount,
 		estimatedCallCount,
 		errorCount,

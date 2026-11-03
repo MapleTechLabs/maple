@@ -160,7 +160,7 @@ const longText = Arbitrary.map(
 	Arbitrary.all([element(["a", "é", "日", "😀", "a b "]), int(-40, 40), element(PII)]),
 	([filler, offset, secret]) => {
 		const target = INGEST_RULE_LIMITS.scanBytes + offset
-		const head = [...filler.repeat(target)].slice(0, target).join("")
+		const head = Array.from(filler.repeat(target)).slice(0, target).join("")
 		return `${head}${secret} tail`
 	},
 )

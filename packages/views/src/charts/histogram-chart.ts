@@ -1,3 +1,4 @@
+import { cellText } from "@maple/ui/components/charts/_shared/breakdown-rows"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
@@ -88,24 +89,26 @@ export const countTooltipBody = (
 		[h.Class("grid min-w-[9rem] items-start gap-1.5"), portal],
 		[
 			h.div(
-				[h.Class("border-border-subtle border-b pb-1 font-medium text-muted-foreground tracking-tight")],
-				[heading],
-			),
-			hstack(h, { gap: "2", className: "w-full" },
 				[
-					h.span([h.Class("size-2.5 shrink-0 rounded-xs"), h.Style({ "background-color": color })]),
-					h.div(
-						[h.Class("flex flex-1 items-center justify-between gap-3 leading-none")],
-						[
-							h.span([h.Class("text-muted-foreground")], ["Count"]),
-							h.span(
-								[h.Class("font-mono font-semibold text-foreground tabular-nums")],
-								[formatNumber(count)],
-							),
-						],
+					h.Class(
+						"border-border-subtle border-b pb-1 font-medium text-muted-foreground tracking-tight",
 					),
 				],
+				[heading],
 			),
+			hstack(h, { gap: "2", className: "w-full" }, [
+				h.span([h.Class("size-2.5 shrink-0 rounded-xs"), h.Style({ "background-color": color })]),
+				h.div(
+					[h.Class("flex flex-1 items-center justify-between gap-3 leading-none")],
+					[
+						h.span([h.Class("text-muted-foreground")], ["Count"]),
+						h.span(
+							[h.Class("font-mono font-semibold text-foreground tabular-nums")],
+							[formatNumber(count)],
+						),
+					],
+				),
+			]),
 		],
 	)
 
@@ -153,7 +156,7 @@ export const view = Submodel.defineView<Model, Message, HistogramChartInputs>((m
 
 	if (isPrebucketed(source)) {
 		const bins: ReadonlyArray<CategoricalBin> = source.map((row) => ({
-			name: String(row.name ?? EMPTY_VALUE),
+			name: cellText(row.name, EMPTY_VALUE),
 			value: asFiniteNumber(row.value),
 		}))
 		return frame(ChartSpec.CategoricalHistogram({ bins, color, useLogY, showTooltip }))

@@ -1,5 +1,5 @@
 /** Pieces the alert MCP tools share: parameter vocabularies, rule rows, and error mapping. */
-import { Effect, Option, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import type { AlertRuleFirstEvaluation, AlertRuleRow } from "@maple/domain/mcp-outputs"
 import {
 	AlertCheckStatus,
@@ -138,10 +138,7 @@ export const ruleNotFound = (ruleId: string) =>
 
 /** A caller-supplied rule id, as the branded id. One that does not parse cannot exist either. */
 export const parseRuleId = (ruleId: string) =>
-	Option.match(decodeAlertRuleId(ruleId), {
-		onNone: () => Effect.fail(ruleNotFound(ruleId)),
-		onSome: (id) => Effect.succeed(id),
-	})
+	Effect.fromOption(decodeAlertRuleId(ruleId), () => ruleNotFound(ruleId))
 
 /**
  * An invalid rule as the model reads it: the message and each detail once. A

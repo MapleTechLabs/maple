@@ -354,7 +354,7 @@ const validateTheme = Effect.fnUntraced(function* (theme: StatusPageTheme) {
 		border: yield* validateHex(theme.border, "Border color"),
 	}
 	const issue = themeContrastIssue(normalized)
-	if (issue !== null) return yield* Effect.fail(invalid(issue))
+	if (issue !== null) return yield* invalid(issue)
 	return normalized
 })
 

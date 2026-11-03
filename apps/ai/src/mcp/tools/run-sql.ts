@@ -368,10 +368,10 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 				seeked === undefined
 					? runFixing(params.sql, [])
 					: runFixing(seeked, []).pipe(
-							Effect.catch((failure) =>
-								failure.error._tag === "@maple/http/errors/WarehouseInvalidSqlError"
-									? runFixing(params.sql, [])
-									: Effect.fail(failure),
+							Effect.catchIf(
+								(failure) =>
+									failure.error._tag === "@maple/http/errors/WarehouseInvalidSqlError",
+								() => runFixing(params.sql, []),
 							),
 						)
 

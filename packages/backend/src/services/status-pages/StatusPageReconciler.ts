@@ -351,7 +351,7 @@ export class StatusPageReconciler extends Context.Service<StatusPageReconciler, 
 					pages,
 					([pageId, entryIds]) =>
 						reconcileEntries(pageId, entryIds).pipe(
-							Effect.map(Option.some),
+							Effect.asSome,
 							Effect.catch((error) =>
 								Effect.logWarning("Status page overlay import failed").pipe(
 									Effect.annotateLogs({

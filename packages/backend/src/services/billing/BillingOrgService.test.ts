@@ -13,6 +13,10 @@ import { ownBillingCustomer } from "./billing-customer"
 import { BillingCustomerResolver } from "./BillingCustomerResolver"
 import { BillingOrgService } from "./BillingOrgService"
 
+/** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
+const requestBodyText = (body: RequestInit["body"]): string =>
+	body instanceof Uint8Array ? new TextDecoder().decode(body) : typeof body === "string" ? body : ""
+
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
@@ -135,7 +139,7 @@ const layerFor = (testDb: TestDb, world: World) =>
 		// Autumn's track route, recorded: the uptime monitor transfer goes through it.
 		Layer.provideMerge(
 			Layer.succeed(FetchHttpClient.Fetch, async (_input, init) => {
-				const body = JSON.parse(String(init?.body ?? "{}"))
+				const body = JSON.parse(requestBodyText(init?.body) || "{}")
 				world.tracked.push({
 					customer: body.customer_id,
 					feature: body.feature_id,

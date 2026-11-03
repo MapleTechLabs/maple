@@ -14,7 +14,7 @@ import {
 	Investigations,
 	type ErrorIssueVerificationRow,
 } from "@maple/db/tables"
-import { Clock, Effect, Schema } from "effect"
+import { DateTime, Clock, Effect, Schema } from "effect"
 import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { startInvestigationTurn } from "@maple/backend/services/errors/investigation-start"
@@ -114,7 +114,7 @@ export const enqueueFixVerification: (
 		return { enqueued: false, reason: "error" as const }
 	}
 
-	const mergedAtIso = decodeIso(new Date(verification.mergedAt).toISOString())
+	const mergedAtIso = decodeIso(DateTime.formatIso(DateTime.makeUnsafe(verification.mergedAt)))
 	const subject = new InvestigationFixVerificationSubject({
 		type: "fix_verification",
 		issueId: verification.issueId,

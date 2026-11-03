@@ -1,4 +1,4 @@
-import { Clock, Effect, Result, Schema, SchemaIssue, SchemaTransformation } from "effect"
+import { Clock, DateTime, Effect, Result, Schema, SchemaIssue, SchemaTransformation } from "effect"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { randomUUID } from "node:crypto"
 import {
@@ -292,7 +292,7 @@ export const withDashboardMutation = Effect.fn("McpDashboardMutations.withDashbo
 			Effect.gen(function* () {
 				const nextWidgets = yield* transform(existing.widgets)
 				const nowMillis = yield* Clock.currentTimeMillis
-				const now = decodeIsoDateTimeString(new Date(nowMillis).toISOString())
+				const now = decodeIsoDateTimeString(DateTime.formatIso(DateTime.makeUnsafe(nowMillis)))
 
 				// Everything but the widgets and `updatedAt` is carried forward
 				// wholesale. Naming the fields here is exactly what used to drop

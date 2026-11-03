@@ -142,7 +142,9 @@ describe.skipIf(!clickhouseE2eEnabled)("trace_facets_hourly materialization", ()
 	it("answers the sidebar identically from the splice and from trace_list_mv alone", async () => {
 		const run = (sql: string) => runJson(normalizeSqlForClickHouseClient(sql))
 		const byFacet = (rows: ReadonlyArray<Record<string, unknown>>) =>
-			[...rows].sort((a, b) => `${a.facetType}:${a.name}`.localeCompare(`${b.facetType}:${b.name}`))
+			[...rows].sort((a, b) =>
+				JSON.stringify([a.facetType, a.name]).localeCompare(JSON.stringify([b.facetType, b.name])),
+			)
 
 		for (const [filters, longestMs] of [
 			[{}, 80],

@@ -187,7 +187,7 @@ export const agentPromptButton = <M>(
 										h.Class("agent-prompt__label"),
 										h.DataAttribute("label", state),
 									],
-									[...AGENT_LABELS[state]].map((char, index) =>
+									Array.from(AGENT_LABELS[state]).map((char, index) =>
 										h.span([h.Attribute("style", `--i:${index}`)], [char]),
 									),
 								),

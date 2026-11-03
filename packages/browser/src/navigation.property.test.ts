@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest"
 import { parseTraceparent } from "./navigation"
 
 const hex = (length: number) =>
-	fc.string({ unit: fc.constantFrom(..."0123456789abcdef"), minLength: length, maxLength: length })
+	fc.string({
+		unit: fc.constantFrom(...Array.from("0123456789abcdef")),
+		minLength: length,
+		maxLength: length,
+	})
 const traceId = hex(32).filter((id) => !/^0+$/.test(id))
 const spanId = hex(16).filter((id) => !/^0+$/.test(id))
 const flags = hex(2)

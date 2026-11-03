@@ -16,7 +16,8 @@
  * timestamp, so the value is whatever the caller passes. `history()` passes the row's stored
  * `created_at`; a tail can only pass receive time. Message *content* is identical either way.
  */
-import type { ChatEvent, ChatMessage, ChatTaskRef, ChatTaskState, ChatToolCall } from "./chat-session"
+import { ChatToolCall } from "./chat-session"
+import type { ChatEvent, ChatMessage, ChatTaskRef, ChatTaskState } from "./chat-session"
 
 /**
  * A transcript being folded, event by event.
@@ -146,17 +147,19 @@ const foldInto = (
 		}
 		case "tool-call": {
 			const message = open(event.messageId)
-			message.toolCalls.push({
-				id: event.callId,
-				name: event.name,
-				input: event.input,
-				// Where the prose stood when the model asked for this call. `ChatMessage` keeps text
-				// and calls in two flat fields, so this offset is the only record of how the turn
-				// actually unfolded — the client re-interleaves from it on a cold load.
-				textOffset: message.text.length,
-				...(event.proposed === true ? { proposed: true } : undefined),
-				...(event.label === undefined ? undefined : { label: event.label }),
-			} as ChatToolCall)
+			message.toolCalls.push(
+				new ChatToolCall({
+					id: event.callId,
+					name: event.name,
+					input: event.input,
+					// Where the prose stood when the model asked for this call. `ChatMessage` keeps text
+					// and calls in two flat fields, so this offset is the only record of how the turn
+					// actually unfolded — the client re-interleaves from it on a cold load.
+					textOffset: message.text.length,
+					...(event.proposed === true ? { proposed: true } : undefined),
+					...(event.label === undefined ? undefined : { label: event.label }),
+				}),
+			)
 			break
 		}
 		case "tool-result": {

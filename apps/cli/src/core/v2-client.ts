@@ -11,7 +11,7 @@
 // minted with `kind: "standard"` and no scope restriction, which
 // `ApiAuthorizationV2Live` accepts across every `/v2` family.
 
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
 import { MapleApiV2 } from "@maple/domain/http/v2"
@@ -69,9 +69,9 @@ export type RemoteError = WarehouseClientError | WarehouseQueryError | CliNotFou
 export const toWarehouseError =
 	(pipeName: string) =>
 	(error: unknown): RemoteError =>
-		error instanceof WarehouseClientError ||
-		error instanceof WarehouseQueryError ||
-		error instanceof CliNotFoundError ||
-		error instanceof CliUsageError
+		Schema.is(WarehouseClientError)(error) ||
+		Schema.is(WarehouseQueryError)(error) ||
+		Schema.is(CliNotFoundError)(error) ||
+		Schema.is(CliUsageError)(error)
 			? error
 			: new WarehouseQueryError({ message: messageOf(error), pipeName, cause: error })

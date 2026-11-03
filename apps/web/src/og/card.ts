@@ -276,7 +276,7 @@ const orgAvatar = (org: OgCardOrg): Node =>
 					justifyContent: "center",
 				},
 				children: [
-					text([...org.name][0]?.toUpperCase() ?? "?", {
+					text(Array.from(org.name)[0]?.toUpperCase() ?? "?", {
 						color: COLOR.muted,
 						fontSize: 17,
 						fontFamily: DISPLAY_FONT,

@@ -303,8 +303,9 @@ export const readAiSessionDetails = Effect.fn("AiSessionReads.details")(function
 		...countedFilters(payload),
 		sessionIds: payload.sessionIds,
 	})
-	const sliced = yield* Effect.all(
-		slices.map((slice) =>
+	const sliced = yield* Effect.forEach(
+		slices,
+		(slice) =>
 			warehouse.compiledQuery(
 				tenant,
 				CH.compile(query, {
@@ -315,7 +316,6 @@ export const readAiSessionDetails = Effect.fn("AiSessionReads.details")(function
 				}),
 				{ profile: "list", context: "aiSessionsDetails" },
 			),
-		),
 		{ concurrency: DETAILS_SLICE_CONCURRENCY },
 	)
 	const rows = Integrations.mergeAiSessionDetails(sliced)

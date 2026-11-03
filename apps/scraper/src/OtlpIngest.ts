@@ -71,16 +71,14 @@ export class OtlpIngest extends Context.Service<OtlpIngest, OtlpIngestApi>()("@m
 						),
 					)
 					if (status >= 200 && status < 300) return
-					return yield* Effect.fail(
-						scrapeError({
-							message:
-								status === 402
-									? `ingest gateway rejected metrics: billing limit reached (HTTP 402): ${text.slice(0, 200)}`
-									: `ingest gateway returned HTTP ${status}: ${text.slice(0, 200)}`,
-							reason: status === 402 ? "delivery_blocked" : "scrape_failed",
-							statusCode: status,
-						}),
-					)
+					return yield* scrapeError({
+						message:
+							status === 402
+								? `ingest gateway rejected metrics: billing limit reached (HTTP 402): ${text.slice(0, 200)}`
+								: `ingest gateway returned HTTP ${status}: ${text.slice(0, 200)}`,
+						reason: status === 402 ? "delivery_blocked" : "scrape_failed",
+						statusCode: status,
+					})
 				})
 				// Inside the chunk span, so only an exhausted retry errors it.
 				yield* attempt.pipe(

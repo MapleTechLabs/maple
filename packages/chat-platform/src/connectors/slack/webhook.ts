@@ -106,7 +106,7 @@ const handle = Effect.fnUntraced(function* (
 	if (signingSecret === undefined) {
 		// Unreachable through the host, which skips a connector whose declared configuration is
 		// missing. Present so this can never degrade into an unverified mode if that ever changes.
-		return yield* Effect.fail(rejected("Slack ingress has no signing secret"))
+		return yield* rejected("Slack ingress has no signing secret")
 	}
 	const body = yield* request.text.pipe(
 		Effect.mapError((cause) => rejected("Slack's request body could not be read", cause)),
@@ -121,7 +121,7 @@ const handle = Effect.fnUntraced(function* (
 	})
 	if (verdict._tag === "rejected") {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.reject_reason": verdict.reason })
-		return yield* Effect.fail(rejected(REJECTED_MESSAGE))
+		return yield* rejected(REJECTED_MESSAGE)
 	}
 
 	if (isFormEncoded(request)) {

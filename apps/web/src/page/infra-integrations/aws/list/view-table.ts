@@ -374,7 +374,7 @@ export const awsTableLoading = (h: H, kind: AwsInfraKindId, nameLabel: string): 
 	)
 
 /** "prod · us-east-1", or the reason it needs a look. */
-const subline = (view: ResourceView): Html | string =>
+const subline = (view: ResourceView): string =>
 	[view.cluster, view.region].filter((part) => part !== "").join(" · ")
 
 const row = (h: H, view: ResourceView, context: TableContext, showTraced: boolean): Html =>

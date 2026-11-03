@@ -269,11 +269,9 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						if (payload.endTime <= payload.startTime) {
-							return yield* Effect.fail(
-								new IntegrationsValidationError({
-									message: "endTime must be after startTime",
-								}),
-							)
+							return yield* new IntegrationsValidationError({
+								message: "endTime must be after startTime",
+							})
 						}
 						const limit = Math.min(Math.max(Math.floor(payload.limit ?? 15), 1), 50)
 						// Cloudflare applies these before ranking, which is the whole point: the live
@@ -302,11 +300,9 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 								payload.zoneName,
 							)
 							if (zoneRow == null) {
-								return yield* Effect.fail(
-									new IntegrationsValidationError({
-										message: `Unknown Cloudflare zone: ${payload.zoneName}`,
-									}),
-								)
+								return yield* new IntegrationsValidationError({
+									message: `Unknown Cloudflare zone: ${payload.zoneName}`,
+								})
 							}
 							const zoneId = zoneRow.zoneId
 							const { accessToken } = yield* cloudflare.getValidAccessToken(

@@ -54,7 +54,10 @@ export const describeUpstreamFailure = (error: unknown): string => {
 	// `undefined` into a span: not every failure reaching here carries a message,
 	// and one that does not used to be the timeout itself.
 	const text = error instanceof Error ? error.message || error.name || String(error) : String(error)
-	const cause = error instanceof Error && error.cause !== undefined ? String(error.cause) : undefined
+	const cause =
+		error instanceof Error && (error.cause instanceof Error || typeof error.cause === "string")
+			? String(error.cause)
+			: undefined
 	// Redact AFTER composing, never per-part: a fetch failure's cause commonly
 	// embeds the request URL too, so redacting only the outer text would leak the
 	// exact credential this exists to protect.

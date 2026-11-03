@@ -3,7 +3,7 @@
 // more than one tool prints. These are the `maple_ai.*` agent traces, not the
 // browser session replays `search_sessions` serves.
 
-import { Effect, Schema } from "effect"
+import { Effect } from "effect"
 import {
 	AI_SESSION_SPANS_MAX_SPANS,
 	GetAiSessionSpansRequest,
@@ -217,7 +217,7 @@ export const loadAgentSessionSpans = Effect.fn("McpAgentSessions.loadAgentSessio
 							? Effect.succeed(HALVE)
 							: state.spans.length === 0
 								? Effect.fail(error)
-								: Effect.succeed(undefined),
+								: Effect.undefined,
 					),
 					Effect.flatMap((page) => {
 						if (page === HALVE) {

@@ -912,9 +912,13 @@ describe("ScrapeTargetsService", () => {
 				}),
 			)
 			assert.isTrue(tokenTarget.hasCredentials)
-			const switched = yield* service.update(asOrgId("org_1"), tokenTarget.id, {
-				authType: "planetscale_oauth",
-			})
+			const switched = yield* service.update(
+				asOrgId("org_1"),
+				tokenTarget.id,
+				new UpdateScrapeTargetRequest({
+					authType: "planetscale_oauth",
+				}),
+			)
 			assert.strictEqual(switched.authType, "planetscale_oauth")
 			assert.isFalse(switched.hasCredentials)
 		}).pipe(Effect.provide(makeLayer(testDb)))

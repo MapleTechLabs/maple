@@ -1,5 +1,5 @@
 /** What a rule write can tell the caller about its first evaluation, from a short preview. */
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, DateTime, Effect, Option, Schema } from "effect"
 import { IsoDateTimeString } from "@maple/domain"
 import {
 	AlertRulePreviewRequest,
@@ -65,7 +65,9 @@ export const firstEvaluation = Effect.fn("McpTool.alertFirstEvaluation")(functio
 	const alerts = yield* AlertsService
 	const now = yield* Clock.currentTimeMillis
 	const nextEvaluationAt = enabled
-		? new Date(Math.ceil((now + 1) / SCHEDULER_TICK_MS) * SCHEDULER_TICK_MS).toISOString()
+		? DateTime.formatIso(
+				DateTime.makeUnsafe(Math.ceil((now + 1) / SCHEDULER_TICK_MS) * SCHEDULER_TICK_MS),
+			)
 		: null
 	const lookbackMs = Math.max(rule.windowMinutes * 6, 60) * 60_000
 

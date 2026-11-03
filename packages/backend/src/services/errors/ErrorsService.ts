@@ -426,12 +426,10 @@ const make: Effect.Effect<
 				} else {
 					const parsed = parseWarehouseDateTime(opts.snoozeUntil)
 					if (!Number.isFinite(parsed)) {
-						return yield* Effect.fail(
-							new ErrorValidationError({
-								message: "Invalid snoozeUntil timestamp",
-								details: [opts.snoozeUntil],
-							}),
-						)
+						return yield* new ErrorValidationError({
+							message: "Invalid snoozeUntil timestamp",
+							details: [opts.snoozeUntil],
+						})
 					}
 					snoozeUntilMs = parsed
 				}
@@ -536,7 +534,7 @@ const make: Effect.Effect<
 						.limit(1),
 				),
 			)
-			return yield* Effect.fail(leaseConflict(issueId, latestRows[0] ?? null))
+			return yield* leaseConflict(issueId, latestRows[0] ?? null)
 		}
 
 		return { row: claimed[0]!, leaseExpiresAt }
@@ -555,14 +553,12 @@ const make: Effect.Effect<
 
 			const current = yield* requireIssue(orgId, issueId)
 			if (CLOSED_WORKFLOW_STATES.has(current.workflowState)) {
-				return yield* Effect.fail(
-					new ErrorIssueTransitionError({
-						message: `Cannot claim an issue in state '${current.workflowState}'`,
-						issueId,
-						fromState: current.workflowState,
-						toState: "in_progress",
-					}),
-				)
+				return yield* new ErrorIssueTransitionError({
+					message: `Cannot claim an issue in state '${current.workflowState}'`,
+					issueId,
+					fromState: current.workflowState,
+					toState: "in_progress",
+				})
 			}
 
 			const { row, leaseExpiresAt } = yield* acquireLease(orgId, actorId, issueId, leaseMs, timestamp)
@@ -629,24 +625,20 @@ const make: Effect.Effect<
 			// deliberately, which is a decision rather than a side effect of
 			// attaching a patch.
 			if (CLOSED_WORKFLOW_STATES.has(current.workflowState)) {
-				return yield* Effect.fail(
-					new ErrorIssueTransitionError({
-						message: `Issue is '${current.workflowState}' and takes no more fixes. Reopen it first with transition_error_issue if this fix is still needed.`,
-						issueId,
-						fromState: current.workflowState,
-						toState: "in_review",
-					}),
-				)
+				return yield* new ErrorIssueTransitionError({
+					message: `Issue is '${current.workflowState}' and takes no more fixes. Reopen it first with transition_error_issue if this fix is still needed.`,
+					issueId,
+					fromState: current.workflowState,
+					toState: "in_review",
+				})
 			}
 			if (!canReachInReview(current.workflowState)) {
-				return yield* Effect.fail(
-					new ErrorIssueTransitionError({
-						message: `An issue in '${current.workflowState}' cannot go under review. Move it to 'triage' first with transition_error_issue.`,
-						issueId,
-						fromState: current.workflowState,
-						toState: "in_review",
-					}),
-				)
+				return yield* new ErrorIssueTransitionError({
+					message: `An issue in '${current.workflowState}' cannot go under review. Move it to 'triage' first with transition_error_issue.`,
+					issueId,
+					fromState: current.workflowState,
+					toState: "in_review",
+				})
 			}
 
 			// A `pr_url` that is not a pull request URL is refused here, before any
@@ -655,13 +647,11 @@ const make: Effect.Effect<
 			// a URL was told the fix was attached and would be verified after merge,
 			// when nothing had been linked and no verification would ever run.
 			if (request.prUrl !== undefined && parsePullRequestUrl(request.prUrl) === null) {
-				return yield* Effect.fail(
-					new ErrorIssuePullRequestInvalidError({
-						message:
-							"Not a recognizable GitHub pull request URL. Omit pr_url to record the fix without one.",
-						rawUrl: request.prUrl,
-					}),
-				)
+				return yield* new ErrorIssuePullRequestInvalidError({
+					message:
+						"Not a recognizable GitHub pull request URL. Omit pr_url to record the fix without one.",
+					rawUrl: request.prUrl,
+				})
 			}
 
 			// Proposing a fix IS picking the issue up, so it takes the lease. If

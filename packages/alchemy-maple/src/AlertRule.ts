@@ -248,11 +248,7 @@ export const AlertRuleProvider = () =>
 					if (output?.ruleId) {
 						observedRaw = yield* api
 							.get(`/v2/alerts/rules/${output.ruleId}`)
-							.pipe(
-								Effect.catchTag(MapleErrorTags.alertRuleNotFound, () =>
-									Effect.succeed(undefined),
-								),
-							)
+							.pipe(Effect.catchTag(MapleErrorTags.alertRuleNotFound, () => Effect.undefined))
 					}
 					if (observedRaw === undefined) {
 						const adopted = yield* findByName(news.name)
@@ -285,11 +281,7 @@ export const AlertRuleProvider = () =>
 					if (!force) {
 						const fetched = yield* api
 							.get(`/v2/alerts/rules/${output.ruleId}`)
-							.pipe(
-								Effect.catchTag(MapleErrorTags.alertRuleNotFound, () =>
-									Effect.succeed(undefined),
-								),
-							)
+							.pipe(Effect.catchTag(MapleErrorTags.alertRuleNotFound, () => Effect.undefined))
 						if (fetched === undefined) return
 						const current = yield* decodeWireRule(fetched)
 						const owners = yield* ruleOwnerTags(fqn)
@@ -312,11 +304,7 @@ export const AlertRuleProvider = () =>
 					if (output?.ruleId) {
 						const fetched = yield* api
 							.get(`/v2/alerts/rules/${output.ruleId}`)
-							.pipe(
-								Effect.catchTag(MapleErrorTags.alertRuleNotFound, () =>
-									Effect.succeed(undefined),
-								),
-							)
+							.pipe(Effect.catchTag(MapleErrorTags.alertRuleNotFound, () => Effect.undefined))
 						if (fetched !== undefined) {
 							const observed = yield* decodeWireRule(fetched)
 							return attributes(observed)

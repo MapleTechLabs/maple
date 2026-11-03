@@ -20,7 +20,7 @@ import {
 	CloudflareTopTrafficRequest,
 } from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
-import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
+import { WarehouseDateTimeString, decodeInput, runWarehouseQuery, wireString } from "./effect-utils"
 
 const ZONE_SERVICE_PREFIX = "cloudflare/"
 const WORKER_SERVICE_PREFIX = "cloudflare-worker/"
@@ -173,7 +173,7 @@ export const getCloudflareZones = Effect.fn("QueryEngine.getCloudflareZones")(fu
 	)
 	return {
 		zones: result.data.map((row): CloudflareZoneRow => {
-			const serviceName = String(row.serviceName ?? "")
+			const serviceName = wireString(row.serviceName)
 			const requests = Number(row.requests ?? 0)
 			const errors5xx = Number(row.errors5xx ?? 0)
 			const errors4xx = Number(row.errors4xx ?? 0)
@@ -227,11 +227,11 @@ export const getCloudflareZoneTimeseries = Effect.fn("QueryEngine.getCloudflareZ
 	)
 	return {
 		buckets: result.data.map((row): CloudflareZoneTimeseriesRow => {
-			const serviceName = String(row.serviceName ?? "")
+			const serviceName = wireString(row.serviceName)
 			return {
 				serviceName,
 				zoneName: stripPrefix(serviceName, ZONE_SERVICE_PREFIX),
-				bucket: String(row.bucket ?? ""),
+				bucket: wireString(row.bucket),
 				requests: Number(row.requests ?? 0),
 				errors5xx: Number(row.errors5xx ?? 0),
 				cacheHits: Number(row.cacheHits ?? 0),
@@ -299,17 +299,17 @@ export const getCloudflareZoneDetail = Effect.fn("QueryEngine.getCloudflareZoneD
 	)
 	return {
 		statusBuckets: result.statusBuckets.map((row): CloudflareZoneStatusBucket => ({
-			bucket: String(row.bucket ?? ""),
-			statusClass: String(row.statusClass ?? "unknown"),
+			bucket: wireString(row.bucket),
+			statusClass: wireString(row.statusClass, "unknown"),
 			requests: Number(row.requests ?? 0),
 		})),
 		cacheBuckets: result.cacheBuckets.map((row): CloudflareZoneCacheBucket => ({
-			bucket: String(row.bucket ?? ""),
-			cacheStatus: String(row.cacheStatus ?? "unknown"),
+			bucket: wireString(row.bucket),
+			cacheStatus: wireString(row.cacheStatus, "unknown"),
 			requests: Number(row.requests ?? 0),
 		})),
 		latencyBuckets: result.latencyBuckets.map((row): CloudflareZoneLatencyBucket => ({
-			bucket: String(row.bucket ?? ""),
+			bucket: wireString(row.bucket),
 			ttfbP50Ms: Number(row.ttfbP50Ms ?? 0),
 			ttfbP95Ms: Number(row.ttfbP95Ms ?? 0),
 			ttfbP99Ms: Number(row.ttfbP99Ms ?? 0),
@@ -387,12 +387,12 @@ export const getCloudflareWorkerDetail = Effect.fn("QueryEngine.getCloudflareWor
 	)
 	return {
 		outcomeBuckets: result.outcomeBuckets.map((row): CloudflareWorkerOutcomeBucket => ({
-			bucket: String(row.bucket ?? ""),
-			status: String(row.status || "unknown"),
+			bucket: wireString(row.bucket),
+			status: wireString(row.status || "unknown"),
 			requests: Number(row.requests ?? 0),
 		})),
 		latencyBuckets: result.latencyBuckets.map((row): CloudflareWorkerLatencyBucket => ({
-			bucket: String(row.bucket ?? ""),
+			bucket: wireString(row.bucket),
 			cpuP50Ms: Number(row.cpuP50Ms ?? 0),
 			cpuP99Ms: Number(row.cpuP99Ms ?? 0),
 			durationP50Ms: Number(row.durationP50Ms ?? 0),
@@ -401,7 +401,7 @@ export const getCloudflareWorkerDetail = Effect.fn("QueryEngine.getCloudflareWor
 			doWallP99Ms: Number(row.doWallP99Ms ?? 0),
 		})),
 		durableObjectBuckets: result.durableObjectBuckets.map((row): CloudflareWorkerDurableObjectBucket => ({
-			bucket: String(row.bucket ?? ""),
+			bucket: wireString(row.bucket),
 			requests: Number(row.requests ?? 0),
 			errors: Number(row.errors ?? 0),
 		})),
@@ -427,13 +427,13 @@ export const getCloudflareWorkers = Effect.fn("QueryEngine.getCloudflareWorkers"
 	)
 	return {
 		workers: result.data.map((row): CloudflareWorkerRow => {
-			const serviceName = String(row.serviceName ?? "")
+			const serviceName = wireString(row.serviceName)
 			const requests = Number(row.requests ?? 0)
 			const errors = Number(row.errors ?? 0)
 			return {
 				serviceName,
 				scriptName: stripPrefix(serviceName, WORKER_SERVICE_PREFIX),
-				accountId: String(row.accountId ?? ""),
+				accountId: wireString(row.accountId),
 				requests,
 				errors,
 				errorRate: ratio(errors, requests),
@@ -486,15 +486,15 @@ export const getCloudflareZoneSecurity = Effect.fn("QueryEngine.getCloudflareZon
 	)
 	return {
 		buckets: result.buckets.map((row): CloudflareZoneFirewallBucket => ({
-			bucket: String(row.bucket ?? ""),
-			action: String(row.action ?? "unknown"),
+			bucket: wireString(row.bucket),
+			action: wireString(row.action, "unknown"),
 			events: Number(row.events ?? 0),
 		})),
 		top: result.top.map((row): CloudflareZoneFirewallTopRow => ({
-			source: String(row.source ?? "unknown"),
-			action: String(row.action ?? "unknown"),
-			ruleId: String(row.ruleId ?? "unknown"),
-			host: String(row.host ?? "unknown"),
+			source: wireString(row.source, "unknown"),
+			action: wireString(row.action, "unknown"),
+			ruleId: wireString(row.ruleId, "unknown"),
+			host: wireString(row.host, "unknown"),
 			events: Number(row.events ?? 0),
 		})),
 		ignoredFilters: result.ignoredFilters,
@@ -536,12 +536,12 @@ export const getCloudflareZoneDns = Effect.fn("QueryEngine.getCloudflareZoneDns"
 	)
 	return {
 		buckets: result.buckets.map((row): CloudflareZoneDnsBucket => ({
-			bucket: String(row.bucket ?? ""),
-			responseCode: String(row.responseCode ?? "unknown"),
+			bucket: wireString(row.bucket),
+			responseCode: wireString(row.responseCode, "unknown"),
 			queries: Number(row.queries ?? 0),
 		})),
 		names: result.names.map((row): CloudflareZoneDnsName => ({
-			queryName: String(row.queryName ?? "unknown"),
+			queryName: wireString(row.queryName, "unknown"),
 			queries: Number(row.queries ?? 0),
 			nxdomain: Number(row.nxdomain ?? 0),
 		})),
@@ -589,11 +589,11 @@ export const getCloudflarePlatformResources = Effect.fn("QueryEngine.getCloudfla
 		)
 		return {
 			queues: result.queues.map((row): CloudflareQueueRow => {
-				const serviceName = String(row.serviceName ?? "")
+				const serviceName = wireString(row.serviceName)
 				return {
 					serviceName,
 					queueName: stripPrefix(serviceName, QUEUE_SERVICE_PREFIX),
-					accountId: String(row.accountId ?? ""),
+					accountId: wireString(row.accountId),
 					backlogMessages: Number(row.backlogMessages ?? 0),
 					backlogMessagesMax: Number(row.backlogMessagesMax ?? 0),
 					backlogBytes: Number(row.backlogBytes ?? 0),
@@ -601,13 +601,13 @@ export const getCloudflarePlatformResources = Effect.fn("QueryEngine.getCloudfla
 				}
 			}),
 			durableObjects: result.durableObjects.map((row): CloudflareDurableObjectRow => {
-				const serviceName = String(row.serviceName ?? "")
+				const serviceName = wireString(row.serviceName)
 				const requests = Number(row.requests ?? 0)
 				const errors = Number(row.errors ?? 0)
 				return {
 					serviceName,
 					scriptName: stripPrefix(serviceName, WORKER_SERVICE_PREFIX),
-					accountId: String(row.accountId ?? ""),
+					accountId: wireString(row.accountId),
 					requests,
 					errors,
 					errorRate: ratio(errors, requests),
@@ -707,7 +707,7 @@ export const getCloudflareZoneBreakdown = Effect.fn("QueryEngine.getCloudflareZo
 		}),
 	)
 	const rows = result.totals.map((row) => ({
-		key: String(row.key ?? ""),
+		key: wireString(row.key),
 		requests: Number(row.requests ?? 0),
 		errors5xx: Number(row.errors5xx ?? 0),
 		bytes: Number(row.bytes ?? 0),
@@ -720,8 +720,8 @@ export const getCloudflareZoneBreakdown = Effect.fn("QueryEngine.getCloudflareZo
 			share: ratio(row.requests, attributed),
 		})),
 		buckets: result.buckets.map((row): CloudflareBreakdownBucket => ({
-			bucket: String(row.bucket ?? ""),
-			key: String(row.key ?? ""),
+			bucket: wireString(row.bucket),
+			key: wireString(row.key),
 			requests: Number(row.requests ?? 0),
 		})),
 		unattributed: result.unattributed,

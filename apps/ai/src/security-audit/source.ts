@@ -158,7 +158,7 @@ const resolvePath = (raw: string): Effect.Effect<string, ToolFailure> => {
 /** An optional path tool argument; the root is no path at all. */
 const scopePath = (raw: string | undefined) =>
 	raw === undefined
-		? Effect.succeed(undefined)
+		? Effect.undefined
 		: Effect.map(resolvePath(raw), (path) => (path === "" ? undefined : path))
 
 /** Paths a missed read suggests, at most. */

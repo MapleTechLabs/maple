@@ -12,7 +12,6 @@ import type {
 import {
 	SignalProjectionSpecSchema,
 	fieldKey,
-	MAX_DECIMAL_INT64_LENGTH,
 	MAX_IN_VALUES,
 	MAX_PREDICATE_DEPTH,
 	MAX_PREDICATE_NODES,

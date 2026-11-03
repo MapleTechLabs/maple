@@ -1,4 +1,5 @@
 import { Layer } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { BillingCustomerCache } from "../data/billing-customer"
 import { OrgCollections } from "../data/collections/org-collections"
 import { ReadCache } from "../data/read-cache"
@@ -23,5 +24,6 @@ export const ResourcesLive = Layer.mergeAll(
 	ReadCache.layer,
 	BillingCustomerCache.layer,
 	IntegrationStatuses.layer.pipe(Layer.provide([MapleInternalApiClient.layer, MapleApiV2Client.layer])),
+	SecureRandom.layerWebCrypto,
 )
 export type Resources = Layer.Success<typeof ResourcesLive>

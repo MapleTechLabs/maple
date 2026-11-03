@@ -7,6 +7,7 @@ import {
 import { getTracesFacets } from "@maple/web-data/warehouse/traces"
 import { displayError } from "@maple/web-data/lib/error-messages"
 import { Clock, Effect, Exit, Schema } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { HttpClientError } from "effect/http"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -20,7 +21,9 @@ import { Message } from "./message"
 
 export const GenerateDraftId = Command.define("GenerateAlertDraftId", {
 	messages: [Message.GeneratedDraftId],
-	execute: Effect.sync(() => Message.GeneratedDraftId({ id: crypto.randomUUID() })),
+	execute: Effect.flatMap(Effect.service(SecureRandom.SecureRandom), (random) =>
+		Effect.map(random.uuidV4(), (id) => Message.GeneratedDraftId({ id })),
+	),
 })
 
 export const ReadEditorClock = Command.define("ReadAlertEditorClock", {

@@ -30,22 +30,22 @@ export const canonicalJSON = (value: unknown): string => {
 	const walk = (v: unknown): unknown => {
 		if (v === null) return null
 		if (v === undefined) return undefined
-		const t = typeof v
-		if (t === "string" || t === "number" || t === "boolean") return v
-		if (t === "bigint") return v.toString()
+		if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v
+		if (typeof v === "bigint") return v.toString()
 		if (Array.isArray(v)) {
 			return v.map((item) => walk(item))
 		}
-		if (t === "object") {
-			if (seen.has(v as object)) return null
-			seen.add(v as object)
-			const entries = Object.entries(v as Record<string, unknown>)
+		if (typeof v === "object") {
+			if (seen.has(v)) return null
+			seen.add(v)
+			const entries = Object.entries(v)
 				.filter(([, nested]) => nested !== undefined)
 				.map(([key, nested]) => [key, walk(nested)] as const)
 				.sort(([a], [b]) => a.localeCompare(b))
 			return Object.fromEntries(entries)
 		}
-		return String(v)
+		// symbol or function: every other type returned above.
+		return typeof v === "symbol" || typeof v === "function" ? v.toString() : null
 	}
 	// Only a top-level `undefined` has no JSON form; it keys as `null`.
 	return Option.getOrElse(encodeJsonOption(walk(value)), () => "null")

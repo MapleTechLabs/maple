@@ -268,12 +268,9 @@ const make: Effect.Effect<
 	}
 
 	const requireConnector = (connectorId: ChatConnectorId) =>
-		Option.match(
+		Effect.fromOption(
 			Arr.findFirst(registry, (connector) => connector.id === connectorId),
-			{
-				onNone: () => Effect.fail(notFound(`No chat connector named ${connectorId}`)),
-				onSome: (connector) => Effect.succeed(connector),
-			},
+			() => notFound(`No chat connector named ${connectorId}`),
 		)
 
 	/** The identity half of a connector, or the failure a connector without one earns. */
@@ -466,7 +463,7 @@ const make: Effect.Effect<
 				connector: connectorId,
 				externalWorkspaceId: installed.externalWorkspaceId,
 			})
-			return yield* Effect.fail(new IntegrationsForbiddenError({ message: CROSS_ORG_CONFLICT_MESSAGE }))
+			return yield* new IntegrationsForbiddenError({ message: CROSS_ORG_CONFLICT_MESSAGE })
 		}
 		yield* Effect.logInfo("Chat workspace linked", {
 			orgId,
@@ -600,7 +597,7 @@ const make: Effect.Effect<
 			),
 		)
 		const row = rows[0]
-		if (row === undefined) return yield* Effect.fail(notFound("No chat workspace with this id"))
+		if (row === undefined) return yield* notFound("No chat workspace with this id")
 		return row
 	})
 
@@ -623,7 +620,7 @@ const make: Effect.Effect<
 		)
 		const stored = updated[0]
 		// Lost a race with an unlink: the row was there a statement ago.
-		if (stored === undefined) return yield* Effect.fail(notFound("No chat workspace with this id"))
+		if (stored === undefined) return yield* notFound("No chat workspace with this id")
 		return toSummary(stored)
 	})
 
@@ -641,7 +638,7 @@ const make: Effect.Effect<
 		)
 		const row = deleted[0]
 		if (row === undefined) {
-			return yield* Effect.fail(notFound("No chat workspace with this id"))
+			return yield* notFound("No chat workspace with this id")
 		}
 		yield* Effect.logInfo("Chat workspace unlinked", { orgId, connector: row.connector })
 	})
@@ -664,15 +661,13 @@ const make: Effect.Effect<
 					),
 			}),
 		)
-		if (Option.isNone(workspace)) return yield* Effect.fail(notFound("No chat workspace with this id"))
+		if (Option.isNone(workspace)) return yield* notFound("No chat workspace with this id")
 		const name = workspace.value.connector.manifest.name
 		const missing = missingOutboundConfig(workspace.value, env.CHAT_CONNECTOR_OUTBOUND_CONFIG)
 		if (missing.length > 0) {
-			return yield* Effect.fail(
-				new IntegrationsConfigurationError({
-					message: `${name} is not configured on this deployment (${missing.join(", ")})`,
-				}),
-			)
+			return yield* new IntegrationsConfigurationError({
+				message: `${name} is not configured on this deployment (${missing.join(", ")})`,
+			})
 		}
 		const transport = yield* chatOutboundTransport(
 			workspace.value,

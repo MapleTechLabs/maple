@@ -11,7 +11,6 @@ import {
 	decodeSignalProjectionSpec,
 	validateMapleCloudEvent,
 	type MapleCloudEvent,
-	type JsonValue,
 	type ProjectionFailure,
 	type SignalProjectionSpec,
 } from "@maple/eventing-core"
@@ -1591,7 +1590,7 @@ export class LocalEventingControlStore extends Context.Service<
 				},
 				catch: consumerFailure,
 			}).pipe(
-				Effect.flatMap((acknowledgement) =>
+				Effect.tap((acknowledgement) =>
 					Effect.try({
 						try: () => consumerLag(tenantId, acknowledgement.acknowledgedThrough),
 						catch: storeFailure,
@@ -1605,7 +1604,6 @@ export class LocalEventingControlStore extends Context.Service<
 								{ discard: true },
 							),
 						),
-						Effect.as(acknowledgement),
 					),
 				),
 				Effect.tapError((error) => observeConsumerFailure("consumer_ack", error)),

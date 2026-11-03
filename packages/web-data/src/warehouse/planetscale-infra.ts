@@ -2,7 +2,13 @@ import { Clock, Effect, Schema } from "effect"
 import { PlanetScaleInfraTimeseriesRequest } from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
 import { MapleApiV2Http } from "./warehouse-services"
-import { WarehouseDateTimeString, decodeInput, runWarehouseQuery, runWarehouseQueryV2 } from "./effect-utils"
+import {
+	WarehouseDateTimeString,
+	decodeInput,
+	runWarehouseQuery,
+	wireString,
+	runWarehouseQueryV2,
+} from "./effect-utils"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 /**
@@ -218,7 +224,7 @@ export const getPlanetScaleInfraTimeseries = Effect.fn("QueryEngine.getPlanetSca
 			buckets: result.data.map((row): PlanetScaleInfraTimeseriesRow => {
 				const samples = Number(row.storageSamples ?? 0)
 				return {
-					bucket: String(row.bucket ?? ""),
+					bucket: wireString(row.bucket),
 					connectionsAvg: Number(row.connectionsAvg ?? 0),
 					cpuMaxPercent: Number(row.cpuMaxPercent ?? 0),
 					memMaxPercent: Number(row.memMaxPercent ?? 0),

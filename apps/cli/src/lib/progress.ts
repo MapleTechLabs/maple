@@ -113,7 +113,7 @@ export const step = <A, E, R>(
 			? yield* write(HIDE_CURSOR).pipe(
 					Effect.andThen(Effect.repeat(draw, Schedule.spaced(FRAME_MS))),
 					Effect.forkChild,
-					Effect.map(Option.some),
+					Effect.asSome,
 				)
 			: Option.none()
 

@@ -4,7 +4,7 @@ import {
 	MAX_RAW_SQL_RESULT_BYTES,
 	MAX_RAW_SQL_RESULT_ROWS,
 	RawSqlValidationError,
-	type WarehouseQueryRequest,
+	WarehouseQueryRequest,
 	WarehouseQueryError,
 	WarehouseQueryResponse,
 	WarehouseResultDecodeError,
@@ -1304,9 +1304,10 @@ WHERE name = 'enable_full_text_index'`,
 	const asExecutor = (tenant: ExecutionTenant): WarehouseExecutorApi => ({
 		orgId: tenant.orgId,
 		query: <T>(pipe: WarehouseQueryName, params: Record<string, unknown>, options?: SqlQueryOptions) =>
-			query(tenant, { pipeName: pipe, params }, { context: `pipe:${pipe}`, ...options }).pipe(
-				Effect.map((response) => ({ data: response.data as ReadonlyArray<T> })),
-			),
+			query(tenant, new WarehouseQueryRequest({ pipeName: pipe, params }), {
+				context: `pipe:${pipe}`,
+				...options,
+			}).pipe(Effect.map((response) => ({ data: response.data as ReadonlyArray<T> }))),
 		compiledQuery: <T>(compiled: CompiledQueryInput<T>, options?: SqlQueryOptions) =>
 			compiledQuery(tenant, compiled, { context: "warehouseExecutor.compiledQuery", ...options }),
 		compiledQueryFirst: <T>(compiled: CompiledQueryInput<T>, options?: SqlQueryOptions) =>

@@ -257,9 +257,11 @@ export function parseErrorPath(text: string): ErrorPath | undefined {
 	const matches = [...text.matchAll(AT_PATH)]
 	const last = matches[matches.length - 1]
 	if (last === undefined) return undefined
-	return [...last[1]!.matchAll(PATH_SEGMENT)].map((segment) =>
-		segment[2] === undefined ? String(parseJson(`"${segment[1]}"`) ?? segment[1]) : Number(segment[2]),
-	)
+	return [...last[1]!.matchAll(PATH_SEGMENT)].map((segment) => {
+		if (segment[2] !== undefined) return Number(segment[2])
+		const unescaped = parseJson(`"${segment[1]}"`)
+		return typeof unescaped === "string" ? unescaped : segment[1]
+	})
 }
 
 /** `evidence[0].traceIds` — a path as the hint writes it. */

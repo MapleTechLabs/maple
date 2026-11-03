@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest"
-import type {
+import {
 	BillingBalance,
 	BillingCustomer,
 	BillingSubscription,
-	BillingUsage,
+	BillingUsageFeature,
 	CatalogPlan,
+	CatalogPlanItem,
+	CatalogPlanItemPrice,
+	CatalogPlanPrice,
 	DailySpendResponse,
+	DailyVolume,
+	type BillingUsage,
 } from "@maple/domain/http"
 import {
 	buildCumulativeSeries,
@@ -22,52 +27,75 @@ const CYCLE_START = Date.UTC(2026, 6, 1)
 const CYCLE_END = Date.UTC(2026, 7, 1)
 const NOW = Date.UTC(2026, 6, 29, 12)
 
-const startupPlan = {
-	id: "startup",
-	name: "Startup",
-	price: { amount: 39, interval: "month" },
-	items: [
-		{ featureId: "logs", included: 100, price: { amount: 0.3 } },
-		{ featureId: "traces", included: 100, price: { amount: 0.3 } },
-		{ featureId: "metrics", included: 100, price: { amount: 0.3 } },
-		{ featureId: "browser_sessions", included: 5_000, price: { amount: 0.002 } },
-		// Billed per 1,000 events: `amount` is the price of one billing block.
-		{ featureId: "product_events", included: 1_000_000, price: { amount: 0.005, billingUnits: 1_000 } },
-	],
-} as CatalogPlan
+const item = (featureId: string, included: number, amount: number, billingUnits?: number) =>
+	new CatalogPlanItem({
+		featureId,
+		included,
+		price: new CatalogPlanItemPrice(billingUnits === undefined ? { amount } : { amount, billingUnits }),
+	})
+
+const startupPlanWith = (items: ReadonlyArray<CatalogPlanItem>) =>
+	new CatalogPlan({
+		id: "startup",
+		name: "Startup",
+		price: new CatalogPlanPrice({ amount: 39, interval: "month" }),
+		items,
+	})
+
+const startupPlan = startupPlanWith([
+	item("logs", 100, 0.3),
+	item("traces", 100, 0.3),
+	item("metrics", 100, 0.3),
+	item("browser_sessions", 5_000, 0.002),
+	// Billed per 1,000 events: `amount` is the price of one billing block.
+	item("product_events", 1_000_000, 0.005, 1_000),
+])
+
+type SubscriptionInput = Pick<BillingSubscription, "planId" | "status"> & Partial<BillingSubscription>
 
 const buildCustomer = (
 	overrides: {
-		subscriptions?: Partial<BillingSubscription>[]
+		subscriptions?: ReadonlyArray<SubscriptionInput>
 		balances?: Record<string, Partial<BillingBalance>>
 	} = {},
 ): BillingCustomer =>
-	({
+	new BillingCustomer({
 		id: "cus_1",
-		subscriptions: overrides.subscriptions ?? [
-			{
-				planId: "startup",
-				status: "active",
-				addOn: false,
-				currentPeriodStart: CYCLE_START,
-				currentPeriodEnd: CYCLE_END,
-			},
-		],
-		balances: overrides.balances ?? {
-			logs: { granted: 100 },
-			traces: { granted: 100 },
-			metrics: { granted: 100 },
-			browser_sessions: { granted: 5_000 },
-			product_events: { granted: 1_000_000 },
-		},
-	}) as BillingCustomer
+		subscriptions: (
+			overrides.subscriptions ?? [
+				{
+					planId: "startup",
+					status: "active",
+					addOn: false,
+					currentPeriodStart: CYCLE_START,
+					currentPeriodEnd: CYCLE_END,
+				},
+			]
+		).map((subscription) => new BillingSubscription(subscription)),
+		balances: Object.fromEntries(
+			Object.entries(
+				overrides.balances ?? {
+					logs: { granted: 100 },
+					traces: { granted: 100 },
+					metrics: { granted: 100 },
+					browser_sessions: { granted: 5_000 },
+					product_events: { granted: 1_000_000 },
+				},
+			).map(([featureId, balance]) => [featureId, new BillingBalance(balance)]),
+		),
+	})
 
-const usage = {
-	logs: { sum: 390 },
-	traces: { sum: 140 },
-	metrics: { sum: 160 },
-	browser_sessions: { sum: 26_700 },
-} as BillingUsage["total"]
+const usageOf = (sums: Record<string, number>): BillingUsage["total"] =>
+	Object.fromEntries(
+		Object.entries(sums).map(([featureId, sum]) => [featureId, new BillingUsageFeature({ sum })]),
+	)
+
+const usage = usageOf({
+	logs: 390,
+	traces: 140,
+	metrics: 160,
+	browser_sessions: 26_700,
+})
 
 const model = () => buildSpendModel({ customer: buildCustomer(), plans: [startupPlan], usage, nowMs: NOW })
 
@@ -107,7 +135,7 @@ describe("buildSpendModel", () => {
 		const result = buildSpendModel({
 			customer,
 			plans: [startupPlan],
-			usage: { logs: { sum: 40 } } as BillingUsage["total"],
+			usage: usageOf({ logs: 40 }),
 			nowMs: paidStart + 2 * day,
 		})
 		if (result === null) throw new Error("expected a model")
@@ -139,12 +167,12 @@ describe("buildSpendModel", () => {
 				},
 			}),
 			plans: [startupPlan],
-			usage: {
-				metrics: { sum: 433.98 },
-				browser_sessions: { sum: 401_015 },
+			usage: usageOf({
+				metrics: 433.98,
+				browser_sessions: 401_015,
 				// No balance for this one: the aggregate is all we have.
-				product_events: { sum: 1_576 },
-			} as BillingUsage["total"],
+				product_events: 1_576,
+			}),
 			nowMs: NOW,
 		})
 		if (result === null) throw new Error("expected a model")
@@ -160,7 +188,7 @@ describe("buildSpendModel", () => {
 		const result = buildSpendModel({
 			customer: buildCustomer(),
 			plans: [startupPlan],
-			usage: { logs: { sum: 10 } } as BillingUsage["total"],
+			usage: usageOf({ logs: 10 }),
 			nowMs: NOW,
 		})
 		expect(result?.topDriver).toBeNull()
@@ -168,13 +196,13 @@ describe("buildSpendModel", () => {
 	})
 
 	it("adds an active add-on to the base fee", () => {
-		const byoc = {
+		const byoc = new CatalogPlan({
 			id: "bringyourowncloud",
 			name: "Bring Your Own Cloud",
 			addOn: true,
-			price: { amount: 99 },
+			price: new CatalogPlanPrice({ amount: 99 }),
 			items: [],
-		} as CatalogPlan
+		})
 
 		const result = buildSpendModel({
 			customer: buildCustomer({
@@ -214,7 +242,7 @@ describe("buildSpendModel", () => {
 		const result = buildSpendModel({
 			customer: buildCustomer(),
 			plans: [startupPlan],
-			usage: { product_events: { sum: 1_400_000 } } as BillingUsage["total"],
+			usage: usageOf({ product_events: 1_400_000 }),
 			nowMs: NOW,
 		})
 		if (result === null) throw new Error("expected a model")
@@ -239,10 +267,7 @@ describe("buildSpendModel", () => {
 				product_events: { unlimited: true },
 			},
 		})
-		const plan = {
-			...startupPlan,
-			items: startupPlan.items.filter((item) => item.featureId !== "metrics"),
-		}
+		const plan = startupPlanWith(startupPlan.items.filter((planItem) => planItem.featureId !== "metrics"))
 		const result = buildSpendModel({ customer, plans: [plan], usage, nowMs: NOW })
 		if (result === null) throw new Error("expected a model")
 		const captions = Object.fromEntries(
@@ -288,13 +313,13 @@ describe("buildSpendModel", () => {
 })
 
 describe("costBreakdown", () => {
-	const byoc = {
+	const byoc = new CatalogPlan({
 		id: "bringyourowncloud",
 		name: "Bring Your Own Cloud",
 		addOn: true,
-		price: { amount: 99, interval: "month" },
+		price: new CatalogPlanPrice({ amount: 99, interval: "month" }),
 		items: [],
-	} as CatalogPlan
+	})
 	const withAddOn = (addOn: Partial<BillingSubscription>) =>
 		buildSpendModel({
 			customer: buildCustomer({
@@ -383,12 +408,12 @@ describe("costBreakdown", () => {
 			}),
 			plans: [
 				startupPlan,
-				{
+				new CatalogPlan({
 					id: "usage_addon",
 					name: "Usage add-on",
 					addOn: true,
-					items: [{ featureId: "logs", included: 10 }],
-				} as CatalogPlan,
+					items: [new CatalogPlanItem({ featureId: "logs", included: 10 })],
+				}),
 			],
 			usage,
 			nowMs: NOW,
@@ -416,17 +441,20 @@ describe("costBreakdown", () => {
 
 describe("buildCumulativeSeries", () => {
 	const daily = (days: ReadonlyArray<{ date: string; logsGB: number }>): DailySpendResponse =>
-		({
-			days: days.map((day) => ({
-				date: day.date,
-				logsGB: day.logsGB,
-				tracesGB: 0,
-				metricsGB: 0,
-				browserSessions: 0,
-			})),
+		new DailySpendResponse({
+			days: days.map(
+				(day) =>
+					new DailyVolume({
+						date: day.date,
+						logsGB: day.logsGB,
+						tracesGB: 0,
+						metricsGB: 0,
+						browserSessions: 0,
+					}),
+			),
 			cycleStart: CYCLE_START,
 			cycleEnd: CYCLE_END,
-		}) as DailySpendResponse
+		})
 
 	// A model whose metered logs total equals the series' own sum, so these tests
 	// exercise the accrual walk itself rather than the scaling above it.
@@ -434,7 +462,7 @@ describe("buildCumulativeSeries", () => {
 		const result = buildSpendModel({
 			customer: buildCustomer(),
 			plans: [startupPlan],
-			usage: { logs: { sum: loggedGB } } as BillingUsage["total"],
+			usage: usageOf({ logs: loggedGB }),
 			nowMs: NOW,
 		})
 		if (result === null) throw new Error("expected a model")
@@ -561,16 +589,19 @@ describe("usageMeter", () => {
 	}
 
 	it("leaves an unlimited feature's bar empty instead of full", () => {
-		const result = meters({ logs: { granted: 100 }, product_events: { unlimited: true } }, {
-			logs: { sum: 50 },
-			product_events: { sum: 2_000_000 },
-		} as BillingUsage["total"])
+		const result = meters(
+			{ logs: { granted: 100 }, product_events: { unlimited: true } },
+			usageOf({
+				logs: 50,
+				product_events: 2_000_000,
+			}),
+		)
 		expect(result.product_events).toEqual({ included: 0, overage: 0 })
 		expect(result.logs).toEqual({ included: 50, overage: 0 })
 	})
 
 	it("splits the bar at the allotment once usage runs past it", () => {
-		const result = meters({ logs: { granted: 100 } }, { logs: { sum: 400 } } as BillingUsage["total"])
+		const result = meters({ logs: { granted: 100 } }, usageOf({ logs: 400 }))
 		expect(result.logs).toEqual({ included: 25, overage: 75 })
 	})
 })

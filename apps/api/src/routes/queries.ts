@@ -88,7 +88,6 @@ const cloudflareInfraZoneLatency = defineQuery({
 		// Counters (metrics_sum) + percentiles (metrics_gauge) run
 		// concurrently, then merge by ServiceName — same shape as
 		// serviceCloudflareStats above.
-		const filters = toCloudflareFilters(payload)
 		return CH.compile(Integrations.cloudflareZoneLatencySQL(), params)
 	},
 })

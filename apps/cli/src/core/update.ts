@@ -143,10 +143,9 @@ const fetchReleasesPage = (page: number) =>
 		const text = yield* response.text.pipe(
 			Effect.mapError((error) => toUpdateError("could not read GitHub release response", error)),
 		)
-		return yield* Effect.try({
-			try: () => Schema.decodeUnknownSync(Schema.fromJsonString(ReleasesResponse))(text),
-			catch: (error) => toUpdateError("could not decode GitHub release response", error),
-		})
+		return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ReleasesResponse))(text).pipe(
+			Effect.mapError((error) => toUpdateError("could not decode GitHub release response", error)),
+		)
 	})
 
 const findCliRelease = (page: number): Effect.Effect<string, UpdateError, HttpClient.HttpClient> =>
@@ -565,7 +564,7 @@ export const maybeNotifyUpdate: Effect.Effect<void, never, MapleConfig | HttpCli
 
 		if (shouldCheck(Option.getOrUndefined(config.lastUpdateCheck), now)) {
 			const fetched = yield* fetchLatestTag(1500).pipe(
-				Effect.map((tag) => Option.some(tag)),
+				Effect.asSome,
 				Effect.orElseSucceed(() => Option.none<string>()),
 			)
 			if (Option.isSome(fetched)) {

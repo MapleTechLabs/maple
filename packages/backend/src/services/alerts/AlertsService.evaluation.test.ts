@@ -1,6 +1,10 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
-import { AlertValidationError, WarehouseQuotaExceededError } from "@maple/domain/http"
+import {
+	AlertValidationError,
+	WarehouseQuotaExceededError,
+	WebhookAlertDestinationConfig,
+} from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Duration, Effect, Layer, Logger, Schema } from "effect"
 import { TestClock } from "effect/testing"
@@ -972,13 +976,18 @@ describe("AlertsService.previewRule", () => {
 			const orgId = asOrgId("org_dedupe")
 			const userId = asUserId("user_dedupe")
 			const first = yield* createWebhookDestination(alerts, orgId, userId)
-			const second = yield* alerts.createDestination(orgId, userId, adminRoles, {
-				type: "webhook",
-				name: "Secondary webhook",
-				enabled: true,
-				url: "https://example.com/maple-alerts-2",
-				signingSecret: "webhook-secret-2",
-			})
+			const second = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new WebhookAlertDestinationConfig({
+					type: "webhook",
+					name: "Secondary webhook",
+					enabled: true,
+					url: "https://example.com/maple-alerts-2",
+					signingSecret: "webhook-secret-2",
+				}),
+			)
 
 			const rule = yield* alerts.createRule(
 				orgId,

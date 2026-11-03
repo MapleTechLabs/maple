@@ -2,6 +2,7 @@ import { defaultWidgetLayout } from "@maple/domain/http"
 import { MetricsQueryDraftSchema } from "@maple/query-model"
 import { makeQueryDataSource } from "@maple/widgets/dashboard"
 import { Clock, Effect, Option, Random, Result, Schema, Stream } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { countLabel } from "@maple/ui/lib/format"
@@ -84,7 +85,9 @@ export const AddWidget = Command.define("AddMetricWidgetToDashboard", {
 			const nowMs = yield* Clock.currentTimeMillis
 			const random = yield* Random.next
 			const id = generateWidgetId(nowMs, random)
-			const widget = widgetOf(draft, crypto.randomUUID())
+			const secureRandom = yield* SecureRandom.SecureRandom
+			const queryId = yield* secureRandom.uuidV4()
+			const widget = widgetOf(draft, queryId)
 			// `addWidget` throws when the board is not readable; the write itself is not awaited:
 			// it navigates on the optimistic update and lets the store report a failed persist.
 			yield* readDocument(orgId, dashboardId)
@@ -111,7 +114,10 @@ export const CreateDashboard = Command.define("CreateDashboardWithMetricWidget",
 	execute: ({ orgId, name, draft }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const widget = { id: crypto.randomUUID(), ...widgetOf(draft, crypto.randomUUID()) }
+			const random = yield* SecureRandom.SecureRandom
+			const widgetId = yield* random.uuidV4()
+			const queryId = yield* random.uuidV4()
+			const widget = { id: widgetId, ...widgetOf(draft, queryId) }
 			const created = yield* client.dashboards.create({
 				payload: createPayload({
 					name,

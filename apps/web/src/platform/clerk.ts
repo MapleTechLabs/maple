@@ -265,8 +265,8 @@ const toOrganization = (organization: ClerkOrganizationResource, nowMs: number):
 
 const toSnapshot = (resources: ClerkResources): Effect.Effect<ClerkSnapshot> =>
 	Effect.map(Clock.currentTimeMillis, (nowMs) => ({
-		maybeUserId: Option.map(Option.fromNullishOr(resources.user?.id), UserId.make),
-		maybeOrgId: Option.map(Option.fromNullishOr(resources.organization?.id), OrgId.make),
+		maybeUserId: Option.map(Option.fromNullishOr(resources.user?.id), (id) => UserId.make(id)),
+		maybeOrgId: Option.map(Option.fromNullishOr(resources.organization?.id), (id) => OrgId.make(id)),
 		maybeUser: Option.map(Option.fromNullishOr(resources.user), (user) => ({
 			fullName: user.fullName ?? null,
 			email: user.primaryEmailAddress?.emailAddress ?? null,
@@ -401,19 +401,13 @@ const missing = (what: string) =>
 
 /** The signed-in Clerk user (`useUser().user`). */
 export const currentClerkUser: Effect.Effect<ClerkUserResource, ClerkActionError> = Effect.suspend(() =>
-	Option.match(Option.fromNullishOr(window.Clerk?.user), {
-		onNone: () => Effect.fail(missing("user")),
-		onSome: Effect.succeed,
-	}),
+	Effect.fromOption(Option.fromNullishOr(window.Clerk?.user), () => missing("user")),
 )
 
 /** The active organization (`useOrganization().organization`). */
 export const currentClerkOrganization: Effect.Effect<ClerkOrganizationResource, ClerkActionError> =
 	Effect.suspend(() =>
-		Option.match(Option.fromNullishOr(window.Clerk?.organization), {
-			onNone: () => Effect.fail(missing("organization")),
-			onSome: Effect.succeed,
-		}),
+		Effect.fromOption(Option.fromNullishOr(window.Clerk?.organization), () => missing("organization")),
 	)
 
 /** The current session's id (`useSession().session?.id`). */

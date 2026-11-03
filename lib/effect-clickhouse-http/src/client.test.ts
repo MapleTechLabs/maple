@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Redacted, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Redacted, Schema, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import {
 	make,
@@ -162,7 +162,7 @@ describe("response errors and resource ownership", () => {
 					const client = yield* make(config)
 					const error = yield* Effect.flip(client.query({ sql: "SELECT 1" }))
 					assert.instanceOf(error, ClickHouseRedirectError)
-					if (error instanceof ClickHouseRedirectError)
+					if (Schema.is(ClickHouseRedirectError)(error))
 						assert.strictEqual(error.location, "http://internal/")
 					assert.isTrue(signal?.aborted)
 				}),
@@ -199,7 +199,7 @@ describe("response errors and resource ownership", () => {
 					const client = yield* make(config)
 					const error = yield* Effect.flip(client.query({ sql: "SELECT 1", queryId: "sent-id" }))
 					assert.instanceOf(error, ClickHouseServerError)
-					if (error instanceof ClickHouseServerError) {
+					if (Schema.is(ClickHouseServerError)(error)) {
 						assert.strictEqual(error.status, status)
 						assert.strictEqual(error.code, expectedCode)
 						assert.strictEqual(error.type, expectedType)
@@ -285,9 +285,8 @@ describe("response errors and resource ownership", () => {
 			return withFetch(
 				Effect.gen(function* () {
 					const client = yield* make(config)
-					assert.isTrue(
-						(yield* Effect.flip(client.query({ sql: "SELECT 1", limits }))) instanceof expected,
-					)
+					const error = yield* Effect.flip(client.query({ sql: "SELECT 1", limits }))
+					assert.isTrue(Schema.is(expected)(error))
 					assert.isTrue(signal?.aborted)
 				}),
 				async (_input, init) => {
@@ -397,7 +396,7 @@ describe("absent HTTP response bodies", () => {
 				const client = yield* make(config)
 				const error = yield* Effect.flip(client.query({ sql: "SELECT 1" }))
 				assert.instanceOf(error, ClickHouseServerError)
-				if (error instanceof ClickHouseServerError) {
+				if (Schema.is(ClickHouseServerError)(error)) {
 					assert.strictEqual(error.status, 500)
 					assert.match(error.message, /HTTP 500/)
 				}

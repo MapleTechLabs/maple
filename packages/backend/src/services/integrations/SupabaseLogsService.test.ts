@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
-import { OrgId, UserId } from "@maple/domain/http"
+import { OrgId, UserId, SupabaseProjectUpdateRequest } from "@maple/domain/http"
 import { SourceId, SupabaseProjectRef } from "@maple/domain/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -577,7 +577,12 @@ describe("SupabaseLogsService", () => {
 				world.supabase.state.drains.set(REF_B, [])
 				const connection = yield* SupabaseConnectionService
 				// The route's order: the project PATCH (live listing) first, then the polling switch.
-				yield* connection.updateProject(ORG, asUserId("user_a"), asRef(REF_B), { logsEnabled: true })
+				yield* connection.updateProject(
+					ORG,
+					asUserId("user_a"),
+					asRef(REF_B),
+					new SupabaseProjectUpdateRequest({ logsEnabled: true }),
+				)
 				yield* (yield* SupabaseLogsService).setLogsEnabled(ORG, asRef(REF_B), true)
 				const project = (yield* connection.getStatus(ORG)).projects.find((item) => item.ref === REF_B)
 				assert.deepStrictEqual([project?.logsEnabled, project?.logDrains], [true, []])
@@ -596,9 +601,14 @@ describe("SupabaseLogsService", () => {
 				const connection = yield* SupabaseConnectionService
 				const logs = yield* SupabaseLogsService
 				const user = asUserId("user_a")
-				const drained = yield* connection.updateProject(ORG, user, asRef(REF_A), {
-					logDrainEnabled: true,
-				})
+				const drained = yield* connection.updateProject(
+					ORG,
+					user,
+					asRef(REF_A),
+					new SupabaseProjectUpdateRequest({
+						logDrainEnabled: true,
+					}),
+				)
 				assert.isFalse(drained.projects.find((project) => project.ref === REF_A)?.logsEnabled ?? true)
 
 				const refused = yield* Effect.flip(logs.setLogsEnabled(ORG, asRef(REF_A), true))
@@ -609,7 +619,12 @@ describe("SupabaseLogsService", () => {
 				assert.strictEqual(logsCalls(world).length, calls)
 
 				// Drain off first, then polling on: the switch back works.
-				yield* connection.updateProject(ORG, user, asRef(REF_A), { logDrainEnabled: false })
+				yield* connection.updateProject(
+					ORG,
+					user,
+					asRef(REF_A),
+					new SupabaseProjectUpdateRequest({ logDrainEnabled: false }),
+				)
 				yield* logs.setLogsEnabled(ORG, asRef(REF_A), true)
 				const status = yield* connection.getStatus(ORG)
 				const project = status.projects.find((item) => item.ref === REF_A)

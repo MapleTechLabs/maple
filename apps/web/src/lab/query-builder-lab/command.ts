@@ -2,6 +2,7 @@ import { createFormulaDraft, createQueryDraft } from "@maple/query-engine/query-
 import { listMetrics } from "@maple/web-data/warehouse/metrics"
 import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
 import { Clock, Duration, Effect, Option, Queue, Schema, Stream } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { currentWindow, TimeWindow } from "../../data/time-range"
@@ -115,11 +116,14 @@ export const CreateFormula = Command.define("CreateQueryBuilderLabFormula", {
 		Effect.sync(() => Message.CreatedFormula({ formula: createFormulaDraft(index, [...queryNames]) })),
 })
 
-/** `cloneQuery`'s `crypto.randomUUID()`. */
+/** `cloneQuery`'s fresh UUID. */
 export const CreateCloneId = Command.define("CreateQueryBuilderLabCloneId", {
 	args: { queryId: Schema.String },
 	messages: [Message.CreatedCloneId],
-	execute: ({ queryId }) => Effect.sync(() => Message.CreatedCloneId({ queryId, id: crypto.randomUUID() })),
+	execute: ({ queryId }) =>
+		Effect.flatMap(Effect.service(SecureRandom.SecureRandom), (random) =>
+			Effect.map(random.uuidV4(), (id) => Message.CreatedCloneId({ queryId, id })),
+		),
 })
 
 /** `setLastRunAt(new Date().toLocaleTimeString())`. */

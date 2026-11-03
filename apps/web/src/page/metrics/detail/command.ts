@@ -7,6 +7,7 @@ import {
 import { getQueryBuilderBreakdown } from "@maple/web-data/warehouse/query-builder-breakdown"
 import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
 import { Clock, Duration, Effect, Schema, Stream } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
@@ -154,17 +155,20 @@ export const BuildAlertLink = Command.define("BuildMetricAlertLink", {
 	args: { query: MetricsQueryDraftSchema, title: Schema.String },
 	messages: [Message.BuiltAlertLink],
 	execute: ({ query, title }) =>
-		Effect.sync(() => {
+		Effect.gen(function* () {
+			const random = yield* SecureRandom.SecureRandom
+			const widgetId = yield* random.uuidV4()
+			const queryId = yield* random.uuidV4()
 			const chart = toBase64Url(
 				encodeJson({
 					dashboardId: "metrics-explorer",
 					widget: {
-						id: crypto.randomUUID(),
+						id: widgetId,
 						visualization: "chart",
 						dataSource: {
 							kind: "query",
 							resultShape: "timeseries",
-							queries: [{ ...query, id: crypto.randomUUID() }],
+							queries: [{ ...query, id: queryId }],
 						},
 						display: { title },
 					},

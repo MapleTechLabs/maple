@@ -1,5 +1,5 @@
 import { McpInvalidInputError, McpNotReadyError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { DateTime, Effect, Schema } from "effect"
 import { AgentFeedbackImpact, AgentFeedbackKind, AgentType } from "@maple/domain/http"
 import { AgentFeedbackPublicId } from "@maple/domain/http/v2"
 import { SendMapleFeedbackOutput } from "@maple/domain/mcp-outputs"
@@ -129,7 +129,7 @@ export function registerSendMapleFeedbackTool(server: McpToolRegistrar) {
 				agentType: feedback.agent.type,
 				agentName: feedback.agent.name,
 				agentModel: feedback.agent.model,
-				createdAt: new Date(feedback.createdAtMs).toISOString(),
+				createdAt: DateTime.formatIso(DateTime.makeUnsafe(feedback.createdAtMs)),
 			}
 		}),
 		render: (output) => ({

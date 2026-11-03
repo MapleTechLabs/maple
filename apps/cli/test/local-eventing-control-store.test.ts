@@ -1,15 +1,6 @@
 import { deepStrictEqual, ok, rejects, strictEqual, throws } from "node:assert"
 import { Database } from "bun:sqlite"
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	readdirSync,
-	rmSync,
-	statSync,
-	symlinkSync,
-} from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, it } from "vitest"

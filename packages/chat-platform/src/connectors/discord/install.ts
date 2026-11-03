@@ -1,5 +1,4 @@
 import { Effect, Schema } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	ChatInstallFailed,
 	ChatSettingsRejected,
@@ -106,7 +105,7 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 	if (guild === undefined) {
 		// No guild means the authorization was not a bot install (or the app's
 		// install settings overrode the requested scope) — there is nothing to link.
-		return yield* Effect.fail(installFailed("Discord's authorization did not add the bot to a server"))
+		return yield* installFailed("Discord's authorization did not add the bot to a server")
 	}
 	return { externalWorkspaceId: guild.id, name: guild.name ?? guild.id }
 })

@@ -250,7 +250,7 @@ describe("Database execute span instrumentation", () => {
 					db.transaction(
 						Effect.gen(function* () {
 							yield* db.run(PG.from(OrgOnboardingState).select())
-							return yield* Effect.fail(rollback)
+							return yield* rollback
 						}),
 					),
 				)

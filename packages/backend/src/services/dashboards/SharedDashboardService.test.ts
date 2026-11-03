@@ -24,7 +24,7 @@
 import type { PGlite } from "@electric-sql/pglite"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Exit, Layer, ManagedRuntime, Schema } from "effect"
-import { DashboardId, OrgId, UserId } from "@maple/domain/http"
+import { OrgId, PortableDashboardDocument, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -97,21 +97,25 @@ const makeRuntime = (
 }
 
 const createDashboard = (
-	runtime: ManagedRuntime.ManagedRuntime<never, never>,
+	runtime: ReturnType<typeof makeRuntime>["runtime"],
 	orgId: OrgId = ORG,
 	userId: UserId = USER,
 ) =>
 	runtime.runPromise(
 		Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			const dashboard = yield* persistence.create(orgId, userId, {
-				name: "Ops",
-				timeRange: { type: "relative", value: "12h" },
-				widgets: [],
-				variables: [],
-			})
+			const dashboard = yield* persistence.create(
+				orgId,
+				userId,
+				new PortableDashboardDocument({
+					name: "Ops",
+					timeRange: { type: "relative", value: "12h" },
+					widgets: [],
+					variables: [],
+				}),
+			)
 			return dashboard.id
-		}) as Effect.Effect<DashboardId, never, never>,
+		}),
 	)
 
 describe("SharedDashboardService", () => {

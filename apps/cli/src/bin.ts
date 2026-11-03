@@ -137,13 +137,13 @@ if (checkpointProbeDataDir !== undefined) {
 		// Genuine failures reach here after closing the root span `Error`, each
 		// under its own tag (see `commands/server-errors.ts`). They still print
 		// one `error:` line; the cause and stack are behind `--debug`.
-		Effect.catchCause((cause) =>
-			Cause.hasInterruptsOnly(cause)
-				? Effect.failCause(cause)
-				: Effect.sync(() => {
-						process.stderr.write(renderUnexpected(cause, debugEnabled()))
-						markFailedExit()
-					}),
+		Effect.catchCauseIf(
+			(cause) => !Cause.hasInterruptsOnly(cause),
+			(cause) =>
+				Effect.sync(() => {
+					process.stderr.write(renderUnexpected(cause, debugEnabled()))
+					markFailedExit()
+				}),
 		),
 		// Logs are diagnostics, never results: keep them off stdout.
 		Effect.provideService(Logger.LogToStderr, true),

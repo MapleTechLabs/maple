@@ -153,11 +153,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				// `session_events` on a cluster that has not applied it (same rule as
 				// the query-engine routes).
 				const withRollup = <A, E, R>(read: (useProductEvents: boolean) => Effect.Effect<A, E, R>) =>
-					read(true).pipe(
-						Effect.catch((error) =>
-							isMissingProductEvents(error) ? read(false) : Effect.fail(error),
-						),
-					)
+					read(true).pipe(Effect.catchIf(isMissingProductEvents, () => read(false)))
 
 				const [
 					curSummary,
@@ -254,12 +250,11 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					// Only a missing table drops the card. Any other failure fails the
 					// org, like the rest of the queries, rather than sending a week with
 					// crawler figures silently missing.
-					Effect.catch((error) =>
-						isMissingAiCrawlerRequests(error)
-							? Effect.logInfo(
-									"ai_crawler_requests absent; sending without crawler stats",
-								).pipe(Effect.annotateLogs({ orgId }), Effect.as(null))
-							: Effect.fail(error),
+					Effect.catchIf(isMissingAiCrawlerRequests, () =>
+						Effect.logInfo("ai_crawler_requests absent; sending without crawler stats").pipe(
+							Effect.annotateLogs({ orgId }),
+							Effect.as(null),
+						),
 					),
 				)
 
