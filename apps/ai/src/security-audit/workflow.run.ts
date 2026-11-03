@@ -134,10 +134,10 @@ const STEP_RETRY = { retries: { limit: 3, delay: "10 seconds", backoff: "exponen
  */
 const ADMISSION_RETRY = { retries: { limit: 6, delay: "15 seconds", backoff: "exponential" } } as const
 
-/** An agent may run 20 minutes; its step allows that plus a margin, and retries once. */
-const AGENT_STEP = {
+/** An agent may run 60 minutes; its step allows that plus a margin, and retries once. */
+export const AGENT_STEP = {
 	retries: { limit: 1, delay: "30 seconds", backoff: "constant" },
-	timeout: "30 minutes",
+	timeout: "75 minutes",
 } as const
 
 /** A prepare fetches the commit and installs its lockfiles; its wait is 22 minutes, retried once. */
