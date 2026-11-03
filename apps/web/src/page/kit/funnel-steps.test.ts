@@ -1,6 +1,14 @@
 import { Option } from "effect"
 import { describe, expect, test } from "vitest"
-import { applyStepEdit, StepEdit, stepControlId, stepEditOf, type StepDraft } from "./funnel-steps"
+import * as Combobox from "@maple/views/ui/combobox"
+import {
+	applyStepEdit,
+	StepEdit,
+	stepComboUpdate,
+	stepControlId,
+	stepEditOf,
+	type StepDraft,
+} from "./funnel-steps"
 
 const steps: ReadonlyArray<StepDraft> = [
 	{ kind: "session", dimension: "referrerHost", value: "google.com" },
@@ -48,5 +56,37 @@ describe("stepEditOf", () => {
 	test("an unknown kind or another control's id is no edit", () => {
 		expect(Option.isNone(stepEditOf(stepControlId("funnel", 0, "kind"), "span"))).toBe(true)
 		expect(Option.isNone(stepEditOf("key-by:funnel", "person"))).toBe(true)
+	})
+})
+
+describe("stepComboUpdate", () => {
+	const id = stepControlId("funnel", 1, "eventName")
+	const toMessage = (message: Combobox.Message) => message
+
+	test("a typed name edits the step and says it is still typing", () => {
+		const next = stepComboUpdate({}, id, Combobox.Message.ChangedInput({ value: "sig" }), toMessage)
+		expect(next.isTyping).toBe(true)
+		expect(next.edit).toEqual(
+			Option.some({
+				scope: "funnel",
+				edit: StepEdit.ChangedText({ index: 1, field: "eventName", value: "sig" }),
+			}),
+		)
+	})
+
+	test("a picked suggestion edits the step and is not typing", () => {
+		const next = stepComboUpdate(
+			{},
+			id,
+			Combobox.Message.ClickedItem({ value: "signup_completed" }),
+			toMessage,
+		)
+		expect(next.isTyping).toBe(false)
+		expect(next.edit).toEqual(
+			Option.some({
+				scope: "funnel",
+				edit: StepEdit.ChangedText({ index: 1, field: "eventName", value: "signup_completed" }),
+			}),
+		)
 	})
 })
