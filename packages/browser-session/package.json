@@ -10,6 +10,7 @@
 		"./replay": "./src/session/replay-session.ts",
 		"./props": "./src/events/props.ts",
 		"./region": "./src/platform/region.ts",
+		"./commit-sha": "./src/platform/commit-sha.ts",
 		"./console": "./src/replay/capture/console.ts"
 	},
 	"scripts": {

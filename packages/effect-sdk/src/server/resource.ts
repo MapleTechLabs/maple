@@ -1,4 +1,5 @@
 import { type MapleRegion, resolveIngestEndpoint } from "@maple/browser-session/region"
+import { isCommitSha } from "@maple/browser-session/commit-sha"
 import { Effect, Option, Redacted } from "effect"
 import * as EnvConfig from "./config.js"
 import { getContainerAttributes } from "./container.js"
@@ -52,14 +53,6 @@ export interface ResourceConfigInput {
 	readonly repositoryUrl?: string | undefined
 }
 
-/**
- * Best-effort guard for `vcs.ref.head.revision`: only stamp values that look
- * like a git commit SHA — `serviceVersion` may legitimately be a semver
- * release string, which belongs in `service.version` but not in `vcs.*`.
- */
-const isCommitSha = (value: string | undefined): value is string =>
-	value !== undefined && /^[0-9a-f]{7,40}$/i.test(value)
-
 export interface ResolvedResource {
 	/**
 	 * Always resolves — the region's endpoint is the final fallback, so this
@@ -106,8 +99,14 @@ export const resolveResource = Effect.fn("resolveResource")(function* (config: R
 	const envIngestKey = yield* EnvConfig.ingestKey
 	const ingestKey = config.ingestKey ? Redacted.make(config.ingestKey) : Option.getOrUndefined(envIngestKey)
 
+	// Only OTEL_SERVICE_NAME may override `service.name` from OTEL_RESOURCE_ATTRIBUTES (OTel spec).
+	const envResourceAttributes = yield* EnvConfig.otelResourceAttributes
+
 	const envServiceVersion = yield* EnvConfig.serviceVersion
-	const serviceVersion = config.serviceVersion ?? Option.getOrUndefined(envServiceVersion)
+	const serviceVersion =
+		config.serviceVersion ??
+		stringOrUndefined(envResourceAttributes["service.version"]) ??
+		Option.getOrUndefined(envServiceVersion)
 
 	const envRepositoryUrl = yield* EnvConfig.repositoryUrl
 	const repositoryUrl = config.repositoryUrl ?? envRepositoryUrl
@@ -120,9 +119,11 @@ export const resolveResource = Effect.fn("resolveResource")(function* (config: R
 	const environment = config.environment ?? envEnvironment
 
 	const envOtelServiceName = yield* EnvConfig.otelServiceName
-	const serviceName = config.serviceName ?? Option.getOrUndefined(envOtelServiceName) ?? "unknown"
-
-	const envResourceAttributes = yield* EnvConfig.otelResourceAttributes
+	const serviceName =
+		config.serviceName ??
+		Option.getOrUndefined(envOtelServiceName) ??
+		stringOrUndefined(envResourceAttributes["service.name"]) ??
+		"unknown"
 
 	const attributes: Record<string, unknown> = {}
 	Object.assign(attributes, getAutoPlatformAttributes())
@@ -192,7 +193,13 @@ export const resolveResourceFromEnv = (
 		stringOrUndefined(env.VERCEL_GIT_COMMIT_SHA) ??
 		stringOrUndefined(env.CF_PAGES_COMMIT_SHA) ??
 		stringOrUndefined(env.RENDER_GIT_COMMIT)
-	const serviceVersion = config.serviceVersion ?? envCommitSha
+	const rawResourceAttributes = stringOrUndefined(env.OTEL_RESOURCE_ATTRIBUTES)
+	const envResourceAttributes = rawResourceAttributes
+		? EnvConfig.parseOtelResourceAttributes(rawResourceAttributes)
+		: {}
+
+	const serviceVersion =
+		config.serviceVersion ?? stringOrUndefined(envResourceAttributes["service.version"]) ?? envCommitSha
 
 	const repositoryUrl =
 		config.repositoryUrl ?? EnvConfig.resolveRepositoryUrl((key) => stringOrUndefined(env[key]))
@@ -207,12 +214,11 @@ export const resolveResourceFromEnv = (
 		stringOrUndefined(env.DEPLOYMENT_ENV) ??
 		"development"
 
-	const serviceName = config.serviceName ?? stringOrUndefined(env.OTEL_SERVICE_NAME) ?? "unknown"
-
-	const rawResourceAttributes = stringOrUndefined(env.OTEL_RESOURCE_ATTRIBUTES)
-	const envResourceAttributes = rawResourceAttributes
-		? EnvConfig.parseOtelResourceAttributes(rawResourceAttributes)
-		: {}
+	const serviceName =
+		config.serviceName ??
+		stringOrUndefined(env.OTEL_SERVICE_NAME) ??
+		stringOrUndefined(envResourceAttributes["service.name"]) ??
+		"unknown"
 
 	const attributes: Record<string, unknown> = {}
 	Object.assign(attributes, getAutoPlatformAttributes())

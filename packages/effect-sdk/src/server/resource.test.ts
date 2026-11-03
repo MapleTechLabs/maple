@@ -43,3 +43,41 @@ describe("resolveResourceFromEnv endpoint", () => {
 		).toBe("https://collector.test")
 	})
 })
+
+describe("service identity from OTEL_RESOURCE_ATTRIBUTES", () => {
+	const resolved = (env: Record<string, string>) =>
+		Effect.runPromise(
+			resolveResource({}).pipe(
+				Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromEnv({ env })),
+			),
+		)
+
+	it("names the service from service.name when OTEL_SERVICE_NAME is unset", async () => {
+		const env = { OTEL_RESOURCE_ATTRIBUTES: "service.name=checkout,service.version=1.4.0" }
+		expect((await resolved(env)).resource).toMatchObject({
+			serviceName: "checkout",
+			serviceVersion: "1.4.0",
+		})
+		expect(resolveResourceFromEnv(env, {}).resource).toMatchObject({
+			serviceName: "checkout",
+			serviceVersion: "1.4.0",
+		})
+	})
+
+	it("lets OTEL_SERVICE_NAME override service.name", async () => {
+		const env = { OTEL_RESOURCE_ATTRIBUTES: "service.name=checkout", OTEL_SERVICE_NAME: "payments" }
+		expect((await resolved(env)).resource.serviceName).toBe("payments")
+		expect(resolveResourceFromEnv(env, {}).resource.serviceName).toBe("payments")
+	})
+})
+
+describe("vcs.ref.head.revision from serviceVersion", () => {
+	const revision = (serviceVersion: string) =>
+		resolveResourceFromEnv({}, { serviceVersion }).resource.attributes["vcs.ref.head.revision"]
+
+	it("stamps a SHA-shaped version and skips build numbers and semver", () => {
+		expect(revision("a1b2c3d")).toBe("a1b2c3d")
+		expect(revision("20261103")).toBeUndefined()
+		expect(revision("1.4.0")).toBeUndefined()
+	})
+})
