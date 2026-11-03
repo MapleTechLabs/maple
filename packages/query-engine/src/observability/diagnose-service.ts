@@ -48,6 +48,7 @@ export const diagnoseService = Effect.fn("Observability.diagnoseService")(functi
 					end_time: input.timeRange.endTime,
 					service: input.serviceName,
 					limit: 15,
+					...(input.environment && { deployment_env: input.environment }),
 				},
 				{ profile: "list" },
 			),
@@ -58,6 +59,7 @@ export const diagnoseService = Effect.fn("Observability.diagnoseService")(functi
 					end_time: input.timeRange.endTime,
 					service: input.serviceName,
 					limit: 5,
+					...(input.environment && { deployment_env: input.environment }),
 				},
 				{ profile: "list" },
 			),
@@ -78,11 +80,14 @@ export const diagnoseService = Effect.fn("Observability.diagnoseService")(functi
 	const agg = aggregateServiceRows(overviewResult.data, input.serviceName)
 	const errorRate = agg.throughput > 0 ? agg.errorCount / agg.throughput : 0
 
-	const avgApdex = pipe(
-		apdexResult.data,
-		Arr.filter((a) => a.totalCount > 0),
-		(vals) => (vals.length > 0 ? Arr.reduce(vals, 0, (sum, a) => sum + a.apdexScore) / vals.length : 0),
-	)
+	// Weighted by span count: a quiet bucket must not count as much as a busy one.
+	const apdexTotals = Arr.reduce(apdexResult.data, { satisfied: 0, tolerating: 0, total: 0 }, (acc, a) => ({
+		satisfied: acc.satisfied + a.satisfiedCount,
+		tolerating: acc.tolerating + a.toleratingCount,
+		total: acc.total + a.totalCount,
+	}))
+	const avgApdex =
+		apdexTotals.total > 0 ? (apdexTotals.satisfied + apdexTotals.tolerating * 0.5) / apdexTotals.total : 0
 
 	return {
 		serviceName: input.serviceName,

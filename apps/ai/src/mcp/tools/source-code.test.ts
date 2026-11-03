@@ -80,6 +80,20 @@ describe("the source-code tools", () => {
 		}),
 	)
 
+	it.effect("does not count the trailing newline as another line", () =>
+		Effect.gen(function* () {
+			const result = yield* call(
+				"read_source_file",
+				{ repository: "octo/shop", path: "src/a.ts" },
+				{ readFile: () => Effect.succeed({ ...file, content: `${file.content}\n` }) },
+			)
+			const output = Schema.decodeUnknownSync(ReadSourceFileOutput)(result.structured)
+			assert.strictEqual(output.totalLines, 4)
+			assert.strictEqual(output.truncated, false)
+			assert.deepStrictEqual(output.lines, ["one", "two", "three", "four"])
+		}),
+	)
+
 	it.effect("reports an inverted range against end_line", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(

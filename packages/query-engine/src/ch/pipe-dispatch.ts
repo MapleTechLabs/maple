@@ -177,6 +177,14 @@ export function compilePipeQuery(
 		return key === undefined ? undefined : [{ key, value: str(valueParam), mode: "equals" as const }]
 	}
 
+	// `http_method` is an equality filter on the `http.method` span attribute.
+	const withHttpMethod = (filters: ReadonlyArray<AttributeFilter> | undefined) => {
+		const httpMethod = str("http_method")
+		return httpMethod === undefined
+			? filters
+			: [...(filters ?? []), { key: "http.method", value: httpMethod, mode: "equals" as const }]
+	}
+
 	// Kept in four groups because Pipeable.pipe's typed overloads stop at 20 transformations.
 	// oxlint-disable-next-line effecttsgo/unnecessary-pipe-chain
 	return Match.value(pipe)
@@ -206,9 +214,8 @@ export function compilePipeQuery(
 											? "contains"
 											: undefined,
 								},
-								attributeFilters: equalsFilter(
-									"attribute_filter_key",
-									"attribute_filter_value",
+								attributeFilters: withHttpMethod(
+									equalsFilter("attribute_filter_key", "attribute_filter_value"),
 								),
 								resourceAttributeFilters: equalsFilter(
 									"resource_filter_key",
@@ -317,6 +324,7 @@ export function compilePipeQuery(
 							cursor: str("cursor"),
 							search: str("search"),
 							limit: int("limit", 50),
+							offset: int("offset", 0),
 							environments: strList("deployment_env"),
 							matchModes:
 								str("deployment_env_match_mode") === "contains"

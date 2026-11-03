@@ -74,6 +74,11 @@ const RowLimit = Schema.Number.check(
 	}),
 )
 
+/** An `OFFSET` a client may ask for; the builder rejects a negative or fractional one at compile time (a 500). */
+const RowOffset = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)).pipe(
+	Schema.annotate({ identifier: "RowOffset", description: "Rows to skip: a whole number, 0 or more." }),
+)
+
 // Dedicated endpoint schemas
 
 /** Shared primitives for filtered list/facet endpoints. */
@@ -1851,7 +1856,7 @@ export class ListMetricsRequest extends Schema.Class<ListMetricsRequest>("ListMe
 	metricType: Schema.optional(Schema.String),
 	search: Schema.optional(Schema.String),
 	limit: Schema.optional(RowLimit),
-	offset: Schema.optional(Schema.Number),
+	offset: Schema.optional(RowOffset),
 }) {}
 
 export class ListMetricsResponse extends Schema.Class<ListMetricsResponse>("ListMetricsResponse")({
@@ -1881,7 +1886,7 @@ export class ListHostsRequest extends Schema.Class<ListHostsRequest>("ListHostsR
 	endTime: TinybirdDateTime,
 	search: Schema.optional(Schema.String),
 	limit: Schema.optional(RowLimit),
-	offset: Schema.optional(Schema.Number),
+	offset: Schema.optional(RowOffset),
 }) {}
 
 const HostRow = Schema.Struct({
@@ -2037,7 +2042,7 @@ export class ListPodsRequest extends Schema.Class<ListPodsRequest>("ListPodsRequ
 	sortBy: Schema.optional(PodSortKeyLiteral),
 	sortDir: Schema.optional(SortDirectionLiteral),
 	limit: Schema.optional(RowLimit),
-	offset: Schema.optional(Schema.Number),
+	offset: Schema.optional(RowOffset),
 }) {}
 
 const PodRow = Schema.Struct({
@@ -2135,7 +2140,7 @@ export class ListContainersRequest extends Schema.Class<ListContainersRequest>("
 	sortBy: Schema.optional(ContainerSortKeyLiteral),
 	sortDir: Schema.optional(SortDirectionLiteral),
 	limit: Schema.optional(RowLimit),
-	offset: Schema.optional(Schema.Number),
+	offset: Schema.optional(RowOffset),
 }) {}
 
 const ContainerRow = Schema.Struct({
@@ -2984,7 +2989,7 @@ export class ListNodesRequest extends Schema.Class<ListNodesRequest>("ListNodesR
 	clusters: Schema.optional(StringArray),
 	environments: Schema.optional(StringArray),
 	limit: Schema.optional(RowLimit),
-	offset: Schema.optional(Schema.Number),
+	offset: Schema.optional(RowOffset),
 }) {}
 
 // Allocatable is 0 when the k8s_cluster receiver did not report it; utilizations are
@@ -3090,7 +3095,7 @@ export class ListWorkloadsRequest extends Schema.Class<ListWorkloadsRequest>("Li
 	environments: Schema.optional(StringArray),
 	computeTypes: Schema.optional(StringArray),
 	limit: Schema.optional(RowLimit),
-	offset: Schema.optional(Schema.Number),
+	offset: Schema.optional(RowOffset),
 }) {}
 
 const WorkloadRow = Schema.Struct({

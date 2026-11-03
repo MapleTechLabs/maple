@@ -42,6 +42,18 @@ describe("compilePipeQuery", () => {
 		}
 	})
 
+	it("list_logs pages by offset", () => {
+		const first = compilePipeQuery("list_logs", { ...baseParams(), limit: 30 })!.sql
+		const second = compilePipeQuery("list_logs", { ...baseParams(), limit: 30, offset: 30 })!.sql
+		expect(second).not.toBe(first)
+		expect(second).toContain("OFFSET 30")
+	})
+
+	it("list_traces filters by http_method", () => {
+		const sql = compilePipeQuery("list_traces", { ...baseParams(), http_method: "POST" })!.sql
+		expect(sql).toContain("'POST'")
+	})
+
 	it("returns undefined for unknown pipes", () => {
 		const result = compilePipeQuery("nonexistent_pipe", baseParams())
 		expect(result).toBeUndefined()
