@@ -2182,7 +2182,7 @@ describe("ErrorsService.runTick", () => {
 	})
 
 	it.effect("a fingerprint version bump re-keys an issue instead of opening a new one", () => {
-		const BUMPED = "33333333333333333333"
+		const BUMPED = "3333333333333333333"
 		const rows = [scanRow({ fingerprintHash: BUMPED, count: 4 })]
 		const lineage = [{ fingerprintHash: BUMPED, previousFingerprintHash: SCAN_FINGERPRINT }]
 		return Effect.gen(function* () {
@@ -2228,8 +2228,8 @@ describe("ErrorsService.runTick", () => {
 	})
 
 	it.effect("a bump that folds two old issues into one hash keeps the one being worked", () => {
-		const BUMPED = "33333333333333333333"
-		const OTHER_V3 = "44444444444444444444"
+		const BUMPED = "3333333333333333333"
+		const OTHER_V3 = "4444444444444444444"
 		const rows = [scanRow({ fingerprintHash: BUMPED, count: 2 })]
 		const lineage = [
 			{ fingerprintHash: BUMPED, previousFingerprintHash: SCAN_FINGERPRINT },
@@ -2276,7 +2276,7 @@ describe("ErrorsService.runTick", () => {
 	})
 
 	it.effect("a re-key onto an issue retention retired brings it back", () => {
-		const BUMPED = "33333333333333333333"
+		const BUMPED = "3333333333333333333"
 		const rows = [scanRow({ fingerprintHash: BUMPED, count: 4 })]
 		const lineage = [{ fingerprintHash: BUMPED, previousFingerprintHash: SCAN_FINGERPRINT }]
 		return Effect.gen(function* () {
@@ -2311,8 +2311,8 @@ describe("ErrorsService.runTick", () => {
 	})
 
 	it.effect("a bumped hash follows its old hash into the issue it was merged into", () => {
-		const BUMPED = "33333333333333333333"
-		const OWNER_FINGERPRINT = "22222222222222222222"
+		const BUMPED = "3333333333333333333"
+		const OWNER_FINGERPRINT = "2222222222222222222"
 		const rows = [scanRow({ fingerprintHash: BUMPED, count: 2 })]
 		const lineage = [{ fingerprintHash: BUMPED, previousFingerprintHash: SCAN_FINGERPRINT }]
 		return Effect.gen(function* () {
