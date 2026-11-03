@@ -38,6 +38,8 @@ import { AppRoute, hrefOf } from "../../../route"
 import { relatedAnomaliesOf, relatedAnomaliesSection } from "./view-anomalies"
 import { issueSkeleton, issueNotFound } from "./view-skeleton"
 import { vstack } from "@maple/views/ui/stack"
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { button } from "@maple/views/ui/button"
 
 // `IssueDetailContent`: skeleton, not-found and error states, then the loaded page.
 
@@ -110,6 +112,43 @@ const incidentsPanel = (
 			: incidentsTable(h, detail.incidents, clock),
 	])
 
+/** A merged issue says where its occurrences go now, and offers to split it back out. */
+const mergedNotice = (h: H, model: Model, issue: ErrorIssueDetailResponse["issue"]): ReadonlyArray<Html> =>
+	issue.mergedIntoIssueId === null
+		? []
+		: [
+				alert(h, { variant: "info", size: "sm", role: "status" }, [
+					alertTitle(h, ["Merged into another issue"]),
+					alertDescription(h, [
+						"New occurrences of this error land on ",
+						h.a(
+							[
+								h.Href(
+									hrefOf(
+										AppRoute.ErrorIssue({ issueId: issue.mergedIntoIssueId, search: {} }),
+									),
+								),
+								h.Class(textLinkClass("primary", false)),
+							],
+							["the issue it was merged into"],
+						),
+						". Unmerge it to track it on its own again.",
+					]),
+					alertAction(h, [
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
+								isLoading: model.busy.includes("unmerge"),
+								attributes: [h.OnClick(Message.ClickedUnmerge())],
+							},
+							["Unmerge"],
+						),
+					]),
+				]),
+			]
+
 type Signal = ReturnType<typeof signalOf>
 
 const signalOfDetail = (model: Model, detail: ErrorIssueDetailResponse): Signal | null =>
@@ -151,10 +190,9 @@ const overview = (
 		...clock,
 	})
 	const fix = getItFixedPanel(h, model, issue, linkedInvestigationOf(model))
-	return vstack(
-		h,
-		{ gap: "4" },
-		issue.kind === "alert"
+	return vstack(h, { gap: "4" }, [
+		...mergedNotice(h, model, issue),
+		...(issue.kind === "alert"
 			? [
 					alertSourceCard(h, issue),
 					stats,
@@ -169,8 +207,8 @@ const overview = (
 					...latestOccurrences(h, model, detail, clock),
 					incidentsPanel(h, detail, clock),
 					...relatedAnomaliesSection(h, relatedAnomaliesOf(model), clock),
-				],
-	)
+				]),
+	])
 }
 
 const rightPanel = (h: H, model: Model, detail: ErrorIssueDetailResponse): Html => {

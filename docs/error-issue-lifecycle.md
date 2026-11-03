@@ -12,7 +12,7 @@ This is the flow both humans and agents are meant to follow. If you are changing
 | Occurrence    | ClickHouse / Tinybird                                       | One exception, one row. Never mutated.                  |
 | Fingerprint   | `cityHash64(org, service, type, frames, message signature)` | The identity of an error _class_.                       |
 | Candidate     | `error_fingerprint_candidates`                              | A fingerprint seen, but not yet worth a row of its own. |
-| **Issue**     | `error_issues`                                              | The durable, assignable record. Owns one fingerprint.   |
+| **Issue**     | `error_issues`                                              | The durable, assignable record. Owns its fingerprint.   |
 | Alias         | `error_issue_fingerprints`                                  | More fingerprints an issue owns, merged or re-keyed.    |
 | Incident      | `error_incidents`                                           | A time-bounded flare-up _under_ an issue.               |
 | Investigation | `investigations`                                            | One AI diagnostic run. Zero or more per issue.          |
@@ -205,6 +205,12 @@ loop in verification without a human ever seeing it.
 - **Versions are compared by membership, never by ordering.** `maple-cli` reports semver and the
   Workers report git SHAs; "newer than the fix" is not a question those strings can answer.
 - **Severity has three sources with a precedence**: manual > ai > detector (`IssueSeveritySource`).
+- **Merging moves fingerprints, not history.** A merged issue is archived with
+  `merged_into_issue_id`, and its hashes become aliases of the kept issue
+  (`error_issue_fingerprints`), so the tick lands their next occurrences there. Its timeline, PRs
+  and investigations stay on it, and its open incident is closed without a notification. Unmerge
+  hands the hashes back; the occurrences that landed on the kept issue meanwhile stay there. A
+  merged `wontfix` issue's hashes are no longer suppressed: they land on the kept issue.
 
 ## The files
 
@@ -213,6 +219,7 @@ loop in verification without a human ever seeing it.
 | State machine, transitions, labels      | `packages/domain/src/http/errors.ts`                                                                         |
 | Verification windows, verdicts          | `packages/domain/src/http/fix-verification.ts`                                                               |
 | Transitions, leases, timeline events    | `packages/backend/src/services/errors/ErrorIssueWorkflowService.ts`                                          |
+| Merging and unmerging issues            | `packages/backend/src/services/errors/ErrorIssueMergeService.ts`                                             |
 | The errors tick (incidents, regression) | `packages/backend/src/services/errors/error-tick-persistence.ts`                                             |
 | Starting an investigation               | `packages/backend/src/services/errors/ai-triage-enqueue.ts`                                                  |
 | The gates in front of it                | `packages/backend/src/services/errors/investigation-gate.ts`, `IncidentClassifier.ts`, `apps/ai/src/triage/` |

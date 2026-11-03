@@ -4054,6 +4054,10 @@
           "lease_holder": {
             "$ref": "#/components/schemas/ErrorIssueActor"
           },
+          "merged_into_issue_id": {
+            "$ref": "#/components/schemas/_maple_ErrorIssueId",
+            "description": "The issue this one was merged into. A merged issue is archived."
+          },
           "merged_pull_request_count": {
             "type": "number"
           },
@@ -4256,6 +4260,10 @@
           },
           "lease_holder": {
             "$ref": "#/components/schemas/ErrorIssueActor"
+          },
+          "merged_into_issue_id": {
+            "$ref": "#/components/schemas/_maple_ErrorIssueId",
+            "description": "The issue this one was merged into. A merged issue is archived."
           },
           "merged_pull_request_count": {
             "type": "number"

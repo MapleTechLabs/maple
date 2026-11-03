@@ -63,7 +63,7 @@ export const Model = Schema.Struct({
 	themeColors: Schema.NullOr(ThemeColors),
 	/** `PageRefreshProvider`: Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
 	/** The rail writes in flight, one entry per write kind. */
-	busy: Schema.Array(Schema.Literals(["state", "severity", "claim", "heartbeat", "release"])),
+	busy: Schema.Array(Schema.Literals(["state", "severity", "claim", "heartbeat", "release", "unmerge"])),
 	/** The severity raise waiting on "Notify escalation destinations?". */
 	/** `startingInvestigation`: the create is in flight. */
 	isStartingInvestigation: Schema.Boolean,

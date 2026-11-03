@@ -506,6 +506,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(m, value) => pickedSeverity(m, isSeverity(value) ? value : null),
 			),
 		ClickedClaim: () => startWrite(model, { _tag: "Claim" }),
+		ClickedUnmerge: () => startWrite(model, { _tag: "Unmerge" }),
 		ClickedExtendLease: () => startWrite(model, { _tag: "Heartbeat" }),
 		ClickedReleaseLease: () => startWrite(model, { _tag: "Release" }),
 		CompletedIssueWrite: ({ write, result }) => {

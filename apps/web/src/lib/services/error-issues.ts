@@ -127,6 +127,7 @@ export const errorIssueFromV2 = (issue: V2ErrorIssue): ErrorIssueDocument =>
 		resolvedVersions: issue.resolved_versions,
 		snoozeUntil: asIsoOrNull(issue.snooze_until),
 		archivedAt: asIsoOrNull(issue.archived_at),
+		mergedIntoIssueId: issue.merged_into_issue_id ?? null,
 		hasOpenIncident: issue.has_open_incident,
 		commentCount: issue.comment_count,
 		openPullRequestCount: issue.open_pull_request_count,
