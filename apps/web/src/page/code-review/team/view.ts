@@ -1,6 +1,6 @@
 import type { CodeReviewTeam, CodeReviewTeamMember, CodeReviewTeamTotals } from "@maple/domain/http"
 import { formatSpan } from "../../../components/code-review/code-review-format"
-import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatExactCount } from "@maple/views/lib/locale"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
@@ -151,7 +151,7 @@ const COLUMNS: ReadonlyArray<Column> = [
 		hint: "Runs that were a rerun of a workflow, over every run the person started",
 		className: "hidden w-24 xl:table-cell",
 		format: rateOf,
-		detail: (member) => `${member.reruns} reruns over ${member.ciRuns} runs`,
+		detail: (member) => `${countLabel(member.reruns, "rerun")} over ${countLabel(member.ciRuns, "run")}`,
 	},
 	{
 		metric: "shippedClean",
@@ -168,7 +168,7 @@ const COLUMNS: ReadonlyArray<Column> = [
 		hint: "Time the person's jobs spent on a runner, queue left out",
 		className: "hidden w-24 md:table-cell",
 		format: (value) => (value === null ? EMPTY_VALUE : runnerTimeOf(value)),
-		detail: (member) => `${member.ciRuns} runs, ${member.cancelledRuns} cancelled`,
+		detail: (member) => `${countLabel(member.ciRuns, "run")}, ${member.cancelledRuns} cancelled`,
 	},
 ]
 
