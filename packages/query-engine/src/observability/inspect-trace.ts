@@ -160,6 +160,7 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 ) {
 	const executor = yield* WarehouseExecutor
 	yield* Effect.annotateCurrentSpan("maple.trace.id", traceId)
+	const decodedTraceId = yield* Schema.decodeEffect(TraceId)(traceId)
 
 	const nowMs = yield* Clock.currentTimeMillis
 	const rangeHours = options?.rangeHours ?? DEFAULT_RANGE_HOURS
@@ -249,6 +250,7 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 		)
 		const resourceAttributes = yield* parseJsonAttributes(span.resourceAttributes ?? "{}")
 		const node: MutableSpanNode = {
+			// oxlint-disable-next-line effecttsgo/schema-sync-in-effect -- read back from the warehouse, which only stores valid span ids
 			spanId: Schema.decodeSync(SpanId)(span.spanId),
 			parentSpanId: span.parentSpanId,
 			spanName: span.spanName,
@@ -305,7 +307,7 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 	yield* Effect.annotateCurrentSpan("result.serviceCount", serviceCount)
 
 	return {
-		traceId: Schema.decodeSync(TraceId)(traceId),
+		traceId: decodedTraceId,
 		serviceCount,
 		spanCount: spans.length,
 		rootDurationMs: roots[0]?.durationMs ?? 0,

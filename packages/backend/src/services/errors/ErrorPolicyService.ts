@@ -123,10 +123,11 @@ const mergeNotificationPolicy = (
 	updatedBy: userId,
 })
 
+const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
+
 const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(function* () {
 	const database = yield* Database
 	const dbExecute = makeErrorDatabaseExecute(database, "ErrorPolicyService")
-	const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
 
 	// Mirrors the column defaults on `error_notification_policies` — an org with no
 	// row must behave exactly like an org that just got one. Notifications are

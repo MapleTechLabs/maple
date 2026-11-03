@@ -55,6 +55,7 @@ export const buildIsolateHandler = <ROut, E>(
 					// HttpRouter.toHttpEffect erases the same phantom markers internally.
 					// A fresh router is essential: only services may be shared across these graphs.
 					const context = yield* Layer.buildWithMemoMap(
+						// oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- phantom request markers, see above
 						(routes as Layer.Layer<ROut, E, HttpRouter.HttpRouter>).pipe(
 							Layer.provideMerge(Layer.fresh(HttpRouter.layer)),
 						),
