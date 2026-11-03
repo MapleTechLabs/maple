@@ -136,16 +136,18 @@ const mergeEntries = (selected: ReadonlyArray<ErrorSignal>): ReadonlyArray<MenuV
 ]
 
 /**
- * Whether the selection can be merged: 2+ issues, all error issues (alert and
- * integration issues own no fingerprints), and few enough for one request, which
- * keeps one issue and folds at most MAX_ISSUE_MERGE_SOURCES into it.
+ * Whether the selection can be merged: 2+ live error issues (alert and integration
+ * issues own no fingerprints, and an archived one cannot be merged), few enough for
+ * one request, which keeps one issue and folds at most MAX_ISSUE_MERGE_SOURCES into it.
  */
 export const canMergeSelection = (
-	signals: ReadonlyArray<{ readonly issue: { readonly kind: ErrorSignal["issue"]["kind"] } }>,
+	signals: ReadonlyArray<{
+		readonly issue: { readonly kind: ErrorSignal["issue"]["kind"]; readonly archivedAt: string | null }
+	}>,
 ): boolean =>
 	signals.length >= 2 &&
 	signals.length <= MAX_ISSUE_MERGE_SOURCES + 1 &&
-	Arr.every(signals, (signal) => signal.issue.kind === "error")
+	Arr.every(signals, (signal) => signal.issue.kind === "error" && signal.issue.archivedAt === null)
 
 export const bulkBar = (h: H, model: Model): ReadonlyArray<Html> => {
 	const signals = Arr.filter(signalsOf(model), (signal) => model.selectedIds.includes(signal.id))

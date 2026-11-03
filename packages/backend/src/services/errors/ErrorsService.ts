@@ -1500,7 +1500,40 @@ const make: Effect.Effect<
 								]),
 							),
 						)
-						// A purged issue's hashes stop landing on it, so the issues merged into it own theirs again.
+						// The issues merged into a purged one get back what they brought, as an unmerge
+						// hands it back: their own hash is their primary again, the rest their aliases.
+						const freed = yield* dbExecute((db) =>
+							db.run(
+								PG.from(ErrorIssues)
+									.select("id", "fingerprintHash")
+									.where(($) => [$.orgId.eq(orgId), $.mergedIntoIssueId.in_(...ids)]),
+							),
+						)
+						yield* Effect.forEach(
+							freed,
+							(issue) =>
+								dbExecute((db) =>
+									Effect.andThen(
+										db.run(
+											PG.deleteFrom(ErrorIssueFingerprints).where(($) => [
+												$.orgId.eq(orgId),
+												$.originIssueId.eq(issue.id),
+												$.fingerprintHash.eq(issue.fingerprintHash),
+											]),
+										),
+										db.run(
+											PG.update(ErrorIssueFingerprints)
+												.set({ issueId: issue.id, originIssueId: null })
+												.where(($) => [
+													$.orgId.eq(orgId),
+													$.originIssueId.eq(issue.id),
+												]),
+										),
+									),
+								),
+							{ discard: true },
+						)
+						// Whatever the purged issues still own stops landing anywhere.
 						yield* dbExecute((db) =>
 							db.run(
 								PG.deleteFrom(ErrorIssueFingerprints).where(($) => [
