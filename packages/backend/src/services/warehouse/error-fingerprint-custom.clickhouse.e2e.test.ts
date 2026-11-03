@@ -20,7 +20,7 @@ const KEY = "checkout-payment-declined"
 /** Now-relative: the tables enforce a TTL at insert time. */
 const SEED_TS = Str.slice(0, 19)(Str.replace("T", " ")(msToDate(Date.now() - 60 * 60 * 1000).toISOString()))
 
-const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 interface Seed {
 	readonly spanId: string

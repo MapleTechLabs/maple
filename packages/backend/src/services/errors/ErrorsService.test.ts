@@ -2670,6 +2670,65 @@ describe("ErrorsService.runTick", () => {
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
 
+	it.effect("purging an issue hands the issues merged into it their fingerprints back", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(RETENTION_TICK_MS)
+			const longAgo = RETENTION_TICK_MS - 120 * DAY_MS
+			const kept = asIssueId(randomUUID())
+			const merged = asIssueId(randomUUID())
+			// The kept issue is past archived retention; the one merged into it is not yet.
+			yield* seedIssue(kept, {
+				fingerprintHash: "1111111111111111111",
+				archivedAt: RETENTION_TICK_MS - 91 * DAY_MS,
+				lastSeenAt: longAgo,
+			})
+			yield* seedIssue(merged, {
+				fingerprintHash: "2222222222222222222",
+				archivedAt: RETENTION_TICK_MS - DAY_MS,
+				mergedIntoIssueId: kept,
+			})
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorIssueFingerprints).values([
+						{
+							orgId: ORG,
+							fingerprintHash: "2222222222222222222",
+							issueId: kept,
+							source: "merge",
+							originIssueId: merged,
+							createdAt: longAgo,
+						},
+						// A hash the merged issue had owned before it was merged.
+						{
+							orgId: ORG,
+							fingerprintHash: "3333333333333333333",
+							issueId: kept,
+							source: "rekey",
+							originIssueId: merged,
+							createdAt: longAgo,
+						},
+					]),
+				),
+			)
+
+			yield* errors.runTick
+
+			assert.strictEqual((yield* loadIssueById(merged)).mergedIntoIssueId, null)
+			const aliases = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorIssueFingerprints)
+						.select("fingerprintHash", "issueId", "originIssueId")
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
+			)
+			assert.deepStrictEqual(aliases, [
+				{ fingerprintHash: "3333333333333333333", issueId: merged, originIssueId: null },
+			])
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
 	it.effect("the retention phase archives stale done issues and purges long-archived ones", () =>
 		Effect.gen(function* () {
 			const errors = yield* ErrorsService

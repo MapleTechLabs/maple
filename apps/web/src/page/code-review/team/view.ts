@@ -333,11 +333,25 @@ const cardSection = (h: H, title: string, rows: ReadonlyArray<Html>, more: numbe
 const countCell = (h: H, count: ActivityCount): Html =>
 	typography(h, { size: "xs", tone: "muted", numeric: true, className: "shrink-0" }, [countLine(count)])
 
-const repositoryLabel = (h: H, repository: string): Html =>
+/**
+ * `wrap` for the day card: the pointer passes through it, so a truncated name has no title to hover.
+ * It breaks after the owner's slash first.
+ */
+const repositoryLabel = (h: H, repository: string, wrap = false): Html =>
 	typography(
 		h,
-		{ size: "xs", mono: true, truncate: true, className: "min-w-0", attributes: [h.Title(repository)] },
-		[repository],
+		{
+			size: "xs",
+			mono: true,
+			truncate: !wrap,
+			className: wrap ? "min-w-0 wrap-anywhere" : "min-w-0",
+			attributes: [h.Title(repository)],
+		},
+		wrap
+			? Arr.flatMap(Str.split("/")(repository), (part, index) =>
+					index === 0 ? [part] : ["/", h.wbr([]), part],
+				)
+			: [repository],
 	)
 
 /** What a calendar day's card says: the totals, then who and where. */
@@ -360,7 +374,7 @@ const dayCard = (h: H, day: string, activity: ActivityDay | undefined): Readonly
 					"People",
 					Arr.map(activity.people.slice(0, CARD_PEOPLE), (person) =>
 						hstack(h, { gap: "3", justify: "between", attributes: [h.Key(person.key)] }, [
-							authorLabel(h, person.key, "text-xs"),
+							authorLabel(h, person.key, "text-xs", true),
 							countCell(h, person),
 						]),
 					),
@@ -371,7 +385,7 @@ const dayCard = (h: H, day: string, activity: ActivityDay | undefined): Readonly
 					"Repositories",
 					Arr.map(activity.repositories.slice(0, CARD_REPOSITORIES), (repository) =>
 						hstack(h, { gap: "3", justify: "between", attributes: [h.Key(repository.key)] }, [
-							repositoryLabel(h, repository.key),
+							repositoryLabel(h, repository.key, true),
 							countCell(h, repository),
 						]),
 					),

@@ -21,7 +21,8 @@ export function registerMergeErrorIssuesTool(server: McpToolRegistrar) {
 			merge_issue_ids: P.list(`Issue IDs to fold into it, at most ${MAX_ISSUE_MERGE_SOURCES}`),
 		}),
 		output: MergeErrorIssuesOutput,
-		hints: { readOnly: false, destructive: false, idempotent: false },
+		// Unmerge hands fingerprints back but not the closed incidents or cleared leases.
+		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Merging duplicate issues"],
 		handler: Effect.fn("McpTool.mergeErrorIssues")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
@@ -36,7 +37,8 @@ export function registerMergeErrorIssuesTool(server: McpToolRegistrar) {
 					parameter: "merge_issue_ids",
 				})
 			}
-			const sourceIds = Arr.flatMap(entries, (entry) => Option.toArray(entry.id))
+			// A UUID and its `iss_` form decode to one id; count it once, as the service does.
+			const sourceIds = Arr.dedupe(Arr.flatMap(entries, (entry) => Option.toArray(entry.id)))
 			const actorId = yield* resolveActorId(tenant)
 			const merges = yield* ErrorIssueMergeService
 			const issue = yield* merges.mergeIssues(tenant.orgId, actorId, params.issue_id, sourceIds).pipe(
