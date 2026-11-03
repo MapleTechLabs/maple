@@ -416,14 +416,19 @@ export function hostNetworkTimeseriesQuery(opts: HostNetworkTimeseriesOpts) {
 					time: $.TimeUnix,
 					isDeltaTemporality: isDelta,
 				}),
-				// A delta point covers its own start..time; a cumulative one the time since the
-				// previous sample, 0 for a series' first, which has nothing to measure against.
+				// A delta point, or a counter restarted since the previous sample, covers its own
+				// start..time; otherwise a point covers the time since the previous sample, 0 for a
+				// series' first, which has nothing to measure against.
 				elapsedSeconds: CH.multiIf(
 					[
 						[
-							isDelta
-								.and(CH.toUnixTimestamp64Nano($.StartTimeUnix).gt(0))
-								.and($.StartTimeUnix.lt($.TimeUnix)),
+							$.StartTimeUnix.lt($.TimeUnix).and(
+								CH.or(
+									isDelta.and(CH.toUnixTimestamp64Nano($.StartTimeUnix).gt(0)),
+									// A restarted counter counts from its new start.
+									$.StartTimeUnix.gt(previousTime),
+								),
+							),
 							secondsSince($.StartTimeUnix),
 						],
 					],

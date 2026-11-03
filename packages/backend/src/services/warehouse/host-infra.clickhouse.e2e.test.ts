@@ -90,7 +90,8 @@ const filesystemPoints: ReadonlyArray<Point> = [
 
 // system.network.io samples every minute, offset by 30s, from one bucket before the window
 // to its end. eth0 receives 6000 B/min (100 B/s) and transmits 12000 B/min (200 B/s); lo
-// receives 600 B/min (10 B/s), which the chart leaves out. eth0's receive counter resets 32.5 minutes in.
+// receives 600 B/min (10 B/s), which the chart leaves out. eth0's receive counter restarts 32.5 minutes in, 30s
+// before a sample, which then reads the 3000 B since the restart.
 const RESET_INDEX = 42
 const networkPoints: ReadonlyArray<Point> = Array.from({ length: 70 }, (_, index) => {
 	const ms = START_MS - 10 * MINUTE_MS + 30_000 + index * MINUTE_MS
@@ -98,7 +99,7 @@ const networkPoints: ReadonlyArray<Point> = Array.from({ length: 70 }, (_, index
 	const eth0Start = restarted
 		? START_MS - 10 * MINUTE_MS + RESET_INDEX * MINUTE_MS
 		: START_MS - 120 * MINUTE_MS
-	const eth0Received = restarted ? 6000 * (index - RESET_INDEX + 1) : 6000 * index
+	const eth0Received = restarted ? 3000 + 6000 * (index - RESET_INDEX) : 6000 * index
 	return [
 		{
 			host: "receiver-host",
