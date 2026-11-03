@@ -169,8 +169,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  */
 const rowBelongsTo = (row: unknown, orgId: string): boolean => {
 	if (!isRecord(row)) return false
+	// `org_id` is the ingestion-JSON key of the datasources that map OrgId by jsonPath
+	// (session_replays, product_events); every tag a row carries must match.
 	const tags = [
 		row.OrgId,
+		row.org_id,
 		isRecord(row.resource_attributes) ? row.resource_attributes.maple_org_id : undefined,
 	].filter((tag) => tag !== undefined)
 	return tags.length > 0 && tags.every((tag) => tag === orgId)

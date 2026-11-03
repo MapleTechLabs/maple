@@ -279,12 +279,20 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 			const foreignResource = yield* executor
 				.ingest(tenant, "traces", [{ resource_attributes: { maple_org_id: "org_victim" } }])
 				.pipe(Effect.flip)
+			const foreignJsonKey = yield* executor
+				.ingest(tenant, "product_events", [{ org_id: "org_victim" }])
+				.pipe(Effect.flip)
 			yield* executor.ingest(tenant, "traces", [{ resource_attributes: { maple_org_id: "org_test" } }])
+			yield* executor.ingest(tenant, "product_events", [{ org_id: "org_test" }])
 
 			assert.strictEqual(error._tag, "@maple/http/errors/WarehouseScopeError")
 			assert.strictEqual(missing._tag, "@maple/http/errors/WarehouseScopeError")
 			assert.strictEqual(foreignResource._tag, "@maple/http/errors/WarehouseScopeError")
-			assert.deepStrictEqual(inserted, [[{ resource_attributes: { maple_org_id: "org_test" } }]])
+			assert.strictEqual(foreignJsonKey._tag, "@maple/http/errors/WarehouseScopeError")
+			assert.deepStrictEqual(inserted, [
+				[{ resource_attributes: { maple_org_id: "org_test" } }],
+				[{ org_id: "org_test" }],
+			])
 		}),
 	)
 
