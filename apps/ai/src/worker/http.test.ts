@@ -78,9 +78,11 @@ const event = (fetch: HttpEffect, method: string, path: string) =>
 		const request = yield* Scope.make()
 		const services = yield* Layer.buildWithScope(
 			Layer.mergeAll(
-				MapleCloudflareSDK.make(workerTelemetryConfig({ serviceName: "maple-ai" })).requestLayer,
+				MapleCloudflareSDK.make(workerTelemetryConfig({ serviceName: "maple-ai" })).requestLayer.pipe(
+					Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env)),
+				),
 				Layer.succeed(Cloudflare.WorkerEnvironment, env),
-			).pipe(Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env))),
+			),
 			request,
 		)
 		// Alchemy erases this helper's return type to any. Restore its boundary contract.

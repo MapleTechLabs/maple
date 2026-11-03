@@ -16,8 +16,8 @@ import { buildChatAlertBlocks, chatTransport } from "./chat"
  * connector is `testchat`, and what the platform does with the blocks is its own test's business.
  */
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_1")
-const WORKSPACE = Schema.decodeUnknownSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
+const ORG = Schema.decodeSync(OrgId)("org_1")
+const WORKSPACE = Schema.decodeSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
 const LINK = "https://web.localhost/alerts"
 const CHAT = "https://web.localhost/alerts/rule_1"
 
@@ -29,7 +29,7 @@ const config: SecretConfigOf<"chat"> = {
 }
 
 const destinationRow: AlertDestinationRow = {
-	id: Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726"),
+	id: Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726"),
 	orgId: ORG,
 	name: "Incidents",
 	type: "chat",

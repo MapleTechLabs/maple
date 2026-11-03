@@ -104,7 +104,7 @@ export const SelectOrganization = Command.define("SelectPlanetscaleOrganization"
 			const client = yield* MapleApiV2Client
 			const withInclude = includeBranches.length > 0 ? { include_branches: includeBranches } : {}
 			const withExclude = excludeBranches.length > 0 ? { exclude_branches: excludeBranches } : {}
-			const payload = yield* Schema.decodeUnknownEffect(V2PlanetScaleSelectOrganizationRequest)({
+			const payload = yield* Schema.decodeEffect(V2PlanetScaleSelectOrganizationRequest)({
 				organization,
 				...withInclude,
 				...withExclude,
@@ -125,7 +125,7 @@ export const SetMetricsToken = Command.define("SetPlanetscaleMetricsToken", {
 	execute: ({ tokenId, tokenSecret }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const payload = yield* Schema.decodeUnknownEffect(V2PlanetScaleMetricsTokenRequest)({
+			const payload = yield* Schema.decodeEffect(V2PlanetScaleMetricsTokenRequest)({
 				token_id: tokenId,
 				token_secret: tokenSecret,
 			})

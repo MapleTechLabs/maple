@@ -18,7 +18,7 @@ import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import type { ExecutorTransport } from "@maple/backend/sandbox/client"
 import { executorAgentId, executorKey, makeExecutor } from "./ExecutorService"
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
+const orgId = Schema.decodeSync(OrgId)("org_test")
 const SHA = Str.repeat(40)("d")
 const target = { repository: "octo/shop", sha: SHA }
 const RUN_ID = "7F3A2C10-1111-4222-8333-944455556666"

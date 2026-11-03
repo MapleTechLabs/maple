@@ -23,7 +23,8 @@ const toWire = (value: unknown): WireJson => {
 			),
 		)
 	}
-	return String(value)
+	// Functions and symbols have no JSON form, as in `JSON.stringify`.
+	return typeof value === "bigint" ? value.toString() : null
 }
 
 /**

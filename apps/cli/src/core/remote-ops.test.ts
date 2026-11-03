@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "bun:test"
 import {
 	Arbitrary,
 	Cause,
+	DateTime,
 	Effect,
 	Exit,
 	Option,
@@ -468,7 +469,7 @@ describe("remote-ops window properties", () => {
 				traces,
 				({ startMs, durationMs }) =>
 					Effect.gen(function* () {
-						const start = new Date(startMs).toISOString()
+						const start = DateTime.formatIso(DateTime.makeUnsafe(startMs))
 						const sent = stubV2((url) =>
 							Str.includes("/logs/search")(url)
 								? listEnvelope([])
@@ -476,7 +477,9 @@ describe("remote-ops window properties", () => {
 										id: "671403778c461093dbe435b41b677d18",
 										object: "trace",
 										start_time: start,
-										end_time: new Date(startMs + durationMs).toISOString(),
+										end_time: DateTime.formatIso(
+											DateTime.makeUnsafe(startMs + durationMs),
+										),
 										duration_ms: durationMs,
 										span_count: 0,
 										service_count: 0,

@@ -1,6 +1,6 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { assert, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Array as Arr } from "effect"
+import { Clock, ConfigProvider, Effect, Layer, Array as Arr } from "effect"
 import { OrgId } from "@maple/domain"
 import type { TimeseriesPoint } from "@maple/domain/query-engine"
 import { Schema } from "effect"
@@ -387,7 +387,7 @@ describe("bucket cache hit rate — dashboard access patterns", () => {
 		const { backend } = makeInstrumentedBackend()
 
 		return Effect.gen(function* () {
-			const nowMs = Date.now()
+			const nowMs = yield* Clock.currentTimeMillis
 			const endMs = Math.floor(nowMs / BUCKET_MS) * BUCKET_MS
 			const window = { startMs: endMs - 30 * MIN, endMs }
 

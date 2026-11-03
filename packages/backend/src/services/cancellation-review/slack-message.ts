@@ -11,7 +11,7 @@ import type {
 } from "@maple/domain/http"
 import type { IntegrationEntry } from "@maple/domain/integration-inventory"
 import { type CancellationSignal, dollars, formatGB, totalGB } from "./signals"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Order, String as Str } from "effect"
 
 /** Where a person looks the org up. */
 export interface OrgLinks {
@@ -64,6 +64,7 @@ export interface CancellationReport {
 }
 
 const REASON_LABELS = {
+	same_day_cancel: "Cancelled the day they subscribed",
 	never_activated: "Never got going",
 	stopped_sending: "Stopped sending telemetry",
 	not_engaged: "Nobody was using it",
@@ -154,45 +155,41 @@ const linksText = (links: OrgLinks): string =>
 interface Stat {
 	readonly topic: CancellationSignal["topic"]
 	readonly label: string
-	readonly value: string
+	/** The last 30 days, or the current value for stats with no window. */
+	readonly now: string
+	/** The same figure a month earlier; null where there is none to compare. */
+	readonly before: string | null
 	readonly notes: ReadonlyArray<string>
 }
 
 const gb = (value: number) => (value === 0 ? "0 GB" : formatGB(value))
 
-/** How this window compares with the one before, in the stat's own unit. */
-const trend = (recent: number, prior: number, format: (value: number) => string): string =>
-	recent === prior ? "same as the month before" : `${recent > prior ? "up" : "down"} from ${format(prior)}`
-
-/** One number per section of the snapshot; the signal sentences only colour them. */
+/** One row per section of the snapshot; the signal sentences only colour them. */
 const stats = (snapshot: CancellationSnapshot): ReadonlyArray<Stat> => {
 	const { org, ingest, visits, adoption, billing } = snapshot
 	const out: Array<Stat> = []
 	if (ingest !== null) {
-		const recent = totalGB(ingest.recent)
 		out.push({
 			topic: "telemetry",
-			label: "Telemetry, 30d",
-			value: gb(recent),
+			label: "Telemetry",
+			now: gb(totalGB(ingest.recent)),
+			before: ingest.daysSinceLastData === null ? null : gb(totalGB(ingest.prior)),
 			notes:
 				ingest.daysSinceLastData === null
 					? ["nothing in the last year"]
-					: [
-							trend(recent, totalGB(ingest.prior), gb),
-							...(ingest.daysSinceLastData >= 2
-								? [`last data ${ingest.daysSinceLastData} days ago`]
-								: []),
-						],
+					: ingest.daysSinceLastData >= 2
+						? [`last data ${ingest.daysSinceLastData} days ago`]
+						: [],
 		})
 	}
 	if (visits !== null) {
 		const { recent, prior, daysSinceLastVisit } = visits
 		out.push({
 			topic: "visits",
-			label: "In the app, 30d",
-			value: plural(recent.activeDays, "day"),
+			label: "Days in the app",
+			now: String(recent.activeDays),
+			before: String(prior.activeDays),
 			notes: [
-				trend(recent.activeDays, prior.activeDays, String),
 				...(recent.peakDailyUsers > 0
 					? [
 							`peak ${recent.peakDailyUsers} ${recent.peakDailyUsers === 1 ? "person" : "people"} a day`,
@@ -210,11 +207,9 @@ const stats = (snapshot: CancellationSnapshot): ReadonlyArray<Stat> => {
 		out.push({
 			topic: "members",
 			label: "Members",
-			value: String(org.members),
-			notes: [
-				...(org.members === 1 ? ["single-member org"] : []),
-				...(org.supportChannel ? ["shared support channel"] : []),
-			],
+			now: String(org.members),
+			before: null,
+			notes: org.supportChannel ? ["shared support channel"] : [],
 		})
 	}
 	if (billing !== null) {
@@ -222,17 +217,12 @@ const stats = (snapshot: CancellationSnapshot): ReadonlyArray<Stat> => {
 		out.push({
 			topic: "billing",
 			label: "Last invoice",
-			value: last === null ? "None yet" : dollars(last),
+			now: last === null ? "None yet" : dollars(last),
+			before: last === null || previous === null ? null : dollars(previous),
 			notes: [
-				...(last === null
-					? []
-					: previous === null
-						? ["first invoice"]
-						: previous === 0 && last > 0
-							? ["first paid, $0 before"]
-							: [trend(last, previous, dollars)]),
+				...(last !== null && previous === null ? ["first invoice"] : []),
 				...(billing.overAllowance.length > 0
-					? [`over allowance on ${Arr.join(Arr.map(billing.overAllowance, escape), ", ")}`]
+					? [`over allowance on ${Arr.join(billing.overAllowance, ", ")}`]
 					: []),
 			],
 		})
@@ -240,9 +230,10 @@ const stats = (snapshot: CancellationSnapshot): ReadonlyArray<Stat> => {
 	if (adoption !== null) {
 		out.push({
 			topic: "setup",
-			label: "Set up",
-			value: plural(adoption.dashboards, "dashboard"),
-			notes: [plural(adoption.alertRules, "alert rule")],
+			label: "Dashboards / alerts",
+			now: `${adoption.dashboards} / ${adoption.alertRules}`,
+			before: null,
+			notes: [],
 		})
 	}
 	return out
@@ -260,17 +251,54 @@ const toneOf = (
 	return tones.includes("concern") ? "concern" : tones.includes("healthy") ? "healthy" : "neutral"
 }
 
-const statField = (stat: Stat, tone: CancellationSignal["tone"]) => ({
-	type: "mrkdwn",
-	text: Arr.join(
-		[
-			`${TONE_MARK[tone]}${stat.label}`,
-			`*${stat.value}*`,
-			...(stat.notes.length > 0 ? [Arr.join(stat.notes, " · ")] : []),
-		],
-		"\n",
-	),
+const TONE_EMOJI = {
+	concern: "red_circle",
+	healthy: "large_green_circle",
+	neutral: null,
+} satisfies Record<CancellationSignal["tone"], string | null>
+
+const TONE_ORDER = { concern: 0, healthy: 1, neutral: 2 } satisfies Record<CancellationSignal["tone"], number>
+
+/** Table cells are rich text, not mrkdwn: nothing in them needs escaping. */
+const cell = (elements: ReadonlyArray<Record<string, unknown>>): Record<string, unknown> => ({
+	type: "rich_text",
+	elements: [{ type: "rich_text_section", elements }],
 })
+
+const bold = (text: string) => cell([{ type: "text", text, style: { bold: true } }])
+
+/** Worrying rows first, then healthy, then the ones with nothing to say. */
+const statsTable = (shown: ReadonlyArray<Stat>, signals: ReadonlyArray<CancellationSignal>) => {
+	const ranked = Arr.sort(
+		Arr.map(shown, (stat) => ({ stat, tone: toneOf(signals, stat.topic) })),
+		Order.mapInput(
+			Order.Number,
+			({ tone }: { readonly tone: CancellationSignal["tone"] }) => TONE_ORDER[tone],
+		),
+	)
+	const rows = Arr.map(ranked, ({ stat, tone }) => {
+		const emoji = TONE_EMOJI[tone]
+		const before = [...(stat.before === null ? [] : [stat.before]), ...stat.notes]
+		return [
+			cell([
+				...(emoji === null
+					? []
+					: [
+							{ type: "emoji", name: emoji },
+							{ type: "text", text: " " },
+						]),
+				{ type: "text", text: stat.label },
+			]),
+			bold(stat.now),
+			{ type: "raw_text", text: before.length > 0 ? Arr.join(before, " · ") : "—" },
+		]
+	})
+	return {
+		type: "table",
+		column_settings: [null, null, { is_wrapped: true }],
+		rows: [[bold("Last 30 days"), bold("Now"), bold("Month before")], ...rows],
+	}
+}
 
 const unread = (snapshot: CancellationSnapshot): ReadonlyArray<string> =>
 	Arr.map(
@@ -539,10 +567,7 @@ export const buildCancellationMessage = (
 		)
 	}
 	if (shown.length > 0) {
-		blocks.push({
-			type: "section",
-			fields: Arr.map(shown, (stat) => statField(stat, toneOf(signals, stat.topic))),
-		})
+		blocks.push(statsTable(shown, signals))
 	}
 	const integrations = integrationBlocks(subject.integrations)
 	if (integrations.length > 0) blocks.push({ type: "divider" }, ...integrations)

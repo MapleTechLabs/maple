@@ -16,10 +16,12 @@ const HTTP_STATUS = /^\d{3}$/
 
 /** An Error set only because of the response status: `error.type` is the status code itself. */
 function isStatusOnlyError(span: ReadableSpan): boolean {
+	const errorType = span.attributes["error.type"]
 	return (
 		span.kind === SpanKind.CLIENT &&
 		span.status.code === SpanStatusCode.ERROR &&
-		HTTP_STATUS.test(String(span.attributes["error.type"] ?? "")) &&
+		(typeof errorType === "string" || typeof errorType === "number") &&
+		HTTP_STATUS.test(String(errorType)) &&
 		!span.events.some((event) => event.name === "exception")
 	)
 }

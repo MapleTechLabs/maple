@@ -20,6 +20,9 @@ export const formatDateTimeUTC = (d: Date): string =>
 	`${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
 	`${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
 
+/** `formatDateTimeUTC` for an epoch-millisecond instant. */
+export const formatEpochMsUTC = (ms: number): string => formatDateTimeUTC(new Date(ms))
+
 const SINCE_RE = /^(\d+)(m|h|d|w)$/
 const UNIT_MS = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 } as const
 
@@ -85,7 +88,7 @@ export const normalizeTimestamp = (input: string, flag: string): Result.Result<s
 					message: `invalid ${flag} "${input}": expected 'YYYY-MM-DD HH:mm:ss' (UTC) or ISO-8601 like 2026-09-25T22:00:00Z`,
 				}),
 			)
-		: Result.succeed(formatDateTimeUTC(new Date(ms)))
+		: Result.succeed(formatEpochMsUTC(ms))
 }
 
 /**
@@ -129,8 +132,8 @@ export const resolveRangeChecked = (a: {
 			const nowMs = yield* Clock.currentTimeMillis
 			const endMs = end === undefined ? nowMs : (parseTimestampMs(end) ?? nowMs)
 			range = {
-				startTime: start ?? formatDateTimeUTC(new Date(endMs - ms)),
-				endTime: end ?? formatDateTimeUTC(new Date(nowMs)),
+				startTime: start ?? formatEpochMsUTC(endMs - ms),
+				endTime: end ?? formatEpochMsUTC(nowMs),
 			}
 		}
 		// Same-format UTC strings order lexicographically.

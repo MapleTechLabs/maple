@@ -349,15 +349,12 @@ const workerMeta = (h: H, row: WorkerListRow) => [
 	row.nameInOtherAccounts ? "name shared with another account" : "",
 	row.errors > 0 ? `${formatNumber(row.errors)} of ${formatNumber(row.requests)} failed` : "",
 	row.doRequests > 0
-		? h.span(
-				[...(row.doErrorRate >= 0.01 ? [h.Class("text-severity-error")] : [])],
-				[
-					"Durable Objects · ",
-					formatNumber(row.doRequests),
-					" calls",
-					row.doErrors > 0 ? ` · ${formatErrorRate(row.doErrorRate)} failed` : "",
-				],
-			)
+		? h.span(row.doErrorRate >= 0.01 ? [h.Class("text-severity-error")] : [], [
+				"Durable Objects · ",
+				formatNumber(row.doRequests),
+				" calls",
+				row.doErrors > 0 ? ` · ${formatErrorRate(row.doErrorRate)} failed` : "",
+			])
 		: "",
 	row.isPreview ? "preview deploy" : "",
 ]

@@ -30,7 +30,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const status = (logsEnabled: boolean) =>
-	Schema.decodeUnknownSync(SupabaseIntegrationStatus)({
+	Schema.decodeSync(SupabaseIntegrationStatus)({
 		configured: true,
 		connected: true,
 		organization: { id: "o1", slug: "acme", name: "Acme" },
@@ -59,7 +59,7 @@ const status = (logsEnabled: boolean) =>
 		],
 	})
 
-const insights = Schema.decodeUnknownSync(SupabaseProjectInsights)({
+const insights = Schema.decodeSync(SupabaseProjectInsights)({
 	projectRef: REF,
 	advisors: { error: [], warn: [], info: [] },
 	advisorsCheckedAt: null,

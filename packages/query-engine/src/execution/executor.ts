@@ -147,7 +147,7 @@ const isPlanLimit429 = (error: WarehouseUpstreamError) =>
 	error.upstreamStatus === 429 && PLAN_LIMIT_429.test(error.message) && !VCPU_429.test(error.message)
 
 const isTransientUpstreamError = (error: unknown): error is WarehouseUpstreamError =>
-	error instanceof WarehouseUpstreamError && !isPlanLimit429(error)
+	Schema.is(WarehouseUpstreamError)(error) && !isPlanLimit429(error)
 
 // Client-side ceiling for a single query attempt. Tinybird's server-side
 // `max_execution_time` is not always honored — when its query queue is saturated
@@ -594,7 +594,7 @@ WHERE name = 'enable_full_text_index'`,
 				)
 				.pipe(
 					Effect.mapError((error) =>
-						error instanceof WarehouseResponseLimitError
+						Schema.is(WarehouseResponseLimitError)(error)
 							? // Only raw SQL restates this as a validation error — there the
 								// oversized result IS the caller's query problem. For a trusted
 								// query the limit is ours, so it propagates unchanged and the

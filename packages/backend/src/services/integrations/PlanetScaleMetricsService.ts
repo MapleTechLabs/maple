@@ -57,7 +57,7 @@ const MAX_BRANCHES_PER_ORG = 150
 const BRANCH_CONCURRENCY = 4
 const ORG_CONCURRENCY = 3
 
-const SYSTEM_USER_ID = Schema.decodeUnknownSync(UserId)("system-planetscale-metrics")
+const SYSTEM_USER_ID = Schema.decodeSync(UserId)("system-planetscale-metrics")
 
 export interface PlanetScaleMetricsPollSummary {
 	readonly orgs: number
@@ -68,7 +68,7 @@ export interface PlanetScaleMetricsPollSummary {
 }
 
 export interface PlanetScaleMetricsServiceApi {
-	readonly pollAll: () => Effect.Effect<PlanetScaleMetricsPollSummary, IntegrationsPersistenceError>
+	readonly pollAll: Effect.Effect<PlanetScaleMetricsPollSummary, IntegrationsPersistenceError>
 }
 
 type OrgOutcome =
@@ -397,7 +397,7 @@ export class PlanetScaleMetricsService extends Context.Service<
 			} satisfies OrgOutcome
 		})
 
-		const pollAll = Effect.fn("PlanetScaleMetricsService.pollAll")(function* () {
+		const pollAll = Effect.gen(function* () {
 			// The lane's inventory and webhook sync already ran; leave room before its deadline.
 			const deadlineMs = (yield* Clock.currentTimeMillis) + POLL_BUDGET_MS
 			const connections = yield* dbExecute((db) => db.run(PG.from(PlanetscaleConnections).select()))
@@ -433,7 +433,7 @@ export class PlanetScaleMetricsService extends Context.Service<
 				rowsIngested: polled.reduce((sum, outcome) => sum + outcome.rows, 0),
 				failures: polled.filter((outcome) => outcome.failed).length,
 			}
-		})
+		}).pipe(Effect.withSpan("PlanetScaleMetricsService.pollAll"))
 
 		return { pollAll } satisfies PlanetScaleMetricsServiceApi
 	}),

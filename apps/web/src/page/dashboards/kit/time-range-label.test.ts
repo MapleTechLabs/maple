@@ -5,7 +5,7 @@ import { widgetTimeRangeLabel } from "./time-range-label"
 
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 const absolute = (startTime: string, endTime: string) =>
-	Schema.decodeUnknownSync(TimeRangeSchema)({ type: "absolute", startTime, endTime })
+	Schema.decodeSync(TimeRangeSchema)({ type: "absolute", startTime, endTime })
 
 describe("widgetTimeRangeLabel", () => {
 	test("a relative window reads as its preset", () => {

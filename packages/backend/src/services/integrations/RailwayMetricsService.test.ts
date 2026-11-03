@@ -9,6 +9,7 @@ import {
 	Array as Arr,
 	Record as Rec,
 	String as Str,
+	DateTime,
 } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
@@ -323,7 +324,7 @@ describe("RailwayMetricsService", () => {
 				)
 				// Nothing of the paused window is read after a resume.
 				assert.strictEqual(
-					new Date(environment!.watermark_at).getTime(),
+					DateTime.toEpochMillis(DateTime.makeUnsafe(environment!.watermark_at)),
 					Date.UTC(2026, 9, 3, 12, 28, 0),
 				)
 			}),
@@ -375,7 +376,7 @@ describe("RailwayMetricsService", () => {
 							.stringValue,
 				)
 				assert.isAbove(stamped.length, 0)
-				const expected = publicSourceId(Schema.decodeUnknownSync(SourceId)(source!.id))
+				const expected = publicSourceId(Schema.decodeSync(SourceId)(source!.id))
 				assert.deepStrictEqual(
 					stamped,
 					Arr.map(stamped, () => expected),
@@ -388,7 +389,7 @@ describe("RailwayMetricsService", () => {
 					),
 				)
 				assert.strictEqual(
-					new Date(environment!.watermark_at).getTime(),
+					DateTime.toEpochMillis(DateTime.makeUnsafe(environment!.watermark_at)),
 					Date.UTC(2026, 9, 3, 12, 28, 0),
 				)
 
@@ -457,7 +458,10 @@ describe("RailwayMetricsService", () => {
 					),
 				]),
 			)
-			assert.isAbove(new Date(rows[0]!.lease_until!).getTime(), now + 10 * minute)
+			assert.isAbove(
+				DateTime.toEpochMillis(DateTime.makeUnsafe(rows[0]!.lease_until!)),
+				now + 10 * minute,
+			)
 			assert.isNull(rows[1]!.watermark_at)
 			const held = yield* run(
 				testDb,
@@ -495,7 +499,10 @@ describe("RailwayMetricsService", () => {
 						[orgId],
 					),
 				)
-				assert.isAbove(new Date(connection!.lease_until!).getTime(), now + 30 * minute)
+				assert.isAbove(
+					DateTime.toEpochMillis(DateTime.makeUnsafe(connection!.lease_until!)),
+					now + 30 * minute,
+				)
 				const held = yield* run(
 					testDb,
 					refusedStub,
@@ -534,7 +541,7 @@ describe("RailwayMetricsService", () => {
 			const all = yield* run(
 				testDb,
 				revokedStub,
-				RailwayMetricsService.use((railway) => railway.pollAllOrgs()),
+				RailwayMetricsService.use((railway) => railway.pollAllOrgs),
 			)
 			assert.strictEqual(all.orgs, 0)
 		})

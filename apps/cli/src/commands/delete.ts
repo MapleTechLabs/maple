@@ -60,7 +60,7 @@ export const buildDeleteRequest = (flags: {
 			}),
 			([, value]) => value !== undefined,
 		)
-		const request = yield* Schema.decodeUnknownEffect(ScopedDeleteRequest)(Rec.fromEntries(present)).pipe(
+		const request = yield* Schema.decodeEffect(ScopedDeleteRequest)(Rec.fromEntries(present)).pipe(
 			Effect.mapError(() =>
 				failure(
 					"invalid delete flags",
@@ -155,7 +155,7 @@ const postDelete = (baseUrl: string, body: ScopedDeleteRequest & { readonly dryR
 			)
 		if (response.status < 200 || response.status >= 300)
 			return yield* failure(text || `server answered HTTP ${response.status}`)
-		return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ScopedDeleteReport))(text).pipe(
+		return yield* Schema.decodeEffect(Schema.fromJsonString(ScopedDeleteReport))(text).pipe(
 			Effect.mapError(() => failure("the server returned an unreadable delete report")),
 		)
 	})

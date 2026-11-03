@@ -4,7 +4,7 @@
 
 import { randomUUID } from "node:crypto"
 import { afterAll, afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, DateTime, Clock } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { migrations } from "@maple/domain/clickhouse"
 import { OrgId } from "@maple/domain/http"
@@ -47,7 +47,7 @@ afterAll(async () => {
 	for (const name of createdDatabases) await clickhouseExec(`DROP DATABASE IF EXISTS ${name}`)
 })
 
-const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 interface Span {
 	readonly type: string
@@ -65,7 +65,12 @@ const spanTimestamp = () =>
 	Str.slice(
 		0,
 		23,
-	)(Str.replace("Z", "")(Str.replace("T", " ")(new Date(Date.now() - 150_000).toISOString())))
+	)(
+		Str.replace(
+			"Z",
+			"",
+		)(Str.replace("T", " ")(DateTime.formatIso(DateTime.makeUnsafe(Date.now() - 150_000)))),
+	)
 
 /** Three of each, so every fingerprint clears the promotion threshold. */
 const insertSpans = async (database: string, spans: ReadonlyArray<Span>): Promise<void> => {
@@ -191,7 +196,7 @@ const makeTickLayer = (database: string) => {
 const PLACEHOLDER_HASH = "placeholder"
 const seedOrgState = Effect.gen(function* () {
 	const database = yield* Database
-	const now = Date.now()
+	const now = yield* Clock.currentTimeMillis
 	yield* database.execute((db) =>
 		db.run(
 			PG.insertInto(ErrorIssues).values({
@@ -261,7 +266,7 @@ describe.skipIf(!clickhouseE2eEnabled)("errors tick over the v3 fingerprint (Cli
 				return yield* Effect.gen(function* () {
 					yield* seedOrgState
 					const errors = yield* ErrorsService
-					yield* errors.runTick()
+					yield* errors.runTick
 
 					const issues = yield* loadIssues
 					assert.sameMembers(
@@ -311,7 +316,7 @@ describe.skipIf(!clickhouseE2eEnabled)("errors tick over the v3 fingerprint (Cli
 					// Archived by the version sweep while its old hash was still live.
 					const issueId = asIssueId(randomUUID())
 					const db = yield* Database
-					const archivedAt = Date.now() - 60 * 60_000
+					const archivedAt = (yield* Clock.currentTimeMillis) - 60 * 60_000
 					yield* db.execute((tx) =>
 						tx.run(
 							PG.insertInto(ErrorIssues).values({
@@ -335,7 +340,7 @@ describe.skipIf(!clickhouseE2eEnabled)("errors tick over the v3 fingerprint (Cli
 						),
 					)
 					const errors = yield* ErrorsService
-					yield* errors.runTick()
+					yield* errors.runTick
 
 					const [issue] = yield* loadIssues
 					assert.isDefined(issue)
@@ -399,7 +404,7 @@ describe.skipIf(!clickhouseE2eEnabled)("errors tick over the v3 fingerprint (Cli
 						),
 					)
 					const errors = yield* ErrorsService
-					yield* errors.runTick()
+					yield* errors.runTick
 
 					const issues = yield* loadIssues
 					assert.deepStrictEqual(

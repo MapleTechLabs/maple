@@ -5,7 +5,7 @@ import fixture from "./__fixtures__/osv.json"
 import { advisoriesOf, type OsvRecord, OsvVulnResponse, toOsvRecord } from "./osv-records"
 
 // `fixture` is a real OSV answer, captured by scripts/capture-osv-fixtures.ts.
-const records = Arr.map(fixture.vulns, (vuln) => toOsvRecord(Schema.decodeUnknownSync(OsvVulnResponse)(vuln)))
+const records = Arr.map(fixture.vulns, (vuln) => toOsvRecord(Schema.decodeSync(OsvVulnResponse)(vuln)))
 
 const recordsFor = (ref: PackageRef): ReadonlyArray<OsvRecord> => {
 	const index = fixture.queries.findIndex(

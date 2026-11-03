@@ -23,7 +23,7 @@ const call = (name: string, params: Record<string, unknown>): Promise<McpToolRes
 	runToolDirect(rt, name, { ...WINDOW, ...params })
 
 const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S, result: McpToolResult) =>
-	Schema.decodeUnknownSync(schema)(result.structuredContent)
+	Schema.decodeSync(schema)(result.structuredContent)
 
 describe("list_infra provider kinds", () => {
 	it("lists Cloudflare zones with the one serving 5xx first and flags it", async () => {

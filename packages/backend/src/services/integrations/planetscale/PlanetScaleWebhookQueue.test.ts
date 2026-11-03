@@ -20,7 +20,7 @@ import {
 const projectPlanetScaleWebhookEvent = (...args: Parameters<typeof projectPlanetScaleWebhookEventResult>) =>
 	Result.getOrThrow(projectPlanetScaleWebhookEventResult(...args))
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_1")
+const orgId = Schema.decodeSync(OrgId)("org_1")
 const payload = {
 	timestamp: 1,
 	event: "branch.anomaly",
@@ -51,7 +51,7 @@ const provideQueue = (producer: QueueProducer) =>
 describe("PlanetScaleWebhookQueue", () => {
 	it("decodes tenant, source, connection, type, schema, and time as one relational boundary", () => {
 		const contradictions: readonly PlanetScaleWebhookJob[] = [
-			{ ...job, event: { ...job.event, tenantid: Schema.decodeUnknownSync(OrgId)("org_2") } },
+			{ ...job, event: { ...job.event, tenantid: Schema.decodeSync(OrgId)("org_2") } },
 			{ ...job, event: { ...job.event, source: "urn:maple:planetscale:connection_2" } },
 			{
 				...job,
@@ -71,8 +71,8 @@ describe("PlanetScaleWebhookQueue", () => {
 			{ ...job, event: { ...job.event, time: "2026-99-99T00:00:00Z" } },
 		]
 		for (const contradiction of contradictions)
-			assert.throws(() => Schema.decodeUnknownSync(PlanetScaleWebhookQueueMessage)(contradiction))
-		assert.deepStrictEqual(Schema.decodeUnknownSync(PlanetScaleWebhookQueueMessage)(job), job)
+			assert.throws(() => Schema.decodeSync(PlanetScaleWebhookQueueMessage)(contradiction))
+		assert.deepStrictEqual(Schema.decodeSync(PlanetScaleWebhookQueueMessage)(job), job)
 	})
 
 	it.effect("schema-encodes the internal job onto the dedicated binding", () => {

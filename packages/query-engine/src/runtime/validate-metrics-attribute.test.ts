@@ -13,7 +13,7 @@ const makeRequest = (query: MetricsTimeseriesQuery): AlertEvaluateRequest => ({
 })
 
 const baseFilters = {
-	metricName: Schema.decodeUnknownSync(MetricName)("cpu.usage"),
+	metricName: Schema.decodeSync(MetricName)("cpu.usage"),
 	metricType: "gauge" as const,
 }
 

@@ -27,7 +27,7 @@ import type { RepositoryCheckout } from "@maple/backend/services/integrations/vc
 import { admit, makeCloudflareRepoSandbox } from "./CloudflareRepoSandbox"
 import { NETWORK_DISABLED, REPO_SANDBOX_RUNTIME, repoMount } from "./repo-mount"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_sandbox_test")
+const ORG = Schema.decodeSync(OrgId)("org_sandbox_test")
 const SHA = Str.repeat(40)("c")
 
 const request = (overrides: Partial<ConstructorParameters<typeof SandboxRequest>[0]> = {}) =>

@@ -49,7 +49,7 @@ const decodesUtc = <Output>(
 			Effect.gen(function* () {
 				const codec = fieldCodec(ast, field)
 				if (codec === undefined) return expect.fail(`no codec for ${field}`)
-				const value = yield* Schema.decodeUnknownEffect(codec)("2024-01-01 10:00:00.123456789")
+				const value = yield* Schema.decodeEffect(codec)("2024-01-01 10:00:00.123456789")
 				expect(DateTime.isDateTime(value) ? DateTime.formatIso(value) : value).toBe(
 					"2024-01-01T10:00:00.123Z",
 				)

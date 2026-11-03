@@ -1,9 +1,19 @@
 import { describe, expect, it } from "vitest"
 import { generateDemoRows } from "./fixtures"
-import { Array as Arr, String as Str } from "effect"
+import { Effect, Random, Array as Arr, String as Str } from "effect"
 
 describe("generateDemoRows metrics", () => {
-	const rows = generateDemoRows({ orgId: "org_test", hours: 2, ratePerHour: 10 })
+	const rows = Effect.runSync(
+		Effect.gen(function* () {
+			const random = yield* Random.Random
+			return generateDemoRows({
+				orgId: "org_test",
+				hours: 2,
+				ratePerHour: 10,
+				random: () => random.nextDoubleUnsafe(),
+			})
+		}).pipe(Random.withSeed("demo-fixtures")),
+	)
 
 	it("emits runtime gauge and sum metrics alongside traces/logs", () => {
 		expect(rows.metricGaugeRows.length).toBeGreaterThan(0)

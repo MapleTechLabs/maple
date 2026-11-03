@@ -264,7 +264,7 @@ describe("SupabaseOAuthService", () => {
 			assert.deepStrictEqual(yield* service.disconnect(ORG), { disconnected: true })
 			const revoke = fake.state.calls.find((call) => call.path === "/v1/oauth/revoke")
 			assert.deepStrictEqual(
-				Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(revoke?.body ?? "{}"),
+				Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))(revoke?.body ?? "{}"),
 				{
 					client_id: FAKE_CLIENT_ID,
 					client_secret: FAKE_CLIENT_SECRET,

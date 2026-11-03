@@ -46,7 +46,7 @@ const row = (service: string, commit: string, firstSeen: string, errorCount = 0)
 	apdexScore: 1,
 })
 
-const data = Schema.decodeUnknownSync(ReleasesData)({
+const data = Schema.decodeSync(ReleasesData)({
 	releases: [
 		row("payment-svc", sha("a"), "2026-09-30T10:00:00.000Z"),
 		row("payment-svc", sha("b"), "2026-10-01T10:00:00.000Z", 90),
@@ -70,7 +70,7 @@ const loaded = (): Model => {
 	).model
 }
 
-const noReleases = Schema.decodeUnknownSync(ReleasesData)({ ...data, releases: [] })
+const noReleases = Schema.decodeSync(ReleasesData)({ ...data, releases: [] })
 
 /** A window with no releases, after the presence read answered. */
 const empty = (traces: "present" | "absent"): Model => {

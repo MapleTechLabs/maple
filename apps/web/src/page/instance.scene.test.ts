@@ -13,7 +13,7 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const documentOf = (id: string) =>
-	Schema.decodeUnknownSync(DashboardDocument)({
+	Schema.decodeSync(DashboardDocument)({
 		id,
 		name: id,
 		timeRange: { type: "relative", value: "6h" },

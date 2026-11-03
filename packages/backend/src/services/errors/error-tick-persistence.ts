@@ -23,16 +23,19 @@ import type {
 	ErrorIncidentReason,
 	ErrorIssueEventId,
 	ErrorIssueId,
+	WorkflowState,
 	IssueSeverity,
 	OrgId,
 } from "@maple/domain/http"
 import { FINGERPRINT_VERSION } from "@maple/domain/tinybird/fingerprint"
+import { foldIssues } from "./issue-fold"
+import { MAX_TRACKED_VERSIONS, mergeVersions } from "./issue-versions"
 import { Array as Arr, Effect, Schema } from "effect"
 
 export interface ErrorTickScanRow {
 	readonly fingerprintHash: string
-	/** The hash the previous fingerprint version gave this error, while a bump settles. */
-	readonly previousFingerprintHash?: string | undefined
+	/** The hashes the previous fingerprint version gave this error, while a bump settles. */
+	readonly previousFingerprintHashes?: ReadonlyArray<string> | undefined
 	readonly serviceName: string
 	readonly exceptionType: string
 	readonly exceptionMessage: string
@@ -110,16 +113,6 @@ export const PROMOTION_MIN_OCCURRENCES = 3
  * otherwise reopen the issue immediately.
  */
 const REGRESSION_GRACE_MS = 60 * 60 * 1000
-
-/**
- * Cap on the per-issue build set, so a long-lived issue cannot grow unbounded.
- *
- * Overflow evicts the LEAST RECENTLY SEEN build, not the oldest-inserted one.
- * Those differ for exactly the builds that matter here: a stale client still
- * reporting the bug keeps re-observing its own version, and evicting it because
- * it was added first is what would make it look like a regression.
- */
-const MAX_TRACKED_VERSIONS = 50
 
 /** The handle `persistErrorTickWindow` runs its statements on, inside its transaction. */
 type ErrorTickTransaction = MapleDb
@@ -281,22 +274,6 @@ export const isRegression = (
 }
 
 /**
- * Union the builds observed this window into an issue's tracked set.
- *
- * Re-observing a build moves it to the end, so the cap evicts by least-recently-
- * seen rather than by insertion order.
- */
-export const mergeVersions = (
-	existing: ReadonlyArray<string>,
-	observed: ReadonlyArray<string>,
-): ReadonlyArray<string> => {
-	const fresh = Arr.filter(observed, (version) => version !== "")
-	if (fresh.length === 0) return existing
-	const next = [...Arr.filter(existing, (version) => !fresh.includes(version)), ...new Set(fresh)]
-	return next.length > MAX_TRACKED_VERSIONS ? next.slice(next.length - MAX_TRACKED_VERSIONS) : next
-}
-
-/**
  * The evaluator no longer holds this org's cursor row. Only reachable when the
  * worker stalled long enough for the crash-recovery TTL to elapse and another
  * invocation took over, so the window must roll back rather than double-apply.
@@ -374,27 +351,49 @@ const aliasOwners = (tx: ErrorTickTransaction, orgId: OrgId, hashes: ReadonlyArr
 				.select(($) => ({ alias: $.fingerprintHash, ...ownerColumns($.issue) }))
 				.where(($) => [$.orgId.eq(orgId), $.issue.orgId.eq(orgId), $.fingerprintHash.in_(...chunk)]),
 		),
-	).pipe(Effect.map((rows) => new Map<string, Owner>(Arr.map(rows, ({ alias, ...owner }) => [alias, owner]))))
+	).pipe(
+		Effect.map((rows) => new Map<string, Owner>(Arr.map(rows, ({ alias, ...owner }) => [alias, owner]))),
+	)
+
+/**
+ * Which of several old issues a bump folds into one keeps the new hash: the one
+ * somebody is working, then the busiest, then the oldest.
+ */
+const REKEY_STATE_RANK = {
+	in_progress: 0,
+	in_review: 1,
+	verifying: 2,
+	todo: 3,
+	regressed: 4,
+	triage: 5,
+	wontfix: 6,
+	done: 7,
+	cancelled: 8,
+} as const satisfies Readonly<Record<WorkflowState, number>>
+const rekeyOrder = (a: ErrorIssueRow, b: ErrorIssueRow) =>
+	REKEY_STATE_RANK[a.workflowState] - REKEY_STATE_RANK[b.workflowState] ||
+	b.occurrenceCount - a.occurrenceCount ||
+	a.firstSeenAt - b.firstSeenAt
 
 /**
  * Hand a fingerprint version bump's new hashes to the issues their previous hashes
  * belong to, recording each as a `rekey` alias, so a bump carries every issue's
- * state instead of opening new ones.
+ * state instead of opening new ones. Where the bump folds several old issues into
+ * one hash, the first by `rekeyOrder` keeps it and the rest are folded into it.
  */
 const rekeyOwners = (
 	tx: ErrorTickTransaction,
-	orgId: OrgId,
+	input: PersistErrorTickWindowInput,
 	rows: ReadonlyArray<ErrorTickScanRow>,
 	owned: ReadonlyMap<string, Owner>,
-	windowEnd: number,
 ): Effect.Effect<ReadonlyMap<string, Owner>, MapleDbError> =>
 	Effect.gen(function* () {
+		const orgId = input.orgId
+		const previousOf = (row: ErrorTickScanRow) =>
+			Arr.filter(row.previousFingerprintHashes ?? [], (hash) => hash !== row.fingerprintHash)
 		const bumped = Arr.filter(
 			rows,
-			(row) =>
-				!owned.has(row.fingerprintHash) &&
-				row.previousFingerprintHash !== undefined &&
-				row.previousFingerprintHash !== row.fingerprintHash,
+			(row) => !owned.has(row.fingerprintHash) && previousOf(row).length > 0,
 		)
 		if (bumped.length === 0) return new Map()
 		// A hash that already has its own issue keeps it.
@@ -402,11 +401,17 @@ const rekeyOwners = (
 			tx.run(
 				PG.from(ErrorIssues)
 					.select("fingerprintHash")
-					.where(($) => [$.orgId.eq(orgId), $.fingerprintHash.in_(...Arr.map(chunk, (row) => row.fingerprintHash))]),
+					.where(($) => [
+						$.orgId.eq(orgId),
+						$.fingerprintHash.in_(...Arr.map(chunk, (row) => row.fingerprintHash)),
+					]),
 			),
 		)
-		const unowned = Arr.filter(bumped, (row) => !ownIssues.some((issue) => issue.fingerprintHash === row.fingerprintHash))
-		const previous = Arr.dedupe(Arr.flatMap(unowned, (row) => (row.previousFingerprintHash === undefined ? [] : [row.previousFingerprintHash])))
+		const unowned = Arr.filter(
+			bumped,
+			(row) => !ownIssues.some((issue) => issue.fingerprintHash === row.fingerprintHash),
+		)
+		const previous = Arr.dedupe(Arr.flatMap(unowned, previousOf))
 		if (previous.length === 0) return new Map()
 		const byPrimary = yield* inChunks(previous, (chunk) =>
 			tx.run(
@@ -420,10 +425,45 @@ const rekeyOwners = (
 			...Arr.map(byPrimary, (owner): [string, Owner] => [owner.fingerprintHash, owner]),
 			...(yield* aliasOwners(tx, orgId, previous)),
 		])
-		const rekeyed = Arr.flatMap(unowned, (row) => {
-			const owner = row.previousFingerprintHash === undefined ? undefined : previousOwners.get(row.previousFingerprintHash)
-			return owner === undefined ? [] : [[row.fingerprintHash, owner] as const]
-		})
+		const candidateIds = Arr.dedupe(
+			Arr.flatMap(previous, (hash) => {
+				const owner = previousOwners.get(hash)
+				return owner === undefined ? [] : [owner.id]
+			}),
+		)
+		const candidates = yield* inChunks(candidateIds, (chunk) =>
+			tx.run(
+				PG.from(ErrorIssues)
+					.select()
+					.where(($) => [$.orgId.eq(orgId), $.id.in_(...chunk), $.mergedIntoIssueId.isNull()]),
+			),
+		)
+		const issueById = new Map(Arr.map(candidates, (issue) => [issue.id, issue]))
+		const folded = new Set<ErrorIssueId>()
+		const rekeyed = yield* Effect.forEach(unowned, (row) =>
+			Effect.gen(function* () {
+				const issues = Arr.dedupe(
+					Arr.flatMap(previousOf(row), (hash) => {
+						const owner = previousOwners.get(hash)
+						const issue = owner === undefined ? undefined : issueById.get(owner.id)
+						return issue === undefined || folded.has(issue.id) ? [] : [issue]
+					}),
+				).sort(rekeyOrder)
+				const [keeper, ...rest] = issues
+				if (keeper === undefined) return []
+				if (rest.length > 0) {
+					Arr.forEach(rest, (issue) => folded.add(issue.id))
+					yield* foldIssues(tx, {
+						orgId,
+						target: keeper,
+						sources: rest,
+						timestamp: input.windowEndMs,
+						event: (issueId, payload) => buildEvent(input, issueId, "merge", { payload }),
+					})
+				}
+				return [[row.fingerprintHash, ownerOf(keeper)] as const]
+			}),
+		).pipe(Effect.map(Arr.flatten))
 		yield* Effect.forEach(
 			Arr.chunksOf(rekeyed, BULK_CHUNK_ROWS),
 			(chunk) =>
@@ -436,7 +476,7 @@ const rekeyOwners = (
 								issueId: owner.id,
 								source: "rekey" as const,
 								originIssueId: null,
-								createdAt: windowEnd,
+								createdAt: input.windowEndMs,
 							})),
 						)
 						.onConflictDoNothing(),
@@ -446,6 +486,16 @@ const rekeyOwners = (
 		return new Map(rekeyed)
 	})
 
+const ownerOf = (issue: ErrorIssueRow): Owner => ({
+	id: issue.id,
+	fingerprintHash: issue.fingerprintHash,
+	serviceName: issue.serviceName,
+	exceptionType: issue.exceptionType,
+	exceptionMessage: issue.exceptionMessage,
+	errorLabel: issue.errorLabel,
+	topFrame: issue.topFrame,
+})
+
 /**
  * Rewrite each fingerprint an issue owns through an alias, or that a version bump
  * re-keyed, to that issue, then merge again: two hashes of one issue in a window
@@ -453,14 +503,18 @@ const rekeyOwners = (
  */
 const canonicalizeScanRows = (
 	tx: ErrorTickTransaction,
-	orgId: OrgId,
+	input: PersistErrorTickWindowInput,
 	rows: ReadonlyArray<ErrorTickScanRow>,
-	windowEnd: number,
 ): Effect.Effect<ReadonlyArray<ErrorTickScanRow>, MapleDbError> =>
 	Effect.gen(function* () {
+		const orgId = input.orgId
 		if (rows.length === 0) return rows
-		const aliased = yield* aliasOwners(tx, orgId, Arr.map(rows, (row) => row.fingerprintHash))
-		const rekeyed = yield* rekeyOwners(tx, orgId, rows, aliased, windowEnd)
+		const aliased = yield* aliasOwners(
+			tx,
+			orgId,
+			Arr.map(rows, (row) => row.fingerprintHash),
+		)
+		const rekeyed = yield* rekeyOwners(tx, input, rows, aliased)
 		if (aliased.size === 0 && rekeyed.size === 0) return rows
 		return mergeScanRows(
 			Arr.map(rows, (row) => {
@@ -564,7 +618,7 @@ export const persistErrorTickWindow = (
 			)
 			if (held.length === 0) return yield* claimLost(input.orgId, "preflight")
 
-			const rows = yield* canonicalizeScanRows(tx, input.orgId, mergeScanRows(input.rows), windowEnd)
+			const rows = yield* canonicalizeScanRows(tx, input, mergeScanRows(input.rows))
 			const fingerprints = Arr.map(rows, (row) => row.fingerprintHash)
 			const existingIssues = yield* inChunks(fingerprints, (chunk) =>
 				tx.run(

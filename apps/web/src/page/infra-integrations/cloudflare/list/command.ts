@@ -42,7 +42,7 @@ export const LoadStatus = Command.define("LoadCloudflareIngestStatus", {
 export const LoadUsage = Command.define("LoadCloudflareUsage", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedLoadUsage],
-	execute: ({ key }) => Effect.map(loadUsage(), (result) => Message.CompletedLoadUsage({ key, result })),
+	execute: ({ key }) => Effect.map(loadUsage, (result) => Message.CompletedLoadUsage({ key, result })),
 })
 
 export const FetchZones = Command.define("FetchCloudflareZones", {

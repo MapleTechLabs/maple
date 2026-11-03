@@ -174,6 +174,8 @@ const run = <A, E>(
 	)
 
 const urlOf = (input: string | URL | Request) => (input instanceof Request ? input.url : String(input))
+const bodyOf = (body: RequestInit["body"]): string =>
+	typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : ""
 
 describe("guard", () => {
 	it.effect("issues the request when the URL is public, with redirect: manual", () =>
@@ -237,7 +239,7 @@ describe("guard", () => {
 		Effect.gen(function* () {
 			const seen: Array<{ url: string; method: string | undefined; body: string }> = []
 			const fakeFetch: typeof fetch = async (input, init) => {
-				seen.push({ url: urlOf(input), method: init?.method, body: String(init?.body ?? "") })
+				seen.push({ url: urlOf(input), method: init?.method, body: bodyOf(init?.body) })
 				return seen.length === 1
 					? new Response(null, { status: 307, headers: { location: "https://api2.example.com/y" } })
 					: new Response("ok", { status: 200 })
@@ -422,7 +424,7 @@ const redirectOnce = (status: number, location: string) => {
 		seen.push({
 			url: urlOf(input),
 			method: init?.method,
-			body: String(init?.body ?? ""),
+			body: bodyOf(init?.body),
 			apiKey: new Headers(init?.headers).get("x-api-key"),
 		})
 		return seen.length === 1

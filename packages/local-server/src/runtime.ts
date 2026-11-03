@@ -256,7 +256,7 @@ const acquireLocal = (options: LocalOptions, portChoice: PortChoice) =>
 			dataDir,
 			configFile: yield* resolveChdbConfigFile(dataDir, undefined),
 			auth: NO_REMOTE_AUTH,
-			assets: yield* resolveUiAssets(),
+			assets: yield* resolveUiAssets,
 		})
 		const endpoint = serverUrl(HOSTNAME, boundPort)
 		// How a second `alchemy dev` of the same stack finds this server (and `maple status` too).

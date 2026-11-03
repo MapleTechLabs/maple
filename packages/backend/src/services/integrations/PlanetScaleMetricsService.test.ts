@@ -192,7 +192,7 @@ const connectAndLoadInventory = (excludeBranches: ReadonlyArray<string> = []) =>
 			organization: "acme",
 			excludeBranches,
 		})
-		yield* (yield* PlanetScaleService).pollAllOrgs()
+		yield* (yield* PlanetScaleService).pollAllOrgs
 	})
 
 const cpuPoints = (payloads: ReadonlyArray<OtlpPayload>) =>
@@ -232,7 +232,7 @@ describe("PlanetScaleMetricsService", () => {
 		const api = fakePlanetScale()
 		return Effect.gen(function* () {
 			yield* connectAndLoadInventory(["pr-*"])
-			const summary = yield* (yield* PlanetScaleMetricsService).pollAll()
+			const summary = yield* (yield* PlanetScaleMetricsService).pollAll
 
 			assert.deepStrictEqual(
 				api.metricRequests.map((request) => request.branch),
@@ -263,7 +263,7 @@ describe("PlanetScaleMetricsService", () => {
 					 auth_credentials_iv = 'x', auth_credentials_tag = 'x', enabled = true WHERE org_id = 'org_1'`,
 				),
 			)
-			yield* (yield* PlanetScaleMetricsService).pollAll()
+			yield* (yield* PlanetScaleMetricsService).pollAll
 
 			assert.lengthOf(api.metricRequests, 0)
 			const status = yield* (yield* PlanetScaleConnectionService).getStatus(asOrgId("org_1"))
@@ -276,7 +276,7 @@ describe("PlanetScaleMetricsService", () => {
 		const api = fakePlanetScale({ ingestStatus: 503 })
 		return Effect.gen(function* () {
 			yield* connectAndLoadInventory(["pr-*"])
-			yield* (yield* PlanetScaleMetricsService).pollAll()
+			yield* (yield* PlanetScaleMetricsService).pollAll
 
 			const state = yield* Effect.promise(() =>
 				queryFirstRow<{ watermark_at: Date | null; last_error: string | null }>(
@@ -303,9 +303,9 @@ describe("PlanetScaleMetricsService", () => {
 		})
 		return Effect.gen(function* () {
 			yield* connectAndLoadInventory(["pr-*"])
-			yield* (yield* PlanetScaleMetricsService)
-				.pollAll()
-				.pipe(Effect.provideService(Tracer.Tracer, tracer))
+			yield* (yield* PlanetScaleMetricsService).pollAll.pipe(
+				Effect.provideService(Tracer.Tracer, tracer),
+			)
 
 			const state = yield* Effect.promise(() =>
 				queryFirstRow<{ watermark_at: Date | null; last_error: string | null }>(
@@ -335,7 +335,7 @@ describe("PlanetScaleMetricsService", () => {
 			yield* Effect.promise(() =>
 				executeSql(testDb, `UPDATE scrape_targets SET enabled = true WHERE org_id = 'org_1'`),
 			)
-			yield* (yield* PlanetScaleMetricsService).pollAll()
+			yield* (yield* PlanetScaleMetricsService).pollAll
 
 			const target = yield* Effect.promise(() =>
 				queryFirstRow<{ enabled: boolean }>(
@@ -353,9 +353,9 @@ describe("PlanetScaleMetricsService", () => {
 		return Effect.gen(function* () {
 			yield* connectAndLoadInventory(["pr-*"])
 			const metrics = yield* PlanetScaleMetricsService
-			yield* metrics.pollAll()
+			yield* metrics.pollAll
 			yield* TestClock.adjust("5 minutes")
-			yield* metrics.pollAll()
+			yield* metrics.pollAll
 
 			const times = cpuPoints(api.ingested).map((point) => point.time)
 			assert.lengthOf(times, 11 + 5)
@@ -369,7 +369,7 @@ describe("PlanetScaleMetricsService", () => {
 		return Effect.gen(function* () {
 			yield* connectAndLoadInventory()
 			const metrics = yield* PlanetScaleMetricsService
-			const summary = yield* metrics.pollAll()
+			const summary = yield* metrics.pollAll
 
 			assert.lengthOf(cpuPoints(api.ingested), 11)
 			assert.strictEqual(summary.failures, 1)
@@ -379,7 +379,7 @@ describe("PlanetScaleMetricsService", () => {
 
 			// The failed branch asks for its first window again; main asks only for what is new.
 			yield* TestClock.adjust("5 minutes")
-			yield* metrics.pollAll()
+			yield* metrics.pollAll
 			const windows = api.metricRequests.slice(-2).map((request) => [request.branch, request.from])
 			assert.sameDeepMembers(windows, [
 				["main", "2026-10-23T23:59:00.000Z"],

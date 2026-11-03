@@ -98,9 +98,9 @@ const scrapesOf = (harness: Harness, id: string, subTargetKey: string | null = n
 /** Real registry, scraper and reporter over a stubbed API, fetcher and ingest. Jitter is zeroed unless asked for. */
 const harnessLayer = (harness: Harness, options: { readonly realJitter?: boolean } = {}) => {
 	const api: ApiClientApi = {
-		listTargets: () => Effect.suspend(() => harness.listImpl()),
+		listTargets: Effect.suspend(() => harness.listImpl()),
 		reportResults: (results) => Effect.sync(() => void harness.reported.push(...results)),
-		listUptimeTargets: () => Effect.succeed([]),
+		listUptimeTargets: Effect.succeed([]),
 		reportUptimeResults: () => Effect.void,
 	}
 	const fetcher = Layer.succeed(TargetFetcher, {

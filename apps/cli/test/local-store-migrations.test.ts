@@ -14,7 +14,7 @@ import {
 	LOCAL_SCHEMA_V6,
 	LOCAL_SCHEMA_V10,
 	LOCAL_SCHEMA_V11,
-	LOCAL_SCHEMA_V46,
+	LOCAL_SCHEMA_V47,
 	SCHEMA_DIGEST,
 	SCHEMA_FINGERPRINT,
 } from "@maple/local-server/schema-identity"
@@ -97,11 +97,11 @@ const [v10ToV11ProductEventsModule] = Arr.filter(
 )
 
 describe("current local schema identity", () => {
-	it("matches the generated v46 revision and keeps the issue-297 identity frozen", () => {
+	it("matches the generated v47 revision and keeps the issue-297 identity frozen", () => {
 		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
-		expect(SCHEMA_FINGERPRINT).toBe("6a571fbc96aeaf6f")
+		expect(SCHEMA_FINGERPRINT).toBe("987e71fae7597294")
 		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
-		expect(SCHEMA_DIGEST).toBe("6a571fbc96aeaf6fa8d30e2daff76698cbcc22369daf4f65c125568a8764b75c")
+		expect(SCHEMA_DIGEST).toBe("987e71fae75972944592a40c5c3dd7bbce5268232c4a7a1d9d12e70d2589b02a")
 		// oxlint-disable-next-line test-slop/no-constant-pin -- frozen identity that stores already on disk carry
 		expect(ISSUE_297_TARGET_SCHEMA_PROJECT_REVISION).toBe(
 			"506bc745f7a7eca202ec905a6403a6815e86413faf0cd3cbbf73881023edce91",
@@ -109,8 +109,8 @@ describe("current local schema identity", () => {
 		expect(CURRENT_SCHEMA_PROJECT_REVISION).toMatch(/^[0-9a-f]{64}$/)
 		expect(LOCAL_SCHEMA_MANIFEST.objects.length).toBeGreaterThan(60)
 		// oxlint-disable-next-line test-slop/no-constant-pin -- anchor that local-schema:bump rewrites on every bump
-		expect(CURRENT_LOCAL_SCHEMA.version).toBe(46)
-		expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V46)
+		expect(CURRENT_LOCAL_SCHEMA.version).toBe(47)
+		expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V47)
 		const logs = LOCAL_SCHEMA_MANIFEST.objects.find((object) => object.name === "logs")
 		expect(logs?.columns.some((column) => Str.startsWith("idx_")(column.name))).toBe(false)
 		expect(logs?.indexes).toContain("idx_lower_body")
@@ -442,7 +442,7 @@ describe("local migration registry", () => {
 				// One past the current tip — bump alongside LOCAL_SCHEMA_VERSION, or this
 				// stops testing the future-store guard and starts testing the
 				// unknown-fingerprint one.
-				{ ...CURRENT_LOCAL_SCHEMA, version: 47, fingerprint: "future", digest: SCHEMA_DIGEST },
+				{ ...CURRENT_LOCAL_SCHEMA, version: 48, fingerprint: "future", digest: SCHEMA_DIGEST },
 				CURRENT_LOCAL_SCHEMA,
 			),
 		).toThrow(/newer than this build/)
@@ -614,8 +614,9 @@ describe("local migration registry", () => {
 			"local-0041-to-0042-security-telemetry",
 			"local-0042-to-0043-error-fingerprint-fuzz-fixes",
 			"local-0043-to-0044-error-fingerprint-json-frames",
-			"local-0044-to-0045-error-custom-fingerprint",
-			"local-0045-to-0046-error-fingerprint-v4",
+			"local-0044-to-0045-error-fingerprint-interleaved-values",
+			"local-0045-to-0046-error-custom-fingerprint",
+			"local-0046-to-0047-error-fingerprint-v4",
 		]
 		const versions = (id: string) => {
 			const match = /^local-(\d{4})-to-(\d{4})-[a-z0-9]+(-[a-z0-9]+)*$/.exec(id)
@@ -873,7 +874,7 @@ describe("durable migration recovery", () => {
 		} as const
 		const makeFixtureModule = (
 			id: string,
-			from: typeof LEGACY_LOCAL_SCHEMA | typeof LOCAL_SCHEMA_V1,
+			from: typeof LOCAL_SCHEMA_V1,
 			to: typeof LOCAL_SCHEMA_V1 | typeof v2,
 			events: string[],
 		): LocalStoreMigration => ({
@@ -1632,8 +1633,9 @@ describe("v10 -> v11 product events module", () => {
 			"local-0041-to-0042-security-telemetry",
 			"local-0042-to-0043-error-fingerprint-fuzz-fixes",
 			"local-0043-to-0044-error-fingerprint-json-frames",
-			"local-0044-to-0045-error-custom-fingerprint",
-			"local-0045-to-0046-error-fingerprint-v4",
+			"local-0044-to-0045-error-fingerprint-interleaved-values",
+			"local-0045-to-0046-error-custom-fingerprint",
+			"local-0046-to-0047-error-fingerprint-v4",
 		])
 		expect(chain[0]?.to).toEqual(LOCAL_SCHEMA_V11)
 		// The dropped table is declared, and the backfilled ones say what they

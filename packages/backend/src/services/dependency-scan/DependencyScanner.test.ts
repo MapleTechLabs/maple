@@ -16,7 +16,7 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 
 const sha = (digit: string) => Schema.decodeSync(GitCommitSha)(digit.repeat(40))
 
-const installation = Schema.decodeUnknownSync(VcsInstallation)({
+const installation = Schema.decodeSync(VcsInstallation)({
 	id: "5d7f8a52-1c3e-4b6a-9b1e-2a3c4d5e6f71",
 	orgId: "org_scan",
 	provider: "github",
@@ -35,7 +35,7 @@ const installation = Schema.decodeUnknownSync(VcsInstallation)({
 	updatedAt: 0,
 })
 
-const repository = Schema.decodeUnknownSync(VcsRepo)({
+const repository = Schema.decodeSync(VcsRepo)({
 	id: "7f0c1a52-4d8e-4b6a-9b1e-2a3c4d5e6f70",
 	orgId: "org_scan",
 	provider: "github",

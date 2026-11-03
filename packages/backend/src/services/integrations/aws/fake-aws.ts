@@ -80,7 +80,7 @@ export const deployTemplate = (
 	templateJson: string,
 	createsProvider = true,
 ): { readonly role: FakeRole; readonly provider: FakeProvider | undefined } => {
-	const template = Schema.decodeUnknownSync(Schema.fromJsonString(Template))(templateJson)
+	const template = Schema.decodeSync(Schema.fromJsonString(Template))(templateJson)
 	const resources = template.Resources
 	const role = Rec.values(resources).find((resource) => resource.Type === "AWS::IAM::Role")
 	if (role === undefined) throw new Error("template has no role")
@@ -158,7 +158,7 @@ const verifiedClaims = async (key: CryptoKey, token: string) => {
 		new TextEncoder().encode(`${header}.${body}`),
 	)
 	return valid
-		? Schema.decodeUnknownSync(Schema.fromJsonString(TokenClaims))(
+		? Schema.decodeSync(Schema.fromJsonString(TokenClaims))(
 				Buffer.from(body, "base64url").toString("utf8"),
 			)
 		: undefined

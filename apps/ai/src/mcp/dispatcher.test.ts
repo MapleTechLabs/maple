@@ -29,7 +29,7 @@ const TENANT: TenantContext = {
 const CONNECTOR_TENANT: TenantContext = {
 	...TENANT,
 	userId: "chat-connector" as TenantContext["userId"],
-	actorId: Schema.decodeUnknownSync(ActorId)("00000000-0000-4000-8000-00000000c0de"),
+	actorId: Schema.decodeSync(ActorId)("00000000-0000-4000-8000-00000000c0de"),
 	turnOrigin: {
 		kind: "connector",
 		connectorId: "testchat",

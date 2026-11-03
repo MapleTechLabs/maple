@@ -21,7 +21,7 @@ import {
 } from "../warehouse-errors"
 import { publicError } from "./public-error"
 
-const keyId = Schema.decodeUnknownSync(ApiKeyId)("0f8fad5b-d9cb-469f-a165-70867728950e")
+const keyId = Schema.decodeSync(ApiKeyId)("0f8fad5b-d9cb-469f-a165-70867728950e")
 
 describe("HttpTaggedError public body", () => {
 	it("encodes the original error directly with its exact tag", () => {

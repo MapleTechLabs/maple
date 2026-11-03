@@ -1,6 +1,6 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema, DateTime } from "effect"
 import {
 	DashboardId,
 	DashboardDocument,
@@ -85,8 +85,8 @@ const makeDashboard = (overrides: Partial<DashboardDocument> = {}): DashboardDoc
 			value: "12h",
 		},
 		widgets: [],
-		createdAt: asIsoDateTimeString(new Date("2026-01-01T00:00:00.000Z").toISOString()),
-		updatedAt: asIsoDateTimeString(new Date("2026-01-01T00:00:00.000Z").toISOString()),
+		createdAt: asIsoDateTimeString(DateTime.formatIso(DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"))),
+		updatedAt: asIsoDateTimeString(DateTime.formatIso(DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"))),
 		...overrides,
 	})
 
@@ -133,13 +133,17 @@ describe("DashboardPersistenceService", () => {
 		const original = makeDashboard({
 			id: asDashboardId("dash-1"),
 			name: "First Name",
-			updatedAt: asIsoDateTimeString(new Date("2026-01-01T00:00:00.000Z").toISOString()),
+			updatedAt: asIsoDateTimeString(
+				DateTime.formatIso(DateTime.makeUnsafe("2026-01-01T00:00:00.000Z")),
+			),
 		})
 
 		const updated = makeDashboard({
 			id: asDashboardId("dash-1"),
 			name: "Second Name",
-			updatedAt: asIsoDateTimeString(new Date("2026-01-01T01:00:00.000Z").toISOString()),
+			updatedAt: asIsoDateTimeString(
+				DateTime.formatIso(DateTime.makeUnsafe("2026-01-01T01:00:00.000Z")),
+			),
 		})
 
 		return Effect.gen(function* () {
@@ -353,8 +357,8 @@ describe("DashboardPersistenceService", () => {
 						id,
 						"Legacy",
 						JSON.stringify(payload),
-						new Date("2026-01-01T00:00:00.000Z"),
-						new Date("2026-01-01T00:00:00.000Z"),
+						"2026-01-01T00:00:00.000Z",
+						"2026-01-01T00:00:00.000Z",
 						"user_a",
 						"user_a",
 						1,
