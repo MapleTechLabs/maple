@@ -36,7 +36,8 @@ export function registerMergeErrorIssuesTool(server: McpToolRegistrar) {
 					parameter: "merge_issue_ids",
 				})
 			}
-			const sourceIds = Arr.flatMap(entries, (entry) => Option.toArray(entry.id))
+			// A UUID and its `iss_` form decode to one id; count it once, as the service does.
+			const sourceIds = Arr.dedupe(Arr.flatMap(entries, (entry) => Option.toArray(entry.id)))
 			const actorId = yield* resolveActorId(tenant)
 			const merges = yield* ErrorIssueMergeService
 			const issue = yield* merges.mergeIssues(tenant.orgId, actorId, params.issue_id, sourceIds).pipe(
