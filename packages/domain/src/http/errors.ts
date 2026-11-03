@@ -490,9 +490,15 @@ export class ErrorIssueSetSeverityRequest extends Schema.Class<ErrorIssueSetSeve
 	note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),
 }) {}
 
+/** How many issues one merge folds into the kept one. */
+export const MAX_ISSUE_MERGE_SOURCES = 50
+
 /** Fold these issues into the one in the path; each is archived pointing at it. */
 export class ErrorIssueMergeRequest extends Schema.Class<ErrorIssueMergeRequest>("ErrorIssueMergeRequest")({
-	sourceIssueIds: Schema.Array(ErrorIssueId).check(Schema.isMinLength(1), Schema.isMaxLength(50)),
+	sourceIssueIds: Schema.Array(ErrorIssueId).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(MAX_ISSUE_MERGE_SOURCES),
+	),
 }) {}
 
 // Pull request links + fix verification

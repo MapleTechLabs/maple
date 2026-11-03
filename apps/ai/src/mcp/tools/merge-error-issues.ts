@@ -1,10 +1,8 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import { MergeErrorIssuesOutput } from "@maple/domain/mcp-outputs"
-import {
-	ErrorIssueMergeService,
-	MAX_MERGE_SOURCES,
-} from "@maple/backend/services/errors/ErrorIssueMergeService"
+import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
+import { MAX_ISSUE_MERGE_SOURCES } from "@maple/domain/http"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { resolveActorId } from "../lib/resolve-actor"
 import * as P from "../lib/params"
@@ -17,10 +15,10 @@ export function registerMergeErrorIssuesTool(server: McpToolRegistrar) {
 	server.define({
 		name: "merge_error_issues",
 		title: "Merge Error Issues",
-		description: `Fold duplicate error issues into one when they are the same bug split across fingerprints. The kept issue (issue_id) takes their occurrences and every future occurrence of their fingerprints; each merged issue is archived pointing at it. Up to ${MAX_MERGE_SOURCES} at a time. Only merge issues you have confirmed share a root cause; a merge is undone from the dashboard.`,
+		description: `Fold duplicate error issues into one when they are the same bug split across fingerprints. The kept issue (issue_id) takes their occurrences and every future occurrence of their fingerprints; each merged issue is archived pointing at it. Up to ${MAX_ISSUE_MERGE_SOURCES} at a time. Only merge issues you have confirmed share a root cause; a merge is undone from the dashboard.`,
 		parameters: Schema.Struct({
 			issue_id: issueIdParam("The issue to keep, from list_error_issues"),
-			merge_issue_ids: P.list(`Issue IDs to fold into it, at most ${MAX_MERGE_SOURCES}`),
+			merge_issue_ids: P.list(`Issue IDs to fold into it, at most ${MAX_ISSUE_MERGE_SOURCES}`),
 		}),
 		output: MergeErrorIssuesOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },

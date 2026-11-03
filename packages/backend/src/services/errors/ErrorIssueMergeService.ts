@@ -13,6 +13,7 @@ import {
 	ErrorIssueNotFoundError,
 	type ErrorPersistenceError,
 	ErrorValidationError,
+	MAX_ISSUE_MERGE_SOURCES,
 	type OrgId,
 } from "@maple/domain/http"
 import { Clock, Context, Effect, Layer, Array as Arr } from "effect"
@@ -21,9 +22,6 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 import { foldIssues } from "./issue-fold"
-
-/** Enough for a cleanup pass over one bug's splinters, small enough for one statement each. */
-export const MAX_MERGE_SOURCES = 50
 
 type MergeError = ErrorPersistenceError | ErrorIssueNotFoundError | ErrorValidationError
 
@@ -97,8 +95,8 @@ const make: Effect.Effect<ErrorIssueMergeServiceApi, never, Database | ErrorIssu
 				"maple.issue.merge.source_count": sources.length,
 			})
 			if (sources.length === 0) return yield* invalid("Pick at least one other issue to merge in.")
-			if (sources.length > MAX_MERGE_SOURCES) {
-				return yield* invalid(`Merge at most ${MAX_MERGE_SOURCES} issues at a time.`)
+			if (sources.length > MAX_ISSUE_MERGE_SOURCES) {
+				return yield* invalid(`Merge at most ${MAX_ISSUE_MERGE_SOURCES} issues at a time.`)
 			}
 			const timestamp = yield* Clock.currentTimeMillis
 
