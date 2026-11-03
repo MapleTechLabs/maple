@@ -276,7 +276,7 @@ export const isSessionTraceCond = ($: {
  * only the deepest span carrying the failure counts — `failureEvents` in
  * `@maple/agent-sessions`' `session-summary.ts`, one level deep.
  */
-const failedSpansExpr = ($: {
+const failedSpansExpr = (_: {
 	readonly SpanId: CH.Expr<string>
 	readonly ParentSpanId: CH.Expr<string>
 	readonly IsToolCall: CH.Expr<number>

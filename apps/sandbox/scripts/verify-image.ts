@@ -56,7 +56,7 @@ const FIXTURE = [
 	"mkdir -p /work/src && cd /work/src",
 	"git init --quiet -b main .",
 	"mkdir -p src",
-	`printf 'export const total = 1\nthrow new Error(%s)\n' \"'card declined'\" > src/checkout.ts`,
+	`printf 'export const total = 1\nthrow new Error(%s)\n' "'card declined'" > src/checkout.ts`,
 	"printf 'a\n' > README.md",
 	"git add -A && git commit --quiet -m first",
 	// A bare origin the clone can reach with no network.

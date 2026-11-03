@@ -325,8 +325,8 @@ const tableColumns = async (
 	return rows.map((row) => ({
 		name: row.name,
 		type: row.type,
-		...(!!row.default_kind ? { defaultKind: row.default_kind } : undefined),
-		...(!!row.default_expression ? { defaultExpression: row.default_expression } : undefined),
+		...(row.default_kind ? { defaultKind: row.default_kind } : undefined),
+		...(row.default_expression ? { defaultExpression: row.default_expression } : undefined),
 		...(!(!row.compression_codec || row.compression_codec === "NONE")
 			? {
 					codec: row.compression_codec,
