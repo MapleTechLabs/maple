@@ -9,6 +9,7 @@ import { buildDisplay, validationErrorOf } from "./lowering"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { update } from "./page-update"
+import { StepEdit } from "../../kit/funnel-steps"
 import { ProductEdit } from "./product-edit"
 import { setDataSource } from "./edits"
 import { targetIndex } from "./list-column-drag"
@@ -109,11 +110,9 @@ describe("list, funnel and paths panels", () => {
 		const anchored = run(
 			paths,
 			edit(
-				ProductEdit.ChangedStepText({
+				ProductEdit.Step({
 					scope: "paths",
-					index: 0,
-					field: "eventName",
-					value: "checkout_started",
+					edit: StepEdit.ChangedText({ index: 0, field: "eventName", value: "checkout_started" }),
 				}),
 			),
 			edit(ProductEdit.SetPathsDirection({ direction: "before" })),
@@ -152,10 +151,10 @@ describe("list, funnel and paths panels", () => {
 		const step = run(
 			opened(),
 			Message.ClickedPanelType({ panel: "funnel" }),
-			edit(ProductEdit.AddedStep()),
-			edit(ProductEdit.AddedStep()),
-			edit(ProductEdit.SetStepKind({ scope: "funnel", index: 0, kind: "session" })),
-			edit(ProductEdit.MovedStep({ index: 0, delta: 1 })),
+			edit(ProductEdit.Step({ scope: "funnel", edit: StepEdit.Added() })),
+			edit(ProductEdit.Step({ scope: "funnel", edit: StepEdit.Added() })),
+			edit(ProductEdit.Step({ scope: "funnel", edit: StepEdit.SetKind({ index: 0, kind: "session" }) })),
+			edit(ProductEdit.Step({ scope: "funnel", edit: StepEdit.Moved({ index: 0, delta: 1 }) })),
 		)
 		expect(step.model.state?.funnel.steps.map((candidate) => candidate.kind)).toEqual(["event", "event"])
 	})

@@ -1,18 +1,18 @@
 import { resolveTimeRangeWindow } from "@maple/query-engine"
 import { Option } from "effect"
-import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import * as Combobox from "@maple/views/ui/combobox"
 import type { PageContext } from "../../contract"
+import { stepComboUpdate } from "../../kit/funnel-steps"
 import { toPanelType } from "../kit/chart-registry"
 import { FetchSuggestions } from "./command"
 import { isProductEventsFunnel } from "./lowering"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { applyProductEdit } from "./product-apply"
-import { ProductEdit, type StepScope, type StepTextField } from "./product-edit"
+import { ProductEdit } from "./product-edit"
 import { SUGGESTION_LOOKUPS, suggestionRequestOf } from "./suggestions"
 import type { Return } from "./update"
 
@@ -70,23 +70,6 @@ export const requestSuggestions = (model: Model, context: PageContext): Return =
 	)
 }
 
-/** A step input's combobox id: scope, step and field. */
-export const stepComboId = (scope: StepScope, index: number, field: "eventName" | "pagePath"): string =>
-	`widget-step-${scope}-${index}-${field}`
-
-const parseComboId = (
-	id: string,
-): Option.Option<Readonly<{ scope: StepScope; index: number; field: StepTextField }>> => {
-	const match = /^widget-step-(funnel|paths)-(\d+)-(eventName|pagePath)$/.exec(id)
-	const [, scope, index, field] = match ?? []
-	if (scope === undefined || index === undefined || field === undefined) return Option.none()
-	return Option.some({
-		scope: scope === "paths" ? "paths" : "funnel",
-		index: Number(index),
-		field: field === "pagePath" ? "pagePath" : "eventName",
-	})
-}
-
 /** `SuggestingInput`: the value is whatever was typed, and picking a suggestion types it. */
 export const stepComboStep = (
 	model: Model,
@@ -95,21 +78,13 @@ export const stepComboStep = (
 	message: Combobox.Message,
 	edit: (model: Model, context: PageContext, change: ProductEdit) => Return,
 ): Return => {
-	const next = Combobox.update(model.stepCombos[id] ?? Combobox.init(id, "single"), message)
-	const lifted: Model = { ...model, stepCombos: { ...model.stepCombos, [id]: next.model } }
-	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
+	const next = stepComboUpdate(model.stepCombos, id, message, (inner) =>
 		Message.GotStepComboMessage({ id, message: inner }),
 	)
-	const typed =
-		message._tag === "ChangedInput"
-			? Option.some(message.value)
-			: next.outMessage?._tag === "ChangedValue"
-				? Option.some(next.outMessage.value)
-				: Option.none()
-	const target = parseComboId(id)
-	if (Option.isNone(typed) || Option.isNone(target)) return { model: lifted, commands }
-	const edited = edit(lifted, context, ProductEdit.ChangedStepText({ ...target.value, value: typed.value }))
-	return { ...edited, commands: [...commands, ...(edited.commands ?? [])] }
+	const lifted: Model = { ...model, stepCombos: next.combos }
+	if (Option.isNone(next.edit)) return { model: lifted, commands: next.commands }
+	const edited = edit(lifted, context, ProductEdit.Step(next.edit.value))
+	return { ...edited, commands: [...next.commands, ...(edited.commands ?? [])] }
 }
 
 /** A panel edit applied to the editing state. */

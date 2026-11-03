@@ -1,4 +1,4 @@
-import { PATHS_MAX_BRANCHES, PATHS_MAX_DEPTH } from "@maple/query-model"
+import { FUNNEL_MAX_STEPS, PATHS_MAX_BRANCHES, PATHS_MAX_DEPTH } from "@maple/query-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AsyncData } from "foldkit"
 import { Option } from "effect"
@@ -23,7 +23,7 @@ import {
 	runRow,
 	windowRow,
 } from "./view-product"
-import { FUNNEL_MAX_STEPS, stepBuilder } from "./view-steps"
+import { stepBuilder } from "./view-steps"
 import { lookupField } from "../../kit/autocomplete-lookups"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
