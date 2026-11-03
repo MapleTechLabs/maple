@@ -124,6 +124,7 @@ const checksRows = (h: H, checks: ReadonlyArray<V2ScrapeTargetCheck>, timeZone: 
 																"text-muted-foreground mt-0.5 cursor-default truncate",
 															),
 															h.DataAttribute("slot", "tooltip-trigger"),
+															h.Tabindex(0),
 															...tooltipTrigger(h, check.message),
 														],
 														[check.message],

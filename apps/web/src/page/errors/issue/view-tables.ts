@@ -62,6 +62,7 @@ const incidentRow = <M>(h: HtmlBuilder<M>, incident: ErrorIncidentDocument, cloc
 				[
 					h.Class("inline-flex cursor-default items-center gap-2"),
 					h.DataAttribute("base-ui-tooltip-trigger", ""),
+					h.Tabindex(0),
 					...tooltipTrigger(h, STATUS_EXPLANATION[incident.status]),
 				],
 				[

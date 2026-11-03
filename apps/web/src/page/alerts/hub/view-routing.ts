@@ -313,12 +313,20 @@ const ATTEMPT_CLASS = new Map<AlertDeliveryEventDocument["status"], string>([
 const deliveryStrip = (h: H, recent: ReadonlyArray<AlertDeliveryEventDocument>, failed: number): Html => {
 	if (recent.length === 0) return typography(h, { size: "xs", tone: "muted" }, ["No deliveries yet"])
 	const pending = recent.filter((event) => event.status === "queued" || event.status === "processing").length
+	const total = recent.length
+	// One attempt reads as itself, not "1 of the last 1 attempts".
 	const summary =
-		failed > 0
-			? `${failed} of the last ${recent.length} attempts failed`
-			: pending > 0
-				? `${recent.length - pending} of the last ${recent.length} attempts delivered, ${pending} pending`
-				: `Last ${recent.length} attempts delivered`
+		total === 1
+			? failed > 0
+				? "The last attempt failed"
+				: pending > 0
+					? "The last attempt is pending"
+					: "The last attempt was delivered"
+			: failed > 0
+				? `${failed} of the last ${total} attempts failed`
+				: pending > 0
+					? `${total - pending} of the last ${total} attempts delivered, ${pending} pending`
+					: `Last ${total} attempts delivered`
 	return h.span(
 		[
 			h.Class("flex h-3.5 cursor-default items-stretch gap-px"),
