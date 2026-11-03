@@ -249,6 +249,11 @@ export default {
 			handle(request, {
 				token: env.SANDBOX_INTERNAL_SERVICE_TOKEN,
 				run: (sandboxKey, exec) => env.Sandbox.getByName(sandboxKey).run(exec),
+				executor: {
+					prepare: (key, request) => env.Executor.getByName(key).prepare(request),
+					run: (key, request) => env.Executor.getByName(key).run(request),
+					destroy: (key) => env.Executor.getByName(key).destroy(),
+				},
 			}).pipe(
 				// `handle` answers every readable request; reaching here is a bug before auth.
 				Effect.catchCause((cause) =>

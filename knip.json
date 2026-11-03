@@ -62,7 +62,8 @@
 		// generated entry would drop the container-backed class export), and the
 		// alchemy declaration beside it is what the root stack yields.
 		"apps/sandbox": {
-			"entry": ["src/worker.ts", "alchemy.run.ts"],
+			// The stand-in gateway is started by path inside a container (`verify:executor`).
+			"entry": ["src/worker.ts", "alchemy.run.ts", "scripts/executor-gateway-stand-in.ts"],
 			"ignoreDependencies": ["cloudflare"],
 			// The probe's TLS test makes its certificate with the system openssl, skipping where there is none.
 			"ignoreBinaries": ["openssl"]

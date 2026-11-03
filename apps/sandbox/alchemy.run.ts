@@ -76,12 +76,13 @@ const props = Effect.gen(function* () {
 				maxInstances: production ? 40 : 5,
 				observability: { logs: { enabled: true } },
 			}),
-			// The execution sandbox: started with internet off, one per probe or run. Today it only
-			// runs the platform probe (`src/executor-probe.ts`) on the cron below.
+			// The execution sandbox: started with internet off, one per security audit run (and the
+			// platform probe on the cron below). Probe v2: standard-2 is 1 vCPU, 6 GB, 11 GB disk.
 			Executor: Cloudflare.Container<Executor>("Executor", {
 				context: SANDBOX_IMAGE_CONTEXT,
 				instanceType: "standard-2" as const,
-				maxInstances: 2,
+				// The cap on concurrent audit runs that execute code.
+				maxInstances: production ? 10 : 2,
 				observability: { logs: { enabled: true } },
 			}),
 			// Never the shared `INTERNAL_SERVICE_TOKEN` (acts as any org; this runs model-chosen
